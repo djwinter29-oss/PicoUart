@@ -9,14 +9,8 @@
 #include "hardware/gpio.h"
 #include "hardware/structs/dma.h"
 
-#include <string.h>
-
-/** @brief DMA RX ring size in bytes. Must remain a power of two. */
-#define HW_UART_DRIVER_RX_BUFFER_SIZE 256u
-/** @brief DMA TX bounce-buffer size in bytes. */
-#define HW_UART_DRIVER_TX_BUFFER_SIZE 256u
 /** @brief DMA ring selector bits for the RX buffer size above. */
-#define HW_UART_DRIVER_RX_RING_BITS 8u
+#define HW_UART_DRIVER_RX_RING_BITS 10u
 
 static void hw_uart_driver_release_dma(hw_uart_driver_t *driver)
 {
@@ -35,10 +29,40 @@ static void hw_uart_driver_release_dma(hw_uart_driver_t *driver)
 
 static size_t hw_uart_driver_rx_write_index(const hw_uart_driver_t *driver)
 {
-    uintptr_t write_addr = dma_hw->ch[driver->rx_dma_channel].write_addr;
-    uintptr_t base_addr = (uintptr_t)driver->rx_buffer;
+    uint32_t remaining = dma_hw->ch[driver->rx_dma_channel].transfer_count;
+    return (size_t)(0xffffffffu - remaining);
+}
 
-    return (size_t)((write_addr - base_addr) & (HW_UART_DRIVER_RX_BUFFER_SIZE - 1u));
+static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
+{
+    dma_channel_config tx_dma_config;
+    ring_buffer_span_t span;
+
+    if ((driver == NULL) || driver->tx_active) {
+        return false;
+    }
+
+    span = ring_buffer_read_span(&driver->tx_ring);
+    if (span.length == 0u) {
+        return false;
+    }
+
+    tx_dma_config = dma_channel_get_default_config((uint)driver->tx_dma_channel);
+    channel_config_set_transfer_data_size(&tx_dma_config, DMA_SIZE_8);
+    channel_config_set_read_increment(&tx_dma_config, true);
+    channel_config_set_write_increment(&tx_dma_config, false);
+    channel_config_set_dreq(&tx_dma_config, uart_get_dreq(driver->config.instance, true));
+    dma_channel_configure(
+        (uint)driver->tx_dma_channel,
+        &tx_dma_config,
+        &uart_get_hw(driver->config.instance)->dr,
+        span.data,
+        (uint32_t)span.length,
+        true);
+
+    driver->tx_dma_bytes_in_flight = span.length;
+    driver->tx_active = true;
+    return true;
 }
 
 static void hw_uart_driver_poll_tx(hw_uart_driver_t *driver)
@@ -48,9 +72,20 @@ static void hw_uart_driver_poll_tx(hw_uart_driver_t *driver)
     }
 
     if (!dma_channel_is_busy((uint)driver->tx_dma_channel)) {
+        (void)ring_buffer_commit_consumed(&driver->tx_ring, driver->tx_dma_bytes_in_flight);
         driver->tx_active = false;
-        driver->tx_length = 0u;
+        driver->tx_dma_bytes_in_flight = 0u;
+        (void)hw_uart_driver_start_tx_dma(driver);
     }
+}
+
+void hw_uart_driver_poll(hw_uart_driver_t *driver)
+{
+    if ((driver == NULL) || !driver->initialized) {
+        return;
+    }
+
+    hw_uart_driver_poll_tx(driver);
 }
 
 bool hw_uart_driver_init(hw_uart_driver_t *driver)
@@ -68,17 +103,24 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver)
 
     driver->rx_dma_channel = -1;
     driver->tx_dma_channel = -1;
-    driver->rx_read_index = 0u;
-    driver->tx_length = 0u;
+    driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_active = false;
-    memset(driver->rx_buffer, 0, sizeof(driver->rx_buffer));
-    memset(driver->tx_buffer, 0, sizeof(driver->tx_buffer));
 
-    if (!dma_channel_claim_unused(true, (uint *)&driver->rx_dma_channel)) {
+    if (!ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
         return false;
     }
 
-    if (!dma_channel_claim_unused(true, (uint *)&driver->tx_dma_channel)) {
+    if (!ring_buffer_init(&driver->tx_ring, driver->tx_storage, sizeof(driver->tx_storage))) {
+        return false;
+    }
+
+    driver->rx_dma_channel = dma_claim_unused_channel(true);
+    if (driver->rx_dma_channel < 0) {
+        return false;
+    }
+
+    driver->tx_dma_channel = dma_claim_unused_channel(true);
+    if (driver->tx_dma_channel < 0) {
         hw_uart_driver_release_dma(driver);
         return false;
     }
@@ -103,7 +145,7 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver)
     dma_channel_configure(
         (uint)driver->rx_dma_channel,
         &rx_dma_config,
-        driver->rx_buffer,
+        driver->rx_storage,
         &uart_get_hw(driver->config.instance)->dr,
         0xffffffffu,
         true);
@@ -125,28 +167,40 @@ void hw_uart_driver_deinit(hw_uart_driver_t *driver)
 
 size_t hw_uart_driver_read(hw_uart_driver_t *driver, uint8_t *data, size_t capacity)
 {
-    size_t count = 0u;
-    size_t write_index;
+    size_t producer;
 
     if ((driver == NULL) || (data == NULL) || !driver->initialized) {
         return 0u;
     }
 
-    write_index = hw_uart_driver_rx_write_index(driver);
+    producer = hw_uart_driver_rx_write_index(driver);
+    ring_buffer_publish_producer(&driver->rx_ring, producer, true);
+    return ring_buffer_read(&driver->rx_ring, data, capacity);
+}
 
-    /* ponytail: this first DMA RX pass uses a ring buffer without explicit overrun tracking; if software falls behind by a full ring, old bytes can be overwritten, which is acceptable for bring-up and can be upgraded later with DMA IRQ watermarking or a larger counted ring. */
-    while ((count < capacity) && (driver->rx_read_index != write_index)) {
-        data[count] = driver->rx_buffer[driver->rx_read_index];
-        driver->rx_read_index = (driver->rx_read_index + 1u) & (HW_UART_DRIVER_RX_BUFFER_SIZE - 1u);
-        count += 1u;
+size_t hw_uart_driver_write_available(const hw_uart_driver_t *driver)
+{
+    if ((driver == NULL) || !driver->initialized) {
+        return 0u;
     }
 
-    return count;
+    return ring_buffer_free_space(&driver->tx_ring);
+}
+
+bool hw_uart_driver_set_baud_rate(hw_uart_driver_t *driver, uint32_t baud_rate)
+{
+    if ((driver == NULL) || !driver->initialized || (baud_rate == 0u)) {
+        return false;
+    }
+
+    driver->config.baud_rate = baud_rate;
+    uart_set_baudrate(driver->config.instance, baud_rate);
+    return true;
 }
 
 size_t hw_uart_driver_write(hw_uart_driver_t *driver, const uint8_t *data, size_t length)
 {
-    dma_channel_config tx_dma_config;
+    size_t written;
 
     if ((driver == NULL) || (data == NULL) || !driver->initialized) {
         return 0u;
@@ -154,35 +208,10 @@ size_t hw_uart_driver_write(hw_uart_driver_t *driver, const uint8_t *data, size_
 
     hw_uart_driver_poll_tx(driver);
 
-    if (driver->tx_active) {
-        return 0u;
+    written = ring_buffer_write(&driver->tx_ring, data, length);
+    if (!driver->tx_active) {
+        (void)hw_uart_driver_start_tx_dma(driver);
     }
 
-    if (length > HW_UART_DRIVER_TX_BUFFER_SIZE) {
-        length = HW_UART_DRIVER_TX_BUFFER_SIZE;
-    }
-
-    if (length == 0u) {
-        return 0u;
-    }
-
-    memcpy(driver->tx_buffer, data, length);
-    driver->tx_length = length;
-
-    tx_dma_config = dma_channel_get_default_config((uint)driver->tx_dma_channel);
-    channel_config_set_transfer_data_size(&tx_dma_config, DMA_SIZE_8);
-    channel_config_set_read_increment(&tx_dma_config, true);
-    channel_config_set_write_increment(&tx_dma_config, false);
-    channel_config_set_dreq(&tx_dma_config, uart_get_dreq(driver->config.instance, true));
-    dma_channel_configure(
-        (uint)driver->tx_dma_channel,
-        &tx_dma_config,
-        &uart_get_hw(driver->config.instance)->dr,
-        driver->tx_buffer,
-        (uint32_t)length,
-        true);
-
-    driver->tx_active = true;
-
-    return length;
+    return written;
 }

@@ -33,6 +33,7 @@ Each port should work independently so traffic on one UART does not block the ot
 - USB device stack with 6 CDC ACM functions
 - USB HID status-monitor function
 - Per-port buffering and routing
+- Per-port RX and TX ring buffers
 - 2 hardware UART backends
 - 4 PIO UART backends
 - Board-specific GPIO configuration
@@ -44,10 +45,12 @@ Each port should work independently so traffic on one UART does not block the ot
 - Use Pico SDK for platform support.
 - Keep pin mapping separate from bridge logic.
 - Plan for RTS and CTS on all 6 UART channels.
+- Prefer separate RX and TX ring buffers per logical port.
 - Start with one working port, then scale to all 6.
 
 ## Open Items
 
 - Supported baud-rate range per port
 - Exact RTS/CTS implementation details for the 4 PIO-backed channels
+- Final ring-buffer implementation details and sizing
 - DMA and interrupt strategy

@@ -23,6 +23,7 @@ microcontroller platform.
 
 - [Architecture](docs/architecture.md)
 - [Hardware Wiring](docs/hardware-wiring.md)
+- [Ring Buffer Design](docs/detail/ring-buffer-design.md)
 
 ## Repository Layout
 

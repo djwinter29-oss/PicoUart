@@ -7,10 +7,12 @@
 int main(void)
 {
     hard_assert(uart_driver_validate_topology());
+    uart_driver_init();
     usb_cdc_init();
     usb_hid_init();
 
     while (true) {
+        uart_driver_poll();
         usb_cdc_poll();
         usb_hid_poll();
         tight_loop_contents();

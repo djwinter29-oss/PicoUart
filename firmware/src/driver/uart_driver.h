@@ -49,6 +49,56 @@ typedef struct {
 size_t uart_driver_port_count(void);
 
 /**
+ * @brief Initialize all configured UART backend instances.
+ */
+void uart_driver_init(void);
+
+/**
+ * @brief Poll all initialized UART backend instances.
+ */
+void uart_driver_poll(void);
+
+/**
+ * @brief Return whether one logical UART port is initialized and available.
+ * @param port_id Logical port identifier.
+ * @return `true` when the port is active, otherwise `false`.
+ */
+bool uart_driver_port_is_ready(uart_port_id_t port_id);
+
+/**
+ * @brief Read bytes from one logical UART port.
+ * @param port_id Logical port identifier.
+ * @param data Destination buffer.
+ * @param capacity Maximum bytes to read.
+ * @return Number of bytes copied into @p data.
+ */
+size_t uart_driver_read(uart_port_id_t port_id, uint8_t *data, size_t capacity);
+
+/**
+ * @brief Return the currently available TX queue space for one logical UART port.
+ * @param port_id Logical port identifier.
+ * @return Number of bytes that can currently be queued for transmission.
+ */
+size_t uart_driver_write_available(uart_port_id_t port_id);
+
+/**
+ * @brief Reconfigure the baud rate for one logical UART port.
+ * @param port_id Logical port identifier.
+ * @param baud_rate New baud rate.
+ * @return `true` when the baud rate was applied, otherwise `false`.
+ */
+bool uart_driver_set_baud_rate(uart_port_id_t port_id, uint32_t baud_rate);
+
+/**
+ * @brief Write bytes to one logical UART port.
+ * @param port_id Logical port identifier.
+ * @param data Source bytes.
+ * @param length Number of bytes to write.
+ * @return Number of bytes accepted for transmission.
+ */
+size_t uart_driver_write(uart_port_id_t port_id, const uint8_t *data, size_t length);
+
+/**
  * @brief Return public metadata for one logical UART port.
  * @param port_id Logical port identifier.
  * @return Pointer to immutable port metadata, or `NULL` when the index is invalid.

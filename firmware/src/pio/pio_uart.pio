@@ -1,0 +1,23 @@
+.program pio_uart_tx
+.side_set 1 opt
+
+.wrap_target
+    pull        side 1 [7]
+    set x, 7    side 0 [7]
+bitloop:
+    out pins, 1
+    jmp x-- bitloop [6]
+    nop         side 1 [6]
+.wrap
+
+.program pio_uart_rx
+
+.wrap_target
+start:
+    wait 0 pin 0
+    set x, 7 [10]
+bitloop:
+    in pins, 1
+    jmp x-- bitloop [6]
+    push block
+.wrap
