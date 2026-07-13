@@ -40,12 +40,16 @@ Implemented now:
 - hardware UART backend integration for both RX and TX ring usage
 - RX DMA producer publishing into the RX ring
 - TX DMA draining contiguous spans from the TX ring
+- PIO UART backend integration with the ring helper and hybrid TX drain policy
+- USB CDC bridge layer using the TX and RX rings end to end
+- multicore split where core 0 owns TinyUSB and shared rings while core 1 owns UART hardware service
 
 Not implemented yet:
 
-- PIO UART backend integration with the ring helper
-- USB CDC bridge layer using the TX and RX rings end to end
 - HID reporting of ring occupancy, overflow, and watermark counters
+- flow-control state in the bridge layer
+- line-coding updates beyond baud rate
+- parity handling and advanced framing features
 
 ## Requirements
 
@@ -87,6 +91,11 @@ For UART to USB:
 - TX ring consumer: UART backend
 - RX ring producer: UART backend
 - RX ring consumer: USB side
+
+With the current multicore split:
+
+- core 0 owns TinyUSB and the ring-side copy operations
+- core 1 owns UART, DMA, PIO, and backend service logic
 
 This fixed ownership keeps race analysis simple.
 
@@ -204,7 +213,7 @@ Each bridge instance owns:
 - RX DMA state
 - counters and status flags for monitoring
 
-The current code already uses this model inside the hardware UART backend, even though the dedicated USB-to-UART bridge layer has not been added yet.
+The current code already uses this model across both the hardware UART and PIO UART backends, and the USB CDC layer now drives the bridge end to end.
 
 ### Top-Level Blocks
 
@@ -228,7 +237,7 @@ Bridge layer:
 - maps CDC index to logical UART port
 - moves data between TinyUSB and the correct TX or RX ring
 - enforces backpressure policy
-- kicks backend work when needed
+- does not touch UART or PIO hardware directly
 
 Ring-buffer layer:
 
@@ -241,6 +250,18 @@ UART backend layer:
 - owns hardware UART or PIO UART specifics
 - owns DMA setup and DMA completion handling
 - updates producer or consumer positions for the port rings
+- keeps PIO RX interrupt-driven and lets the worker core choose between FIFO polling and TX DMA based on queue depth
+
+## Current Scope Limits
+
+The current transport deliberately targets a narrow UART subset:
+
+- 8 data bits
+- no parity
+- 1 stop bit
+- framing validation limited to stop-bit-high checks on the PIO RX path
+
+This keeps the PIO and bridge logic compact while the multi-port data path is stabilized first.
 
 HID monitor layer:
 
@@ -262,7 +283,7 @@ typedef struct {
 	uint8_t tx_storage[1024];
 	uint8_t rx_storage[1024];
 
-	bool tx_dma_active;
+	uint8_t tx_service_mode;
 	uint32_t tx_dma_bytes_in_flight;
 	uint32_t rx_dma_last_write_offset;
 
@@ -469,7 +490,7 @@ Current hardware UART implementation detail:
 TX DMA:
 
 - launched on one contiguous ring span at a time
-- marks `tx_dma_active` while in flight
+- marks the TX service state as DMA-active while bytes are in flight
 - commits consumed bytes only after transfer completion
 - immediately launches another span if pending data remains
 
@@ -539,6 +560,7 @@ Expected usage:
 - `driver/hw_uart_driver.c` uses RX and TX ring helpers for hardware UART DMA paths
 - `driver/pio_uart_driver.c` uses the same helpers for PIO UART DMA paths
 - `usb/usb_cdc.c` reads from and writes to rings through the bridge layer
+
 
 ## Bring-Up Plan
 

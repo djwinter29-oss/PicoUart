@@ -5,6 +5,8 @@
 
 #include "ring_buffer/ring_buffer.h"
 
+#include "hardware/sync.h"
+
 #include <string.h>
 
 static size_t ring_buffer_min_size(size_t left, size_t right)
@@ -76,6 +78,7 @@ ring_buffer_span_t ring_buffer_read_span(const ring_buffer_t *ring)
         return span;
     }
 
+    __dmb();
     offset = ring->consumer & ring->mask;
     contiguous = ring->size - offset;
     span.data = ring->storage + offset;
@@ -99,6 +102,7 @@ ring_buffer_span_t ring_buffer_write_span(ring_buffer_t *ring)
         return span;
     }
 
+    __dmb();
     offset = ring->producer & ring->mask;
     contiguous = ring->size - offset;
     span.data = ring->storage + offset;
@@ -114,6 +118,7 @@ bool ring_buffer_commit_produced(ring_buffer_t *ring, size_t count)
         return false;
     }
 
+    __dmb();
     ring->producer += count;
     occupancy = ring_buffer_occupancy(ring);
     if (occupancy > ring->high_watermark) {
@@ -129,6 +134,7 @@ bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count)
         return false;
     }
 
+    __dmb();
     ring->consumer += count;
     return true;
 }
@@ -194,6 +200,33 @@ size_t ring_buffer_write(ring_buffer_t *ring, const uint8_t *data, size_t length
     }
 
     return total_written;
+}
+
+void ring_buffer_write_byte_preserve_newest(ring_buffer_t *ring, uint8_t byte)
+{
+    size_t occupancy;
+
+    if ((ring == NULL) || (ring->storage == NULL)) {
+        return;
+    }
+
+    occupancy = ring_buffer_occupancy(ring);
+    ring->storage[ring->producer & ring->mask] = byte;
+    __dmb();
+
+    if (occupancy == ring->size) {
+        ring->consumer += 1u;
+        ring->overflow_count += 1u;
+        ring->producer += 1u;
+        ring->high_watermark = ring->size;
+        return;
+    }
+
+    ring->producer += 1u;
+    occupancy += 1u;
+    if (occupancy > ring->high_watermark) {
+        ring->high_watermark = occupancy;
+    }
 }
 
 size_t ring_buffer_read(ring_buffer_t *ring, uint8_t *data, size_t length)

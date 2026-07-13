@@ -61,12 +61,17 @@ static uint8_t const hid_report_descriptor[] = {
     0x06, 0x00, 0xFF,
     0x09, 0x01,
     0xA1, 0x01,
+    0x85, 0x01,
     0x15, 0x00,
     0x26, 0xFF, 0x00,
     0x75, 0x08,
-    0x95, 0x20,
+    0x95, 0x40,
     0x09, 0x01,
     0x81, 0x02,
+    0x85, 0x02,
+    0x95, 0x40,
+    0x09, 0x02,
+    0xB1, 0x02,
     0xC0,
 };
 
@@ -198,6 +203,9 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
         }
         {
             const char *str = string_desc_arr[index];
+            if (str == NULL) {
+                return NULL;
+            }
             chr_count = strlen(str);
             for (size_t i = 0; i < chr_count; i++) {
                 desc_str[1 + i] = (uint16_t)str[i];

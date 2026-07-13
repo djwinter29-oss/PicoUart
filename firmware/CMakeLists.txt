@@ -37,6 +37,7 @@ target_include_directories(pico_uart PRIVATE
 
 target_link_libraries(pico_uart
     pico_stdlib
+    pico_multicore
     hardware_dma
     hardware_pio
     hardware_uart

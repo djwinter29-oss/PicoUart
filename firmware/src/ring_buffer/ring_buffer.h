@@ -115,6 +115,13 @@ void ring_buffer_publish_producer(ring_buffer_t *ring, size_t producer, bool pre
 size_t ring_buffer_write(ring_buffer_t *ring, const uint8_t *data, size_t length);
 
 /**
+ * @brief Write one byte into the ring, dropping the oldest unread byte on overflow.
+ * @param ring Ring to update.
+ * @param byte Byte to publish.
+ */
+void ring_buffer_write_byte_preserve_newest(ring_buffer_t *ring, uint8_t byte);
+
+/**
  * @brief Copy bytes out of the ring into a caller buffer.
  * @param ring Ring to read.
  * @param data Destination buffer.

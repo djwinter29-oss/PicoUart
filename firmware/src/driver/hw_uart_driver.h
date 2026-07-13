@@ -93,6 +93,21 @@ size_t hw_uart_driver_write_available(const hw_uart_driver_t *driver);
 bool hw_uart_driver_set_baud_rate(hw_uart_driver_t *driver, uint32_t baud_rate);
 
 /**
+ * @brief Reconfigure the full UART line format for one hardware UART backend.
+ * @param driver Driver instance to update.
+ * @param baud_rate New baud rate.
+ * @param data_bits New UART data-bit count.
+ * @param stop_bits New UART stop-bit count.
+ * @param parity New UART parity mode.
+ * @return `true` when the line format was applied, otherwise `false`.
+ */
+bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
+                                    uint32_t baud_rate,
+                                    uint8_t data_bits,
+                                    uint8_t stop_bits,
+                                    uart_parity_t parity);
+
+/**
  * @brief Write bytes to one hardware UART backend.
  * @param driver Driver instance to write to.
  * @param data Source bytes.

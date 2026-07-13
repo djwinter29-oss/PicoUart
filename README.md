@@ -1,7 +1,7 @@
 # PicoUart
 
 PicoUart is a USB-to-UART converter project for the Raspberry Pi RP2040 and RP2350.
-The goal is to expose up to 6 independent USB CDC interfaces to the host, with each CDC
+The current firmware exposes 6 independent USB CDC interfaces to the host, with each CDC
 interface mapped to one UART channel on the target side.
 
 ## Project Goal
@@ -30,21 +30,21 @@ microcontroller platform.
 - [docs](docs)
 - [firmware](firmware)
 
-## Planned Architecture
+## Current Architecture
 
 Each USB CDC channel is mapped 1:1 to a UART instance:
 
-| USB CDC | UART backend | Notes |
-| --- | --- | --- |
-| CDC0 | HW UART0 | Final pin mapping TBD |
-| CDC1 | HW UART1 | Final pin mapping TBD |
-| CDC2 | PIO UART | Final pin mapping TBD |
-| CDC3 | PIO UART | Final pin mapping TBD |
-| CDC4 | PIO UART | Final pin mapping TBD |
-| CDC5 | PIO UART | Final pin mapping TBD |
+| USB CDC | UART backend | TX | RX |
+| --- | --- | --- | --- |
+| CDC0 | HW UART0 | GP0 | GP1 |
+| CDC1 | HW UART1 | GP4 | GP5 |
+| CDC2 | PIO UART | GP8 | GP9 |
+| CDC3 | PIO UART | GP12 | GP13 |
+| CDC4 | PIO UART | GP16 | GP17 |
+| CDC5 | PIO UART | GP20 | GP21 |
 
-The exact assignment between CDC indexes and physical UART pins can be adjusted later
-based on board routing and firmware constraints.
+The current transport code only uses TX and RX. The board-level RTS and CTS reservations are
+documented separately and remain a follow-up item.
 
 ## Target Devices
 
@@ -64,13 +64,16 @@ the low-level implementation differs.
 
 ## Firmware Scope
 
-The firmware is expected to handle:
+The firmware currently handles:
 
 - USB enumeration with 6 CDC ACM functions
 - USB enumeration with 1 HID monitor function for status reporting
 - Routing RX/TX data between each CDC interface and its matching UART
-- UART configuration such as baud rate, parity, stop bits, and flow control where supported
+- UART configuration updates received through USB CDC line coding
 - Buffering and scheduling so multiple active ports can run at the same time
+
+The current HID monitor publishes a compact per-port snapshot with backend type, TX pin,
+RX pin, and placeholder status bytes.
 
 ## Design Considerations
 
@@ -82,15 +85,20 @@ The firmware is expected to handle:
 
 ## Current Status
 
-This repository is currently at the planning stage.
+The firmware has moved beyond the planning stage and now provides a working baseline bridge:
 
-Immediate next steps:
+1. 6 CDC ACM interfaces enumerate through TinyUSB.
+2. 1 vendor HID interface enumerates for status monitoring.
+3. CDC traffic is bridged to 2 hardware UART backends and 4 PIO UART backends.
+4. Hardware UART ports use DMA-backed RX and TX rings.
+5. PIO UART ports use polling with per-port RX and TX rings.
 
-1. Define the USB descriptor layout for 6 CDC interfaces.
-2. Assign the 2 hardware UART channels and 4 PIO UART channels to concrete GPIO pins.
-3. Choose the firmware stack and SDK structure.
-4. Implement and validate a single CDC-to-UART path first.
-5. Scale the design to all 6 channels and verify concurrent operation.
+Known gaps in the current implementation:
+
+1. RTS and CTS are not wired into the runtime yet.
+2. CDC line-state changes are ignored.
+3. PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or data-bit changes.
+4. HID status bytes are placeholders and do not yet expose readiness, overflow, or error counters.
 
 ## Possible Future Enhancements
 
@@ -102,7 +110,7 @@ Immediate next steps:
 
 ## Summary
 
-PicoUart aims to turn an RP2040 or RP2350 into a 6-port USB serial adapter by combining:
+PicoUart turns an RP2040 or RP2350 into a 6-port USB serial adapter by combining:
 
 - 6 USB CDC interfaces on the host side
 - 2 hardware UARTs

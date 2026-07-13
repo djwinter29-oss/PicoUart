@@ -1,6 +1,6 @@
 /**
  * @file usb_cdc.h
- * @brief TinyUSB CDC helpers for the PicoUart USB echo firmware.
+ * @brief TinyUSB CDC helpers for the PicoUart USB-to-UART bridge firmware.
  */
 
 #ifndef USB_CDC_H
@@ -9,7 +9,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/** @brief Initialize the TinyUSB device stack and local CDC buffers. */
+/** @brief Initialize the TinyUSB device stack for the CDC bridge. */
 void usb_cdc_init(void);
 
 /** @brief Run TinyUSB background work. */

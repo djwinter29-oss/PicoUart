@@ -23,6 +23,6 @@
 #define CFG_TUD_CDC_EP_BUFSIZE 64
 
 #define CFG_TUD_HID 1
-#define CFG_TUD_HID_EP_BUFSIZE 32
+#define CFG_TUD_HID_EP_BUFSIZE 64
 
 #endif

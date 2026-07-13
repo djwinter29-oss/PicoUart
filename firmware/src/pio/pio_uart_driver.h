@@ -7,18 +7,24 @@
 #define PIO_UART_DRIVER_H
 
 #include "hardware/pio.h"
-#include "ring_buffer/ring_buffer.h"
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
 
 /** @brief Invalid GPIO marker used while board pin mapping is still open. */
 #define PIO_UART_DRIVER_PIN_UNASSIGNED ((uint32_t)UINT32_MAX)
+/** @brief No optional board-level GPIO policy flags are enabled. */
+#define PIO_UART_DRIVER_PIN_FLAG_NONE 0u
+/** @brief Enable a pull-up on the configured RX pin during backend init. */
+#define PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP (1u << 0)
+/** @brief Require a high (idle) RX line as an extra guard before applying a deferred baud change. */
+#define PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH (1u << 1)
 /** @brief PIO UART RX ring size in bytes. */
 #define PIO_UART_DRIVER_RX_BUFFER_SIZE 1024u
 /** @brief PIO UART TX ring size in bytes. */
 #define PIO_UART_DRIVER_TX_BUFFER_SIZE 1024u
+/** @brief Default TX backlog threshold that triggers a DMA transfer. */
+#define PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD 64u
 
 /**
  * @brief Static configuration for one PIO UART instance.
@@ -30,19 +36,14 @@ typedef struct {
     uint32_t baud_rate; /**< Target UART baud rate. */
     uint32_t tx_pin; /**< GPIO used for TX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
     uint32_t rx_pin; /**< GPIO used for RX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t pin_flags; /**< Explicit board-level GPIO policy flags. */
+    uint32_t tx_dma_start_threshold; /**< TX backlog threshold that triggers a DMA transfer, or 0 for the default. */
 } pio_uart_driver_config_t;
 
 /**
- * @brief Runtime state for one PIO UART instance.
+ * @brief Opaque runtime state for one PIO UART instance.
  */
-typedef struct {
-    pio_uart_driver_config_t config; /**< Immutable PIO UART configuration. */
-    bool initialized; /**< True after a real PIO program is attached. */
-    ring_buffer_t rx_ring; /**< UART-to-USB receive ring. */
-    ring_buffer_t tx_ring; /**< USB-to-UART transmit ring. */
-    uint8_t rx_storage[PIO_UART_DRIVER_RX_BUFFER_SIZE]; /**< RX ring storage. */
-    uint8_t tx_storage[PIO_UART_DRIVER_TX_BUFFER_SIZE]; /**< TX ring storage. */
-} pio_uart_driver_t;
+typedef struct pio_uart_driver pio_uart_driver_t;
 
 /**
  * @brief Initialize one PIO UART backend.
@@ -52,7 +53,8 @@ typedef struct {
 bool pio_uart_driver_init(pio_uart_driver_t *driver);
 
 /**
- * @brief Poll one PIO UART backend to move data between FIFOs and rings.
+ * @brief Poll one PIO UART backend to advance the core-1 TX service path.
+ * RX service remains IRQ-driven. TX uses FIFO polling for short queues and DMA for deeper backlog.
  * @param driver Driver instance to poll.
  */
 void pio_uart_driver_poll(pio_uart_driver_t *driver);
@@ -64,36 +66,11 @@ void pio_uart_driver_poll(pio_uart_driver_t *driver);
 void pio_uart_driver_deinit(pio_uart_driver_t *driver);
 
 /**
- * @brief Read bytes from one PIO UART backend.
- * @param driver Driver instance to read from.
- * @param data Destination buffer.
- * @param capacity Maximum bytes to read.
- * @return Number of bytes copied into @p data.
- */
-size_t pio_uart_driver_read(pio_uart_driver_t *driver, uint8_t *data, size_t capacity);
-
-/**
- * @brief Return the currently available TX ring space for one PIO UART backend.
- * @param driver Driver instance to inspect.
- * @return Number of bytes that can currently be queued for transmission.
- */
-size_t pio_uart_driver_write_available(const pio_uart_driver_t *driver);
-
-/**
  * @brief Reconfigure the baud rate for one PIO UART backend.
  * @param driver Driver instance to update.
  * @param baud_rate New baud rate.
  * @return `true` when the baud rate was applied, otherwise `false`.
  */
 bool pio_uart_driver_set_baud_rate(pio_uart_driver_t *driver, uint32_t baud_rate);
-
-/**
- * @brief Write bytes to one PIO UART backend.
- * @param driver Driver instance to write to.
- * @param data Source bytes.
- * @param length Number of bytes to write.
- * @return Number of bytes written.
- */
-size_t pio_uart_driver_write(pio_uart_driver_t *driver, const uint8_t *data, size_t length);
 
 #endif
