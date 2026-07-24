@@ -1,34 +1,35 @@
 param(
-    [string]$BuildDir = "firmware/build",
+    [string]$BuildDir = "build/firmware",
     [string]$Board,
     [string]$Generator,
-    [string]$PicoSdkPath = $env:PICO_SDK_PATH,
-    [string]$FirmwareVersion = $env:PICO_UART_VERSION
+    [string]$PicoSdkPath,
+    [string]$FirmwareVersion = $env:PICO_UART_VERSION,
+    [int]$SystemClockKhz = 0
 )
 
 $ErrorActionPreference = "Stop"
-
-if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
-    throw "PICO_SDK_PATH is not set."
-}
 
 if ([string]::IsNullOrWhiteSpace($Board)) {
     $Board = $env:PICO_BOARD
 }
 
 if (-not [string]::IsNullOrWhiteSpace($Board)) {
-    if (($Board -ne "pico") -and ($Board -ne "pico2")) {
-        throw "Unsupported board '$Board'. Use 'pico' or 'pico2'."
-    }
-
-    if ($BuildDir -eq "firmware/build") {
-        $BuildDir = "firmware/build-$Board"
+    if ($BuildDir -eq "build/firmware") {
+        $BuildDir = "build/firmware-$Board"
     }
 }
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $sourceDir = Join-Path $repoRoot "firmware"
 $buildDirPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $BuildDir))
+
+if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
+    $PicoSdkPath = Join-Path $repoRoot ".pico-sdk"
+}
+
+if (-not (Test-Path (Join-Path $PicoSdkPath "external\pico_sdk_import.cmake"))) {
+    throw "Pico SDK is not available at $PicoSdkPath. Run . .\tools\windows\setup-sdk-env.ps1 first."
+}
 
 if ([string]::IsNullOrWhiteSpace($Generator)) {
     if (Get-Command ninja -ErrorAction SilentlyContinue) {
@@ -47,6 +48,10 @@ $cmakeArgs = @(
 
 if (-not [string]::IsNullOrWhiteSpace($FirmwareVersion)) {
     $cmakeArgs += "-DPICO_UART_VERSION=$FirmwareVersion"
+}
+
+if ($SystemClockKhz -gt 0) {
+    $cmakeArgs += "-DPICO_UART_SYSTEM_CLOCK_KHZ=$SystemClockKhz"
 }
 
 if (-not [string]::IsNullOrWhiteSpace($Board)) {

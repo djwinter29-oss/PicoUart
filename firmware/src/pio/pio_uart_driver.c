@@ -5,7 +5,7 @@
 
 #include "pio/pio_uart_driver_internal.h"
 
-#include "pio/pio_uart.pio.h"
+#include "pio_uart.pio.h"
 
 #include "hardware/clocks.h"
 #include "hardware/dma.h"

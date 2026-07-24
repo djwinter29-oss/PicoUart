@@ -54,5 +54,10 @@ dkms.conf
 # debug information files
 *.dwo
 
-# Pico firmware build output
-firmware/build/
+# Generated build output
+build/
+__pycache__/
+*.py[cod]
+
+# Project-local Pico SDK downloaded by tools/linux/setup-sdk-env.sh
+.pico-sdk/

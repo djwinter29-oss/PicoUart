@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
 set -eu
 
-BUILD_DIR="${BUILD_DIR:-firmware/build-coverage}"
-OUTPUT_DIR="${OUTPUT_DIR:-firmware/build-coverage/coverage}"
+BUILD_DIR="${BUILD_DIR:-build/coverage}"
+OUTPUT_DIR="${OUTPUT_DIR:-build/coverage/report}"
 GENERATOR="${GENERATOR:-}"
-PICO_SDK_PATH_VALUE="${PICO_SDK_PATH:-}"
+PICO_SDK_PATH_VALUE=""
 SKIP_BUILD=0
 SKIP_TESTS=0
 
@@ -41,11 +41,6 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ -z "$PICO_SDK_PATH_VALUE" ]; then
-    echo "PICO_SDK_PATH is not set." >&2
-    exit 1
-fi
-
 if ! command -v gcovr >/dev/null 2>&1; then
     echo "gcovr is not installed or not on PATH." >&2
     exit 1
@@ -58,6 +53,15 @@ BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR"
 OUTPUT_DIR_PATH="$REPO_ROOT/$OUTPUT_DIR"
 HTML_REPORT="$OUTPUT_DIR_PATH/index.html"
 XML_REPORT="$OUTPUT_DIR_PATH/coverage.xml"
+
+if [ -z "$PICO_SDK_PATH_VALUE" ]; then
+    PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
+fi
+
+if [ ! -f "$PICO_SDK_PATH_VALUE/external/pico_sdk_import.cmake" ]; then
+    echo "Pico SDK is not available at $PICO_SDK_PATH_VALUE. Run . tools/linux/setup-sdk-env.sh first." >&2
+    exit 1
+fi
 
 if [ -z "$GENERATOR" ]; then
     if command -v ninja >/dev/null 2>&1; then

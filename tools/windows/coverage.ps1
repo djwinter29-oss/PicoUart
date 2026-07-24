@@ -1,17 +1,13 @@
 param(
-    [string]$BuildDir = "firmware/build-coverage",
-    [string]$OutputDir = "firmware/build-coverage/coverage",
+    [string]$BuildDir = "build/coverage",
+    [string]$OutputDir = "build/coverage/report",
     [string]$Generator,
-    [string]$PicoSdkPath = $env:PICO_SDK_PATH,
+    [string]$PicoSdkPath,
     [switch]$SkipBuild,
     [switch]$SkipTests
 )
 
 $ErrorActionPreference = "Stop"
-
-if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
-    throw "PICO_SDK_PATH is not set."
-}
 
 if (-not (Get-Command gcovr -ErrorAction SilentlyContinue)) {
     throw "gcovr is not installed or not on PATH."
@@ -24,6 +20,14 @@ $outputDirPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputDir))
 $ctestFile = Join-Path $buildDirPath "CTestTestfile.cmake"
 $htmlReport = Join-Path $outputDirPath "index.html"
 $xmlReport = Join-Path $outputDirPath "coverage.xml"
+
+if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
+    $PicoSdkPath = Join-Path $repoRoot ".pico-sdk"
+}
+
+if (-not (Test-Path (Join-Path $PicoSdkPath "external\pico_sdk_import.cmake"))) {
+    throw "Pico SDK is not available at $PicoSdkPath. Run . .\tools\windows\setup-sdk-env.ps1 first."
+}
 
 if ([string]::IsNullOrWhiteSpace($Generator)) {
     if (Get-Command ninja -ErrorAction SilentlyContinue) {

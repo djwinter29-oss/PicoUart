@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
-BUILD_DIR="${BUILD_DIR:-firmware/build}"
+BUILD_DIR="${BUILD_DIR:-build/firmware}"
 GENERATOR="${GENERATOR:-}"
-PICO_SDK_PATH_VALUE="${PICO_SDK_PATH:-}"
+PICO_SDK_PATH_VALUE=""
 SKIP_BUILD=0
 
 while [ "$#" -gt 0 ]; do
@@ -34,6 +34,10 @@ done
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR"
+
+if [ -z "$PICO_SDK_PATH_VALUE" ]; then
+    PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
+fi
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
     BUILD_DIR="$BUILD_DIR" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" "$SCRIPT_DIR/build.sh"

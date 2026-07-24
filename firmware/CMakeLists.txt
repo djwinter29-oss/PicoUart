@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(PICO_BOARD pico CACHE STRING "Target board")
+set(PICO_UART_SYSTEM_CLOCK_KHZ "" CACHE STRING "Optional system clock target override in kHz")
 
 if(DEFINED PICO_SDK_PATH)
     include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
@@ -20,6 +21,7 @@ pico_sdk_init()
 
 add_executable(pico_uart
     src/driver/hw_uart_driver.c
+    src/driver/system.c
     src/pio/pio_uart_driver.c
     src/driver/uart_driver.c
     src/main.c
@@ -38,12 +40,17 @@ target_include_directories(pico_uart PRIVATE
 target_link_libraries(pico_uart
     pico_stdlib
     pico_multicore
+    hardware_clocks
     hardware_dma
     hardware_pio
     hardware_uart
     pico_unique_id
     tinyusb_device
 )
+
+if (NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
+    target_compile_definitions(pico_uart PRIVATE PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ}u)
+endif ()
 
 pico_enable_stdio_uart(pico_uart 0)
 pico_enable_stdio_usb(pico_uart 0)

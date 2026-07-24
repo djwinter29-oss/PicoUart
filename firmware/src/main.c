@@ -1,11 +1,13 @@
 #include "pico/stdlib.h"
 
+#include "driver/system.h"
 #include "driver/uart_driver.h"
 #include "usb/usb_cdc.h"
 #include "usb/usb_hid.h"
 
 int main(void)
 {
+    system_init_clock();
     hard_assert(uart_driver_validate_topology());
     hard_assert(uart_driver_init());
     usb_cdc_init();

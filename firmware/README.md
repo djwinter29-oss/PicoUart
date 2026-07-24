@@ -12,13 +12,54 @@ Each CDC port is bridged to one logical UART backend.
 3. Configure and build:
 
 ```powershell
-cmake -S firmware -B firmware/build -G Ninja
-cmake --build firmware/build
+cmake -S firmware -B build/firmware -G Ninja
+cmake --build build/firmware
+```
+
+For the project-local Pico SDK and board-specific builds on Linux:
+
+```sh
+. tools/linux/setup-sdk-env.sh
+tools/linux/build.sh --board pico
+tools/linux/build.sh --board pico2
+```
+
+On Windows PowerShell, download the same project-local SDK and build with:
+
+```powershell
+. .\tools\windows\setup-sdk-env.ps1
+.\tools\windows\build.ps1 -Board pico
+.\tools\windows\build.ps1 -Board pico2
+```
+
+All generated output is stored under the repository-root `build/` directory.
+Use a separate build directory per board. The Linux and Windows build/load tools
+accept `--board` or `-Board` values supported by the installed Pico SDK.
+They also accept `--system-clock-khz` or `-SystemClockKhz` to override the
+system clock for a build. For example:
+
+```sh
+tools/linux/build.sh --board pico --system-clock-khz 250000
+tools/linux/build.sh --board pico2 --system-clock-khz 300000
+```
+
+## Load
+
+The Linux and Windows load tools program the ELF remotely through a Raspberry
+Pi Debug Probe using CMSIS-DAP OpenOCD. Connect the probe's SWDIO, SWCLK, and
+GND signals to PicoUart before loading; UART TX/RX wiring is separate from SWD.
+
+```sh
+tools/linux/load.sh --board pico
+tools/linux/load.sh --board pico2
 ```
 
 ## Notes
 
 - Default board is `pico`.
+- Default system-clock targets are 250000 kHz for RP2040 and 300000 kHz for
+	RP2350. Override them only after validating the board and attached hardware
+	at the selected frequency.
 - Override the board with `-DPICO_BOARD=<board>` when needed.
 - Firmware startup asserts that all 6 UART backends initialize before USB enumeration begins.
 - A dedicated second core owns UART backend init, polling, and control operations.
