@@ -82,7 +82,8 @@ jobs:
             cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${BOARD}.$ext"
           done
           strings "$SRC/pico_uart.bin" | grep -Fqx "${VERSION}"
-          python3 -c "import pathlib,sys; d=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if b'\\xfe\\xca\\x10\\x40' in d else 1)" "$SRC/pico_uart.bin"
+          # Encode major.minor as USB BCD (1.2.3 -> 0x0102 -> bytes 02 01 after cafe:4010)
+          python3 -c "import pathlib,re,sys; d=pathlib.Path(sys.argv[1]).read_bytes(); m=re.match(r'^([0-9]+)\\.([0-9]+)\\.([0-9]+)', sys.argv[2]); assert m, sys.argv[2]; major,minor=int(m.group(1)),int(m.group(2)); assert 0<=major<=99 and 0<=minor<=99; bcd=((major//10)<<12)|((major%10)<<8)|((minor//10)<<4)|(minor%10); needle=bytes([0xFE,0xCA,0x10,0x40,bcd&0xFF,(bcd>>8)&0xFF]); assert needle in d, needle.hex(); print(f'USB cafe:4010 bcdDevice=0x{bcd:04x} OK')" "$SRC/pico_uart.bin" "$VERSION"
           ls -la "$OUT"
 
       - name: Upload packaged artifacts

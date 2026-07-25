@@ -17,6 +17,16 @@
 #include <limits.h>
 #include <string.h>
 
+#ifndef PICO_UART_VERSION_MAJOR
+#define PICO_UART_VERSION_MAJOR 0u
+#endif
+#ifndef PICO_UART_VERSION_MINOR
+#define PICO_UART_VERSION_MINOR 0u
+#endif
+#ifndef PICO_UART_VERSION_PATCH
+#define PICO_UART_VERSION_PATCH 0u
+#endif
+
 /** @brief HID status report interval in milliseconds. */
 #define USB_HID_STATUS_INTERVAL_MS 100u
 /** @brief HID status report signature byte 0. */
@@ -24,10 +34,10 @@
 /** @brief HID status report signature byte 1. */
 #define USB_HID_SIGNATURE1 'U'
 /** @brief HID status report format version. */
-#define USB_HID_REPORT_VERSION 13u
+#define USB_HID_REPORT_VERSION 14u
 /** @brief HID input report ID for the compact status monitor. */
 #define USB_HID_REPORT_ID_STATUS 1u
-/** @brief HID feature report ID for board temperature. */
+/** @brief HID feature report ID for board temperature and firmware version. */
 #define USB_HID_REPORT_ID_BOARD_STATUS 3u
 /** @brief HID feature report ID for board control commands. */
 #define USB_HID_REPORT_ID_COMMAND 4u
@@ -72,13 +82,20 @@ typedef struct {
 _Static_assert(sizeof(usb_hid_status_report_t) == 64u, "HID status report must fit one USB packet");
 
 /**
- * @brief HID feature report containing the internal temperature estimate.
+ * @brief HID feature report containing temperature and firmware version.
  */
 typedef struct {
     uint8_t version; /**< Report layout version. */
-    uint8_t reserved; /**< Reserved for board-status flags. */
+    uint8_t reserved0; /**< Reserved for board-status flags. */
     int16_t temperature_centidegrees_celsius; /**< Internal temperature in hundredths of a degree Celsius. */
-} usb_hid_board_status_report_t;
+    uint8_t firmware_major; /**< Firmware semantic version major component. */
+    uint8_t firmware_minor; /**< Firmware semantic version minor component. */
+    uint8_t firmware_patch; /**< Firmware semantic version patch component. */
+    uint8_t reserved1; /**< Reserved; always zero. */
+} __attribute__((packed)) usb_hid_board_status_report_t;
+
+_Static_assert(sizeof(usb_hid_board_status_report_t) == 8u,
+               "HID board-status report must match the HID report descriptor");
 
 /** @brief Next absolute time, in milliseconds, when a HID report may be published. */
 static uint32_t usb_hid_next_report_ms;
@@ -120,6 +137,9 @@ static void usb_hid_build_board_status_report(usb_hid_board_status_report_t *rep
     memset(report, 0, sizeof(*report));
     report->version = USB_HID_REPORT_VERSION;
     report->temperature_centidegrees_celsius = (int16_t)(temperature_read_celsius() * 100.0f);
+    report->firmware_major = (uint8_t)PICO_UART_VERSION_MAJOR;
+    report->firmware_minor = (uint8_t)PICO_UART_VERSION_MINOR;
+    report->firmware_patch = (uint8_t)PICO_UART_VERSION_PATCH;
 }
 
 static void usb_hid_build_status_report(

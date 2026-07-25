@@ -24,9 +24,10 @@ tools/linux/build.sh --board pico
 tools/linux/build.sh --board pico2
 ```
 
-Optional: stamp a release version into the firmware binary info with
-`--firmware-version` (for example `1.2.3`). Untagged local builds default to
-`0.0.0-dev`.
+Optional: stamp a release version into the firmware with `--firmware-version`
+(for example `1.2.3` from tag `v1.2.3`). That value is published through HID
+as `MAJOR.MINOR.PATCH`, while USB `bcdDevice` receives major.minor BCD only
+(`1.2.3` → `0x0102`). Untagged local builds default to `0.0.0-dev`.
 
 On Windows PowerShell, download the same project-local SDK and build with:
 

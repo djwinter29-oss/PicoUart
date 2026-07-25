@@ -15,8 +15,12 @@
 #define USB_VID 0xCafe
 /** @brief USB product ID used by the PicoUart firmware image. */
 #define USB_PID 0x4010
-/** @brief USB device version advertised in the device descriptor. */
+/** @brief USB 2.0 revision advertised in the device descriptor. */
 #define USB_BCD  0x0210
+#ifndef PICO_UART_BCD_DEVICE
+/** @brief Fallback USB bcdDevice when CMake does not inject a build version. */
+#define PICO_UART_BCD_DEVICE 0x0000
+#endif
 
 /** @brief Manufacturer string exposed in the USB string table. */
 #define USB_STR_MANUFACTURER "PicoUart"
@@ -69,7 +73,7 @@ static uint8_t const hid_report_descriptor[] = {
     0x09, 0x01,
     0x81, 0x02,
     0x85, 0x03,
-    0x95, 0x04,
+    0x95, 0x08,
     0x09, 0x03,
     0xB1, 0x02,
     0x85, 0x04,
@@ -90,7 +94,7 @@ static tusb_desc_device_t const desc_device = {
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor = USB_VID,
     .idProduct = USB_PID,
-    .bcdDevice = 0x0101,
+    .bcdDevice = PICO_UART_BCD_DEVICE,
     .iManufacturer = STRID_MANUFACTURER,
     .iProduct = STRID_PRODUCT,
     .iSerialNumber = STRID_SERIAL,

@@ -18,9 +18,14 @@ devices. Run the tool with the privileges required by the local HID device node.
 ```sh
 python3 host/python/pico_uart_hid.py monitor --duration 10
 python3 host/python/pico_uart_hid.py temperature
+python3 host/python/pico_uart_hid.py version
 python3 host/python/pico_uart_hid.py toggle-led
 python3 host/python/pico_uart_hid.py reset
 ```
+
+`version` prints the firmware semantic version (`MAJOR.MINOR.PATCH`) from HID
+feature report 3. USB `bcdDevice` advertises major.minor only (for example
+tag `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
 
 `reset` immediately reboots PicoUart and disconnects its USB interfaces. The
 board enumerates again after firmware startup completes.

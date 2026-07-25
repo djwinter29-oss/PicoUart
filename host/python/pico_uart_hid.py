@@ -25,7 +25,9 @@ COMMAND_TOGGLE_LED = 1
 COMMAND_RESET_BOARD = 2
 
 STATUS_SIZE = 64
-BOARD_STATUS_SIZE = 4
+BOARD_STATUS_SIZE = 8
+BOARD_STATUS_LAYOUT_VERSION = 14
+STATUS_LAYOUT_VERSION = 14
 
 
 def open_device() -> Any:
@@ -57,14 +59,29 @@ def read_feature(device: Any, report_id: int, payload_size: int) -> bytes:
     return require_payload(device.get_feature_report(report_id, payload_size + 1), report_id, payload_size)
 
 
+def read_board_status(device: Any) -> dict[str, Any]:
+    """Read board temperature and firmware semantic version from feature report 3."""
+    payload = read_feature(device, REPORT_ID_BOARD_STATUS, BOARD_STATUS_SIZE)
+    version, _reserved0, centidegrees, major, minor, patch, _reserved1 = struct.unpack("<BBhBBBB", payload)
+    if version != BOARD_STATUS_LAYOUT_VERSION:
+        raise RuntimeError(f"unsupported board-status report version {version}")
+    return {
+        "temperature_celsius": centidegrees / 100.0,
+        "firmware_version": f"{major}.{minor}.{patch}",
+        "firmware_major": major,
+        "firmware_minor": minor,
+        "firmware_patch": patch,
+    }
+
+
 def read_board_temperature(device: Any) -> float:
     """Read the internal RP2 temperature estimate in degrees Celsius."""
-    version, _reserved, centidegrees = struct.unpack("<BBh", read_feature(
-        device, REPORT_ID_BOARD_STATUS, BOARD_STATUS_SIZE
-    ))
-    if version != 13:
-        raise RuntimeError(f"unsupported board-status report version {version}")
-    return centidegrees / 100.0
+    return read_board_status(device)["temperature_celsius"]
+
+
+def read_firmware_version(device: Any) -> str:
+    """Read the firmware semantic version (MAJOR.MINOR.PATCH) from HID."""
+    return read_board_status(device)["firmware_version"]
 
 
 def parse_status(payload: bytes) -> dict[str, Any]:
@@ -75,7 +92,7 @@ def parse_status(payload: bytes) -> dict[str, Any]:
     signature0, signature1, version, sequence = payload[:4]
     if bytes((signature0, signature1)) != b"PU":
         raise RuntimeError("received a status report with an invalid signature")
-    if version != 13:
+    if version != STATUS_LAYOUT_VERSION:
         raise RuntimeError(f"unsupported status report version {version}")
 
     channels = [struct.unpack_from("<BB4H", payload, 4 + index * 10) for index in range(6)]
@@ -127,6 +144,7 @@ def parse_arguments() -> argparse.Namespace:
     monitor_parser = commands.add_parser("monitor", help="print periodic status reports")
     monitor_parser.add_argument("--duration", type=float, default=5.0, help="monitor duration in seconds")
     commands.add_parser("temperature", help="read the internal board temperature")
+    commands.add_parser("version", help="read the firmware semantic version (MAJOR.MINOR.PATCH)")
     commands.add_parser("toggle-led", help="toggle the board's default LED")
     commands.add_parser("reset", help="reset the board immediately")
     return parser.parse_args()
@@ -145,6 +163,8 @@ def main() -> int:
                 monitor(device, arguments.duration)
             elif arguments.command == "temperature":
                 print(f"temperature={read_board_temperature(device):.2f} C")
+            elif arguments.command == "version":
+                print(read_firmware_version(device))
             elif arguments.command == "toggle-led":
                 send_command(device, COMMAND_TOGGLE_LED)
             elif arguments.command == "reset":

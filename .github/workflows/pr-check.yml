@@ -58,8 +58,9 @@ jobs:
           test -f "$ELF"
           test -f "build/firmware-${{ matrix.board }}/pico_uart.uf2"
           file "$ELF" | grep -q "ARM"
-          # USB device descriptor stores idVendor/idProduct little-endian as FE CA 10 40
-          python3 -c "import pathlib,sys; d=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if b'\\xfe\\xca\\x10\\x40' in d else 1)" "$BIN"
+          # USB device descriptor: idVendor/idProduct/bcdDevice little-endian
+          # Default 0.0.0-dev -> bcdDevice 0x0000 => fe ca 10 40 00 00
+          python3 -c "import pathlib,sys; d=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if b'\\xfe\\xca\\x10\\x40\\x00\\x00' in d else 1)" "$BIN"
           strings "$BIN" | grep -qx "CDC0"
           strings "$BIN" | grep -qx "CDC5"
           strings "$BIN" | grep -Fqx "PicoUart USB CDC + HID"
