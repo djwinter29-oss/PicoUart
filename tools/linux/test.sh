@@ -38,14 +38,18 @@ done
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
-BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR"
 
 if [ -z "$PICO_SDK_PATH_VALUE" ]; then
-    PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
+    if [ -n "${PICO_SDK_PATH:-}" ]; then
+        PICO_SDK_PATH_VALUE="$PICO_SDK_PATH"
+    else
+        PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
+    fi
 fi
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
-    BUILD_DIR="$BUILD_DIR" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" "$SCRIPT_DIR/build.sh"
+    BUILD_DIR="$BUILD_DIR" GENERATOR="$GENERATOR" \
+        "$SCRIPT_DIR/build.sh" --pico-sdk-path "$PICO_SDK_PATH_VALUE"
 fi
 
 if [ "$SKIP_HOST" -eq 0 ]; then

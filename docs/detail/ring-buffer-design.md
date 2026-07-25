@@ -299,8 +299,8 @@ typedef struct {
 	ring_buffer_t tx_ring;
 	ring_buffer_t rx_ring;
 
-	uint8_t tx_storage[1024];
-	uint8_t rx_storage[1024];
+	uint8_t tx_storage[4096];
+	uint8_t rx_storage[4096];
 
 	uint8_t tx_service_mode;
 	uint32_t tx_dma_bytes_in_flight;
@@ -320,8 +320,8 @@ The current hardware UART backend already contains the subset below:
 
 - `ring_buffer_t tx_ring`
 - `ring_buffer_t rx_ring`
-- `tx_storage[1024]`
-- `rx_storage[1024]`
+- `tx_storage[4096]`
+- `rx_storage[4096]`
 - `tx_dma_active`
 - `tx_dma_bytes_in_flight`
 
@@ -395,8 +395,8 @@ The generic ring helper should not perform blocking waits and should not know ab
 
 Default per port:
 
-- TX ring: 1024 bytes
-- RX ring: 1024 bytes
+- TX ring: 4096 bytes
+- RX ring: 4096 bytes
 
 Sizing rationale:
 
@@ -594,13 +594,13 @@ Phase 3:
 
 ## Integration Notes
 
-Place the implementation under `firmware/src/ring_buffer`.
+Place the implementation under `firmware/src/uart/ring_buffer`.
 
 Expected usage:
 
-- `driver/hw_uart_driver.c` uses RX and TX ring helpers for hardware UART DMA paths
-- `driver/pio_uart_driver.c` uses the same helpers for PIO UART DMA paths
-- `usb/usb_cdc.c` reads from and writes to rings through the bridge layer
+- `firmware/src/uart/hw/driver.c` uses RX and TX ring helpers for hardware UART DMA paths
+- `firmware/src/uart/pio/driver.c` uses the same helpers for PIO UART DMA paths
+- `firmware/src/usb/usb_cdc.c` reads from and writes to rings through the bridge layer
 
 
 ## Bring-Up Plan

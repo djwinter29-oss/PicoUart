@@ -125,6 +125,18 @@ static bool hw_uart_driver_line_format_supported(uint32_t baud_rate,
            (parity == UART_PARITY_EVEN);
 }
 
+/**
+ * @brief Abort one DMA channel safely on RP2040 and RP2350.
+ *
+ * RP2350-E5: clear channel EN before abort so the controller cannot re-trigger.
+ * Use the non-triggering CTRL alias so clearing EN does not start a transfer.
+ */
+static void hw_uart_driver_abort_dma_channel(uint channel)
+{
+    hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+    dma_channel_abort(channel);
+}
+
 static void hw_uart_driver_release_dma(hw_uart_driver_t *driver)
 {
     if (driver->rx_dma_channel >= 0) {
@@ -132,13 +144,15 @@ static void hw_uart_driver_release_dma(hw_uart_driver_t *driver)
                                      (uint)driver->rx_dma_channel,
                                      false);
         hw_uart_driver_rx_irq_owners[driver->rx_dma_channel] = NULL;
-        dma_channel_abort((uint)driver->rx_dma_channel);
+        hw_uart_driver_abort_dma_channel((uint)driver->rx_dma_channel);
+        dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
+                                     (uint)driver->rx_dma_channel);
         dma_channel_unclaim((uint)driver->rx_dma_channel);
         driver->rx_dma_channel = -1;
     }
 
     if (driver->tx_dma_channel >= 0) {
-        dma_channel_abort((uint)driver->tx_dma_channel);
+        hw_uart_driver_abort_dma_channel((uint)driver->tx_dma_channel);
         dma_channel_unclaim((uint)driver->tx_dma_channel);
         driver->tx_dma_channel = -1;
     }
@@ -347,18 +361,22 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
 
     uart_tx_wait_blocking(driver->config.instance);
 
-    /* Mask RX DMA IRQ so a completion cannot re-arm during abort/reconfigure. */
-    dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                 (uint)driver->rx_dma_channel,
-                                 false);
+    /*
+     * Stop RX DMA before publishing progress so WRITE_ADDR cannot race ahead of
+     * the ring producer. CPSID first so a pending DMA IRQ cannot re-arm after
+     * INTE clear but before abort completes.
+     */
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
-        hw_uart_driver_publish_rx(driver);
-        dma_channel_abort((uint)driver->rx_dma_channel);
-        dma_channel_abort((uint)driver->tx_dma_channel);
+        dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
+                                     (uint)driver->rx_dma_channel,
+                                     false);
+        hw_uart_driver_abort_dma_channel((uint)driver->rx_dma_channel);
+        hw_uart_driver_abort_dma_channel((uint)driver->tx_dma_channel);
         dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
                                      (uint)driver->rx_dma_channel);
+        hw_uart_driver_publish_rx(driver);
         driver->tx_dma_bytes_in_flight = 0u;
         driver->tx_active = false;
         restore_interrupts(interrupt_status);

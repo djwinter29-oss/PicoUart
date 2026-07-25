@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contract import firmware_hid_report_version, firmware_usb_ids
+from contract import firmware_hid_constants, firmware_usb_ids, is_lab_placeholder_identity
 
 
 def test_usb_ids_parse_from_firmware_defines(hid_module, repo_root):
@@ -11,7 +11,24 @@ def test_usb_ids_parse_from_firmware_defines(hid_module, repo_root):
     assert pid == hid_module.PRODUCT_ID
 
 
-def test_hid_layout_version_matches_firmware(hid_module, repo_root):
-    version = firmware_hid_report_version(repo_root)
-    assert version == hid_module.STATUS_LAYOUT_VERSION
-    assert version == hid_module.BOARD_STATUS_LAYOUT_VERSION
+def test_hid_layout_and_command_constants_match_firmware(hid_module, repo_root):
+    fw = firmware_hid_constants(repo_root)
+    assert fw["USB_HID_REPORT_VERSION"] == hid_module.STATUS_LAYOUT_VERSION
+    assert fw["USB_HID_REPORT_VERSION"] == hid_module.BOARD_STATUS_LAYOUT_VERSION
+    assert fw["USB_HID_REPORT_ID_STATUS"] == hid_module.REPORT_ID_STATUS
+    assert fw["USB_HID_REPORT_ID_BOARD_STATUS"] == hid_module.REPORT_ID_BOARD_STATUS
+    assert fw["USB_HID_REPORT_ID_COMMAND"] == hid_module.REPORT_ID_COMMAND
+    assert fw["USB_HID_COMMAND_TOGGLE_LED"] == hid_module.COMMAND_TOGGLE_LED
+    assert fw["USB_HID_COMMAND_RESET_BOARD"] == hid_module.COMMAND_RESET_BOARD
+    assert fw["USB_HID_COMMAND_ARM_RESET"] == hid_module.COMMAND_ARM_RESET
+    assert fw["USB_HID_RESET_ARM_WINDOW_MS"] == int(hid_module.RESET_ARM_WINDOW_S * 1000)
+    assert hid_module.STATUS_SIZE == 64
+    assert hid_module.BOARD_STATUS_SIZE == 8
+
+
+def test_lab_placeholder_helper_and_current_tree_identity(repo_root):
+    assert is_lab_placeholder_identity(0xCAFE, 0x4010) is True
+    assert is_lab_placeholder_identity(0x1209, 0x0001) is False
+    # Development tree ships the lab placeholder until a release identity is allocated.
+    vid, pid = firmware_usb_ids(repo_root)
+    assert is_lab_placeholder_identity(vid, pid) is True

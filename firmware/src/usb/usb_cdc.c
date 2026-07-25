@@ -54,6 +54,13 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
         return;
     }
 
+    /* Permanent rejects must not retry forever with soft-pending stuck true. */
+    if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &pending->line_coding)) {
+        pending->pending = false;
+        uart_driver_report_control_error((uart_port_id_t)itf);
+        return;
+    }
+
     if (usb_cdc_apply_line_coding(itf, &pending->line_coding)) {
         pending->pending = false;
     }
@@ -173,6 +180,14 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
                                    p_line_coding->parity,
                                    p_line_coding->data_bits,
                                    &line_coding)) {
+        usb_cdc_line_coding_pending[itf].pending = false;
+        uart_driver_report_control_error((uart_port_id_t)itf);
+        return;
+    }
+
+    /* Do not arm CDC soft-pending for permanent backend rejects (PIO 8N1/baud). */
+    if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &line_coding)) {
+        usb_cdc_line_coding_pending[itf].pending = false;
         uart_driver_report_control_error((uart_port_id_t)itf);
         return;
     }

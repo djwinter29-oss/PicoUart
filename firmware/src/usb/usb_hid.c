@@ -233,6 +233,7 @@ void usb_hid_init(void)
 {
     usb_hid_sequence = 0u;
     usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time());
+    usb_hid_reset_armed_deadline = nil_time;
     memset(usb_hid_last_reported_uart_stats, 0, sizeof(usb_hid_last_reported_uart_stats));
     memset(usb_hid_last_reported_cdc_stats, 0, sizeof(usb_hid_last_reported_cdc_stats));
 }

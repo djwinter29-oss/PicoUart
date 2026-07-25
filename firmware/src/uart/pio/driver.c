@@ -6,17 +6,13 @@
 #include "uart/pio/internal.h"
 
 #include "uart.pio.h"
+#include "uart/line_coding.h"
 
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
-#include "hardware/irq.h"
 #include "hardware/sync.h"
 
-/** @brief Minimum clock divider supported by the Pico SDK helper. */
-#define PIO_UART_DRIVER_MIN_CLOCK_DIVIDER 1.0f
-/** @brief Maximum clock divider supported by the Pico SDK helper. */
-#define PIO_UART_DRIVER_MAX_CLOCK_DIVIDER 65536.0f
 /** @brief Joined PIO TX FIFO depth in 32-bit entries. */
 #define PIO_UART_DRIVER_TX_FIFO_DEPTH 8u
 /** @brief Maximum bytes launched in one TX DMA transfer. */
@@ -75,15 +71,8 @@ static float pio_uart_driver_clock_divider(uint32_t baud_rate)
 
 static bool pio_uart_driver_baud_rate_supported(uint32_t baud_rate)
 {
-    float divider;
-
-    if (baud_rate == 0u) {
-        return false;
-    }
-
-    divider = pio_uart_driver_clock_divider(baud_rate);
-    return (divider >= PIO_UART_DRIVER_MIN_CLOCK_DIVIDER) &&
-           (divider < PIO_UART_DRIVER_MAX_CLOCK_DIVIDER);
+    /* Same integer feasibility gate used by USB fail-fast / Unity tests. */
+    return uart_line_coding_pio_baud_feasible(baud_rate, clock_get_hz(clk_sys));
 }
 
 static uint pio_uart_driver_tx_offset(PIO pio)
@@ -460,20 +449,14 @@ bool pio_uart_driver_set_baud_rate(pio_uart_driver_t *driver, uint32_t baud_rate
         return false;
     }
 
-    /*
-     * Mask only DMA IRQ0 (HW UART RX re-arm) instead of disabling all IRQs, so a
-     * concurrent HW UART flood does not widen its FIFO overrun window.
-     */
-    irq_set_enabled(DMA_IRQ_0, false);
+    /* Same-core prepare/apply; do not mask DMA IRQ0 (keeps HW UART RX re-arm live). */
     if (!pio_uart_driver_prepare_baud_change_locked(driver)) {
-        irq_set_enabled(DMA_IRQ_0, true);
         return false;
     }
 
     pio_uart_driver_apply_baud_locked(driver, baud_rate);
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_dma_active = false;
-    irq_set_enabled(DMA_IRQ_0, true);
     pio_uart_driver_poll(driver);
     return true;
 }

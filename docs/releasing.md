@@ -46,6 +46,19 @@ need a recorded hardware-in-the-loop (HIL) pass:
 
 A release without a recorded HIL pass is lab-only.
 
+## Promote checklist (draft → published)
+
+Before clicking **Publish** on the GitHub draft:
+
+1. **Artifact ↔ HIL SHA match**: the UF2/ELF/BIN attached to the draft (or their
+   `SHA256SUMS-*`) are bit-identical to the images used for the recorded HIL
+   pass. Do not promote if HIL ran on a different local rebuild.
+2. **USB identity**: for non-lab releases, `PICO_UART_USB_VID` /
+   `PICO_UART_USB_PID` are **not** the development placeholder `0xCAFE` /
+   `0x4010` (confirm in release notes and in the packaged binaries).
+3. **HIL transcript** is linked or attached (see above).
+4. Release notes call out any breaking USB identity or HID layout changes.
+
 ## Versioning
 
 Tag form is `vMAJOR.MINOR.PATCH` (no `-rc` / pre-release suffixes for publish).

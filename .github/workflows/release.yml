@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      # Plain semver only (matches docs/releasing.md); reject v1.2.3-rc1 etc.
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       version:
@@ -31,8 +32,22 @@ jobs:
       - name: Install host dependencies
         run: python3 -m pip install -r host/python/requirements-dev.txt
 
+      - name: Syntax-check Python tools
+        run: |
+          python3 -m py_compile \
+            host/python/src/pico_uart_hid.py \
+            tools/linux/serial_bridge_test.py \
+            tools/linux/serial_stress_benchmark.py
+
       - name: Run host unit tests (C Unity + Python pytest)
         run: tools/linux/test-host.sh
+
+      - name: Import hidapi and exercise HID CLI help
+        run: |
+          python3 -c "import hid; print('hidapi OK')"
+          python3 host/python/src/pico_uart_hid.py --help
+          python3 tools/linux/serial_bridge_test.py --help
+          python3 tools/linux/serial_stress_benchmark.py --help
 
   build:
     name: Build (${{ matrix.board }})
@@ -153,8 +168,9 @@ jobs:
           fail_on_unmatched_files: true
           body: |
             Draft release — complete `docs/releasing.md` before publishing:
-            - Replace development USB IDs (`cafe:4010`) for non-lab releases
+            - Confirm packaged artifact SHAs match the recorded HIL images
+            - For non-lab releases, replace development USB IDs (must not ship the lab placeholder)
             - Attach or link a recorded HIL pass
-            - Promote from draft only after review
+            - Promote from draft only after the promote checklist passes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
