@@ -97,7 +97,7 @@ jobs:
       - name: Syntax-check Python tools
         run: |
           python3 -m py_compile \
-            host/python/pico_uart_hid.py \
+            host/python/src/pico_uart_hid.py \
             tools/linux/serial_bridge_test.py \
             tools/linux/serial_stress_benchmark.py
 
@@ -107,6 +107,6 @@ jobs:
       - name: Import hidapi and exercise HID CLI help
         run: |
           python3 -c "import hid; print('hidapi OK')"
-          python3 host/python/pico_uart_hid.py --help
+          python3 host/python/src/pico_uart_hid.py --help
           python3 tools/linux/serial_bridge_test.py --help
           python3 tools/linux/serial_stress_benchmark.py --help

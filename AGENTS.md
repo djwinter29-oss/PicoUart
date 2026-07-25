@@ -30,9 +30,10 @@ The update script refreshes Python host dependencies (`requirements.txt` and
 - If you build in a shell that hasn't sourced `setup-sdk-env.sh`, `build.sh` still finds
   `.pico-sdk/` automatically (defaults `PICO_SDK_PATH` to `<repo>/.pico-sdk`).
 - Host unit tests (no board): `tools/linux/test-host.sh` — native C Unity/CTest under
-  `tests/c/` plus Python pytest under `tests/python/`. See `tests/README.md`.
+  `firmware/tests/` plus Python pytest under `host/python/tests/`. See
+  `firmware/tests/README.md`.
 - Combined: `tools/linux/test.sh` builds firmware (unless `--skip-build`) then runs host tests.
-- Host HID tool: `python3 host/python/pico_uart_hid.py {monitor,temperature,version,toggle-led,reset}`.
+- Host HID tool: `python3 host/python/src/pico_uart_hid.py {monitor,temperature,version,toggle-led,reset}`.
 - Serial bridge/stress tests: `tools/linux/serial_bridge_test.py`, `serial_stress_benchmark.py`.
 
 ### Expected without hardware

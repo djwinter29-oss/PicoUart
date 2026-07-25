@@ -4,10 +4,11 @@
 
 | Path | Purpose |
 | --- | --- |
-| `tests/c/` | Native C unit tests (Unity + CMake/CTest) for firmware logic |
-| `tests/c/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |
-| `tests/c/third_party/unity/` | Vendored [Unity](https://github.com/ThrowTheSwitch/Unity) v2.6.0 |
-| `tests/python/` | Pytest suite for `host/python` HID parsers |
+| `firmware/tests/` | Native C unit tests (Unity + CMake/CTest) for firmware logic |
+| `firmware/tests/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |
+| `firmware/tests/third_party/unity/` | Vendored [Unity](https://github.com/ThrowTheSwitch/Unity) v2.6.0 |
+| `host/python/src/` | HID host tool package/scripts |
+| `host/python/tests/` | Pytest suite for the host tool |
 
 ## Run everything
 
@@ -24,7 +25,7 @@ tools/linux/test.sh --skip-build
 ## C tests only
 
 ```sh
-cmake -S tests/c -B build/host-tests -G Ninja
+cmake -S firmware/tests -B build/host-tests -G Ninja
 cmake --build build/host-tests
 ctest --test-dir build/host-tests --output-on-failure
 ```

@@ -1,4 +1,4 @@
 [tool.pytest.ini_options]
-testpaths = ["tests/python"]
-pythonpath = ["host/python", "tests/python"]
+testpaths = ["host/python/tests"]
+pythonpath = ["host/python/src", "host/python/tests"]
 addopts = "-q"

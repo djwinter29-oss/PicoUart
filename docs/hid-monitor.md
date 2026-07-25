@@ -110,9 +110,10 @@ Unknown command values are ignored. The report has no response payload.
 
 ## Host Tool
 
-The reference client at [host/python](../host/python) discovers this vendor HID
-collection and offers `monitor`, `temperature`, `version`, `toggle-led`, and
-`reset` commands. Install its `hidapi` dependency before use.
+The reference client at [host/python](../host/python) (`src/pico_uart_hid.py`)
+discovers this vendor HID collection and offers `monitor`, `temperature`,
+`version`, `toggle-led`, and `reset` commands. Install its `hidapi` dependency
+before use.
 
 ## Compatibility
 

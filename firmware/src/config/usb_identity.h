@@ -13,7 +13,7 @@
  * 1. Obtain an allocated VID/PID (for example via https://pid.codes or a
  *    commercial USB-IF vendor ID).
  * 2. Update @ref PICO_UART_USB_VID and @ref PICO_UART_USB_PID here.
- * 3. Keep @ref host/python/pico_uart_hid.py in sync (same numeric values).
+ * 3. Keep @ref host/python/src/pico_uart_hid.py in sync (same numeric values).
  * 4. Call out the identity change in release notes as a breaking USB change.
  */
 

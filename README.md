@@ -45,20 +45,22 @@ version `1.2.3` stamped into binary info and HID, sets USB `bcdDevice` to
 major.minor BCD (`0x0102` for `1.2.3`), and publishes a GitHub Release with
 board-qualified artifacts (`pico_uart-v1.2.3-pico.uf2`,
 `pico_uart-v1.2.3-pico2.uf2`, and the matching `.elf` / `.bin` / `.hex` files).
-After flashing, `python3 host/python/pico_uart_hid.py version` should print
+After flashing, `python3 host/python/src/pico_uart_hid.py version` should print
 `1.2.3`.
 
-Host-side tests (no board required) live under [`tests/`](tests/README.md):
+Host-side tests (no board required):
 
 ```sh
 tools/linux/test-host.sh
 ```
 
+See [`firmware/tests/README.md`](firmware/tests/README.md).
+
 ## Repository Layout
 
 - [docs](docs)
 - [firmware](firmware)
-- [host/python](host/python) - Python HID monitor and board-control utility
+- [host/python](host/python) - Python HID monitor and board-control utility (`src/`, tests in `tests/`)
 
 ## Current Architecture
 

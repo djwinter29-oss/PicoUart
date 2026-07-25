@@ -86,7 +86,7 @@ fi
 
 if [ ! -f "$BUILD_DIR_PATH/CTestTestfile.cmake" ]; then
     echo "No on-target firmware CMake/CTest targets are configured yet." >&2
-    echo "Host unit tests: tools/linux/test-host.sh (see tests/README.md)." >&2
+    echo "Host unit tests: tools/linux/test-host.sh (see firmware/tests/README.md)." >&2
     exit 1
 fi
 

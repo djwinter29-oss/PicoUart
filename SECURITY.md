@@ -17,7 +17,7 @@ Do **not** ship production devices with the placeholder IDs:
 
 1. Obtain an allocated VID/PID (pid.codes or a commercial USB-IF vendor ID).
 2. Update `PICO_UART_USB_VID` / `PICO_UART_USB_PID` in `usb_identity.h`.
-3. Keep [`host/python/pico_uart_hid.py`](host/python/pico_uart_hid.py) in sync.
+3. Keep [`host/python/src/pico_uart_hid.py`](host/python/src/pico_uart_hid.py) in sync.
 4. Note the identity change in release notes.
 
 ## HID board controls

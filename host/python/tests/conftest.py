@@ -8,7 +8,7 @@ import pytest
 
 import pico_uart_hid as hid
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture

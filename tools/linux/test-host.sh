@@ -44,7 +44,7 @@ fi
 
 if [ "$SKIP_C" -eq 0 ]; then
     echo "=== Host C unit tests (Unity / CTest) ==="
-    cmake -S "$REPO_ROOT/tests/c" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR"
+    cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR"
     cmake --build "$HOST_TEST_BUILD_DIR" --parallel
     ctest --test-dir "$HOST_TEST_BUILD_DIR" --output-on-failure
 fi

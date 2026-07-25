@@ -35,7 +35,7 @@ if (-not $SkipBuild) {
 if (-not $SkipHost) {
     if (-not $SkipC) {
         Write-Host "=== Host C unit tests (Unity / CTest) ==="
-        cmake -S (Join-Path $repoRoot "tests\c") -B $hostTestBuildPath -G $Generator
+        cmake -S (Join-Path $repoRoot "firmware\tests") -B $hostTestBuildPath -G $Generator
         if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
         cmake --build $hostTestBuildPath --parallel
         if ($LASTEXITCODE -ne 0) { throw "host C test build failed" }
