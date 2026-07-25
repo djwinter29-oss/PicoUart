@@ -26,6 +26,23 @@ microcontroller platform.
 - [HID Monitor and Board Control](docs/hid-monitor.md)
 - [Ring Buffer Design](docs/detail/ring-buffer-design.md)
 
+## Build and CI
+
+Linux:
+
+```sh
+. tools/linux/setup-sdk-env.sh
+tools/linux/build.sh --board pico
+tools/linux/build.sh --board pico2
+```
+
+Pull requests run `.github/workflows/pr-check.yml` (firmware build for `pico` /
+`pico2` plus host-tool syntax checks). Pushing a tag matching `v*` (for example
+`v1.2.3`) runs `.github/workflows/release.yml`, which builds both boards with
+that version stamped into the binary and publishes a GitHub Release with
+board-qualified artifacts (`pico_uart-v1.2.3-pico.uf2`,
+`pico_uart-v1.2.3-pico2.uf2`, and the matching `.elf` / `.bin` / `.hex` files).
+
 ## Repository Layout
 
 - [docs](docs)

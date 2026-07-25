@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(PICO_BOARD pico CACHE STRING "Target board")
+set(PICO_UART_VERSION "0.0.0-dev" CACHE STRING "Firmware semantic version string")
 set(PICO_UART_SYSTEM_CLOCK_KHZ "" CACHE STRING "Optional system clock target override in kHz")
 
 if(DEFINED PICO_SDK_PATH)
@@ -51,6 +52,10 @@ target_link_libraries(pico_uart
     pico_unique_id
     tinyusb_device
 )
+
+pico_set_program_name(pico_uart "PicoUart")
+pico_set_program_description(pico_uart "USB CDC + HID multi-UART bridge")
+pico_set_program_version(pico_uart "${PICO_UART_VERSION}")
 
 if (NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
     target_compile_definitions(pico_uart PRIVATE PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ}u)

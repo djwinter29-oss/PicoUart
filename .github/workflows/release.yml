@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without leading v (for dry-run artifact naming)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.board }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [pico, pico2]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+            echo "Refusing version '$VERSION' (expected semver like 1.2.3)" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved firmware version: $VERSION"
+
+      - name: Install host build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build g++
+
+      - name: Install Arm GNU Toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: "13.3.Rel1"
+
+      - name: Cache Pico SDK
+        uses: actions/cache@v4
+        with:
+          path: .pico-sdk
+          key: pico-sdk-2.2.0-${{ runner.os }}
+
+      - name: Setup Pico SDK
+        run: |
+          set --
+          . tools/linux/setup-sdk-env.sh
+
+      - name: Build firmware
+        run: |
+          tools/linux/build.sh \
+            --board ${{ matrix.board }} \
+            --firmware-version "${{ steps.version.outputs.version }}"
+
+      - name: Package board artifacts
+        run: |
+          set -eu
+          VERSION="${{ steps.version.outputs.version }}"
+          BOARD="${{ matrix.board }}"
+          SRC="build/firmware-${BOARD}"
+          OUT="dist"
+          mkdir -p "$OUT"
+          for ext in uf2 elf bin hex; do
+            cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${BOARD}.$ext"
+          done
+          strings "$SRC/pico_uart.bin" | grep -Fqx "${VERSION}"
+          python3 -c "import pathlib,sys; d=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if b'\\xfe\\xca\\x10\\x40' in d else 1)" "$SRC/pico_uart.bin"
+          ls -la "$OUT"
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.board }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    # workflow_dispatch builds artifacts only; tag pushes create the release
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Download all board artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: PicoUart ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

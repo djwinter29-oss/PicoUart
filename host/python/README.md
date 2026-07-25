@@ -18,7 +18,6 @@ devices. Run the tool with the privileges required by the local HID device node.
 ```sh
 python3 host/python/pico_uart_hid.py monitor --duration 10
 python3 host/python/pico_uart_hid.py temperature
-python3 host/python/pico_uart_hid.py statistics
 python3 host/python/pico_uart_hid.py toggle-led
 python3 host/python/pico_uart_hid.py reset
 ```

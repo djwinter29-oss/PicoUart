@@ -24,6 +24,10 @@ tools/linux/build.sh --board pico
 tools/linux/build.sh --board pico2
 ```
 
+Optional: stamp a release version into the firmware binary info with
+`--firmware-version` (for example `1.2.3`). Untagged local builds default to
+`0.0.0-dev`.
+
 On Windows PowerShell, download the same project-local SDK and build with:
 
 ```powershell
