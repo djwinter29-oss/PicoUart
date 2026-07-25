@@ -36,26 +36,29 @@ The devices are normally ordered CDC0 through CDC5, but `/dev/ttyACM` numbering
 can change when other USB serial devices are attached.
 
 ```sh
-ls -l /dev/ttyACM*
+ls -l /dev/serial/by-id
 ```
 
-Run the existing marker test. Replace each placeholder with the device
-corresponding to that CDC interface.
+Prefer stable `/dev/serial/by-id/...` paths. Do not assume `/dev/ttyACM*`
+numbering is stable when other USB serial devices are attached.
 
 ```sh
 # UART0 through the Debug Probe UART connection.
 python3 tools/linux/serial_bridge_test.py \
-   --pico-port <cdc0> --peer-port /dev/ttyACM0 \
+   --pico-port /dev/serial/by-id/<pico-uart-cdc0> \
+   --peer-port /dev/serial/by-id/<debug-probe-uart> \
    --label uart0-debug-probe
 
 # UART2 and UART3 cross-connection.
 python3 tools/linux/serial_bridge_test.py \
-   --pico-port <cdc2> --peer-port <cdc3> \
+   --pico-port /dev/serial/by-id/<pico-uart-cdc2> \
+   --peer-port /dev/serial/by-id/<pico-uart-cdc3> \
    --label uart2-uart3-cross
 
 # UART5 direct loopback.
 python3 tools/linux/serial_bridge_test.py \
-   --pico-port <cdc5> --loopback --label uart5-gp20-gp21
+   --pico-port /dev/serial/by-id/<pico-uart-cdc5> \
+   --loopback --label uart5-gp20-gp21
 ```
 
 UART0 and the UART2-to-UART3 cross-connection must each print both
@@ -76,13 +79,16 @@ For each PIO rate, the benchmark runs these streams concurrently:
 
 Each stream sends deterministic 1024-byte blocks for 10 seconds by default,
 checks every returned byte, and reports verified bytes plus measured throughput.
-The default rate list is 9600, 19200, 38400, 57600, 115200, 230400, 460800, and
-921600 baud.
+The default rate list is 9600, 19200, 38400, 57600, 115200, 230400, 460800,
+921600, and 1000000 baud.
 
 ```sh
 python3 tools/linux/serial_stress_benchmark.py \
-  --uart0-pico <cdc0> --uart0-peer /dev/ttyACM0 \
-  --uart2 <cdc2> --uart3 <cdc3> --uart5 <cdc5>
+  --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
+  --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
+  --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
+  --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
+  --uart5 /dev/serial/by-id/<pico-uart-cdc5>
 ```
 
 Use `--rates` to retry one or more PIO rates and `--duration` to use a longer
@@ -90,8 +96,11 @@ load window. For example, apply a 30-second run at 460800 and 921600 baud:
 
 ```sh
 python3 tools/linux/serial_stress_benchmark.py \
-  --uart0-pico <cdc0> --uart0-peer /dev/ttyACM0 \
-  --uart2 <cdc2> --uart3 <cdc3> --uart5 <cdc5> \
+  --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
+  --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
+  --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
+  --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
+  --uart5 /dev/serial/by-id/<pico-uart-cdc5> \
   --rates 460800,921600 --duration 30
 ```
 

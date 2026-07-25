@@ -134,12 +134,12 @@ equivalent synchronization primitive.
 
 ### Recommended Buffer Shape
 
-Per port:
+Per port (current firmware defaults in `firmware/src/config/config.h`):
 
-- RX ring: 1024 bytes
-- TX ring: 1024 bytes
+- RX ring: 4096 bytes
+- TX ring: 4096 bytes
 
-For 6 ports, 1024-byte RX and TX rings use about 12 KB total.
+For 6 ports, 4096-byte RX and TX rings use about 48 KB total.
 
 ### RX Implementation Detail
 
@@ -470,7 +470,7 @@ ring_buffer_span_t ring_buffer_read_span(ring_buffer_t *ring);
 ring_buffer_span_t ring_buffer_write_span(ring_buffer_t *ring);
 bool ring_buffer_commit_produced(ring_buffer_t *ring, size_t count);
 bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count);
-void ring_buffer_publish_producer(ring_buffer_t *ring, uint32_t producer);
+void ring_buffer_produce_external(ring_buffer_t *ring, uint32_t count);
 void ring_buffer_write_byte_overwrite(ring_buffer_t *ring, uint8_t byte);
 size_t ring_buffer_write(ring_buffer_t *ring, const uint8_t *data, size_t length);
 size_t ring_buffer_read(ring_buffer_t *ring, uint8_t *data, size_t length);
@@ -506,10 +506,10 @@ RX DMA:
 
 Current hardware UART implementation detail:
 
-- RX DMA runs with a 1024-byte ring buffer
+- RX DMA runs with a 4096-byte ring buffer
 - software extends DMA transfer progress into a 32-bit producer sequence across
 	UART reconfiguration and DMA transfer-count restarts
-- `ring_buffer_publish_producer()` publishes absolute RX DMA progress
+- `ring_buffer_produce_external()` publishes RX DMA byte deltas
 - the USB-side consumer records overwritten bytes before it reads the next span
 
 TX DMA:

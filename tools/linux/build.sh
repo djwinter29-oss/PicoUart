@@ -58,7 +58,13 @@ SOURCE_DIR="$REPO_ROOT/firmware"
 BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR"
 
 if [ -z "$PICO_SDK_PATH_VALUE" ]; then
-    PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
+    # Prefer an explicit CLI path, then a sourced/exported PICO_SDK_PATH, then the
+    # project-local checkout created by setup-sdk-env.sh.
+    if [ -n "${PICO_SDK_PATH:-}" ]; then
+        PICO_SDK_PATH_VALUE="$PICO_SDK_PATH"
+    else
+        PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
+    fi
 fi
 
 if [ ! -f "$PICO_SDK_PATH_VALUE/external/pico_sdk_import.cmake" ]; then

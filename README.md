@@ -25,27 +25,30 @@ microcontroller platform.
 - [Hardware Wiring](docs/hardware-wiring.md)
 - [HID Monitor and Board Control](docs/hid-monitor.md)
 - [Test Connections](docs/test-connections.md)
+- [Releasing](docs/releasing.md)
 - [Ring Buffer Design](docs/detail/ring-buffer-design.md)
+- [PIO UART Design](docs/detail/pio-uart-design.md)
 - [Security / USB identity policy](SECURITY.md)
 
 ## Build and CI
 
-Linux:
+Linux CI only (see `tools/windows/` for local Windows helpers).
 
 ```sh
 . tools/linux/setup-sdk-env.sh
 tools/linux/build.sh --board pico
 tools/linux/build.sh --board pico2
+tools/linux/test-host.sh
 ```
 
 Pull requests run `.github/workflows/pr-check.yml` (firmware build for `pico` /
-`pico2`, host C Unity tests, Python pytest, plus host-tool syntax checks). Pushing a tag matching `v*` (for example
+`pico2`, stamped-version smoke, host C Unity tests, Python pytest, plus host-tool syntax checks). Pushing a tag matching `vMAJOR.MINOR.PATCH` (for example
 `v1.2.3`) runs `.github/workflows/release.yml`, which builds both boards with
 version `1.2.3` stamped into binary info and HID, sets USB `bcdDevice` to
-major.minor BCD (`0x0102` for `1.2.3`), and publishes a GitHub Release with
-board-qualified artifacts (`pico_uart-v1.2.3-pico.uf2`,
-`pico_uart-v1.2.3-pico2.uf2`, and the matching `.elf` / `.bin` / `.hex` files).
-After flashing, `python3 host/python/src/pico_uart_hid.py version` should print
+major.minor BCD (`0x0102` for `1.2.3`), runs host unit tests, and opens a
+**draft** GitHub Release with board-qualified artifacts plus SHA256SUMS. Promote
+the draft only after `docs/releasing.md` (USB identity + recorded HIL). After
+flashing, `python3 host/python/src/pico_uart_hid.py version` should print
 `1.2.3`.
 
 Host-side tests (no board required):
@@ -82,11 +85,10 @@ behavior. Host CDC RTS is ignored.
 
 ## Target Devices
 
-- RP2040-based boards such as Raspberry Pi Pico
-- RP2350-based boards as the design evolves
+- RP2040-based boards such as Raspberry Pi Pico (`--board pico`)
+- RP2350-based boards such as Raspberry Pi Pico 2 (`--board pico2`)
 
-The firmware should keep the transport model consistent across both device families even if
-the low-level implementation differs.
+CI builds both targets. The transport model stays consistent across both families.
 
 ## Core Features
 

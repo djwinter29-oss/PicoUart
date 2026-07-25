@@ -15,6 +15,25 @@ permissions:
   contents: write
 
 jobs:
+  host-tools:
+    name: Host tools
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install host dependencies
+        run: python3 -m pip install -r host/python/requirements-dev.txt
+
+      - name: Run host unit tests (C Unity + Python pytest)
+        run: tools/linux/test-host.sh
+
   build:
     name: Build (${{ matrix.board }})
     runs-on: ubuntu-24.04
@@ -36,8 +55,8 @@ jobs:
           else
             VERSION="${GITHUB_REF_NAME#v}"
           fi
-          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
-            echo "Refusing version '$VERSION' (expected semver like 1.2.3)" >&2
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Refusing version '$VERSION' (expected plain MAJOR.MINOR.PATCH like 1.2.3)" >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -82,8 +101,23 @@ jobs:
             cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${BOARD}.$ext"
           done
           strings "$SRC/pico_uart.bin" | grep -Fqx "${VERSION}"
-          # Encode major.minor as USB BCD (1.2.3 -> 0x0102 -> bytes 02 01 after cafe:4010)
-          python3 -c "import pathlib,re,sys; d=pathlib.Path(sys.argv[1]).read_bytes(); m=re.match(r'^([0-9]+)\\.([0-9]+)\\.([0-9]+)', sys.argv[2]); assert m, sys.argv[2]; major,minor=int(m.group(1)),int(m.group(2)); assert 0<=major<=99 and 0<=minor<=99; bcd=((major//10)<<12)|((major%10)<<8)|((minor//10)<<4)|(minor%10); needle=bytes([0xFE,0xCA,0x10,0x40,bcd&0xFF,(bcd>>8)&0xFF]); assert needle in d, needle.hex(); print(f'USB cafe:4010 bcdDevice=0x{bcd:04x} OK')" "$SRC/pico_uart.bin" "$VERSION"
+          python3 -c "
+          import pathlib, re, sys
+          sys.path.insert(0, 'host/python/tests')
+          from contract import firmware_usb_ids, usb_identity_needle_le
+          version = sys.argv[2]
+          data = pathlib.Path(sys.argv[1]).read_bytes()
+          m = re.match(r'^([0-9]+)\\.([0-9]+)\\.([0-9]+)$', version)
+          assert m, version
+          major, minor = int(m.group(1)), int(m.group(2))
+          assert 0 <= major <= 99 and 0 <= minor <= 99
+          bcd = ((major // 10) << 12) | ((major % 10) << 8) | ((minor // 10) << 4) | (minor % 10)
+          vid, pid = firmware_usb_ids(pathlib.Path('.'))
+          needle = usb_identity_needle_le(vid, pid, bcd)
+          assert needle in data, needle.hex()
+          print(f'USB {vid:#06x}:{pid:#06x} bcdDevice=0x{bcd:04x} OK')
+          " "$SRC/pico_uart.bin" "$VERSION"
+          (cd "$OUT" && sha256sum pico_uart-v${VERSION}-${BOARD}.* > "SHA256SUMS-${BOARD}.txt")
           ls -la "$OUT"
 
       - name: Upload packaged artifacts
@@ -95,9 +129,9 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, host-tools]
     runs-on: ubuntu-24.04
-    # workflow_dispatch builds artifacts only; tag pushes create the release
+    # workflow_dispatch builds artifacts only; tag pushes create a draft release
     if: github.event_name == 'push'
 
     steps:
@@ -108,13 +142,19 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Create GitHub Release
+      - name: Create draft GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: PicoUart ${{ github.ref_name }}
           generate_release_notes: true
+          draft: true
           files: dist/*
           fail_on_unmatched_files: true
+          body: |
+            Draft release — complete `docs/releasing.md` before publishing:
+            - Replace development USB IDs (`cafe:4010`) for non-lab releases
+            - Attach or link a recorded HIL pass
+            - Promote from draft only after review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

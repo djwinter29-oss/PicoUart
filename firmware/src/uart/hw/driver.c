@@ -67,6 +67,7 @@ static void __isr hw_uart_driver_rx_dma_irq_handler(void)
 static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
 {
     dma_channel_config rx_dma_config;
+    uint8_t *write_addr;
 
     rx_dma_config = dma_channel_get_default_config((uint)driver->rx_dma_channel);
     channel_config_set_transfer_data_size(&rx_dma_config, DMA_SIZE_8);
@@ -76,14 +77,20 @@ static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
     channel_config_set_ring(&rx_dma_config, true, PICO_UART_HW_UART_RX_DMA_RING_BITS);
     channel_config_set_irq_quiet(&rx_dma_config, false);
     driver->rx_dma_last_progress = 0u;
+    /*
+     * Continue writing at the live producer index so a line-format restart does
+     * not desync DMA WRITE_ADDR from ring_buffer_produce_external accounting.
+     */
+    write_addr = &driver->rx_storage[ring_buffer_producer_index(&driver->rx_ring)];
     dma_channel_configure((uint)driver->rx_dma_channel,
                           &rx_dma_config,
-                          driver->rx_storage,
+                          write_addr,
                           &uart_get_hw(driver->config.instance)->dr,
                           0xffffffffu,
                           true);
 
     hw_uart_driver_rx_irq_owners[driver->rx_dma_channel] = driver;
+    dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel);
     dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
                                  (uint)driver->rx_dma_channel,
                                  true);
@@ -339,11 +346,24 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
     }
 
     uart_tx_wait_blocking(driver->config.instance);
-    hw_uart_driver_publish_rx(driver);
-    dma_channel_abort((uint)driver->rx_dma_channel);
-    dma_channel_abort((uint)driver->tx_dma_channel);
-    driver->tx_dma_bytes_in_flight = 0u;
-    driver->tx_active = false;
+
+    /* Mask RX DMA IRQ so a completion cannot re-arm during abort/reconfigure. */
+    dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
+                                 (uint)driver->rx_dma_channel,
+                                 false);
+    {
+        uint32_t interrupt_status = save_and_disable_interrupts();
+
+        hw_uart_driver_publish_rx(driver);
+        dma_channel_abort((uint)driver->rx_dma_channel);
+        dma_channel_abort((uint)driver->tx_dma_channel);
+        dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
+                                     (uint)driver->rx_dma_channel);
+        driver->tx_dma_bytes_in_flight = 0u;
+        driver->tx_active = false;
+        restore_interrupts(interrupt_status);
+    }
+
     uart_deinit(driver->config.instance);
 
     driver->config.baud_rate = baud_rate;

@@ -10,6 +10,7 @@
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
+#include "hardware/irq.h"
 #include "hardware/sync.h"
 
 /** @brief Minimum clock divider supported by the Pico SDK helper. */
@@ -455,22 +456,24 @@ static void pio_uart_driver_apply_baud_locked(pio_uart_driver_t *driver, uint32_
 
 bool pio_uart_driver_set_baud_rate(pio_uart_driver_t *driver, uint32_t baud_rate)
 {
-    uint32_t save;
-
     if ((driver == NULL) || !driver->initialized || !pio_uart_driver_baud_rate_supported(baud_rate)) {
         return false;
     }
 
-    save = save_and_disable_interrupts();
+    /*
+     * Mask only DMA IRQ0 (HW UART RX re-arm) instead of disabling all IRQs, so a
+     * concurrent HW UART flood does not widen its FIFO overrun window.
+     */
+    irq_set_enabled(DMA_IRQ_0, false);
     if (!pio_uart_driver_prepare_baud_change_locked(driver)) {
-        restore_interrupts(save);
+        irq_set_enabled(DMA_IRQ_0, true);
         return false;
     }
 
     pio_uart_driver_apply_baud_locked(driver, baud_rate);
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_dma_active = false;
-    restore_interrupts(save);
+    irq_set_enabled(DMA_IRQ_0, true);
     pio_uart_driver_poll(driver);
     return true;
 }

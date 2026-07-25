@@ -8,18 +8,20 @@ import pico_uart_hid as hid
 
 
 def board_status_bytes(
-    layout_version: int = 14,
+    layout_version: int | None = None,
     temperature_c: float = 25.30,
     major: int = 1,
     minor: int = 2,
     patch: int = 3,
 ) -> bytes:
+    if layout_version is None:
+        layout_version = hid.BOARD_STATUS_LAYOUT_VERSION
     centi = int(round(temperature_c * 100.0))
     return struct.pack("<BBhBBBB", layout_version, 0, centi, major, minor, patch, 0)
 
 
 def status_report_bytes(sequence: int = 7, health0: int = 0x11) -> bytes:
-    header = struct.pack("<BBBB", ord("P"), ord("U"), 14, sequence)
+    header = struct.pack("<BBBB", ord("P"), ord("U"), hid.STATUS_LAYOUT_VERSION, sequence)
     channels = b""
     for index in range(6):
         health = health0 if index == 0 else 0x01

@@ -77,10 +77,14 @@ consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produ
 	safe idle boundary within 1 second (avoids pausing USB ingress indefinitely).
 - CDC `SET_LINE_CODING` can succeed at the USB layer while firmware rejects the request;
 	hosts must watch HID health bit 2 (`CONTROL_ERROR`). Shared validation lives in
-	`firmware/src/uart/line_coding.c` (50–3 000 000 baud).
+	`firmware/src/uart/line_coding.c` (50–3 000 000 baud). PIO also rejects bauds its
+	clock divider cannot represent (fail-fast, no 1 s pending window).
 - Hardware UART RX DMA re-arms from a DMA IRQ when the transfer counter exhausts; the
-	worker poll path is a safety net. Peers that ignore RTS can still overrun the UART
-	FIFO under sustained flood — exercise that case in HIL before advertising flow control.
+	worker poll path is a safety net. Line-format restarts continue DMA at the live ring
+	producer index. Peers that ignore RTS can still overrun the UART FIFO under sustained
+	flood — exercise that case in HIL before advertising flow control.
+- HID reset requires arm (`3`) then reset (`2`) within 2 s, or compile with
+	`PICO_UART_ALLOW_HID_RESET=0` to disable it.
 
 ## Open Items
 

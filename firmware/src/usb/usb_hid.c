@@ -44,8 +44,23 @@
 
 /** @brief HID command value that toggles the board LED. */
 #define USB_HID_COMMAND_TOGGLE_LED 1u
-/** @brief HID command value that immediately resets the board. */
+/**
+ * @brief HID command value that resets the board after a prior arm command.
+ *
+ * Compile with `-DPICO_UART_ALLOW_HID_RESET=0` to disable remote reset entirely
+ * on shared hosts. When enabled, @ref USB_HID_COMMAND_ARM_RESET must be sent
+ * first and @ref USB_HID_COMMAND_RESET_BOARD must follow within
+ * @ref USB_HID_RESET_ARM_WINDOW_MS.
+ */
 #define USB_HID_COMMAND_RESET_BOARD 2u
+/** @brief HID command value that arms a subsequent reset command. */
+#define USB_HID_COMMAND_ARM_RESET 3u
+/** @brief Maximum time between arm-reset and reset commands. */
+#define USB_HID_RESET_ARM_WINDOW_MS 2000u
+
+#ifndef PICO_UART_ALLOW_HID_RESET
+#define PICO_UART_ALLOW_HID_RESET 1
+#endif
 
 /** @brief Per-channel health bit: the host opened the matching CDC interface. */
 #define USB_HID_CHANNEL_STATUS_CDC_OPEN (1u << 4)
@@ -105,6 +120,8 @@ static uint8_t usb_hid_sequence;
 static uart_driver_port_stats_t usb_hid_last_reported_uart_stats[UART_PORT_COUNT];
 /** @brief CDC counters captured when the last periodic HID input report was published. */
 static usb_cdc_port_stats_t usb_hid_last_reported_cdc_stats[UART_PORT_COUNT];
+/** @brief Deadline after which a previously armed HID reset expires. */
+static absolute_time_t usb_hid_reset_armed_deadline;
 
 static uint16_t usb_hid_clamp_u16(uint32_t value)
 {
@@ -296,8 +313,19 @@ void tud_hid_set_report_cb(uint8_t instance,
         led_toggle();
         break;
 
+    case USB_HID_COMMAND_ARM_RESET:
+#if PICO_UART_ALLOW_HID_RESET
+        usb_hid_reset_armed_deadline = make_timeout_time_ms(USB_HID_RESET_ARM_WINDOW_MS);
+#endif
+        break;
+
     case USB_HID_COMMAND_RESET_BOARD:
-        system_reset();
+#if PICO_UART_ALLOW_HID_RESET
+        if (!time_reached(usb_hid_reset_armed_deadline)) {
+            usb_hid_reset_armed_deadline = nil_time;
+            system_reset();
+        }
+#endif
         break;
 
     default:

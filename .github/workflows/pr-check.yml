@@ -58,14 +58,39 @@ jobs:
           test -f "$ELF"
           test -f "build/firmware-${{ matrix.board }}/pico_uart.uf2"
           file "$ELF" | grep -q "ARM"
-          # USB device descriptor: idVendor/idProduct/bcdDevice little-endian
-          # Default 0.0.0-dev -> bcdDevice 0x0000 => fe ca 10 40 00 00
-          python3 -c "import pathlib,sys; d=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if b'\\xfe\\xca\\x10\\x40\\x00\\x00' in d else 1)" "$BIN"
+          python3 -c "
+          import pathlib, sys
+          sys.path.insert(0, 'host/python/tests')
+          from contract import firmware_usb_ids, usb_identity_needle_le
+          data = pathlib.Path(sys.argv[1]).read_bytes()
+          vid, pid = firmware_usb_ids(pathlib.Path('.'))
+          needle = usb_identity_needle_le(vid, pid, 0)
+          assert needle in data, needle.hex()
+          print(f'USB {vid:#06x}:{pid:#06x} bcdDevice=0x0000 OK')
+          " "$BIN"
           strings "$BIN" | grep -qx "CDC0"
           strings "$BIN" | grep -qx "CDC5"
           strings "$BIN" | grep -Fqx "PicoUart USB CDC + HID"
           # Default CMake version stamp when --firmware-version is not passed
           strings "$BIN" | grep -Fqx "0.0.0-dev"
+
+      - name: Smoke-check stamped version / bcdDevice
+        if: matrix.board == 'pico'
+        run: |
+          set -eu
+          tools/linux/build.sh --board pico --firmware-version 1.2.3 --build-dir build/firmware-pico-stamp
+          BIN=build/firmware-pico-stamp/pico_uart.bin
+          strings "$BIN" | grep -Fqx "1.2.3"
+          python3 -c "
+          import pathlib, sys
+          sys.path.insert(0, 'host/python/tests')
+          from contract import firmware_usb_ids, usb_identity_needle_le
+          data = pathlib.Path(sys.argv[1]).read_bytes()
+          vid, pid = firmware_usb_ids(pathlib.Path('.'))
+          needle = usb_identity_needle_le(vid, pid, 0x0102)
+          assert needle in data, needle.hex()
+          print('stamped bcdDevice 0x0102 OK')
+          " "$BIN"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

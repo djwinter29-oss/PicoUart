@@ -51,7 +51,3 @@ fi
 if [ "$SKIP_HOST" -eq 0 ]; then
     GENERATOR="$GENERATOR" "$SCRIPT_DIR/test-host.sh"
 fi
-
-if [ -f "$BUILD_DIR_PATH/CTestTestfile.cmake" ]; then
-    ctest --test-dir "$BUILD_DIR_PATH" --output-on-failure
-fi

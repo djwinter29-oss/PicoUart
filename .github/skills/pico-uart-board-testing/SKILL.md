@@ -112,13 +112,23 @@ with no runtime flow-control behavior. Host CDC RTS is ignored.
 8. **HW UART RX stress with an RTS-ignoring peer** (release-candidate / HIL
    recording). Hardware UART RX DMA re-arms via DMA IRQ when the 32-bit transfer
    counter exhausts; the worker poll path is only a safety net. With RTS/CTS
-   enabled, a well-behaved peer should not overrun. To stress the gap that remains
-   when a peer **ignores RTS**, run a sustained high-baud UART0 (or UART1) flood
-   from a peer that does not honor RTS, while draining CDC slowly or not at all
-   long enough to exercise backpressure, then confirm HID health bit 6
-   (`rx_overrun`) / bit 7 (`rx_error`) behavior matches expectations. Capture the
-   command lines, baud, duration, and `PASS`/`FAIL` lines as a recorded HIL
-   artifact for the release checklist in `docs/releasing.md`.
+   enabled, a well-behaved peer should not overrun. Example skeleton when the
+   peer ignores RTS (leave CTS unconnected / peer does not wire RTS):
+
+   ```sh
+   # Terminal A: watch HID health bits (look for rx_overrun / rx_error).
+   python3 host/python/src/pico_uart_hid.py monitor --duration 30
+
+   # Terminal B: flood UART0 from an RTS-ignoring peer while CDC0 drains slowly
+   # or is held closed for part of the window, then reopen and check integrity.
+   python3 tools/linux/serial_bridge_test.py \
+     --pico-port /dev/serial/by-id/<pico-uart-cdc0> \
+     --peer-port /dev/serial/by-id/<rts-ignoring-peer> \
+     --baud 921600 --payload-bytes 65536 --label uart0-rts-ignore-flood
+   ```
+
+   Capture command lines, baud, duration, HID `monitor` lines, and `PASS`/`FAIL`
+   output as a recorded HIL artifact for `docs/releasing.md`.
 
 ## Diagnose Failures
 

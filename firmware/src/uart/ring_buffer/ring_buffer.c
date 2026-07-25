@@ -247,6 +247,19 @@ void ring_buffer_produce_external(ring_buffer_t *ring, uint32_t count)
     ring_buffer_update_high_watermark(ring);
 }
 
+uint32_t ring_buffer_producer_index(const ring_buffer_t *ring)
+{
+    uint32_t producer;
+
+    if ((ring == NULL) || (ring->size == 0u)) {
+        return 0u;
+    }
+
+    producer = ring->producer;
+    __dmb();
+    return producer & ring->mask;
+}
+
 size_t ring_buffer_write(ring_buffer_t *ring, const uint8_t *data, size_t length)
 {
     size_t total_written = 0u;
