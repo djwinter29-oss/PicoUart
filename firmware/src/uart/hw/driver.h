@@ -6,6 +6,7 @@
 #ifndef HW_UART_DRIVER_H
 #define HW_UART_DRIVER_H
 
+#include "config/config.h"
 #include "hardware/uart.h"
 #include "uart/ring_buffer/ring_buffer.h"
 
@@ -15,11 +16,6 @@
 
 /** @brief Invalid GPIO marker used while board pin mapping is still open. */
 #define UART_DRIVER_PIN_UNASSIGNED ((uint32_t)UINT32_MAX)
-/** @brief Hardware UART RX ring size in bytes. */
-#define HW_UART_DRIVER_RX_BUFFER_SIZE 1024u
-/** @brief Hardware UART TX ring size in bytes. */
-#define HW_UART_DRIVER_TX_BUFFER_SIZE 1024u
-
 /**
  * @brief Static configuration for one hardware UART instance.
  */
@@ -45,8 +41,8 @@ typedef struct {
     bool tx_active; /**< True while a TX DMA transfer is still in flight. */
     ring_buffer_t rx_ring; /**< UART-to-USB receive ring. */
     ring_buffer_t tx_ring; /**< USB-to-UART transmit ring. */
-    uint8_t rx_storage[HW_UART_DRIVER_RX_BUFFER_SIZE] __attribute__((aligned(HW_UART_DRIVER_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
-    uint8_t tx_storage[HW_UART_DRIVER_TX_BUFFER_SIZE]; /**< TX ring storage. */
+    uint8_t rx_storage[PICO_UART_HW_UART_RX_BUFFER_SIZE] __attribute__((aligned(PICO_UART_HW_UART_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
+    uint8_t tx_storage[PICO_UART_HW_UART_TX_BUFFER_SIZE]; /**< TX ring storage. */
 } hw_uart_driver_t;
 
 /**

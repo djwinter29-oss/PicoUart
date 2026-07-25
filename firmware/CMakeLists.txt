@@ -20,7 +20,9 @@ project(pico_uart C CXX ASM)
 pico_sdk_init()
 
 add_executable(pico_uart
+    src/driver/led.c
     src/driver/system.c
+    src/driver/temperature.c
     src/main.c
     src/uart/hw/driver.c
     src/uart/pio/driver.c
@@ -35,11 +37,13 @@ pico_generate_pio_header(pico_uart ${CMAKE_CURRENT_LIST_DIR}/src/uart/pio/uart.p
 
 target_include_directories(pico_uart PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/src/config
 )
 
 target_link_libraries(pico_uart
     pico_stdlib
     pico_multicore
+    hardware_adc
     hardware_clocks
     hardware_dma
     hardware_pio

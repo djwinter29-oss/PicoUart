@@ -58,7 +58,8 @@ Notes:
 
 - This uses 24 exposed GPIOs for 6 channels with RTS/CTS.
 - GP27 and GP28 remain free for future use.
-- GP23, GP24, and GP25 are not used because they are not generally available on standard Pico headers.
+- GP23 and GP24 are not used because they are not generally available on standard Pico headers.
+- GP25 is reserved for the selected board's default LED when `PICO_DEFAULT_LED_PIN` is defined.
 - GP26 is used as a digital GPIO in this plan, so that ADC input is no longer available for other functions.
 
 ## Wiring Rules

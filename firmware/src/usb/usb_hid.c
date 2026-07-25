@@ -5,6 +5,9 @@
 
 #include "usb/usb_hid.h"
 
+#include "driver/led.h"
+#include "driver/system.h"
+#include "driver/temperature.h"
 #include "uart/uart_driver.h"
 
 #include "pico/stdlib.h"
@@ -25,6 +28,15 @@
 #define USB_HID_REPORT_ID_STATUS 1u
 /** @brief HID feature report ID for full-width PIO statistics. */
 #define USB_HID_REPORT_ID_PIO_STATS 2u
+/** @brief HID feature report ID for board temperature. */
+#define USB_HID_REPORT_ID_BOARD_STATUS 3u
+/** @brief HID feature report ID for board control commands. */
+#define USB_HID_REPORT_ID_COMMAND 4u
+
+/** @brief HID command value that toggles the board LED. */
+#define USB_HID_COMMAND_TOGGLE_LED 1u
+/** @brief HID command value that immediately resets the board. */
+#define USB_HID_COMMAND_RESET_BOARD 2u
 
 /** @brief Number of PIO-backed logical UART ports exposed by the firmware. */
 #define USB_HID_PIO_PORT_COUNT 4u
@@ -60,6 +72,15 @@ typedef struct {
     uint32_t tx_polled_bytes[USB_HID_PIO_PORT_COUNT]; /**< Full per-port TX poll-path byte counters. */
     uint32_t tx_dma_bytes[USB_HID_PIO_PORT_COUNT]; /**< Full per-port TX DMA-path byte counters. */
 } usb_hid_pio_stats_report_t;
+
+/**
+ * @brief HID feature report containing the internal temperature estimate.
+ */
+typedef struct {
+    uint8_t version; /**< Report layout version. */
+    uint8_t reserved; /**< Reserved for board-status flags. */
+    int16_t temperature_centidegrees_celsius; /**< Internal temperature in hundredths of a degree Celsius. */
+} usb_hid_board_status_report_t;
 
 /** @brief HID worker state flag: UART worker core has started. */
 #define USB_HID_WORKER_STATE_RUNNING (1u << 0)
@@ -110,6 +131,17 @@ static void usb_hid_build_pio_stats_report(usb_hid_pio_stats_report_t *report)
         report->tx_polled_bytes[pio_index] = stats.tx_polled_bytes;
         report->tx_dma_bytes[pio_index] = stats.tx_dma_bytes;
     }
+}
+
+/**
+ * @brief Snapshot the board-scoped status exposed through HID feature report 3.
+ * @param report Destination feature-report payload.
+ */
+static void usb_hid_build_board_status_report(usb_hid_board_status_report_t *report)
+{
+    memset(report, 0, sizeof(*report));
+    report->version = USB_HID_REPORT_VERSION;
+    report->temperature_centidegrees_celsius = (int16_t)(temperature_read_celsius() * 100.0f);
 }
 
 static void usb_hid_build_status_report(usb_hid_status_report_t *report,
@@ -219,6 +251,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance,
                                uint16_t reqlen)
 {
     usb_hid_pio_stats_report_t stats_report;
+    usb_hid_board_status_report_t board_status_report;
     usb_hid_status_report_t report;
     uart_driver_pio_stats_t current_stats[USB_HID_PIO_PORT_COUNT];
 
@@ -231,6 +264,16 @@ uint16_t tud_hid_get_report_cb(uint8_t instance,
         }
 
         memcpy(buffer, &stats_report, reqlen);
+        return reqlen;
+    }
+
+    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_BOARD_STATUS)) {
+        usb_hid_build_board_status_report(&board_status_report);
+        if (reqlen > sizeof(board_status_report)) {
+            reqlen = sizeof(board_status_report);
+        }
+
+        memcpy(buffer, &board_status_report, reqlen);
         return reqlen;
     }
 
@@ -251,8 +294,23 @@ void tud_hid_set_report_cb(uint8_t instance,
                            uint16_t bufsize)
 {
     (void)instance;
-    (void)report_id;
-    (void)report_type;
-    (void)buffer;
-    (void)bufsize;
+
+    if ((report_id != USB_HID_REPORT_ID_COMMAND) ||
+        (report_type != HID_REPORT_TYPE_FEATURE) ||
+        (bufsize < 1u)) {
+        return;
+    }
+
+    switch (buffer[0]) {
+    case USB_HID_COMMAND_TOGGLE_LED:
+        led_toggle();
+        break;
+
+    case USB_HID_COMMAND_RESET_BOARD:
+        system_reset();
+        break;
+
+    default:
+        break;
+    }
 }

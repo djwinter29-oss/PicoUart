@@ -4,7 +4,8 @@
 
 PicoUart is a USB-to-UART bridge for RP2040 and RP2350.
 The device presents 6 USB CDC interfaces to the host.
-The device also presents 1 USB HID interface for status monitoring.
+The device also presents 1 USB HID interface for status monitoring and
+narrowly scoped board controls.
 Each CDC interface maps to one UART channel.
 
 ## Current Firmware Status
@@ -16,7 +17,8 @@ the TinyUSB device stack and the HID monitor. At runtime:
 - core 0 services TinyUSB tasks
 - core 0 moves CDC OUT traffic into shared per-port TX rings
 - core 0 moves shared per-port RX ring data back to the matching CDC IN endpoint
-- core 0 emits a periodic HID status report when the host is ready
+- core 0 emits a periodic HID status report when the host is ready and serves
+	HID feature reads for PIO statistics and board temperature
 
 This means the codebase is already at the multi-port bridge stage, not the earlier local-echo scaffold.
 
@@ -47,13 +49,14 @@ then lazily claims DMA when deeper backlog makes that path cheaper.
 ## Main Blocks
 
 - USB device stack with 6 CDC ACM functions
-- USB HID status-monitor function
+- USB HID status-monitor function with LED-toggle and watchdog-reset commands
 - Per-port CDC-to-UART routing in the USB poll loop
 - Per-port RX and TX ring buffers inside each UART backend
 - 2 hardware UART backends
 - 4 PIO UART backends
 - Board-specific GPIO configuration
-- Placeholder line-state and status-monitor hooks for future control-plane features
+- CDC line-state hooks remain placeholders; HID board controls are restricted
+	to LED toggle and reset
 
 ## Design Notes
 
@@ -70,5 +73,5 @@ then lazily claims DMA when deeper backlog makes that path cheaper.
 
 - RTS and CTS runtime behavior for both hardware UART and PIO UART ports
 - Whether non-baud line-coding fields should be ignored permanently or surfaced as explicit unsupported settings
-- What the HID status bytes should report beyond static topology metadata
-- Whether additional counters such as ring overflow and high-water marks should be exposed to the host
+- Whether additional HID counters such as ring overflow and high-water marks
+	should be exposed to the host

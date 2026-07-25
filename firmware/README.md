@@ -39,7 +39,7 @@ They also accept `--system-clock-khz` or `-SystemClockKhz` to override the
 system clock for a build. For example:
 
 ```sh
-tools/linux/build.sh --board pico --system-clock-khz 125000
+tools/linux/build.sh --board pico --system-clock-khz 250000
 tools/linux/build.sh --board pico2 --system-clock-khz 300000
 ```
 
@@ -54,13 +54,33 @@ tools/linux/load.sh --board pico
 tools/linux/load.sh --board pico2
 ```
 
+## Configuration
+
+Shared fixed capacities are defined in [src/config/config.h](src/config/config.h).
+This includes USB control and CDC endpoint capacities, CDC FIFOs, HID endpoint
+capacity, and the hardware/PIO UART ring capacities. TinyUSB-specific mappings
+remain in [src/config/tusb_config.h](src/config/tusb_config.h).
+
+Do not change a ring capacity without preserving its power-of-two requirement.
+The PIO RX/TX and hardware UART RX/TX ring definitions document where that
+requirement applies.
+
 ## Notes
 
 - Default board is `pico`.
 
-- Default system-clock targets are 125000 kHz for RP2040 and 300000 kHz for
+
+- Default system-clock targets are 250000 kHz for RP2040 and 300000 kHz for
 	RP2350. Override them only after validating the board and attached hardware
 	at the selected frequency.
+- Startup initializes the selected board's default LED when it defines
+  `PICO_DEFAULT_LED_PIN`; the LED starts off.
+- The internal ADC temperature sensor is enabled at startup and can be sampled
+  through `temperature_read_celsius()`.
+- HID report ID `3` exposes the internal temperature estimate; report ID `4`
+	accepts board-scoped LED-toggle and watchdog-reset commands. HID does not
+	own UART configuration. See [the HID protocol](../docs/hid-monitor.md) and
+	[the Python host utility](../host/python/README.md).
 - Override the board with `-DPICO_BOARD=<board>` when needed.
 - Firmware startup asserts that all 6 UART backends initialize before USB enumeration begins.
 - A dedicated second core owns UART backend init, polling, and control operations.
@@ -75,4 +95,5 @@ tools/linux/load.sh --board pico2
 - PIO UART line-coding changes are deferred on the worker core until the port reaches a safe idle point, to avoid discarding queued traffic.
 - PIO UART RX drops frames with an invalid stop bit instead of forwarding corrupted bytes.
 - CDC line-state changes such as DTR and RTS are currently ignored.
-- The HID monitor currently reports topology metadata, not live error or overflow counters.
+- HID reports topology, worker state, PIO framing/DMA statistics, and
+	temperature; ring occupancy and overflow counters are not yet reported.

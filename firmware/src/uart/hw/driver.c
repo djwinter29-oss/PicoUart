@@ -10,9 +10,6 @@
 #include "hardware/structs/dma.h"
 #include "pico/stdlib.h"
 
-/** @brief DMA ring selector bits for the RX buffer size above. */
-#define HW_UART_DRIVER_RX_RING_BITS 10u
-
 static void hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
 {
     uart_init(driver->config.instance, driver->config.baud_rate);
@@ -33,7 +30,7 @@ static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
     channel_config_set_read_increment(&rx_dma_config, false);
     channel_config_set_write_increment(&rx_dma_config, true);
     channel_config_set_dreq(&rx_dma_config, uart_get_dreq(driver->config.instance, false));
-    channel_config_set_ring(&rx_dma_config, true, HW_UART_DRIVER_RX_RING_BITS);
+    channel_config_set_ring(&rx_dma_config, true, PICO_UART_HW_UART_RX_DMA_RING_BITS);
     dma_channel_configure((uint)driver->rx_dma_channel,
                           &rx_dma_config,
                           driver->rx_storage,

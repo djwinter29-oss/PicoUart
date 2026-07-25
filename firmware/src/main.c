@@ -1,6 +1,8 @@
 #include "pico/stdlib.h"
 
+#include "driver/led.h"
 #include "driver/system.h"
+#include "driver/temperature.h"
 #include "uart/uart_driver.h"
 #include "usb/usb_cdc.h"
 #include "usb/usb_hid.h"
@@ -8,6 +10,8 @@
 int main(void)
 {
     system_init_clock();
+    led_init();
+    temperature_init();
     usb_cdc_init();
     usb_hid_init();
     hard_assert(uart_driver_validate_topology());

@@ -7,7 +7,7 @@
 #define SYSTEM_H
 
 /** @brief Default system-clock target in kHz for RP2040 boards. */
-#define PICO_UART_RP2040_SYSTEM_CLOCK_KHZ 125000u
+#define PICO_UART_RP2040_SYSTEM_CLOCK_KHZ 250000u
 /** @brief Default system-clock target in kHz for RP2350 boards. */
 #define PICO_UART_RP2350_SYSTEM_CLOCK_KHZ 300000u
 
@@ -24,5 +24,10 @@
  * @brief Configure the system clock before initializing timing-sensitive hardware.
  */
 void system_init_clock(void);
+
+/**
+ * @brief Reboot the board immediately through the watchdog.
+ */
+void system_reset(void);
 
 #endif

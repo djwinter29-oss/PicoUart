@@ -19,8 +19,6 @@
 #define PIO_UART_DRIVER_MAX_CLOCK_DIVIDER 65536.0f
 /** @brief Joined PIO TX FIFO depth in 32-bit entries. */
 #define PIO_UART_DRIVER_TX_FIFO_DEPTH 8u
-/** @brief Default TX backlog threshold that triggers a DMA transfer. */
-#define PIO_UART_DRIVER_DEFAULT_TX_DMA_THRESHOLD 64u
 /** @brief Maximum bytes launched in one TX DMA transfer. */
 #define PIO_UART_DRIVER_DEFAULT_TX_DMA_MAX_TRANSFER_BYTES 256u
 /** @brief Poll iterations to wait before retrying a failed TX DMA claim. */
@@ -78,7 +76,7 @@ static size_t pio_uart_driver_dma_threshold(const pio_uart_driver_t *driver)
     if ((driver != NULL) && (driver->config.tx_dma_start_threshold != 0u)) {
         return (size_t)driver->config.tx_dma_start_threshold;
     }
-    return PIO_UART_DRIVER_DEFAULT_TX_DMA_THRESHOLD;
+    return PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD;
 }
 
 static bool pio_uart_driver_register_instance(pio_uart_driver_t *driver)

@@ -102,8 +102,9 @@ RTS and CTS are not implemented by the current firmware.
    ```
 
    The default 10-second window reports verified bytes and measured throughput
-   for every stream at 9600, 19200, 38400, 57600, 115200, 230400, 460800, and
-   921600 baud. Use `--rates` and `--duration` for a focused longer run.
+   for every stream at 9600, 19200, 38400, 57600, 115200, 230400, 460800,
+   921600, and 1000000 baud. Use `--rates` and `--duration` for a focused
+   longer run.
 
 ## Diagnose Failures
 

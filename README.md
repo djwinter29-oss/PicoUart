@@ -23,12 +23,14 @@ microcontroller platform.
 
 - [Architecture](docs/architecture.md)
 - [Hardware Wiring](docs/hardware-wiring.md)
+- [HID Monitor and Board Control](docs/hid-monitor.md)
 - [Ring Buffer Design](docs/detail/ring-buffer-design.md)
 
 ## Repository Layout
 
 - [docs](docs)
 - [firmware](firmware)
+- [host/python](host/python) - Python HID monitor and board-control utility
 
 ## Current Architecture
 
@@ -72,8 +74,10 @@ The firmware currently handles:
 - UART configuration updates received through USB CDC line coding
 - Buffering and scheduling so multiple active ports can run at the same time
 
-The current HID monitor publishes a compact per-port snapshot with backend type, TX pin,
-RX pin, and placeholder status bytes.
+The HID interface publishes a compact per-port status report, cumulative PIO
+statistics, and the internal temperature estimate. It also supports narrowly
+scoped board commands to toggle the default LED and reset the board; it does
+not configure UART transport settings.
 
 ## Design Considerations
 
@@ -88,7 +92,7 @@ RX pin, and placeholder status bytes.
 The firmware has moved beyond the planning stage and now provides a working baseline bridge:
 
 1. 6 CDC ACM interfaces enumerate through TinyUSB.
-2. 1 vendor HID interface enumerates for status monitoring.
+2. 1 vendor HID interface enumerates for status monitoring and limited board control.
 3. CDC traffic is bridged to 2 hardware UART backends and 4 PIO UART backends.
 4. Hardware UART ports use DMA-backed RX and TX rings.
 5. PIO UART ports use polling with per-port RX and TX rings.
@@ -98,7 +102,7 @@ Known gaps in the current implementation:
 1. RTS and CTS are not wired into the runtime yet.
 2. CDC line-state changes are ignored.
 3. PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or data-bit changes.
-4. HID status bytes are placeholders and do not yet expose readiness, overflow, or error counters.
+4. Ring-buffer occupancy, high-water-mark, and overflow counters are not yet exposed through HID.
 
 ## Possible Future Enhancements
 

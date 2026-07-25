@@ -1,13 +1,14 @@
 # HID Monitor
 
 PicoUart exposes one vendor-defined USB HID interface named `Status Monitor`.
-It is a read-only diagnostics channel for the six UART bridges. UART data and
-line configuration remain on the matching USB CDC (`ttyACM`) interface.
+It provides diagnostics for the six UART bridges plus narrowly scoped board
+controls. UART data and line configuration remain on the matching USB CDC
+(`ttyACM`) interface.
 
 The HID interface uses vendor usage page `0xFF00`, vendor usage `0x01`, no boot
-protocol, and a 64-byte report size. The device is identified as USB
-`cafe:4010` and has one HID interface after the twelve CDC control/data
-interfaces.
+protocol, and 64-byte status and PIO-statistics reports alongside compact
+board-status and command feature reports. The device is identified as USB
+`cafe:4010` and has one HID interface after the twelve CDC control/data interfaces.
 
 ## Ownership
 
@@ -15,12 +16,12 @@ interfaces.
 | --- | --- | --- |
 | UART data | CDC0 through CDC5 | Transfers bytes to and from the matching UART. |
 | Baud, data bits, parity, stop bits | CDC line-coding request | Parsed from `SET_LINE_CODING` and queued to the matching UART backend. |
-| Status and PIO counters | HID | Read-only monitoring data. |
-| HID output or feature writes | HID | Ignored. No control operation is implemented. |
+| Status, PIO counters, and temperature | HID | Read-only monitoring data. |
+| Toggle default board LED | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one. |
+| Reset board | HID command feature report | Immediately reboots through the watchdog. |
 
 HID must not be used to select a UART, set baud rate, change GPIO mapping, or
-alter ring-buffer behavior. A future board reset command may be added as a
-separate, narrowly scoped HID report, but it is not implemented now.
+alter ring-buffer behavior. The two command values are board-scoped only.
 
 ## Report IDs
 
@@ -28,6 +29,8 @@ separate, narrowly scoped HID report, but it is not implemented now.
 | --- | --- | --- | --- | --- |
 | `1` | Input | Device to host | 64 bytes | Periodic compact status report. |
 | `2` | Feature | Host reads from device | 64 bytes | Full-width PIO UART counters. |
+| `3` | Feature | Host reads from device | 4 bytes | Internal temperature sensor estimate. |
+| `4` | Feature | Host writes to device | 1 byte | Board-control command. |
 
 Report ID bytes are managed by the HID transport and are not included in the
 64-byte payload layouts below. The device attempts to publish report ID `1`
@@ -115,6 +118,34 @@ consecutive arrays, each indexed as UART2, UART3, UART4, UART5.
 
 These counters are cumulative since firmware boot. They are intended for
 monitoring and test diagnostics; they do not configure or control UART traffic.
+
+## Report ID 3: Board Status
+
+Request feature report ID `3` to read the internal RP2 temperature-sensor
+estimate.
+
+| Offset | Size | Field | Meaning |
+| --- | ---: | --- | --- |
+| 0 | 1 | `version` | Report layout version, currently `11`. |
+| 1 | 1 | `reserved` | Always zero; reserved for board-status flags. |
+| 2 | 2 | `temperature_centidegrees_celsius` | Signed little-endian temperature estimate in hundredths of a degree Celsius. |
+
+## Report ID 4: Board Command
+
+Write feature report ID `4` with one payload byte:
+
+| Value | Command |
+| ---: | --- |
+| `1` | Toggle the selected board's default LED. Does nothing when the board exposes no `PICO_DEFAULT_LED_PIN`. |
+| `2` | Immediately reset the board through the watchdog. The USB device disconnects and enumerates again after startup. |
+
+Unknown command values are ignored. The report has no response payload.
+
+## Host Tool
+
+The reference client at [host/python](../host/python) discovers this vendor HID
+collection and offers `monitor`, `temperature`, `statistics`, `toggle-led`, and
+`reset` commands. Install its `hidapi` dependency before use.
 
 ## Compatibility
 

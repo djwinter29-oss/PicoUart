@@ -30,8 +30,8 @@ struct pio_uart_driver {
     ring_buffer_t rx_ring; /**< PIO RX producer ring shared with the USB bridge. */
     ring_buffer_t tx_ring; /**< USB-core TX producer ring drained by core-0 PIO polling. */
     size_t rx_framing_error_count; /**< Number of dropped RX words with an invalid stop bit. */
-    uint8_t rx_storage[PIO_UART_DRIVER_RX_BUFFER_SIZE]; /**< RX ring storage. */
-    uint8_t tx_storage[PIO_UART_DRIVER_TX_BUFFER_SIZE]; /**< TX ring storage. */
+    uint8_t rx_storage[PICO_UART_PIO_UART_RX_BUFFER_SIZE]; /**< RX ring storage. */
+    uint8_t tx_storage[PICO_UART_PIO_UART_TX_BUFFER_SIZE]; /**< TX ring storage. */
 };
 
 void pio_uart_driver_poll(pio_uart_driver_t *driver);

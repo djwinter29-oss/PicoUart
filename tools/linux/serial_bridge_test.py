@@ -19,6 +19,7 @@ BAUD_RATES = {
     230400: termios.B230400,
     460800: termios.B460800,
     921600: termios.B921600,
+    1000000: termios.B1000000,
 }
 STANDARD_BAUD_RATES = tuple(BAUD_RATES)
 

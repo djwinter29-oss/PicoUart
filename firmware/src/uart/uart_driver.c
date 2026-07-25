@@ -16,6 +16,8 @@
 #define UART_DRIVER_DEFAULT_BAUD_RATE 115200u
 /** @brief Maximum time core 0 waits for a UART worker mailbox response. */
 #define UART_DRIVER_MAILBOX_TIMEOUT_MS 20u
+/** @brief Maximum wait for core 0 to stop PIO polling during a PIO reconfiguration. */
+#define UART_DRIVER_PIO_LOCKOUT_TIMEOUT_US 1000u
 
 /**
  * @brief Commands accepted by the cross-core UART control mailbox.
@@ -84,7 +86,7 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        8u,
                        9u,
                        PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
-                       PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD},
+                       PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
     },
@@ -98,7 +100,7 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        12u,
                        13u,
                        PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
-                       PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD},
+                       PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
     },
@@ -112,7 +114,7 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        16u,
                        17u,
                        PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
-                       PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD},
+                       PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
     },
@@ -126,7 +128,7 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        20u,
                        21u,
                        PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
-                       PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD},
+                       PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
     },
@@ -489,8 +491,14 @@ static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_dri
             return;
         }
     } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        if (!pio_uart_driver_set_baud_rate(&port->backend.pio,
-                                           pending_control->line_coding.baud_rate)) {
+        if (!multicore_lockout_start_timeout_us(UART_DRIVER_PIO_LOCKOUT_TIMEOUT_US)) {
+            return;
+        }
+
+        bool applied = pio_uart_driver_set_baud_rate(&port->backend.pio,
+                                                      pending_control->line_coding.baud_rate);
+        multicore_lockout_end_blocking();
+        if (!applied) {
             return;
         }
     } else {
@@ -535,6 +543,7 @@ bool uart_driver_init(void)
         uart_driver_worker_heartbeat_value = 0u;
         uart_driver_hardfault_core_value = 0u;
         multicore_reset_core1();
+        multicore_lockout_victim_init();
         multicore_launch_core1(uart_driver_worker_core_main);
         uart_driver_worker_started = true;
     }

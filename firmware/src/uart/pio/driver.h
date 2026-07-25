@@ -6,6 +6,7 @@
 #ifndef PIO_UART_DRIVER_H
 #define PIO_UART_DRIVER_H
 
+#include "config/config.h"
 #include "hardware/pio.h"
 
 #include <stdbool.h>
@@ -19,13 +20,6 @@
 #define PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP (1u << 0)
 /** @brief Require a high (idle) RX line as an extra guard before applying a deferred baud change. */
 #define PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH (1u << 1)
-/** @brief PIO UART RX ring size in bytes. */
-#define PIO_UART_DRIVER_RX_BUFFER_SIZE 1024u
-/** @brief PIO UART TX ring size in bytes. */
-#define PIO_UART_DRIVER_TX_BUFFER_SIZE 1024u
-/** @brief Default TX backlog threshold that triggers a DMA transfer. */
-#define PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD 64u
-
 /**
  * @brief Static configuration for one PIO UART instance.
  */
