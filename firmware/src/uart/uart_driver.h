@@ -39,7 +39,7 @@ typedef enum {
 #define UART_DRIVER_PORT_STATUS_INIT_FAILED (1u << 1)
 /** @brief Port status flag: the most recent control command for this port failed. */
 #define UART_DRIVER_PORT_STATUS_CONTROL_ERROR (1u << 2)
-/** @brief Port status flag: the worker core is currently applying a control change for this port. */
+/** @brief Port status flag: ingress is paused while the worker applies a control change at a safe backend boundary. */
 #define UART_DRIVER_PORT_STATUS_CONTROL_PENDING (1u << 3)
 
 /**
@@ -67,14 +67,18 @@ typedef struct {
 } uart_driver_port_info_t;
 
 /**
- * @brief Host-visible PIO observability counters for one logical port.
+ * @brief Transport counters for one logical UART port.
  */
 typedef struct {
-    uint32_t rx_framing_error_count; /**< Full count of dropped RX words with an invalid stop bit. */
-    uint32_t tx_dma_claim_failure_count; /**< Full count of failed TX DMA channel claims. */
-    uint32_t tx_polled_bytes; /**< Full count of bytes sent through the poll path. */
-    uint32_t tx_dma_bytes; /**< Full count of bytes sent through the DMA path. */
-} uart_driver_pio_stats_t;
+    uint32_t controller_tx_bytes; /**< Bytes transmitted by the UART controller. */
+    uint32_t controller_rx_bytes; /**< Bytes received by the UART controller. */
+    uint16_t tx_ring_high_watermark; /**< Largest observed USB-to-UART ring occupancy. */
+    uint16_t rx_ring_high_watermark; /**< Largest observed UART-to-USB ring occupancy. */
+    uint32_t tx_ring_overflow_count; /**< Bytes rejected by the USB-to-UART ring. */
+    uint32_t rx_ring_overflow_count; /**< Bytes dropped by the UART-to-USB ring. */
+    uint32_t rx_ring_pending_overflow_count; /**< Unread UART-to-USB bytes already overwritten. */
+    uint32_t rx_error_count; /**< Hardware UART receive-status events observed since initialization. */
+} uart_driver_port_stats_t;
 
 /**
  * @brief Host-requested UART parity mode.
@@ -125,46 +129,40 @@ void uart_driver_poll_hardware(void);
 void uart_driver_poll_pio(void);
 
 /**
- * @brief Read bytes from one logical UART port RX ring.
+ * @brief Drain RX bytes from one logical UART port into a caller-owned writer.
  * @param port_id Logical port identifier.
- * @param data Destination buffer.
- * @param capacity Maximum bytes to read.
- * @return Number of bytes copied out of the shared RX ring.
+ * @param capacity Maximum byte count to drain across contiguous RX spans.
+ * @param writer Caller callback that writes some or all of the offered bytes.
+ * @param context Opaque caller context passed to @p writer.
+ * @return Number of bytes committed from the RX ring.
  */
-size_t uart_driver_read(uart_port_id_t port_id, uint8_t *data, size_t capacity);
+size_t uart_driver_drain_rx(uart_port_id_t port_id,
+                            size_t capacity,
+                            uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length),
+                            void *context);
 
 /**
- * @brief Return the currently available shared TX-ring space for one logical UART port.
+ * @brief Fill TX bytes for one logical UART port from a caller-owned reader.
  * @param port_id Logical port identifier.
- * @return Number of bytes that can currently be queued for transmission.
+ * @param capacity Maximum byte count to fill across contiguous TX spans.
+ * @param reader Caller callback that provides bytes for the writable span.
+ * @param context Opaque caller context passed to @p reader.
+ * @return Number of bytes committed into the TX ring.
  */
-size_t uart_driver_write_available(uart_port_id_t port_id);
-
-/**
- * @brief Reconfigure one logical UART port from a host line-coding request.
- * @param port_id Logical port identifier.
- * @param line_coding Requested baud/data/parity/stop configuration.
- * @return `true` when the line coding was applied, otherwise `false`.
- */
-bool uart_driver_set_line_coding(uart_port_id_t port_id,
-                                 const uart_driver_line_coding_t *line_coding);
+size_t uart_driver_fill_tx(uart_port_id_t port_id,
+                           size_t capacity,
+                           uint32_t (*reader)(void *context, uint8_t *data, uint32_t length),
+                           void *context);
 
 /**
  * @brief Queue one host line-coding request without waiting for the UART worker.
  * @param port_id Logical port identifier.
  * @param line_coding Requested baud/data/parity/stop configuration.
- * @return `true` when the worker mailbox accepted the request, otherwise `false`.
+ * @return `true` when the worker mailbox accepted the request and ingress is
+ * paused until the worker applies or rejects it, otherwise `false`.
  */
 bool uart_driver_queue_line_coding(uart_port_id_t port_id,
                                    const uart_driver_line_coding_t *line_coding);
-
-/**
- * @brief Reconfigure the baud rate for one logical UART port.
- * @param port_id Logical port identifier.
- * @param baud_rate New baud rate.
- * @return `true` when the baud rate was applied, otherwise `false`.
- */
-bool uart_driver_set_baud_rate(uart_port_id_t port_id, uint32_t baud_rate);
 
 /**
  * @brief Return the status flags for one logical UART port.
@@ -174,49 +172,10 @@ bool uart_driver_set_baud_rate(uart_port_id_t port_id, uint32_t baud_rate);
 uint8_t uart_driver_port_status(uart_port_id_t port_id);
 
 /**
- * @brief Return the most recent cross-core control status.
- * @return Latest mailbox command result.
- */
-uart_driver_command_status_t uart_driver_last_command_status(void);
-
-/**
- * @brief Return the logical port associated with the most recent control status.
- * @return Port index, or `UART_PORT_COUNT` when the last command was not port-specific.
- */
-uart_port_id_t uart_driver_last_command_port(void);
-
-/**
  * @brief Return whether the dedicated UART worker core is running.
  * @return `true` after the worker core has been launched.
  */
 bool uart_driver_worker_is_running(void);
-
-/**
- * @brief Return the UART port currently being serviced by the worker.
- * @return Logical port index, or @ref UART_PORT_COUNT between poll passes.
- */
-uart_port_id_t uart_driver_worker_poll_port(void);
-
-/**
- * @brief Return the worker poll-loop heartbeat.
- * @return Value incremented after each completed backend poll sweep.
- */
-uint8_t uart_driver_worker_heartbeat(void);
-
-/**
- * @brief Return the core that most recently entered HardFault.
- * @return Zero when no fault occurred, one for core 0, or two for core 1.
- */
-uint8_t uart_driver_hardfault_core(void);
-
-/**
- * @brief Write bytes into one logical UART port TX ring.
- * @param port_id Logical port identifier.
- * @param data Source bytes.
- * @param length Number of bytes to queue.
- * @return Number of bytes accepted into the shared TX ring.
- */
-size_t uart_driver_write(uart_port_id_t port_id, const uint8_t *data, size_t length);
 
 /**
  * @brief Return public metadata for one logical UART port.
@@ -226,12 +185,12 @@ size_t uart_driver_write(uart_port_id_t port_id, const uint8_t *data, size_t len
 const uart_driver_port_info_t *uart_driver_port_info(uart_port_id_t port_id);
 
 /**
- * @brief Return compact PIO counters for one logical UART port.
+ * @brief Snapshot transport counters for one logical UART port.
  * @param port_id Logical port identifier.
- * @param stats Output storage for the compact counters.
- * @return `true` when the port uses the PIO backend and stats were written, otherwise `false`.
+ * @param stats Output storage for the counter snapshot.
+ * @return `true` when @p stats was written, otherwise `false`.
  */
-bool uart_driver_port_pio_stats(uart_port_id_t port_id, uart_driver_pio_stats_t *stats);
+bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *stats);
 
 /**
  * @brief Check that the logical UART table still matches the 2-HW and 4-PIO design.

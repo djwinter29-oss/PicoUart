@@ -10,7 +10,9 @@ The current firmware architecture reserves:
 
 This document describes the wiring model and the signals that each UART channel is expected to provide.
 
-The intended design includes hardware flow control with RTS and CTS on each UART channel.
+Hardware UART0 and UART1 reserve RTS and CTS for an optional runtime
+flow-control configuration. PIO UART ports reserve the same signals for a
+future flow-control implementation.
 
 ## Host Side
 
@@ -28,7 +30,10 @@ Each UART channel should expose:
 - CTS
 - GND
 
-For bring-up, TX, RX, and GND are still the minimum path to prove the bridge, but the board design should reserve RTS and CTS for all channels.
+Hardware UART bring-up requires TX, RX, and GND. When its board configuration
+enables flow control, also cross-connect RTS and CTS; the connected target must
+honor RTS to avoid UART RX FIFO overflow during exceptional service gaps such
+as a DMA re-arm. PIO UART bring-up currently requires TX, RX, and GND only.
 
 ## Channel Plan
 
@@ -103,5 +108,5 @@ Remove this temporary wiring before attaching an external target. See
 ## Open Items
 
 - Connector style and pin order
-- Whether RTS and CTS are implemented immediately on every channel or staged after basic TX/RX bring-up
+- PIO UART RTS and CTS runtime implementation
 - Whether one PCB supports both RP2040 and RP2350 variants or separate layouts are used

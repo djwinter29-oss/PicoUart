@@ -36,7 +36,7 @@ The design includes:
 
 Implemented now:
 
-- generic fixed-size ring-buffer helper under `firmware/src/ring_buffer`
+- generic fixed-size ring-buffer helper under `firmware/src/uart/ring_buffer`
 - hardware UART backend integration for both RX and TX ring usage
 - RX DMA producer publishing into the RX ring
 - TX DMA draining contiguous spans from the TX ring
@@ -46,7 +46,7 @@ Implemented now:
 
 Not implemented yet:
 
-- HID reporting of ring occupancy, overflow, and watermark counters
+- HID reporting of ring overflow counters
 - flow-control state in the bridge layer
 - line-coding updates beyond baud rate
 - parity handling and advanced framing features
@@ -98,6 +98,18 @@ With the current multicore split:
 - core 1 owns UART, DMA, PIO, and backend service logic
 
 This fixed ownership keeps race analysis simple.
+
+### Memory Ordering Assumption
+
+The ring uses `volatile uint32_t` producer and consumer sequences with Pico SDK
+`__dmb()` barriers. On RP2040 and RP2350, aligned 32-bit cursor loads and stores
+are atomic, and the barriers order payload writes before a producer publishes a
+new sequence and consumer reads before it retires one.
+
+This is target-specific synchronization, not a portable C11 threading
+implementation. Any future port must either preserve these hardware guarantees
+and barrier semantics or replace the cursor access with that platform's
+equivalent synchronization primitive.
 
 ### Benefits
 
@@ -243,14 +255,15 @@ Ring-buffer layer:
 
 - provides fixed-size single-producer single-consumer queues
 - exposes contiguous readable and writable spans
-- maintains occupancy, high-water mark, and overflow counters
+- maintains occupancy and high-water marks
+- lets the consumer detect and count RX overwrites without the producer changing the consumer cursor
 
 UART backend layer:
 
 - owns hardware UART or PIO UART specifics
 - owns DMA setup and DMA completion handling
 - updates producer or consumer positions for the port rings
-- keeps PIO RX interrupt-driven and lets the worker core choose between FIFO polling and TX DMA based on queue depth
+- polls PIO RX and lets the worker core choose between FIFO polling and TX DMA based on queue depth
 
 ## Current Scope Limits
 
@@ -259,7 +272,7 @@ The current transport deliberately targets a narrow UART subset:
 - 8 data bits
 - no parity
 - 1 stop bit
-- framing validation limited to stop-bit-high checks on the PIO RX path
+- no PIO framing or stop-bit validation
 
 This keeps the PIO and bridge logic compact while the multi-port data path is stabilized first.
 
@@ -287,7 +300,6 @@ typedef struct {
 	uint32_t tx_dma_bytes_in_flight;
 	uint32_t rx_dma_last_write_offset;
 
-	uint32_t tx_reject_count;
 	uint32_t rx_overwrite_count;
 	uint32_t usb_out_bytes;
 	uint32_t usb_in_bytes;
@@ -317,7 +329,7 @@ This path handles USB CDC OUT traffic.
 2. TinyUSB reports bytes available on CDC `n`.
 3. Bridge layer reads bytes from TinyUSB.
 4. Bridge layer writes those bytes into port `n` TX ring.
-5. If the TX ring does not have enough space, the bridge stops accepting more bytes for now and records a TX-side rejection event.
+5. If the TX ring does not have enough space, the bridge retains unread CDC data in its per-port pending buffer and retries it later.
 6. If the backend TX DMA is idle, the backend reads the next contiguous TX span.
 7. Backend launches a TX DMA transfer from that span into the UART data register or PIO TX FIFO feed path.
 8. On DMA completion, the backend commits consumed bytes.
@@ -338,7 +350,7 @@ This path handles UART RX traffic.
 ### Path C: HID Status Monitoring
 
 1. HID poll task snapshots per-port counters.
-2. HID report includes backend type, pin map, high-water marks, overflow counts, and DMA-active flags.
+2. HID report includes channel health, backend class, ring high-water mark, and controller/CDC traffic deltas.
 3. Host monitor uses HID data to detect congestion or stalled flows.
 
 ## Execution Model
@@ -398,8 +410,9 @@ RX uses DMA circular writes into the RX storage.
 Selected policy on RX overrun:
 
 - preserve newest data
-- advance consumer to make space
-- increment overflow counters
+- producer continues publishing its own sequence only
+- consumer detects that the producer is more than one buffer ahead
+- consumer advances its own cursor and increments the overflow counter
 
 Reason:
 
@@ -414,23 +427,23 @@ TX uses software enqueue and DMA burst drain.
 
 Selected policy on TX full:
 
-- reject bytes that do not fit
-- increment TX reject counter
-- do not silently discard previously queued data
+- retain bytes in the per-port CDC pending buffer
+- stop reading additional CDC data until pending bytes enter the TX ring
+- do not silently discard queued or pending host-originated data
 
 Reason:
 
 - queued host-originated bytes should remain ordered
-- the host can retry if software exposes backpressure properly
+- TinyUSB applies endpoint backpressure while the pending buffer drains
 
 ## API Shape
 
 The ring helper should provide:
 
 - initialize
-- reset
 - occupancy
 - free space
+- pending overwrite count
 - readable contiguous span
 - writable contiguous span
 - commit produced bytes
@@ -444,21 +457,25 @@ The ring helper should provide:
 The current implementation provides this concrete API:
 
 ```c
-bool ring_buffer_size_is_valid(size_t size);
 bool ring_buffer_init(ring_buffer_t *ring, uint8_t *storage, size_t size);
-void ring_buffer_reset(ring_buffer_t *ring);
 size_t ring_buffer_occupancy(const ring_buffer_t *ring);
 size_t ring_buffer_free_space(const ring_buffer_t *ring);
-ring_buffer_span_t ring_buffer_read_span(const ring_buffer_t *ring);
+ring_buffer_span_t ring_buffer_read_span(ring_buffer_t *ring);
 ring_buffer_span_t ring_buffer_write_span(ring_buffer_t *ring);
 bool ring_buffer_commit_produced(ring_buffer_t *ring, size_t count);
 bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count);
-void ring_buffer_publish_producer(ring_buffer_t *ring, size_t producer, bool preserve_newest);
+void ring_buffer_publish_producer(ring_buffer_t *ring, uint32_t producer);
+void ring_buffer_write_byte_overwrite(ring_buffer_t *ring, uint8_t byte);
 size_t ring_buffer_write(ring_buffer_t *ring, const uint8_t *data, size_t length);
 size_t ring_buffer_read(ring_buffer_t *ring, uint8_t *data, size_t length);
 size_t ring_buffer_high_watermark(const ring_buffer_t *ring);
 size_t ring_buffer_overflow_count(const ring_buffer_t *ring);
+size_t ring_buffer_pending_overflow(const ring_buffer_t *ring);
 ```
+
+`ring_buffer_commit_produced()` and `ring_buffer_commit_consumed()` accept only
+counts within the caller's most recently returned contiguous span. Requesting a
+new span replaces an uncommitted reservation.
 
 The bridge layer should provide per-port operations conceptually equivalent to:
 
@@ -484,8 +501,10 @@ RX DMA:
 Current hardware UART implementation detail:
 
 - RX DMA runs with a 1024-byte ring buffer
-- software derives an absolute producer count from DMA transfer progress
-- `ring_buffer_publish_producer(..., true)` is used so RX overflow preserves newest data
+- software extends DMA transfer progress into a 32-bit producer sequence across
+	UART reconfiguration and DMA transfer-count restarts
+- `ring_buffer_publish_producer()` publishes absolute RX DMA progress
+- the USB-side consumer records overwritten bytes before it reads the next span
 
 TX DMA:
 
@@ -504,23 +523,39 @@ If a backend cannot DMA directly from the ring storage, that backend may use a b
 
 ## HID Status Fields
 
-The HID monitor should eventually expose at least:
+The compact HID monitor currently exposes, per channel:
 
-- backend type
-- TX pin and RX pin
-- TX ring occupancy
-- RX ring occupancy
-- TX high-water mark
-- RX high-water mark
-- TX reject count
-- RX overflow count
-- TX DMA active flag
-- RX overrun flag
+- health flags, including a sticky RX-overrun indication
+- whether the UART backend is hardware or PIO
+- the largest observed RX or TX ring occupancy in 16-byte blocks
+- controller TX/RX and CDC TX/RX byte deltas
 
-This makes the ring-buffer behavior measurable from the host.
+The compact report intentionally does not include full ring occupancy or
+cumulative overflow counts. Those remain available inside the firmware for
+diagnostics and can be added to a future report version if needed.
 
-Current HID status implementation does not expose these counters yet.
-That is a planned follow-up, not current behavior.
+The compact HID health byte sets an RX-overrun flag while
+`ring_buffer_pending_overflow()` is nonzero. The flag remains set after recovery
+for the rest of the firmware session, while `ring_buffer_overflow_count()`
+retains the cumulative discarded-byte count. Core 0 services RX overrun recovery
+on every USB poll, including while a CDC interface is closed, so the 32-bit
+producer sequence cannot accumulate an ambiguous full epoch during normal operation.
+
+## Overrun Boundary
+
+The ring detects and reports overwrite, but it cannot make an RX DMA buffer
+lossless after the producer outpaces the consumer. A consumer copy can only be
+best-effort while DMA remains able to overwrite the same circular storage.
+Targets that require every byte must use RTS/CTS or another source-side pacing
+protocol before the RX ring becomes full.
+
+## Self-Check
+
+Firmware startup runs `ring_buffer_self_check()` before UART initialization. It
+verifies full-buffer overwrite recovery, wrapped-span commit rejection, and
+32-bit producer-sequence wrap. The check is intentionally small and does not
+exercise concurrent DMA traffic; hardware flow control remains necessary when
+lossless behavior is required.
 
 ## Failure Modes To Design For
 
@@ -566,7 +601,7 @@ Expected usage:
 
 1. Implement the generic fixed-size ring helper.
 2. Integrate it into the hardware UART backend.
-3. Validate RX overflow handling, TX rejection behavior, and DMA restart logic.
+3. Validate RX overflow handling, retained CDC backpressure, and DMA restart logic.
 4. Add the USB CDC bridge layer that uses the rings directly.
 5. Add HID counters for ring health.
 6. Reuse the same ring model for the 4 PIO UART ports.

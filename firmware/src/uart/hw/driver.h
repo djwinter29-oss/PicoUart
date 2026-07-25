@@ -24,6 +24,9 @@ typedef struct {
     uint32_t baud_rate; /**< Initial baud rate to program into the peripheral. */
     uint32_t tx_pin; /**< GPIO used for TX, or @ref UART_DRIVER_PIN_UNASSIGNED. */
     uint32_t rx_pin; /**< GPIO used for RX, or @ref UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t cts_pin; /**< GPIO used for CTS, or @ref UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t rts_pin; /**< GPIO used for RTS, or @ref UART_DRIVER_PIN_UNASSIGNED. */
+    bool hardware_flow_control; /**< Enable CTS/RTS when both flow-control pins are assigned. */
     uint8_t data_bits; /**< UART data bits, typically 8. */
     uint8_t stop_bits; /**< UART stop bits, typically 1. */
     uart_parity_t parity; /**< UART parity mode. */
@@ -39,6 +42,10 @@ typedef struct {
     int tx_dma_channel; /**< Claimed DMA channel used for UART TX. */
     size_t tx_dma_bytes_in_flight; /**< Bytes currently owned by the active TX DMA transfer. */
     bool tx_active; /**< True while a TX DMA transfer is still in flight. */
+    uint32_t controller_tx_bytes; /**< Bytes completed by the UART TX DMA engine. */
+    uint32_t controller_rx_bytes; /**< Bytes accepted by the UART RX DMA engine. */
+    uint32_t rx_error_count; /**< Hardware UART receive-status events observed since initialization. */
+    uint32_t rx_dma_last_progress; /**< Last current-transfer RX DMA progress used for accounting. */
     ring_buffer_t rx_ring; /**< UART-to-USB receive ring. */
     ring_buffer_t tx_ring; /**< USB-to-UART transmit ring. */
     uint8_t rx_storage[PICO_UART_HW_UART_RX_BUFFER_SIZE] __attribute__((aligned(PICO_UART_HW_UART_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
@@ -65,30 +72,6 @@ void hw_uart_driver_poll(hw_uart_driver_t *driver);
 void hw_uart_driver_deinit(hw_uart_driver_t *driver);
 
 /**
- * @brief Read bytes from one hardware UART backend.
- * @param driver Driver instance to read from.
- * @param data Destination buffer.
- * @param capacity Maximum bytes to read.
- * @return Number of bytes copied into @p data.
- */
-size_t hw_uart_driver_read(hw_uart_driver_t *driver, uint8_t *data, size_t capacity);
-
-/**
- * @brief Return the currently available TX ring space for one hardware UART backend.
- * @param driver Driver instance to inspect.
- * @return Number of bytes that can currently be queued for transmission.
- */
-size_t hw_uart_driver_write_available(const hw_uart_driver_t *driver);
-
-/**
- * @brief Reconfigure the baud rate for one hardware UART backend.
- * @param driver Driver instance to update.
- * @param baud_rate New baud rate.
- * @return `true` when the baud rate was applied, otherwise `false`.
- */
-bool hw_uart_driver_set_baud_rate(hw_uart_driver_t *driver, uint32_t baud_rate);
-
-/**
  * @brief Reconfigure the full UART line format for one hardware UART backend.
  * @param driver Driver instance to update.
  * @param baud_rate New baud rate.
@@ -102,14 +85,5 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
                                     uint8_t data_bits,
                                     uint8_t stop_bits,
                                     uart_parity_t parity);
-
-/**
- * @brief Write bytes to one hardware UART backend.
- * @param driver Driver instance to write to.
- * @param data Source bytes.
- * @param length Number of bytes to write.
- * @return Number of bytes written.
- */
-size_t hw_uart_driver_write(hw_uart_driver_t *driver, const uint8_t *data, size_t length);
 
 #endif

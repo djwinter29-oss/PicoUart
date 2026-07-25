@@ -9,14 +9,58 @@
 
 #include <string.h>
 
-static size_t ring_buffer_min_size(size_t left, size_t right)
+static uint32_t ring_buffer_min(uint32_t left, uint32_t right)
 {
     return (left < right) ? left : right;
 }
 
-bool ring_buffer_size_is_valid(size_t size)
+static bool ring_buffer_size_is_valid(size_t size)
 {
-    return (size != 0u) && ((size & (size - 1u)) == 0u);
+    return (size != 0u) && (size <= UINT32_MAX) && ((size & (size - 1u)) == 0u);
+}
+
+static void ring_buffer_reset(ring_buffer_t *ring)
+{
+    ring->producer = 0u;
+    ring->consumer = 0u;
+    ring->high_watermark = 0u;
+    ring->overflow_count = 0u;
+    ring->producer_reserved_sequence = 0u;
+    ring->producer_reserved_count = 0u;
+    ring->consumer_reserved_sequence = 0u;
+    ring->consumer_reserved_count = 0u;
+}
+
+static uint32_t ring_buffer_available(const ring_buffer_t *ring)
+{
+    uint32_t producer = ring->producer;
+    uint32_t consumer = ring->consumer;
+    uint32_t available;
+
+    __dmb();
+    available = producer - consumer;
+
+    return (available > ring->size) ? ring->size : available;
+}
+
+static uint32_t ring_buffer_pending_overflow_internal(const ring_buffer_t *ring)
+{
+    uint32_t producer = ring->producer;
+    uint32_t consumer = ring->consumer;
+    uint32_t available;
+
+    __dmb();
+    available = producer - consumer;
+    return (available > ring->size) ? (available - ring->size) : 0u;
+}
+
+static void ring_buffer_update_high_watermark(ring_buffer_t *ring)
+{
+    uint32_t available = ring_buffer_available(ring);
+
+    if (available > ring->high_watermark) {
+        ring->high_watermark = available;
+    }
 }
 
 bool ring_buffer_init(ring_buffer_t *ring, uint8_t *storage, size_t size)
@@ -26,22 +70,66 @@ bool ring_buffer_init(ring_buffer_t *ring, uint8_t *storage, size_t size)
     }
 
     ring->storage = storage;
-    ring->size = size;
-    ring->mask = size - 1u;
+    ring->size = (uint32_t)size;
+    ring->mask = (uint32_t)(size - 1u);
     ring_buffer_reset(ring);
     return true;
 }
 
-void ring_buffer_reset(ring_buffer_t *ring)
+bool ring_buffer_self_check(void)
 {
-    if (ring == NULL) {
-        return;
+    uint8_t storage[8];
+    uint8_t input[8] = {0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u};
+    uint8_t output[8];
+    ring_buffer_t ring;
+
+    if (!ring_buffer_init(&ring, storage, sizeof(storage)) ||
+        (ring_buffer_write(&ring, input, sizeof(input)) != sizeof(input))) {
+        return false;
     }
 
-    ring->producer = 0u;
-    ring->consumer = 0u;
-    ring->high_watermark = 0u;
-    ring->overflow_count = 0u;
+    ring_buffer_write_byte_overwrite(&ring, 8u);
+    if (ring_buffer_pending_overflow(&ring) != 1u) {
+        return false;
+    }
+
+    if ((ring_buffer_recover_overflow(&ring) != 1u) ||
+        (ring_buffer_overflow_count(&ring) != 1u) ||
+        (ring_buffer_pending_overflow(&ring) != 0u) ||
+        (ring_buffer_read(&ring, output, sizeof(output)) != sizeof(output))) {
+        return false;
+    }
+
+    for (size_t index = 0u; index < sizeof(output); ++index) {
+        if (output[index] != (uint8_t)(index + 1u)) {
+            return false;
+        }
+    }
+
+    if (!ring_buffer_init(&ring, storage, sizeof(storage)) ||
+        (ring_buffer_write(&ring, input, 6u) != 6u) ||
+        (ring_buffer_read(&ring, output, 4u) != 4u) ||
+        (ring_buffer_write_span(&ring).length != 2u) ||
+        ring_buffer_commit_produced(&ring, 3u)) {
+        return false;
+    }
+
+    if (!ring_buffer_init(&ring, storage, sizeof(storage)) ||
+        (ring_buffer_write(&ring, input, 4u) != 4u) ||
+        (ring_buffer_read_span(&ring).length != 4u) ||
+        ring_buffer_commit_consumed(&ring, 5u) ||
+        !ring_buffer_commit_consumed(&ring, 4u)) {
+        return false;
+    }
+
+    if (!ring_buffer_init(&ring, storage, sizeof(storage))) {
+        return false;
+    }
+
+    ring.producer = UINT32_MAX;
+    ring.consumer = UINT32_MAX;
+    ring_buffer_write_byte_overwrite(&ring, 0x5au);
+    return (ring_buffer_read(&ring, output, 1u) == 1u) && (output[0] == 0x5au);
 }
 
 size_t ring_buffer_occupancy(const ring_buffer_t *ring)
@@ -50,7 +138,7 @@ size_t ring_buffer_occupancy(const ring_buffer_t *ring)
         return 0u;
     }
 
-    return ring->producer - ring->consumer;
+    return ring_buffer_available(ring);
 }
 
 size_t ring_buffer_free_space(const ring_buffer_t *ring)
@@ -59,115 +147,100 @@ size_t ring_buffer_free_space(const ring_buffer_t *ring)
         return 0u;
     }
 
-    return ring->size - ring_buffer_occupancy(ring);
+    return (size_t)(ring->size - ring_buffer_available(ring));
 }
 
-ring_buffer_span_t ring_buffer_read_span(const ring_buffer_t *ring)
+ring_buffer_span_t ring_buffer_read_span(ring_buffer_t *ring)
 {
     ring_buffer_span_t span = {0};
-    size_t occupancy;
-    size_t offset;
-    size_t contiguous;
+    uint32_t occupancy;
+    uint32_t offset;
+    uint32_t contiguous;
 
     if ((ring == NULL) || (ring->storage == NULL)) {
         return span;
     }
 
-    occupancy = ring_buffer_occupancy(ring);
+    occupancy = ring_buffer_available(ring);
     if (occupancy == 0u) {
+        ring->consumer_reserved_count = 0u;
         return span;
     }
 
-    __dmb();
     offset = ring->consumer & ring->mask;
     contiguous = ring->size - offset;
     span.data = ring->storage + offset;
-    span.length = ring_buffer_min_size(occupancy, contiguous);
+    span.length = (size_t)ring_buffer_min(occupancy, contiguous);
+    ring->consumer_reserved_sequence = ring->consumer;
+    ring->consumer_reserved_count = (uint32_t)span.length;
     return span;
 }
 
 ring_buffer_span_t ring_buffer_write_span(ring_buffer_t *ring)
 {
     ring_buffer_span_t span = {0};
-    size_t free_space;
-    size_t offset;
-    size_t contiguous;
+    uint32_t free_space;
+    uint32_t offset;
+    uint32_t contiguous;
 
     if ((ring == NULL) || (ring->storage == NULL)) {
         return span;
     }
 
-    free_space = ring_buffer_free_space(ring);
+    free_space = ring->size - ring_buffer_available(ring);
     if (free_space == 0u) {
+        ring->producer_reserved_count = 0u;
         return span;
     }
 
-    __dmb();
     offset = ring->producer & ring->mask;
     contiguous = ring->size - offset;
     span.data = ring->storage + offset;
-    span.length = ring_buffer_min_size(free_space, contiguous);
+    span.length = (size_t)ring_buffer_min(free_space, contiguous);
+    ring->producer_reserved_sequence = ring->producer;
+    ring->producer_reserved_count = (uint32_t)span.length;
     return span;
 }
 
 bool ring_buffer_commit_produced(ring_buffer_t *ring, size_t count)
 {
-    size_t occupancy;
-
-    if ((ring == NULL) || (count > ring_buffer_free_space(ring))) {
+    if ((ring == NULL) ||
+        (ring->producer != ring->producer_reserved_sequence) ||
+        (count > ring->producer_reserved_count)) {
         return false;
     }
 
     __dmb();
-    ring->producer += count;
-    occupancy = ring_buffer_occupancy(ring);
-    if (occupancy > ring->high_watermark) {
-        ring->high_watermark = occupancy;
-    }
-
+    ring->producer += (uint32_t)count;
+    ring->producer_reserved_count = 0u;
+    ring_buffer_update_high_watermark(ring);
     return true;
 }
 
 bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count)
 {
-    if ((ring == NULL) || (count > ring_buffer_occupancy(ring))) {
+    if ((ring == NULL) ||
+        (ring->consumer != ring->consumer_reserved_sequence) ||
+        (count > ring->consumer_reserved_count)) {
         return false;
     }
 
     __dmb();
-    ring->consumer += count;
+    ring->consumer += (uint32_t)count;
+    ring->consumer_reserved_count = 0u;
     return true;
 }
 
-void ring_buffer_publish_producer(ring_buffer_t *ring, size_t producer, bool preserve_newest)
+void ring_buffer_produce_external(ring_buffer_t *ring, uint32_t count)
 {
-    size_t delta;
-    size_t free_space;
-    size_t overflow;
-
-    if ((ring == NULL) || (producer <= ring->producer)) {
+    if ((ring == NULL) || (count == 0u)) {
         return;
     }
 
-    delta = producer - ring->producer;
-    free_space = ring_buffer_free_space(ring);
-    if (delta <= free_space) {
-        (void)ring_buffer_commit_produced(ring, delta);
-        return;
-    }
-
-    overflow = delta - free_space;
-    ring->overflow_count += overflow;
-
-    if (preserve_newest) {
-        ring->consumer += overflow;
-        ring->producer = producer;
-        ring->high_watermark = ring->size;
-        return;
-    }
-
-    ring->producer += free_space;
-    ring->high_watermark = ring->size;
+    __dmb();
+    ring->producer += count;
+    ring->producer_reserved_count = 0u;
+    ring_buffer_update_high_watermark(ring);
 }
 
 size_t ring_buffer_write(ring_buffer_t *ring, const uint8_t *data, size_t length)
@@ -186,47 +259,28 @@ size_t ring_buffer_write(ring_buffer_t *ring, const uint8_t *data, size_t length
             break;
         }
 
-        chunk = ring_buffer_min_size(length - total_written, span.length);
+        chunk = (length - total_written < span.length) ? (length - total_written) : span.length;
         memcpy(span.data, data + total_written, chunk);
         if (!ring_buffer_commit_produced(ring, chunk)) {
             break;
         }
-
         total_written += chunk;
-    }
-
-    if (total_written < length) {
-        ring->overflow_count += (length - total_written);
     }
 
     return total_written;
 }
 
-void ring_buffer_write_byte_preserve_newest(ring_buffer_t *ring, uint8_t byte)
+void ring_buffer_write_byte_overwrite(ring_buffer_t *ring, uint8_t byte)
 {
-    size_t occupancy;
-
     if ((ring == NULL) || (ring->storage == NULL)) {
         return;
     }
 
-    occupancy = ring_buffer_occupancy(ring);
     ring->storage[ring->producer & ring->mask] = byte;
     __dmb();
-
-    if (occupancy == ring->size) {
-        ring->consumer += 1u;
-        ring->overflow_count += 1u;
-        ring->producer += 1u;
-        ring->high_watermark = ring->size;
-        return;
-    }
-
     ring->producer += 1u;
-    occupancy += 1u;
-    if (occupancy > ring->high_watermark) {
-        ring->high_watermark = occupancy;
-    }
+    ring->producer_reserved_count = 0u;
+    ring_buffer_update_high_watermark(ring);
 }
 
 size_t ring_buffer_read(ring_buffer_t *ring, uint8_t *data, size_t length)
@@ -245,12 +299,11 @@ size_t ring_buffer_read(ring_buffer_t *ring, uint8_t *data, size_t length)
             break;
         }
 
-        chunk = ring_buffer_min_size(length - total_read, span.length);
+        chunk = (length - total_read < span.length) ? (length - total_read) : span.length;
         memcpy(data + total_read, span.data, chunk);
         if (!ring_buffer_commit_consumed(ring, chunk)) {
             break;
         }
-
         total_read += chunk;
     }
 
@@ -273,4 +326,32 @@ size_t ring_buffer_overflow_count(const ring_buffer_t *ring)
     }
 
     return ring->overflow_count;
+}
+
+size_t ring_buffer_pending_overflow(const ring_buffer_t *ring)
+{
+    if (ring == NULL) {
+        return 0u;
+    }
+
+    return (size_t)ring_buffer_pending_overflow_internal(ring);
+}
+
+size_t ring_buffer_recover_overflow(ring_buffer_t *ring)
+{
+    uint32_t overwritten;
+
+    if (ring == NULL) {
+        return 0u;
+    }
+
+    overwritten = ring_buffer_pending_overflow_internal(ring);
+    if (overwritten != 0u) {
+        __dmb();
+        ring->consumer += overwritten;
+        ring->overflow_count += overwritten;
+        ring->consumer_reserved_count = 0u;
+    }
+
+    return (size_t)overwritten;
 }

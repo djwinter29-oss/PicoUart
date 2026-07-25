@@ -20,16 +20,20 @@
 #define PICO_UART_USB_HID_ENDPOINT_BUFFER_SIZE 64u
 
 /** @brief Hardware UART receive ring capacity in bytes. Must be a power of two. */
-#define PICO_UART_HW_UART_RX_BUFFER_SIZE 1024u
+#define PICO_UART_HW_UART_RX_BUFFER_SIZE 4096u
 /** @brief Hardware UART transmit ring capacity in bytes. Must be a power of two. */
-#define PICO_UART_HW_UART_TX_BUFFER_SIZE 1024u
+#define PICO_UART_HW_UART_TX_BUFFER_SIZE 4096u
 /** @brief Hardware UART RX DMA ring selector bits for the receive-ring capacity. */
-#define PICO_UART_HW_UART_RX_DMA_RING_BITS 10u
+#define PICO_UART_HW_UART_RX_DMA_RING_BITS 12u
+
+_Static_assert(PICO_UART_HW_UART_RX_BUFFER_SIZE ==
+				   (1u << PICO_UART_HW_UART_RX_DMA_RING_BITS),
+			   "Hardware UART RX DMA ring bits must match its buffer size");
 
 /** @brief PIO UART receive ring capacity in bytes. Must be a power of two. */
-#define PICO_UART_PIO_UART_RX_BUFFER_SIZE 1024u
+#define PICO_UART_PIO_UART_RX_BUFFER_SIZE 4096u
 /** @brief PIO UART transmit ring capacity in bytes. Must be a power of two. */
-#define PICO_UART_PIO_UART_TX_BUFFER_SIZE 1024u
+#define PICO_UART_PIO_UART_TX_BUFFER_SIZE 4096u
 /** @brief PIO UART TX backlog in bytes that starts DMA transmission. */
 #define PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD 64u
 

@@ -13,12 +13,12 @@ Each CDC interface maps to one UART channel.
 The current firmware boots core 1 as a dedicated UART worker, then core 0 initializes
 the TinyUSB device stack and the HID monitor. At runtime:
 
-- core 1 advances UART backends and services UART-facing interrupts
+- core 1 exclusively initializes, polls, and reconfigures UART controllers
 - core 0 services TinyUSB tasks
 - core 0 moves CDC OUT traffic into shared per-port TX rings
 - core 0 moves shared per-port RX ring data back to the matching CDC IN endpoint
 - core 0 emits a periodic HID status report when the host is ready and serves
-	HID feature reads for PIO statistics and board temperature
+	HID feature reads for board temperature
 
 This means the codebase is already at the multi-port bridge stage, not the earlier local-echo scaffold.
 
@@ -43,8 +43,9 @@ Host application
 
 Each port should work independently so traffic on one UART does not block the others more than necessary.
 Hardware UART ports use DMA-backed RX and TX rings. PIO UART ports use per-port software rings with
-IRQ-driven RX on core 1 and a hybrid TX path on core 1 that fills the joined TX FIFO for short queues,
-then lazily claims DMA when deeper backlog makes that path cheaper.
+core-1 RX polling and a hybrid core-1 TX path that fills the joined TX FIFO for short queues,
+then lazily claims DMA when deeper backlog makes that path cheaper. Each ring has one producer and one
+consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produces RX.
 
 ## Main Blocks
 
@@ -55,7 +56,7 @@ then lazily claims DMA when deeper backlog makes that path cheaper.
 - 2 hardware UART backends
 - 4 PIO UART backends
 - Board-specific GPIO configuration
-- CDC line-state hooks remain placeholders; HID board controls are restricted
+- CDC DTR state opens the matching bridge; HID board controls are restricted
 	to LED toggle and reset
 
 ## Design Notes
@@ -66,12 +67,14 @@ then lazily claims DMA when deeper backlog makes that path cheaper.
 - Use separate RX and TX ring buffers per logical port.
 - Use DMA for hardware UART RX and TX where the silicon already supports it well.
 - Keep TinyUSB ownership in one execution context by polling it from `main`.
-- Reserve RTS and CTS in the board-level design, but stage runtime support after TX/RX bridging.
-- Keep the current UART transport intentionally narrow: 8N1 only, no parity handling, and no advanced framing protocol support.
+- Keep UART-controller ownership on core 1; cross-core traffic uses only the
+	per-port rings and the control mailbox.
+- Reserve RTS and CTS for hardware UART ports; enable them in the board configuration only when the connected peer supports flow control.
+- PIO UART ports support 8N1; hardware UART ports additionally apply valid CDC data-bit,
+	stop-bit, and parity settings.
 
 ## Open Items
 
-- RTS and CTS runtime behavior for both hardware UART and PIO UART ports
-- Whether non-baud line-coding fields should be ignored permanently or surfaced as explicit unsupported settings
-- Whether additional HID counters such as ring overflow and high-water marks
-	should be exposed to the host
+- RTS and CTS runtime behavior for PIO UART ports
+- Whether to replace PIO RX polling with IRQ or DMA service at sustained high baud rates
+- Whether ring-overflow counters should be added to the compact HID report
