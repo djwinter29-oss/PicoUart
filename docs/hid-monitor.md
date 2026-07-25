@@ -17,7 +17,7 @@ command feature reports. The device is identified as USB
 | Operation | USB interface | Current behavior |
 | --- | --- | --- |
 | UART data | CDC0 through CDC5 | Transfers bytes to and from the matching UART. |
-| Baud, data bits, parity, stop bits | CDC line-coding request | Parsed from `SET_LINE_CODING` and queued to the matching UART backend. |
+| Baud, data bits, parity, stop bits | CDC line-coding request | Parsed from `SET_LINE_CODING` and queued to the matching UART backend. TinyUSB accepts the USB transfer before firmware validation; rejected or unsupported requests set health bit 2 (`control_error`) instead of stalling the CDC control pipe. PIO ports accept 8N1 only. |
 | Health, traffic, ring peak, temperature, and firmware version | HID | Read-only monitoring data. |
 | Toggle default board LED | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one. |
 | Reset board | HID command feature report | Immediately reboots through the watchdog. |
@@ -73,12 +73,28 @@ at least that large. The ring peak is cumulative from boot and saturates at
 | ---: | --- |
 | 0 | UART backend is initialized and ready. |
 | 1 | Backend initialization failed. |
-| 2 | The most recent control request failed. |
+| 2 | The most recent control request failed (invalid or unsupported CDC line coding, deferred-apply timeout, or backend reject). USB `SET_LINE_CODING` may still have completed successfully. |
 | 3 | A line-coding control request is pending. |
 | 4 | Host has opened the matching CDC interface (DTR asserted). |
 | 5 | The matching UART uses PIO; clear for hardware UART. |
 | 6 | UART RX data has been overwritten since boot; drain the CDC interface or apply flow control. |
-| 7 | The UART has observed a receive-status error since boot. |
+| 7 | The UART has observed a receive-status / framing error since boot (hardware UART RSR, or PIO stop-bit framing fail). |
+
+## Line-coding rejects
+
+Hosts typically treat CDC `SET_LINE_CODING` as fire-and-forget. PicoUart cannot
+STALL that transfer after TinyUSB has already accepted it, so firmware surfaces
+rejects through HID:
+
+1. Watch health bit 3 (`control_pending`) while the worker applies a change.
+2. Watch health bit 2 (`control_error`) after a parse failure, PIO non-8N1 reject,
+   or deferred-apply timeout (1 s).
+3. Use `python3 host/python/src/pico_uart_hid.py monitor` — the tool decodes those
+   bits into `control_pending` / `control_error` labels.
+
+PIO UART ports remain 8N1-only. Hardware UART0/UART1 accept supported
+baud/data/parity/stop combinations within firmware bounds (50–3 000 000 baud,
+5–8 data bits, 1/2 stop, none/odd/even parity).
 
 ## Report ID 3: Board Status
 

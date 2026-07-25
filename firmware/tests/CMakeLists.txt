@@ -27,3 +27,13 @@ target_include_directories(test_ring_buffer PRIVATE
 )
 target_link_libraries(test_ring_buffer PRIVATE unity)
 add_test(NAME ring_buffer COMMAND test_ring_buffer)
+
+add_executable(test_line_coding
+    test_line_coding.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+)
+target_include_directories(test_line_coding PRIVATE
+    ${FIRMWARE_ROOT}/src
+)
+target_link_libraries(test_line_coding PRIVATE unity)
+add_test(NAME line_coding COMMAND test_line_coding)

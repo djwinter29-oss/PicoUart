@@ -175,6 +175,16 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
                                    const uart_driver_line_coding_t *line_coding);
 
 /**
+ * @brief Mark one logical UART port as having failed its latest control request.
+ * @param port_id Logical port identifier.
+ *
+ * Used when USB CDC accepts a `SET_LINE_CODING` transfer that the firmware
+ * cannot parse or apply, so hosts can observe @ref UART_DRIVER_PORT_STATUS_CONTROL_ERROR
+ * through HID even though the USB control transfer itself succeeded.
+ */
+void uart_driver_report_control_error(uart_port_id_t port_id);
+
+/**
  * @brief Return the status flags for one logical UART port.
  * @param port_id Logical port identifier.
  * @return Bitwise OR of @ref UART_DRIVER_PORT_STATUS_* flags.

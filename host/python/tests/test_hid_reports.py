@@ -31,6 +31,9 @@ def test_parse_status_channels(hid_module):
     assert channel0["ring_high_watermark"] == 32
     assert channel0["controller_tx_bytes"] == 10
     assert channel0["cdc_rx_bytes"] == 40
+    assert hid_module.decode_health(0x31) == ["ready", "cdc_open", "pio"]
+    assert "control_error" in hid_module.decode_health(0x04)
+    assert "control_pending" in hid_module.decode_health(0x08)
 
 
 def test_rejects_bad_signature(hid_module):

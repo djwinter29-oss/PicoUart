@@ -11,6 +11,10 @@ bitloop:
 .wrap
 
 .program pio_uart_rx
+; 8N1 RX with stop-bit framing check.
+; On a framing error (stop bit low): raise irq 0 rel for this SM, discard the
+; partial ISR, wait for the line to return idle-high, then hunt for the next
+; start bit. Valid frames are pushed as usual.
 
 .wrap_target
 start:
@@ -19,5 +23,12 @@ start:
 bitloop:
     in pins, 1
     jmp x-- bitloop [6]
+    nop [7]                 ; delay from last data-bit centre to stop-bit centre
+    jmp pin good_stop
+    irq set 0 rel
+    mov isr, null
+    wait 1 pin 0
+    jmp start
+good_stop:
     push block
 .wrap

@@ -111,13 +111,15 @@ worker loop responsive while the port drains toward a safe reconfiguration point
 - 8N1 only
 - no parity handling
 - no RTS/CTS runtime behavior (pins reserved; hardware UART0/UART1 own RTS/CTS)
-- no framing or stop-bit validation
 - TX DMA thresholds are configurable per port but still use static defaults rather than adaptive tuning
 - TX fairness across the 4 PIO ports is improved by worker-loop round-robin polling, but still lacks an explicit scheduler
 - per-launch DMA size is a fixed bound today, not adaptive to live peer pressure
 
+PIO RX validates the stop bit after each 8-bit frame. A low stop bit raises a
+relative PIO IRQ, discards the partial ISR, waits for idle-high, and increments
+the port's sticky `rx_error_count` (visible as HID health bit 7).
+
 ## Follow-Up Options
 
 1. Tune DMA threshold and max DMA launch size from measured worker-core load and end-to-end latency.
-2. Upgrade the PIO RX program if line-noise tolerance becomes a priority.
-3. Add an explicit worker-side TX scheduler if multiple PIO ports sustain high TX pressure at the same time.
+2. Add an explicit worker-side TX scheduler if multiple PIO ports sustain high TX pressure at the same time.

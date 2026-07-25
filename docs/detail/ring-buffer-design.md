@@ -38,18 +38,24 @@ Implemented now:
 
 - generic fixed-size ring-buffer helper under `firmware/src/uart/ring_buffer`
 - hardware UART backend integration for both RX and TX ring usage
-- RX DMA producer publishing into the RX ring
+- RX DMA producer publishing into the RX ring, with IRQ-driven transfer-count re-arm
 - TX DMA draining contiguous spans from the TX ring
+- hardware UART0/UART1 RTS/CTS flow control (CTS pull-down when peer omits CTS)
+- full hardware UART line-coding (baud/data/parity/stop) via deferred worker apply
 - PIO UART backend integration with the ring helper and hybrid TX drain policy
+- PIO 8N1 line-coding (baud changes deferred; non-8N1 rejected with `CONTROL_ERROR`)
+- PIO RX stop-bit framing validation with sticky RX-error health
 - USB CDC bridge layer using the TX and RX rings end to end
 - multicore split where core 0 owns TinyUSB and shared rings while core 1 owns UART hardware service
+- HID health bits for ready/init-failed/control-error/control-pending/CDC-open/PIO/RX-overrun/RX-error
+- HID ring high-water marks (16-byte blocks)
 
 Not implemented yet:
 
-- HID reporting of ring overflow counters
-- flow-control state in the bridge layer
-- line-coding updates beyond baud rate
-- parity handling and advanced framing features
+- HID reporting of full ring overflow **counts** (sticky overrun bit is present)
+- PIO RTS/CTS runtime flow control (pins reserved)
+- Host CDC RTS acting as UART flow control
+- Clearable / resettable overrun and framing-error counters
 
 ## Requirements
 
@@ -272,7 +278,7 @@ The current transport deliberately targets a narrow UART subset:
 - 8 data bits
 - no parity
 - 1 stop bit
-- no PIO framing or stop-bit validation
+- PIO RX stop-bit framing validation (sticky RX-error count / HID bit 7)
 
 This keeps the PIO and bridge logic compact while the multi-port data path is stabilized first.
 

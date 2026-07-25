@@ -7,9 +7,19 @@
 
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
+#include "hardware/irq.h"
 #include "hardware/regs/uart.h"
 #include "hardware/structs/dma.h"
+#include "hardware/sync.h"
 #include "pico/stdlib.h"
+
+/** @brief Shared DMA IRQ used for HW UART RX transfer-count re-arm. */
+#define HW_UART_DRIVER_RX_DMA_IRQ_INDEX 0
+
+/** @brief Drivers that own an RX DMA channel armed on @ref HW_UART_DRIVER_RX_DMA_IRQ_INDEX. */
+static hw_uart_driver_t *hw_uart_driver_rx_irq_owners[NUM_DMA_CHANNELS];
+/** @brief True after the shared DMA IRQ0 handler has been installed once. */
+static bool hw_uart_driver_rx_dma_irq_installed;
 
 static void hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
 {
@@ -24,6 +34,36 @@ static void hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
     uart_set_fifo_enabled(driver->config.instance, true);
 }
 
+static void hw_uart_driver_rearm_rx_dma(hw_uart_driver_t *driver)
+{
+    /*
+     * Keep WRITE_ADDR / ring state and only reload TRANS_COUNT. This is the
+     * tight path that closes the software re-arm gap after the 32-bit transfer
+     * counter exhausts (~4 GiB). Peers that ignore RTS can still overrun the
+     * UART FIFO if re-arm is delayed into the poll loop; the DMA IRQ below
+     * restarts before the next worker sweep.
+     */
+    dma_channel_set_trans_count((uint)driver->rx_dma_channel, 0xffffffffu, true);
+}
+
+static void __isr hw_uart_driver_rx_dma_irq_handler(void)
+{
+    for (uint channel = 0u; channel < NUM_DMA_CHANNELS; ++channel) {
+        hw_uart_driver_t *driver = hw_uart_driver_rx_irq_owners[channel];
+
+        if (driver == NULL) {
+            continue;
+        }
+
+        if (!dma_irqn_get_channel_status(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel)) {
+            continue;
+        }
+
+        dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
+        hw_uart_driver_rearm_rx_dma(driver);
+    }
+}
+
 static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
 {
     dma_channel_config rx_dma_config;
@@ -34,6 +74,7 @@ static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
     channel_config_set_write_increment(&rx_dma_config, true);
     channel_config_set_dreq(&rx_dma_config, uart_get_dreq(driver->config.instance, false));
     channel_config_set_ring(&rx_dma_config, true, PICO_UART_HW_UART_RX_DMA_RING_BITS);
+    channel_config_set_irq_quiet(&rx_dma_config, false);
     driver->rx_dma_last_progress = 0u;
     dma_channel_configure((uint)driver->rx_dma_channel,
                           &rx_dma_config,
@@ -41,6 +82,18 @@ static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
                           &uart_get_hw(driver->config.instance)->dr,
                           0xffffffffu,
                           true);
+
+    hw_uart_driver_rx_irq_owners[driver->rx_dma_channel] = driver;
+    dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
+                                 (uint)driver->rx_dma_channel,
+                                 true);
+    if (!hw_uart_driver_rx_dma_irq_installed) {
+        irq_add_shared_handler(DMA_IRQ_0,
+                               hw_uart_driver_rx_dma_irq_handler,
+                               PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
+        irq_set_enabled(DMA_IRQ_0, true);
+        hw_uart_driver_rx_dma_irq_installed = true;
+    }
 }
 
 static bool hw_uart_driver_line_format_supported(uint32_t baud_rate,
@@ -68,6 +121,10 @@ static bool hw_uart_driver_line_format_supported(uint32_t baud_rate,
 static void hw_uart_driver_release_dma(hw_uart_driver_t *driver)
 {
     if (driver->rx_dma_channel >= 0) {
+        dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
+                                     (uint)driver->rx_dma_channel,
+                                     false);
+        hw_uart_driver_rx_irq_owners[driver->rx_dma_channel] = NULL;
         dma_channel_abort((uint)driver->rx_dma_channel);
         dma_channel_unclaim((uint)driver->rx_dma_channel);
         driver->rx_dma_channel = -1;
@@ -143,7 +200,16 @@ static void hw_uart_driver_publish_rx(hw_uart_driver_t *driver)
     }
 
     progress = hw_uart_driver_rx_progress(driver);
-    produced = progress - driver->rx_dma_last_progress;
+    /*
+     * After an IRQ (or poll) re-arm, progress drops from ~0xffffffff back to 0.
+     * Treat that as a wrap so bytes between last_progress and the end of the
+     * previous transfer are still published.
+     */
+    if (progress < driver->rx_dma_last_progress) {
+        produced = (0xffffffffu - driver->rx_dma_last_progress) + progress;
+    } else {
+        produced = progress - driver->rx_dma_last_progress;
+    }
     driver->controller_rx_bytes += produced;
     driver->rx_dma_last_progress = progress;
     ring_buffer_produce_external(&driver->rx_ring, produced);
@@ -172,10 +238,16 @@ void hw_uart_driver_poll(hw_uart_driver_t *driver)
 
     hw_uart_driver_publish_rx(driver);
     hw_uart_driver_record_rx_errors(driver);
+    /* Safety net if the DMA IRQ was masked or delayed past transfer completion. */
     if (!dma_channel_is_busy((uint)driver->rx_dma_channel) &&
         (dma_hw->ch[driver->rx_dma_channel].transfer_count == 0u)) {
-        // ponytail: a peer that ignores optional RTS can overrun the UART FIFO during this re-arm; chained DMA is the upgrade path.
-        hw_uart_driver_start_rx_dma(driver);
+        uint32_t interrupt_status = save_and_disable_interrupts();
+
+        if (!dma_channel_is_busy((uint)driver->rx_dma_channel) &&
+            (dma_hw->ch[driver->rx_dma_channel].transfer_count == 0u)) {
+            hw_uart_driver_rearm_rx_dma(driver);
+        }
+        restore_interrupts(interrupt_status);
     }
     hw_uart_driver_poll_tx(driver);
     if (!driver->tx_active) {

@@ -15,10 +15,13 @@ Do **not** ship production devices with the placeholder IDs:
 
 ### Before a public or production release
 
+Follow the USB-identity and recorded-HIL gates in
+[`docs/releasing.md`](docs/releasing.md):
+
 1. Obtain an allocated VID/PID (pid.codes or a commercial USB-IF vendor ID).
 2. Update `PICO_UART_USB_VID` / `PICO_UART_USB_PID` in `usb_identity.h`.
 3. Keep [`host/python/src/pico_uart_hid.py`](host/python/src/pico_uart_hid.py) in sync.
-4. Note the identity change in release notes.
+4. Update the release workflow identity assertion and note the change in release notes.
 
 ## HID board controls
 

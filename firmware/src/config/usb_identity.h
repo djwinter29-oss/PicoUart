@@ -15,6 +15,7 @@
  * 2. Update @ref PICO_UART_USB_VID and @ref PICO_UART_USB_PID here.
  * 3. Keep @ref host/python/src/pico_uart_hid.py in sync (same numeric values).
  * 4. Call out the identity change in release notes as a breaking USB change.
+ * 5. See docs/releasing.md for the full non-lab release checklist (identity + HIL).
  */
 
 #ifndef PICO_UART_USB_IDENTITY_H

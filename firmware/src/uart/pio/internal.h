@@ -24,6 +24,7 @@ struct pio_uart_driver {
     size_t tx_polled_bytes; /**< Bytes sent through the direct FIFO polling path. */
     size_t tx_dma_bytes; /**< Bytes sent through the TX DMA path. */
     uint32_t controller_rx_bytes; /**< Valid received bytes removed from the PIO RX FIFO. */
+    uint32_t rx_error_count; /**< Framing (stop-bit) errors observed since initialization. */
     ring_buffer_t rx_ring; /**< PIO RX producer ring shared with the USB bridge. */
     ring_buffer_t tx_ring; /**< USB-core TX producer ring drained by core-1 PIO polling. */
     uint8_t rx_storage[PICO_UART_PIO_UART_RX_BUFFER_SIZE]; /**< RX ring storage. */

@@ -107,10 +107,33 @@ def parse_status(payload: bytes) -> dict[str, Any]:
     }
 
 
+def decode_health(health: int) -> list[str]:
+    """Decode compact HID channel health bits into short labels."""
+    labels = []
+    if health & (1 << 0):
+        labels.append("ready")
+    if health & (1 << 1):
+        labels.append("init_failed")
+    if health & (1 << 2):
+        labels.append("control_error")
+    if health & (1 << 3):
+        labels.append("control_pending")
+    if health & (1 << 4):
+        labels.append("cdc_open")
+    if health & (1 << 5):
+        labels.append("pio")
+    if health & (1 << 6):
+        labels.append("rx_overrun")
+    if health & (1 << 7):
+        labels.append("rx_error")
+    return labels
+
+
 def print_status(status: dict[str, Any]) -> None:
     """Print a concise one-line status report for repeated polling."""
     channels = " ".join(
-        f"cdc{channel['id']} health=0x{channel['health']:02x} "
+        f"cdc{channel['id']} health=0x{channel['health']:02x}"
+        f"[{','.join(decode_health(channel['health'])) or '-'}] "
         f"uart_tx/rx={channel['controller_tx_bytes']}/{channel['controller_rx_bytes']} "
         f"cdc_tx/rx={channel['cdc_tx_bytes']}/{channel['cdc_rx_bytes']} "
         f"ring_peak={channel['ring_high_watermark']}"

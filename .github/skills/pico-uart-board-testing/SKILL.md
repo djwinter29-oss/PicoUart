@@ -17,7 +17,10 @@ physical test links are:
 
 The UART0 Debug Probe link requires crossed TX/RX wiring, a shared ground, and
 3.3 V logic. The on-board PIO test wiring uses only the listed Pico GPIOs.
-RTS and CTS are not implemented by the current firmware.
+Hardware UART0/UART1 enable RTS/CTS in firmware (CTS is pulled down so TX still
+flows when the peer omits CTS). Cross-connect RTS/CTS when validating flow
+control against a peer that drives CTS. PIO UART RTS/CTS pins remain reserved
+with no runtime flow-control behavior. Host CDC RTS is ignored.
 
 ## Procedure
 
@@ -105,6 +108,17 @@ RTS and CTS are not implemented by the current firmware.
    for every stream at 9600, 19200, 38400, 57600, 115200, 230400, 460800,
    921600, and 1000000 baud. Use `--rates` and `--duration` for a focused
    longer run.
+
+8. **HW UART RX stress with an RTS-ignoring peer** (release-candidate / HIL
+   recording). Hardware UART RX DMA re-arms via DMA IRQ when the 32-bit transfer
+   counter exhausts; the worker poll path is only a safety net. With RTS/CTS
+   enabled, a well-behaved peer should not overrun. To stress the gap that remains
+   when a peer **ignores RTS**, run a sustained high-baud UART0 (or UART1) flood
+   from a peer that does not honor RTS, while draining CDC slowly or not at all
+   long enough to exercise backpressure, then confirm HID health bit 6
+   (`rx_overrun`) / bit 7 (`rx_error`) behavior matches expectations. Capture the
+   command lines, baud, duration, and `PASS`/`FAIL` lines as a recorded HIL
+   artifact for the release checklist in `docs/releasing.md`.
 
 ## Diagnose Failures
 
