@@ -49,12 +49,9 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
 fi
 
 if [ "$SKIP_HOST" -eq 0 ]; then
-    echo "Running host HID golden tests..."
-    python3 "$REPO_ROOT/host/python/tests/test_hid_reports.py"
+    GENERATOR="$GENERATOR" "$SCRIPT_DIR/test-host.sh"
 fi
 
 if [ -f "$BUILD_DIR_PATH/CTestTestfile.cmake" ]; then
     ctest --test-dir "$BUILD_DIR_PATH" --output-on-failure
-else
-    echo "No firmware CMake/CTest targets are configured yet; host golden tests are the default automated suite."
 fi

@@ -58,6 +58,9 @@ dkms.conf
 build/
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.venv/
+venv/
 
 # Project-local Pico SDK downloaded by tools/linux/setup-sdk-env.sh
 .pico-sdk/

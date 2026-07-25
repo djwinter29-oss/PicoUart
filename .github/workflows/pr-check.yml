@@ -92,7 +92,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install host dependencies
-        run: python3 -m pip install -r host/python/requirements.txt
+        run: python3 -m pip install -r host/python/requirements-dev.txt
 
       - name: Syntax-check Python tools
         run: |
@@ -101,8 +101,8 @@ jobs:
             tools/linux/serial_bridge_test.py \
             tools/linux/serial_stress_benchmark.py
 
-      - name: Run host HID golden tests
-        run: python3 host/python/tests/test_hid_reports.py
+      - name: Run host unit tests (C Unity + Python pytest)
+        run: tools/linux/test-host.sh
 
       - name: Import hidapi and exercise HID CLI help
         run: |

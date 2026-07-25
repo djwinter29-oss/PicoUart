@@ -10,6 +10,15 @@ owner of UART line coding.
 python3 -m pip install -r host/python/requirements.txt
 ```
 
+For host automated tests (pytest):
+
+```sh
+python3 -m pip install -r host/python/requirements-dev.txt
+python3 -m pytest
+```
+
+See [`tests/README.md`](../../tests/README.md) for the full host C + Python suite.
+
 Linux users may also need a udev rule that permits non-root access to vendor HID
 devices. Run the tool with the privileges required by the local HID device node.
 

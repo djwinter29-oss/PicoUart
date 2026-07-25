@@ -39,7 +39,7 @@ tools/linux/build.sh --board pico2
 ```
 
 Pull requests run `.github/workflows/pr-check.yml` (firmware build for `pico` /
-`pico2` plus host-tool syntax checks). Pushing a tag matching `v*` (for example
+`pico2`, host C Unity tests, Python pytest, plus host-tool syntax checks). Pushing a tag matching `v*` (for example
 `v1.2.3`) runs `.github/workflows/release.yml`, which builds both boards with
 version `1.2.3` stamped into binary info and HID, sets USB `bcdDevice` to
 major.minor BCD (`0x0102` for `1.2.3`), and publishes a GitHub Release with
@@ -47,6 +47,12 @@ board-qualified artifacts (`pico_uart-v1.2.3-pico.uf2`,
 `pico_uart-v1.2.3-pico2.uf2`, and the matching `.elf` / `.bin` / `.hex` files).
 After flashing, `python3 host/python/pico_uart_hid.py version` should print
 `1.2.3`.
+
+Host-side tests (no board required) live under [`tests/`](tests/README.md):
+
+```sh
+tools/linux/test-host.sh
+```
 
 ## Repository Layout
 

@@ -1,0 +1,6 @@
+/*
+ * Unity - ThrownTheSwitch unit test framework (vendored for host tests).
+ * Upstream: https://github.com/ThrowTheSwitch/Unity
+ * Version: v2.6.0
+ * License: MIT (see unity.h header)
+ */
