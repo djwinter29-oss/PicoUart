@@ -5,6 +5,7 @@ BUILD_DIR="${BUILD_DIR:-build/firmware}"
 GENERATOR="${GENERATOR:-}"
 PICO_SDK_PATH_VALUE=""
 SKIP_BUILD=0
+SKIP_HOST=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -22,6 +23,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --skip-build)
             SKIP_BUILD=1
+            shift
+            ;;
+        --skip-host)
+            SKIP_HOST=1
             shift
             ;;
         *)
@@ -43,8 +48,13 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
     BUILD_DIR="$BUILD_DIR" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" "$SCRIPT_DIR/build.sh"
 fi
 
+if [ "$SKIP_HOST" -eq 0 ]; then
+    echo "Running host HID golden tests..."
+    python3 "$REPO_ROOT/host/python/tests/test_hid_reports.py"
+fi
+
 if [ -f "$BUILD_DIR_PATH/CTestTestfile.cmake" ]; then
     ctest --test-dir "$BUILD_DIR_PATH" --output-on-failure
 else
-    echo "No CMake tests are configured for this repository."
+    echo "No firmware CMake/CTest targets are configured yet; host golden tests are the default automated suite."
 fi

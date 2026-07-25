@@ -101,6 +101,9 @@ jobs:
             tools/linux/serial_bridge_test.py \
             tools/linux/serial_stress_benchmark.py
 
+      - name: Run host HID golden tests
+        run: python3 host/python/tests/test_hid_reports.py
+
       - name: Import hidapi and exercise HID CLI help
         run: |
           python3 -c "import hid; print('hidapi OK')"

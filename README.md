@@ -24,7 +24,9 @@ microcontroller platform.
 - [Architecture](docs/architecture.md)
 - [Hardware Wiring](docs/hardware-wiring.md)
 - [HID Monitor and Board Control](docs/hid-monitor.md)
+- [Test Connections](docs/test-connections.md)
 - [Ring Buffer Design](docs/detail/ring-buffer-design.md)
+- [Security / USB identity policy](SECURITY.md)
 
 ## Build and CI
 
@@ -119,18 +121,18 @@ The firmware has moved beyond the planning stage and now provides a working base
 
 Known gaps in the current implementation:
 
-1. RTS and CTS are not wired into the runtime yet.
-2. CDC line-state changes are ignored.
+1. PIO UART RTS/CTS pins are reserved but have no runtime flow-control behavior yet (hardware UART0/UART1 enable RTS/CTS).
+2. Host CDC RTS is ignored; DTR is recorded for HID monitoring only and does not gate bridging.
 3. PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or data-bit changes.
-4. Ring-buffer occupancy, high-water-mark, and overflow counters are not yet exposed through HID.
+4. HID exposes ring high-water marks and a sticky RX-overrun health bit; full occupancy/overflow **counts** are not in the compact HID report.
 
 ## Possible Future Enhancements
 
 - Per-port status LEDs
 - Configurable default baud rates
-- Optional RTS/CTS support on selected channels
-- Vendor-specific control interface for diagnostics and statistics
+- PIO UART RTS/CTS runtime flow control
 - Board-specific pinout tables for RP2040 and RP2350 variants
+- Replace development USB IDs (`cafe:4010`) with an allocated identity (see [SECURITY.md](SECURITY.md))
 
 ## Summary
 

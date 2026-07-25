@@ -5,6 +5,8 @@
 
 #include "pico/unique_id.h"
 #include "tusb.h"
+#include "config/usb_identity.h"
+#include "uart/uart_driver.h"
 #include <string.h>
 
 /** @brief Total number of CDC functions exposed by the firmware. */
@@ -12,15 +14,18 @@
 /** @brief Number of HID monitor interfaces exposed by the firmware. */
 #define USB_HID_COUNT 1u
 /** @brief USB vendor ID used by the PicoUart firmware image. */
-#define USB_VID 0xCafe
+#define USB_VID PICO_UART_USB_VID
 /** @brief USB product ID used by the PicoUart firmware image. */
-#define USB_PID 0x4010
+#define USB_PID PICO_UART_USB_PID
 /** @brief USB 2.0 revision advertised in the device descriptor. */
 #define USB_BCD  0x0210
 #ifndef PICO_UART_BCD_DEVICE
 /** @brief Fallback USB bcdDevice when CMake does not inject a build version. */
 #define PICO_UART_BCD_DEVICE 0x0000
 #endif
+
+_Static_assert(USB_CDC_COUNT == UART_PORT_COUNT,
+               "USB CDC count must match the logical UART port table");
 
 /** @brief Manufacturer string exposed in the USB string table. */
 #define USB_STR_MANUFACTURER "PicoUart"

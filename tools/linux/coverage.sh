@@ -85,7 +85,8 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
 fi
 
 if [ ! -f "$BUILD_DIR_PATH/CTestTestfile.cmake" ]; then
-    echo "No CMake tests are configured for this repository, so no coverage report can be generated yet." >&2
+    echo "No firmware CMake/CTest targets are configured yet, so no coverage report can be generated." >&2
+    echo "Run tools/linux/test.sh for the host HID golden suite in the meantime." >&2
     exit 1
 fi
 

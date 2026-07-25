@@ -12,8 +12,8 @@ try:
 except ImportError as error:
     raise SystemExit("Missing dependency: install host/python/requirements.txt") from error
 
-VENDOR_ID = 0xCAFE
-PRODUCT_ID = 0x4010
+VENDOR_ID = 0xCAFE  # Keep in sync with firmware/src/config/usb_identity.h
+PRODUCT_ID = 0x4010  # Development placeholder; see SECURITY.md
 USAGE_PAGE = 0xFF00
 USAGE = 0x0001
 

@@ -82,23 +82,26 @@ requirement applies.
   `PICO_DEFAULT_LED_PIN`; the LED starts off.
 - The internal ADC temperature sensor is enabled at startup and can be sampled
   through `temperature_read_celsius()`.
-- HID report ID `3` exposes the internal temperature estimate; report ID `4`
+- HID report ID `3` exposes temperature and firmware version; report ID `4`
 	accepts board-scoped LED-toggle and watchdog-reset commands. HID does not
 	own UART configuration. See [the HID protocol](../docs/hid-monitor.md) and
 	[the Python host utility](../host/python/README.md).
 - Override the board with `-DPICO_BOARD=<board>` when needed.
-- Firmware startup asserts that all 6 UART backends initialize before USB enumeration begins.
+- Firmware initializes all 6 UART backends on core 1 before starting TinyUSB on core 0.
 - A dedicated second core owns UART backend init, polling, and control operations.
 - Core 0 talks to the UART core through a small single-slot mailbox for cross-core control.
-- HID status reports expose the worker-core state, the last mailbox command result, and per-port init/control-error flags.
-- Deferred control requests first report as queued, then transition to success only after the worker actually applies them.
-- Core 1 initializes UART backends and applies deferred control requests; core 0 services hardware UART DMA and PIO UART RX/TX state while bridging TinyUSB.
+- HID status reports expose per-port health (including sticky RX overrun), ring high-water
+  marks, temperature, and firmware `MAJOR.MINOR.PATCH`.
+- Deferred control requests first report as queued, then transition to success after the
+  worker applies them, or to `CONTROL_ERROR` if apply cannot complete within 1 second.
+- Core 1 initializes UART backends, polls hardware UART DMA and PIO UART RX/TX, and
+  applies deferred control requests; core 0 services TinyUSB and bridges CDC rings.
 - The current firmware maps CDC0-CDC5 to 2 hardware UART backends and 4 PIO UART backends.
 - CDC line coding is parsed on core 0, stored as pending per-port configuration, and applied on core 1 by the UART worker.
-- PIO UART RX and TX are polled on core 0. TX fills the joined FIFO for short queues and lazily claims DMA only when deeper backlog makes it worthwhile.
-- Hardware UART ports accept supported baud/data/parity/stop updates; PIO UART ports remain 8N1-only.
+- PIO UART RX and TX are polled on core 1. TX fills the joined FIFO for short queues and lazily claims DMA only when deeper backlog makes it worthwhile.
+- Hardware UART ports accept supported baud/data/parity/stop updates and enable RTS/CTS;
+  PIO UART ports remain 8N1-only with reserved RTS/CTS pins.
 - PIO UART line-coding changes are deferred on the worker core until the port reaches a safe idle point, to avoid discarding queued traffic.
-- PIO UART RX drops frames with an invalid stop bit instead of forwarding corrupted bytes.
-- CDC line-state changes such as DTR and RTS are currently ignored.
-- HID reports topology, worker state, PIO framing/DMA statistics, and
-	temperature; ring occupancy and overflow counters are not yet reported.
+- PIO UART RX currently does not validate stop bits (see `docs/detail/pio-uart-design.md`).
+- CDC DTR updates HID `opened` only and does not gate bridging; host CDC RTS is ignored.
+- HID does not yet report full ring occupancy/overflow **counts** (only high-water blocks and a sticky overrun bit).
