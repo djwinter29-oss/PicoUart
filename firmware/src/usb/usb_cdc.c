@@ -23,10 +23,20 @@ typedef struct {
     uint32_t offset; /**< First unsent byte inside @ref data. */
 } usb_cdc_pending_transfer_t;
 
+/**
+ * @brief Line-coding request deferred until the UART worker mailbox is available.
+ */
+typedef struct {
+    bool pending; /**< True while the host request has not entered the worker mailbox. */
+    uart_driver_line_coding_t line_coding; /**< Latest requested UART settings. */
+} usb_cdc_pending_line_coding_t;
+
 /** @brief Per-port USB-to-UART staging state. */
 static usb_cdc_pending_transfer_t usb_cdc_usb_to_uart_pending[USB_CDC_PORT_COUNT];
 /** @brief Per-port UART-to-USB staging state. */
 static usb_cdc_pending_transfer_t usb_cdc_uart_to_usb_pending[USB_CDC_PORT_COUNT];
+/** @brief Per-port host line-coding requests waiting for the worker mailbox. */
+static usb_cdc_pending_line_coding_t usb_cdc_line_coding_pending[USB_CDC_PORT_COUNT];
 
 static uint32_t usb_cdc_pending_length(const usb_cdc_pending_transfer_t *pending)
 {
@@ -89,7 +99,20 @@ static bool usb_cdc_apply_line_coding(uint8_t itf,
         return false;
     }
 
-    return uart_driver_set_line_coding((uart_port_id_t)itf, line_coding);
+    return uart_driver_queue_line_coding((uart_port_id_t)itf, line_coding);
+}
+
+static void usb_cdc_apply_pending_line_coding(uint8_t itf)
+{
+    usb_cdc_pending_line_coding_t *pending = &usb_cdc_line_coding_pending[itf];
+
+    if (!pending->pending) {
+        return;
+    }
+
+    if (usb_cdc_apply_line_coding(itf, &pending->line_coding)) {
+        pending->pending = false;
+    }
 }
 
 static void usb_cdc_flush_usb_to_uart(uint8_t itf)
@@ -209,6 +232,8 @@ void usb_cdc_poll(void) {
     tud_task();
 
     for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
+        usb_cdc_apply_pending_line_coding(itf);
+
         if (!uart_driver_port_is_ready((uart_port_id_t)itf)) {
             continue;
         }
@@ -242,13 +267,11 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
 {
     uart_driver_line_coding_t line_coding;
 
-    if (p_line_coding == NULL) {
+    if ((itf >= USB_CDC_PORT_COUNT) ||
+        !usb_cdc_parse_line_coding(p_line_coding, &line_coding)) {
         return;
     }
 
-    if (!usb_cdc_parse_line_coding(p_line_coding, &line_coding)) {
-        return;
-    }
-
-    (void)usb_cdc_apply_line_coding(itf, &line_coding);
+    usb_cdc_line_coding_pending[itf].line_coding = line_coding;
+    usb_cdc_line_coding_pending[itf].pending = true;
 }

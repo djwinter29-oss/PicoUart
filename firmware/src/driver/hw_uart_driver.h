@@ -45,7 +45,7 @@ typedef struct {
     bool tx_active; /**< True while a TX DMA transfer is still in flight. */
     ring_buffer_t rx_ring; /**< UART-to-USB receive ring. */
     ring_buffer_t tx_ring; /**< USB-to-UART transmit ring. */
-    uint8_t rx_storage[HW_UART_DRIVER_RX_BUFFER_SIZE]; /**< DMA-owned RX ring storage. */
+    uint8_t rx_storage[HW_UART_DRIVER_RX_BUFFER_SIZE] __attribute__((aligned(HW_UART_DRIVER_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
     uint8_t tx_storage[HW_UART_DRIVER_TX_BUFFER_SIZE]; /**< TX ring storage. */
 } hw_uart_driver_t;
 

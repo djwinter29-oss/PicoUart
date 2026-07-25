@@ -69,10 +69,7 @@ static bool pio_uart_driver_block_has_registered_drivers(uint block_index);
 
 static inline bool pio_uart_driver_decode_rx_word(uint32_t word, uint8_t *byte)
 {
-    if ((word & 0x80000000u) == 0u) {
-        return false;
-    }
-    *byte = (uint8_t)((word >> 23) & 0xffu);
+    *byte = (uint8_t)((word >> 24) & 0xffu);
     return true;
 }
 
@@ -268,8 +265,11 @@ static void pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
 
     pio_gpio_init(driver->config.pio, driver->config.tx_pin);
     pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.tx_state_machine, driver->config.tx_pin, 1u, true);
-    pio_sm_set_pins_with_mask(driver->config.pio, driver->config.tx_state_machine, 1u << driver->config.tx_pin, 1u << driver->config.tx_pin);
     pio_sm_init(driver->config.pio, driver->config.tx_state_machine, offset, &config);
+    pio_sm_set_pins_with_mask(driver->config.pio,
+                               driver->config.tx_state_machine,
+                               1u << driver->config.tx_pin,
+                               1u << driver->config.tx_pin);
     pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, true);
 }
 
@@ -527,8 +527,6 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
         pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, false);
         return false;
     }
-    pio_uart_driver_enable_rx_irq(driver);
-
     driver->initialized = true;
     return true;
 }
@@ -536,6 +534,12 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
 void pio_uart_driver_poll(pio_uart_driver_t *driver)
 {
     if ((driver == NULL) || !driver->initialized) {
+        return;
+    }
+
+    pio_uart_driver_fill_rx_ring(driver);
+
+    if ((driver->tx_dma_channel < 0) && (ring_buffer_occupancy(&driver->tx_ring) == 0u)) {
         return;
     }
 

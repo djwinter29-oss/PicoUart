@@ -30,6 +30,7 @@ typedef enum {
     UART_DRIVER_COMMAND_STATUS_BACKEND_REJECTED = 5, /**< Backend rejected the requested control change. */
     UART_DRIVER_COMMAND_STATUS_UNSUPPORTED = 6, /**< Command could not be applied to the selected backend. */
     UART_DRIVER_COMMAND_STATUS_QUEUED = 7, /**< Command was accepted and queued for deferred worker-side apply. */
+    UART_DRIVER_COMMAND_STATUS_TIMEOUT = 8, /**< Worker did not complete the command before its deadline. */
 } uart_driver_command_status_t;
 
 /** @brief Port status flag: backend is initialized and available. */
@@ -114,6 +115,16 @@ bool uart_driver_init(void);
 bool uart_driver_port_is_ready(uart_port_id_t port_id);
 
 /**
+ * @brief Advance DMA state for the two hardware UART backends.
+ */
+void uart_driver_poll_hardware(void);
+
+/**
+ * @brief Advance RX and TX state for the four PIO UART backends.
+ */
+void uart_driver_poll_pio(void);
+
+/**
  * @brief Read bytes from one logical UART port RX ring.
  * @param port_id Logical port identifier.
  * @param data Destination buffer.
@@ -137,6 +148,15 @@ size_t uart_driver_write_available(uart_port_id_t port_id);
  */
 bool uart_driver_set_line_coding(uart_port_id_t port_id,
                                  const uart_driver_line_coding_t *line_coding);
+
+/**
+ * @brief Queue one host line-coding request without waiting for the UART worker.
+ * @param port_id Logical port identifier.
+ * @param line_coding Requested baud/data/parity/stop configuration.
+ * @return `true` when the worker mailbox accepted the request, otherwise `false`.
+ */
+bool uart_driver_queue_line_coding(uart_port_id_t port_id,
+                                   const uart_driver_line_coding_t *line_coding);
 
 /**
  * @brief Reconfigure the baud rate for one logical UART port.
@@ -170,6 +190,24 @@ uart_port_id_t uart_driver_last_command_port(void);
  * @return `true` after the worker core has been launched.
  */
 bool uart_driver_worker_is_running(void);
+
+/**
+ * @brief Return the UART port currently being serviced by the worker.
+ * @return Logical port index, or @ref UART_PORT_COUNT between poll passes.
+ */
+uart_port_id_t uart_driver_worker_poll_port(void);
+
+/**
+ * @brief Return the worker poll-loop heartbeat.
+ * @return Value incremented after each completed backend poll sweep.
+ */
+uint8_t uart_driver_worker_heartbeat(void);
+
+/**
+ * @brief Return the core that most recently entered HardFault.
+ * @return Zero when no fault occurred, one for core 0, or two for core 1.
+ */
+uint8_t uart_driver_hardfault_core(void);
 
 /**
  * @brief Write bytes into one logical UART port TX ring.

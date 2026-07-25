@@ -7,7 +7,7 @@
 #define SYSTEM_H
 
 /** @brief Default system-clock target in kHz for RP2040 boards. */
-#define PICO_UART_RP2040_SYSTEM_CLOCK_KHZ 250000u
+#define PICO_UART_RP2040_SYSTEM_CLOCK_KHZ 125000u
 /** @brief Default system-clock target in kHz for RP2350 boards. */
 #define PICO_UART_RP2350_SYSTEM_CLOCK_KHZ 300000u
 

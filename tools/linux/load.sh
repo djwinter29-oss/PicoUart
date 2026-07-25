@@ -11,6 +11,9 @@ SYSTEM_CLOCK_KHZ=""
 OPENOCD_EXE="${OPENOCD_EXE:-openocd}"
 OPENOCD_TARGET="${PICO_OPENOCD_TARGET:-}"
 ADAPTER_SPEED_KHZ="${PICO_DEBUG_PROBE_SPEED_KHZ:-5000}"
+DEBUG_PROBE_VID="${PICO_DEBUG_PROBE_VID:-0x2e8a}"
+DEBUG_PROBE_PID="${PICO_DEBUG_PROBE_PID:-0x000c}"
+DEBUG_PROBE_SERIAL="${PICO_DEBUG_PROBE_SERIAL:-}"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -113,8 +116,57 @@ if ! command -v "$OPENOCD_EXE" >/dev/null 2>&1; then
     exit 1
 fi
 
-"$OPENOCD_EXE" \
-    -f interface/cmsis-dap.cfg \
-    -f "$OPENOCD_TARGET" \
-    -c "adapter speed $ADAPTER_SPEED_KHZ" \
-    -c "program $ELF_PATH verify reset exit"
+run_openocd() {
+    OPENOCD_LOG=$(mktemp)
+    set -- "$OPENOCD_EXE" \
+        -f interface/cmsis-dap.cfg \
+        -c "cmsis-dap vid_pid $DEBUG_PROBE_VID $DEBUG_PROBE_PID"
+
+    if [ -n "$DEBUG_PROBE_SERIAL" ]; then
+        set -- "$@" -c "adapter serial $DEBUG_PROBE_SERIAL"
+    fi
+
+    set -- "$@" \
+        -f "$OPENOCD_TARGET" \
+        -c "adapter speed $ADAPTER_SPEED_KHZ" \
+        -c "program $ELF_PATH verify reset exit"
+
+    if "$@" >"$OPENOCD_LOG" 2>&1; then
+        cat "$OPENOCD_LOG"
+        rm -f "$OPENOCD_LOG"
+        return 0
+    fi
+
+    cat "$OPENOCD_LOG" >&2
+
+    if grep -q 'Access denied (insufficient permissions)' "$OPENOCD_LOG" &&
+       command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+        echo "Retrying OpenOCD with sudo because the Debug Probe USB device is not writable." >&2
+        if sudo -n "$@"; then
+            rm -f "$OPENOCD_LOG"
+            return 0
+        fi
+    fi
+
+    if grep -Eq 'Operation timed out|unable to find a matching CMSIS-DAP device' "$OPENOCD_LOG" &&
+       command -v usbreset >/dev/null 2>&1 &&
+       command -v lsusb >/dev/null 2>&1 &&
+       command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+        DEBUG_PROBE_BUS_DEVICE=$(lsusb | awk -v probe_id="${DEBUG_PROBE_VID#0x}:${DEBUG_PROBE_PID#0x}" \
+            '$6 == probe_id { device = $4; sub(/:$/, "", device); print $2 "/" device; exit }')
+        if [ -n "$DEBUG_PROBE_BUS_DEVICE" ]; then
+            echo "Retrying OpenOCD after resetting stalled Debug Probe USB device $DEBUG_PROBE_BUS_DEVICE." >&2
+            if sudo -n usbreset "$DEBUG_PROBE_BUS_DEVICE" && "$@"; then
+                rm -f "$OPENOCD_LOG"
+                return 0
+            fi
+        else
+            echo "The Debug Probe disappeared while recovering it. Reconnect its USB cable, then retry." >&2
+        fi
+    fi
+
+    rm -f "$OPENOCD_LOG"
+    return 1
+}
+
+run_openocd

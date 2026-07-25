@@ -8,11 +8,14 @@
 #include "driver/hw_uart_driver.h"
 #include "hardware/sync.h"
 #include "pico/multicore.h"
+#include "pico/time.h"
 #include "pio/pio_uart_driver_internal.h"
 #include "ring_buffer/ring_buffer.h"
 
 /** @brief Default startup baud rate applied to all logical UART ports. */
 #define UART_DRIVER_DEFAULT_BAUD_RATE 115200u
+/** @brief Maximum time core 0 waits for a UART worker mailbox response. */
+#define UART_DRIVER_MAILBOX_TIMEOUT_MS 20u
 
 /**
  * @brief Commands accepted by the cross-core UART control mailbox.
@@ -80,7 +83,7 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        UART_DRIVER_DEFAULT_BAUD_RATE,
                        8u,
                        9u,
-                       PIO_UART_DRIVER_PIN_FLAG_NONE,
+                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
                        PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
@@ -94,7 +97,7 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        UART_DRIVER_DEFAULT_BAUD_RATE,
                        12u,
                        13u,
-                       PIO_UART_DRIVER_PIN_FLAG_NONE,
+                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
                        PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
@@ -108,7 +111,7 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        UART_DRIVER_DEFAULT_BAUD_RATE,
                        16u,
                        17u,
-                       PIO_UART_DRIVER_PIN_FLAG_NONE,
+                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
                        PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
@@ -122,7 +125,7 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        UART_DRIVER_DEFAULT_BAUD_RATE,
                        20u,
                        21u,
-                       PIO_UART_DRIVER_PIN_FLAG_NONE,
+                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
                        PIO_UART_DRIVER_DEFAULT_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
@@ -143,6 +146,12 @@ static volatile uint8_t uart_driver_port_status_flags[UART_PORT_COUNT];
 static uart_driver_pending_control_t uart_driver_pending_controls[UART_PORT_COUNT];
 /** @brief Worker-loop port index that starts the next backend poll sweep. */
 static size_t uart_driver_poll_start_index;
+/** @brief Logical port currently being serviced by the worker, or count between passes. */
+static volatile uart_port_id_t uart_driver_worker_poll_port_id = UART_PORT_COUNT;
+/** @brief Incremented after each completed worker backend poll sweep. */
+static volatile uint8_t uart_driver_worker_heartbeat_value;
+/** @brief Core that most recently entered HardFault, or zero when none has occurred. */
+static volatile uint8_t uart_driver_hardfault_core_value;
 
 static uart_driver_command_status_t uart_driver_init_backends(uint32_t *result_port_id);
 static void uart_driver_poll_backends(void);
@@ -156,6 +165,17 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
     const uart_driver_line_coding_t *line_coding,
     uint32_t *result_port_id);
 static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_driver_port_t *port);
+
+/**
+ * @brief Preserve the faulting core for nonintrusive HID diagnostics.
+ */
+void isr_hardfault(void)
+{
+    uart_driver_hardfault_core_value = (uint8_t)(get_core_num() + 1u);
+    while (true) {
+        tight_loop_contents();
+    }
+}
 
 static void uart_driver_set_last_status(uart_driver_command_status_t status, uart_port_id_t port_id)
 {
@@ -206,6 +226,7 @@ static void uart_driver_worker_core_main(void)
         }
 
         uart_driver_poll_backends();
+        uart_driver_worker_heartbeat_value += 1u;
         tight_loop_contents();
     }
 }
@@ -214,9 +235,14 @@ static bool uart_driver_mailbox_call(uart_driver_mailbox_command_t command,
                                      uint32_t port_id,
                                      const uart_driver_line_coding_t *line_coding)
 {
+    absolute_time_t deadline = make_timeout_time_ms(UART_DRIVER_MAILBOX_TIMEOUT_MS);
     uint32_t request_sequence;
 
     while (uart_driver_mailbox.request_sequence != uart_driver_mailbox.response_sequence) {
+        if (time_reached(deadline)) {
+            uart_driver_set_last_status(UART_DRIVER_COMMAND_STATUS_TIMEOUT, (uart_port_id_t)port_id);
+            return false;
+        }
         tight_loop_contents();
     }
 
@@ -230,6 +256,10 @@ static bool uart_driver_mailbox_call(uart_driver_mailbox_command_t command,
     uart_driver_mailbox.request_sequence = request_sequence;
 
     while (uart_driver_mailbox.response_sequence != request_sequence) {
+        if (time_reached(deadline)) {
+            uart_driver_set_last_status(UART_DRIVER_COMMAND_STATUS_TIMEOUT, (uart_port_id_t)port_id);
+            return false;
+        }
         tight_loop_contents();
     }
 
@@ -426,15 +456,12 @@ static void uart_driver_poll_backends(void)
         size_t index = (uart_driver_poll_start_index + offset) % UART_PORT_COUNT;
         uart_driver_port_t *port = &uart_ports[index];
 
-        if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-            hw_uart_driver_poll(&port->backend.hw);
-        } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-            pio_uart_driver_poll(&port->backend.pio);
-        }
+        uart_driver_worker_poll_port_id = (uart_port_id_t)index;
 
         uart_driver_service_pending_control((uart_port_id_t)index, port);
     }
 
+    uart_driver_worker_poll_port_id = UART_PORT_COUNT;
     uart_driver_poll_start_index = (uart_driver_poll_start_index + 1u) % UART_PORT_COUNT;
 }
 
@@ -502,6 +529,10 @@ bool uart_driver_init(void)
         uart_driver_mailbox.result_port_id = UART_PORT_COUNT;
         uart_driver_mailbox.result_status = UART_DRIVER_COMMAND_STATUS_WORKER_NOT_STARTED;
         uart_driver_poll_start_index = 0u;
+        uart_driver_worker_poll_port_id = UART_PORT_COUNT;
+        uart_driver_worker_heartbeat_value = 0u;
+        uart_driver_hardfault_core_value = 0u;
+        multicore_reset_core1();
         multicore_launch_core1(uart_driver_worker_core_main);
         uart_driver_worker_started = true;
     }
@@ -526,6 +557,28 @@ bool uart_driver_port_is_ready(uart_port_id_t port_id)
     }
 
     return false;
+}
+
+void uart_driver_poll_hardware(void)
+{
+    for (size_t index = UART_PORT_0; index <= UART_PORT_1; ++index) {
+        uart_driver_port_t *port = &uart_ports[index];
+
+        if (port->backend.hw.initialized) {
+            hw_uart_driver_poll(&port->backend.hw);
+        }
+    }
+}
+
+void uart_driver_poll_pio(void)
+{
+    for (size_t index = UART_PORT_2; index < UART_PORT_COUNT; ++index) {
+        uart_driver_port_t *port = &uart_ports[index];
+
+        if (port->backend.pio.initialized) {
+            pio_uart_driver_poll(&port->backend.pio);
+        }
+    }
 }
 
 size_t uart_driver_read(uart_port_id_t port_id, uint8_t *data, size_t capacity)
@@ -624,6 +677,35 @@ bool uart_driver_set_line_coding(uart_port_id_t port_id,
                                     line_coding);
 }
 
+bool uart_driver_queue_line_coding(uart_port_id_t port_id,
+                                   const uart_driver_line_coding_t *line_coding)
+{
+    uint32_t request_sequence;
+
+    if (!uart_driver_worker_started) {
+        uart_driver_set_last_status(UART_DRIVER_COMMAND_STATUS_WORKER_NOT_STARTED, port_id);
+        return false;
+    }
+
+    if (!uart_driver_line_coding_is_valid(line_coding)) {
+        uart_driver_set_last_status(UART_DRIVER_COMMAND_STATUS_INVALID_ARGUMENT, port_id);
+        return false;
+    }
+
+    if (uart_driver_mailbox.request_sequence != uart_driver_mailbox.response_sequence) {
+        return false;
+    }
+
+    request_sequence = uart_driver_mailbox.request_sequence + 1u;
+    uart_driver_mailbox.port_id = (uint32_t)port_id;
+    uart_driver_mailbox.line_coding = *line_coding;
+    uart_driver_mailbox.command = UART_DRIVER_MAILBOX_COMMAND_SET_LINE_CODING;
+    __dmb();
+    uart_driver_mailbox.request_sequence = request_sequence;
+    uart_driver_set_last_status(UART_DRIVER_COMMAND_STATUS_QUEUED, port_id);
+    return true;
+}
+
 bool uart_driver_set_baud_rate(uart_port_id_t port_id, uint32_t baud_rate)
 {
     uart_driver_port_t *port = uart_driver_port_mutable(port_id);
@@ -665,6 +747,21 @@ uart_port_id_t uart_driver_last_command_port(void)
 bool uart_driver_worker_is_running(void)
 {
     return uart_driver_worker_started;
+}
+
+uart_port_id_t uart_driver_worker_poll_port(void)
+{
+    return uart_driver_worker_poll_port_id;
+}
+
+uint8_t uart_driver_worker_heartbeat(void)
+{
+    return uart_driver_worker_heartbeat_value;
+}
+
+uint8_t uart_driver_hardfault_core(void)
+{
+    return uart_driver_hardfault_core_value;
 }
 
 size_t uart_driver_write(uart_port_id_t port_id, const uint8_t *data, size_t length)

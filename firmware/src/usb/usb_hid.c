@@ -20,7 +20,7 @@
 /** @brief HID status report signature byte 1. */
 #define USB_HID_SIGNATURE1 'U'
 /** @brief HID status report format version. */
-#define USB_HID_REPORT_VERSION 6u
+#define USB_HID_REPORT_VERSION 11u
 /** @brief HID input report ID for the compact status monitor. */
 #define USB_HID_REPORT_ID_STATUS 1u
 /** @brief HID feature report ID for full-width PIO statistics. */
@@ -39,8 +39,8 @@ typedef struct {
     uint8_t port_count; /**< Number of logical UART ports. */
     uint8_t sequence; /**< Monotonic report sequence number. */
     uint8_t worker_state; /**< Worker-core state flags. */
-    uint8_t last_command_status; /**< Latest cross-core command result. */
-    uint8_t last_command_port; /**< Port associated with the latest command result. */
+    uint8_t last_command_status; /**< Latest command result with temporary HardFault marker in bits 4-5. */
+    uint8_t last_command_port; /**< Temporary full-width worker heartbeat diagnostic. */
     uint8_t backend[UART_PORT_COUNT]; /**< Backend type for each port. */
     uint8_t tx_pin[UART_PORT_COUNT]; /**< TX GPIO assignment for each port. */
     uint8_t rx_pin[UART_PORT_COUNT]; /**< RX GPIO assignment for each port. */
@@ -65,6 +65,12 @@ typedef struct {
 #define USB_HID_WORKER_STATE_RUNNING (1u << 0)
 /** @brief HID worker state flag: current UART transport scope is 8N1-only. */
 #define USB_HID_WORKER_STATE_8N1_ONLY (1u << 1)
+/** @brief Bit offset of the worker's current poll port in the status byte. */
+#define USB_HID_WORKER_STATE_POLL_PORT_SHIFT 2u
+/** @brief Bit offset of the worker poll-loop heartbeat in the status byte. */
+#define USB_HID_WORKER_STATE_HEARTBEAT_SHIFT 5u
+/** @brief Number of heartbeat bits carried by the status report. */
+#define USB_HID_WORKER_STATE_HEARTBEAT_MASK 0x07u
 
 /** @brief Next absolute time, in milliseconds, when a HID report may be published. */
 static uint32_t usb_hid_next_report_ms;
@@ -119,8 +125,14 @@ static void usb_hid_build_status_report(usb_hid_status_report_t *report,
     if (uart_driver_worker_is_running()) {
         report->worker_state |= USB_HID_WORKER_STATE_RUNNING;
     }
+    report->worker_state |= (uint8_t)(uart_driver_worker_poll_port()
+                                      << USB_HID_WORKER_STATE_POLL_PORT_SHIFT);
+    report->worker_state |= (uint8_t)((uart_driver_worker_heartbeat() &
+                                       USB_HID_WORKER_STATE_HEARTBEAT_MASK)
+                                      << USB_HID_WORKER_STATE_HEARTBEAT_SHIFT);
     report->last_command_status = (uint8_t)uart_driver_last_command_status();
-    report->last_command_port = (uint8_t)uart_driver_last_command_port();
+    report->last_command_status |= (uint8_t)(uart_driver_hardfault_core() << 4u);
+    report->last_command_port = uart_driver_worker_heartbeat();
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
         const uart_driver_port_info_t *port_info = uart_driver_port_info((uart_port_id_t)index);

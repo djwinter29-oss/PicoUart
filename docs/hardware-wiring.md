@@ -71,6 +71,19 @@ Notes:
 - Keep UART signal voltage levels compatible with the target system.
 - Do not connect RS-232 level signals directly to RP2040 or RP2350 GPIOs.
 
+## Bring-Up Loopbacks
+
+The following temporary wiring validates the three PIO UART data paths without
+an external UART peer:
+
+| Test | Temporary wiring |
+| --- | --- |
+| UART2 to UART3 cross-connection | GP8 to GP13; GP12 to GP9 |
+| UART5 loopback | GP20 to GP21 |
+
+Remove this temporary wiring before attaching an external target. See
+`docs/test-connections.md` for the matching host test commands.
+
 ## Power Notes
 
 - USB powers the Pico board.

@@ -16,7 +16,11 @@ BAUD_RATES = {
     38400: termios.B38400,
     57600: termios.B57600,
     115200: termios.B115200,
+    230400: termios.B230400,
+    460800: termios.B460800,
+    921600: termios.B921600,
 }
+STANDARD_BAUD_RATES = tuple(BAUD_RATES)
 
 
 def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
@@ -46,7 +50,6 @@ def write_all(file_descriptor: int, data: bytes) -> None:
             select.select([], [file_descriptor], [], 0.1)
             continue
         offset += count
-    termios.tcdrain(file_descriptor)
 
 
 def wait_for_marker(file_descriptor: int, marker: bytes, timeout: float) -> bool:
@@ -97,32 +100,39 @@ def parse_arguments() -> argparse.Namespace:
         description="Verify both directions of one PicoUart CDC-to-UART link."
     )
     parser.add_argument("--pico-port", required=True, help="PicoUart CDC device, for example /dev/ttyACM2")
-    parser.add_argument("--peer-port", required=True, help="Connected UART peer device, for example /dev/serial0")
+    peer_group = parser.add_mutually_exclusive_group(required=True)
+    peer_group.add_argument("--peer-port", help="Connected UART peer device, for example /dev/serial0")
+    peer_group.add_argument("--loopback", action="store_true", help="Test a TX-to-RX jumper on the PicoUart channel")
     parser.add_argument("--label", default="bridge", help="Name shown in test output")
-    parser.add_argument("--baud", type=int, default=115200, choices=BAUD_RATES)
+    baud_group = parser.add_mutually_exclusive_group()
+    baud_group.add_argument("--baud", type=int, choices=BAUD_RATES, help="One baud rate; defaults to 115200")
+    baud_group.add_argument("--all-baud-rates", action="store_true", help="Test every supported standard baud rate")
     parser.add_argument("--payload-bytes", type=int, default=64)
     parser.add_argument("--timeout", type=float, default=3.0)
     return parser.parse_args()
 
 
-def main() -> int:
-    arguments = parse_arguments()
-    if arguments.payload_bytes < 1 or arguments.payload_bytes > 4096:
-        print("--payload-bytes must be between 1 and 4096", file=sys.stderr)
-        return 2
-    if arguments.timeout <= 0:
-        print("--timeout must be greater than zero", file=sys.stderr)
-        return 2
-
+def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
     pico_fd = -1
     peer_fd = -1
     pico_settings = None
     peer_settings = None
 
     try:
-        pico_fd, pico_settings = configure_port(arguments.pico_port, arguments.baud)
-        peer_fd, peer_settings = configure_port(arguments.peer_port, arguments.baud)
-        print(f"Testing {arguments.label} at {arguments.baud} baud")
+        pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
+        if arguments.loopback:
+            time.sleep(0.05)
+            print(f"Testing {arguments.label} loopback at {baud_rate} baud")
+            passed = test_direction(pico_fd,
+                                    pico_fd,
+                                    "pico-loopback",
+                                    arguments.payload_bytes,
+                                    arguments.timeout)
+            return 0 if passed else 1
+
+        peer_fd, peer_settings = configure_port(arguments.peer_port, baud_rate)
+        time.sleep(0.05)
+        print(f"Testing {arguments.label} at {baud_rate} baud")
         pico_to_peer = test_direction(pico_fd,
                                       peer_fd,
                                       "pico-to-peer",
@@ -144,6 +154,22 @@ def main() -> int:
         if peer_fd >= 0 and peer_settings is not None:
             termios.tcsetattr(peer_fd, termios.TCSANOW, peer_settings)
             os.close(peer_fd)
+
+
+def main() -> int:
+    arguments = parse_arguments()
+    if arguments.payload_bytes < 1 or arguments.payload_bytes > 4096:
+        print("--payload-bytes must be between 1 and 4096", file=sys.stderr)
+        return 2
+    if arguments.timeout <= 0:
+        print("--timeout must be greater than zero", file=sys.stderr)
+        return 2
+
+    baud_rates = STANDARD_BAUD_RATES if arguments.all_baud_rates else (arguments.baud or 115200,)
+    result = 0
+    for baud_rate in baud_rates:
+        result |= run_test(arguments, baud_rate)
+    return result
 
 
 if __name__ == "__main__":
