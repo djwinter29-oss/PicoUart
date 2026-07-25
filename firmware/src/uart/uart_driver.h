@@ -142,6 +142,16 @@ size_t uart_driver_drain_rx(uart_port_id_t port_id,
                             void *context);
 
 /**
+ * @brief Advance RX overrun recovery for one logical UART port without draining.
+ * @param port_id Logical port identifier.
+ * @return Number of overwritten bytes retired from the RX ring, or zero.
+ *
+ * Call this from the USB poll even when the matching CDC IN endpoint has no
+ * space, so a stalled host cannot leave the ring sequence ambiguous.
+ */
+size_t uart_driver_recover_rx(uart_port_id_t port_id);
+
+/**
  * @brief Fill TX bytes for one logical UART port from a caller-owned reader.
  * @param port_id Logical port identifier.
  * @param capacity Maximum byte count to fill across contiguous TX spans.

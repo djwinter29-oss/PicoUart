@@ -1,0 +1,112 @@
+name: PR Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: pr-check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    name: Firmware (${{ matrix.board }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [pico, pico2]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install host build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build g++
+
+      - name: Install Arm GNU Toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: "13.3.Rel1"
+
+      - name: Cache Pico SDK
+        uses: actions/cache@v4
+        with:
+          path: .pico-sdk
+          key: pico-sdk-2.2.0-${{ runner.os }}
+
+      - name: Setup Pico SDK
+        run: |
+          set --
+          . tools/linux/setup-sdk-env.sh
+
+      - name: Build firmware
+        run: tools/linux/build.sh --board ${{ matrix.board }}
+
+      - name: Smoke-check product identity
+        run: |
+          set -eu
+          BIN="build/firmware-${{ matrix.board }}/pico_uart.bin"
+          ELF="build/firmware-${{ matrix.board }}/pico_uart.elf"
+          test -f "$BIN"
+          test -f "$ELF"
+          test -f "build/firmware-${{ matrix.board }}/pico_uart.uf2"
+          file "$ELF" | grep -q "ARM"
+          # USB device descriptor: idVendor/idProduct/bcdDevice little-endian
+          # Default 0.0.0-dev -> bcdDevice 0x0000 => fe ca 10 40 00 00
+          python3 -c "import pathlib,sys; d=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if b'\\xfe\\xca\\x10\\x40\\x00\\x00' in d else 1)" "$BIN"
+          strings "$BIN" | grep -qx "CDC0"
+          strings "$BIN" | grep -qx "CDC5"
+          strings "$BIN" | grep -Fqx "PicoUart USB CDC + HID"
+          # Default CMake version stamp when --firmware-version is not passed
+          strings "$BIN" | grep -Fqx "0.0.0-dev"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pico_uart-${{ matrix.board }}
+          path: |
+            build/firmware-${{ matrix.board }}/pico_uart.uf2
+            build/firmware-${{ matrix.board }}/pico_uart.elf
+            build/firmware-${{ matrix.board }}/pico_uart.bin
+            build/firmware-${{ matrix.board }}/pico_uart.hex
+          if-no-files-found: error
+
+  host-tools:
+    name: Host tools
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install host dependencies
+        run: python3 -m pip install -r host/python/requirements.txt
+
+      - name: Syntax-check Python tools
+        run: |
+          python3 -m py_compile \
+            host/python/pico_uart_hid.py \
+            tools/linux/serial_bridge_test.py \
+            tools/linux/serial_stress_benchmark.py
+
+      - name: Run host HID golden tests
+        run: python3 host/python/tests/test_hid_reports.py
+
+      - name: Import hidapi and exercise HID CLI help
+        run: |
+          python3 -c "import hid; print('hidapi OK')"
+          python3 host/python/pico_uart_hid.py --help
+          python3 tools/linux/serial_bridge_test.py --help
+          python3 tools/linux/serial_stress_benchmark.py --help

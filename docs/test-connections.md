@@ -110,5 +110,8 @@ results.
 5. Run the concurrent performance benchmark when the 115200 baud tests pass.
 6. Remove the test jumpers before connecting external UART targets.
 
-The current firmware does not apply RTS or CTS. Test these links with TX, RX,
-and GND only.
+The current firmware enables RTS/CTS on hardware UART0/UART1. Debug Probe and
+PIO loopback tests only need TX, RX, and GND; unconnected CTS still allows TX
+because the pin is pulled down. Cross-connect RTS/CTS when validating flow
+control against a peer that supports it. PIO UART RTS/CTS pins remain reserved
+only.

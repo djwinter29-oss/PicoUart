@@ -110,7 +110,7 @@ worker loop responsive while the port drains toward a safe reconfiguration point
 
 - 8N1 only
 - no parity handling
-- no RTS/CTS runtime behavior
+- no RTS/CTS runtime behavior (pins reserved; hardware UART0/UART1 own RTS/CTS)
 - no framing or stop-bit validation
 - TX DMA thresholds are configurable per port but still use static defaults rather than adaptive tuning
 - TX fairness across the 4 PIO ports is improved by worker-loop round-robin polling, but still lacks an explicit scheduler

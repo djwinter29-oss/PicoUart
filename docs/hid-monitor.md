@@ -18,7 +18,7 @@ command feature reports. The device is identified as USB
 | --- | --- | --- |
 | UART data | CDC0 through CDC5 | Transfers bytes to and from the matching UART. |
 | Baud, data bits, parity, stop bits | CDC line-coding request | Parsed from `SET_LINE_CODING` and queued to the matching UART backend. |
-| Health, traffic, ring peak, and temperature | HID | Read-only monitoring data. |
+| Health, traffic, ring peak, temperature, and firmware version | HID | Read-only monitoring data. |
 | Toggle default board LED | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one. |
 | Reset board | HID command feature report | Immediately reboots through the watchdog. |
 
@@ -30,7 +30,7 @@ alter ring-buffer behavior. The two command values are board-scoped only.
 | Report ID | Type | Direction | Payload | Purpose |
 | --- | --- | --- | --- | --- |
 | `1` | Input | Device to host | 64 bytes | Periodic compact status report. |
-| `3` | Feature | Host reads from device | 4 bytes | Internal temperature sensor estimate. |
+| `3` | Feature | Host reads from device | 8 bytes | Temperature estimate and firmware semantic version. |
 | `4` | Feature | Host writes to device | 1 byte | Board-control command. |
 
 Report ID bytes are managed by the HID transport and are not included in the
@@ -47,7 +47,7 @@ channel `0` is CDC0/UART0 and channel `5` is CDC5/UART5.
 | --- | ---: | --- | --- |
 | 0 | 1 | `signature0` | ASCII `P` (`0x50`). |
 | 1 | 1 | `signature1` | ASCII `U` (`0x55`). |
-| 2 | 1 | `version` | Report layout version, currently `13`. |
+| 2 | 1 | `version` | Report layout version, currently `14`. |
 | 3 | 1 | `sequence` | Increments after each successfully published status report. |
 | 4 | 60 | `channel[6]` | Six consecutive 10-byte CDC/UART channel snapshots. |
 
@@ -83,13 +83,19 @@ at least that large. The ring peak is cumulative from boot and saturates at
 ## Report ID 3: Board Status
 
 Request feature report ID `3` to read the internal RP2 temperature-sensor
-estimate.
+estimate and the firmware semantic version. Tag `v1.2.3` builds advertise
+`1.2.3` here. The USB device descriptor `bcdDevice` carries only major.minor
+as BCD (so `1.2.3` → `0x0102`, commonly shown as `1.02` / `1.2`).
 
 | Offset | Size | Field | Meaning |
 | --- | ---: | --- | --- |
-| 0 | 1 | `version` | Report layout version, currently `13`. |
-| 1 | 1 | `reserved` | Always zero; reserved for board-status flags. |
+| 0 | 1 | `version` | Report layout version, currently `14`. |
+| 1 | 1 | `reserved0` | Always zero; reserved for board-status flags. |
 | 2 | 2 | `temperature_centidegrees_celsius` | Signed little-endian temperature estimate in hundredths of a degree Celsius. |
+| 4 | 1 | `firmware_major` | Firmware semantic version major component. |
+| 5 | 1 | `firmware_minor` | Firmware semantic version minor component. |
+| 6 | 1 | `firmware_patch` | Firmware semantic version patch component. |
+| 7 | 1 | `reserved1` | Always zero. |
 
 ## Report ID 4: Board Command
 
@@ -105,8 +111,8 @@ Unknown command values are ignored. The report has no response payload.
 ## Host Tool
 
 The reference client at [host/python](../host/python) discovers this vendor HID
-collection and offers `monitor`, `temperature`, `toggle-led`, and `reset`
-commands. Install its `hidapi` dependency before use.
+collection and offers `monitor`, `temperature`, `version`, `toggle-led`, and
+`reset` commands. Install its `hidapi` dependency before use.
 
 ## Compatibility
 

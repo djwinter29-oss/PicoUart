@@ -15,6 +15,9 @@
 /** @brief Maximum bytes moved per interface and direction in one bridge pass. */
 #define USB_CDC_BRIDGE_PASS_BUDGET 256u
 
+_Static_assert(USB_CDC_PORT_COUNT == UART_PORT_COUNT,
+               "USB CDC port count must match the logical UART port table");
+
 /**
  * @brief Line-coding request deferred until the UART worker mailbox is available.
  */
@@ -128,21 +131,22 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
     uint32_t writable = tud_cdc_n_write_available(itf);
     size_t written = 0u;
 
-    if (writable != 0u) {
-        if (writable > USB_CDC_BRIDGE_PASS_BUDGET) {
-            writable = USB_CDC_BRIDGE_PASS_BUDGET;
-        }
-
-        written = uart_driver_drain_rx((uart_port_id_t)itf,
-                                       writable,
-                                       usb_cdc_usb_writer,
-                                       &itf);
-        if (written != 0u) {
-            usb_cdc_stats[itf].tx_bytes += (uint32_t)written;
-        }
+    if (writable == 0u) {
+        /* Still retire RX overruns so a stalled host cannot wrap the ring. */
+        (void)uart_driver_recover_rx((uart_port_id_t)itf);
+        return;
     }
 
+    if (writable > USB_CDC_BRIDGE_PASS_BUDGET) {
+        writable = USB_CDC_BRIDGE_PASS_BUDGET;
+    }
+
+    written = uart_driver_drain_rx((uart_port_id_t)itf,
+                                   writable,
+                                   usb_cdc_usb_writer,
+                                   &itf);
     if (written != 0u) {
+        usb_cdc_stats[itf].tx_bytes += (uint32_t)written;
         tud_cdc_n_write_flush(itf);
     }
 }
@@ -169,8 +173,8 @@ void usb_cdc_poll(void) {
 /**
  * @brief TinyUSB callback for CDC line-state changes.
  * @param itf TinyUSB CDC interface index.
- * @param dtr Host DTR state.
- * @param rts Host RTS state.
+ * @param dtr Host DTR state (recorded for HID monitoring only; does not gate bridging).
+ * @param rts Host RTS state (currently ignored; HW UART RTS/CTS is board-side).
  */
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts) {
     (void)rts;

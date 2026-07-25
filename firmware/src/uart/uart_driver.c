@@ -16,6 +16,8 @@
 #define UART_DRIVER_DEFAULT_BAUD_RATE 115200u
 /** @brief Maximum time core 0 waits for a UART worker mailbox response. */
 #define UART_DRIVER_MAILBOX_TIMEOUT_MS 20u
+/** @brief Maximum time the worker may defer applying a line-coding change. */
+#define UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS 1000u
 
 /**
  * @brief Commands accepted by the cross-core UART control mailbox.
@@ -55,6 +57,7 @@ typedef struct {
  */
 typedef struct {
     bool pending; /**< True while a line-coding change is waiting to be applied. */
+    absolute_time_t deadline; /**< Absolute time when a deferred apply must succeed or fail. */
     uart_driver_line_coding_t line_coding; /**< Latest requested line-coding payload. */
 } uart_driver_pending_control_t;
 
@@ -63,14 +66,15 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
     {
         .info = {UART_PORT_0, UART_DRIVER_BACKEND_HW, UART_DRIVER_DEFAULT_BAUD_RATE, 0u, 1u},
         .backend.hw = {
-            .config = {uart0, UART_DRIVER_DEFAULT_BAUD_RATE, 0u, 1u, 2u, 3u, false, 8u, 1u, UART_PARITY_NONE},
+            /* CTS pull-down (active-low) keeps TX flowing when the peer omits CTS. */
+            .config = {uart0, UART_DRIVER_DEFAULT_BAUD_RATE, 0u, 1u, 2u, 3u, true, 8u, 1u, UART_PARITY_NONE},
             .initialized = false,
         },
     },
     {
         .info = {UART_PORT_1, UART_DRIVER_BACKEND_HW, UART_DRIVER_DEFAULT_BAUD_RATE, 4u, 5u},
         .backend.hw = {
-            .config = {uart1, UART_DRIVER_DEFAULT_BAUD_RATE, 4u, 5u, 6u, 7u, false, 8u, 1u, UART_PARITY_NONE},
+            .config = {uart1, UART_DRIVER_DEFAULT_BAUD_RATE, 4u, 5u, 6u, 7u, true, 8u, 1u, UART_PARITY_NONE},
             .initialized = false,
         },
     },
@@ -138,6 +142,8 @@ static uart_driver_mailbox_t uart_driver_mailbox;
 static bool uart_driver_worker_started;
 /** @brief Per-port status flags for monitoring and HID reporting. */
 static volatile uint8_t uart_driver_port_status_flags[UART_PORT_COUNT];
+/** @brief Cross-core lock protecting @ref uart_driver_port_status_flags. */
+static spin_lock_t *uart_driver_status_lock;
 /** @brief Deferred line-coding requests owned by the worker core. */
 static uart_driver_pending_control_t uart_driver_pending_controls[UART_PORT_COUNT];
 /** @brief Worker-loop port index that starts the next backend poll sweep. */
@@ -166,20 +172,28 @@ void isr_hardfault(void)
 
 static void uart_driver_set_port_status_flag(uart_port_id_t port_id, uint8_t flag)
 {
+    uint32_t save;
+
     if (port_id >= UART_PORT_COUNT) {
         return;
     }
 
+    save = spin_lock_blocking(uart_driver_status_lock);
     uart_driver_port_status_flags[port_id] |= flag;
+    spin_unlock(uart_driver_status_lock, save);
 }
 
 static void uart_driver_clear_port_status_flag(uart_port_id_t port_id, uint8_t flag)
 {
+    uint32_t save;
+
     if (port_id >= UART_PORT_COUNT) {
         return;
     }
 
+    save = spin_lock_blocking(uart_driver_status_lock);
     uart_driver_port_status_flags[port_id] &= (uint8_t)~flag;
+    spin_unlock(uart_driver_status_lock, save);
 }
 
 static void uart_driver_worker_core_main(void)
@@ -415,6 +429,7 @@ static void uart_driver_poll_backends(void)
 static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_driver_port_t *port)
 {
     uart_driver_pending_control_t *pending_control;
+    bool applied = false;
 
     if ((port == NULL) || (port_id >= UART_PORT_COUNT)) {
         return;
@@ -426,20 +441,28 @@ static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_dri
     }
 
     if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-        if (!hw_uart_driver_set_line_format(&port->backend.hw,
-                                            pending_control->line_coding.baud_rate,
-                                            pending_control->line_coding.data_bits,
-                                            pending_control->line_coding.stop_bits,
-                                            uart_driver_hw_parity(pending_control->line_coding.parity))) {
-            return;
-        }
+        applied = hw_uart_driver_set_line_format(&port->backend.hw,
+                                                 pending_control->line_coding.baud_rate,
+                                                 pending_control->line_coding.data_bits,
+                                                 pending_control->line_coding.stop_bits,
+                                                 uart_driver_hw_parity(pending_control->line_coding.parity));
     } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        bool applied = pio_uart_driver_set_baud_rate(&port->backend.pio,
-                                                      pending_control->line_coding.baud_rate);
-        if (!applied) {
+        applied = pio_uart_driver_set_baud_rate(&port->backend.pio,
+                                                pending_control->line_coding.baud_rate);
+    } else {
+        pending_control->pending = false;
+        uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
+        uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+        return;
+    }
+
+    if (!applied) {
+        if (!time_reached(pending_control->deadline)) {
             return;
         }
-    } else {
+
+        /* Continuous RX/TX activity can defer a PIO/HW reconfigure forever;
+         * fail the request so USB ingress is not paused indefinitely. */
         pending_control->pending = false;
         uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
         uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
@@ -457,9 +480,13 @@ static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_dri
 bool uart_driver_init(void)
 {
     if (!uart_driver_worker_started) {
+        if (uart_driver_status_lock == NULL) {
+            uart_driver_status_lock = spin_lock_instance(spin_lock_claim_unused(true));
+        }
         for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
             uart_driver_port_status_flags[index] = 0u;
             uart_driver_pending_controls[index].pending = false;
+            uart_driver_pending_controls[index].deadline = nil_time;
             uart_driver_pending_controls[index].line_coding.baud_rate = UART_DRIVER_DEFAULT_BAUD_RATE;
             uart_driver_pending_controls[index].line_coding.data_bits = 8u;
             uart_driver_pending_controls[index].line_coding.stop_bits = 1u;
@@ -576,6 +603,23 @@ size_t uart_driver_drain_rx(uart_port_id_t port_id,
     return total_written;
 }
 
+size_t uart_driver_recover_rx(uart_port_id_t port_id)
+{
+    uart_driver_port_t *port = uart_driver_port_mutable(port_id);
+    ring_buffer_t *rx_ring;
+
+    if ((port == NULL) || !uart_driver_port_is_ready(port_id)) {
+        return 0u;
+    }
+
+    rx_ring = uart_driver_rx_ring_mutable(port);
+    if (rx_ring == NULL) {
+        return 0u;
+    }
+
+    return ring_buffer_recover_overflow(rx_ring);
+}
+
 size_t uart_driver_fill_tx(uart_port_id_t port_id,
                            size_t capacity,
                            uint32_t (*reader)(void *context, uint8_t *data, uint32_t length),
@@ -668,6 +712,7 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
         return UART_DRIVER_COMMAND_STATUS_UNSUPPORTED;
     }
 
+    pending_control->deadline = make_timeout_time_ms(UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS);
     pending_control->pending = true;
     uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
     uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
@@ -704,13 +749,15 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
 uint8_t uart_driver_port_status(uart_port_id_t port_id)
 {
     uint8_t status;
+    uint32_t save;
 
     if (port_id >= UART_PORT_COUNT) {
         return 0u;
     }
 
+    save = spin_lock_blocking(uart_driver_status_lock);
     status = uart_driver_port_status_flags[port_id];
-    __dmb();
+    spin_unlock(uart_driver_status_lock, save);
     return status;
 }
 

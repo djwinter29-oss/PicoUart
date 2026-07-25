@@ -405,7 +405,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
         !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
         !pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
         !pio_uart_driver_rx_line_idle(driver)) {
-        // ponytail: continuous RX activity can defer a baud change indefinitely; preserving frame integrity is acceptable now, and a bounded reject policy is the upgrade path if host control needs a deadline.
+        /* Continuous traffic defers the change; uart_driver applies a bounded timeout. */
         return false;
     }
 
