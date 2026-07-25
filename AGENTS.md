@@ -20,7 +20,8 @@ These are installed once and captured in the snapshot:
   `tools/linux/setup-sdk-env.sh`. Persisted in the snapshot; the setup script is idempotent
   (skips the clone if `.pico-sdk/` already exists).
 
-The update script only refreshes the Python host dependency (`host/python/requirements.txt`).
+The update script refreshes Python host dependencies (`requirements.txt` and
+`requirements-dev.txt` when present).
 
 ### Build / test / run (standard commands live in the scripts; see `.github/skills/pico-uart-board-testing/SKILL.md`)
 
@@ -28,9 +29,11 @@ The update script only refreshes the Python host dependency (`host/python/requir
   Artifacts land in `build/firmware-<board>/pico_uart.{elf,uf2,bin,hex}`.
 - If you build in a shell that hasn't sourced `setup-sdk-env.sh`, `build.sh` still finds
   `.pico-sdk/` automatically (defaults `PICO_SDK_PATH` to `<repo>/.pico-sdk`).
-- Tests: `tools/linux/test.sh` — there are currently **no CMake tests**, so it prints
-  "No CMake tests are configured for this repository." (`coverage.sh` exits for the same reason).
-- Host HID tool: `python3 host/python/pico_uart_hid.py {monitor,temperature,toggle-led,reset}`.
+- Host unit tests (no board): `tools/linux/test-host.sh` — native C Unity/CTest under
+  `firmware/tests/` plus Python pytest under `host/python/tests/`. See
+  `firmware/tests/README.md`.
+- Combined: `tools/linux/test.sh` builds firmware (unless `--skip-build`) then runs host tests.
+- Host HID tool: `python3 host/python/src/pico_uart_hid.py {monitor,temperature,version,toggle-led,reset}`.
 - Serial bridge/stress tests: `tools/linux/serial_bridge_test.py`, `serial_stress_benchmark.py`.
 
 ### Expected without hardware

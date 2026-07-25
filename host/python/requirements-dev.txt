@@ -1,0 +1,5 @@
+# Runtime dependency for the HID host tool.
+-r requirements.txt
+
+# Host-side test runner.
+pytest>=8.0
