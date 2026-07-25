@@ -6,6 +6,7 @@
 #include "usb/usb_cdc.h"
 
 #include "config/config.h"
+#include "uart/line_coding.h"
 #include "uart/uart_driver.h"
 
 #include "tusb.h"
@@ -30,37 +31,6 @@ typedef struct {
 static usb_cdc_pending_line_coding_t usb_cdc_line_coding_pending[USB_CDC_PORT_COUNT];
 /** @brief Per-port host-side CDC transport state. */
 static usb_cdc_port_stats_t usb_cdc_stats[USB_CDC_PORT_COUNT];
-
-static bool usb_cdc_parse_line_coding(cdc_line_coding_t const *usb_line_coding,
-                                      uart_driver_line_coding_t *line_coding)
-{
-    if ((usb_line_coding == NULL) || (line_coding == NULL) || (usb_line_coding->bit_rate == 0u)) {
-        return false;
-    }
-
-    line_coding->baud_rate = usb_line_coding->bit_rate;
-    line_coding->data_bits = usb_line_coding->data_bits;
-
-    if (usb_line_coding->stop_bits == 0u) {
-        line_coding->stop_bits = 1u;
-    } else if (usb_line_coding->stop_bits == 2u) {
-        line_coding->stop_bits = 2u;
-    } else {
-        return false;
-    }
-
-    if (usb_line_coding->parity == 0u) {
-        line_coding->parity = UART_DRIVER_PARITY_NONE;
-    } else if (usb_line_coding->parity == 1u) {
-        line_coding->parity = UART_DRIVER_PARITY_ODD;
-    } else if (usb_line_coding->parity == 2u) {
-        line_coding->parity = UART_DRIVER_PARITY_EVEN;
-    } else {
-        return false;
-    }
-
-    return true;
-}
 
 static bool usb_cdc_apply_line_coding(uint8_t itf,
                                       const uart_driver_line_coding_t *line_coding)
@@ -188,8 +158,22 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
 {
     uart_driver_line_coding_t line_coding;
 
-    if ((itf >= USB_CDC_PORT_COUNT) ||
-        !usb_cdc_parse_line_coding(p_line_coding, &line_coding)) {
+    if (itf >= USB_CDC_PORT_COUNT) {
+        return;
+    }
+
+    /*
+     * TinyUSB accepts SET_LINE_CODING at the USB layer before this callback.
+     * Parse failures and later backend rejects are therefore invisible on the
+     * CDC control pipe; surface them through HID CONTROL_ERROR instead.
+     */
+    if ((p_line_coding == NULL) ||
+        !uart_line_coding_from_usb(p_line_coding->bit_rate,
+                                   p_line_coding->stop_bits,
+                                   p_line_coding->parity,
+                                   p_line_coding->data_bits,
+                                   &line_coding)) {
+        uart_driver_report_control_error((uart_port_id_t)itf);
         return;
     }
 

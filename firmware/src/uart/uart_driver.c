@@ -6,6 +6,7 @@
 #include "uart/uart_driver.h"
 
 #include "uart/hw/driver.h"
+#include "uart/line_coding.h"
 #include "hardware/sync.h"
 #include "pico/multicore.h"
 #include "pico/time.h"
@@ -14,8 +15,22 @@
 
 /** @brief Default startup baud rate applied to all logical UART ports. */
 #define UART_DRIVER_DEFAULT_BAUD_RATE 115200u
-/** @brief Maximum time core 0 waits for a UART worker mailbox response. */
-#define UART_DRIVER_MAILBOX_TIMEOUT_MS 20u
+/**
+ * @brief Maximum time core 0 waits for the mailbox to become idle before posting.
+ *
+ * If this expires, no request was posted and nothing is orphaned.
+ */
+#define UART_DRIVER_MAILBOX_IDLE_TIMEOUT_MS 20u
+/**
+ * @brief Maximum time core 0 waits for a response after posting a mailbox request.
+ *
+ * On expiry the request remains in flight on core 1 (an orphan from core 0's
+ * point of view). Core 0 records @ref UART_DRIVER_COMMAND_STATUS_TIMEOUT locally
+ * and must not post another command until `request_sequence == response_sequence`
+ * again. The worker still completes the original command and publishes its
+ * result; the next successful wait-for-idle observes that completion.
+ */
+#define UART_DRIVER_MAILBOX_RESPONSE_TIMEOUT_MS 100u
 /** @brief Maximum time the worker may defer applying a line-coding change. */
 #define UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS 1000u
 
@@ -148,12 +163,19 @@ static spin_lock_t *uart_driver_status_lock;
 static uart_driver_pending_control_t uart_driver_pending_controls[UART_PORT_COUNT];
 /** @brief Worker-loop port index that starts the next backend poll sweep. */
 static size_t uart_driver_poll_start_index;
+/**
+ * @brief Sticky core-0 view of the last synchronous mailbox outcome.
+ *
+ * Set to @ref UART_DRIVER_COMMAND_STATUS_TIMEOUT when core 0 posts a request
+ * and the response deadline expires before the worker publishes
+ * `response_sequence`. The in-flight request is not cancelled.
+ */
+static volatile uart_driver_command_status_t uart_driver_mailbox_last_status =
+    UART_DRIVER_COMMAND_STATUS_WORKER_NOT_STARTED;
 
 static uart_driver_command_status_t uart_driver_init_backends(uint32_t *result_port_id);
 static void uart_driver_poll_backends(void);
-static bool uart_driver_line_coding_is_valid(const uart_driver_line_coding_t *line_coding);
 static uart_parity_t uart_driver_hw_parity(uart_driver_parity_t parity);
-static bool uart_driver_pio_line_coding_supported(const uart_driver_line_coding_t *line_coding);
 static uart_driver_command_status_t uart_driver_set_line_coding_local(
     uart_port_id_t port_id,
     const uart_driver_line_coding_t *line_coding,
@@ -233,11 +255,14 @@ static bool uart_driver_mailbox_call(uart_driver_mailbox_command_t command,
                                      uint32_t port_id,
                                      const uart_driver_line_coding_t *line_coding)
 {
-    absolute_time_t deadline = make_timeout_time_ms(UART_DRIVER_MAILBOX_TIMEOUT_MS);
+    absolute_time_t idle_deadline = make_timeout_time_ms(UART_DRIVER_MAILBOX_IDLE_TIMEOUT_MS);
+    absolute_time_t response_deadline;
     uint32_t request_sequence;
 
+    /* Wait until any previous request (including an orphaned timed-out one) finishes. */
     while (uart_driver_mailbox.request_sequence != uart_driver_mailbox.response_sequence) {
-        if (time_reached(deadline)) {
+        if (time_reached(idle_deadline)) {
+            uart_driver_mailbox_last_status = UART_DRIVER_COMMAND_STATUS_TIMEOUT;
             return false;
         }
         tight_loop_contents();
@@ -252,8 +277,16 @@ static bool uart_driver_mailbox_call(uart_driver_mailbox_command_t command,
     __dmb();
     uart_driver_mailbox.request_sequence = request_sequence;
 
+    response_deadline = make_timeout_time_ms(UART_DRIVER_MAILBOX_RESPONSE_TIMEOUT_MS);
     while (uart_driver_mailbox.response_sequence != request_sequence) {
-        if (time_reached(deadline)) {
+        if (time_reached(response_deadline)) {
+            /*
+             * Orphan policy: leave the in-flight request alone. The worker will
+             * still complete it and advance response_sequence. Callers must treat
+             * this as "completion unknown" and retry only after the mailbox is
+             * idle again (the wait loop above).
+             */
+            uart_driver_mailbox_last_status = UART_DRIVER_COMMAND_STATUS_TIMEOUT;
             return false;
         }
         tight_loop_contents();
@@ -261,27 +294,9 @@ static bool uart_driver_mailbox_call(uart_driver_mailbox_command_t command,
 
     __dmb();
     uart_driver_mailbox.command = UART_DRIVER_MAILBOX_COMMAND_NONE;
+    uart_driver_mailbox_last_status = uart_driver_mailbox.result_status;
     return (uart_driver_mailbox.result_status == UART_DRIVER_COMMAND_STATUS_OK) ||
            (uart_driver_mailbox.result_status == UART_DRIVER_COMMAND_STATUS_QUEUED);
-}
-
-static bool uart_driver_line_coding_is_valid(const uart_driver_line_coding_t *line_coding)
-{
-    if ((line_coding == NULL) || (line_coding->baud_rate == 0u)) {
-        return false;
-    }
-
-    if ((line_coding->data_bits < 5u) || (line_coding->data_bits > 8u)) {
-        return false;
-    }
-
-    if ((line_coding->stop_bits != 1u) && (line_coding->stop_bits != 2u)) {
-        return false;
-    }
-
-    return (line_coding->parity == UART_DRIVER_PARITY_NONE) ||
-           (line_coding->parity == UART_DRIVER_PARITY_ODD) ||
-           (line_coding->parity == UART_DRIVER_PARITY_EVEN);
 }
 
 static uart_parity_t uart_driver_hw_parity(uart_driver_parity_t parity)
@@ -295,17 +310,6 @@ static uart_parity_t uart_driver_hw_parity(uart_driver_parity_t parity)
     }
 
     return UART_PARITY_NONE;
-}
-
-static bool uart_driver_pio_line_coding_supported(const uart_driver_line_coding_t *line_coding)
-{
-    if (!uart_driver_line_coding_is_valid(line_coding)) {
-        return false;
-    }
-
-    return (line_coding->data_bits == 8u) &&
-           (line_coding->stop_bits == 1u) &&
-           (line_coding->parity == UART_DRIVER_PARITY_NONE);
 }
 
 static uart_driver_port_t *uart_driver_port_mutable(uart_port_id_t port_id)
@@ -688,7 +692,7 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
         return UART_DRIVER_COMMAND_STATUS_INVALID_PORT;
     }
 
-    if (!uart_driver_line_coding_is_valid(line_coding)) {
+    if (!uart_line_coding_is_valid(line_coding)) {
         uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
         uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
         return UART_DRIVER_COMMAND_STATUS_INVALID_ARGUMENT;
@@ -699,7 +703,7 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
     if (port->info.backend == UART_DRIVER_BACKEND_HW) {
         pending_control->line_coding = *line_coding;
     } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        if (!uart_driver_pio_line_coding_supported(line_coding)) {
+        if (!uart_line_coding_pio_supported(line_coding)) {
             uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
             uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
             return UART_DRIVER_COMMAND_STATUS_BACKEND_REJECTED;
@@ -728,7 +732,8 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
         return false;
     }
 
-    if (!uart_driver_line_coding_is_valid(line_coding)) {
+    if (!uart_line_coding_is_valid(line_coding)) {
+        uart_driver_report_control_error(port_id);
         return false;
     }
 
@@ -744,6 +749,16 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
     __dmb();
     uart_driver_mailbox.request_sequence = request_sequence;
     return true;
+}
+
+void uart_driver_report_control_error(uart_port_id_t port_id)
+{
+    if (port_id >= UART_PORT_COUNT) {
+        return;
+    }
+
+    uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
+    uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
 }
 
 uint8_t uart_driver_port_status(uart_port_id_t port_id)
@@ -804,6 +819,7 @@ bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *st
         stats->controller_tx_bytes = (uint32_t)(port->backend.pio.tx_polled_bytes +
                                                 port->backend.pio.tx_dma_bytes);
         stats->controller_rx_bytes = port->backend.pio.controller_rx_bytes;
+        stats->rx_error_count = port->backend.pio.rx_error_count;
     } else if (port->info.backend == UART_DRIVER_BACKEND_HW) {
         stats->controller_tx_bytes = port->backend.hw.controller_tx_bytes;
         stats->controller_rx_bytes = port->backend.hw.controller_rx_bytes;

@@ -75,8 +75,10 @@ Each USB CDC channel is mapped 1:1 to a UART instance:
 | CDC4 | PIO UART | GP16 | GP17 |
 | CDC5 | PIO UART | GP20 | GP21 |
 
-The current transport code only uses TX and RX. The board-level RTS and CTS reservations are
-documented separately and remain a follow-up item.
+The current transport uses TX and RX on every port. Hardware UART0/UART1 also
+enable board-side RTS/CTS (CTS pulled down so TX still flows when a peer omits
+CTS). PIO UART RTS/CTS pins remain reserved without runtime flow-control
+behavior. Host CDC RTS is ignored.
 
 ## Target Devices
 
@@ -131,8 +133,10 @@ Known gaps in the current implementation:
 
 1. PIO UART RTS/CTS pins are reserved but have no runtime flow-control behavior yet (hardware UART0/UART1 enable RTS/CTS).
 2. Host CDC RTS is ignored; DTR is recorded for HID monitoring only and does not gate bridging.
-3. PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or data-bit changes.
+3. PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or data-bit changes (HID `control_error`).
 4. HID exposes ring high-water marks and a sticky RX-overrun health bit; full occupancy/overflow **counts** are not in the compact HID report.
+
+Release process (USB identity gate + recorded HIL pass): [docs/releasing.md](docs/releasing.md).
 
 ## Possible Future Enhancements
 

@@ -102,6 +102,8 @@ requirement applies.
 - Hardware UART ports accept supported baud/data/parity/stop updates and enable RTS/CTS;
   PIO UART ports remain 8N1-only with reserved RTS/CTS pins.
 - PIO UART line-coding changes are deferred on the worker core until the port reaches a safe idle point, to avoid discarding queued traffic.
-- PIO UART RX currently does not validate stop bits (see `docs/detail/pio-uart-design.md`).
+- PIO UART RX validates stop bits and counts framing errors (see `docs/detail/pio-uart-design.md`).
+- CDC line-coding rejects are visible through HID `CONTROL_ERROR` because TinyUSB accepts `SET_LINE_CODING` before firmware validation (`docs/hid-monitor.md`).
+- Cross-core mailbox: core 0 waits up to 20 ms for the slot to be idle and 100 ms for a response after posting. A response timeout leaves the request in flight (orphan); the next call waits for idle rather than posting over it.
 - CDC DTR updates HID `opened` only and does not gate bridging; host CDC RTS is ignored.
 - HID does not yet report full ring occupancy/overflow **counts** (only high-water blocks and a sticky overrun bit).

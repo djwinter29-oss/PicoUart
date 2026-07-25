@@ -43,6 +43,7 @@ add_executable(pico_uart
     src/driver/temperature.c
     src/main.c
     src/uart/hw/driver.c
+    src/uart/line_coding.c
     src/uart/pio/driver.c
     src/uart/ring_buffer/ring_buffer.c
     src/uart/uart_driver.c

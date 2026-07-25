@@ -136,6 +136,8 @@ static void pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
     pio_sm_config config = pio_uart_rx_program_get_default_config(offset);
 
     sm_config_set_in_pins(&config, driver->config.rx_pin);
+    /* jmp pin is sampled by the stop-bit check after the 8 data bits. */
+    sm_config_set_jmp_pin(&config, driver->config.rx_pin);
     sm_config_set_in_shift(&config, true, false, 32u);
     sm_config_set_fifo_join(&config, PIO_FIFO_JOIN_RX);
     sm_config_set_clkdiv(&config, pio_uart_driver_clock_divider(driver->config.baud_rate));
@@ -145,6 +147,7 @@ static void pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
         gpio_pull_up(driver->config.rx_pin);
     }
     pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.rx_state_machine, driver->config.rx_pin, 1u, false);
+    pio_interrupt_clear(driver->config.pio, driver->config.rx_state_machine);
     pio_sm_init(driver->config.pio, driver->config.rx_state_machine, offset, &config);
     pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, true);
 }
@@ -271,8 +274,19 @@ static void pio_uart_driver_service_tx(pio_uart_driver_t *driver)
     pio_uart_driver_drain_tx_fifo(driver);
 }
 
+static void pio_uart_driver_harvest_framing_errors(pio_uart_driver_t *driver)
+{
+    /* irq set 0 rel raises the flag whose index matches the RX state machine. */
+    if (pio_interrupt_get(driver->config.pio, driver->config.rx_state_machine)) {
+        pio_interrupt_clear(driver->config.pio, driver->config.rx_state_machine);
+        driver->rx_error_count += 1u;
+    }
+}
+
 static void pio_uart_driver_fill_rx_ring(pio_uart_driver_t *driver)
 {
+    pio_uart_driver_harvest_framing_errors(driver);
+
     while (!pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine)) {
         ring_buffer_span_t span = ring_buffer_write_span(&driver->rx_ring);
         size_t produced = 0u;
@@ -334,6 +348,7 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
     driver->tx_polled_bytes = 0u;
     driver->tx_dma_bytes = 0u;
     driver->controller_rx_bytes = 0u;
+    driver->rx_error_count = 0u;
 
     if (!ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
         return false;

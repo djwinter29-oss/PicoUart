@@ -71,10 +71,16 @@ consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produ
 	per-port rings and the control mailbox.
 - Hardware UART0/UART1 enable RTS/CTS. CTS is active-low with a board pull-down so
 	TX still flows when a peer omits the CTS wire (for example a Debug Probe UART).
-- PIO UART ports support 8N1; hardware UART ports additionally apply valid CDC data-bit,
+- PIO UART ports support 8N1 with stop-bit framing validation; hardware UART ports additionally apply valid CDC data-bit,
 	stop-bit, and parity settings.
 - Deferred line-coding applies fail with `CONTROL_ERROR` if the backend cannot reach a
 	safe idle boundary within 1 second (avoids pausing USB ingress indefinitely).
+- CDC `SET_LINE_CODING` can succeed at the USB layer while firmware rejects the request;
+	hosts must watch HID health bit 2 (`CONTROL_ERROR`). Shared validation lives in
+	`firmware/src/uart/line_coding.c` (50–3 000 000 baud).
+- Hardware UART RX DMA re-arms from a DMA IRQ when the transfer counter exhausts; the
+	worker poll path is a safety net. Peers that ignore RTS can still overrun the UART
+	FIFO under sustained flood — exercise that case in HIL before advertising flow control.
 
 ## Open Items
 
@@ -82,4 +88,4 @@ consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produ
 - Whether to replace PIO RX polling with IRQ or DMA service at sustained high baud rates
 - Whether full ring occupancy/overflow counters should be added to the compact HID report
 	(high-water mark blocks and a sticky overrun health bit are already present)
-- Replace development USB IDs (`cafe:4010`) before production releases
+- Replace development USB IDs (`cafe:4010`) before production releases (see `docs/releasing.md`)
