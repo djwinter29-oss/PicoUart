@@ -1,11 +1,11 @@
 /**
- * @file pio_uart_driver.c
+ * @file driver.c
  * @brief PIO UART backend for PicoUart logical UART ports.
  */
 
-#include "pio/pio_uart_driver_internal.h"
+#include "uart/pio/internal.h"
 
-#include "pio_uart.pio.h"
+#include "uart.pio.h"
 
 #include "hardware/clocks.h"
 #include "hardware/dma.h"

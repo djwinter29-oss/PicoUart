@@ -5,7 +5,7 @@
 
 #include "usb/usb_cdc.h"
 
-#include "driver/uart_driver.h"
+#include "uart/uart_driver.h"
 
 #include "tusb.h"
 

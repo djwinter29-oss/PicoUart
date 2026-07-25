@@ -1,13 +1,13 @@
 /**
- * @file pio_uart_driver_internal.h
+ * @file internal.h
  * @brief Internal runtime state for the PicoUart PIO UART backend.
  */
 
 #ifndef PIO_UART_DRIVER_INTERNAL_H
 #define PIO_UART_DRIVER_INTERNAL_H
 
-#include "pio/pio_uart_driver.h"
-#include "ring_buffer/ring_buffer.h"
+#include "uart/pio/driver.h"
+#include "uart/ring_buffer/ring_buffer.h"
 
 #include <stddef.h>
 #include <stdint.h>

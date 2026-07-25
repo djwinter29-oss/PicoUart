@@ -3,7 +3,7 @@
  * @brief Fixed-size ring-buffer helpers for PicoUart DMA and USB bridging.
  */
 
-#include "ring_buffer/ring_buffer.h"
+#include "uart/ring_buffer/ring_buffer.h"
 
 #include "hardware/sync.h"
 

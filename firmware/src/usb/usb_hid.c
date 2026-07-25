@@ -5,7 +5,7 @@
 
 #include "usb/usb_hid.h"
 
-#include "driver/uart_driver.h"
+#include "uart/uart_driver.h"
 
 #include "pico/stdlib.h"
 #include "tusb.h"

@@ -1,5 +1,5 @@
 /**
- * @file pio_uart_driver.h
+ * @file driver.h
  * @brief PIO UART backend for PicoUart logical UART ports.
  */
 

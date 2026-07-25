@@ -1,7 +1,7 @@
 #include "pico/stdlib.h"
 
 #include "driver/system.h"
-#include "driver/uart_driver.h"
+#include "uart/uart_driver.h"
 #include "usb/usb_cdc.h"
 #include "usb/usb_hid.h"
 

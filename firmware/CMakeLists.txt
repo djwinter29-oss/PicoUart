@@ -20,18 +20,18 @@ project(pico_uart C CXX ASM)
 pico_sdk_init()
 
 add_executable(pico_uart
-    src/driver/hw_uart_driver.c
     src/driver/system.c
-    src/pio/pio_uart_driver.c
-    src/driver/uart_driver.c
     src/main.c
-    src/ring_buffer/ring_buffer.c
+    src/uart/hw/driver.c
+    src/uart/pio/driver.c
+    src/uart/ring_buffer/ring_buffer.c
+    src/uart/uart_driver.c
     src/usb/usb_cdc.c
     src/usb/usb_hid.c
     src/usb/usb_descriptors.c
 )
 
-pico_generate_pio_header(pico_uart ${CMAKE_CURRENT_LIST_DIR}/src/pio/pio_uart.pio)
+pico_generate_pio_header(pico_uart ${CMAKE_CURRENT_LIST_DIR}/src/uart/pio/uart.pio)
 
 target_include_directories(pico_uart PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src

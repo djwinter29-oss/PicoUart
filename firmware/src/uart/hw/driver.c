@@ -1,9 +1,9 @@
 /**
- * @file hw_uart_driver.c
+ * @file driver.c
  * @brief Hardware UART backend for PicoUart logical UART ports.
  */
 
-#include "driver/hw_uart_driver.h"
+#include "uart/hw/driver.h"
 
 #include "hardware/dma.h"
 #include "hardware/gpio.h"

@@ -3,14 +3,14 @@
  * @brief Logical UART port table for the PicoUart firmware.
  */
 
-#include "driver/uart_driver.h"
+#include "uart/uart_driver.h"
 
-#include "driver/hw_uart_driver.h"
+#include "uart/hw/driver.h"
 #include "hardware/sync.h"
 #include "pico/multicore.h"
 #include "pico/time.h"
-#include "pio/pio_uart_driver_internal.h"
-#include "ring_buffer/ring_buffer.h"
+#include "uart/pio/internal.h"
+#include "uart/ring_buffer/ring_buffer.h"
 
 /** @brief Default startup baud rate applied to all logical UART ports. */
 #define UART_DRIVER_DEFAULT_BAUD_RATE 115200u
@@ -209,13 +209,15 @@ static void uart_driver_worker_core_main(void)
         if (request_sequence != uart_driver_mailbox.response_sequence) {
             uart_driver_command_status_t status = UART_DRIVER_COMMAND_STATUS_UNSUPPORTED;
             uint32_t result_port_id = UART_PORT_COUNT;
+            uart_driver_line_coding_t line_coding;
 
             __dmb();
             if (uart_driver_mailbox.command == UART_DRIVER_MAILBOX_COMMAND_INIT) {
                 status = uart_driver_init_backends(&result_port_id);
             } else if (uart_driver_mailbox.command == UART_DRIVER_MAILBOX_COMMAND_SET_LINE_CODING) {
+                line_coding = uart_driver_mailbox.line_coding;
                 status = uart_driver_set_line_coding_local((uart_port_id_t)uart_driver_mailbox.port_id,
-                                                           &uart_driver_mailbox.line_coding,
+                                                           &line_coding,
                                                            &result_port_id);
             }
 
