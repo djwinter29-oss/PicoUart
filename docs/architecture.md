@@ -10,8 +10,9 @@ Each CDC interface maps to one UART channel.
 
 ## Current Firmware Status
 
-The current firmware boots core 1 as a dedicated UART worker, then core 0 initializes
-the TinyUSB device stack and the HID monitor. At runtime:
+The current firmware boots core 1 as a dedicated UART worker and initializes all
+UART backends first, then core 0 starts the TinyUSB device stack and the HID
+monitor. At runtime:
 
 - core 1 exclusively initializes, polls, and reconfigures UART controllers
 - core 0 services TinyUSB tasks
@@ -50,14 +51,13 @@ consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produ
 ## Main Blocks
 
 - USB device stack with 6 CDC ACM functions
-- USB HID status-monitor function with LED-toggle and watchdog-reset commands
+- USB HID status-monitor function with LED-toggle, watchdog-reset, temperature, and firmware-version feature reports
 - Per-port CDC-to-UART routing in the USB poll loop
 - Per-port RX and TX ring buffers inside each UART backend
-- 2 hardware UART backends
+- 2 hardware UART backends with RTS/CTS hardware flow control enabled
 - 4 PIO UART backends
 - Board-specific GPIO configuration
-- CDC DTR state opens the matching bridge; HID board controls are restricted
-	to LED toggle and reset
+- CDC DTR is recorded for HID monitoring only and does not gate bridging; HID board controls are restricted to LED toggle and reset
 
 ## Design Notes
 
@@ -69,12 +69,17 @@ consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produ
 - Keep TinyUSB ownership in one execution context by polling it from `main`.
 - Keep UART-controller ownership on core 1; cross-core traffic uses only the
 	per-port rings and the control mailbox.
-- Reserve RTS and CTS for hardware UART ports; enable them in the board configuration only when the connected peer supports flow control.
+- Hardware UART0/UART1 enable RTS/CTS. CTS is active-low with a board pull-down so
+	TX still flows when a peer omits the CTS wire (for example a Debug Probe UART).
 - PIO UART ports support 8N1; hardware UART ports additionally apply valid CDC data-bit,
 	stop-bit, and parity settings.
+- Deferred line-coding applies fail with `CONTROL_ERROR` if the backend cannot reach a
+	safe idle boundary within 1 second (avoids pausing USB ingress indefinitely).
 
 ## Open Items
 
 - RTS and CTS runtime behavior for PIO UART ports
 - Whether to replace PIO RX polling with IRQ or DMA service at sustained high baud rates
-- Whether ring-overflow counters should be added to the compact HID report
+- Whether full ring occupancy/overflow counters should be added to the compact HID report
+	(high-water mark blocks and a sticky overrun health bit are already present)
+- Replace development USB IDs (`cafe:4010`) before production releases

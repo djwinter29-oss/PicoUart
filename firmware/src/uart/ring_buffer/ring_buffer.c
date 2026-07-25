@@ -161,6 +161,10 @@ ring_buffer_span_t ring_buffer_read_span(ring_buffer_t *ring)
         return span;
     }
 
+    /* Recover before every read so a stalled consumer cannot leave the
+     * producer-consumer delta ambiguous across a full 32-bit wrap. */
+    (void)ring_buffer_recover_overflow(ring);
+
     occupancy = ring_buffer_available(ring);
     if (occupancy == 0u) {
         ring->consumer_reserved_count = 0u;

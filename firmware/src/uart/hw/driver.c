@@ -230,6 +230,8 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver)
     if (driver->config.hardware_flow_control) {
         gpio_set_function(driver->config.cts_pin, GPIO_FUNC_UART);
         gpio_set_function(driver->config.rts_pin, GPIO_FUNC_UART);
+        /* CTS is active-low; pull-down keeps TX flowing when the peer omits CTS. */
+        gpio_pull_down(driver->config.cts_pin);
     }
     hw_uart_driver_configure_uart(driver);
     hw_uart_driver_start_rx_dma(driver);
