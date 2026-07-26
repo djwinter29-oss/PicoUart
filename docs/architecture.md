@@ -44,9 +44,9 @@ Host application
 
 Each port should work independently so traffic on one UART does not block the others more than necessary.
 Hardware UART ports use DMA-backed RX and TX rings. PIO UART ports use per-port software rings with
-core-1 RX polling and a hybrid core-1 TX path that fills the joined TX FIFO for short queues,
-then lazily claims DMA when deeper backlog makes that path cheaper. Each ring has one producer and one
-consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produces RX.
+DMA-backed RX (PIO RX FIFO → ring) and a hybrid core-1 TX path that fills the joined TX FIFO for short
+queues, then lazily claims DMA when deeper backlog makes that path cheaper. Each ring has one producer and
+one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produces RX.
 
 ## Main Blocks
 
@@ -89,7 +89,7 @@ consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produ
 ## Open Items
 
 - RTS and CTS runtime behavior for PIO UART ports
-- Whether to replace PIO RX polling with IRQ or DMA service at sustained high baud rates
 - Whether full ring occupancy/overflow counters should be added to the compact HID report
 	(high-water mark blocks and a sticky overrun health bit are already present)
 - Replace development USB IDs (`cafe:4010`) before production releases (see `docs/releasing.md`)
+- Sustained multi-port 1 Mbaud remains bounded by USB full-speed aggregate bandwidth

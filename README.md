@@ -117,7 +117,9 @@ not configure UART transport settings.
 
 - USB stack selection must support composite devices with multiple CDC interfaces
 - PIO UART implementations need careful timing, buffering, and interrupt/DMA handling
-- Aggregate throughput will depend on USB bandwidth, CPU load, and UART baud rates
+- Aggregate throughput will depend on USB full-speed bandwidth, CPU load, and UART baud rates.
+  Each of the 6 ports can be configured for 1 Mbaud; sustained multi-port 1 Mbaud full-duplex
+  is limited by USB FS aggregate capacity, not by the PIO baud divider.
 - Pin planning is important because 6 UART channels require a significant number of GPIOs
 - RTS/CTS support increases GPIO demand and is likely hardest on the 4 PIO-backed channels
 
@@ -129,7 +131,7 @@ The firmware has moved beyond the planning stage and now provides a working base
 2. 1 vendor HID interface enumerates for status monitoring and limited board control.
 3. CDC traffic is bridged to 2 hardware UART backends and 4 PIO UART backends.
 4. Hardware UART ports use DMA-backed RX and TX rings.
-5. PIO UART ports use polling with per-port RX and TX rings.
+5. PIO UART ports use DMA-backed RX rings and hybrid FIFO/DMA TX.
 
 Known gaps in the current implementation:
 

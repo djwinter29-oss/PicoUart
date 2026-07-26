@@ -52,3 +52,5 @@ best available end-to-end check here.
 - HID `reset` is arm-then-reset (`command 3` then `2` within 2 s).
 - Tag releases open as **draft**; promote only after `docs/releasing.md` gates.
 - Host unit tests: `tools/linux/test-host.sh`. Host coverage: `tools/linux/coverage.sh`.
+- Each CDC/UART can be set to 1 Mbaud; PIO RX is DMA-backed. Sustained multi-port 1 Mbaud
+  full-duplex is still limited by USB full-speed aggregate bandwidth.

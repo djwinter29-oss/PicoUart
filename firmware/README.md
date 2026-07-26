@@ -98,7 +98,9 @@ requirement applies.
   applies deferred control requests; core 0 services TinyUSB and bridges CDC rings.
 - The current firmware maps CDC0-CDC5 to 2 hardware UART backends and 4 PIO UART backends.
 - CDC line coding is parsed on core 0, stored as pending per-port configuration, and applied on core 1 by the UART worker.
-- PIO UART RX and TX are polled on core 1. TX fills the joined FIFO for short queues and lazily claims DMA only when deeper backlog makes it worthwhile.
+- PIO UART RX uses persistent DMA into the per-port RX ring (DMA IRQ1 re-arm).
+  PIO TX fills the joined FIFO for short queues and lazily claims DMA only when
+  deeper backlog makes it worthwhile.
 - Hardware UART ports accept supported baud/data/parity/stop updates and enable RTS/CTS;
   PIO UART ports remain 8N1-only with reserved RTS/CTS pins.
 - PIO UART line-coding changes are deferred on the worker core until the port reaches a safe idle point, to avoid discarding queued traffic.
