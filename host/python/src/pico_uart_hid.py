@@ -25,10 +25,10 @@ COMMAND_TOGGLE_LED = 1
 COMMAND_RESET_BOARD = 2
 COMMAND_ARM_RESET = 3
 
-STATUS_SIZE = 64
+STATUS_SIZE = 63
 BOARD_STATUS_SIZE = 8
-BOARD_STATUS_LAYOUT_VERSION = 14
-STATUS_LAYOUT_VERSION = 14
+BOARD_STATUS_LAYOUT_VERSION = 15
+STATUS_LAYOUT_VERSION = 15
 RESET_ARM_WINDOW_S = 2.0
 
 
@@ -87,17 +87,17 @@ def read_firmware_version(device: Any) -> str:
 
 
 def parse_status(payload: bytes) -> dict[str, Any]:
-    """Decode the 64-byte periodic monitor report."""
+    """Decode the 63-byte periodic monitor report (layout v15)."""
     if len(payload) != STATUS_SIZE:
         raise RuntimeError(f"unexpected status report size {len(payload)}")
 
-    signature0, signature1, version, sequence = payload[:4]
-    if bytes((signature0, signature1)) != b"PU":
+    signature0, version, sequence = payload[:3]
+    if signature0 != ord("P"):
         raise RuntimeError("received a status report with an invalid signature")
     if version != STATUS_LAYOUT_VERSION:
         raise RuntimeError(f"unsupported status report version {version}")
 
-    channels = [struct.unpack_from("<BB4H", payload, 4 + index * 10) for index in range(6)]
+    channels = [struct.unpack_from("<BB4H", payload, 3 + index * 10) for index in range(6)]
     return {
         "sequence": sequence,
         "channels": [

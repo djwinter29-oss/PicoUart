@@ -61,7 +61,7 @@ typedef enum {
 typedef struct {
     uart_port_id_t id; /**< Logical port identifier. */
     uart_driver_backend_t backend; /**< Backend class assigned to the port. */
-    uint32_t baud_rate; /**< Configured startup baud rate. */
+    uint32_t baud_rate; /**< Current baud rate (startup default; updated after a successful line-coding apply). */
     uint32_t tx_pin; /**< Configured TX GPIO, or unassigned marker. */
     uint32_t rx_pin; /**< Configured RX GPIO, or unassigned marker. */
 } uart_driver_port_info_t;
@@ -195,6 +195,16 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
 void uart_driver_report_control_error(uart_port_id_t port_id);
 
 /**
+ * @brief Mark one logical UART port as having a control request in flight.
+ * @param port_id Logical port identifier.
+ *
+ * Used by the CDC soft-pending path so HID `control_pending` is visible while a
+ * line-coding request waits for the worker mailbox (before
+ * @ref uart_driver_queue_line_coding accepts it).
+ */
+void uart_driver_mark_control_pending(uart_port_id_t port_id);
+
+/**
  * @brief Return the status flags for one logical UART port.
  * @param port_id Logical port identifier.
  * @return Bitwise OR of @ref UART_DRIVER_PORT_STATUS_* flags.
@@ -210,7 +220,8 @@ bool uart_driver_worker_is_running(void);
 /**
  * @brief Return public metadata for one logical UART port.
  * @param port_id Logical port identifier.
- * @return Pointer to immutable port metadata, or `NULL` when the index is invalid.
+ * @return Pointer to port metadata, or `NULL` when the index is invalid.
+ * @note `baud_rate` reflects the last successfully applied line coding.
  */
 const uart_driver_port_info_t *uart_driver_port_info(uart_port_id_t port_id);
 

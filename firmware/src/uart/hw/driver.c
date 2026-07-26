@@ -5,6 +5,8 @@
 
 #include "uart/hw/driver.h"
 
+#include "uart/dma_progress.h"
+
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
@@ -38,12 +40,17 @@ static void hw_uart_driver_rearm_rx_dma(hw_uart_driver_t *driver)
 {
     /*
      * Keep WRITE_ADDR / ring state and only reload TRANS_COUNT. This is the
-     * tight path that closes the software re-arm gap after the 32-bit transfer
-     * counter exhausts (~4 GiB). Peers that ignore RTS can still overrun the
-     * UART FIFO if re-arm is delayed into the poll loop; the DMA IRQ below
-     * restarts before the next worker sweep.
+     * tight path that closes the software re-arm gap after the countdown
+     * exhausts. Peers that ignore RTS can still overrun the UART FIFO if
+     * re-arm is delayed into the poll loop; the DMA IRQ below restarts before
+     * the next worker sweep.
+     *
+     * Use @ref uart_dma_rx_transfer_count_encoded — raw 0xffffffff is ENDLESS
+     * mode on RP2350 and breaks progress publishing.
      */
-    dma_channel_set_trans_count((uint)driver->rx_dma_channel, 0xffffffffu, true);
+    dma_channel_set_trans_count((uint)driver->rx_dma_channel,
+                                uart_dma_rx_transfer_count_encoded(),
+                                true);
 }
 
 static void __isr hw_uart_driver_rx_dma_irq_handler(void)
@@ -86,7 +93,7 @@ static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
                           &rx_dma_config,
                           write_addr,
                           &uart_get_hw(driver->config.instance)->dr,
-                          0xffffffffu,
+                          uart_dma_rx_transfer_count_encoded(),
                           true);
 
     hw_uart_driver_rx_irq_owners[driver->rx_dma_channel] = driver;
@@ -160,8 +167,7 @@ static void hw_uart_driver_release_dma(hw_uart_driver_t *driver)
 
 static uint32_t hw_uart_driver_rx_progress(const hw_uart_driver_t *driver)
 {
-    uint32_t remaining = dma_hw->ch[driver->rx_dma_channel].transfer_count;
-    return 0xffffffffu - remaining;
+    return uart_dma_rx_progress((uint)driver->rx_dma_channel);
 }
 
 static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
@@ -222,12 +228,12 @@ static void hw_uart_driver_publish_rx(hw_uart_driver_t *driver)
 
     progress = hw_uart_driver_rx_progress(driver);
     /*
-     * After an IRQ (or poll) re-arm, progress drops from ~0xffffffff back to 0.
-     * Treat that as a wrap so bytes between last_progress and the end of the
-     * previous transfer are still published.
+     * After an IRQ (or poll) re-arm, progress drops back toward 0. Treat that as
+     * a wrap so bytes between last_progress and the end of the previous countdown
+     * are still published.
      */
     if (progress < driver->rx_dma_last_progress) {
-        produced = (0xffffffffu - driver->rx_dma_last_progress) + progress;
+        produced = (uart_dma_rx_transfer_count_max() - driver->rx_dma_last_progress) + progress;
     } else {
         produced = progress - driver->rx_dma_last_progress;
     }
@@ -261,11 +267,11 @@ void hw_uart_driver_poll(hw_uart_driver_t *driver)
     hw_uart_driver_record_rx_errors(driver);
     /* Safety net if the DMA IRQ was masked or delayed past transfer completion. */
     if (!dma_channel_is_busy((uint)driver->rx_dma_channel) &&
-        (dma_hw->ch[driver->rx_dma_channel].transfer_count == 0u)) {
+        (uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel) == 0u)) {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
         if (!dma_channel_is_busy((uint)driver->rx_dma_channel) &&
-            (dma_hw->ch[driver->rx_dma_channel].transfer_count == 0u)) {
+            (uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel) == 0u)) {
             hw_uart_driver_rearm_rx_dma(driver);
         }
         restore_interrupts(interrupt_status);

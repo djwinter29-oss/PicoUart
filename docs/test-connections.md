@@ -19,12 +19,14 @@ Cross TX and RX. Do not connect a signal labelled TX to another TX signal.
 ## Direct Pico Cross-Connection And Loopback
 
 Cross-connect UART2 and UART3 to test two independent PIO UART channels in both
-directions. Keep UART5 self-looped to test its own complete
-CDC-to-UART-TX-to-UART-RX-to-CDC path without a second UART device.
+directions. Self-loop UART1, UART4, and UART5 to cover the remaining channels
+without a second UART device.
 
 | Test | USB CDC | Jumper wiring |
 | --- | --- | --- |
+| UART1 loopback | CDC1 | GP4 to GP5 |
 | UART2 to UART3 cross-connection | CDC2 and CDC3 | GP8 to GP13; GP12 to GP9 |
+| UART4 loopback | CDC4 | GP16 to GP17 |
 | UART5 loopback | CDC5 | GP20 to GP21 |
 
 Do not connect these GPIOs to power or ground while the test jumpers are fitted.
@@ -51,18 +53,24 @@ python3 tools/linux/serial_bridge_test.py \
 
 # UART2 and UART3 cross-connection.
 python3 tools/linux/serial_bridge_test.py \
-   --pico-port /dev/serial/by-id/<pico-uart-cdc2> \
-   --peer-port /dev/serial/by-id/<pico-uart-cdc3> \
-   --label uart2-uart3-cross
+  --pico-port /dev/serial/by-id/<pico-uart-cdc2> \
+  --peer-port /dev/serial/by-id/<pico-uart-cdc3> \
+  --label uart2-uart3-cross
 
-# UART5 direct loopback.
+# UART1 / UART4 / UART5 direct loopbacks.
 python3 tools/linux/serial_bridge_test.py \
-   --pico-port /dev/serial/by-id/<pico-uart-cdc5> \
-   --loopback --label uart5-gp20-gp21
+  --pico-port /dev/serial/by-id/<pico-uart-cdc1> \
+  --loopback --label uart1-gp4-gp5
+python3 tools/linux/serial_bridge_test.py \
+  --pico-port /dev/serial/by-id/<pico-uart-cdc4> \
+  --loopback --label uart4-gp16-gp17
+python3 tools/linux/serial_bridge_test.py \
+  --pico-port /dev/serial/by-id/<pico-uart-cdc5> \
+  --loopback --label uart5-gp20-gp21
 ```
 
 UART0 and the UART2-to-UART3 cross-connection must each print both
-`PASS pico-to-peer` and `PASS peer-to-pico`. The UART5 loopback must print
+`PASS pico-to-peer` and `PASS peer-to-pico`. Each loopback must print
 `PASS pico-loopback`.
 
 ## Concurrent Performance Benchmark

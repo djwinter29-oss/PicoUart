@@ -103,7 +103,8 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        UART_DRIVER_DEFAULT_BAUD_RATE,
                        8u,
                        9u,
-                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
+                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP |
+                           PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH,
                        PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
@@ -117,7 +118,8 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        UART_DRIVER_DEFAULT_BAUD_RATE,
                        12u,
                        13u,
-                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
+                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP |
+                           PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH,
                        PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
@@ -131,7 +133,8 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        UART_DRIVER_DEFAULT_BAUD_RATE,
                        16u,
                        17u,
-                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
+                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP |
+                           PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH,
                        PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
@@ -145,7 +148,8 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
                        UART_DRIVER_DEFAULT_BAUD_RATE,
                        20u,
                        21u,
-                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP,
+                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP |
+                           PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH,
                        PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
             .initialized = false,
         },
@@ -682,7 +686,11 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
     uint32_t *result_port_id)
 {
     uart_driver_port_t *port = uart_driver_port_mutable(port_id);
-    // ponytail: pre-change RX bytes remain queued so line reconfiguration preserves data; add an explicit RX flush and drop counter if hosts require a strict transition boundary.
+    /*
+     * Pre-change RX bytes remain queued so line reconfiguration preserves data.
+     * Add an explicit RX flush and drop counter if hosts require a strict
+     * transition boundary.
+     */
     uart_driver_pending_control_t *pending_control;
 
     if (result_port_id != NULL) {
@@ -776,6 +784,16 @@ void uart_driver_report_control_error(uart_port_id_t port_id)
 
     uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
     uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+}
+
+void uart_driver_mark_control_pending(uart_port_id_t port_id)
+{
+    if (port_id >= UART_PORT_COUNT) {
+        return;
+    }
+
+    uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
+    uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
 }
 
 uint8_t uart_driver_port_status(uart_port_id_t port_id)

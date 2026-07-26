@@ -48,7 +48,7 @@ def test_rejects_bad_signature(hid_module):
 
 def test_rejects_wrong_status_layout_version(hid_module):
     payload = bytearray(status_report_bytes())
-    payload[2] = 13
+    payload[1] = 13
     with pytest.raises(RuntimeError, match="unsupported status report version"):
         hid_module.parse_status(bytes(payload))
 
