@@ -37,3 +37,12 @@ target_include_directories(test_line_coding PRIVATE
 )
 target_link_libraries(test_line_coding PRIVATE unity)
 add_test(NAME line_coding COMMAND test_line_coding)
+
+add_executable(test_dma_progress
+    test_dma_progress.c
+)
+target_include_directories(test_dma_progress PRIVATE
+    ${FIRMWARE_ROOT}/src
+)
+target_link_libraries(test_dma_progress PRIVATE unity)
+add_test(NAME dma_progress COMMAND test_dma_progress)

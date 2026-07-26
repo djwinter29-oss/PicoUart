@@ -29,7 +29,12 @@ struct pio_uart_driver {
     uint32_t rx_dma_last_progress; /**< Last observed RX DMA progress (0xffffffff - TRANS_COUNT). */
     ring_buffer_t rx_ring; /**< PIO RX producer ring shared with the USB bridge. */
     ring_buffer_t tx_ring; /**< USB-core TX producer ring drained by core-1 PIO polling. */
-    uint8_t rx_storage[PICO_UART_PIO_UART_RX_BUFFER_SIZE]; /**< RX ring storage. */
+    /**
+     * DMA ring mode wraps WRITE_ADDR on the lower RING_BITS; storage must be
+     * size-aligned so hardware wrap matches the software ring indices.
+     */
+    uint8_t rx_storage[PICO_UART_PIO_UART_RX_BUFFER_SIZE]
+        __attribute__((aligned(PICO_UART_PIO_UART_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
     uint8_t tx_storage[PICO_UART_PIO_UART_TX_BUFFER_SIZE]; /**< TX ring storage. */
 };
 

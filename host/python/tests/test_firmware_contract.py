@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contract import (
     firmware_hid_constants,
+    firmware_hid_report_count,
     firmware_hid_status_report_count,
     firmware_usb_ids,
     is_lab_placeholder_identity,
@@ -27,13 +28,19 @@ def test_hid_layout_and_command_constants_match_firmware(hid_module, repo_root):
     assert fw["USB_HID_COMMAND_RESET_BOARD"] == hid_module.COMMAND_RESET_BOARD
     assert fw["USB_HID_COMMAND_ARM_RESET"] == hid_module.COMMAND_ARM_RESET
     assert fw["USB_HID_RESET_ARM_WINDOW_MS"] == int(hid_module.RESET_ARM_WINDOW_S * 1000)
+    assert fw["USB_HID_SIGNATURE0"] == ord("P")
     assert hid_module.STATUS_SIZE == 63
+    assert hid_module.STATUS_SIZE == 3 + (6 * 10)
     assert hid_module.BOARD_STATUS_SIZE == 8
     assert hid_module.STATUS_SIZE + 1 <= 64
 
 
 def test_hid_descriptor_status_report_count_matches_host_payload(hid_module, repo_root):
     assert firmware_hid_status_report_count(repo_root) == hid_module.STATUS_SIZE
+
+
+def test_hid_descriptor_board_status_report_count_matches_host_payload(hid_module, repo_root):
+    assert firmware_hid_report_count(repo_root, 3) == hid_module.BOARD_STATUS_SIZE
 
 
 def test_lab_placeholder_helper_and_current_tree_identity(repo_root):

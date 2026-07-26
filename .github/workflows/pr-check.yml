@@ -47,16 +47,20 @@ jobs:
           . tools/linux/setup-sdk-env.sh
 
       - name: Build firmware
-        run: tools/linux/build.sh --board ${{ matrix.board }}
+        env:
+          BOARD: ${{ matrix.board }}
+        run: tools/linux/build.sh --board "$BOARD"
 
       - name: Smoke-check product identity
+        env:
+          BOARD: ${{ matrix.board }}
         run: |
           set -eu
-          BIN="build/firmware-${{ matrix.board }}/pico_uart.bin"
-          ELF="build/firmware-${{ matrix.board }}/pico_uart.elf"
+          BIN="build/firmware-${BOARD}/pico_uart.bin"
+          ELF="build/firmware-${BOARD}/pico_uart.elf"
           test -f "$BIN"
           test -f "$ELF"
-          test -f "build/firmware-${{ matrix.board }}/pico_uart.uf2"
+          test -f "build/firmware-${BOARD}/pico_uart.uf2"
           file "$ELF" | grep -q "ARM"
           python3 -c "
           import pathlib, sys
@@ -66,6 +70,7 @@ jobs:
           vid, pid = firmware_usb_ids(pathlib.Path('.'))
           needle = usb_identity_needle_le(vid, pid, 0)
           assert needle in data, needle.hex()
+          assert bytes([0x95, 0x3F]) in data, 'HID status Report Count 0x3F missing'
           print(f'USB {vid:#06x}:{pid:#06x} bcdDevice=0x0000 OK')
           " "$BIN"
           strings "$BIN" | grep -qx "CDC0"

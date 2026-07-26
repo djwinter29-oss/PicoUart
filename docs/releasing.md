@@ -33,14 +33,19 @@ need a recorded hardware-in-the-loop (HIL) pass:
 
 1. Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md)
    and [`docs/test-connections.md`](test-connections.md).
-2. Flash the exact UF2/ELF that will be attached to the GitHub Release.
+2. Flash the exact UF2/ELF that will be attached to the GitHub Release. Repeat
+   the full HIL matrix below on **both** packaged board images (`pico` and
+   `pico2`) whose SHAs match the draft release artifacts — RP2350 DMA COUNT
+   behavior differs from RP2040 and must not be skipped.
 3. Run the UART0 Debug Probe, UART1 loopback, UART2↔UART3 cross, UART4
    loopback, and UART5 loopback `serial_bridge_test.py` cases; keep the full
    console transcript.
 4. Run `serial_stress_benchmark.py` at the default rate sweep (or the rates
-   claimed in the release notes).
+   claimed in the release notes), including `--uart1` and `--uart4` when those
+   jumpers are fitted so all six ports are loaded.
 5. Optionally run the RTS-ignoring HW UART RX stress step from the board-testing
-   skill when advertising flow-control behavior.
+   skill (`--flood-seconds` / `--hold-cdc-seconds`) when advertising
+   flow-control or RX DMA re-arm behavior.
 6. Attach or link the transcript (and any HID `monitor` snippets showing
    `control_error` / `rx_overrun` expectations) to the GitHub Release notes or a
    linked issue.
@@ -53,11 +58,12 @@ Before clicking **Publish** on the GitHub draft:
 
 1. **Artifact ↔ HIL SHA match**: the UF2/ELF/BIN attached to the draft (or their
    `SHA256SUMS-*`) are bit-identical to the images used for the recorded HIL
-   pass. Do not promote if HIL ran on a different local rebuild.
+   pass on **each** board (`pico` and `pico2`). Do not promote if HIL ran on a
+   different local rebuild or only one of the two targets.
 2. **USB identity**: for non-lab releases, `PICO_UART_USB_VID` /
    `PICO_UART_USB_PID` are **not** the development placeholder `0xCAFE` /
    `0x4010` (confirm in release notes and in the packaged binaries).
-3. **HIL transcript** is linked or attached (see above).
+3. **HIL transcript** is linked or attached (see above), covering both boards.
 4. Release notes call out any breaking USB identity or HID layout changes.
 
 ## Versioning

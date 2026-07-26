@@ -15,8 +15,20 @@
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
 
+#include <stddef.h>
+
+_Static_assert((offsetof(hw_uart_driver_t, rx_storage) % PICO_UART_HW_UART_RX_BUFFER_SIZE) == 0u,
+               "HW RX DMA ring storage must be size-aligned for channel_config_set_ring");
+
 /** @brief Shared DMA IRQ used for HW UART RX transfer-count re-arm. */
 #define HW_UART_DRIVER_RX_DMA_IRQ_INDEX 0
+/**
+ * @brief Bound for draining the UART TX shifter/FIFO before line-format changes.
+ *
+ * Unbounded `uart_tx_wait_blocking` can hang core 1 forever when CTS holds the
+ * transmitter busy after the software TX ring is already empty.
+ */
+#define HW_UART_DRIVER_TX_DRAIN_TIMEOUT_MS 100u
 
 /** @brief Drivers that own an RX DMA channel armed on @ref HW_UART_DRIVER_RX_DMA_IRQ_INDEX. */
 static hw_uart_driver_t *hw_uart_driver_rx_irq_owners[NUM_DMA_CHANNELS];
@@ -232,11 +244,9 @@ static void hw_uart_driver_publish_rx(hw_uart_driver_t *driver)
      * a wrap so bytes between last_progress and the end of the previous countdown
      * are still published.
      */
-    if (progress < driver->rx_dma_last_progress) {
-        produced = (uart_dma_rx_transfer_count_max() - driver->rx_dma_last_progress) + progress;
-    } else {
-        produced = progress - driver->rx_dma_last_progress;
-    }
+    produced = uart_dma_rx_bytes_produced(progress,
+                                         driver->rx_dma_last_progress,
+                                         uart_dma_rx_transfer_count_max());
     driver->controller_rx_bytes += produced;
     driver->rx_dma_last_progress = progress;
     ring_buffer_produce_external(&driver->rx_ring, produced);
@@ -365,7 +375,17 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
         return false;
     }
 
-    uart_tx_wait_blocking(driver->config.instance);
+    {
+        absolute_time_t tx_deadline = make_timeout_time_ms(HW_UART_DRIVER_TX_DRAIN_TIMEOUT_MS);
+
+        while ((uart_get_hw(driver->config.instance)->fr & UART_UARTFR_BUSY_BITS) != 0u) {
+            if (time_reached(tx_deadline)) {
+                /* CTS (or a stuck shifter) must not hang the UART worker forever. */
+                return false;
+            }
+            tight_loop_contents();
+        }
+    }
 
     /*
      * Stop RX DMA before publishing progress so WRITE_ADDR cannot race ahead of

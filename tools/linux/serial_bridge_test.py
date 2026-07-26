@@ -96,6 +96,56 @@ def test_direction(source_fd: int,
     return False
 
 
+def drain_available(file_descriptor: int) -> int:
+    drained = 0
+    while True:
+        readable, _, _ = select.select([file_descriptor], [], [], 0)
+        if not readable:
+            return drained
+        try:
+            chunk = os.read(file_descriptor, 4096)
+        except BlockingIOError:
+            return drained
+        if not chunk:
+            return drained
+        drained += len(chunk)
+
+
+def run_flood(source_fd: int,
+              destination_fd: int | None,
+              duration: float,
+              chunk_size: int,
+              hold_destination_seconds: float) -> tuple[int, int]:
+    """Sustained TX flood; optionally delay opening/draining the destination CDC."""
+    pattern = secrets.token_bytes(chunk_size)
+    written = 0
+    drained = 0
+    start = time.monotonic()
+    deadline = start + duration
+    destination_open_at = start + max(0.0, hold_destination_seconds)
+
+    while time.monotonic() < deadline:
+        try:
+            write_all(source_fd, pattern)
+            written += len(pattern)
+        except OSError:
+            break
+
+        if destination_fd is not None and time.monotonic() >= destination_open_at:
+            drained += drain_available(destination_fd)
+
+        # Yield briefly so a held-closed CDC path can back up into firmware rings.
+        time.sleep(0)
+
+    if destination_fd is not None:
+        settle_deadline = time.monotonic() + 1.0
+        while time.monotonic() < settle_deadline:
+            drained += drain_available(destination_fd)
+            time.sleep(0.01)
+
+    return written, drained
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Verify both directions of one PicoUart CDC-to-UART link."
@@ -110,7 +160,95 @@ def parse_arguments() -> argparse.Namespace:
     baud_group.add_argument("--all-baud-rates", action="store_true", help="Test every supported standard baud rate")
     parser.add_argument("--payload-bytes", type=int, default=64)
     parser.add_argument("--timeout", type=float, default=3.0)
+    parser.add_argument(
+        "--flood-seconds",
+        type=float,
+        default=0.0,
+        help="Sustained peer→pico (or loopback) TX flood for N seconds instead of a one-shot marker",
+    )
+    parser.add_argument(
+        "--hold-cdc-seconds",
+        type=float,
+        default=0.0,
+        help="With --flood-seconds and --peer-port, delay draining the CDC for N seconds",
+    )
     return parser.parse_args()
+
+
+def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
+    pico_fd = -1
+    peer_fd = -1
+    pico_settings = None
+    peer_settings = None
+
+    try:
+        if arguments.loopback:
+            pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
+            time.sleep(0.05)
+            print(
+                f"Flooding {arguments.label} loopback at {baud_rate} baud "
+                f"for {arguments.flood_seconds:.1f}s"
+            )
+            written, drained = run_flood(
+                pico_fd,
+                pico_fd,
+                arguments.flood_seconds,
+                arguments.payload_bytes,
+                0.0,
+            )
+        else:
+            peer_fd, peer_settings = configure_port(arguments.peer_port, baud_rate)
+            hold = max(0.0, arguments.hold_cdc_seconds)
+            if hold > 0.0:
+                print(
+                    f"Flooding {arguments.label} peer→pico at {baud_rate} baud "
+                    f"for {arguments.flood_seconds:.1f}s (CDC drain held {hold:.1f}s)"
+                )
+                time.sleep(0.05)
+                written, _ = run_flood(
+                    peer_fd,
+                    None,
+                    min(hold, arguments.flood_seconds),
+                    arguments.payload_bytes,
+                    0.0,
+                )
+                remaining = arguments.flood_seconds - min(hold, arguments.flood_seconds)
+                pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
+                more_written, drained = run_flood(
+                    peer_fd,
+                    pico_fd,
+                    max(0.0, remaining),
+                    arguments.payload_bytes,
+                    0.0,
+                )
+                written += more_written
+            else:
+                pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
+                time.sleep(0.05)
+                print(
+                    f"Flooding {arguments.label} peer→pico at {baud_rate} baud "
+                    f"for {arguments.flood_seconds:.1f}s"
+                )
+                written, drained = run_flood(
+                    peer_fd,
+                    pico_fd,
+                    arguments.flood_seconds,
+                    arguments.payload_bytes,
+                    0.0,
+                )
+
+        print(f"PASS flood: wrote {written} bytes, drained {drained} bytes")
+        return 0 if written > 0 else 1
+    except OSError as error:
+        print(f"Serial setup failed: {error}", file=sys.stderr)
+        return 2
+    finally:
+        if pico_fd >= 0 and pico_settings is not None:
+            termios.tcsetattr(pico_fd, termios.TCSANOW, pico_settings)
+            os.close(pico_fd)
+        if peer_fd >= 0 and peer_settings is not None:
+            termios.tcsetattr(peer_fd, termios.TCSANOW, peer_settings)
+            os.close(peer_fd)
 
 
 def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
@@ -165,11 +303,29 @@ def main() -> int:
     if arguments.timeout <= 0:
         print("--timeout must be greater than zero", file=sys.stderr)
         return 2
+    if arguments.flood_seconds < 0:
+        print("--flood-seconds must be >= 0", file=sys.stderr)
+        return 2
+    if arguments.hold_cdc_seconds < 0:
+        print("--hold-cdc-seconds must be >= 0", file=sys.stderr)
+        return 2
+    if arguments.hold_cdc_seconds > 0 and arguments.flood_seconds <= 0:
+        print("--hold-cdc-seconds requires --flood-seconds", file=sys.stderr)
+        return 2
+    if arguments.hold_cdc_seconds > 0 and arguments.loopback:
+        print("--hold-cdc-seconds requires --peer-port", file=sys.stderr)
+        return 2
+    if arguments.flood_seconds > 0 and arguments.all_baud_rates:
+        print("--flood-seconds cannot be combined with --all-baud-rates", file=sys.stderr)
+        return 2
 
     baud_rates = STANDARD_BAUD_RATES if arguments.all_baud_rates else (arguments.baud or 115200,)
     result = 0
     for baud_rate in baud_rates:
-        result |= run_test(arguments, baud_rate)
+        if arguments.flood_seconds > 0:
+            result |= run_flood_test(arguments, baud_rate)
+        else:
+            result |= run_test(arguments, baud_rate)
     return result
 
 

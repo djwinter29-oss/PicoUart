@@ -108,10 +108,10 @@ The firmware currently handles:
 - UART configuration updates received through USB CDC line coding
 - Buffering and scheduling so multiple active ports can run at the same time
 
-The HID interface publishes a compact per-port status report, cumulative PIO
-statistics, and the internal temperature estimate. It also supports narrowly
-scoped board commands to toggle the default LED and reset the board; it does
-not configure UART transport settings.
+The HID interface publishes a compact per-port status report (byte deltas,
+health flags, ring peaks), board temperature, and firmware version. It also
+supports narrowly scoped board commands to toggle the default LED and reset the
+board; it does not configure UART transport settings.
 
 ## Design Considerations
 
