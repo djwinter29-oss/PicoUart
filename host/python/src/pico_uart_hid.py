@@ -32,14 +32,36 @@ STATUS_LAYOUT_VERSION = 15
 RESET_ARM_WINDOW_S = 2.0
 
 
+def open_enumerated_device(device_info: dict[str, Any]) -> Any:
+    """Open one enumerated HID device with a clearer Linux permission error."""
+    device = hid.device()
+
+    try:
+        device.open_path(device_info["path"])
+    except OSError as error:
+        path = device_info.get("path", b"")
+        if isinstance(path, bytes):
+            path = path.decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"failed to open PicoUart HID interface at {path}; check hidraw permissions"
+        ) from error
+
+    return device
+
+
 def open_device() -> Any:
     """Open PicoUart's vendor-defined HID collection."""
     devices = hid.enumerate(VENDOR_ID, PRODUCT_ID)
+    fallback = None
     for device_info in devices:
         if device_info.get("usage_page") == USAGE_PAGE and device_info.get("usage") == USAGE:
-            device = hid.device()
-            device.open_path(device_info["path"])
-            return device
+            return open_enumerated_device(device_info)
+
+        if fallback is None:
+            fallback = device_info
+
+    if fallback is not None:
+        return open_enumerated_device(fallback)
 
     raise RuntimeError(
         "PicoUart HID interface not found. Check that the firmware is connected and enumerated."

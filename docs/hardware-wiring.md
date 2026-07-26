@@ -10,10 +10,9 @@ The current firmware architecture reserves:
 
 This document describes the wiring model and the signals that each UART channel is expected to provide.
 
-Hardware UART0 and UART1 enable RTS and CTS hardware flow control at runtime.
-CTS is active-low; the firmware applies a pull-down so TX still flows when a
-peer omits the CTS wire. PIO UART ports reserve the same signals for a future
-flow-control implementation.
+Hardware UART0 and UART1 leave RTS and CTS disabled by default at runtime.
+PIO UART ports reserve the same signals for a future flow-control
+implementation.
 
 ## Host Side
 
@@ -31,10 +30,10 @@ Each UART channel should expose:
 - CTS
 - GND
 
-Hardware UART bring-up requires TX, RX, and GND. RTS/CTS are enabled in
-firmware; cross-connect them when the peer supports flow control. A peer that
-only wires TX/RX/GND still works because CTS is pulled down (active-low clear
-to send). PIO UART bring-up currently requires TX, RX, and GND only.
+Hardware UART bring-up requires TX, RX, and GND. RTS/CTS stay disabled in
+firmware by default; cross-connect them only when validating explicit hardware
+flow control against a peer that supports it. PIO UART bring-up currently
+requires TX, RX, and GND only.
 
 ## Channel Plan
 

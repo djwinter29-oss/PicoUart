@@ -12,13 +12,16 @@ Use this skill to validate a flashed PicoUart board on Linux. The supported
 physical test links are:
 
 - UART0: CDC0, GP0 TX and GP1 RX, connected to the Raspberry Pi Debug Probe UART
-- UART1 loopback: CDC1, GP4 TX jumpered to GP5 RX
+- UART1 loopback (optional): CDC1, GP4 TX jumpered to GP5 RX
 - UART2 to UART3 cross-connection: CDC2 GP8 TX to CDC3 GP13 RX, and CDC3 GP12 TX to CDC2 GP9 RX
-- UART4 loopback: CDC4, GP16 TX jumpered to GP17 RX
+- UART4 loopback (optional): CDC4, GP16 TX jumpered to GP17 RX
 - UART5 loopback: CDC5, GP20 TX jumpered to GP21 RX
 
 The UART0 Debug Probe link requires crossed TX/RX wiring, a shared ground, and
 3.3 V logic. The on-board test wiring uses only the listed Pico GPIOs.
+UART0 is not part of a self-loopback; it is tested only against the external
+Debug Probe UART. The common bench wiring keeps UART2↔UART3 and UART5 fitted,
+while UART1 and UART4 loopbacks are optional.
 Hardware UART0/UART1 enable RTS/CTS in firmware (CTS is pulled down so TX still
 flows when the peer omits CTS). Cross-connect RTS/CTS when validating flow
 control against a peer that drives CTS. PIO UART RTS/CTS pins remain reserved
@@ -89,20 +92,25 @@ with no runtime flow-control behavior. Host CDC RTS is ignored.
      --label uart0-debug-probe
    ```
 
-5. Verify the UART2-to-UART3 cross-connection and the UART1 / UART4 / UART5
-   loopbacks:
+5. Verify the UART2-to-UART3 cross-connection and the fitted loopbacks:
 
    ```sh
    python3 tools/linux/serial_bridge_test.py \
      --pico-port /dev/serial/by-id/<pico-uart-cdc2> \
      --peer-port /dev/serial/by-id/<pico-uart-cdc3> \
      --label uart2-uart3-cross
+
+   # Optional when the UART1 jumper is fitted.
    python3 tools/linux/serial_bridge_test.py \
      --pico-port /dev/serial/by-id/<pico-uart-cdc1> \
      --loopback --label uart1-gp4-gp5
+
+   # Optional when the UART4 jumper is fitted.
    python3 tools/linux/serial_bridge_test.py \
      --pico-port /dev/serial/by-id/<pico-uart-cdc4> \
      --loopback --label uart4-gp16-gp17
+
+   # Common bench loopback.
    python3 tools/linux/serial_bridge_test.py \
      --pico-port /dev/serial/by-id/<pico-uart-cdc5> \
      --loopback --label uart5-gp20-gp21

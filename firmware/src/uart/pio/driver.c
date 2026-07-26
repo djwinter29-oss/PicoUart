@@ -563,10 +563,14 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
             pio_uart_driver_abort_dma_channel((uint)driver->rx_dma_channel);
             dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
                                          (uint)driver->rx_dma_channel);
-            pio_uart_driver_publish_rx(driver);
         }
         restore_interrupts(interrupt_status);
     }
+
+    if (!ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
+        return false;
+    }
+    driver->rx_dma_last_progress = 0u;
 
     pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, false);
     pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, false);

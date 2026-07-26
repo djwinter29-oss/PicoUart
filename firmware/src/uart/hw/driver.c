@@ -392,11 +392,15 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
         hw_uart_driver_abort_dma_channel((uint)driver->tx_dma_channel);
         dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
                                      (uint)driver->rx_dma_channel);
-        hw_uart_driver_publish_rx(driver);
         driver->tx_dma_bytes_in_flight = 0u;
         driver->tx_active = false;
         restore_interrupts(interrupt_status);
     }
+
+    if (!ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
+        return false;
+    }
+    driver->rx_dma_last_progress = 0u;
 
     uart_deinit(driver->config.instance);
 

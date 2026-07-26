@@ -6,6 +6,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 HOST_TEST_BUILD_DIR="${HOST_TEST_BUILD_DIR:-$REPO_ROOT/build/host-tests}"
 GENERATOR="${GENERATOR:-}"
+PYTHON_EXE="${PYTHON_EXE:-python3}"
 SKIP_C=0
 SKIP_PYTHON=0
 
@@ -42,6 +43,15 @@ if [ -z "$GENERATOR" ]; then
     fi
 fi
 
+if [ "$SKIP_PYTHON" -eq 0 ] && ! "$PYTHON_EXE" -m pip --version >/dev/null 2>&1; then
+    if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+        PYTHON_EXE="$REPO_ROOT/.venv/bin/python"
+    else
+        echo "Python pip is unavailable for '$PYTHON_EXE' and no repo virtualenv was found." >&2
+        exit 1
+    fi
+fi
+
 if [ "$SKIP_C" -eq 0 ]; then
     echo "=== Host C unit tests (Unity / CTest) ==="
     cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR"
@@ -51,9 +61,9 @@ fi
 
 if [ "$SKIP_PYTHON" -eq 0 ]; then
     echo "=== Host Python tests (pytest) ==="
-    python3 -m pip install -q -r "$REPO_ROOT/host/python/requirements-dev.txt"
+    "$PYTHON_EXE" -m pip install -q -r "$REPO_ROOT/host/python/requirements-dev.txt"
     (
         CDPATH= cd -- "$REPO_ROOT"
-        python3 -m pytest
+        "$PYTHON_EXE" -m pytest
     )
 fi

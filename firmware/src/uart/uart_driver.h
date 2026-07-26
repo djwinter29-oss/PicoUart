@@ -129,6 +129,11 @@ void uart_driver_poll_hardware(void);
 void uart_driver_poll_pio(void);
 
 /**
+ * @brief Service deferred control changes and poll all UART backends.
+ */
+void uart_driver_poll(void);
+
+/**
  * @brief Drain RX bytes from one logical UART port into a caller-owned writer.
  * @param port_id Logical port identifier.
  * @param capacity Maximum byte count to drain across contiguous RX spans.

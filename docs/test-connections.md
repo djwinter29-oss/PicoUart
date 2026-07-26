@@ -1,7 +1,7 @@
 # Test Connections
 
 This setup verifies PicoUart channels using a Raspberry Pi Debug Probe and
-direct TX-to-RX loopback jumpers.
+selected direct TX-to-RX loopback jumpers.
 
 ## UART0 To Debug Probe
 
@@ -15,18 +15,27 @@ GP0 and GP1.
 | GND | GND | GND |
 
 Cross TX and RX. Do not connect a signal labelled TX to another TX signal.
+UART0 is tested only through the external Debug Probe peer. It is not part of a
+direct Pico loopback.
 
 ## Direct Pico Cross-Connection And Loopback
 
 Cross-connect UART2 and UART3 to test two independent PIO UART channels in both
-directions. Self-loop UART1, UART4, and UART5 to cover the remaining channels
-without a second UART device.
+directions. Add loopbacks only on the channels you want to exercise.
+
+The current bench wiring used for bring-up keeps these links fitted:
+
+- UART0 to the Debug Probe UART
+- UART2 to UART3 cross-connection
+- UART5 loopback
+
+UART1 and UART4 loopbacks are optional and are not fitted on this bench.
 
 | Test | USB CDC | Jumper wiring |
 | --- | --- | --- |
-| UART1 loopback | CDC1 | GP4 to GP5 |
+| UART1 loopback (optional) | CDC1 | GP4 to GP5 |
 | UART2 to UART3 cross-connection | CDC2 and CDC3 | GP8 to GP13; GP12 to GP9 |
-| UART4 loopback | CDC4 | GP16 to GP17 |
+| UART4 loopback (optional) | CDC4 | GP16 to GP17 |
 | UART5 loopback | CDC5 | GP20 to GP21 |
 
 Do not connect these GPIOs to power or ground while the test jumpers are fitted.
@@ -57,13 +66,15 @@ python3 tools/linux/serial_bridge_test.py \
   --peer-port /dev/serial/by-id/<pico-uart-cdc3> \
   --label uart2-uart3-cross
 
-# UART1 / UART4 / UART5 direct loopbacks.
+# Optional UART1 / UART4 loopbacks. Skip these when those jumpers are not fitted.
 python3 tools/linux/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-uart-cdc1> \
   --loopback --label uart1-gp4-gp5
 python3 tools/linux/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-uart-cdc4> \
   --loopback --label uart4-gp16-gp17
+
+# UART5 direct loopback.
 python3 tools/linux/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-uart-cdc5> \
   --loopback --label uart5-gp20-gp21
@@ -125,16 +136,17 @@ results.
 
 1. Flash PicoUart and connect its USB device port to the host.
 2. Confirm that all six CDC devices enumerate.
-3. Fit GP4-to-GP5 (UART1), GP8-to-GP13 and GP12-to-GP9 (UART2↔UART3),
-   GP16-to-GP17 (UART4), and GP20-to-GP21 (UART5).
-4. Run the UART0 Debug Probe test, the UART1 / UART4 / UART5 loopbacks, and the
-   UART2-to-UART3 cross-connection test.
-5. Run the concurrent performance benchmark when the 115200 baud tests pass.
-   Prefer passing `--uart1` / `--uart4` so stress covers all six ports.
-6. Remove the test jumpers before connecting external UART targets.
+3. Fit GP8-to-GP13 and GP12-to-GP9 (UART2↔UART3) plus GP20-to-GP21 (UART5).
+4. Optionally fit GP4-to-GP5 (UART1) and GP16-to-GP17 (UART4) when those
+   loopbacks are part of the bench.
+5. Run the UART0 Debug Probe test, the UART2-to-UART3 cross-connection test,
+   and the UART5 loopback. Run the UART1 / UART4 loopbacks only when those
+   jumpers are fitted.
+6. Run the concurrent performance benchmark when the 115200 baud tests pass.
+   Pass `--uart1` / `--uart4` only when those optional loopbacks are wired.
+7. Remove the test jumpers before connecting external UART targets.
 
-The current firmware enables RTS/CTS on hardware UART0/UART1. Debug Probe and
-PIO loopback tests only need TX, RX, and GND; unconnected CTS still allows TX
-because the pin is pulled down. Cross-connect RTS/CTS when validating flow
-control against a peer that supports it. PIO UART RTS/CTS pins remain reserved
-only.
+The current firmware leaves RTS/CTS disabled by default on hardware UART0 and
+UART1. Debug Probe and PIO loopback tests therefore only need TX, RX, and GND.
+Cross-connect RTS/CTS only when validating explicit hardware flow control with a
+peer that supports it. PIO UART RTS/CTS pins remain reserved only.
