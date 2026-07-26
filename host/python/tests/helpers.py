@@ -21,14 +21,14 @@ def board_status_bytes(
 
 
 def status_report_bytes(sequence: int = 7, health0: int = 0x11) -> bytes:
-    header = struct.pack("<BBBB", ord("P"), ord("U"), hid.STATUS_LAYOUT_VERSION, sequence)
+    header = struct.pack("<BBB", ord("P"), hid.STATUS_LAYOUT_VERSION, sequence)
     channels = b""
     for index in range(6):
         health = health0 if index == 0 else 0x01
         channels += struct.pack(
             "<BB4H", health, 2, 10 + index, 20 + index, 30 + index, 40 + index
         )
-    assert len(header) + len(channels) == 64
+    assert len(header) + len(channels) == 63
     return header + channels
 
 

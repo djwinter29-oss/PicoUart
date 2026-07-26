@@ -8,7 +8,7 @@ whenever their matching CDC interface is connected. DTR state is reported for
 monitoring only.
 
 The HID interface uses vendor usage page `0xFF00`, vendor usage `0x01`, no boot
-protocol, and a 64-byte status report alongside compact board-status and
+protocol, and a 63-byte status report alongside compact board-status and
 command feature reports. The device is identified as USB
 `cafe:4010` and has one HID interface after the twelve CDC control/data interfaces.
 
@@ -29,14 +29,15 @@ alter ring-buffer behavior. The three command values are board-scoped only.
 
 | Report ID | Type | Direction | Payload | Purpose |
 | --- | --- | --- | --- | --- |
-| `1` | Input | Device to host | 64 bytes | Periodic compact status report. |
+| `1` | Input | Device to host | 63 bytes | Periodic compact status report. |
 | `3` | Feature | Host reads from device | 8 bytes | Temperature estimate and firmware semantic version. |
 | `4` | Feature | Host writes to device | 1 byte | Board-control command. |
 
 Report ID bytes are managed by the HID transport and are not included in the
-64-byte payload layouts below. The device attempts to publish report ID `1`
-every 100 ms while its HID IN endpoint is ready. Reports are not queued when
-the endpoint is busy.
+payload layouts below. Status is 63 bytes so Report ID + payload fit in one
+full-speed interrupt packet (64 bytes). The device attempts to publish report
+ID `1` every 100 ms while its HID IN endpoint is ready. Reports are not queued
+when the endpoint is busy.
 
 ## Report ID 1: Status
 
@@ -46,10 +47,9 @@ channel `0` is CDC0/UART0 and channel `5` is CDC5/UART5.
 | Offset | Size | Field | Meaning |
 | --- | ---: | --- | --- |
 | 0 | 1 | `signature0` | ASCII `P` (`0x50`). |
-| 1 | 1 | `signature1` | ASCII `U` (`0x55`). |
-| 2 | 1 | `version` | Report layout version, currently `14`. |
-| 3 | 1 | `sequence` | Increments after each successfully published status report. |
-| 4 | 60 | `channel[6]` | Six consecutive 10-byte CDC/UART channel snapshots. |
+| 1 | 1 | `version` | Report layout version, currently `15`. |
+| 2 | 1 | `sequence` | Increments after each successfully published status report. |
+| 3 | 60 | `channel[6]` | Six consecutive 10-byte CDC/UART channel snapshots. |
 
 Each `channel` record has the following layout:
 
@@ -105,7 +105,7 @@ as BCD (so `1.2.3` → `0x0102`, commonly shown as `1.02` / `1.2`).
 
 | Offset | Size | Field | Meaning |
 | --- | ---: | --- | --- |
-| 0 | 1 | `version` | Report layout version, currently `14`. |
+| 0 | 1 | `version` | Report layout version, currently `15`. |
 | 1 | 1 | `reserved0` | Always zero; reserved for board-status flags. |
 | 2 | 2 | `temperature_centidegrees_celsius` | Signed little-endian temperature estimate in hundredths of a degree Celsius. |
 | 4 | 1 | `firmware_major` | Firmware semantic version major component. |
@@ -136,9 +136,9 @@ before use.
 
 ## Compatibility
 
-Hosts must validate `signature0`, `signature1`, and `version` before decoding a
-status report. Treat unknown report IDs, newer versions, and reserved bits as
-unsupported rather than attempting to infer behavior.
+Hosts must validate `signature0` and `version` before decoding a status report.
+Treat unknown report IDs, newer versions, and reserved bits as unsupported rather
+than attempting to infer behavior.
 
 The source of truth for the implementation is [usb_hid.c](../firmware/src/usb/usb_hid.c)
 and the report descriptor in [usb_descriptors.c](../firmware/src/usb/usb_descriptors.c).

@@ -20,8 +20,8 @@ bitloop:
 ; partial ISR, wait for the line to return idle-high, then hunt for the next
 ; start bit. Valid frames are pushed as usual.
 ;
-; IN shift direction is configured in C as shift-left so the assembled byte
-; lands in ISR[7:0], enabling DMA_SIZE_8 pops from the RX FIFO into the ring.
+; IN shift direction is configured in C as shift-right so LSB-first UART samples
+; assemble a natural byte in ISR[31:24]. RX DMA then reads that high byte.
 
 .wrap_target
 start:

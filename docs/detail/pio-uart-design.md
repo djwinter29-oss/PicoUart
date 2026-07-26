@@ -24,11 +24,12 @@ progress into the ring producer and harvests stop-bit framing IRQs.
 
 Current RX behavior:
 
-- IN shift is configured left so each FIFO word carries the byte in bits `[7:0]`,
-  allowing `DMA_SIZE_8` pops without a software extract
+- IN shift is configured right so LSB-first UART samples assemble a natural byte
+  in FIFO bits `[31:24]`; RX DMA uses an 8-bit read at `rxf+3` to capture it
 - when the RX ring wraps under a stalled USB consumer, the consumer recovers
   overwritten bytes through the shared ring overflow accounting
 - TX still uses the hybrid FIFO + DMA policy below
+- RX DMA TRANS_COUNT uses the SDK encoder so RP2350 does not enter ENDLESS mode
 
 ## TX Path
 

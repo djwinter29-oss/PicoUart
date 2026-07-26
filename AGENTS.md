@@ -50,6 +50,9 @@ best available end-to-end check here.
   (especially PIO non-8N1 or out-of-range PIO baud). Watch HID health bit 2
   (`control_error`) / use `pico_uart_hid.py monitor`. See `docs/hid-monitor.md`.
 - HID `reset` is arm-then-reset (`command 3` then `2` within 2 s).
+- HID status input layout is **v15** (63-byte payload) so Report ID + payload fit
+  one full-speed interrupt packet; older host tools expecting 64-byte/`PU` headers
+  need updating.
 - Tag releases open as **draft**; promote only after `docs/releasing.md` gates.
 - Host unit tests: `tools/linux/test-host.sh`. Host coverage: `tools/linux/coverage.sh`.
 - Each CDC/UART can be set to 1 Mbaud; PIO RX is DMA-backed. Sustained multi-port 1 Mbaud

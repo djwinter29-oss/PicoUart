@@ -6,6 +6,7 @@
 #include "uart/pio/internal.h"
 
 #include "uart.pio.h"
+#include "uart/dma_progress.h"
 #include "uart/line_coding.h"
 
 #include "hardware/clocks.h"
@@ -69,7 +70,9 @@ static void pio_uart_driver_abort_dma_channel(uint channel)
 
 static void pio_uart_driver_rearm_rx_dma(pio_uart_driver_t *driver)
 {
-    dma_channel_set_trans_count((uint)driver->rx_dma_channel, 0xffffffffu, true);
+    dma_channel_set_trans_count((uint)driver->rx_dma_channel,
+                                uart_dma_rx_transfer_count_encoded(),
+                                true);
 }
 
 static void __isr pio_uart_driver_rx_dma_irq_handler(void)
@@ -189,10 +192,10 @@ static void pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
     /* jmp pin is sampled by the stop-bit check after the 8 data bits. */
     sm_config_set_jmp_pin(&config, driver->config.rx_pin);
     /*
-     * Shift left so the assembled UART byte lands in ISR[7:0]. That lets RX DMA
-     * use DMA_SIZE_8 reads of the FIFO register without a >>24 software extract.
+     * Shift right so LSB-first UART samples assemble a natural byte in ISR[31:24].
+     * RX DMA reads that high byte via an 8-bit access at rxf+3 (little-endian).
      */
-    sm_config_set_in_shift(&config, false, false, 32u);
+    sm_config_set_in_shift(&config, true, false, 32u);
     sm_config_set_fifo_join(&config, PIO_FIFO_JOIN_RX);
     sm_config_set_clkdiv(&config, pio_uart_driver_clock_divider(driver->config.baud_rate));
 
@@ -223,12 +226,18 @@ static void pio_uart_driver_start_rx_dma(pio_uart_driver_t *driver)
     channel_config_set_irq_quiet(&rx_dma_config, false);
     driver->rx_dma_last_progress = 0u;
     write_addr = &driver->rx_storage[ring_buffer_producer_index(&driver->rx_ring)];
-    dma_channel_configure((uint)driver->rx_dma_channel,
-                          &rx_dma_config,
-                          write_addr,
-                          (const volatile void *)&driver->config.pio->rxf[driver->config.rx_state_machine],
-                          0xffffffffu,
-                          true);
+    /*
+     * PIO RX FIFO words are 32-bit with the UART byte in bits [31:24] (shift-right
+     * IN). An 8-bit DMA from rxf+3 pops one FIFO entry and captures that byte.
+     */
+    dma_channel_configure(
+        (uint)driver->rx_dma_channel,
+        &rx_dma_config,
+        write_addr,
+        (const volatile void *)((uintptr_t)&driver->config.pio->rxf[driver->config.rx_state_machine] +
+                                3u),
+        uart_dma_rx_transfer_count_encoded(),
+        true);
 
     pio_uart_driver_rx_irq_owners[driver->rx_dma_channel] = driver;
     dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel);
@@ -246,8 +255,7 @@ static void pio_uart_driver_start_rx_dma(pio_uart_driver_t *driver)
 
 static uint32_t pio_uart_driver_rx_progress(const pio_uart_driver_t *driver)
 {
-    uint32_t remaining = dma_hw->ch[driver->rx_dma_channel].transfer_count;
-    return 0xffffffffu - remaining;
+    return uart_dma_rx_progress((uint)driver->rx_dma_channel);
 }
 
 static void pio_uart_driver_publish_rx(pio_uart_driver_t *driver)
@@ -261,7 +269,7 @@ static void pio_uart_driver_publish_rx(pio_uart_driver_t *driver)
 
     progress = pio_uart_driver_rx_progress(driver);
     if (progress < driver->rx_dma_last_progress) {
-        produced = (0xffffffffu - driver->rx_dma_last_progress) + progress;
+        produced = (uart_dma_rx_transfer_count_max() - driver->rx_dma_last_progress) + progress;
     } else {
         produced = progress - driver->rx_dma_last_progress;
     }
@@ -472,11 +480,11 @@ void pio_uart_driver_poll(pio_uart_driver_t *driver)
     /* Safety net if the DMA IRQ was masked or delayed past transfer completion. */
     if ((driver->rx_dma_channel >= 0) &&
         !dma_channel_is_busy((uint)driver->rx_dma_channel) &&
-        (dma_hw->ch[driver->rx_dma_channel].transfer_count == 0u)) {
+        (uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel) == 0u)) {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
         if (!dma_channel_is_busy((uint)driver->rx_dma_channel) &&
-            (dma_hw->ch[driver->rx_dma_channel].transfer_count == 0u)) {
+            (uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel) == 0u)) {
             pio_uart_driver_rearm_rx_dma(driver);
         }
         restore_interrupts(interrupt_status);

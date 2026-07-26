@@ -5,6 +5,7 @@
 
 #include "usb/usb_hid.h"
 
+#include "config/config.h"
 #include "driver/led.h"
 #include "driver/system.h"
 #include "driver/temperature.h"
@@ -29,12 +30,15 @@
 
 /** @brief HID status report interval in milliseconds. */
 #define USB_HID_STATUS_INTERVAL_MS 100u
-/** @brief HID status report signature byte 0. */
+/** @brief HID status report signature byte (`P`). */
 #define USB_HID_SIGNATURE0 'P'
-/** @brief HID status report signature byte 1. */
-#define USB_HID_SIGNATURE1 'U'
-/** @brief HID status report format version. */
-#define USB_HID_REPORT_VERSION 14u
+/**
+ * @brief HID status / board-status report format version.
+ *
+ * v15 shrinks the status input payload to 63 bytes so Report ID + payload fit
+ * in one full-speed HID interrupt packet (`CFG_TUD_HID_EP_BUFSIZE`).
+ */
+#define USB_HID_REPORT_VERSION 15u
 /** @brief HID input report ID for the compact status monitor. */
 #define USB_HID_REPORT_ID_STATUS 1u
 /** @brief HID feature report ID for board temperature and firmware version. */
@@ -85,16 +89,20 @@ typedef struct {
 
 /**
  * @brief Compact HID monitor report published to the host.
+ *
+ * Layout is 63 bytes so TinyUSB can prepend Report ID 1 inside a 64-byte FS EP.
  */
 typedef struct {
-    uint8_t signature0; /**< Fixed report signature byte 0. */
-    uint8_t signature1; /**< Fixed report signature byte 1. */
+    uint8_t signature0; /**< Fixed report signature byte (`P`). */
     uint8_t version; /**< Report layout version. */
     uint8_t sequence; /**< Monotonic report sequence number. */
     usb_hid_channel_status_t channel[UART_PORT_COUNT]; /**< Per-CDC/UART bridge snapshots. */
 } __attribute__((packed)) usb_hid_status_report_t;
 
-_Static_assert(sizeof(usb_hid_status_report_t) == 64u, "HID status report must fit one USB packet");
+_Static_assert(sizeof(usb_hid_status_report_t) == 63u,
+               "HID status report must be 63 bytes (Report ID + payload <= 64)");
+_Static_assert(sizeof(usb_hid_status_report_t) + 1u <= PICO_UART_USB_HID_ENDPOINT_BUFFER_SIZE,
+               "HID status Report ID + payload must fit the HID EP buffer");
 
 /**
  * @brief HID feature report containing temperature and firmware version.
@@ -166,7 +174,6 @@ static void usb_hid_build_status_report(
 {
     memset(report, 0, sizeof(*report));
     report->signature0 = USB_HID_SIGNATURE0;
-    report->signature1 = USB_HID_SIGNATURE1;
     report->version = USB_HID_REPORT_VERSION;
     report->sequence = usb_hid_sequence;
 
