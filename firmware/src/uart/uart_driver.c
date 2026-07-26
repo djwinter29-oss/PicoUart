@@ -168,6 +168,7 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
 static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_driver_port_t *port);
 static void uart_driver_set_worker_control_pending(uart_port_id_t port_id);
 static void uart_driver_finish_worker_control(uart_port_id_t port_id, bool success);
+static bool uart_driver_mailbox_has_pending_port(uart_port_id_t port_id);
 
 /**
  * @brief Halt after a HardFault so the debugger can inspect the fault.
@@ -227,6 +228,18 @@ static void uart_driver_finish_worker_control(uart_port_id_t port_id, bool succe
         uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
     }
     spin_unlock(uart_driver_status_lock, save);
+}
+
+static bool uart_driver_mailbox_has_pending_port(uart_port_id_t port_id)
+{
+    uint32_t request_sequence = uart_driver_mailbox.request_sequence;
+
+    if (request_sequence == uart_driver_mailbox.response_sequence) {
+        return false;
+    }
+
+    __dmb();
+    return uart_driver_mailbox.port_id == (uint32_t)port_id;
 }
 
 static void uart_driver_worker_core_main(void)
@@ -690,6 +703,8 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
         return UART_DRIVER_COMMAND_STATUS_INVALID_PORT;
     }
 
+    pending_control = &uart_driver_pending_controls[port_id];
+
     if (!uart_line_coding_is_valid(line_coding)) {
         uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
         uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
@@ -697,13 +712,16 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
     }
 
     if (uart_driver_line_coding_matches_current(port, line_coding)) {
-        uart_driver_clear_port_status_flag(port_id,
-                                           UART_DRIVER_PORT_STATUS_CONTROL_PENDING |
-                                               UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+        if (pending_control->pending) {
+            /* The newest request keeps the current format, so cancel the older deferred change. */
+            uart_driver_finish_worker_control(port_id, true);
+        } else {
+            uart_driver_clear_port_status_flag(port_id,
+                                               UART_DRIVER_PORT_STATUS_CONTROL_PENDING |
+                                                   UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+        }
         return UART_DRIVER_COMMAND_STATUS_OK;
     }
-
-    pending_control = &uart_driver_pending_controls[port_id];
 
     if (port->info.backend == UART_DRIVER_BACKEND_HW) {
         pending_control->line_coding = *line_coding;
@@ -745,7 +763,6 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
 bool uart_driver_queue_line_coding(uart_port_id_t port_id,
                                    const uart_driver_line_coding_t *line_coding)
 {
-    uart_driver_port_t *port = uart_driver_port_mutable(port_id);
     uint32_t request_sequence;
 
     if (!uart_driver_worker_started) {
@@ -755,13 +772,6 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
     if (!uart_driver_line_coding_acceptable(port_id, line_coding)) {
         uart_driver_report_control_error(port_id);
         return false;
-    }
-
-    if (uart_driver_line_coding_matches_current(port, line_coding)) {
-        uart_driver_clear_port_status_flag(port_id,
-                                           UART_DRIVER_PORT_STATUS_CONTROL_PENDING |
-                                               UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
-        return true;
     }
 
     if (uart_driver_mailbox.request_sequence != uart_driver_mailbox.response_sequence) {
@@ -798,7 +808,8 @@ void uart_driver_report_soft_pending_error(uart_port_id_t port_id)
 
     save = spin_lock_blocking(uart_driver_status_lock);
     uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-    if (!uart_driver_pending_controls[port_id].pending) {
+    if (!uart_driver_pending_controls[port_id].pending &&
+        !uart_driver_mailbox_has_pending_port(port_id)) {
         uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
     spin_unlock(uart_driver_status_lock, save);

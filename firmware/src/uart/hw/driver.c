@@ -390,9 +390,9 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
     }
 
     /*
-     * Stop RX DMA before publishing progress so WRITE_ADDR cannot race ahead of
-     * the ring producer. CPSID first so a pending DMA IRQ cannot re-arm after
-     * INTE clear but before abort completes.
+     * Mask the RX re-arm IRQ before sampling progress so the live DMA count and
+     * ring producer stay coherent. Publish before abort: abort does not promise
+     * that TRANS_COUNT remains a usable progress sample on every target.
      */
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
@@ -400,6 +400,7 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
         dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
                                      (uint)driver->rx_dma_channel,
                                      false);
+        hw_uart_driver_publish_rx(driver);
         hw_uart_driver_abort_dma_channel((uint)driver->rx_dma_channel);
         hw_uart_driver_abort_dma_channel((uint)driver->tx_dma_channel);
         dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,

@@ -161,6 +161,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--payload-bytes", type=int, default=64)
     parser.add_argument("--timeout", type=float, default=3.0)
     parser.add_argument(
+        "--settle-seconds",
+        type=float,
+        default=0.05,
+        help="Wait after opening and configuring ports before sending a marker",
+    )
+    parser.add_argument(
         "--flood-seconds",
         type=float,
         default=0.0,
@@ -283,7 +289,7 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
     try:
         pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
         if arguments.loopback:
-            time.sleep(0.05)
+            time.sleep(arguments.settle_seconds)
             print(f"Testing {arguments.label} loopback at {baud_rate} baud")
             passed = test_direction(pico_fd,
                                     pico_fd,
@@ -293,7 +299,7 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
             return 0 if passed else 1
 
         peer_fd, peer_settings = configure_port(arguments.peer_port, baud_rate)
-        time.sleep(0.05)
+        time.sleep(arguments.settle_seconds)
         print(f"Testing {arguments.label} at {baud_rate} baud")
         pico_to_peer = test_direction(pico_fd,
                                       peer_fd,
@@ -325,6 +331,9 @@ def main() -> int:
         return 2
     if arguments.timeout <= 0:
         print("--timeout must be greater than zero", file=sys.stderr)
+        return 2
+    if arguments.settle_seconds < 0:
+        print("--settle-seconds must be >= 0", file=sys.stderr)
         return 2
     if arguments.flood_seconds < 0:
         print("--flood-seconds must be >= 0", file=sys.stderr)
