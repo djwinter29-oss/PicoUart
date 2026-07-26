@@ -47,8 +47,10 @@ typedef struct pio_uart_driver pio_uart_driver_t;
 bool pio_uart_driver_init(pio_uart_driver_t *driver);
 
 /**
- * @brief Poll one PIO UART backend to drain RX and advance TX service.
- * RX and TX are serviced by the caller. TX uses FIFO polling for short queues and DMA for deeper backlog.
+ * @brief Poll one PIO UART backend to publish RX DMA progress and advance TX service.
+ * RX bytes are moved by DMA from the PIO RX FIFO into the shared ring; the poll
+ * path publishes producer progress and re-arms exhausted transfers. TX uses FIFO
+ * polling for short queues and DMA for deeper backlog.
  * @param driver Driver instance to poll.
  */
 void pio_uart_driver_poll(pio_uart_driver_t *driver);

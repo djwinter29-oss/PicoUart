@@ -1,13 +1,17 @@
 .program pio_uart_tx
 .side_set 1 opt
 
+; 8N1 TX at 8 PIO clocks per bit (matches UART_LINE_CODING_PIO_CLOCKS_PER_BIT).
+; Continuous frames are exactly 10 bit-times (start + 8 data + stop): the next
+; wrap to `pull side 1 [7]` asserts the stop bit. Do not add a trailing nop —
+; that lengthens the frame and under-runs a nominal 1 Mbaud byte rate.
+
 .wrap_target
-    pull        side 1 [7]
-    set x, 7    side 0 [7]
+    pull        side 1 [7] ; Stop bit / idle-high (8 clocks)
+    set x, 7    side 0 [7] ; Start bit (8 clocks)
 bitloop:
     out pins, 1
-    jmp x-- bitloop [6]
-    nop         side 1 [6]
+    jmp x-- bitloop [6]    ; 8 data bits × 8 clocks
 .wrap
 
 .program pio_uart_rx
@@ -15,6 +19,9 @@ bitloop:
 ; On a framing error (stop bit low): raise irq 0 rel for this SM, discard the
 ; partial ISR, wait for the line to return idle-high, then hunt for the next
 ; start bit. Valid frames are pushed as usual.
+;
+; IN shift direction is configured in C as shift-left so the assembled byte
+; lands in ISR[7:0], enabling DMA_SIZE_8 pops from the RX FIFO into the ring.
 
 .wrap_target
 start:

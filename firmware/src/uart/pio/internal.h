@@ -18,13 +18,15 @@
 struct pio_uart_driver {
     pio_uart_driver_config_t config; /**< Immutable PIO UART configuration. */
     bool initialized; /**< True after the PIO state machines and software rings are configured. */
+    int rx_dma_channel; /**< Persistent DMA channel writing PIO RX FIFO bytes into @ref rx_ring. */
     int tx_dma_channel; /**< Dynamically claimed DMA channel used for high-backlog TX draining. */
     bool tx_dma_active; /**< True while the active TX DMA channel owns a ring span. */
     size_t tx_dma_bytes_in_flight; /**< Bytes currently owned by the active TX DMA transfer. */
     size_t tx_polled_bytes; /**< Bytes sent through the direct FIFO polling path. */
     size_t tx_dma_bytes; /**< Bytes sent through the TX DMA path. */
-    uint32_t controller_rx_bytes; /**< Valid received bytes removed from the PIO RX FIFO. */
+    uint32_t controller_rx_bytes; /**< Valid received bytes published into the RX ring. */
     uint32_t rx_error_count; /**< Framing (stop-bit) errors observed since initialization. */
+    uint32_t rx_dma_last_progress; /**< Last observed RX DMA progress (0xffffffff - TRANS_COUNT). */
     ring_buffer_t rx_ring; /**< PIO RX producer ring shared with the USB bridge. */
     ring_buffer_t tx_ring; /**< USB-core TX producer ring drained by core-1 PIO polling. */
     uint8_t rx_storage[PICO_UART_PIO_UART_RX_BUFFER_SIZE]; /**< RX ring storage. */

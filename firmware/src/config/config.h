@@ -34,7 +34,13 @@ _Static_assert(PICO_UART_HW_UART_RX_BUFFER_SIZE ==
 #define PICO_UART_PIO_UART_RX_BUFFER_SIZE 4096u
 /** @brief PIO UART transmit ring capacity in bytes. Must be a power of two. */
 #define PICO_UART_PIO_UART_TX_BUFFER_SIZE 4096u
+/** @brief PIO UART RX DMA ring selector bits for the receive-ring capacity. */
+#define PICO_UART_PIO_UART_RX_DMA_RING_BITS 12u
 /** @brief PIO UART TX backlog in bytes that starts DMA transmission. */
 #define PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD 64u
+
+_Static_assert(PICO_UART_PIO_UART_RX_BUFFER_SIZE ==
+                                   (1u << PICO_UART_PIO_UART_RX_DMA_RING_BITS),
+                           "PIO UART RX DMA ring bits must match its buffer size");
 
 #endif

@@ -17,13 +17,18 @@ single consumer per ring direction.
 
 ## RX Path
 
-The RX path is polling-driven on core 1. Each worker sweep drains every configured
-PIO RX FIFO into its matching RX ring.
+The RX path is DMA-backed on core 1. Each PIO RX state machine DREQ feeds a
+persistent DMA channel that writes assembled UART bytes into the matching RX
+ring (ring mode, IRQ1 transfer-count re-arm). The worker poll publishes DMA
+progress into the ring producer and harvests stop-bit framing IRQs.
 
 Current RX behavior:
 
-- when the RX ring is full, the backend preserves newest valid bytes by advancing the consumer
-  and incrementing the overflow counter
+- IN shift is configured left so each FIFO word carries the byte in bits `[7:0]`,
+  allowing `DMA_SIZE_8` pops without a software extract
+- when the RX ring wraps under a stalled USB consumer, the consumer recovers
+  overwritten bytes through the shared ring overflow accounting
+- TX still uses the hybrid FIFO + DMA policy below
 
 ## TX Path
 
@@ -93,10 +98,12 @@ request path itself to busy-wait for that idle window.
 Before reconfiguring a PIO UART backend, core 1:
 
 - pauses new USB-to-UART writes for that port through the shared control-pending state
-- drains any pending RX bytes into the RX ring
+- drains any pending RX bytes into the RX ring (publish RX DMA progress)
+- aborts the port's RX DMA channel before pausing the state machines
 - harvests TX DMA completion if one just finished
 - retries on later worker sweeps while TX DMA is still active, TX ring data remains, the TX FIFO is not empty,
   or the RX FIFO is not empty
+- restarts RX DMA after a successful baud apply (or after a deferred attempt rolls back)
 
 The RX line level is not part of the mandatory gate. Requiring the RX pin to read high before reconfiguring
 can stall a deferred baud change forever when the pin floats or is externally held low, so that stricter
@@ -113,15 +120,20 @@ worker loop responsive while the port drains toward a safe reconfiguration point
 - no RTS/CTS runtime behavior (pins reserved; hardware UART0/UART1 own RTS/CTS)
 - TX DMA thresholds are configurable per port but still use static defaults rather than adaptive tuning
 - TX fairness across the 4 PIO ports is improved by worker-loop round-robin polling, but still lacks an explicit scheduler
-- per-launch DMA size is a fixed bound today, not adaptive to live peer pressure
+- per-launch TX DMA size is a fixed bound today, not adaptive to live peer pressure
+- each port can be configured for 1 Mbaud; sustained multi-port 1 Mbaud is still bounded by
+  USB full-speed aggregate bandwidth and host drain rate
 
-PIO RX validates the stop bit after each 8-bit frame. The final data-bit loop
-delay already lands on the stop-bit centre (do not add an extra bit-time nop).
-A low stop bit raises a relative PIO IRQ, discards the partial ISR, waits for
-idle-high, and increments the port's sticky `rx_error_count` (visible as HID
-health bit 7). Baud rates outside the PIO divider range are rejected fail-fast.
+PIO TX frames are canonical 8N1 at 8 PIO clocks/bit (stop bit comes from the
+next `pull`). PIO RX validates the stop bit after each 8-bit frame. The final
+data-bit loop delay already lands on the stop-bit centre. A low stop bit raises
+a relative PIO IRQ, discards the partial ISR, waits for idle-high, and increments
+the port's sticky `rx_error_count` (visible as HID health bit 7). Baud rates
+outside the PIO divider range are rejected fail-fast.
 
 ## Follow-Up Options
 
-1. Tune DMA threshold and max DMA launch size from measured worker-core load and end-to-end latency.
-2. Add an explicit worker-side TX scheduler if multiple PIO ports sustain high TX pressure at the same time.
+1. Tune TX DMA threshold and max DMA launch size from measured worker-core load and end-to-end latency.
+2. Persist PIO TX DMA channels (today they are claimed per launch) if sustained multi-port 1 Mbaud TX needs lower setup cost.
+3. Add an explicit worker-side TX scheduler if multiple PIO ports sustain high TX pressure at the same time.
+4. Optional PIO RTS pacing when USB consumers stall.

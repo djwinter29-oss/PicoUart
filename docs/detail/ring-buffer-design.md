@@ -42,7 +42,7 @@ Implemented now:
 - TX DMA draining contiguous spans from the TX ring
 - hardware UART0/UART1 RTS/CTS flow control (CTS pull-down when peer omits CTS)
 - full hardware UART line-coding (baud/data/parity/stop) via deferred worker apply
-- PIO UART backend integration with the ring helper and hybrid TX drain policy
+- PIO UART backend integration with DMA-backed RX and hybrid TX drain policy
 - PIO 8N1 line-coding (baud changes deferred; non-8N1 rejected with `CONTROL_ERROR`)
 - PIO RX stop-bit framing validation with sticky RX-error health
 - USB CDC bridge layer using the TX and RX rings end to end
@@ -269,7 +269,7 @@ UART backend layer:
 - owns hardware UART or PIO UART specifics
 - owns DMA setup and DMA completion handling
 - updates producer or consumer positions for the port rings
-- polls PIO RX and lets the worker core choose between FIFO polling and TX DMA based on queue depth
+- publishes PIO RX DMA progress and chooses FIFO polling vs TX DMA based on queue depth
 
 ## Current Scope Limits
 
