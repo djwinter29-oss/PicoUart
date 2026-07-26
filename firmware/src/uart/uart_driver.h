@@ -175,6 +175,16 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
                                    const uart_driver_line_coding_t *line_coding);
 
 /**
+ * @brief Return whether @p line_coding can ever be applied to @p port_id.
+ * @param port_id Logical port identifier.
+ * @param line_coding Host-requested baud/data/parity/stop configuration.
+ * @return `false` for invalid ports/args or permanent backend rejects (for
+ * example PIO non-8N1 or infeasible baud). Does not consider mailbox busyness.
+ */
+bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
+                                        const uart_driver_line_coding_t *line_coding);
+
+/**
  * @brief Mark one logical UART port as having failed its latest control request.
  * @param port_id Logical port identifier.
  *

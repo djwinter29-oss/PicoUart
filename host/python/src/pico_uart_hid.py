@@ -164,7 +164,8 @@ def send_command(device: Any, command: int) -> None:
 def reset_board(device: Any) -> None:
     """Arm then reset the board (two-step HID sequence)."""
     send_command(device, COMMAND_ARM_RESET)
-    time.sleep(0.05)
+    # Stay well inside the firmware arm window without waiting the full period.
+    time.sleep(min(0.05, RESET_ARM_WINDOW_S / 10.0))
     send_command(device, COMMAND_RESET_BOARD)
 
 

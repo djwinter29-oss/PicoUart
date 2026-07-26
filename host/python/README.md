@@ -45,8 +45,9 @@ python3 host/python/src/pico_uart_hid.py reset
 feature report 3. USB `bcdDevice` advertises major.minor only (for example
 tag `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
 
-`reset` immediately reboots PicoUart and disconnects its USB interfaces. The
-board enumerates again after firmware startup completes.
+`reset` sends HID arm (`3`) then reset (`2`) within the firmware arm window
+(2 s). The board reboots through the watchdog and disconnects its USB
+interfaces, then enumerates again after firmware startup completes.
 
 The tool selects the HID collection with vendor usage page `0xFF00`, usage
 `0x0001`; this avoids confusing the HID interface with any CDC ports.

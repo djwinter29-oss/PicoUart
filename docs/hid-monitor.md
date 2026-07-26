@@ -20,10 +20,10 @@ command feature reports. The device is identified as USB
 | Baud, data bits, parity, stop bits | CDC line-coding request | Parsed from `SET_LINE_CODING` and queued to the matching UART backend. TinyUSB accepts the USB transfer before firmware validation; rejected or unsupported requests set health bit 2 (`control_error`) instead of stalling the CDC control pipe. PIO ports accept 8N1 only. |
 | Health, traffic, ring peak, temperature, and firmware version | HID | Read-only monitoring data. |
 | Toggle default board LED | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one. |
-| Reset board | HID command feature report | Immediately reboots through the watchdog. |
+| Reset board | HID command feature report | Arm (`3`) then reset (`2`) within 2 seconds; disable with `PICO_UART_ALLOW_HID_RESET=0`. |
 
 HID must not be used to select a UART, set baud rate, change GPIO mapping, or
-alter ring-buffer behavior. The two command values are board-scoped only.
+alter ring-buffer behavior. The three command values are board-scoped only.
 
 ## Report IDs
 

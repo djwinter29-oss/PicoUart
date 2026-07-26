@@ -724,29 +724,32 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
     return UART_DRIVER_COMMAND_STATUS_QUEUED;
 }
 
+bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
+                                        const uart_driver_line_coding_t *line_coding)
+{
+    const uart_driver_port_info_t *port_info = uart_driver_port_info(port_id);
+
+    if ((port_info == NULL) || !uart_line_coding_is_valid(line_coding)) {
+        return false;
+    }
+
+    if (port_info->backend == UART_DRIVER_BACKEND_PIO) {
+        return uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys));
+    }
+
+    return port_info->backend == UART_DRIVER_BACKEND_HW;
+}
+
 bool uart_driver_queue_line_coding(uart_port_id_t port_id,
                                    const uart_driver_line_coding_t *line_coding)
 {
     uint32_t request_sequence;
-    const uart_driver_port_info_t *port_info;
 
     if (!uart_driver_worker_started) {
         return false;
     }
 
-    if (!uart_line_coding_is_valid(line_coding)) {
-        uart_driver_report_control_error(port_id);
-        return false;
-    }
-
-    port_info = uart_driver_port_info(port_id);
-    if (port_info == NULL) {
-        return false;
-    }
-
-    /* Fail fast for PIO format/baud rejects so USB ingress is not paused for 1 s. */
-    if ((port_info->backend == UART_DRIVER_BACKEND_PIO) &&
-        !uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys))) {
+    if (!uart_driver_line_coding_acceptable(port_id, line_coding)) {
         uart_driver_report_control_error(port_id);
         return false;
     }
