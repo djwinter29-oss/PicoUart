@@ -13,6 +13,7 @@
 #include "hardware/regs/uart.h"
 #include "hardware/structs/dma.h"
 #include "hardware/sync.h"
+#include "pico/platform.h"
 #include "pico/stdlib.h"
 
 #include <stddef.h>
@@ -155,10 +156,32 @@ static bool hw_uart_driver_line_format_supported(uint32_t baud_rate,
  * RP2350-E5: clear channel EN before abort so the controller cannot re-trigger.
  * Use the non-triggering CTRL alias so clearing EN does not start a transfer.
  */
+static void hw_uart_driver_abort_dma_channel(uint channel);
+static void hw_uart_driver_publish_rx(hw_uart_driver_t *driver);
+
 static void hw_uart_driver_abort_dma_channel(uint channel)
 {
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
     dma_channel_abort(channel);
+}
+
+/**
+ * @brief Stop RX DMA for line-format reconfig with a stable progress sample.
+ *
+ * Disable the channel, wait for any in-flight beat, publish progress, then abort.
+ */
+static void hw_uart_driver_stop_rx_dma_for_reconfig(hw_uart_driver_t *driver)
+{
+    uint channel = (uint)driver->rx_dma_channel;
+
+    dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
+    hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+    while (dma_channel_is_busy(channel)) {
+        tight_loop_contents();
+    }
+    hw_uart_driver_publish_rx(driver);
+    dma_channel_abort(channel);
+    dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
 }
 
 static void hw_uart_driver_release_dma(hw_uart_driver_t *driver)
@@ -390,21 +413,14 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
     }
 
     /*
-     * Mask the RX re-arm IRQ before sampling progress so the live DMA count and
-     * ring producer stay coherent. Publish before abort: abort does not promise
-     * that TRANS_COUNT remains a usable progress sample on every target.
+     * Mask the RX re-arm IRQ, stop the channel, wait for any in-flight beat,
+     * publish a stable progress sample, then abort/ack before restarting.
      */
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
-        dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                     (uint)driver->rx_dma_channel,
-                                     false);
-        hw_uart_driver_publish_rx(driver);
-        hw_uart_driver_abort_dma_channel((uint)driver->rx_dma_channel);
+        hw_uart_driver_stop_rx_dma_for_reconfig(driver);
         hw_uart_driver_abort_dma_channel((uint)driver->tx_dma_channel);
-        dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                     (uint)driver->rx_dma_channel);
         driver->tx_dma_bytes_in_flight = 0u;
         driver->tx_active = false;
         restore_interrupts(interrupt_status);

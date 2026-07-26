@@ -135,7 +135,7 @@ The firmware has moved beyond the planning stage and now provides a working base
 
 Known gaps in the current implementation:
 
-1. PIO UART RTS/CTS pins are reserved but have no runtime flow-control behavior yet (hardware UART0/UART1 enable RTS/CTS).
+1. PIO UART RTS/CTS pins are reserved in the board docs but not GPIO-owned, and have no runtime flow-control behavior yet. Hardware UART0/UART1 retain RTS/CTS pin assignments with runtime flow control **disabled by default** (`uart_board.c`).
 2. Host CDC RTS is ignored; DTR is recorded for HID monitoring only and does not gate bridging.
 3. PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or data-bit changes (HID `control_error`).
 4. HID exposes ring high-water marks and a sticky RX-overrun health bit; full occupancy/overflow **counts** are not in the compact HID report.

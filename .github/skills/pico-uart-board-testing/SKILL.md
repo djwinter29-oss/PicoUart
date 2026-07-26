@@ -141,17 +141,18 @@ flow-control behavior. Host CDC RTS is ignored.
   The default 10-second window reports verified bytes and measured throughput
   for every stream at 9600, 19200, 38400, 57600, 115200, 230400, 460800,
   921600, and 1000000 baud. Use `--rates`, `--duration`, and `--uart0-baud`
-  for a focused longer run. Omit `--uart1` / `--uart4` only when those
-  jumpers are not fitted; release HIL should include them.
+  for a focused longer run. `--uart1` / `--uart4` are optional; omit them when
+  those jumpers are not fitted. Release promote does not require UART1/4 when
+  the transcript documents that those jumpers were absent.
 
-8. **HW UART RX stress with an RTS-ignoring peer** (optional for flow-control /
-   RX DMA re-arm claims; not a substitute for the six-port bridge matrix).
-   Hardware UART RX DMA re-arms via DMA IRQ when the countdown TRANS_COUNT
-   exhausts (full 32-bit on RP2040; masked COUNT on RP2350 — see
-   `firmware/src/uart/dma_progress.h`); the worker poll path is only a safety
-  net. When hardware flow control is explicitly enabled, a well-behaved peer
-  should not overrun. Example when the peer ignores RTS (leave CTS
-  unconnected / peer does not wire RTS):
+8. **HW UART RX stress / CDC-hold flood** (optional; not a substitute for the
+   required bridge matrix). Hardware UART RX DMA re-arms via DMA IRQ when the
+   countdown TRANS_COUNT exhausts (full 32-bit on RP2040; masked COUNT on
+   RP2350 — see `firmware/src/uart/dma_progress.h`); the worker poll path is
+   only a safety net. Default firmware leaves HW RTS/CTS **disabled** in
+   `uart_board.c`. The flood below stresses ring/DMA backpressure with CDC
+   held closed; it is **not** an RTS/CTS proof unless you first set
+   `hardware_flow_control` true and wire RTS/CTS:
 
    ```sh
    # Terminal A: watch HID health bits (look for rx_overrun / rx_error).

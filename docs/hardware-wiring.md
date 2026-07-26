@@ -10,9 +10,12 @@ The current firmware architecture reserves:
 
 This document describes the wiring model and the signals that each UART channel is expected to provide.
 
-Hardware UART0 and UART1 leave RTS and CTS disabled by default at runtime.
-PIO UART ports reserve the same signals for a future flow-control
-implementation.
+Hardware UART0 and UART1 leave RTS and CTS disabled by default at runtime
+(`hardware_flow_control = false` in `firmware/src/config/uart_board.c`). Those
+pins are listed in the board table but are **not muxed** unless flow control is
+explicitly enabled. PIO UART RTS/CTS numbers below are **docs-reserved only** —
+firmware does not claim those GPIOs today, so they may be reused carefully until
+PIO flow control lands.
 
 ## Host Side
 
@@ -61,7 +64,10 @@ This allocation is intended for Pico-class boards that expose GP0-GP22 and GP26-
 
 Notes:
 
-- This uses 24 exposed GPIOs for 6 channels with RTS/CTS.
+- TX/RX columns match `firmware/src/config/uart_board.c` (source of truth).
+- RTS/CTS columns are the intended allocation. HW RTS/CTS are not claimed unless
+  `hardware_flow_control` is enabled; PIO RTS/CTS are documentation reservations
+  only (not GPIO-owned by firmware).
 - GP27 and GP28 remain free for future use.
 - GP23 and GP24 are not used because they are not generally available on standard Pico headers.
 - GP25 is reserved for the selected board's default LED when `PICO_DEFAULT_LED_PIN` is defined.

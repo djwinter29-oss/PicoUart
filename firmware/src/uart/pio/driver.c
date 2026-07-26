@@ -16,6 +16,7 @@
 #include "hardware/regs/pio.h"
 #include "hardware/structs/dma.h"
 #include "hardware/sync.h"
+#include "pico/platform.h"
 
 #include <stddef.h>
 
@@ -72,6 +73,25 @@ static void pio_uart_driver_abort_dma_channel(uint channel)
 {
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
     dma_channel_abort(channel);
+}
+
+/**
+ * @brief Stop RX DMA for line-coding reconfig with a stable progress sample.
+ *
+ * Disable the channel, wait for any in-flight beat, publish progress, then abort.
+ */
+static void pio_uart_driver_stop_rx_dma_for_reconfig(pio_uart_driver_t *driver)
+{
+    uint channel = (uint)driver->rx_dma_channel;
+
+    dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
+    hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+    while (dma_channel_is_busy(channel)) {
+        tight_loop_contents();
+    }
+    pio_uart_driver_publish_rx(driver);
+    dma_channel_abort(channel);
+    dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
 }
 
 static void pio_uart_driver_rearm_rx_dma(pio_uart_driver_t *driver)
@@ -541,13 +561,29 @@ static bool pio_uart_driver_rx_line_idle(const pio_uart_driver_t *driver)
 /**
  * @brief True when the TX SM has stalled on `pull` (FIFO empty, OSR drained).
  *
- * TXSTALL is sticky (WC). After the software ring and TX FIFO are empty, a set
- * TXSTALL means the SM finished the last frame and is waiting idle-high on pull.
+ * TXSTALL is sticky (write-1-to-clear). Clear it, then require it to re-assert so a
+ * stale stall bit cannot pass while the SM is still shifting the last frame.
  */
-static bool pio_uart_driver_tx_shifter_idle(const pio_uart_driver_t *driver)
+static bool pio_uart_driver_tx_shifter_idle(pio_uart_driver_t *driver)
 {
     uint32_t mask = 1u << (PIO_FDEBUG_TXSTALL_LSB + driver->config.tx_state_machine);
-    return (driver->config.pio->fdebug & mask) != 0u;
+    PIO pio = driver->config.pio;
+
+    if ((pio->fdebug & mask) == 0u) {
+        return false;
+    }
+
+    pio->fdebug = mask; /* W1C sticky stall flag */
+    /*
+     * If the SM is still stalled on an empty TX FIFO pull, TXSTALL re-asserts
+     * within a few PIO cycles. A short settle avoids mid-frame baud applies
+     * without spinning the worker for milliseconds.
+     */
+    for (uint32_t settle = 0u; settle < 32u; ++settle) {
+        tight_loop_contents();
+    }
+
+    return (pio->fdebug & mask) != 0u;
 }
 
 static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver)
@@ -569,13 +605,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
         uint32_t interrupt_status = save_and_disable_interrupts();
 
         if (driver->rx_dma_channel >= 0) {
-            dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                         (uint)driver->rx_dma_channel,
-                                         false);
-            pio_uart_driver_publish_rx(driver);
-            pio_uart_driver_abort_dma_channel((uint)driver->rx_dma_channel);
-            dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                         (uint)driver->rx_dma_channel);
+            pio_uart_driver_stop_rx_dma_for_reconfig(driver);
         }
         restore_interrupts(interrupt_status);
     }

@@ -119,7 +119,9 @@ worker loop responsive while the port drains toward a safe reconfiguration point
 
 - 8N1 only
 - no parity handling
-- no RTS/CTS runtime behavior (pins reserved; hardware UART0/UART1 own RTS/CTS)
+- no RTS/CTS runtime behavior (pins are **docs-reserved only**, not claimed by
+  firmware; hardware UART0/UART1 keep RTS/CTS pin numbers in `uart_board.c` with
+  runtime flow control disabled by default)
 - TX DMA thresholds are configurable per port but still use static defaults rather than adaptive tuning
 - TX fairness across the 4 PIO ports is improved by worker-loop round-robin polling, but still lacks an explicit scheduler
 - per-launch TX DMA size is a fixed bound today, not adaptive to live peer pressure

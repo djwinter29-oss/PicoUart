@@ -36,13 +36,18 @@ void test_worker_completion_keeps_newer_control_pending_owner(void)
 
 void test_soft_pending_completion_uses_original_request_generation(void)
 {
-    uint32_t valid_soft_pending_generation = 7u;
-    uint32_t newer_rejected_generation = 8u;
+    /*
+     * Preserve-path rejects use note_control_error (no generation bump), so the
+     * original soft-pending generation stays current for a later successful apply.
+     * A full report_control_error-style bump would invalidate the older request.
+     */
+    uint32_t soft_pending_generation = 7u;
+    uint32_t bumped_after_hard_reject = 8u;
 
-    TEST_ASSERT_FALSE(uart_control_completion_is_current(valid_soft_pending_generation,
-                                                          newer_rejected_generation));
-    TEST_ASSERT_TRUE(uart_control_completion_is_current(newer_rejected_generation,
-                                                         newer_rejected_generation));
+    TEST_ASSERT_TRUE(uart_control_completion_is_current(soft_pending_generation,
+                                                         soft_pending_generation));
+    TEST_ASSERT_FALSE(uart_control_completion_is_current(soft_pending_generation,
+                                                          bumped_after_hard_reject));
 }
 
 int main(void)

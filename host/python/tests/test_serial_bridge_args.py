@@ -97,3 +97,40 @@ def test_flood_seconds_parses(monkeypatch: pytest.MonkeyPatch) -> None:
     assert args.hold_cdc_seconds == 1.0
     monkeypatch.setattr(bridge, "run_flood_test", lambda *_args, **_kwargs: 0)
     assert bridge.main() == 0
+
+
+def test_settle_seconds_rejects_negative(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serial_bridge_test.py",
+            "--pico-port",
+            "/dev/null",
+            "--loopback",
+            "--settle-seconds",
+            "-0.1",
+        ],
+    )
+    bridge = _load_bridge()
+    assert bridge.main() == 2
+
+
+def test_settle_seconds_parses(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serial_bridge_test.py",
+            "--pico-port",
+            "/dev/null",
+            "--loopback",
+            "--settle-seconds",
+            "0.2",
+        ],
+    )
+    bridge = _load_bridge()
+    args = bridge.parse_arguments()
+    assert args.settle_seconds == 0.2
+    monkeypatch.setattr(bridge, "run_test", lambda *_args, **_kwargs: 0)
+    assert bridge.main() == 0

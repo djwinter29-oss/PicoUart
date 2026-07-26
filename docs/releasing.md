@@ -39,15 +39,18 @@ need a recorded hardware-in-the-loop (HIL) pass:
    `tools/linux/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>`.
    Repeat the full matrix below on **both** packaged board images — RP2350 DMA
    COUNT behavior differs from RP2040 and must not be skipped.
-3. Run the UART0 Debug Probe, UART1 loopback, UART2↔UART3 cross, UART4
-   loopback, and UART5 loopback `serial_bridge_test.py` cases; keep the full
-   console transcript.
+3. Run the required bridge cases and keep the full console transcript:
+   UART0 Debug Probe, UART2↔UART3 cross, and UART5 loopback. Include UART1
+   and UART4 loopbacks when those jumpers are fitted (optional for promote;
+   recommended when claiming six-port coverage).
 4. Run `serial_stress_benchmark.py` at the default rate sweep (or the rates
-   claimed in the release notes), including `--uart1` and `--uart4` when those
-   jumpers are fitted so all six ports are loaded.
-5. Optionally run the RTS-ignoring HW UART RX stress step from the board-testing
-   skill (`--flood-seconds` / `--hold-cdc-seconds`) when advertising
-   flow-control or RX DMA re-arm behavior.
+   claimed in the release notes). Pass `--uart1` / `--uart4` only when those
+   jumpers are fitted.
+5. Optionally run the CDC-hold / RX flood step from the board-testing skill
+   (`--flood-seconds` / `--hold-cdc-seconds`) when advertising ring/DMA
+   backpressure behavior. To claim hardware RTS/CTS, explicitly enable
+   `hardware_flow_control` in `firmware/src/config/uart_board.c` first — the
+   default build leaves HW flow control off.
 6. Attach or link the transcript (and any HID `monitor` snippets showing
    `control_error` / `rx_overrun` expectations) to the GitHub Release notes or a
    linked issue.

@@ -821,6 +821,19 @@ void uart_driver_report_control_error(uart_port_id_t port_id)
     spin_unlock(uart_driver_status_lock, save);
 }
 
+void uart_driver_note_control_error(uart_port_id_t port_id)
+{
+    uint32_t save;
+
+    if (port_id >= UART_PORT_COUNT) {
+        return;
+    }
+
+    save = spin_lock_blocking(uart_driver_status_lock);
+    uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    spin_unlock(uart_driver_status_lock, save);
+}
+
 void uart_driver_report_soft_pending_error(uart_port_id_t port_id,
                                            uint32_t control_generation)
 {
@@ -952,16 +965,28 @@ bool uart_driver_validate_topology(void)
     size_t pio_count = 0u;
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        if (uart_board_ports[index].info.id != (uart_port_id_t)index) {
+        const uart_board_port_config_t *board = &uart_board_ports[index];
+
+        if (board->info.id != (uart_port_id_t)index) {
             return false;
         }
 
-        if (uart_board_ports[index].info.backend == UART_DRIVER_BACKEND_HW) {
+        if (board->info.backend == UART_DRIVER_BACKEND_HW) {
+            if ((board->info.tx_pin != board->backend.hw.tx_pin) ||
+                (board->info.rx_pin != board->backend.hw.rx_pin) ||
+                (board->info.baud_rate != board->backend.hw.baud_rate)) {
+                return false;
+            }
             hw_count += 1u;
             continue;
         }
 
-        if (uart_board_ports[index].info.backend == UART_DRIVER_BACKEND_PIO) {
+        if (board->info.backend == UART_DRIVER_BACKEND_PIO) {
+            if ((board->info.tx_pin != board->backend.pio.tx_pin) ||
+                (board->info.rx_pin != board->backend.pio.rx_pin) ||
+                (board->info.baud_rate != board->backend.pio.baud_rate)) {
+                return false;
+            }
             pio_count += 1u;
             continue;
         }
