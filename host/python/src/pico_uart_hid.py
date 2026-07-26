@@ -23,11 +23,13 @@ REPORT_ID_COMMAND = 4
 
 COMMAND_TOGGLE_LED = 1
 COMMAND_RESET_BOARD = 2
+COMMAND_ARM_RESET = 3
 
 STATUS_SIZE = 64
 BOARD_STATUS_SIZE = 8
 BOARD_STATUS_LAYOUT_VERSION = 14
 STATUS_LAYOUT_VERSION = 14
+RESET_ARM_WINDOW_S = 2.0
 
 
 def open_device() -> Any:
@@ -159,6 +161,13 @@ def send_command(device: Any, command: int) -> None:
         raise RuntimeError(f"HID command write was incomplete: wrote {bytes_written} bytes")
 
 
+def reset_board(device: Any) -> None:
+    """Arm then reset the board (two-step HID sequence)."""
+    send_command(device, COMMAND_ARM_RESET)
+    time.sleep(0.05)
+    send_command(device, COMMAND_RESET_BOARD)
+
+
 def parse_arguments() -> argparse.Namespace:
     """Parse the HID command-line interface."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -169,7 +178,10 @@ def parse_arguments() -> argparse.Namespace:
     commands.add_parser("temperature", help="read the internal board temperature")
     commands.add_parser("version", help="read the firmware semantic version (MAJOR.MINOR.PATCH)")
     commands.add_parser("toggle-led", help="toggle the board's default LED")
-    commands.add_parser("reset", help="reset the board immediately")
+    commands.add_parser(
+        "reset",
+        help="arm then reset the board (requires firmware HID reset support)",
+    )
     return parser.parse_args()
 
 
@@ -191,7 +203,7 @@ def main() -> int:
             elif arguments.command == "toggle-led":
                 send_command(device, COMMAND_TOGGLE_LED)
             elif arguments.command == "reset":
-                send_command(device, COMMAND_RESET_BOARD)
+                reset_board(device)
         finally:
             device.close()
     except (OSError, RuntimeError) as error:

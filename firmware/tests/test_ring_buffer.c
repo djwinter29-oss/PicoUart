@@ -130,6 +130,43 @@ void test_builtin_self_check(void)
     TEST_ASSERT_TRUE(ring_buffer_self_check());
 }
 
+void test_producer_advance_invalidates_prior_write_span_commit(void)
+{
+    ring_buffer_t ring;
+    uint8_t storage[8];
+    ring_buffer_span_t span;
+
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    span = ring_buffer_write_span(&ring);
+    TEST_ASSERT_TRUE(span.length > 0u);
+    /* External producer movement replaces the outstanding reservation contract. */
+    ring_buffer_produce_external(&ring, 1u);
+    TEST_ASSERT_FALSE(ring_buffer_commit_produced(&ring, span.length));
+}
+
+void test_write_returns_short_count_when_full(void)
+{
+    ring_buffer_t ring;
+    uint8_t storage[8];
+    uint8_t payload[16];
+
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    memset(payload, 0xA5, sizeof(payload));
+    TEST_ASSERT_EQUAL_UINT(8u, ring_buffer_write(&ring, payload, sizeof(payload)));
+    TEST_ASSERT_EQUAL_UINT(0u, ring_buffer_write(&ring, payload, 1u));
+}
+
+void test_producer_index_tracks_writes(void)
+{
+    ring_buffer_t ring;
+    uint8_t storage[8];
+
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    TEST_ASSERT_EQUAL_UINT32(0u, ring_buffer_producer_index(&ring));
+    TEST_ASSERT_EQUAL_UINT(3u, ring_buffer_write(&ring, (const uint8_t *)"abc", 3u));
+    TEST_ASSERT_EQUAL_UINT32(3u, ring_buffer_producer_index(&ring));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -139,6 +176,9 @@ int main(void)
     RUN_TEST(test_overwrite_recovery_on_read_span);
     RUN_TEST(test_read_span_recovers_before_returning_data);
     RUN_TEST(test_commit_rejects_oversized_counts);
+    RUN_TEST(test_producer_advance_invalidates_prior_write_span_commit);
+    RUN_TEST(test_write_returns_short_count_when_full);
+    RUN_TEST(test_producer_index_tracks_writes);
     RUN_TEST(test_builtin_self_check);
     return UNITY_END();
 }

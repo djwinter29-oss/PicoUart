@@ -120,9 +120,12 @@ Write feature report ID `4` with one payload byte:
 | Value | Command |
 | ---: | --- |
 | `1` | Toggle the selected board's default LED. Does nothing when the board exposes no `PICO_DEFAULT_LED_PIN`. |
-| `2` | Immediately reset the board through the watchdog. The USB device disconnects and enumerates again after startup. |
+| `2` | Reset the board through the watchdog **only if** command `3` armed a reset within the previous 2 seconds. |
+| `3` | Arm a subsequent reset (`2`) for 2 seconds. |
 
-Unknown command values are ignored. The report has no response payload.
+Unknown command values are ignored. The report has no response payload. Build with
+`-DPICO_UART_ALLOW_HID_RESET=0` to disable remote reset entirely on shared hosts.
+The reference host tool's `reset` command sends `3` then `2`.
 
 ## Host Tool
 

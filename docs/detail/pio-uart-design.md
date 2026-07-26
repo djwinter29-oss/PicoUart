@@ -115,9 +115,11 @@ worker loop responsive while the port drains toward a safe reconfiguration point
 - TX fairness across the 4 PIO ports is improved by worker-loop round-robin polling, but still lacks an explicit scheduler
 - per-launch DMA size is a fixed bound today, not adaptive to live peer pressure
 
-PIO RX validates the stop bit after each 8-bit frame. A low stop bit raises a
-relative PIO IRQ, discards the partial ISR, waits for idle-high, and increments
-the port's sticky `rx_error_count` (visible as HID health bit 7).
+PIO RX validates the stop bit after each 8-bit frame. The final data-bit loop
+delay already lands on the stop-bit centre (do not add an extra bit-time nop).
+A low stop bit raises a relative PIO IRQ, discards the partial ISR, waits for
+idle-high, and increments the port's sticky `rx_error_count` (visible as HID
+health bit 7). Baud rates outside the PIO divider range are rejected fail-fast.
 
 ## Follow-Up Options
 

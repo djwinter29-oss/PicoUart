@@ -47,8 +47,8 @@ best available end-to-end check here.
 ### Non-obvious firmware caveats
 
 - CDC `SET_LINE_CODING` can succeed at the USB layer while firmware rejects the request
-  (especially PIO non-8N1). Watch HID health bit 2 (`control_error`) / use
-  `pico_uart_hid.py monitor`, which decodes those bits. See `docs/hid-monitor.md`.
-- Non-lab releases need a real VID/PID and a recorded HIL pass — `docs/releasing.md`.
-- Host unit tests live under `firmware/tests/` (Unity) and `host/python/tests/` (pytest);
-  run via `tools/linux/test-host.sh`.
+  (especially PIO non-8N1 or out-of-range PIO baud). Watch HID health bit 2
+  (`control_error`) / use `pico_uart_hid.py monitor`. See `docs/hid-monitor.md`.
+- HID `reset` is arm-then-reset (`command 3` then `2` within 2 s).
+- Tag releases open as **draft**; promote only after `docs/releasing.md` gates.
+- Host unit tests: `tools/linux/test-host.sh`. Host coverage: `tools/linux/coverage.sh`.

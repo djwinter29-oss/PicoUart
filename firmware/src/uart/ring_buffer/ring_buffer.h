@@ -116,6 +116,13 @@ bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count);
 void ring_buffer_produce_external(ring_buffer_t *ring, uint32_t count);
 
 /**
+ * @brief Return the current producer index into the ring storage.
+ * @param ring Ring to inspect.
+ * @return `producer & mask`, suitable as a DMA write offset into @p ring storage.
+ */
+uint32_t ring_buffer_producer_index(const ring_buffer_t *ring);
+
+/**
  * @brief Copy bytes into the ring from a caller buffer.
  * @param ring Ring to write.
  * @param data Source bytes.

@@ -7,6 +7,7 @@
 
 #include "uart/hw/driver.h"
 #include "uart/line_coding.h"
+#include "hardware/clocks.h"
 #include "hardware/sync.h"
 #include "pico/multicore.h"
 #include "pico/time.h"
@@ -703,7 +704,7 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
     if (port->info.backend == UART_DRIVER_BACKEND_HW) {
         pending_control->line_coding = *line_coding;
     } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        if (!uart_line_coding_pio_supported(line_coding)) {
+        if (!uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys))) {
             uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
             uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
             return UART_DRIVER_COMMAND_STATUS_BACKEND_REJECTED;
@@ -727,12 +728,25 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
                                    const uart_driver_line_coding_t *line_coding)
 {
     uint32_t request_sequence;
+    const uart_driver_port_info_t *port_info;
 
     if (!uart_driver_worker_started) {
         return false;
     }
 
     if (!uart_line_coding_is_valid(line_coding)) {
+        uart_driver_report_control_error(port_id);
+        return false;
+    }
+
+    port_info = uart_driver_port_info(port_id);
+    if (port_info == NULL) {
+        return false;
+    }
+
+    /* Fail fast for PIO format/baud rejects so USB ingress is not paused for 1 s. */
+    if ((port_info->backend == UART_DRIVER_BACKEND_PIO) &&
+        !uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys))) {
         uart_driver_report_control_error(port_id);
         return false;
     }

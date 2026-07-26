@@ -6,6 +6,9 @@
 #include "unity.h"
 #include "uart/line_coding.h"
 
+/** @brief Representative RP2040 default system clock used by divider tests. */
+#define TEST_SYS_HZ 125000000u
+
 void setUp(void)
 {
 }
@@ -33,7 +36,7 @@ void test_valid_8n1_accepted(void)
     uart_driver_line_coding_t coding = make_coding(115200u, 8u, 1u, UART_DRIVER_PARITY_NONE);
 
     TEST_ASSERT_TRUE(uart_line_coding_is_valid(&coding));
-    TEST_ASSERT_TRUE(uart_line_coding_pio_supported(&coding));
+    TEST_ASSERT_TRUE(uart_line_coding_pio_supported(&coding, TEST_SYS_HZ));
 }
 
 void test_hw_parity_and_stop_accepted_but_not_pio(void)
@@ -42,9 +45,9 @@ void test_hw_parity_and_stop_accepted_but_not_pio(void)
     uart_driver_line_coding_t two_stop = make_coding(9600u, 7u, 2u, UART_DRIVER_PARITY_NONE);
 
     TEST_ASSERT_TRUE(uart_line_coding_is_valid(&odd));
-    TEST_ASSERT_FALSE(uart_line_coding_pio_supported(&odd));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_supported(&odd, TEST_SYS_HZ));
     TEST_ASSERT_TRUE(uart_line_coding_is_valid(&two_stop));
-    TEST_ASSERT_FALSE(uart_line_coding_pio_supported(&two_stop));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_supported(&two_stop, TEST_SYS_HZ));
 }
 
 void test_baud_bounds(void)
@@ -70,6 +73,20 @@ void test_baud_bounds(void)
     TEST_ASSERT_TRUE(uart_line_coding_is_valid(&min_ok));
     TEST_ASSERT_TRUE(uart_line_coding_is_valid(&max_ok));
     TEST_ASSERT_FALSE(uart_line_coding_is_valid(&too_fast));
+    TEST_ASSERT_FALSE(uart_line_coding_is_valid(NULL));
+}
+
+void test_pio_baud_feasibility(void)
+{
+    uart_driver_line_coding_t low = make_coding(50u, 8u, 1u, UART_DRIVER_PARITY_NONE);
+    uart_driver_line_coding_t ok = make_coding(115200u, 8u, 1u, UART_DRIVER_PARITY_NONE);
+
+    /* At 125 MHz, divider for 50 baud is 125e6/(8*50) = 312500 >= 65536. */
+    TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(50u, TEST_SYS_HZ));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_supported(&low, TEST_SYS_HZ));
+    TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(115200u, TEST_SYS_HZ));
+    TEST_ASSERT_TRUE(uart_line_coding_pio_supported(&ok, TEST_SYS_HZ));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(115200u, 0u));
 }
 
 void test_usb_parse_table(void)
@@ -89,6 +106,9 @@ void test_usb_parse_table(void)
     TEST_ASSERT_TRUE(uart_line_coding_from_usb(19200u, 0u, 2u, 8u, &coding));
     TEST_ASSERT_EQUAL_INT(UART_DRIVER_PARITY_EVEN, coding.parity);
 
+    TEST_ASSERT_TRUE(uart_line_coding_from_usb(115200u, 0u, 0u, 5u, &coding));
+    TEST_ASSERT_EQUAL_UINT8(5u, coding.data_bits);
+
     /* USB 1.5 stop bits */
     TEST_ASSERT_FALSE(uart_line_coding_from_usb(115200u, 1u, 0u, 8u, &coding));
     /* mark/space parity */
@@ -98,6 +118,7 @@ void test_usb_parse_table(void)
     /* out-of-range data bits */
     TEST_ASSERT_FALSE(uart_line_coding_from_usb(115200u, 0u, 0u, 9u, &coding));
     TEST_ASSERT_FALSE(uart_line_coding_from_usb(115200u, 0u, 0u, 4u, &coding));
+    TEST_ASSERT_FALSE(uart_line_coding_from_usb(115200u, 0u, 0u, 8u, NULL));
 }
 
 int main(void)
@@ -106,6 +127,7 @@ int main(void)
     RUN_TEST(test_valid_8n1_accepted);
     RUN_TEST(test_hw_parity_and_stop_accepted_but_not_pio);
     RUN_TEST(test_baud_bounds);
+    RUN_TEST(test_pio_baud_feasibility);
     RUN_TEST(test_usb_parse_table);
     return UNITY_END();
 }

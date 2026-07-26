@@ -22,6 +22,12 @@
  * Backends may still reject rates their clock divider cannot represent.
  */
 #define UART_LINE_CODING_BAUD_MAX 3000000u
+/** @brief PIO UART program clocks per bit (must match uart.pio timing). */
+#define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 8u
+/** @brief Inclusive minimum PIO clock divider accepted by the Pico SDK helper. */
+#define UART_LINE_CODING_PIO_DIVIDER_MIN 1u
+/** @brief Exclusive maximum PIO clock divider accepted by the Pico SDK helper. */
+#define UART_LINE_CODING_PIO_DIVIDER_MAX_EXCLUSIVE 65536u
 
 /**
  * @brief Return whether @p line_coding is structurally valid for any backend.
@@ -31,11 +37,22 @@
 bool uart_line_coding_is_valid(const uart_driver_line_coding_t *line_coding);
 
 /**
+ * @brief Return whether @p baud_rate is representable by the PIO UART clock divider.
+ * @param baud_rate Requested baud rate.
+ * @param sys_hz System clock frequency in Hz (for example `clock_get_hz(clk_sys)`).
+ * @return `true` when `sys_hz / (8 * baud)` is in `[1, 65536)`.
+ */
+bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
+
+/**
  * @brief Return whether @p line_coding is supported by the PIO UART backend.
  * @param line_coding Host-requested baud/data/parity/stop configuration.
- * @return `true` only for 8N1 requests that also pass @ref uart_line_coding_is_valid.
+ * @param sys_hz System clock frequency in Hz used for divider feasibility.
+ * @return `true` only for feasible 8N1 requests that also pass
+ * @ref uart_line_coding_is_valid.
  */
-bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding);
+bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding,
+                                    uint32_t sys_hz);
 
 /**
  * @brief Translate a USB CDC ACM line-coding request into firmware form.

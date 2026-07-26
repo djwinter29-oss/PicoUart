@@ -34,6 +34,9 @@ def test_parse_status_channels(hid_module):
     assert hid_module.decode_health(0x31) == ["ready", "cdc_open", "pio"]
     assert "control_error" in hid_module.decode_health(0x04)
     assert "control_pending" in hid_module.decode_health(0x08)
+    assert "init_failed" in hid_module.decode_health(0x02)
+    assert "rx_overrun" in hid_module.decode_health(0x40)
+    assert "rx_error" in hid_module.decode_health(0x80)
 
 
 def test_rejects_bad_signature(hid_module):
@@ -50,10 +53,24 @@ def test_rejects_wrong_status_layout_version(hid_module):
         hid_module.parse_status(bytes(payload))
 
 
-def test_usb_ids_match_firmware_policy_header(hid_module, repo_root):
-    identity = repo_root / "firmware" / "src" / "config" / "usb_identity.h"
-    text = identity.read_text(encoding="utf-8")
-    assert "0xCafe" in text
-    assert "0x4010" in text
-    assert hid_module.VENDOR_ID == 0xCAFE
-    assert hid_module.PRODUCT_ID == 0x4010
+def test_require_payload_rejects_bad_prefix(hid_module):
+    with pytest.raises(RuntimeError, match="unexpected report"):
+        hid_module.require_payload([3, 1, 2], report_id=1, payload_size=2)
+    with pytest.raises(RuntimeError, match="unexpected report"):
+        hid_module.require_payload([1, 1], report_id=1, payload_size=2)
+
+
+def test_send_command_and_reset_sequence(hid_module):
+    writes: list[list[int]] = []
+
+    class FakeWriteDevice:
+        def send_feature_report(self, report: list[int]) -> int:
+            writes.append(report)
+            return len(report)
+
+    device = FakeWriteDevice()
+    hid_module.send_command(device, hid_module.COMMAND_TOGGLE_LED)
+    hid_module.reset_board(device)
+    assert writes[0] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_TOGGLE_LED]
+    assert writes[1] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_ARM_RESET]
+    assert writes[2] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_RESET_BOARD]

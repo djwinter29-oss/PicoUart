@@ -1,31 +1,35 @@
 # Releasing PicoUart
 
-Release tags matching `v*` build firmware artifacts through
-[`.github/workflows/release.yml`](../.github/workflows/release.yml). Use this
-checklist before publishing a non-lab / production-facing release.
+Release tags matching `vMAJOR.MINOR.PATCH` (plain semver only) run
+[`.github/workflows/release.yml`](../.github/workflows/release.yml). That
+workflow builds both boards, runs host unit tests, packages UF2/ELF/BIN/HEX plus
+SHA256SUMS, and opens a **draft** GitHub Release. Promote the draft only after
+this checklist passes.
 
-## USB identity (P1 gate)
+Suggested flow: `workflow_dispatch` dry-run → HIL on those artifacts → tag →
+review draft → publish.
+
+## USB identity (gate)
 
 Lab images may keep the development placeholder `cafe:4010`. **Do not** ship a
 public or production release on that identity.
 
-Before tagging a non-lab release:
+Before promoting a non-lab draft:
 
 1. Obtain an allocated VID/PID (pid.codes or a commercial USB-IF vendor ID).
 2. Update `PICO_UART_USB_VID` / `PICO_UART_USB_PID` in
    [`firmware/src/config/usb_identity.h`](../firmware/src/config/usb_identity.h).
 3. Keep [`host/python/src/pico_uart_hid.py`](../host/python/src/pico_uart_hid.py)
-   in sync.
-4. Update the `cafe:4010` assertion in `release.yml` (or replace it with the new
-   little-endian VID/PID needle) so CI matches the shipped identity.
-5. Call out the identity change in release notes as a breaking USB change.
+   in sync (CI parses the header defines; no manual needle edits in
+   `release.yml`).
+4. Call out the identity change in release notes as a breaking USB change.
 
 See also [`SECURITY.md`](../SECURITY.md).
 
-## Recorded HIL pass (P1 gate)
+## Recorded HIL pass (gate)
 
-Cloud / CI builds prove compilation only. Release candidates need a recorded
-hardware-in-the-loop (HIL) pass:
+Cloud / CI builds prove compilation and host unit tests only. Release candidates
+need a recorded hardware-in-the-loop (HIL) pass:
 
 1. Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md)
    and [`docs/test-connections.md`](test-connections.md).
@@ -44,6 +48,7 @@ A release without a recorded HIL pass is lab-only.
 
 ## Versioning
 
-Tag form is `vMAJOR.MINOR.PATCH`. The tag stamps HID firmware version
-`MAJOR.MINOR.PATCH` and USB `bcdDevice` as major.minor BCD only (for example
-`v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`). Details are in the root README.
+Tag form is `vMAJOR.MINOR.PATCH` (no `-rc` / pre-release suffixes for publish).
+The tag stamps HID firmware version `MAJOR.MINOR.PATCH` and USB `bcdDevice` as
+major.minor BCD only (for example `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
+Details are in the root README.

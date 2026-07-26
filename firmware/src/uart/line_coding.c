@@ -26,15 +26,42 @@ bool uart_line_coding_is_valid(const uart_driver_line_coding_t *line_coding)
            (line_coding->parity == UART_DRIVER_PARITY_EVEN);
 }
 
-bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding)
+bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz)
+{
+    uint64_t clocks_per_bit;
+
+    if ((baud_rate == 0u) || (sys_hz == 0u)) {
+        return false;
+    }
+
+    clocks_per_bit = (uint64_t)UART_LINE_CODING_PIO_CLOCKS_PER_BIT * (uint64_t)baud_rate;
+    /* divider = sys_hz / clocks_per_bit must satisfy 1 <= divider < 65536. */
+    if ((uint64_t)sys_hz < (clocks_per_bit * (uint64_t)UART_LINE_CODING_PIO_DIVIDER_MIN)) {
+        return false;
+    }
+
+    if ((uint64_t)sys_hz >=
+        ((uint64_t)UART_LINE_CODING_PIO_DIVIDER_MAX_EXCLUSIVE * clocks_per_bit)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding,
+                                    uint32_t sys_hz)
 {
     if (!uart_line_coding_is_valid(line_coding)) {
         return false;
     }
 
-    return (line_coding->data_bits == 8u) &&
-           (line_coding->stop_bits == 1u) &&
-           (line_coding->parity == UART_DRIVER_PARITY_NONE);
+    if ((line_coding->data_bits != 8u) ||
+        (line_coding->stop_bits != 1u) ||
+        (line_coding->parity != UART_DRIVER_PARITY_NONE)) {
+        return false;
+    }
+
+    return uart_line_coding_pio_baud_feasible(line_coding->baud_rate, sys_hz);
 }
 
 bool uart_line_coding_from_usb(uint32_t bit_rate,
