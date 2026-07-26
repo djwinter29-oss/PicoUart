@@ -13,6 +13,7 @@
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
+#include "hardware/regs/pio.h"
 #include "hardware/structs/dma.h"
 #include "hardware/sync.h"
 
@@ -525,6 +526,18 @@ static bool pio_uart_driver_rx_line_idle(const pio_uart_driver_t *driver)
     return gpio_get(driver->config.rx_pin);
 }
 
+/**
+ * @brief True when the TX SM has stalled on `pull` (FIFO empty, OSR drained).
+ *
+ * TXSTALL is sticky (WC). After the software ring and TX FIFO are empty, a set
+ * TXSTALL means the SM finished the last frame and is waiting idle-high on pull.
+ */
+static bool pio_uart_driver_tx_shifter_idle(const pio_uart_driver_t *driver)
+{
+    uint32_t mask = 1u << (PIO_FDEBUG_TXSTALL_LSB + driver->config.tx_state_machine);
+    return (driver->config.pio->fdebug & mask) != 0u;
+}
+
 static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver)
 {
     pio_uart_driver_publish_rx(driver);
@@ -533,6 +546,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
     if (driver->tx_dma_active ||
         (ring_buffer_occupancy(&driver->tx_ring) != 0u) ||
         !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
+        !pio_uart_driver_tx_shifter_idle(driver) ||
         !pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
         !pio_uart_driver_rx_line_idle(driver)) {
         /* Continuous traffic defers the change; uart_driver applies a bounded timeout. */

@@ -22,13 +22,6 @@ _Static_assert((offsetof(hw_uart_driver_t, rx_storage) % PICO_UART_HW_UART_RX_BU
 
 /** @brief Shared DMA IRQ used for HW UART RX transfer-count re-arm. */
 #define HW_UART_DRIVER_RX_DMA_IRQ_INDEX 0
-/**
- * @brief Bound for draining the UART TX shifter/FIFO before line-format changes.
- *
- * Unbounded `uart_tx_wait_blocking` can hang core 1 forever when CTS holds the
- * transmitter busy after the software TX ring is already empty.
- */
-#define HW_UART_DRIVER_TX_DRAIN_TIMEOUT_MS 100u
 
 /** @brief Drivers that own an RX DMA channel armed on @ref HW_UART_DRIVER_RX_DMA_IRQ_INDEX. */
 static hw_uart_driver_t *hw_uart_driver_rx_irq_owners[NUM_DMA_CHANNELS];
@@ -375,16 +368,13 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
         return false;
     }
 
-    {
-        absolute_time_t tx_deadline = make_timeout_time_ms(HW_UART_DRIVER_TX_DRAIN_TIMEOUT_MS);
-
-        while ((uart_get_hw(driver->config.instance)->fr & UART_UARTFR_BUSY_BITS) != 0u) {
-            if (time_reached(tx_deadline)) {
-                /* CTS (or a stuck shifter) must not hang the UART worker forever. */
-                return false;
-            }
-            tight_loop_contents();
-        }
+    /*
+     * Do not spin waiting for UARTFR_BUSY. CTS (or a late shifter byte) must
+     * defer the apply without stalling the UART worker's RX publish loop.
+     * The worker's 1 s deferred-apply deadline fails the request if BUSY sticks.
+     */
+    if ((uart_get_hw(driver->config.instance)->fr & UART_UARTFR_BUSY_BITS) != 0u) {
+        return false;
     }
 
     /*

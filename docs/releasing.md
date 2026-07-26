@@ -33,10 +33,12 @@ need a recorded hardware-in-the-loop (HIL) pass:
 
 1. Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md)
    and [`docs/test-connections.md`](test-connections.md).
-2. Flash the exact UF2/ELF that will be attached to the GitHub Release. Repeat
-   the full HIL matrix below on **both** packaged board images (`pico` and
-   `pico2`) whose SHAs match the draft release artifacts — RP2350 DMA COUNT
-   behavior differs from RP2040 and must not be skipped.
+2. Flash the **exact** UF2/ELF attached to the GitHub Release (or the
+   `workflow_dispatch` dry-run artifacts). Do **not** rebuild for release HIL.
+   Record `SHA256SUMS-*` and flash with
+   `tools/linux/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>`.
+   Repeat the full matrix below on **both** packaged board images — RP2350 DMA
+   COUNT behavior differs from RP2040 and must not be skipped.
 3. Run the UART0 Debug Probe, UART1 loopback, UART2↔UART3 cross, UART4
    loopback, and UART5 loopback `serial_bridge_test.py` cases; keep the full
    console transcript.

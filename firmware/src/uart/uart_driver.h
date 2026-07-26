@@ -191,8 +191,28 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
  * Used when USB CDC accepts a `SET_LINE_CODING` transfer that the firmware
  * cannot parse or apply, so hosts can observe @ref UART_DRIVER_PORT_STATUS_CONTROL_ERROR
  * through HID even though the USB control transfer itself succeeded.
+ *
+ * Does **not** clear @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING. Pending is owned
+ * by the soft-pending path or the worker deferred-apply path; clearing it from a
+ * concurrent reject would unpause USB→UART ingress while an apply is still in flight.
  */
 void uart_driver_report_control_error(uart_port_id_t port_id);
+
+/**
+ * @brief Clear @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING for @p port_id.
+ * @param port_id Logical port identifier.
+ *
+ * Call only from the path that owns the in-flight control request (worker apply
+ * completion/failure, or CDC soft-pending timeout when the worker has no deferred
+ * apply).
+ */
+void uart_driver_clear_control_pending(uart_port_id_t port_id);
+
+/**
+ * @brief Return whether the worker still owns a deferred line-coding apply.
+ * @param port_id Logical port identifier.
+ */
+bool uart_driver_has_deferred_line_coding(uart_port_id_t port_id);
 
 /**
  * @brief Mark one logical UART port as having a control request in flight.

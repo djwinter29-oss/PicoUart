@@ -170,7 +170,7 @@ def parse_arguments() -> argparse.Namespace:
         "--hold-cdc-seconds",
         type=float,
         default=0.0,
-        help="With --flood-seconds and --peer-port, delay draining the CDC for N seconds",
+        help="With --flood-seconds and --peer-port, defer opening (and draining) the pico CDC for N seconds",
     )
     return parser.parse_args()
 
@@ -182,6 +182,10 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
     peer_settings = None
 
     try:
+        expect_drain = True
+        written = 0
+        drained = 0
+
         if arguments.loopback:
             pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
             time.sleep(0.05)
@@ -202,26 +206,30 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
             if hold > 0.0:
                 print(
                     f"Flooding {arguments.label} peer→pico at {baud_rate} baud "
-                    f"for {arguments.flood_seconds:.1f}s (CDC drain held {hold:.1f}s)"
+                    f"for {arguments.flood_seconds:.1f}s "
+                    f"(pico CDC open deferred {hold:.1f}s)"
                 )
                 time.sleep(0.05)
-                written, _ = run_flood(
+                held_written, _ = run_flood(
                     peer_fd,
                     None,
                     min(hold, arguments.flood_seconds),
                     arguments.payload_bytes,
                     0.0,
                 )
+                written += held_written
                 remaining = arguments.flood_seconds - min(hold, arguments.flood_seconds)
-                pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
-                more_written, drained = run_flood(
-                    peer_fd,
-                    pico_fd,
-                    max(0.0, remaining),
-                    arguments.payload_bytes,
-                    0.0,
-                )
-                written += more_written
+                expect_drain = remaining > 0.0
+                if expect_drain:
+                    pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
+                    more_written, drained = run_flood(
+                        peer_fd,
+                        pico_fd,
+                        remaining,
+                        arguments.payload_bytes,
+                        0.0,
+                    )
+                    written += more_written
             else:
                 pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
                 time.sleep(0.05)
@@ -237,8 +245,23 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
                     0.0,
                 )
 
+        if written <= 0:
+            print(f"FAIL flood: wrote {written} bytes", file=sys.stderr)
+            return 1
+        if expect_drain and drained <= 0:
+            print(
+                f"FAIL flood: wrote {written} bytes but drained {drained} "
+                f"(CDC open window produced no RX)",
+                file=sys.stderr,
+            )
+            return 1
+
         print(f"PASS flood: wrote {written} bytes, drained {drained} bytes")
-        return 0 if written > 0 else 1
+        print(
+            "Note: flood PASS checks write/drain activity only; pair with "
+            "HID monitor for rx_overrun / rx_error claims."
+        )
+        return 0
     except OSError as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
         return 2

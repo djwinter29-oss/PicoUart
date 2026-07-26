@@ -47,7 +47,8 @@ This keeps the data path straightforward while still avoiding DMA setup overhead
 When the shared TX ring holds only a short queue, core 1 pushes bytes directly into the joined PIO TX FIFO
 from the poll loop.
 This keeps small bursts cheap and avoids paying DMA setup cost for a handful of bytes.
-The TX poll path runs alongside the next worker-sweep RX FIFO drain.
+The TX poll path runs alongside the next worker-sweep RX DMA progress publish
+and re-arm.
 
 ### DMA Preferred Mode
 
@@ -103,7 +104,7 @@ Before reconfiguring a PIO UART backend, core 1:
 - aborts the port's RX DMA channel before pausing the state machines
 - harvests TX DMA completion if one just finished
 - retries on later worker sweeps while TX DMA is still active, TX ring data remains, the TX FIFO is not empty,
-  or the RX FIFO is not empty
+  the TX state machine has not stalled on `pull` (TXSTALL — last frame still shifting), or the RX FIFO is not empty
 - restarts RX DMA after a successful baud apply (or after a deferred attempt rolls back)
 
 The RX line level is part of the mandatory baud-change gate for shipped PIO ports

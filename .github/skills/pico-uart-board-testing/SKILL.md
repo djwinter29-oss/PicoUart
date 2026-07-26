@@ -42,14 +42,25 @@ with no runtime flow-control behavior. Host CDC RTS is ignored.
    ```
 
 2. Connect the Debug Probe SWDIO, SWCLK, and GND signals to the PicoUart board,
-   then flash the firmware through CMSIS-DAP OpenOCD. Release HIL must repeat
-   the matrix below on **both** packaged images:
+   then flash through CMSIS-DAP OpenOCD.
+
+   **Bring-up / local rebuild** (default rebuilds then flashes):
 
    ```sh
    tools/linux/load.sh --board pico
-   # ... run steps 3–8, capture transcript ...
-   tools/linux/load.sh --board pico2
-   # ... repeat steps 3–8 on the same wiring, capture transcript ...
+   ```
+
+   **Release HIL** must flash the **packaged** ELF whose SHA matches
+   `SHA256SUMS-*` / the draft release — do not rebuild. Repeat the full matrix
+   (steps 3–8) on both boards:
+
+   ```sh
+   tools/linux/load.sh --board pico --skip-build \
+     --elf /path/to/pico_uart-vX.Y.Z-pico.elf
+   # ... run steps 3–8, capture transcript + record SHA ...
+   tools/linux/load.sh --board pico2 --skip-build \
+     --elf /path/to/pico_uart-vX.Y.Z-pico2.elf
+   # ... repeat steps 3–8 on the same wiring, capture transcript + record SHA ...
    ```
 
    This uses `target/rp2040.cfg` for `pico` and `target/rp2350.cfg` for
@@ -137,7 +148,7 @@ with no runtime flow-control behavior. Host CDC RTS is ignored.
    # Terminal A: watch HID health bits (look for rx_overrun / rx_error).
    python3 host/python/src/pico_uart_hid.py monitor --duration 30
 
-   # Terminal B: sustained peer→pico flood; hold CDC drain briefly so rings back up.
+   # Terminal B: sustained peer→pico flood; defer opening pico CDC briefly so rings back up.
    python3 tools/linux/serial_bridge_test.py \
      --pico-port /dev/serial/by-id/<pico-uart-cdc0> \
      --peer-port /dev/serial/by-id/<rts-ignoring-peer> \
@@ -146,8 +157,9 @@ with no runtime flow-control behavior. Host CDC RTS is ignored.
      --label uart0-rts-ignore-flood
    ```
 
-   Capture command lines, baud, duration, HID `monitor` lines, and `PASS`/`FAIL`
-   output as a recorded HIL artifact for `docs/releasing.md`.
+   Flood `PASS` only proves write/drain activity; pair with HID `monitor` for
+   `rx_overrun` / `rx_error`. Capture command lines, baud, duration, HID lines,
+   and `PASS`/`FAIL` output as a recorded HIL artifact for `docs/releasing.md`.
 
 ## Diagnose Failures
 
