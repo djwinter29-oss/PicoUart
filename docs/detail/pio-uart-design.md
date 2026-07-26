@@ -104,8 +104,12 @@ Before reconfiguring a PIO UART backend, core 1:
 - aborts the port's RX DMA channel before pausing the state machines
 - harvests TX DMA completion if one just finished
 - retries on later worker sweeps while TX DMA is still active, TX ring data remains, the TX FIFO is not empty,
-  the TX state machine has not stalled on `pull` (TXSTALL — last frame still shifting), or the RX FIFO is not empty
+  the TX state machine has not re-asserted `TXSTALL` after a write-clear (last frame still shifting), or the RX FIFO is not empty
 - restarts RX DMA after a successful baud apply (or after a deferred attempt rolls back)
+
+When stopping RX DMA for baud reconfig, firmware clears channel EN (pause), briefly settles,
+publishes ring progress, then aborts. It must not wait on DMA `BUSY` after clearing EN —
+paused channels keep `BUSY` high until `CHAN_ABORT`.
 
 The RX line level is part of the mandatory baud-change gate for shipped PIO ports
 (`PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH` combined with RX pull-up). This

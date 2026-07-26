@@ -87,8 +87,9 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   clock divider cannot represent (fail-fast, no 1 s pending window).
 - Hardware UART RX DMA re-arms from a DMA IRQ when the transfer counter exhausts; the
   worker poll path is a safety net. Line-format restarts continue DMA at the live ring
-  producer index after publishing all bytes accepted before DMA stops. Peers that ignore RTS can still overrun the UART FIFO under sustained
-  flood - exercise that case in HIL before advertising flow control.
+  producer index after publishing all bytes accepted before DMA stops. With HW FC off
+  (default), a sustained peer flood can still overrun the UART FIFO / ring — exercise
+  that case in HIL before advertising flow control.
 - HID reset is **disabled by default**. Compile with `-DPICO_UART_ALLOW_HID_RESET=1`
   to enable arm (`3`) then reset (`2`) within 2 s.
 

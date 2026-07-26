@@ -78,7 +78,9 @@ static void pio_uart_driver_abort_dma_channel(uint channel)
 /**
  * @brief Stop RX DMA for line-coding reconfig with a stable progress sample.
  *
- * Disable the channel, wait for any in-flight beat, publish progress, then abort.
+ * Clear EN (RP2350-E5 / pause), briefly settle so any in-flight beat can retire,
+ * publish progress while the channel is paused, then abort. Do not wait on BUSY
+ * after clearing EN: paused channels keep BUSY high until CHAN_ABORT.
  */
 static void pio_uart_driver_stop_rx_dma_for_reconfig(pio_uart_driver_t *driver)
 {
@@ -86,7 +88,7 @@ static void pio_uart_driver_stop_rx_dma_for_reconfig(pio_uart_driver_t *driver)
 
     dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
-    while (dma_channel_is_busy(channel)) {
+    for (uint32_t settle = 0u; settle < 16u; ++settle) {
         tight_loop_contents();
     }
     pio_uart_driver_publish_rx(driver);
@@ -576,14 +578,17 @@ static bool pio_uart_driver_tx_shifter_idle(pio_uart_driver_t *driver)
     pio->fdebug = mask; /* W1C sticky stall flag */
     /*
      * If the SM is still stalled on an empty TX FIFO pull, TXSTALL re-asserts
-     * within a few PIO cycles. A short settle avoids mid-frame baud applies
-     * without spinning the worker for milliseconds.
+     * within a few PIO cycles. Poll with a bound so mid-frame (no re-assert)
+     * defers without spinning the worker for milliseconds.
      */
-    for (uint32_t settle = 0u; settle < 32u; ++settle) {
+    for (uint32_t settle = 0u; settle < 64u; ++settle) {
+        if ((pio->fdebug & mask) != 0u) {
+            return true;
+        }
         tight_loop_contents();
     }
 
-    return (pio->fdebug & mask) != 0u;
+    return false;
 }
 
 static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver)

@@ -168,7 +168,9 @@ static void hw_uart_driver_abort_dma_channel(uint channel)
 /**
  * @brief Stop RX DMA for line-format reconfig with a stable progress sample.
  *
- * Disable the channel, wait for any in-flight beat, publish progress, then abort.
+ * Clear EN (RP2350-E5 / pause), briefly settle so any in-flight beat can retire,
+ * publish progress while the channel is paused, then abort. Do not wait on BUSY
+ * after clearing EN: paused channels keep BUSY high until CHAN_ABORT.
  */
 static void hw_uart_driver_stop_rx_dma_for_reconfig(hw_uart_driver_t *driver)
 {
@@ -176,7 +178,7 @@ static void hw_uart_driver_stop_rx_dma_for_reconfig(hw_uart_driver_t *driver)
 
     dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
-    while (dma_channel_is_busy(channel)) {
+    for (uint32_t settle = 0u; settle < 16u; ++settle) {
         tight_loop_contents();
     }
     hw_uart_driver_publish_rx(driver);
@@ -413,7 +415,7 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
     }
 
     /*
-     * Mask the RX re-arm IRQ, stop the channel, wait for any in-flight beat,
+     * Mask the RX re-arm IRQ, pause the channel (clear EN), settle briefly,
      * publish a stable progress sample, then abort/ack before restarting.
      */
     {

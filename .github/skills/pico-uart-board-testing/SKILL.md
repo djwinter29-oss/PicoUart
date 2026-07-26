@@ -131,11 +131,12 @@ flow-control behavior. Host CDC RTS is ignored.
    python3 tools/linux/serial_stress_benchmark.py \
      --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
      --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
-     --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
      --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
      --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
-     --uart4 /dev/serial/by-id/<pico-uart-cdc4> \
      --uart5 /dev/serial/by-id/<pico-uart-cdc5>
+   # Optional when jumpers are fitted:
+   #   --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
+   #   --uart4 /dev/serial/by-id/<pico-uart-cdc4>
    ```
 
   The default 10-second window reports verified bytes and measured throughput
@@ -161,10 +162,10 @@ flow-control behavior. Host CDC RTS is ignored.
    # Terminal B: sustained peer→pico flood; defer opening pico CDC briefly so rings back up.
    python3 tools/linux/serial_bridge_test.py \
      --pico-port /dev/serial/by-id/<pico-uart-cdc0> \
-     --peer-port /dev/serial/by-id/<rts-ignoring-peer> \
+     --peer-port /dev/serial/by-id/<peer-uart> \
      --baud 921600 --payload-bytes 4096 \
      --flood-seconds 20 --hold-cdc-seconds 5 \
-     --label uart0-rts-ignore-flood
+     --label uart0-cdc-hold-flood
    ```
 
    Flood `PASS` only proves write/drain activity; pair with HID `monitor` for

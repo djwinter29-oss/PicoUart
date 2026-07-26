@@ -134,3 +134,38 @@ def test_settle_seconds_parses(monkeypatch: pytest.MonkeyPatch) -> None:
     assert args.settle_seconds == 0.2
     monkeypatch.setattr(bridge, "run_test", lambda *_args, **_kwargs: 0)
     assert bridge.main() == 0
+
+
+def test_flood_loopback_sleeps_settle_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Flood path must honor --settle-seconds (not a hardcoded 0.05)."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serial_bridge_test.py",
+            "--pico-port",
+            "/dev/null",
+            "--loopback",
+            "--flood-seconds",
+            "0.1",
+            "--settle-seconds",
+            "0.2",
+            "--payload-bytes",
+            "64",
+        ],
+    )
+    bridge = _load_bridge()
+    args = bridge.parse_arguments()
+    assert args.settle_seconds == 0.2
+    assert args.flood_seconds == 0.1
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(bridge.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(bridge, "configure_port", lambda *_a, **_k: (3, object()))
+    monkeypatch.setattr(bridge, "run_flood", lambda *_a, **_k: (100, 100))
+    monkeypatch.setattr(bridge.os, "close", lambda *_a, **_k: None)
+    monkeypatch.setattr(bridge.termios, "tcsetattr", lambda *_a, **_k: None)
+
+    assert bridge.run_flood_test(args, 115200) == 0
+    assert 0.2 in sleeps
+    assert 0.05 not in sleeps

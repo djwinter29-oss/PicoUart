@@ -32,4 +32,29 @@ static inline bool uart_control_completion_is_current(uint32_t completion_genera
     return completion_generation == latest_generation;
 }
 
+/**
+ * @brief Apply CONTROL_ERROR bookkeeping for a host reject (host-testable model).
+ * @param generation Host control generation; bumped only when @p bump_generation.
+ * @param status_flags Port status flags word.
+ * @param control_error_bit Status bit to set.
+ * @param bump_generation True for hard rejects (`report_control_error`); false for
+ *        preserve-path soft-pending rejects (`note_control_error`).
+ *
+ * Mirrors `uart_driver_report_control_error` vs `uart_driver_note_control_error`.
+ */
+static inline void uart_control_apply_reject_error(uint32_t *generation,
+                                                   uint32_t *status_flags,
+                                                   uint32_t control_error_bit,
+                                                   bool bump_generation)
+{
+    if ((generation == NULL) || (status_flags == NULL)) {
+        return;
+    }
+
+    if (bump_generation) {
+        *generation += 1u;
+    }
+    *status_flags |= control_error_bit;
+}
+
 #endif

@@ -42,12 +42,12 @@ requires TX, RX, and GND only.
 
 | Channel | Backend | Required Signals | Notes |
 | --- | --- | --- | --- |
-| UART0 | Hardware UART | TX, RX, RTS, CTS, GND | Uses UART0 hardware pins |
-| UART1 | Hardware UART | TX, RX, RTS, CTS, GND | Uses UART1 hardware pins |
-| UART2 | PIO UART | TX, RX, RTS, CTS, GND | Uses PIO-managed GPIO block |
-| UART3 | PIO UART | TX, RX, RTS, CTS, GND | Uses PIO-managed GPIO block |
-| UART4 | PIO UART | TX, RX, RTS, CTS, GND | Uses PIO-managed GPIO block |
-| UART5 | PIO UART | TX, RX, RTS, CTS, GND | Uses split GPIO block because GP23-GP25 are not header-accessible on Pico |
+| UART0 | Hardware UART | TX, RX, GND (RTS/CTS optional) | HW FC off by default; RTS/CTS only when enabled |
+| UART1 | Hardware UART | TX, RX, GND (RTS/CTS optional) | HW FC off by default; RTS/CTS only when enabled |
+| UART2 | PIO UART | TX, RX, GND | RTS/CTS docs-reserved only (not GPIO-owned) |
+| UART3 | PIO UART | TX, RX, GND | RTS/CTS docs-reserved only (not GPIO-owned) |
+| UART4 | PIO UART | TX, RX, GND | RTS/CTS docs-reserved only (not GPIO-owned) |
+| UART5 | PIO UART | TX, RX, GND | Split GPIO block because GP23-GP25 are not header-accessible on Pico; RTS/CTS docs-reserved |
 
 ## Proposed Pico Pin Allocation
 

@@ -214,6 +214,7 @@ void uart_driver_report_control_error(uart_port_id_t port_id);
  *
  * Use when rejecting a new SET_LINE_CODING while a prior valid request is still
  * soft-pending, so a later successful apply of that request can still clear error.
+ * Status may briefly show CONTROL_ERROR | CONTROL_PENDING until that apply completes.
  */
 void uart_driver_note_control_error(uart_port_id_t port_id);
 
