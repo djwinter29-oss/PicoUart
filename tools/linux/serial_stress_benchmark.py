@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stress PicoUart UART0, UART2/UART3, and UART5 concurrently."""
+"""Stress PicoUart UART0, optional UART1/UART4, UART2/UART3, and UART5 concurrently."""
 
 import argparse
 import os
@@ -129,15 +129,17 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--uart0-pico", required=True, help="PicoUart CDC0 device")
     parser.add_argument("--uart0-peer", required=True, help="Debug Probe UART device")
+    parser.add_argument("--uart1", help="Optional PicoUart CDC1 loopback device")
     parser.add_argument("--uart2", required=True, help="PicoUart CDC2 device")
     parser.add_argument("--uart3", required=True, help="PicoUart CDC3 device")
+    parser.add_argument("--uart4", help="Optional PicoUart CDC4 loopback device")
     parser.add_argument("--uart5", required=True, help="PicoUart CDC5 device")
     parser.add_argument("--uart0-baud", type=int, default=115200, choices=BAUD_RATES,
                         help="UART0 and Debug Probe rate; defaults to 115200")
     parser.add_argument("--rates", type=parse_rates, default=DEFAULT_RATES,
-                        help="PIO rates to test, comma-separated")
+                        help="PIO/HW loopback rates to test, comma-separated")
     parser.add_argument("--duration", type=float, default=10.0,
-                        help="Transmit duration per PIO rate in seconds")
+                        help="Transmit duration per rate in seconds")
     parser.add_argument("--payload-bytes", type=int, default=1024,
                         help="Bytes per verified stream block")
     parser.add_argument("--timeout", type=float, default=3.0,
@@ -150,7 +152,7 @@ def close_port(file_descriptor: int, settings: list) -> None:
     os.close(file_descriptor)
 
 
-def benchmark_rate(arguments: argparse.Namespace, pio_baud: int) -> bool:
+def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     ports: list[tuple[int, list]] = []
     results: dict[str, tuple[int, str | None]] = {}
 
@@ -159,22 +161,32 @@ def benchmark_rate(arguments: argparse.Namespace, pio_baud: int) -> bool:
         ports.append((uart0_pico, uart0_pico_settings))
         uart0_peer, uart0_peer_settings = configure_port(arguments.uart0_peer, arguments.uart0_baud)
         ports.append((uart0_peer, uart0_peer_settings))
-        uart2, uart2_settings = configure_port(arguments.uart2, pio_baud)
+        uart2, uart2_settings = configure_port(arguments.uart2, stream_baud)
         ports.append((uart2, uart2_settings))
-        uart3, uart3_settings = configure_port(arguments.uart3, pio_baud)
+        uart3, uart3_settings = configure_port(arguments.uart3, stream_baud)
         ports.append((uart3, uart3_settings))
-        uart5, uart5_settings = configure_port(arguments.uart5, pio_baud)
+        uart5, uart5_settings = configure_port(arguments.uart5, stream_baud)
         ports.append((uart5, uart5_settings))
 
-        time.sleep(0.1)
-        start = threading.Barrier(5)
-        streams = (
+        streams: list[tuple[str, int, int]] = [
             ("uart0-pico-to-peer", uart0_pico, uart0_peer),
             ("uart0-peer-to-pico", uart0_peer, uart0_pico),
             ("uart2-to-uart3", uart2, uart3),
             ("uart3-to-uart2", uart3, uart2),
             ("uart5-loopback", uart5, uart5),
-        )
+        ]
+
+        if arguments.uart1:
+            uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
+            ports.append((uart1, uart1_settings))
+            streams.append(("uart1-loopback", uart1, uart1))
+        if arguments.uart4:
+            uart4, uart4_settings = configure_port(arguments.uart4, stream_baud)
+            ports.append((uart4, uart4_settings))
+            streams.append(("uart4-loopback", uart4, uart4))
+
+        time.sleep(0.1)
+        start = threading.Barrier(len(streams))
         threads = [
             threading.Thread(target=run_stream,
                              args=(label, source_fd, destination_fd, arguments.duration,
@@ -182,7 +194,16 @@ def benchmark_rate(arguments: argparse.Namespace, pio_baud: int) -> bool:
             for label, source_fd, destination_fd in streams
         ]
 
-        print(f"Benchmarking PIO at {pio_baud} baud; UART0 at {arguments.uart0_baud} baud")
+        extras = []
+        if arguments.uart1:
+            extras.append("UART1")
+        if arguments.uart4:
+            extras.append("UART4")
+        extra_note = f"; including {', '.join(extras)}" if extras else ""
+        print(
+            f"Benchmarking PIO/loopbacks at {stream_baud} baud; "
+            f"UART0 at {arguments.uart0_baud} baud{extra_note}"
+        )
         started = time.monotonic()
         for thread in threads:
             thread.start()

@@ -57,10 +57,15 @@ static bool usb_cdc_apply_line_coding(uint8_t itf,
 
 static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_t *line_coding)
 {
-    usb_cdc_line_coding_pending[itf].line_coding = *line_coding;
-    usb_cdc_line_coding_pending[itf].deadline =
-        make_timeout_time_ms(USB_CDC_SOFT_PENDING_TIMEOUT_MS);
-    usb_cdc_line_coding_pending[itf].pending = true;
+    usb_cdc_pending_line_coding_t *pending = &usb_cdc_line_coding_pending[itf];
+    bool was_pending = pending->pending;
+
+    pending->line_coding = *line_coding;
+    /* Coalesce retries onto the original deadline so hosts cannot refresh forever. */
+    if (!was_pending) {
+        pending->deadline = make_timeout_time_ms(USB_CDC_SOFT_PENDING_TIMEOUT_MS);
+    }
+    pending->pending = true;
     /* HID-visible while waiting for the mailbox (before queue_line_coding). */
     uart_driver_mark_control_pending((uart_port_id_t)itf);
 }

@@ -13,7 +13,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   host-tools:
@@ -103,16 +103,20 @@ jobs:
           . tools/linux/setup-sdk-env.sh
 
       - name: Build firmware
+        env:
+          BOARD: ${{ matrix.board }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           tools/linux/build.sh \
-            --board ${{ matrix.board }} \
-            --firmware-version "${{ steps.version.outputs.version }}"
+            --board "$BOARD" \
+            --firmware-version "$VERSION"
 
       - name: Package board artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BOARD: ${{ matrix.board }}
         run: |
           set -eu
-          VERSION="${{ steps.version.outputs.version }}"
-          BOARD="${{ matrix.board }}"
           SRC="build/firmware-${BOARD}"
           OUT="dist"
           mkdir -p "$OUT"
@@ -134,6 +138,8 @@ jobs:
           vid, pid = firmware_usb_ids(pathlib.Path('.'))
           needle = usb_identity_needle_le(vid, pid, bcd)
           assert needle in data, needle.hex()
+          # HID status Report Count 0x3F (63) must remain in the descriptor.
+          assert bytes([0x95, 0x3F]) in data, 'HID status Report Count 0x3F missing'
           print(f'USB {vid:#06x}:{pid:#06x} bcdDevice=0x{bcd:04x} OK')
           " "$SRC/pico_uart.bin" "$VERSION"
           (cd "$OUT" && sha256sum pico_uart-v${VERSION}-${BOARD}.* > "SHA256SUMS-${BOARD}.txt")
@@ -150,6 +156,8 @@ jobs:
     name: Publish GitHub Release
     needs: [build, host-tools]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     # workflow_dispatch builds artifacts only; tag pushes create a draft release
     if: github.event_name == 'push'
 
@@ -172,9 +180,9 @@ jobs:
           fail_on_unmatched_files: true
           body: |
             Draft release — complete `docs/releasing.md` before publishing:
-            - Confirm packaged artifact SHAs match the recorded HIL images
+            - Confirm packaged artifact SHAs match the recorded HIL images on **both** pico and pico2
             - For non-lab releases, replace development USB IDs (must not ship the lab placeholder)
-            - Attach or link a recorded HIL pass
+            - Attach or link a recorded HIL pass covering both boards
             - Promote from draft only after the promote checklist passes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

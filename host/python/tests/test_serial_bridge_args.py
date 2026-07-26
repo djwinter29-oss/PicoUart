@@ -53,3 +53,47 @@ def test_payload_bytes_accepts_max(monkeypatch: pytest.MonkeyPatch) -> None:
     assert bridge.main() == 0
     args = bridge.parse_arguments()
     assert args.payload_bytes == 4096
+
+
+def test_hold_cdc_requires_flood(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serial_bridge_test.py",
+            "--pico-port",
+            "/dev/null",
+            "--peer-port",
+            "/dev/null",
+            "--hold-cdc-seconds",
+            "1",
+        ],
+    )
+    bridge = _load_bridge()
+    assert bridge.main() == 2
+
+
+def test_flood_seconds_parses(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serial_bridge_test.py",
+            "--pico-port",
+            "/dev/null",
+            "--peer-port",
+            "/dev/null",
+            "--flood-seconds",
+            "2.5",
+            "--hold-cdc-seconds",
+            "1",
+            "--payload-bytes",
+            "64",
+        ],
+    )
+    bridge = _load_bridge()
+    args = bridge.parse_arguments()
+    assert args.flood_seconds == 2.5
+    assert args.hold_cdc_seconds == 1.0
+    monkeypatch.setattr(bridge, "run_flood_test", lambda *_args, **_kwargs: 0)
+    assert bridge.main() == 0

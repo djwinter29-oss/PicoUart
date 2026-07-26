@@ -42,10 +42,14 @@ with no runtime flow-control behavior. Host CDC RTS is ignored.
    ```
 
 2. Connect the Debug Probe SWDIO, SWCLK, and GND signals to the PicoUart board,
-   then flash the firmware through CMSIS-DAP OpenOCD:
+   then flash the firmware through CMSIS-DAP OpenOCD. Release HIL must repeat
+   the matrix below on **both** packaged images:
 
    ```sh
    tools/linux/load.sh --board pico
+   # ... run steps 3–8, capture transcript ...
+   tools/linux/load.sh --board pico2
+   # ... repeat steps 3–8 on the same wiring, capture transcript ...
    ```
 
    This uses `target/rp2040.cfg` for `pico` and `target/rp2350.cfg` for
@@ -101,44 +105,47 @@ with no runtime flow-control behavior. Host CDC RTS is ignored.
 
 7. After the 115200 baud smoke tests pass, run the concurrent performance
    benchmark. It keeps UART0 and the Debug Probe at 115200 baud, then sweeps
-   UART2-to-UART3 and UART5 across the supported standard PIO rates while all
-   five data streams run concurrently:
+   UART2-to-UART3, UART5, and (when provided) UART1/UART4 across the supported
+   rates while all configured streams run concurrently:
 
    ```sh
    python3 tools/linux/serial_stress_benchmark.py \
      --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
      --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
+     --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
      --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
      --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
+     --uart4 /dev/serial/by-id/<pico-uart-cdc4> \
      --uart5 /dev/serial/by-id/<pico-uart-cdc5>
    ```
 
    The default 10-second window reports verified bytes and measured throughput
    for every stream at 9600, 19200, 38400, 57600, 115200, 230400, 460800,
    921600, and 1000000 baud. Use `--rates` and `--duration` for a focused
-   longer run.
+   longer run. Omit `--uart1` / `--uart4` only when those jumpers are not
+   fitted; release HIL should include them.
 
-8. **HW UART RX stress with an RTS-ignoring peer** (release-candidate / HIL
-   recording). Hardware UART RX DMA re-arms via DMA IRQ when the 32-bit transfer
-   counter exhausts; the worker poll path is only a safety net. With RTS/CTS
-   enabled, a well-behaved peer should not overrun. Example skeleton when the
-   peer ignores RTS (leave CTS unconnected / peer does not wire RTS):
+8. **HW UART RX stress with an RTS-ignoring peer** (optional for flow-control /
+   RX DMA re-arm claims; not a substitute for the six-port bridge matrix).
+   Hardware UART RX DMA re-arms via DMA IRQ when the countdown TRANS_COUNT
+   exhausts (full 32-bit on RP2040; masked COUNT on RP2350 — see
+   `firmware/src/uart/dma_progress.h`); the worker poll path is only a safety
+   net. With RTS/CTS enabled, a well-behaved peer should not overrun. Example
+   when the peer ignores RTS (leave CTS unconnected / peer does not wire RTS):
 
    ```sh
    # Terminal A: watch HID health bits (look for rx_overrun / rx_error).
    python3 host/python/src/pico_uart_hid.py monitor --duration 30
 
-   # Terminal B: flood UART0 from an RTS-ignoring peer while CDC0 drains slowly
-   # or is held closed for part of the window, then reopen and check integrity.
+   # Terminal B: sustained peer→pico flood; hold CDC drain briefly so rings back up.
    python3 tools/linux/serial_bridge_test.py \
      --pico-port /dev/serial/by-id/<pico-uart-cdc0> \
      --peer-port /dev/serial/by-id/<rts-ignoring-peer> \
-     --baud 921600 --payload-bytes 4096 --timeout 30 \
+     --baud 921600 --payload-bytes 4096 \
+     --flood-seconds 20 --hold-cdc-seconds 5 \
      --label uart0-rts-ignore-flood
    ```
 
-   Repeat the bridge command as needed for a longer flood window; the tool
-   caps `--payload-bytes` at 4096.
    Capture command lines, baud, duration, HID `monitor` lines, and `PASS`/`FAIL`
    output as a recorded HIL artifact for `docs/releasing.md`.
 

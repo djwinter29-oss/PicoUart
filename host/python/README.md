@@ -4,6 +4,10 @@
 for board controls and monitoring. It does not configure UARTs; CDC remains the
 owner of UART line coding.
 
+Status input reports use layout **v15** (63-byte payload after the Report ID).
+Older hosts expecting v14 / 64-byte `PU` headers are incompatible — see
+[`docs/hid-monitor.md`](../../docs/hid-monitor.md).
+
 ## Layout
 
 | Path | Purpose |

@@ -80,12 +80,14 @@ Notes:
 
 ## Bring-Up Loopbacks
 
-The following temporary wiring validates the three PIO UART data paths without
-an external UART peer:
+The following temporary wiring validates the hardware and PIO UART data paths
+without an external UART peer (UART0 still needs the Debug Probe peer):
 
 | Test | Temporary wiring |
 | --- | --- |
+| UART1 loopback | GP4 to GP5 |
 | UART2 to UART3 cross-connection | GP8 to GP13; GP12 to GP9 |
+| UART4 loopback | GP16 to GP17 |
 | UART5 loopback | GP20 to GP21 |
 
 Remove this temporary wiring before attaching an external target. See

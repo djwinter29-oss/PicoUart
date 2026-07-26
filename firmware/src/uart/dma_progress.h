@@ -11,6 +11,8 @@
 #ifndef UART_DMA_PROGRESS_H
 #define UART_DMA_PROGRESS_H
 
+#include "uart/dma_progress_math.h"
+
 #include "hardware/dma.h"
 #include "hardware/structs/dma.h"
 
@@ -23,9 +25,9 @@
 static inline uint32_t uart_dma_rx_transfer_count_encoded(void)
 {
 #if PICO_RP2040
-    return 0xffffffffu;
+    return UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040;
 #else
-    return dma_encode_transfer_count(DMA_CH0_TRANS_COUNT_COUNT_BITS);
+    return dma_encode_transfer_count(UART_DMA_RX_TRANSFER_COUNT_MASK_RP2350);
 #endif
 }
 
@@ -35,9 +37,9 @@ static inline uint32_t uart_dma_rx_transfer_count_encoded(void)
 static inline uint32_t uart_dma_rx_transfer_count_max(void)
 {
 #if PICO_RP2040
-    return 0xffffffffu;
+    return UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040;
 #else
-    return DMA_CH0_TRANS_COUNT_COUNT_BITS;
+    return UART_DMA_RX_TRANSFER_COUNT_MASK_RP2350;
 #endif
 }
 
@@ -48,8 +50,10 @@ static inline uint32_t uart_dma_rx_transfer_count_max(void)
 static inline uint32_t uart_dma_rx_transfer_count_remaining(uint channel)
 {
     uint32_t remaining = dma_hw->ch[channel].transfer_count;
-#if !PICO_RP2040
-    remaining &= DMA_CH0_TRANS_COUNT_COUNT_BITS;
+#if PICO_RP2040
+    remaining = uart_dma_rx_mask_remaining(remaining, UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040);
+#else
+    remaining = uart_dma_rx_mask_remaining(remaining, UART_DMA_RX_TRANSFER_COUNT_MASK_RP2350);
 #endif
     return remaining;
 }
@@ -60,7 +64,8 @@ static inline uint32_t uart_dma_rx_transfer_count_remaining(uint channel)
  */
 static inline uint32_t uart_dma_rx_progress(uint channel)
 {
-    return uart_dma_rx_transfer_count_max() - uart_dma_rx_transfer_count_remaining(channel);
+    return uart_dma_rx_progress_from_remaining(uart_dma_rx_transfer_count_remaining(channel),
+                                               uart_dma_rx_transfer_count_max());
 }
 
 #endif

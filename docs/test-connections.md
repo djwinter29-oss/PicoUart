@@ -79,11 +79,12 @@ The standard functional tests above use 115200 baud, which is sufficient for
 bring-up. Use the performance benchmark after they pass to apply load to all
 available test links simultaneously.
 
-For each PIO rate, the benchmark runs these streams concurrently:
+For each selected rate, the benchmark runs these streams concurrently:
 
 - UART0 CDC0 to the Debug Probe and Debug Probe to CDC0 at 115200 baud.
 - UART2 CDC2 to UART3 CDC3 and UART3 CDC3 to UART2 CDC2 at the selected rate.
 - UART5 CDC5 through the GP20-to-GP21 loopback at the selected rate.
+- Optional UART1 / UART4 loopbacks when `--uart1` / `--uart4` are passed.
 
 Each stream sends deterministic 1024-byte blocks for 10 seconds by default,
 checks every returned byte, and reports verified bytes plus measured throughput.
@@ -94,20 +95,24 @@ The default rate list is 9600, 19200, 38400, 57600, 115200, 230400, 460800,
 python3 tools/linux/serial_stress_benchmark.py \
   --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
   --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
+  --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
   --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
   --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
+  --uart4 /dev/serial/by-id/<pico-uart-cdc4> \
   --uart5 /dev/serial/by-id/<pico-uart-cdc5>
 ```
 
-Use `--rates` to retry one or more PIO rates and `--duration` to use a longer
+Use `--rates` to retry one or more rates and `--duration` to use a longer
 load window. For example, apply a 30-second run at 460800 and 921600 baud:
 
 ```sh
 python3 tools/linux/serial_stress_benchmark.py \
   --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
   --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
+  --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
   --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
   --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
+  --uart4 /dev/serial/by-id/<pico-uart-cdc4> \
   --uart5 /dev/serial/by-id/<pico-uart-cdc5> \
   --rates 460800,921600 --duration 30
 ```
@@ -120,11 +125,12 @@ results.
 
 1. Flash PicoUart and connect its USB device port to the host.
 2. Confirm that all six CDC devices enumerate.
-3. Fit GP8-to-GP13 and GP12-to-GP9 for the UART2-to-UART3 cross-connection,
-   plus GP20-to-GP21 for the UART5 loopback.
-4. Run the UART0 Debug Probe test, the UART2-to-UART3 cross-connection test,
-   and the UART5 loopback test.
+3. Fit GP4-to-GP5 (UART1), GP8-to-GP13 and GP12-to-GP9 (UART2↔UART3),
+   GP16-to-GP17 (UART4), and GP20-to-GP21 (UART5).
+4. Run the UART0 Debug Probe test, the UART1 / UART4 / UART5 loopbacks, and the
+   UART2-to-UART3 cross-connection test.
 5. Run the concurrent performance benchmark when the 115200 baud tests pass.
+   Prefer passing `--uart1` / `--uart4` so stress covers all six ports.
 6. Remove the test jumpers before connecting external UART targets.
 
 The current firmware enables RTS/CTS on hardware UART0/UART1. Debug Probe and

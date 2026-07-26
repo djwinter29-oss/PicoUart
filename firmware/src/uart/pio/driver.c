@@ -16,6 +16,11 @@
 #include "hardware/structs/dma.h"
 #include "hardware/sync.h"
 
+#include <stddef.h>
+
+_Static_assert((offsetof(pio_uart_driver_t, rx_storage) % PICO_UART_PIO_UART_RX_BUFFER_SIZE) == 0u,
+               "PIO RX DMA ring storage must be size-aligned for channel_config_set_ring");
+
 /** @brief Joined PIO TX FIFO depth in 32-bit entries. */
 #define PIO_UART_DRIVER_TX_FIFO_DEPTH 8u
 /** @brief Maximum bytes launched in one TX DMA transfer. */
@@ -268,11 +273,9 @@ static void pio_uart_driver_publish_rx(pio_uart_driver_t *driver)
     }
 
     progress = pio_uart_driver_rx_progress(driver);
-    if (progress < driver->rx_dma_last_progress) {
-        produced = (uart_dma_rx_transfer_count_max() - driver->rx_dma_last_progress) + progress;
-    } else {
-        produced = progress - driver->rx_dma_last_progress;
-    }
+    produced = uart_dma_rx_bytes_produced(progress,
+                                         driver->rx_dma_last_progress,
+                                         uart_dma_rx_transfer_count_max());
     driver->controller_rx_bytes += produced;
     driver->rx_dma_last_progress = progress;
     ring_buffer_produce_external(&driver->rx_ring, produced);
