@@ -8,6 +8,7 @@
 #include "config/config.h"
 #include "uart/line_coding.h"
 #include "uart/uart_driver.h"
+#include "usb/cdc_soft_pending.h"
 
 #include "pico/time.h"
 #include "tusb.h"
@@ -62,12 +63,31 @@ static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_
 
     pending->line_coding = *line_coding;
     /* Coalesce retries onto the original deadline so hosts cannot refresh forever. */
-    if (!was_pending) {
+    if (usb_cdc_soft_pending_should_set_deadline(was_pending)) {
         pending->deadline = make_timeout_time_ms(USB_CDC_SOFT_PENDING_TIMEOUT_MS);
     }
     pending->pending = true;
     /* HID-visible while waiting for the mailbox (before queue_line_coding). */
     uart_driver_mark_control_pending((uart_port_id_t)itf);
+}
+
+static void usb_cdc_reject_line_coding(uint8_t itf)
+{
+    /*
+     * Surface CONTROL_ERROR for the bad host request. If a prior valid soft-pending
+     * request is still armed, keep it (and CONTROL_PENDING) so a transient reject
+     * cannot abandon a still-valid mailbox wait.
+     */
+    if (usb_cdc_soft_pending_preserve_on_reject(usb_cdc_line_coding_pending[itf].pending)) {
+        uart_driver_report_control_error((uart_port_id_t)itf);
+        return;
+    }
+
+    uart_driver_report_control_error((uart_port_id_t)itf);
+    if (usb_cdc_soft_pending_timeout_clears_pending(
+            uart_driver_has_deferred_line_coding((uart_port_id_t)itf))) {
+        uart_driver_clear_control_pending((uart_port_id_t)itf);
+    }
 }
 
 static void usb_cdc_apply_pending_line_coding(uint8_t itf)
@@ -81,6 +101,10 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
     if (time_reached(pending->deadline)) {
         pending->pending = false;
         uart_driver_report_control_error((uart_port_id_t)itf);
+        if (usb_cdc_soft_pending_timeout_clears_pending(
+                uart_driver_has_deferred_line_coding((uart_port_id_t)itf))) {
+            uart_driver_clear_control_pending((uart_port_id_t)itf);
+        }
         return;
     }
 
@@ -88,6 +112,10 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
     if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &pending->line_coding)) {
         pending->pending = false;
         uart_driver_report_control_error((uart_port_id_t)itf);
+        if (usb_cdc_soft_pending_timeout_clears_pending(
+                uart_driver_has_deferred_line_coding((uart_port_id_t)itf))) {
+            uart_driver_clear_control_pending((uart_port_id_t)itf);
+        }
         return;
     }
 
@@ -210,15 +238,13 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
                                    p_line_coding->parity,
                                    p_line_coding->data_bits,
                                    &line_coding)) {
-        usb_cdc_line_coding_pending[itf].pending = false;
-        uart_driver_report_control_error((uart_port_id_t)itf);
+        usb_cdc_reject_line_coding(itf);
         return;
     }
 
     /* Do not arm CDC soft-pending for permanent backend rejects (PIO 8N1/baud). */
     if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &line_coding)) {
-        usb_cdc_line_coding_pending[itf].pending = false;
-        uart_driver_report_control_error((uart_port_id_t)itf);
+        usb_cdc_reject_line_coding(itf);
         return;
     }
 

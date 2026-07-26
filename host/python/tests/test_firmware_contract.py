@@ -43,6 +43,10 @@ def test_hid_descriptor_board_status_report_count_matches_host_payload(hid_modul
     assert firmware_hid_report_count(repo_root, 3) == hid_module.BOARD_STATUS_SIZE
 
 
+def test_hid_descriptor_command_report_count_matches_host_payload(hid_module, repo_root):
+    assert firmware_hid_report_count(repo_root, 4) == 1
+
+
 def test_lab_placeholder_helper_and_current_tree_identity(repo_root):
     assert is_lab_placeholder_identity(0xCAFE, 0x4010) is True
     assert is_lab_placeholder_identity(0x1209, 0x0001) is False

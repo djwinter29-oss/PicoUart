@@ -782,8 +782,26 @@ void uart_driver_report_control_error(uart_port_id_t port_id)
         return;
     }
 
-    uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
+    /* Do not clear CONTROL_PENDING — soft-pending / worker deferred-apply own it. */
     uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+}
+
+void uart_driver_clear_control_pending(uart_port_id_t port_id)
+{
+    if (port_id >= UART_PORT_COUNT) {
+        return;
+    }
+
+    uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
+}
+
+bool uart_driver_has_deferred_line_coding(uart_port_id_t port_id)
+{
+    if (port_id >= UART_PORT_COUNT) {
+        return false;
+    }
+
+    return uart_driver_pending_controls[port_id].pending;
 }
 
 void uart_driver_mark_control_pending(uart_port_id_t port_id)

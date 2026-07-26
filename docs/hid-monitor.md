@@ -88,7 +88,9 @@ rejects through HID:
 
 1. Watch health bit 3 (`control_pending`) while the worker applies a change, and
    while CDC soft-pending waits for the worker mailbox (up to 1 s from the first
-   arm; later `SET_LINE_CODING` retries do not refresh that deadline).
+   arm; later `SET_LINE_CODING` retries do not refresh that deadline). Invalid
+   follow-up line-coding requests set `control_error` without clearing an
+   in-flight pending apply.
 2. Watch health bit 2 (`control_error`) after a parse failure, PIO non-8N1 reject,
    deferred-apply timeout (1 s), or CDC soft-pending mailbox timeout (1 s).
 3. Use `python3 host/python/src/pico_uart_hid.py monitor` — the tool decodes those

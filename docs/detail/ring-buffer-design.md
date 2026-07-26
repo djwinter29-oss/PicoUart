@@ -335,7 +335,9 @@ This path handles USB CDC OUT traffic.
 2. TinyUSB reports bytes available on CDC `n`.
 3. Bridge layer reads bytes from TinyUSB.
 4. Bridge layer writes those bytes into port `n` TX ring.
-5. If the TX ring does not have enough space, the bridge retains unread CDC data in its per-port pending buffer and retries it later.
+5. If the TX ring does not have enough space, the bridge stops reading from
+   TinyUSB for that CDC interface; unread OUT data remains in TinyUSB buffers
+   and USB endpoint backpressure applies until ring space frees.
 6. If the backend TX DMA is idle, the backend reads the next contiguous TX span.
 7. Backend launches a TX DMA transfer from that span into the UART data register or PIO TX FIFO feed path.
 8. On DMA completion, the backend commits consumed bytes.
@@ -433,14 +435,14 @@ TX uses software enqueue and DMA burst drain.
 
 Selected policy on TX full:
 
-- retain bytes in the per-port CDC pending buffer
-- stop reading additional CDC data until pending bytes enter the TX ring
-- do not silently discard queued or pending host-originated data
+- leave unread CDC OUT bytes in TinyUSB / the endpoint buffer
+- stop calling `tud_cdc_n_read` for that interface until the TX ring has space
+- do not silently discard host-originated data still held by TinyUSB
 
 Reason:
 
 - queued host-originated bytes should remain ordered
-- TinyUSB applies endpoint backpressure while the pending buffer drains
+- TinyUSB applies endpoint backpressure while the TX ring drains
 
 ## API Shape
 
