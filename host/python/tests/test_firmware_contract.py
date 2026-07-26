@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from contract import firmware_hid_constants, firmware_usb_ids, is_lab_placeholder_identity
+from contract import (
+    firmware_hid_constants,
+    firmware_hid_status_report_count,
+    firmware_usb_ids,
+    is_lab_placeholder_identity,
+)
 
 
 def test_usb_ids_parse_from_firmware_defines(hid_module, repo_root):
@@ -25,6 +30,10 @@ def test_hid_layout_and_command_constants_match_firmware(hid_module, repo_root):
     assert hid_module.STATUS_SIZE == 63
     assert hid_module.BOARD_STATUS_SIZE == 8
     assert hid_module.STATUS_SIZE + 1 <= 64
+
+
+def test_hid_descriptor_status_report_count_matches_host_payload(hid_module, repo_root):
+    assert firmware_hid_status_report_count(repo_root) == hid_module.STATUS_SIZE
 
 
 def test_lab_placeholder_helper_and_current_tree_identity(repo_root):

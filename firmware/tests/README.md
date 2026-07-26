@@ -10,7 +10,10 @@
 | `firmware/tests/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |
 | `firmware/tests/third_party/unity/` | Vendored [Unity](https://github.com/ThrowTheSwitch/Unity) v2.6.0 |
 | `host/python/src/` | HID host tool package/scripts |
-| `host/python/tests/` | Pytest suite for the host tool |
+| `host/python/tests/` | HID parsers/contracts, HID descriptor report-count sync, serial tool arg validation |
+
+Mailbox, TinyUSB CDC callbacks, and DMA paths are exercised on-target via the
+board-testing skill / `docs/releasing.md` HIL gate (not host-native C tests).
 
 ## Run everything
 

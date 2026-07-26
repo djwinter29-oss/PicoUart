@@ -106,10 +106,10 @@ Before reconfiguring a PIO UART backend, core 1:
   or the RX FIFO is not empty
 - restarts RX DMA after a successful baud apply (or after a deferred attempt rolls back)
 
-The RX line level is not part of the mandatory gate. Requiring the RX pin to read high before reconfiguring
-can stall a deferred baud change forever when the pin floats or is externally held low, so that stricter
-check is opt-in per port through `PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH` and is only appropriate for
-boards that can guarantee an idle-high RX line.
+The RX line level is part of the mandatory baud-change gate for shipped PIO ports
+(`PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH` combined with RX pull-up). This
+avoids applying a divider change mid-frame. Boards that cannot guarantee idle-high
+must clear that flag and accept a transition-boundary drop risk.
 
 This keeps the reconfiguration path conservative, avoids silently discarding queued traffic, and keeps the
 worker loop responsive while the port drains toward a safe reconfiguration point.

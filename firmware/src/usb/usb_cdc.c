@@ -9,12 +9,20 @@
 #include "uart/line_coding.h"
 #include "uart/uart_driver.h"
 
+#include "pico/time.h"
 #include "tusb.h"
 
 /** @brief Number of USB CDC functions exposed by the firmware. */
 #define USB_CDC_PORT_COUNT 6u
 /** @brief Maximum bytes moved per interface and direction in one bridge pass. */
 #define USB_CDC_BRIDGE_PASS_BUDGET 256u
+/**
+ * @brief How long a CDC soft-pending line-coding request may wait for the mailbox.
+ *
+ * Matches the worker-side deferred-apply window so hosts see `control_error`
+ * instead of an indefinite soft-pending stall when the mailbox never accepts.
+ */
+#define USB_CDC_SOFT_PENDING_TIMEOUT_MS 1000u
 
 _Static_assert(USB_CDC_PORT_COUNT == UART_PORT_COUNT,
                "USB CDC port count must match the logical UART port table");
@@ -24,6 +32,7 @@ _Static_assert(USB_CDC_PORT_COUNT == UART_PORT_COUNT,
  */
 typedef struct {
     bool pending; /**< True while the host request has not entered the worker mailbox. */
+    absolute_time_t deadline; /**< Soft-pending expiry; ignored when @ref pending is false. */
     uart_driver_line_coding_t line_coding; /**< Latest requested UART settings. */
 } usb_cdc_pending_line_coding_t;
 
@@ -46,11 +55,27 @@ static bool usb_cdc_apply_line_coding(uint8_t itf,
     return uart_driver_queue_line_coding((uart_port_id_t)itf, line_coding);
 }
 
+static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_t *line_coding)
+{
+    usb_cdc_line_coding_pending[itf].line_coding = *line_coding;
+    usb_cdc_line_coding_pending[itf].deadline =
+        make_timeout_time_ms(USB_CDC_SOFT_PENDING_TIMEOUT_MS);
+    usb_cdc_line_coding_pending[itf].pending = true;
+    /* HID-visible while waiting for the mailbox (before queue_line_coding). */
+    uart_driver_mark_control_pending((uart_port_id_t)itf);
+}
+
 static void usb_cdc_apply_pending_line_coding(uint8_t itf)
 {
     usb_cdc_pending_line_coding_t *pending = &usb_cdc_line_coding_pending[itf];
 
     if (!pending->pending) {
+        return;
+    }
+
+    if (time_reached(pending->deadline)) {
+        pending->pending = false;
+        uart_driver_report_control_error((uart_port_id_t)itf);
         return;
     }
 
@@ -192,8 +217,7 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
         return;
     }
 
-    usb_cdc_line_coding_pending[itf].line_coding = line_coding;
-    usb_cdc_line_coding_pending[itf].pending = true;
+    usb_cdc_arm_soft_pending(itf, &line_coding);
 }
 
 bool usb_cdc_port_stats(uint8_t itf, usb_cdc_port_stats_t *stats)

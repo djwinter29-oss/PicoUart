@@ -61,3 +61,18 @@ def usb_identity_needle_le(vid: int, pid: int, bcd_device: int = 0) -> bytes:
 
 def is_lab_placeholder_identity(vid: int, pid: int) -> bool:
     return (vid, pid) == (0xCAFE, 0x4010)
+
+
+def firmware_hid_status_report_count(repo_root: Path) -> int:
+    """Parse Report Count for HID input report ID 1 from usb_descriptors.c."""
+    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r"0x85,\s*0x01,\s*0x15,\s*0x00,\s*0x26,\s*0xFF,\s*0x00,\s*0x75,\s*0x08,\s*0x95,\s*(0x[0-9A-Fa-f]+)",
+        text,
+        flags=re.DOTALL,
+    )
+    if not match:
+        raise ValueError("HID status report count not found in usb_descriptors.c")
+    return int(match.group(1), 0)
