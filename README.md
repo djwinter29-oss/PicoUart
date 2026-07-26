@@ -78,10 +78,10 @@ Each USB CDC channel is mapped 1:1 to a UART instance:
 | CDC4 | PIO UART | GP16 | GP17 |
 | CDC5 | PIO UART | GP20 | GP21 |
 
-The current transport uses TX and RX on every port. Hardware UART0/UART1 also
-enable board-side RTS/CTS (CTS pulled down so TX still flows when a peer omits
-CTS). PIO UART RTS/CTS pins remain reserved without runtime flow-control
-behavior. Host CDC RTS is ignored.
+The current transport uses TX and RX on every port. Hardware UART0/UART1 leave
+board-side RTS/CTS disabled by default, while retaining their assigned pins for
+future explicit enablement. PIO UART RTS/CTS pins remain reserved without
+runtime flow-control behavior. Host CDC RTS is ignored.
 
 ## Target Devices
 

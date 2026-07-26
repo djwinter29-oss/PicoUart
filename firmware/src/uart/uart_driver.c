@@ -5,6 +5,8 @@
 
 #include "uart/uart_driver.h"
 
+#include "config/uart_board.h"
+#include "uart/control_pending.h"
 #include "uart/hw/driver.h"
 #include "uart/line_coding.h"
 #include "hardware/clocks.h"
@@ -16,14 +18,10 @@
 
 /** @brief Default startup baud rate applied to all logical UART ports. */
 #define UART_DRIVER_DEFAULT_BAUD_RATE 115200u
-/**
- * @brief Maximum time core 0 waits for the mailbox to become idle before posting.
- *
- * If this expires, no request was posted and nothing is orphaned.
- */
-#define UART_DRIVER_MAILBOX_IDLE_TIMEOUT_MS 20u
 /** @brief Maximum time the worker may defer applying a line-coding change. */
 #define UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS 1000u
+/** @brief Maximum attempts to acquire a coherent worker-owned telemetry snapshot. */
+#define UART_DRIVER_PORT_STATS_SNAPSHOT_ATTEMPTS 3u
 
 /**
  * @brief Commands accepted by the cross-core UART control mailbox.
@@ -41,6 +39,7 @@ typedef struct {
     volatile uint32_t response_sequence; /**< Latest completed request sequence published by core 1. */
     volatile uart_driver_mailbox_command_t command; /**< Pending mailbox command. */
     volatile uint32_t port_id; /**< Port argument used by parameterized commands. */
+    volatile uint32_t control_generation; /**< Host request generation associated with the command. */
     volatile uart_driver_line_coding_t line_coding; /**< Pending line-coding payload. */
     volatile uint32_t result_port_id; /**< Port associated with the command result. */
     volatile uart_driver_command_status_t result_status; /**< Command result written by core 1. */
@@ -62,87 +61,13 @@ typedef struct {
  */
 typedef struct {
     bool pending; /**< True while a line-coding change is waiting to be applied. */
+    uint32_t control_generation; /**< Host request generation that owns @ref pending. */
     absolute_time_t deadline; /**< Absolute time when a deferred apply must succeed or fail. */
     uart_driver_line_coding_t line_coding; /**< Latest requested line-coding payload. */
 } uart_driver_pending_control_t;
 
-/** @brief Static logical UART port table for the 6-port bridge. */
-static uart_driver_port_t uart_ports[UART_PORT_COUNT] = {
-    {
-        .info = {UART_PORT_0, UART_DRIVER_BACKEND_HW, UART_DRIVER_DEFAULT_BAUD_RATE, 0u, 1u},
-        .backend.hw = {
-            .config = {uart0, UART_DRIVER_DEFAULT_BAUD_RATE, 0u, 1u, 2u, 3u, false, 8u, 1u, UART_PARITY_NONE},
-            .initialized = false,
-        },
-    },
-    {
-        .info = {UART_PORT_1, UART_DRIVER_BACKEND_HW, UART_DRIVER_DEFAULT_BAUD_RATE, 4u, 5u},
-        .backend.hw = {
-            .config = {uart1, UART_DRIVER_DEFAULT_BAUD_RATE, 4u, 5u, 6u, 7u, false, 8u, 1u, UART_PARITY_NONE},
-            .initialized = false,
-        },
-    },
-    {
-        .info = {UART_PORT_2, UART_DRIVER_BACKEND_PIO, UART_DRIVER_DEFAULT_BAUD_RATE, 8u, 9u},
-        .backend.pio = {
-            .config = {pio0,
-                       0u,
-                       1u,
-                       UART_DRIVER_DEFAULT_BAUD_RATE,
-                       8u,
-                       9u,
-                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP |
-                           PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH,
-                       PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
-            .initialized = false,
-        },
-    },
-    {
-        .info = {UART_PORT_3, UART_DRIVER_BACKEND_PIO, UART_DRIVER_DEFAULT_BAUD_RATE, 12u, 13u},
-        .backend.pio = {
-            .config = {pio0,
-                       2u,
-                       3u,
-                       UART_DRIVER_DEFAULT_BAUD_RATE,
-                       12u,
-                       13u,
-                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP |
-                           PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH,
-                       PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
-            .initialized = false,
-        },
-    },
-    {
-        .info = {UART_PORT_4, UART_DRIVER_BACKEND_PIO, UART_DRIVER_DEFAULT_BAUD_RATE, 16u, 17u},
-        .backend.pio = {
-            .config = {pio1,
-                       0u,
-                       1u,
-                       UART_DRIVER_DEFAULT_BAUD_RATE,
-                       16u,
-                       17u,
-                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP |
-                           PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH,
-                       PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
-            .initialized = false,
-        },
-    },
-    {
-        .info = {UART_PORT_5, UART_DRIVER_BACKEND_PIO, UART_DRIVER_DEFAULT_BAUD_RATE, 20u, 21u},
-        .backend.pio = {
-            .config = {pio1,
-                       2u,
-                       3u,
-                       UART_DRIVER_DEFAULT_BAUD_RATE,
-                       20u,
-                       21u,
-                       PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP |
-                           PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH,
-                       PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD},
-            .initialized = false,
-        },
-    },
-};
+/** @brief Runtime state for the 6-port bridge, initialized from the board map. */
+static uart_driver_port_t uart_ports[UART_PORT_COUNT];
 
 /** @brief Core-to-core mailbox used for UART control operations. */
 static uart_driver_mailbox_t uart_driver_mailbox;
@@ -154,9 +79,16 @@ static volatile uint8_t uart_driver_port_status_flags[UART_PORT_COUNT];
 static spin_lock_t *uart_driver_status_lock;
 /** @brief Deferred line-coding requests owned by the worker core. */
 static uart_driver_pending_control_t uart_driver_pending_controls[UART_PORT_COUNT];
+/** @brief CDC requests waiting on core 0 for the worker mailbox. */
+static bool uart_driver_soft_pending_controls[UART_PORT_COUNT];
+/** @brief Latest host control-request generation for each port. */
+static uint32_t uart_driver_control_generations[UART_PORT_COUNT];
+/** @brief Per-port sequence counters for coherent core-0 telemetry snapshots. */
+static volatile uint32_t uart_driver_port_stats_sequence[UART_PORT_COUNT];
 /** @brief Worker-loop port index that starts the next backend poll sweep. */
 static size_t uart_driver_poll_start_index;
 static uart_driver_command_status_t uart_driver_init_backends(uint32_t *result_port_id);
+static void uart_driver_load_board_config(void);
 static void uart_driver_poll_backends(void);
 static uart_parity_t uart_driver_hw_parity(uart_driver_parity_t parity);
 static bool uart_driver_line_coding_matches_current(const uart_driver_port_t *port,
@@ -164,11 +96,29 @@ static bool uart_driver_line_coding_matches_current(const uart_driver_port_t *po
 static uart_driver_command_status_t uart_driver_set_line_coding_local(
     uart_port_id_t port_id,
     const uart_driver_line_coding_t *line_coding,
+    uint32_t control_generation,
     uint32_t *result_port_id);
 static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_driver_port_t *port);
-static void uart_driver_set_worker_control_pending(uart_port_id_t port_id);
-static void uart_driver_finish_worker_control(uart_port_id_t port_id, bool success);
+static void uart_driver_set_worker_control_pending(uart_port_id_t port_id, uint32_t control_generation);
+static void uart_driver_finish_worker_control(uart_port_id_t port_id,
+                                              uint32_t control_generation,
+                                              bool success);
+static void uart_driver_finish_mailbox_control(uart_port_id_t port_id,
+                                               uint32_t control_generation,
+                                               bool success);
 static bool uart_driver_mailbox_has_pending_port(uart_port_id_t port_id);
+
+static void uart_driver_begin_port_stats_update(uart_port_id_t port_id)
+{
+    uart_driver_port_stats_sequence[port_id] += 1u;
+    __dmb();
+}
+
+static void uart_driver_end_port_stats_update(uart_port_id_t port_id)
+{
+    __dmb();
+    uart_driver_port_stats_sequence[port_id] += 1u;
+}
 
 /**
  * @brief Halt after a HardFault so the debugger can inspect the fault.
@@ -206,26 +156,59 @@ static void uart_driver_clear_port_status_flag(uart_port_id_t port_id, uint8_t f
     spin_unlock(uart_driver_status_lock, save);
 }
 
-static void uart_driver_set_worker_control_pending(uart_port_id_t port_id)
+static void uart_driver_set_worker_control_pending(uart_port_id_t port_id,
+                                                   uint32_t control_generation)
 {
     uint32_t save = spin_lock_blocking(uart_driver_status_lock);
 
     uart_driver_pending_controls[port_id].pending = true;
+    uart_driver_pending_controls[port_id].control_generation = control_generation;
     uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
-    uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    if (uart_control_completion_is_current(control_generation,
+                                           uart_driver_control_generations[port_id])) {
+        uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    }
     spin_unlock(uart_driver_status_lock, save);
 }
 
-static void uart_driver_finish_worker_control(uart_port_id_t port_id, bool success)
+static void uart_driver_finish_worker_control(uart_port_id_t port_id,
+                                              uint32_t control_generation,
+                                              bool success)
 {
     uint32_t save = spin_lock_blocking(uart_driver_status_lock);
 
     uart_driver_pending_controls[port_id].pending = false;
-    uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
-    if (success) {
-        uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-    } else {
-        uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    if (uart_control_pending_should_clear(uart_driver_soft_pending_controls[port_id],
+                                          uart_driver_mailbox_has_pending_port(port_id))) {
+        uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    }
+    if (uart_control_completion_is_current(control_generation,
+                                           uart_driver_control_generations[port_id])) {
+        if (success) {
+            uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+        } else {
+            uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+        }
+    }
+    spin_unlock(uart_driver_status_lock, save);
+}
+
+static void uart_driver_finish_mailbox_control(uart_port_id_t port_id,
+                                               uint32_t control_generation,
+                                               bool success)
+{
+    uint32_t save = spin_lock_blocking(uart_driver_status_lock);
+
+    if (!uart_driver_soft_pending_controls[port_id]) {
+        uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    }
+    if (uart_control_completion_is_current(control_generation,
+                                           uart_driver_control_generations[port_id])) {
+        if (success) {
+            uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+        } else {
+            uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+        }
     }
     spin_unlock(uart_driver_status_lock, save);
 }
@@ -253,13 +236,16 @@ static void uart_driver_worker_core_main(void)
         if (request_sequence != uart_driver_mailbox.response_sequence) {
             uart_driver_command_status_t status = UART_DRIVER_COMMAND_STATUS_UNSUPPORTED;
             uint32_t result_port_id = UART_PORT_COUNT;
+            uint32_t control_generation;
             uart_driver_line_coding_t line_coding;
 
             __dmb();
+            control_generation = uart_driver_mailbox.control_generation;
             if (uart_driver_mailbox.command == UART_DRIVER_MAILBOX_COMMAND_SET_LINE_CODING) {
                 line_coding = uart_driver_mailbox.line_coding;
                 status = uart_driver_set_line_coding_local((uart_port_id_t)uart_driver_mailbox.port_id,
                                                            &line_coding,
+                                                           control_generation,
                                                            &result_port_id);
             }
 
@@ -320,6 +306,23 @@ static uart_driver_port_t *uart_driver_port_mutable(uart_port_id_t port_id)
     }
 
     return &uart_ports[port_id];
+}
+
+static void uart_driver_load_board_config(void)
+{
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        const uart_board_port_config_t *board_port = &uart_board_ports[index];
+        uart_driver_port_t *port = &uart_ports[index];
+
+        port->info = board_port->info;
+        if (board_port->info.backend == UART_DRIVER_BACKEND_HW) {
+            port->backend.hw.config = board_port->backend.hw;
+            port->backend.hw.initialized = false;
+        } else {
+            port->backend.pio.config = board_port->backend.pio;
+            port->backend.pio.initialized = false;
+        }
+    }
 }
 
 static ring_buffer_t *uart_driver_rx_ring_mutable(uart_driver_port_t *port)
@@ -425,7 +428,9 @@ static void uart_driver_poll_backends(void)
         size_t index = (uart_driver_poll_start_index + offset) % UART_PORT_COUNT;
         uart_driver_port_t *port = &uart_ports[index];
 
+        uart_driver_begin_port_stats_update((uart_port_id_t)index);
         uart_driver_service_pending_control((uart_port_id_t)index, port);
+        uart_driver_end_port_stats_update((uart_port_id_t)index);
     }
 
     uart_driver_poll_start_index = (uart_driver_poll_start_index + 1u) % UART_PORT_COUNT;
@@ -455,7 +460,7 @@ static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_dri
         applied = pio_uart_driver_set_baud_rate(&port->backend.pio,
                                                 pending_control->line_coding.baud_rate);
     } else {
-        uart_driver_finish_worker_control(port_id, false);
+        uart_driver_finish_worker_control(port_id, pending_control->control_generation, false);
         return;
     }
 
@@ -466,13 +471,13 @@ static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_dri
 
         /* Continuous RX/TX activity can defer a PIO/HW reconfigure forever;
          * fail the request so USB ingress is not paused indefinitely. */
-        uart_driver_finish_worker_control(port_id, false);
+        uart_driver_finish_worker_control(port_id, pending_control->control_generation, false);
         return;
     }
 
     port->info.baud_rate = pending_control->line_coding.baud_rate;
     __dmb();
-    uart_driver_finish_worker_control(port_id, true);
+    uart_driver_finish_worker_control(port_id, pending_control->control_generation, true);
 }
 
 bool uart_driver_init(void)
@@ -482,10 +487,16 @@ bool uart_driver_init(void)
             uart_driver_status_lock = spin_lock_instance(spin_lock_claim_unused(true));
         }
 
+        uart_driver_load_board_config();
+
         for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
             uart_driver_port_status_flags[index] = 0u;
             uart_driver_pending_controls[index].pending = false;
+            uart_driver_soft_pending_controls[index] = false;
+            uart_driver_control_generations[index] = 0u;
+            uart_driver_port_stats_sequence[index] = 0u;
             uart_driver_pending_controls[index].deadline = nil_time;
+            uart_driver_pending_controls[index].control_generation = 0u;
             uart_driver_pending_controls[index].line_coding.baud_rate = UART_DRIVER_DEFAULT_BAUD_RATE;
             uart_driver_pending_controls[index].line_coding.data_bits = 8u;
             uart_driver_pending_controls[index].line_coding.stop_bits = 1u;
@@ -496,6 +507,7 @@ bool uart_driver_init(void)
         uart_driver_mailbox.response_sequence = 0u;
         uart_driver_mailbox.command = UART_DRIVER_MAILBOX_COMMAND_NONE;
         uart_driver_mailbox.port_id = 0u;
+        uart_driver_mailbox.control_generation = 0u;
         uart_driver_mailbox.line_coding.baud_rate = 0u;
         uart_driver_mailbox.line_coding.data_bits = 8u;
         uart_driver_mailbox.line_coding.stop_bits = 1u;
@@ -549,7 +561,9 @@ void uart_driver_poll_hardware(void)
         uart_driver_port_t *port = &uart_ports[index];
 
         if (port->backend.hw.initialized) {
+            uart_driver_begin_port_stats_update((uart_port_id_t)index);
             hw_uart_driver_poll(&port->backend.hw);
+            uart_driver_end_port_stats_update((uart_port_id_t)index);
         }
     }
 }
@@ -560,7 +574,9 @@ void uart_driver_poll_pio(void)
         uart_driver_port_t *port = &uart_ports[index];
 
         if (port->backend.pio.initialized) {
+            uart_driver_begin_port_stats_update((uart_port_id_t)index);
             pio_uart_driver_poll(&port->backend.pio);
+            uart_driver_end_port_stats_update((uart_port_id_t)index);
         }
     }
 }
@@ -687,6 +703,7 @@ size_t uart_driver_fill_tx(uart_port_id_t port_id,
 static uart_driver_command_status_t uart_driver_set_line_coding_local(
     uart_port_id_t port_id,
     const uart_driver_line_coding_t *line_coding,
+    uint32_t control_generation,
     uint32_t *result_port_id)
 {
     uart_driver_port_t *port = uart_driver_port_mutable(port_id);
@@ -706,19 +723,17 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
     pending_control = &uart_driver_pending_controls[port_id];
 
     if (!uart_line_coding_is_valid(line_coding)) {
-        uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
-        uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+        uart_driver_finish_mailbox_control(port_id, control_generation, false);
         return UART_DRIVER_COMMAND_STATUS_INVALID_ARGUMENT;
     }
 
     if (uart_driver_line_coding_matches_current(port, line_coding)) {
         if (pending_control->pending) {
             /* The newest request keeps the current format, so cancel the older deferred change. */
-            uart_driver_finish_worker_control(port_id, true);
+            uart_driver_finish_worker_control(port_id, pending_control->control_generation, true);
+            uart_driver_finish_mailbox_control(port_id, control_generation, true);
         } else {
-            uart_driver_clear_port_status_flag(port_id,
-                                               UART_DRIVER_PORT_STATUS_CONTROL_PENDING |
-                                                   UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+            uart_driver_finish_mailbox_control(port_id, control_generation, true);
         }
         return UART_DRIVER_COMMAND_STATUS_OK;
     }
@@ -727,20 +742,18 @@ static uart_driver_command_status_t uart_driver_set_line_coding_local(
         pending_control->line_coding = *line_coding;
     } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
         if (!uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys))) {
-            uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
-            uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+            uart_driver_finish_mailbox_control(port_id, control_generation, false);
             return UART_DRIVER_COMMAND_STATUS_BACKEND_REJECTED;
         }
 
         pending_control->line_coding = *line_coding;
     } else {
-        uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
-        uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+        uart_driver_finish_mailbox_control(port_id, control_generation, false);
         return UART_DRIVER_COMMAND_STATUS_UNSUPPORTED;
     }
 
     pending_control->deadline = make_timeout_time_ms(UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS);
-    uart_driver_set_worker_control_pending(port_id);
+    uart_driver_set_worker_control_pending(port_id, control_generation);
     return UART_DRIVER_COMMAND_STATUS_QUEUED;
 }
 
@@ -761,7 +774,8 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
 }
 
 bool uart_driver_queue_line_coding(uart_port_id_t port_id,
-                                   const uart_driver_line_coding_t *line_coding)
+                                   const uart_driver_line_coding_t *line_coding,
+                                   uint32_t control_generation)
 {
     uint32_t request_sequence;
 
@@ -779,26 +793,21 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
     }
 
     request_sequence = uart_driver_mailbox.request_sequence + 1u;
+    uint32_t save = spin_lock_blocking(uart_driver_status_lock);
+
+    uart_driver_soft_pending_controls[port_id] = false;
+    uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     uart_driver_mailbox.port_id = (uint32_t)port_id;
+    uart_driver_mailbox.control_generation = control_generation;
     uart_driver_mailbox.line_coding = *line_coding;
     uart_driver_mailbox.command = UART_DRIVER_MAILBOX_COMMAND_SET_LINE_CODING;
-    uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
     __dmb();
     uart_driver_mailbox.request_sequence = request_sequence;
+    spin_unlock(uart_driver_status_lock, save);
     return true;
 }
 
 void uart_driver_report_control_error(uart_port_id_t port_id)
-{
-    if (port_id >= UART_PORT_COUNT) {
-        return;
-    }
-
-    /* Do not clear CONTROL_PENDING — soft-pending / worker deferred-apply own it. */
-    uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
-}
-
-void uart_driver_report_soft_pending_error(uart_port_id_t port_id)
 {
     uint32_t save;
 
@@ -807,22 +816,50 @@ void uart_driver_report_soft_pending_error(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_status_lock);
+    uart_driver_control_generations[port_id] += 1u;
     uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-    if (!uart_driver_pending_controls[port_id].pending &&
-        !uart_driver_mailbox_has_pending_port(port_id)) {
+    spin_unlock(uart_driver_status_lock, save);
+}
+
+void uart_driver_report_soft_pending_error(uart_port_id_t port_id,
+                                           uint32_t control_generation)
+{
+    uint32_t save;
+
+    if (port_id >= UART_PORT_COUNT) {
+        return;
+    }
+
+    save = spin_lock_blocking(uart_driver_status_lock);
+    uart_driver_soft_pending_controls[port_id] = false;
+    if (uart_control_completion_is_current(control_generation,
+                                           uart_driver_control_generations[port_id])) {
+        uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    }
+    if (uart_control_pending_should_clear(uart_driver_pending_controls[port_id].pending,
+                                          uart_driver_mailbox_has_pending_port(port_id))) {
         uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
     spin_unlock(uart_driver_status_lock, save);
 }
 
-void uart_driver_mark_control_pending(uart_port_id_t port_id)
+uint32_t uart_driver_mark_control_pending(uart_port_id_t port_id)
 {
+    uint32_t save;
+    uint32_t control_generation;
+
     if (port_id >= UART_PORT_COUNT) {
-        return;
+        return 0u;
     }
 
-    uart_driver_set_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
-    uart_driver_clear_port_status_flag(port_id, UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+    save = spin_lock_blocking(uart_driver_status_lock);
+    uart_driver_control_generations[port_id] += 1u;
+    control_generation = uart_driver_control_generations[port_id];
+    uart_driver_soft_pending_controls[port_id] = true;
+    uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    spin_unlock(uart_driver_status_lock, save);
+    return control_generation;
 }
 
 uint8_t uart_driver_port_status(uart_port_id_t port_id)
@@ -859,6 +896,8 @@ bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *st
     uart_driver_port_t *port = uart_driver_port_mutable(port_id);
     ring_buffer_t *rx_ring;
     ring_buffer_t *tx_ring;
+    uint32_t first_sequence;
+    uint32_t second_sequence;
 
     if ((port == NULL) || (stats == NULL)) {
         return false;
@@ -870,27 +909,41 @@ bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *st
         return false;
     }
 
-    stats->controller_tx_bytes = 0u;
-    stats->controller_rx_bytes = 0u;
-    stats->tx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(tx_ring);
-    stats->rx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(rx_ring);
-    stats->tx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(tx_ring);
-    stats->rx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(rx_ring);
-    stats->rx_ring_pending_overflow_count = (uint32_t)ring_buffer_pending_overflow(rx_ring);
-    stats->rx_error_count = 0u;
+    for (size_t attempt = 0u; attempt < UART_DRIVER_PORT_STATS_SNAPSHOT_ATTEMPTS; ++attempt) {
+        first_sequence = uart_driver_port_stats_sequence[port_id];
+        __dmb();
+        if ((first_sequence & 1u) != 0u) {
+            continue;
+        }
 
-    if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        stats->controller_tx_bytes = (uint32_t)(port->backend.pio.tx_polled_bytes +
-                                                port->backend.pio.tx_dma_bytes);
-        stats->controller_rx_bytes = port->backend.pio.controller_rx_bytes;
-        stats->rx_error_count = port->backend.pio.rx_error_count;
-    } else if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-        stats->controller_tx_bytes = port->backend.hw.controller_tx_bytes;
-        stats->controller_rx_bytes = port->backend.hw.controller_rx_bytes;
-        stats->rx_error_count = port->backend.hw.rx_error_count;
+        stats->controller_tx_bytes = 0u;
+        stats->controller_rx_bytes = 0u;
+        stats->tx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(tx_ring);
+        stats->rx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(rx_ring);
+        stats->tx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(tx_ring);
+        stats->rx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(rx_ring);
+        stats->rx_ring_pending_overflow_count = (uint32_t)ring_buffer_pending_overflow(rx_ring);
+        stats->rx_error_count = 0u;
+
+        if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
+            stats->controller_tx_bytes = (uint32_t)(port->backend.pio.tx_polled_bytes +
+                                                    port->backend.pio.tx_dma_bytes);
+            stats->controller_rx_bytes = port->backend.pio.controller_rx_bytes;
+            stats->rx_error_count = port->backend.pio.rx_error_count;
+        } else if (port->info.backend == UART_DRIVER_BACKEND_HW) {
+            stats->controller_tx_bytes = port->backend.hw.controller_tx_bytes;
+            stats->controller_rx_bytes = port->backend.hw.controller_rx_bytes;
+            stats->rx_error_count = port->backend.hw.rx_error_count;
+        }
+
+        __dmb();
+        second_sequence = uart_driver_port_stats_sequence[port_id];
+        if ((first_sequence == second_sequence) && ((second_sequence & 1u) == 0u)) {
+            return true;
+        }
     }
 
-    return true;
+    return false;
 }
 
 bool uart_driver_validate_topology(void)
@@ -899,16 +952,16 @@ bool uart_driver_validate_topology(void)
     size_t pio_count = 0u;
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        if (uart_ports[index].info.id != (uart_port_id_t)index) {
+        if (uart_board_ports[index].info.id != (uart_port_id_t)index) {
             return false;
         }
 
-        if (uart_ports[index].info.backend == UART_DRIVER_BACKEND_HW) {
+        if (uart_board_ports[index].info.backend == UART_DRIVER_BACKEND_HW) {
             hw_count += 1u;
             continue;
         }
 
-        if (uart_ports[index].info.backend == UART_DRIVER_BACKEND_PIO) {
+        if (uart_board_ports[index].info.backend == UART_DRIVER_BACKEND_PIO) {
             pio_count += 1u;
             continue;
         }

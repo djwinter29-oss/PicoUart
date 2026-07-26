@@ -33,6 +33,7 @@ _Static_assert(USB_CDC_PORT_COUNT == UART_PORT_COUNT,
  */
 typedef struct {
     bool pending; /**< True while the host request has not entered the worker mailbox. */
+    uint32_t control_generation; /**< Host request generation retained until mailbox submission. */
     absolute_time_t deadline; /**< Soft-pending expiry; ignored when @ref pending is false. */
     uart_driver_line_coding_t line_coding; /**< Latest requested UART settings. */
 } usb_cdc_pending_line_coding_t;
@@ -43,7 +44,8 @@ static usb_cdc_pending_line_coding_t usb_cdc_line_coding_pending[USB_CDC_PORT_CO
 static usb_cdc_port_stats_t usb_cdc_stats[USB_CDC_PORT_COUNT];
 
 static bool usb_cdc_apply_line_coding(uint8_t itf,
-                                      const uart_driver_line_coding_t *line_coding)
+                                      const uart_driver_line_coding_t *line_coding,
+                                      uint32_t control_generation)
 {
     if ((itf >= USB_CDC_PORT_COUNT) || (line_coding == NULL)) {
         return false;
@@ -53,7 +55,7 @@ static bool usb_cdc_apply_line_coding(uint8_t itf,
         return false;
     }
 
-    return uart_driver_queue_line_coding((uart_port_id_t)itf, line_coding);
+    return uart_driver_queue_line_coding((uart_port_id_t)itf, line_coding, control_generation);
 }
 
 static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_t *line_coding)
@@ -68,7 +70,7 @@ static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_
     }
     pending->pending = true;
     /* HID-visible while waiting for the mailbox (before queue_line_coding). */
-    uart_driver_mark_control_pending((uart_port_id_t)itf);
+    pending->control_generation = uart_driver_mark_control_pending((uart_port_id_t)itf);
 }
 
 static void usb_cdc_reject_line_coding(uint8_t itf)
@@ -83,7 +85,7 @@ static void usb_cdc_reject_line_coding(uint8_t itf)
         return;
     }
 
-    uart_driver_report_soft_pending_error((uart_port_id_t)itf);
+    uart_driver_report_control_error((uart_port_id_t)itf);
 }
 
 static void usb_cdc_apply_pending_line_coding(uint8_t itf)
@@ -96,18 +98,18 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
 
     if (time_reached(pending->deadline)) {
         pending->pending = false;
-        uart_driver_report_soft_pending_error((uart_port_id_t)itf);
+        uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
         return;
     }
 
     /* Permanent rejects must not retry forever with soft-pending stuck true. */
     if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &pending->line_coding)) {
         pending->pending = false;
-        uart_driver_report_soft_pending_error((uart_port_id_t)itf);
+        uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
         return;
     }
 
-    if (usb_cdc_apply_line_coding(itf, &pending->line_coding)) {
+    if (usb_cdc_apply_line_coding(itf, &pending->line_coding, pending->control_generation)) {
         pending->pending = false;
     }
 }

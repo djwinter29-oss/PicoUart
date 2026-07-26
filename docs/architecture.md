@@ -56,7 +56,7 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
 - Per-port RX and TX ring buffers inside each UART backend
 - 2 hardware UART backends with RTS/CTS pins exposed but disabled by default
 - 4 PIO UART backends
-- Board-specific GPIO configuration
+- Board-specific GPIO and peripheral mapping in `firmware/src/config/uart_board.c`
 - CDC DTR is recorded for HID monitoring only and does not gate bridging; HID board controls are restricted to LED toggle and reset
 
 ## Design Notes

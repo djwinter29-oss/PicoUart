@@ -20,7 +20,7 @@ command feature reports. The device is identified as USB
 | Baud, data bits, parity, stop bits | CDC line-coding request | Parsed from `SET_LINE_CODING` and queued to the matching UART backend. TinyUSB accepts the USB transfer before firmware validation; rejected or unsupported requests set health bit 2 (`control_error`) instead of stalling the CDC control pipe. PIO ports accept 8N1 only. |
 | Health, traffic, ring peak, temperature, and firmware version | HID | Read-only monitoring data. |
 | Toggle default board LED | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one. |
-| Reset board | HID command feature report | Arm (`3`) then reset (`2`) within 2 seconds; disable with `PICO_UART_ALLOW_HID_RESET=0`. |
+| Reset board | HID command feature report | Disabled by default; trusted lab builds may enable arm (`3`) then reset (`2`) within 2 seconds with `PICO_UART_ALLOW_HID_RESET=1`. |
 
 HID must not be used to select a UART, set baud rate, change GPIO mapping, or
 alter ring-buffer behavior. The three command values are board-scoped only.
@@ -127,9 +127,10 @@ Write feature report ID `4` with one payload byte:
 | `2` | Reset the board through the watchdog **only if** command `3` armed a reset within the previous 2 seconds. |
 | `3` | Arm a subsequent reset (`2`) for 2 seconds. |
 
-Unknown command values are ignored. The report has no response payload. Build with
-`-DPICO_UART_ALLOW_HID_RESET=0` to disable remote reset entirely on shared hosts.
-The reference host tool's `reset` command sends `3` then `2`.
+Unknown command values are ignored. The report has no response payload. Remote
+reset is disabled by default; enable it only for a trusted lab build with
+`-DPICO_UART_ALLOW_HID_RESET=1`. The reference host tool's `reset` command
+sends `3` then `2` when reset support is enabled.
 
 ## Host Tool
 

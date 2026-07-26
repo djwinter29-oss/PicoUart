@@ -63,7 +63,7 @@
 #define USB_HID_RESET_ARM_WINDOW_MS 2000u
 
 #ifndef PICO_UART_ALLOW_HID_RESET
-#define PICO_UART_ALLOW_HID_RESET 1
+#define PICO_UART_ALLOW_HID_RESET 0
 #endif
 
 /** @brief Per-channel health bit: the host opened the matching CDC interface. */
@@ -126,6 +126,8 @@ static uint32_t usb_hid_next_report_ms;
 static uint8_t usb_hid_sequence;
 /** @brief UART counters captured when the last periodic HID input report was published. */
 static uart_driver_port_stats_t usb_hid_last_reported_uart_stats[UART_PORT_COUNT];
+/** @brief Most recent coherent UART counter snapshot for each port. */
+static uart_driver_port_stats_t usb_hid_last_sampled_uart_stats[UART_PORT_COUNT];
 /** @brief CDC counters captured when the last periodic HID input report was published. */
 static usb_cdc_port_stats_t usb_hid_last_reported_cdc_stats[UART_PORT_COUNT];
 /** @brief Deadline after which a previously armed HID reset expires. */
@@ -144,11 +146,15 @@ static uint8_t usb_hid_clamp_u8(uint32_t value)
 static void usb_hid_sample_stats(uart_driver_port_stats_t uart_stats[UART_PORT_COUNT],
                                  usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT])
 {
-    memset(uart_stats, 0, sizeof(uart_driver_port_stats_t) * UART_PORT_COUNT);
     memset(cdc_stats, 0, sizeof(usb_cdc_port_stats_t) * UART_PORT_COUNT);
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        (void)uart_driver_port_stats((uart_port_id_t)index, &uart_stats[index]);
+        uart_stats[index] = usb_hid_last_sampled_uart_stats[index];
+        if (uart_driver_port_stats((uart_port_id_t)index, &uart_stats[index])) {
+            usb_hid_last_sampled_uart_stats[index] = uart_stats[index];
+        } else {
+            uart_stats[index] = usb_hid_last_sampled_uart_stats[index];
+        }
         (void)usb_cdc_port_stats((uint8_t)index, &cdc_stats[index]);
     }
 }
@@ -242,6 +248,7 @@ void usb_hid_init(void)
     usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time());
     usb_hid_reset_armed_deadline = nil_time;
     memset(usb_hid_last_reported_uart_stats, 0, sizeof(usb_hid_last_reported_uart_stats));
+    memset(usb_hid_last_sampled_uart_stats, 0, sizeof(usb_hid_last_sampled_uart_stats));
     memset(usb_hid_last_reported_cdc_stats, 0, sizeof(usb_hid_last_reported_cdc_stats));
 }
 

@@ -181,7 +181,8 @@ size_t uart_driver_fill_tx(uart_port_id_t port_id,
  * paused until the worker applies or rejects it, otherwise `false`.
  */
 bool uart_driver_queue_line_coding(uart_port_id_t port_id,
-                                   const uart_driver_line_coding_t *line_coding);
+                                   const uart_driver_line_coding_t *line_coding,
+                                   uint32_t control_generation);
 
 /**
  * @brief Return whether @p line_coding can ever be applied to @p port_id.
@@ -215,7 +216,8 @@ void uart_driver_report_control_error(uart_port_id_t port_id);
  * @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING only when the worker has not
  * accepted the request for deferred application.
  */
-void uart_driver_report_soft_pending_error(uart_port_id_t port_id);
+void uart_driver_report_soft_pending_error(uart_port_id_t port_id,
+                                           uint32_t control_generation);
 
 /**
  * @brief Mark one logical UART port as having a control request in flight.
@@ -224,8 +226,9 @@ void uart_driver_report_soft_pending_error(uart_port_id_t port_id);
  * Used by the CDC soft-pending path so HID `control_pending` is visible while a
  * line-coding request waits for the worker mailbox (before
  * @ref uart_driver_queue_line_coding accepts it).
+ * @return Generation identifying the newly pending request, or zero for an invalid port.
  */
-void uart_driver_mark_control_pending(uart_port_id_t port_id);
+uint32_t uart_driver_mark_control_pending(uart_port_id_t port_id);
 
 /**
  * @brief Return the status flags for one logical UART port.

@@ -73,9 +73,9 @@ requirement applies.
 ## Notes
 
 - Default board is `pico`.
-- Default system-clock targets are 250000 kHz for RP2040 and 300000 kHz for
-  RP2350. Override them only after validating the board and attached hardware
-  at the selected frequency.
+- Default system-clock targets are 125000 kHz for RP2040 and 150000 kHz for
+  RP2350. Higher clock rates are board-specific overrides; validate voltage,
+  thermal margin, USB, and UART behavior before using them.
 - Startup initializes the selected board's default LED when it defines
   `PICO_DEFAULT_LED_PIN`; the LED starts off.
 - The internal ADC temperature sensor is enabled at startup and can be sampled
@@ -92,8 +92,9 @@ requirement applies.
   marks, temperature, and firmware `MAJOR.MINOR.PATCH`.
 - Deferred control requests first report as queued, then transition to success after the
   worker applies them, or to `CONTROL_ERROR` if apply cannot complete within 1 second.
-- Core 1 initializes UART backends, polls hardware UART DMA and PIO UART RX/TX, and
-  applies deferred control requests; core 0 services TinyUSB and bridges CDC rings.
+- Core 0 initializes UART backends before launching the worker. Core 1 then
+  polls hardware UART DMA and PIO UART RX/TX and applies deferred control
+  requests; core 0 services TinyUSB and bridges CDC rings.
 - The current firmware maps CDC0-CDC5 to 2 hardware UART backends and 4 PIO UART backends.
 - CDC line coding is parsed on core 0, stored as pending per-port configuration, and applied on core 1 by the UART worker.
 - PIO UART RX uses persistent DMA into the per-port RX ring (DMA IRQ1 re-arm).
@@ -106,7 +107,12 @@ requirement applies.
 - PIO UART RX validates stop bits and counts framing errors (see `docs/detail/pio-uart-design.md`).
 - CDC line-coding rejects are visible through HID `CONTROL_ERROR` because TinyUSB accepts `SET_LINE_CODING` before firmware validation (`docs/hid-monitor.md`).
 - PIO baud/format rejects fail fast on core 0 (no deferred 1 s pause) when the divider is out of range or the request is not 8N1.
-- Cross-core mailbox: core 0 waits up to 20 ms for the slot to be idle and 100 ms for a response after posting. A response timeout leaves the request in flight (orphan); the next call waits for idle rather than posting over it.
-- HID reset is a two-step arm/reset sequence; disable with `-DPICO_UART_ALLOW_HID_RESET=0`.
+- Cross-core mailbox: core 0 posts a line-coding request immediately when the
+  single slot is idle. When it is busy, the matching CDC request stays
+  soft-pending and is retried from the USB poll loop for up to 1 second; expiry
+  sets `CONTROL_ERROR`. Core 1 acknowledges mailbox receipt, then may defer the
+  backend apply for up to a further 1 second while waiting for a safe idle point.
+- HID reset is disabled by default. Enable the two-step arm/reset sequence only
+  for a trusted lab build with `-DPICO_UART_ALLOW_HID_RESET=1`.
 - CDC DTR updates HID `opened` only and does not gate bridging; host CDC RTS is ignored.
 - HID does not yet report full ring occupancy/overflow **counts** (only high-water blocks and a sticky overrun bit).

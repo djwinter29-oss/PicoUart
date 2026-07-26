@@ -38,6 +38,7 @@ project(pico_uart C CXX ASM)
 pico_sdk_init()
 
 add_executable(pico_uart
+    src/config/uart_board.c
     src/driver/led.c
     src/driver/system.c
     src/driver/temperature.c

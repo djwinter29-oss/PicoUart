@@ -572,6 +572,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
             dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
                                          (uint)driver->rx_dma_channel,
                                          false);
+            pio_uart_driver_publish_rx(driver);
             pio_uart_driver_abort_dma_channel((uint)driver->rx_dma_channel);
             dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
                                          (uint)driver->rx_dma_channel);

@@ -25,15 +25,16 @@ Follow the USB-identity and recorded-HIL gates in
 
 ## HID board controls
 
-The vendor HID interface accepts commands that toggle the board LED and can
-reset the device. Reset requires a two-step sequence (arm, then reset within
-2 seconds). Any local user who can open the HID node can still reboot the board
-when HID reset is compiled in.
+The vendor HID interface accepts commands that toggle the board LED. Remote
+reset is disabled by default. Trusted lab builds may enable it with
+`-DPICO_UART_ALLOW_HID_RESET=1`; reset then requires a two-step sequence (arm,
+then reset within 2 seconds). Any local user who can open the HID node can
+still reboot a build that enables it.
 
 Mitigations:
 
-- Prefer udev/`dialout` ACLs that limit HID access on shared hosts.
-- Build with `-DPICO_UART_ALLOW_HID_RESET=0` to disable remote reset entirely.
+- Keep the default `PICO_UART_ALLOW_HID_RESET=0` for shared or production hosts.
+- Prefer udev/`dialout` ACLs that limit HID access when reset is enabled.
 
 ## Reporting issues
 
