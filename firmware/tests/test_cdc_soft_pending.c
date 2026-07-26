@@ -26,17 +26,10 @@ void test_preserve_prior_soft_pending_on_reject(void)
     TEST_ASSERT_FALSE(usb_cdc_soft_pending_preserve_on_reject(false));
 }
 
-void test_timeout_clears_pending_only_without_worker_deferred(void)
-{
-    TEST_ASSERT_TRUE(usb_cdc_soft_pending_timeout_clears_pending(false));
-    TEST_ASSERT_FALSE(usb_cdc_soft_pending_timeout_clears_pending(true));
-}
-
 int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_deadline_set_only_on_first_arm);
     RUN_TEST(test_preserve_prior_soft_pending_on_reject);
-    RUN_TEST(test_timeout_clears_pending_only_without_worker_deferred);
     return UNITY_END();
 }

@@ -88,7 +88,8 @@ UART0 and the UART2-to-UART3 cross-connection must each print both
 
 The standard functional tests above use 115200 baud, which is sufficient for
 bring-up. Use the performance benchmark after they pass to apply load to all
-available test links simultaneously.
+available test links simultaneously. The current bench has also been validated
+at `1,000,000` baud on UART0, UART2↔UART3, and UART5.
 
 For each selected rate, the benchmark runs these streams concurrently:
 
@@ -128,9 +129,9 @@ python3 tools/linux/serial_stress_benchmark.py \
   --rates 460800,921600 --duration 30
 ```
 
-The Debug Probe peer remains at its proven 115200 baud rate throughout this
-benchmark. This keeps external-peer limitations from masking the PIO UART rate
-results.
+When the Debug Probe path needs extra margin, keep UART0 at 115200 with the
+default benchmark settings. On the current bench, `--uart0-baud 1000000` is
+also valid and has passed repeated smoke tests plus 120-second concurrent soaks.
 
 ## Bring-Up Check
 

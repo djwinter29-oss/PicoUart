@@ -60,6 +60,14 @@ typedef struct {
 bool hw_uart_driver_init(hw_uart_driver_t *driver);
 
 /**
+ * @brief Activate hardware-UART RX DMA interrupts on the UART worker core.
+ *
+ * Call after all hardware UART backends are initialized and from the core that
+ * owns steady-state UART service.
+ */
+void hw_uart_driver_enable_rx_dma_irq(void);
+
+/**
  * @brief Poll one hardware UART backend to advance TX DMA completion state.
  * @param driver Driver instance to poll.
  */

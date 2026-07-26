@@ -47,6 +47,14 @@ typedef struct pio_uart_driver pio_uart_driver_t;
 bool pio_uart_driver_init(pio_uart_driver_t *driver);
 
 /**
+ * @brief Activate PIO-UART RX DMA interrupts on the UART worker core.
+ *
+ * Call after all PIO UART backends are initialized and from the core that owns
+ * steady-state UART service.
+ */
+void pio_uart_driver_enable_rx_dma_irq(void);
+
+/**
  * @brief Poll one PIO UART backend to publish RX DMA progress and advance TX service.
  * RX bytes are moved by DMA from the PIO RX FIFO into the shared ring; the poll
  * path publishes producer progress and re-arms exhausted transfers. TX uses FIFO

@@ -22,10 +22,10 @@ The UART0 Debug Probe link requires crossed TX/RX wiring, a shared ground, and
 UART0 is not part of a self-loopback; it is tested only against the external
 Debug Probe UART. The common bench wiring keeps UART2↔UART3 and UART5 fitted,
 while UART1 and UART4 loopbacks are optional.
-Hardware UART0/UART1 enable RTS/CTS in firmware (CTS is pulled down so TX still
-flows when the peer omits CTS). Cross-connect RTS/CTS when validating flow
-control against a peer that drives CTS. PIO UART RTS/CTS pins remain reserved
-with no runtime flow-control behavior. Host CDC RTS is ignored.
+Hardware UART0/UART1 leave RTS/CTS disabled by default in firmware. Cross-connect
+RTS/CTS only when validating an explicit flow-control configuration against a
+peer that drives CTS. PIO UART RTS/CTS pins remain reserved with no runtime
+flow-control behavior. Host CDC RTS is ignored.
 
 ## Procedure
 
@@ -123,9 +123,9 @@ with no runtime flow-control behavior. Host CDC RTS is ignored.
    alternate baud rates, longer transfers, or slower peers.
 
 7. After the 115200 baud smoke tests pass, run the concurrent performance
-   benchmark. It keeps UART0 and the Debug Probe at 115200 baud, then sweeps
-   UART2-to-UART3, UART5, and (when provided) UART1/UART4 across the supported
-   rates while all configured streams run concurrently:
+  benchmark. By default it keeps UART0 and the Debug Probe at 115200 baud,
+  then sweeps UART2-to-UART3, UART5, and (when provided) UART1/UART4 across
+  the supported rates while all configured streams run concurrently:
 
    ```sh
    python3 tools/linux/serial_stress_benchmark.py \
@@ -138,19 +138,20 @@ with no runtime flow-control behavior. Host CDC RTS is ignored.
      --uart5 /dev/serial/by-id/<pico-uart-cdc5>
    ```
 
-   The default 10-second window reports verified bytes and measured throughput
-   for every stream at 9600, 19200, 38400, 57600, 115200, 230400, 460800,
-   921600, and 1000000 baud. Use `--rates` and `--duration` for a focused
-   longer run. Omit `--uart1` / `--uart4` only when those jumpers are not
-   fitted; release HIL should include them.
+  The default 10-second window reports verified bytes and measured throughput
+  for every stream at 9600, 19200, 38400, 57600, 115200, 230400, 460800,
+  921600, and 1000000 baud. Use `--rates`, `--duration`, and `--uart0-baud`
+  for a focused longer run. Omit `--uart1` / `--uart4` only when those
+  jumpers are not fitted; release HIL should include them.
 
 8. **HW UART RX stress with an RTS-ignoring peer** (optional for flow-control /
    RX DMA re-arm claims; not a substitute for the six-port bridge matrix).
    Hardware UART RX DMA re-arms via DMA IRQ when the countdown TRANS_COUNT
    exhausts (full 32-bit on RP2040; masked COUNT on RP2350 — see
    `firmware/src/uart/dma_progress.h`); the worker poll path is only a safety
-   net. With RTS/CTS enabled, a well-behaved peer should not overrun. Example
-   when the peer ignores RTS (leave CTS unconnected / peer does not wire RTS):
+  net. When hardware flow control is explicitly enabled, a well-behaved peer
+  should not overrun. Example when the peer ignores RTS (leave CTS
+  unconnected / peer does not wire RTS):
 
    ```sh
    # Terminal A: watch HID health bits (look for rx_overrun / rx_error).

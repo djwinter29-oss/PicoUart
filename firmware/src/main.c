@@ -20,7 +20,6 @@ int main(void)
     usb_hid_init();
 
     while (true) {
-        uart_driver_poll();
         usb_cdc_poll();
         usb_hid_poll();
         tight_loop_contents();

@@ -73,22 +73,20 @@ requirement applies.
 ## Notes
 
 - Default board is `pico`.
-
-
 - Default system-clock targets are 250000 kHz for RP2040 and 300000 kHz for
-	RP2350. Override them only after validating the board and attached hardware
-	at the selected frequency.
+  RP2350. Override them only after validating the board and attached hardware
+  at the selected frequency.
 - Startup initializes the selected board's default LED when it defines
   `PICO_DEFAULT_LED_PIN`; the LED starts off.
 - The internal ADC temperature sensor is enabled at startup and can be sampled
   through `temperature_read_celsius()`.
 - HID report ID `3` exposes temperature and firmware version; report ID `4`
-	accepts board-scoped LED-toggle and watchdog-reset commands. HID does not
-	own UART configuration. See [the HID protocol](../docs/hid-monitor.md) and
-	[the Python host utility](../host/python/README.md).
+  accepts board-scoped LED-toggle and watchdog-reset commands. HID does not
+  own UART configuration. See [the HID protocol](../docs/hid-monitor.md) and
+  [the Python host utility](../host/python/README.md).
 - Override the board with `-DPICO_BOARD=<board>` when needed.
-- Firmware initializes all 6 UART backends on core 1 before starting TinyUSB on core 0.
-- A dedicated second core owns UART backend init, polling, and control operations.
+- Firmware initializes all 6 UART backends during startup on core 0, then runs steady-state UART service on core 1 while core 0 owns TinyUSB.
+- A dedicated second core owns steady-state UART polling and control operations.
 - Core 0 talks to the UART core through a small single-slot mailbox for cross-core control.
 - HID status reports expose per-port health (including sticky RX overrun), ring high-water
   marks, temperature, and firmware `MAJOR.MINOR.PATCH`.
@@ -101,8 +99,9 @@ requirement applies.
 - PIO UART RX uses persistent DMA into the per-port RX ring (DMA IRQ1 re-arm).
   PIO TX fills the joined FIFO for short queues and lazily claims DMA only when
   deeper backlog makes it worthwhile.
-- Hardware UART ports accept supported baud/data/parity/stop updates and enable RTS/CTS;
-  PIO UART ports remain 8N1-only with reserved RTS/CTS pins.
+- Hardware UART ports accept supported baud/data/parity/stop updates and leave
+  RTS/CTS disabled by default; PIO UART ports remain 8N1-only with reserved
+  RTS/CTS pins.
 - PIO UART line-coding changes are deferred on the worker core until the port reaches a safe idle point, to avoid discarding queued traffic.
 - PIO UART RX validates stop bits and counts framing errors (see `docs/detail/pio-uart-design.md`).
 - CDC line-coding rejects are visible through HID `CONTROL_ERROR` because TinyUSB accepts `SET_LINE_CODING` before firmware validation (`docs/hid-monitor.md`).

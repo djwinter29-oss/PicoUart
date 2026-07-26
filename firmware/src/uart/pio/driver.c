@@ -99,6 +99,23 @@ static void __isr pio_uart_driver_rx_dma_irq_handler(void)
     }
 }
 
+void pio_uart_driver_enable_rx_dma_irq(void)
+{
+    if (!pio_uart_driver_rx_dma_irq_installed) {
+        irq_add_shared_handler(DMA_IRQ_1,
+                               pio_uart_driver_rx_dma_irq_handler,
+                               PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
+        irq_set_enabled(DMA_IRQ_1, true);
+        pio_uart_driver_rx_dma_irq_installed = true;
+    }
+
+    for (uint channel = 0u; channel < NUM_DMA_CHANNELS; ++channel) {
+        if (pio_uart_driver_rx_irq_owners[channel] != NULL) {
+            dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, true);
+        }
+    }
+}
+
 static void pio_uart_driver_release_dma(pio_uart_driver_t *driver)
 {
     if (driver == NULL) {
@@ -247,15 +264,10 @@ static void pio_uart_driver_start_rx_dma(pio_uart_driver_t *driver)
 
     pio_uart_driver_rx_irq_owners[driver->rx_dma_channel] = driver;
     dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel);
-    dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                 (uint)driver->rx_dma_channel,
-                                 true);
-    if (!pio_uart_driver_rx_dma_irq_installed) {
-        irq_add_shared_handler(DMA_IRQ_1,
-                               pio_uart_driver_rx_dma_irq_handler,
-                               PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
-        irq_set_enabled(DMA_IRQ_1, true);
-        pio_uart_driver_rx_dma_irq_installed = true;
+    if (pio_uart_driver_rx_dma_irq_installed) {
+        dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
+                                     (uint)driver->rx_dma_channel,
+                                     true);
     }
 }
 
@@ -567,9 +579,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
         restore_interrupts(interrupt_status);
     }
 
-    if (!ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
-        return false;
-    }
+    /* Preserve unread RX bytes; restart DMA at the live producer index. */
     driver->rx_dma_last_progress = 0u;
 
     pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, false);

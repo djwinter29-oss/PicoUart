@@ -10,16 +10,16 @@ Each CDC interface maps to one UART channel.
 
 ## Current Firmware Status
 
-The current firmware boots core 1 as a dedicated UART worker and initializes all
-UART backends first, then core 0 starts the TinyUSB device stack and the HID
-monitor. At runtime:
+The current firmware initializes UART backends during startup, then boots core 1
+as a dedicated UART worker before core 0 starts the TinyUSB device stack and
+the HID monitor. At runtime:
 
-- core 1 exclusively initializes, polls, and reconfigures UART controllers
+- core 0 performs startup initialization once, then core 1 owns runtime UART polling and reconfiguration
 - core 0 services TinyUSB tasks
 - core 0 moves CDC OUT traffic into shared per-port TX rings
 - core 0 moves shared per-port RX ring data back to the matching CDC IN endpoint
 - core 0 emits a periodic HID status report when the host is ready and serves
-	HID feature reads for board temperature
+  HID feature reads for board temperature
 
 This means the codebase is already at the multi-port bridge stage, not the earlier local-echo scaffold.
 
@@ -54,7 +54,7 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
 - USB HID status-monitor function with LED-toggle, watchdog-reset, temperature, and firmware-version feature reports
 - Per-port CDC-to-UART routing in the USB poll loop
 - Per-port RX and TX ring buffers inside each UART backend
-- 2 hardware UART backends with RTS/CTS hardware flow control enabled
+- 2 hardware UART backends with RTS/CTS pins exposed but disabled by default
 - 4 PIO UART backends
 - Board-specific GPIO configuration
 - CDC DTR is recorded for HID monitoring only and does not gate bridging; HID board controls are restricted to LED toggle and reset
@@ -68,28 +68,31 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
 - Use DMA for hardware UART RX and TX where the silicon already supports it well.
 - Keep TinyUSB ownership in one execution context by polling it from `main`.
 - Keep UART-controller ownership on core 1; cross-core traffic uses only the
-	per-port rings and the control mailbox.
-- Hardware UART0/UART1 enable RTS/CTS. CTS is active-low with a board pull-down so
-	TX still flows when a peer omits the CTS wire (for example a Debug Probe UART).
+  per-port rings and the control mailbox.
+- Core 1 also installs and services the DMA RX re-arm IRQ handlers. Core 0
+  configures backends during startup but does not execute live UART IRQ work.
+- Hardware UART0/UART1 leave RTS/CTS disabled by default. The pins stay available
+  for explicit future flow-control enablement, but the default bench wiring and
+  Debug Probe validation use TX, RX, and GND only.
 - PIO UART ports support 8N1 with stop-bit framing validation; hardware UART ports additionally apply valid CDC data-bit,
-	stop-bit, and parity settings.
+  stop-bit, and parity settings.
 - Deferred line-coding applies fail with `CONTROL_ERROR` if the backend cannot reach a
-	safe idle boundary within 1 second (avoids pausing USB ingress indefinitely).
+  safe idle boundary within 1 second (avoids pausing USB ingress indefinitely).
 - CDC `SET_LINE_CODING` can succeed at the USB layer while firmware rejects the request;
-	hosts must watch HID health bit 2 (`CONTROL_ERROR`). Shared validation lives in
-	`firmware/src/uart/line_coding.c` (50–3 000 000 baud). PIO also rejects bauds its
-	clock divider cannot represent (fail-fast, no 1 s pending window).
+  hosts must watch HID health bit 2 (`CONTROL_ERROR`). Shared validation lives in
+  `firmware/src/uart/line_coding.c` (50–3 000 000 baud). PIO also rejects bauds its
+  clock divider cannot represent (fail-fast, no 1 s pending window).
 - Hardware UART RX DMA re-arms from a DMA IRQ when the transfer counter exhausts; the
-	worker poll path is a safety net. Line-format restarts continue DMA at the live ring
-	producer index. Peers that ignore RTS can still overrun the UART FIFO under sustained
-	flood — exercise that case in HIL before advertising flow control.
+  worker poll path is a safety net. Line-format restarts continue DMA at the live ring
+  producer index. Peers that ignore RTS can still overrun the UART FIFO under sustained
+  flood - exercise that case in HIL before advertising flow control.
 - HID reset requires arm (`3`) then reset (`2`) within 2 s, or compile with
-	`PICO_UART_ALLOW_HID_RESET=0` to disable it.
+  `PICO_UART_ALLOW_HID_RESET=0` to disable it.
 
 ## Open Items
 
 - RTS and CTS runtime behavior for PIO UART ports
 - Whether full ring occupancy/overflow counters should be added to the compact HID report
-	(high-water mark blocks and a sticky overrun health bit are already present)
+  (high-water mark blocks and a sticky overrun health bit are already present)
 - Replace development USB IDs (`cafe:4010`) before production releases (see `docs/releasing.md`)
 - Sustained multi-port 1 Mbaud remains bounded by USB full-speed aggregate bandwidth

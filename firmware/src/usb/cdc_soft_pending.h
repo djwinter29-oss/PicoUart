@@ -29,14 +29,4 @@ static inline bool usb_cdc_soft_pending_preserve_on_reject(bool soft_pending_arm
     return soft_pending_armed;
 }
 
-/**
- * @brief Decide whether soft-pending timeout may clear CONTROL_PENDING.
- * @param worker_has_deferred True when the UART worker still owns a deferred apply.
- * @return `true` when CDC owned the only in-flight control request.
- */
-static inline bool usb_cdc_soft_pending_timeout_clears_pending(bool worker_has_deferred)
-{
-    return !worker_has_deferred;
-}
-
 #endif

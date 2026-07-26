@@ -129,7 +129,11 @@ void uart_driver_poll_hardware(void);
 void uart_driver_poll_pio(void);
 
 /**
- * @brief Service deferred control changes and poll all UART backends.
+ * @brief Compatibility shim for older single-core call sites.
+ *
+ * The current firmware runs deferred control changes plus UART hardware and PIO
+ * polling on the dedicated worker core. This function remains as a no-op so
+ * existing callers do not need to conditionalize on the execution model.
  */
 void uart_driver_poll(void);
 
@@ -204,20 +208,14 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
 void uart_driver_report_control_error(uart_port_id_t port_id);
 
 /**
- * @brief Clear @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING for @p port_id.
+ * @brief Report a CDC soft-pending failure without racing worker-owned control state.
  * @param port_id Logical port identifier.
  *
- * Call only from the path that owns the in-flight control request (worker apply
- * completion/failure, or CDC soft-pending timeout when the worker has no deferred
- * apply).
+ * Sets @ref UART_DRIVER_PORT_STATUS_CONTROL_ERROR and clears
+ * @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING only when the worker has not
+ * accepted the request for deferred application.
  */
-void uart_driver_clear_control_pending(uart_port_id_t port_id);
-
-/**
- * @brief Return whether the worker still owns a deferred line-coding apply.
- * @param port_id Logical port identifier.
- */
-bool uart_driver_has_deferred_line_coding(uart_port_id_t port_id);
+void uart_driver_report_soft_pending_error(uart_port_id_t port_id);
 
 /**
  * @brief Mark one logical UART port as having a control request in flight.

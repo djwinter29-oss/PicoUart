@@ -83,11 +83,7 @@ static void usb_cdc_reject_line_coding(uint8_t itf)
         return;
     }
 
-    uart_driver_report_control_error((uart_port_id_t)itf);
-    if (usb_cdc_soft_pending_timeout_clears_pending(
-            uart_driver_has_deferred_line_coding((uart_port_id_t)itf))) {
-        uart_driver_clear_control_pending((uart_port_id_t)itf);
-    }
+    uart_driver_report_soft_pending_error((uart_port_id_t)itf);
 }
 
 static void usb_cdc_apply_pending_line_coding(uint8_t itf)
@@ -100,22 +96,14 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
 
     if (time_reached(pending->deadline)) {
         pending->pending = false;
-        uart_driver_report_control_error((uart_port_id_t)itf);
-        if (usb_cdc_soft_pending_timeout_clears_pending(
-                uart_driver_has_deferred_line_coding((uart_port_id_t)itf))) {
-            uart_driver_clear_control_pending((uart_port_id_t)itf);
-        }
+        uart_driver_report_soft_pending_error((uart_port_id_t)itf);
         return;
     }
 
     /* Permanent rejects must not retry forever with soft-pending stuck true. */
     if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &pending->line_coding)) {
         pending->pending = false;
-        uart_driver_report_control_error((uart_port_id_t)itf);
-        if (usb_cdc_soft_pending_timeout_clears_pending(
-                uart_driver_has_deferred_line_coding((uart_port_id_t)itf))) {
-            uart_driver_clear_control_pending((uart_port_id_t)itf);
-        }
+        uart_driver_report_soft_pending_error((uart_port_id_t)itf);
         return;
     }
 

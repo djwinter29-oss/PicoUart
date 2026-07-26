@@ -40,7 +40,7 @@ Implemented now:
 - hardware UART backend integration for both RX and TX ring usage
 - RX DMA producer publishing into the RX ring, with IRQ-driven transfer-count re-arm
 - TX DMA draining contiguous spans from the TX ring
-- hardware UART0/UART1 RTS/CTS flow control (CTS pull-down when peer omits CTS)
+- hardware UART0/UART1 line-coding support with RTS/CTS pins reserved but disabled by default
 - full hardware UART line-coding (baud/data/parity/stop) via deferred worker apply
 - PIO UART backend integration with DMA-backed RX and hybrid TX drain policy
 - PIO 8N1 line-coding (baud changes deferred; non-8N1 rejected with `CONTROL_ERROR`)

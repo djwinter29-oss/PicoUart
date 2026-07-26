@@ -76,6 +76,23 @@ static void __isr hw_uart_driver_rx_dma_irq_handler(void)
     }
 }
 
+void hw_uart_driver_enable_rx_dma_irq(void)
+{
+    if (!hw_uart_driver_rx_dma_irq_installed) {
+        irq_add_shared_handler(DMA_IRQ_0,
+                               hw_uart_driver_rx_dma_irq_handler,
+                               PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
+        irq_set_enabled(DMA_IRQ_0, true);
+        hw_uart_driver_rx_dma_irq_installed = true;
+    }
+
+    for (uint channel = 0u; channel < NUM_DMA_CHANNELS; ++channel) {
+        if (hw_uart_driver_rx_irq_owners[channel] != NULL) {
+            dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, true);
+        }
+    }
+}
+
 static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
 {
     dma_channel_config rx_dma_config;
@@ -103,15 +120,10 @@ static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
 
     hw_uart_driver_rx_irq_owners[driver->rx_dma_channel] = driver;
     dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel);
-    dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                 (uint)driver->rx_dma_channel,
-                                 true);
-    if (!hw_uart_driver_rx_dma_irq_installed) {
-        irq_add_shared_handler(DMA_IRQ_0,
-                               hw_uart_driver_rx_dma_irq_handler,
-                               PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
-        irq_set_enabled(DMA_IRQ_0, true);
-        hw_uart_driver_rx_dma_irq_installed = true;
+    if (hw_uart_driver_rx_dma_irq_installed) {
+        dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
+                                     (uint)driver->rx_dma_channel,
+                                     true);
     }
 }
 
@@ -397,9 +409,7 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
         restore_interrupts(interrupt_status);
     }
 
-    if (!ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
-        return false;
-    }
+    /* Preserve unread RX bytes; restart DMA at the live producer index. */
     driver->rx_dma_last_progress = 0u;
 
     uart_deinit(driver->config.instance);
