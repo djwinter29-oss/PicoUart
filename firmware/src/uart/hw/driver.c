@@ -13,7 +13,6 @@
 #include "hardware/regs/uart.h"
 #include "hardware/structs/dma.h"
 #include "hardware/sync.h"
-#include "pico/platform.h"
 #include "pico/stdlib.h"
 
 #include <stddef.h>
@@ -168,9 +167,10 @@ static void hw_uart_driver_abort_dma_channel(uint channel)
 /**
  * @brief Stop RX DMA for line-format reconfig with a stable progress sample.
  *
- * Clear EN (RP2350-E5 / pause), briefly settle so any in-flight beat can retire,
- * publish progress while the channel is paused, then abort. Do not wait on BUSY
- * after clearing EN: paused channels keep BUSY high until CHAN_ABORT.
+ * Clear EN (RP2350-E5 / pause), wait until TRANS_COUNT is stable so any
+ * in-flight beat is counted, publish while paused, then abort. Do not wait on
+ * BUSY after clearing EN: paused channels keep BUSY high until CHAN_ABORT.
+ * Publish stays before abort because abort does not promise a usable TRANS_COUNT.
  */
 static void hw_uart_driver_stop_rx_dma_for_reconfig(hw_uart_driver_t *driver)
 {
@@ -178,9 +178,7 @@ static void hw_uart_driver_stop_rx_dma_for_reconfig(hw_uart_driver_t *driver)
 
     dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
-    for (uint32_t settle = 0u; settle < 16u; ++settle) {
-        tight_loop_contents();
-    }
+    uart_dma_rx_wait_paused_progress_stable(channel);
     hw_uart_driver_publish_rx(driver);
     dma_channel_abort(channel);
     dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
@@ -414,9 +412,14 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
         return false;
     }
 
+    /* Defer while the HW RX FIFO still holds bytes DMA has not drained. */
+    if (uart_is_readable(driver->config.instance)) {
+        return false;
+    }
+
     /*
-     * Mask the RX re-arm IRQ, pause the channel (clear EN), settle briefly,
-     * publish a stable progress sample, then abort/ack before restarting.
+     * Mask the RX re-arm IRQ, pause the channel (clear EN), wait for a stable
+     * TRANS_COUNT sample, publish, then abort/ack before restarting.
      */
     {
         uint32_t interrupt_status = save_and_disable_interrupts();

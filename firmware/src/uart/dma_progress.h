@@ -15,6 +15,7 @@
 
 #include "hardware/dma.h"
 #include "hardware/structs/dma.h"
+#include "pico/platform.h"
 
 #include <stdint.h>
 
@@ -66,6 +67,39 @@ static inline uint32_t uart_dma_rx_progress(uint channel)
 {
     return uart_dma_rx_progress_from_remaining(uart_dma_rx_transfer_count_remaining(channel),
                                                uart_dma_rx_transfer_count_max());
+}
+
+/**
+ * @brief After clearing DMA CH EN, wait until TRANS_COUNT stops changing.
+ * @param channel Claimed RX DMA channel (already paused: EN cleared).
+ *
+ * Paused channels keep BUSY high until CHAN_ABORT, so callers must not spin on
+ * BUSY. An in-flight beat may still retire and decrement TRANS_COUNT; wait for
+ * consecutive identical samples before publish-before-abort so that byte is
+ * included. Publish must still happen before abort: abort does not promise a
+ * usable TRANS_COUNT on every target.
+ */
+static inline void uart_dma_rx_wait_paused_progress_stable(uint channel)
+{
+    uint32_t last = uart_dma_rx_transfer_count_remaining(channel);
+    uint32_t stable = 0u;
+
+    for (uint32_t attempt = 0u; attempt < 64u; ++attempt) {
+        tight_loop_contents();
+        {
+            uint32_t now = uart_dma_rx_transfer_count_remaining(channel);
+
+            if (now == last) {
+                stable += 1u;
+                if (stable >= 2u) {
+                    return;
+                }
+            } else {
+                last = now;
+                stable = 0u;
+            }
+        }
+    }
 }
 
 #endif

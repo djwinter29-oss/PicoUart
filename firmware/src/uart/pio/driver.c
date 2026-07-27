@@ -78,9 +78,10 @@ static void pio_uart_driver_abort_dma_channel(uint channel)
 /**
  * @brief Stop RX DMA for line-coding reconfig with a stable progress sample.
  *
- * Clear EN (RP2350-E5 / pause), briefly settle so any in-flight beat can retire,
- * publish progress while the channel is paused, then abort. Do not wait on BUSY
- * after clearing EN: paused channels keep BUSY high until CHAN_ABORT.
+ * Clear EN (RP2350-E5 / pause), wait until TRANS_COUNT is stable so any
+ * in-flight beat is counted, publish while paused, then abort. Do not wait on
+ * BUSY after clearing EN: paused channels keep BUSY high until CHAN_ABORT.
+ * Publish stays before abort because abort does not promise a usable TRANS_COUNT.
  */
 static void pio_uart_driver_stop_rx_dma_for_reconfig(pio_uart_driver_t *driver)
 {
@@ -88,9 +89,7 @@ static void pio_uart_driver_stop_rx_dma_for_reconfig(pio_uart_driver_t *driver)
 
     dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
-    for (uint32_t settle = 0u; settle < 16u; ++settle) {
-        tight_loop_contents();
-    }
+    uart_dma_rx_wait_paused_progress_stable(channel);
     pio_uart_driver_publish_rx(driver);
     dma_channel_abort(channel);
     dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
@@ -579,7 +578,8 @@ static bool pio_uart_driver_tx_shifter_idle(pio_uart_driver_t *driver)
     /*
      * If the SM is still stalled on an empty TX FIFO pull, TXSTALL re-asserts
      * within a few PIO cycles. Poll with a bound so mid-frame (no re-assert)
-     * defers without spinning the worker for milliseconds.
+     * defers without spinning the worker for milliseconds. A false-negative
+     * under a very slow PIO clock only defers the baud apply to a later sweep.
      */
     for (uint32_t settle = 0u; settle < 64u; ++settle) {
         if ((pio->fdebug & mask) != 0u) {

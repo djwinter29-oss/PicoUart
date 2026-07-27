@@ -107,11 +107,12 @@ The default rate list is 9600, 19200, 38400, 57600, 115200, 230400, 460800,
 python3 tools/linux/serial_stress_benchmark.py \
   --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
   --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
-  --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
   --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
   --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
-  --uart4 /dev/serial/by-id/<pico-uart-cdc4> \
   --uart5 /dev/serial/by-id/<pico-uart-cdc5>
+# Optional when jumpers are fitted:
+#   --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
+#   --uart4 /dev/serial/by-id/<pico-uart-cdc4>
 ```
 
 Use `--rates` to retry one or more rates and `--duration` to use a longer
@@ -121,12 +122,11 @@ load window. For example, apply a 30-second run at 460800 and 921600 baud:
 python3 tools/linux/serial_stress_benchmark.py \
   --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
   --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
-  --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
   --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
   --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
-  --uart4 /dev/serial/by-id/<pico-uart-cdc4> \
   --uart5 /dev/serial/by-id/<pico-uart-cdc5> \
   --rates 460800,921600 --duration 30
+# Optional: --uart1 / --uart4 when those loopbacks are wired
 ```
 
 When the Debug Probe path needs extra margin, keep UART0 at 115200 with the

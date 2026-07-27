@@ -27,12 +27,12 @@ This means the codebase is already at the multi-port bridge stage, not the earli
 
 | USB CDC | UART Type | Notes |
 | --- | --- | --- |
-| CDC0 | Hardware UART0 | TX GP0, RX GP1, RTS GP3, CTS GP2 |
-| CDC1 | Hardware UART1 | TX GP4, RX GP5, RTS GP7, CTS GP6 |
-| CDC2 | PIO UART | TX GP8, RX GP9, RTS GP10, CTS GP11 |
-| CDC3 | PIO UART | TX GP12, RX GP13, RTS GP14, CTS GP15 |
-| CDC4 | PIO UART | TX GP16, RX GP17, RTS GP18, CTS GP19 |
-| CDC5 | PIO UART | TX GP20, RX GP21, RTS GP22, CTS GP26 |
+| CDC0 | Hardware UART0 | TX GP0, RX GP1; RTS GP3 / CTS GP2 reserved (FC off by default) |
+| CDC1 | Hardware UART1 | TX GP4, RX GP5; RTS GP7 / CTS GP6 reserved (FC off by default) |
+| CDC2 | PIO UART | TX GP8, RX GP9; RTS GP10 / CTS GP11 docs-reserved only (not GPIO-owned) |
+| CDC3 | PIO UART | TX GP12, RX GP13; RTS GP14 / CTS GP15 docs-reserved only (not GPIO-owned) |
+| CDC4 | PIO UART | TX GP16, RX GP17; RTS GP18 / CTS GP19 docs-reserved only (not GPIO-owned) |
+| CDC5 | PIO UART | TX GP20, RX GP21; RTS GP22 / CTS GP26 docs-reserved only (not GPIO-owned) |
 
 ## Data Flow
 

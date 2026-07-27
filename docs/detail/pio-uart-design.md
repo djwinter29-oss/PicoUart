@@ -107,9 +107,11 @@ Before reconfiguring a PIO UART backend, core 1:
   the TX state machine has not re-asserted `TXSTALL` after a write-clear (last frame still shifting), or the RX FIFO is not empty
 - restarts RX DMA after a successful baud apply (or after a deferred attempt rolls back)
 
-When stopping RX DMA for baud reconfig, firmware clears channel EN (pause), briefly settles,
-publishes ring progress, then aborts. It must not wait on DMA `BUSY` after clearing EN —
-paused channels keep `BUSY` high until `CHAN_ABORT`.
+When stopping RX DMA for baud reconfig, firmware clears channel EN (pause), waits
+until `TRANS_COUNT` is stable (so an in-flight beat is counted), publishes ring
+progress, then aborts. It must not wait on DMA `BUSY` after clearing EN —
+paused channels keep `BUSY` high until `CHAN_ABORT`. Publish stays before abort
+because abort does not promise a usable `TRANS_COUNT` on every target.
 
 The RX line level is part of the mandatory baud-change gate for shipped PIO ports
 (`PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH` combined with RX pull-up). This

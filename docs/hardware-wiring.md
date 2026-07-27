@@ -25,13 +25,12 @@ PIO flow control lands.
 
 ## Target Side
 
-Each UART channel should expose:
+Each UART channel should expose TX, RX, and GND for bring-up.
 
-- TX
-- RX
-- RTS
-- CTS
-- GND
+- Hardware UART0/UART1: RTS/CTS are optional and only needed when
+  `hardware_flow_control` is enabled in firmware and the peer supports FC.
+- PIO UART: RTS/CTS numbers in the pin tables are **docs-reserved only** (not
+  GPIO-owned by firmware).
 
 Hardware UART bring-up requires TX, RX, and GND. RTS/CTS stay disabled in
 firmware by default; cross-connect them only when validating explicit hardware
