@@ -50,8 +50,10 @@ feature report 3. USB `bcdDevice` advertises major.minor only (for example
 tag `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
 
 `reset` sends HID arm (`3`) then reset (`2`) within the firmware arm window
-(2 s). The board reboots through the watchdog and disconnects its USB
-interfaces, then enumerates again after firmware startup completes.
+(2 s). Remote reset is **disabled by default** in firmware
+(`PICO_UART_ALLOW_HID_RESET=0`); build with `-DPICO_UART_ALLOW_HID_RESET=1` for
+the command to reboot the board. Otherwise the host tool still sends the
+commands, but firmware ignores reset.
 
 The tool selects the HID collection with vendor usage page `0xFF00`, usage
 `0x0001`; this avoids confusing the HID interface with any CDC ports.

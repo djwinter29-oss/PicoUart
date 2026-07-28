@@ -7,6 +7,9 @@
 #include "uart/control_pending.h"
 #include "usb/cdc_soft_pending.h"
 
+/** @brief Stand-in for UART_DRIVER_PORT_STATUS_CONTROL_ERROR in host tests. */
+#define TEST_CONTROL_ERROR_BIT 0x4u
+
 void setUp(void)
 {
 }
@@ -21,12 +24,6 @@ void test_deadline_set_only_on_first_arm(void)
     TEST_ASSERT_FALSE(usb_cdc_soft_pending_should_set_deadline(true));
 }
 
-void test_preserve_prior_soft_pending_on_reject(void)
-{
-    TEST_ASSERT_TRUE(usb_cdc_soft_pending_preserve_on_reject(true));
-    TEST_ASSERT_FALSE(usb_cdc_soft_pending_preserve_on_reject(false));
-}
-
 void test_worker_completion_keeps_newer_control_pending_owner(void)
 {
     TEST_ASSERT_FALSE(uart_control_pending_should_clear(true, false));
@@ -34,23 +31,40 @@ void test_worker_completion_keeps_newer_control_pending_owner(void)
     TEST_ASSERT_TRUE(uart_control_pending_should_clear(false, false));
 }
 
-void test_soft_pending_completion_uses_original_request_generation(void)
+void test_rejected_follow_up_invalidates_prior_soft_pending_completion(void)
 {
-    uint32_t valid_soft_pending_generation = 7u;
-    uint32_t newer_rejected_generation = 8u;
+    uint32_t soft_pending_generation = 7u;
+    uint32_t generation = soft_pending_generation;
+    uint8_t status = 0u;
 
-    TEST_ASSERT_FALSE(uart_control_completion_is_current(valid_soft_pending_generation,
-                                                          newer_rejected_generation));
-    TEST_ASSERT_TRUE(uart_control_completion_is_current(newer_rejected_generation,
-                                                         newer_rejected_generation));
+    uart_control_apply_reject_error(&generation,
+                                    &status,
+                                    TEST_CONTROL_ERROR_BIT);
+
+    TEST_ASSERT_EQUAL_UINT32(8u, generation);
+    TEST_ASSERT_EQUAL_UINT32(TEST_CONTROL_ERROR_BIT, status);
+    TEST_ASSERT_FALSE(uart_control_completion_is_current(soft_pending_generation, generation));
+
+    uart_control_apply_completion_error(&status,
+                                        TEST_CONTROL_ERROR_BIT,
+                                        soft_pending_generation,
+                                        generation,
+                                        true);
+    TEST_ASSERT_EQUAL_UINT8(TEST_CONTROL_ERROR_BIT, status);
+
+    uart_control_apply_completion_error(&status,
+                                        TEST_CONTROL_ERROR_BIT,
+                                        generation,
+                                        generation,
+                                        true);
+    TEST_ASSERT_EQUAL_UINT8(0u, status);
 }
 
 int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_deadline_set_only_on_first_arm);
-    RUN_TEST(test_preserve_prior_soft_pending_on_reject);
     RUN_TEST(test_worker_completion_keeps_newer_control_pending_owner);
-    RUN_TEST(test_soft_pending_completion_uses_original_request_generation);
+    RUN_TEST(test_rejected_follow_up_invalidates_prior_soft_pending_completion);
     return UNITY_END();
 }

@@ -10,9 +10,12 @@ The current firmware architecture reserves:
 
 This document describes the wiring model and the signals that each UART channel is expected to provide.
 
-Hardware UART0 and UART1 leave RTS and CTS disabled by default at runtime.
-PIO UART ports reserve the same signals for a future flow-control
-implementation.
+Hardware UART0 and UART1 leave RTS and CTS disabled by default at runtime
+(`hardware_flow_control = false` in `firmware/src/config/uart_board.c`). Those
+pins are listed in the board table but are **not muxed** unless flow control is
+explicitly enabled. PIO UART RTS/CTS numbers below are **docs-reserved only** —
+firmware does not claim those GPIOs today, so they may be reused carefully until
+PIO flow control lands.
 
 ## Host Side
 
@@ -22,13 +25,12 @@ implementation.
 
 ## Target Side
 
-Each UART channel should expose:
+Each UART channel should expose TX, RX, and GND for bring-up.
 
-- TX
-- RX
-- RTS
-- CTS
-- GND
+- Hardware UART0/UART1: RTS/CTS are optional and only needed when
+  `hardware_flow_control` is enabled in firmware and the peer supports FC.
+- PIO UART: RTS/CTS numbers in the pin tables are **docs-reserved only** (not
+  GPIO-owned by firmware).
 
 Hardware UART bring-up requires TX, RX, and GND. RTS/CTS stay disabled in
 firmware by default; cross-connect them only when validating explicit hardware
@@ -39,12 +41,12 @@ requires TX, RX, and GND only.
 
 | Channel | Backend | Required Signals | Notes |
 | --- | --- | --- | --- |
-| UART0 | Hardware UART | TX, RX, RTS, CTS, GND | Uses UART0 hardware pins |
-| UART1 | Hardware UART | TX, RX, RTS, CTS, GND | Uses UART1 hardware pins |
-| UART2 | PIO UART | TX, RX, RTS, CTS, GND | Uses PIO-managed GPIO block |
-| UART3 | PIO UART | TX, RX, RTS, CTS, GND | Uses PIO-managed GPIO block |
-| UART4 | PIO UART | TX, RX, RTS, CTS, GND | Uses PIO-managed GPIO block |
-| UART5 | PIO UART | TX, RX, RTS, CTS, GND | Uses split GPIO block because GP23-GP25 are not header-accessible on Pico |
+| UART0 | Hardware UART | TX, RX, GND (RTS/CTS optional) | HW FC off by default; RTS/CTS only when enabled |
+| UART1 | Hardware UART | TX, RX, GND (RTS/CTS optional) | HW FC off by default; RTS/CTS only when enabled |
+| UART2 | PIO UART | TX, RX, GND | RTS/CTS docs-reserved only (not GPIO-owned) |
+| UART3 | PIO UART | TX, RX, GND | RTS/CTS docs-reserved only (not GPIO-owned) |
+| UART4 | PIO UART | TX, RX, GND | RTS/CTS docs-reserved only (not GPIO-owned) |
+| UART5 | PIO UART | TX, RX, GND | Split GPIO block because GP23-GP25 are not header-accessible on Pico; RTS/CTS docs-reserved |
 
 ## Proposed Pico Pin Allocation
 
@@ -61,7 +63,10 @@ This allocation is intended for Pico-class boards that expose GP0-GP22 and GP26-
 
 Notes:
 
-- This uses 24 exposed GPIOs for 6 channels with RTS/CTS.
+- TX/RX columns match `firmware/src/config/uart_board.c` (source of truth).
+- RTS/CTS columns are the intended allocation. HW RTS/CTS are not claimed unless
+  `hardware_flow_control` is enabled; PIO RTS/CTS are documentation reservations
+  only (not GPIO-owned by firmware).
 - GP27 and GP28 remain free for future use.
 - GP23 and GP24 are not used because they are not generally available on standard Pico headers.
 - GP25 is reserved for the selected board's default LED when `PICO_DEFAULT_LED_PIN` is defined.
@@ -84,9 +89,9 @@ without an external UART peer (UART0 still needs the Debug Probe peer):
 
 | Test | Temporary wiring |
 | --- | --- |
-| UART1 loopback | GP4 to GP5 |
+| UART1 loopback (optional) | GP4 to GP5 |
 | UART2 to UART3 cross-connection | GP8 to GP13; GP12 to GP9 |
-| UART4 loopback | GP16 to GP17 |
+| UART4 loopback (optional) | GP16 to GP17 |
 | UART5 loopback | GP20 to GP21 |
 
 Remove this temporary wiring before attaching an external target. See

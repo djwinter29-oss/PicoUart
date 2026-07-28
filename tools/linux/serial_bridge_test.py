@@ -164,7 +164,7 @@ def parse_arguments() -> argparse.Namespace:
         "--settle-seconds",
         type=float,
         default=0.05,
-        help="Wait after opening and configuring ports before sending a marker",
+        help="Wait after opening and configuring ports before sending a marker or flood",
     )
     parser.add_argument(
         "--flood-seconds",
@@ -194,7 +194,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
 
         if arguments.loopback:
             pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
-            time.sleep(0.05)
+            time.sleep(arguments.settle_seconds)
             print(
                 f"Flooding {arguments.label} loopback at {baud_rate} baud "
                 f"for {arguments.flood_seconds:.1f}s"
@@ -215,7 +215,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
                     f"for {arguments.flood_seconds:.1f}s "
                     f"(pico CDC open deferred {hold:.1f}s)"
                 )
-                time.sleep(0.05)
+                time.sleep(arguments.settle_seconds)
                 held_written, _ = run_flood(
                     peer_fd,
                     None,
@@ -228,6 +228,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
                 expect_drain = remaining > 0.0
                 if expect_drain:
                     pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
+                    time.sleep(arguments.settle_seconds)
                     more_written, drained = run_flood(
                         peer_fd,
                         pico_fd,
@@ -238,7 +239,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
                     written += more_written
             else:
                 pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
-                time.sleep(0.05)
+                time.sleep(arguments.settle_seconds)
                 print(
                     f"Flooding {arguments.label} peer→pico at {baud_rate} baud "
                     f"for {arguments.flood_seconds:.1f}s"

@@ -104,8 +104,18 @@ Before reconfiguring a PIO UART backend, core 1:
 - aborts the port's RX DMA channel before pausing the state machines
 - harvests TX DMA completion if one just finished
 - retries on later worker sweeps while TX DMA is still active, TX ring data remains, the TX FIFO is not empty,
-  the TX state machine has not stalled on `pull` (TXSTALL — last frame still shifting), or the RX FIFO is not empty
+  the TX state machine has not re-asserted `TXSTALL` after a write-clear (last frame still shifting), or the RX FIFO is not empty
 - restarts RX DMA after a successful baud apply (or after a deferred attempt rolls back)
+
+When stopping RX DMA for baud reconfig, firmware clears channel EN (pause), waits
+with a real-time floor until `TRANS_COUNT` is stable (so an in-flight beat is
+counted), publishes ring progress, then aborts. It must not wait on DMA `BUSY`
+after clearing EN — paused channels keep `BUSY` high until `CHAN_ABORT`. Publish
+stays before abort because abort does not promise a usable `TRANS_COUNT` on every
+target.
+
+TX idle for baud apply uses sticky `TXSTALL` write-clear then re-assert, waiting up
+to a few PIO cycles derived from the current baud (not a fixed CPU-iteration poll).
 
 The RX line level is part of the mandatory baud-change gate for shipped PIO ports
 (`PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH` combined with RX pull-up). This
@@ -119,7 +129,9 @@ worker loop responsive while the port drains toward a safe reconfiguration point
 
 - 8N1 only
 - no parity handling
-- no RTS/CTS runtime behavior (pins reserved; hardware UART0/UART1 own RTS/CTS)
+- no RTS/CTS runtime behavior (pins are **docs-reserved only**, not claimed by
+  firmware; hardware UART0/UART1 keep RTS/CTS pin numbers in `uart_board.c` with
+  runtime flow control disabled by default)
 - TX DMA thresholds are configurable per port but still use static defaults rather than adaptive tuning
 - TX fairness across the 4 PIO ports is improved by worker-loop round-robin polling, but still lacks an explicit scheduler
 - per-launch TX DMA size is a fixed bound today, not adaptive to live peer pressure

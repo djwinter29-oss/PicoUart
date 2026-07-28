@@ -87,3 +87,55 @@ def firmware_hid_report_count(repo_root: Path, report_id: int) -> int:
 def firmware_hid_status_report_count(repo_root: Path) -> int:
     """Parse Report Count for HID input report ID 1 from usb_descriptors.c."""
     return firmware_hid_report_count(repo_root, 1)
+
+
+def firmware_hid_reset_default_enabled(repo_root: Path) -> bool:
+    """Return whether HID reset is enabled by the default #define in usb_hid.c."""
+    text = (repo_root / "firmware" / "src" / "usb" / "usb_hid.c").read_text(encoding="utf-8")
+    match = re.search(
+        r"#ifndef\s+PICO_UART_ALLOW_HID_RESET\s*\n\s*#define\s+PICO_UART_ALLOW_HID_RESET\s+(\d+)",
+        text,
+    )
+    if not match:
+        raise ValueError("PICO_UART_ALLOW_HID_RESET default not found")
+    return int(match.group(1)) != 0
+
+
+def firmware_uart_board_ports(repo_root: Path) -> list[dict[str, object]]:
+    """Parse TX/RX pins and HW flow-control defaults from uart_board.c."""
+    text = (repo_root / "firmware" / "src" / "config" / "uart_board.c").read_text(
+        encoding="utf-8"
+    )
+    ports: list[dict[str, object]] = []
+    for match in re.finditer(
+        r"\.info\s*=\s*\{(UART_PORT_\d+)\s*,\s*(UART_DRIVER_BACKEND_\w+)\s*,"
+        r"\s*PICO_UART_BOARD_DEFAULT_BAUD_RATE\s*,\s*(\d+)u\s*,\s*(\d+)u\}"
+        r"(.*?)\n\s*\},",
+        text,
+        flags=re.DOTALL,
+    ):
+        port_name, backend, tx_pin, rx_pin, body = match.groups()
+        entry: dict[str, object] = {
+            "id": port_name,
+            "backend": backend,
+            "tx_pin": int(tx_pin),
+            "rx_pin": int(rx_pin),
+        }
+        if backend == "UART_DRIVER_BACKEND_HW":
+            hw = re.search(
+                r"\.backend\.hw\s*=\s*\{[^;]*?"
+                r"(\d+)u\s*,\s*(\d+)u\s*,\s*(\d+)u\s*,\s*(\d+)u\s*,\s*(true|false)",
+                body,
+                flags=re.DOTALL,
+            )
+            if not hw:
+                raise ValueError(f"HW backend fields not found for {port_name}")
+            if int(hw.group(1)) != entry["tx_pin"] or int(hw.group(2)) != entry["rx_pin"]:
+                raise ValueError(f"HW TX/RX mismatch for {port_name}")
+            entry["cts_pin"] = int(hw.group(3))
+            entry["rts_pin"] = int(hw.group(4))
+            entry["hardware_flow_control"] = hw.group(5) == "true"
+        ports.append(entry)
+    if len(ports) != 6:
+        raise ValueError(f"expected 6 uart_board ports, found {len(ports)}")
+    return ports

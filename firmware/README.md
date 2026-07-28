@@ -101,8 +101,8 @@ requirement applies.
   PIO TX fills the joined FIFO for short queues and lazily claims DMA only when
   deeper backlog makes it worthwhile.
 - Hardware UART ports accept supported baud/data/parity/stop updates and leave
-  RTS/CTS disabled by default; PIO UART ports remain 8N1-only with reserved
-  RTS/CTS pins.
+  RTS/CTS disabled by default; PIO UART ports remain 8N1-only with docs-reserved
+  RTS/CTS pins (not GPIO-owned).
 - PIO UART line-coding changes are deferred on the worker core until the port reaches a safe idle point, to avoid discarding queued traffic.
 - PIO UART RX validates stop bits and counts framing errors (see `docs/detail/pio-uart-design.md`).
 - CDC line-coding rejects are visible through HID `CONTROL_ERROR` because TinyUSB accepts `SET_LINE_CODING` before firmware validation (`docs/hid-monitor.md`).

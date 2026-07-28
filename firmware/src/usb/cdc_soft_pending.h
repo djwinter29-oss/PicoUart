@@ -19,14 +19,4 @@ static inline bool usb_cdc_soft_pending_should_set_deadline(bool was_pending)
     return !was_pending;
 }
 
-/**
- * @brief Decide whether an invalid new SET_LINE_CODING may drop prior soft-pending.
- * @param soft_pending_armed True when a prior valid request is still soft-pending.
- * @return `true` when the prior request must be preserved.
- */
-static inline bool usb_cdc_soft_pending_preserve_on_reject(bool soft_pending_armed)
-{
-    return soft_pending_armed;
-}
-
 #endif

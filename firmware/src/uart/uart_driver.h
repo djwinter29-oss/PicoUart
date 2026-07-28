@@ -202,15 +202,15 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
  * cannot parse or apply, so hosts can observe @ref UART_DRIVER_PORT_STATUS_CONTROL_ERROR
  * through HID even though the USB control transfer itself succeeded.
  *
- * Does **not** clear @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING. Pending is owned
- * by the soft-pending path or the worker deferred-apply path; clearing it from a
- * concurrent reject would unpause USB→UART ingress while an apply is still in flight.
+ * Advances the port control generation so a later completion from an older request
+ * cannot clear this error. Does **not** clear @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING.
  */
 void uart_driver_report_control_error(uart_port_id_t port_id);
 
 /**
  * @brief Report a CDC soft-pending failure without racing worker-owned control state.
  * @param port_id Logical port identifier.
+ * @param control_generation Generation of the soft-pending request that failed.
  *
  * Sets @ref UART_DRIVER_PORT_STATUS_CONTROL_ERROR and clears
  * @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING only when the worker has not

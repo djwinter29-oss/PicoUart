@@ -27,12 +27,12 @@ This means the codebase is already at the multi-port bridge stage, not the earli
 
 | USB CDC | UART Type | Notes |
 | --- | --- | --- |
-| CDC0 | Hardware UART0 | TX GP0, RX GP1, RTS GP3, CTS GP2 |
-| CDC1 | Hardware UART1 | TX GP4, RX GP5, RTS GP7, CTS GP6 |
-| CDC2 | PIO UART | TX GP8, RX GP9, RTS GP10, CTS GP11 |
-| CDC3 | PIO UART | TX GP12, RX GP13, RTS GP14, CTS GP15 |
-| CDC4 | PIO UART | TX GP16, RX GP17, RTS GP18, CTS GP19 |
-| CDC5 | PIO UART | TX GP20, RX GP21, RTS GP22, CTS GP26 |
+| CDC0 | Hardware UART0 | TX GP0, RX GP1; RTS GP3 / CTS GP2 reserved (FC off by default) |
+| CDC1 | Hardware UART1 | TX GP4, RX GP5; RTS GP7 / CTS GP6 reserved (FC off by default) |
+| CDC2 | PIO UART | TX GP8, RX GP9; RTS GP10 / CTS GP11 docs-reserved only (not GPIO-owned) |
+| CDC3 | PIO UART | TX GP12, RX GP13; RTS GP14 / CTS GP15 docs-reserved only (not GPIO-owned) |
+| CDC4 | PIO UART | TX GP16, RX GP17; RTS GP18 / CTS GP19 docs-reserved only (not GPIO-owned) |
+| CDC5 | PIO UART | TX GP20, RX GP21; RTS GP22 / CTS GP26 docs-reserved only (not GPIO-owned) |
 
 ## Data Flow
 
@@ -87,10 +87,11 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   clock divider cannot represent (fail-fast, no 1 s pending window).
 - Hardware UART RX DMA re-arms from a DMA IRQ when the transfer counter exhausts; the
   worker poll path is a safety net. Line-format restarts continue DMA at the live ring
-  producer index after publishing all bytes accepted before DMA stops. Peers that ignore RTS can still overrun the UART FIFO under sustained
-  flood - exercise that case in HIL before advertising flow control.
-- HID reset requires arm (`3`) then reset (`2`) within 2 s, or compile with
-  `PICO_UART_ALLOW_HID_RESET=0` to disable it.
+  producer index after publishing all bytes accepted before DMA stops. With HW FC off
+  (default), a sustained peer flood can still overrun the UART FIFO / ring — exercise
+  that case in HIL before advertising flow control.
+- HID reset is **disabled by default**. Compile with `-DPICO_UART_ALLOW_HID_RESET=1`
+  to enable arm (`3`) then reset (`2`) within 2 s.
 
 ## Open Items
 

@@ -51,9 +51,10 @@
 /**
  * @brief HID command value that resets the board after a prior arm command.
  *
- * Compile with `-DPICO_UART_ALLOW_HID_RESET=0` to disable remote reset entirely
- * on shared hosts. When enabled, @ref USB_HID_COMMAND_ARM_RESET must be sent
- * first and @ref USB_HID_COMMAND_RESET_BOARD must follow within
+ * Remote reset is **disabled by default** (`PICO_UART_ALLOW_HID_RESET` is 0).
+ * Compile with `-DPICO_UART_ALLOW_HID_RESET=1` to enable it on trusted hosts.
+ * When enabled, @ref USB_HID_COMMAND_ARM_RESET must be sent first and
+ * @ref USB_HID_COMMAND_RESET_BOARD must follow within
  * @ref USB_HID_RESET_ARM_WINDOW_MS.
  */
 #define USB_HID_COMMAND_RESET_BOARD 2u
