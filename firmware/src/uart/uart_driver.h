@@ -208,17 +208,6 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
 void uart_driver_report_control_error(uart_port_id_t port_id);
 
 /**
- * @brief Set @ref UART_DRIVER_PORT_STATUS_CONTROL_ERROR without invalidating the
- * current soft-pending / mailbox generation.
- * @param port_id Logical port identifier.
- *
- * Use when rejecting a new SET_LINE_CODING while a prior valid request is still
- * soft-pending, so a later successful apply of that request can still clear error.
- * Status may briefly show CONTROL_ERROR | CONTROL_PENDING until that apply completes.
- */
-void uart_driver_note_control_error(uart_port_id_t port_id);
-
-/**
  * @brief Report a CDC soft-pending failure without racing worker-owned control state.
  * @param port_id Logical port identifier.
  * @param control_generation Generation of the soft-pending request that failed.

@@ -76,17 +76,11 @@ static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_
 static void usb_cdc_reject_line_coding(uint8_t itf)
 {
     /*
-     * Surface CONTROL_ERROR for the bad host request. If a prior valid soft-pending
-     * request is still armed, keep it (and CONTROL_PENDING) and do not bump the
-     * control generation so a later successful apply of that request can clear error.
-     * Hosts may briefly observe CONTROL_ERROR | CONTROL_PENDING in that window.
+     * Surface CONTROL_ERROR for the bad host request. A prior valid soft-pending
+     * request remains armed, but its completion is stale and cannot clear this
+     * newer failure.
      */
-    if (usb_cdc_reject_should_bump_generation(usb_cdc_line_coding_pending[itf].pending)) {
-        uart_driver_report_control_error((uart_port_id_t)itf);
-        return;
-    }
-
-    uart_driver_note_control_error((uart_port_id_t)itf);
+    uart_driver_report_control_error((uart_port_id_t)itf);
 }
 
 static void usb_cdc_apply_pending_line_coding(uint8_t itf)

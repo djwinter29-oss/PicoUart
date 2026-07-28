@@ -182,14 +182,11 @@ static void uart_driver_finish_worker_control(uart_port_id_t port_id,
                                           uart_driver_mailbox_has_pending_port(port_id))) {
         uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
-    if (uart_control_completion_is_current(control_generation,
-                                           uart_driver_control_generations[port_id])) {
-        if (success) {
-            uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-        } else {
-            uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-        }
-    }
+    uart_control_apply_completion_error(&uart_driver_port_status_flags[port_id],
+                                        UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                                        control_generation,
+                                        uart_driver_control_generations[port_id],
+                                        success);
     spin_unlock(uart_driver_status_lock, save);
 }
 
@@ -202,14 +199,11 @@ static void uart_driver_finish_mailbox_control(uart_port_id_t port_id,
     if (!uart_driver_soft_pending_controls[port_id]) {
         uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
-    if (uart_control_completion_is_current(control_generation,
-                                           uart_driver_control_generations[port_id])) {
-        if (success) {
-            uart_driver_port_status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-        } else {
-            uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-        }
-    }
+    uart_control_apply_completion_error(&uart_driver_port_status_flags[port_id],
+                                        UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                                        control_generation,
+                                        uart_driver_control_generations[port_id],
+                                        success);
     spin_unlock(uart_driver_status_lock, save);
 }
 
@@ -816,21 +810,9 @@ void uart_driver_report_control_error(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_status_lock);
-    uart_driver_control_generations[port_id] += 1u;
-    uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-    spin_unlock(uart_driver_status_lock, save);
-}
-
-void uart_driver_note_control_error(uart_port_id_t port_id)
-{
-    uint32_t save;
-
-    if (port_id >= UART_PORT_COUNT) {
-        return;
-    }
-
-    save = spin_lock_blocking(uart_driver_status_lock);
-    uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    uart_control_apply_reject_error(&uart_driver_control_generations[port_id],
+                                    &uart_driver_port_status_flags[port_id],
+                                    UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
     spin_unlock(uart_driver_status_lock, save);
 }
 
