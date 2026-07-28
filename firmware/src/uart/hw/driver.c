@@ -155,7 +155,6 @@ static bool hw_uart_driver_line_format_supported(uint32_t baud_rate,
  * RP2350-E5: clear channel EN before abort so the controller cannot re-trigger.
  * Use the non-triggering CTRL alias so clearing EN does not start a transfer.
  */
-static void hw_uart_driver_abort_dma_channel(uint channel);
 static void hw_uart_driver_publish_rx(hw_uart_driver_t *driver);
 
 static void hw_uart_driver_abort_dma_channel(uint channel)
@@ -419,22 +418,29 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
 
     /*
      * Mask the RX re-arm IRQ, pause the channel (clear EN), wait for a stable
-     * TRANS_COUNT sample, publish, then abort/ack before restarting.
+     * TRANS_COUNT sample, publish, then abort/ack. Re-check the RX FIFO under
+     * the lock before uart_deinit so a late byte cannot be destroyed. Keep IRQs
+     * masked through deinit to close that TOCTOU window.
      */
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
         hw_uart_driver_stop_rx_dma_for_reconfig(driver);
+        if (uart_is_readable(driver->config.instance)) {
+            hw_uart_driver_start_rx_dma(driver);
+            restore_interrupts(interrupt_status);
+            return false;
+        }
+
         hw_uart_driver_abort_dma_channel((uint)driver->tx_dma_channel);
         driver->tx_dma_bytes_in_flight = 0u;
         driver->tx_active = false;
+
+        /* Preserve unread RX bytes; restart DMA at the live producer index. */
+        driver->rx_dma_last_progress = 0u;
+        uart_deinit(driver->config.instance);
         restore_interrupts(interrupt_status);
     }
-
-    /* Preserve unread RX bytes; restart DMA at the live producer index. */
-    driver->rx_dma_last_progress = 0u;
-
-    uart_deinit(driver->config.instance);
 
     driver->config.baud_rate = baud_rate;
     driver->config.data_bits = data_bits;

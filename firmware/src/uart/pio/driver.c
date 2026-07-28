@@ -16,6 +16,7 @@
 #include "hardware/regs/pio.h"
 #include "hardware/structs/dma.h"
 #include "hardware/sync.h"
+#include "pico/time.h"
 #include "pico/platform.h"
 
 #include <stddef.h>
@@ -564,31 +565,46 @@ static bool pio_uart_driver_rx_line_idle(const pio_uart_driver_t *driver)
  *
  * TXSTALL is sticky (write-1-to-clear). Clear it, then require it to re-assert so a
  * stale stall bit cannot pass while the SM is still shifting the last frame.
+ * Re-assert is paced by the PIO clock (one cycle ≈ 1/(8·baud)), so the wait is
+ * baud-based — a fixed CPU-iteration poll is too short at ≤9600 and can clear a
+ * true idle stall forever until the 1 s control timeout.
  */
 static bool pio_uart_driver_tx_shifter_idle(pio_uart_driver_t *driver)
 {
     uint32_t mask = 1u << (PIO_FDEBUG_TXSTALL_LSB + driver->config.tx_state_machine);
     PIO pio = driver->config.pio;
+    uint32_t baud = driver->config.baud_rate;
+    uint32_t wait_us;
+    absolute_time_t deadline;
 
     if ((pio->fdebug & mask) == 0u) {
         return false;
     }
 
-    pio->fdebug = mask; /* W1C sticky stall flag */
+    if (baud == 0u) {
+        baud = 1u;
+    }
+
     /*
-     * If the SM is still stalled on an empty TX FIFO pull, TXSTALL re-asserts
-     * within a few PIO cycles. Poll with a bound so mid-frame (no re-assert)
-     * defers without spinning the worker for milliseconds. A false-negative
-     * under a very slow PIO clock only defers the baud apply to a later sweep.
+     * Wait up to three PIO cycles for TXSTALL to re-assert after W1C:
+     * ceil(3e6 / (8 * baud)) us. Floor at 2 us for high bauds / APB latency.
+     * At BAUD_MIN (50) this is 7.5 ms — acceptable for a once-per-sweep gate.
      */
-    for (uint32_t settle = 0u; settle < 64u; ++settle) {
+    wait_us = (375000u + baud - 1u) / baud;
+    if (wait_us < 2u) {
+        wait_us = 2u;
+    }
+
+    pio->fdebug = mask; /* W1C sticky stall flag */
+    deadline = make_timeout_time_us(wait_us);
+    do {
         if ((pio->fdebug & mask) != 0u) {
             return true;
         }
         tight_loop_contents();
-    }
+    } while (!time_reached(deadline));
 
-    return false;
+    return (pio->fdebug & mask) != 0u;
 }
 
 static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver)

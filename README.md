@@ -15,6 +15,7 @@ Pico platform:
 - 2 UARTs implemented with RP2040/RP2350 hardware UART peripherals
 - 4 UARTs implemented with PIO-based software UARTs
 - RTS/CTS hardware flow-control signals included in the intended channel design
+  (HW FC off by default; PIO RTS/CTS docs-reserved only / not GPIO-owned)
 
 This makes the board act like a 6-port USB serial converter while still using a low-cost
 microcontroller platform.

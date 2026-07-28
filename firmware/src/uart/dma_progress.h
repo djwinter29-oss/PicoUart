@@ -15,7 +15,7 @@
 
 #include "hardware/dma.h"
 #include "hardware/structs/dma.h"
-#include "pico/platform.h"
+#include "pico/time.h"
 
 #include <stdint.h>
 
@@ -74,24 +74,35 @@ static inline uint32_t uart_dma_rx_progress(uint channel)
  * @param channel Claimed RX DMA channel (already paused: EN cleared).
  *
  * Paused channels keep BUSY high until CHAN_ABORT, so callers must not spin on
- * BUSY. An in-flight beat may still retire and decrement TRANS_COUNT; wait for
- * consecutive identical samples before publish-before-abort so that byte is
- * included. Publish must still happen before abort: abort does not promise a
- * usable TRANS_COUNT on every target.
+ * BUSY. An in-flight beat may still retire and decrement TRANS_COUNT; wait with
+ * a real-time floor plus consecutive identical samples before publish-before-abort.
+ * Publish must still happen before abort: abort does not promise a usable
+ * TRANS_COUNT on every target. On timeout, take one final grace sample so the
+ * caller still publishes the best available count.
  */
 static inline void uart_dma_rx_wait_paused_progress_stable(uint channel)
 {
-    uint32_t last = uart_dma_rx_transfer_count_remaining(channel);
+    uint32_t last;
     uint32_t stable = 0u;
+    absolute_time_t deadline;
 
-    for (uint32_t attempt = 0u; attempt < 64u; ++attempt) {
+    /*
+     * Floor settle so a typical in-flight AHB beat can retire after EN clear
+     * before we start sampling for stability (a few core cycles is not enough).
+     */
+    busy_wait_us_32(5u);
+
+    last = uart_dma_rx_transfer_count_remaining(channel);
+    deadline = make_timeout_time_us(50u);
+
+    while (!time_reached(deadline)) {
         tight_loop_contents();
         {
             uint32_t now = uart_dma_rx_transfer_count_remaining(channel);
 
             if (now == last) {
                 stable += 1u;
-                if (stable >= 2u) {
+                if (stable >= 3u) {
                     return;
                 }
             } else {
@@ -100,6 +111,9 @@ static inline void uart_dma_rx_wait_paused_progress_stable(uint channel)
             }
         }
     }
+
+    /* Timed out while still moving: brief grace, then caller publishes. */
+    busy_wait_us_32(2u);
 }
 
 #endif

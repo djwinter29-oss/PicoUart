@@ -40,7 +40,7 @@ Implemented now:
 - hardware UART backend integration for both RX and TX ring usage
 - RX DMA producer publishing into the RX ring, with IRQ-driven transfer-count re-arm
 - TX DMA draining contiguous spans from the TX ring
-- hardware UART0/UART1 line-coding support with RTS/CTS pins reserved but disabled by default
+- hardware UART0/UART1 line-coding support with RTS/CTS pins retained but disabled by default
 - full hardware UART line-coding (baud/data/parity/stop) via deferred worker apply
 - PIO UART backend integration with DMA-backed RX and hybrid TX drain policy
 - PIO 8N1 line-coding (baud changes deferred; non-8N1 rejected with `CONTROL_ERROR`)
@@ -53,7 +53,7 @@ Implemented now:
 Not implemented yet:
 
 - HID reporting of full ring overflow **counts** (sticky overrun bit is present)
-- PIO RTS/CTS runtime flow control (pins reserved)
+- PIO RTS/CTS runtime flow control (pins docs-reserved only, not GPIO-owned)
 - Host CDC RTS acting as UART flow control
 - Clearable / resettable overrun and framing-error counters
 
