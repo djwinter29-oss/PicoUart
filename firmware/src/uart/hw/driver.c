@@ -164,20 +164,29 @@ static void hw_uart_driver_abort_dma_channel(uint channel)
 }
 
 /**
- * @brief Stop RX DMA for line-format reconfig with a stable progress sample.
+ * @brief Pause RX DMA for reconfig: mask channel IRQ, clear EN, settle TRANS_COUNT.
  *
- * Clear EN (RP2350-E5 / pause), wait until TRANS_COUNT is stable so any
- * in-flight beat is counted, publish while paused, then abort. Do not wait on
- * BUSY after clearing EN: paused channels keep BUSY high until CHAN_ABORT.
- * Publish stays before abort because abort does not promise a usable TRANS_COUNT.
+ * Settle runs with global IRQs enabled so sibling ports can still re-arm. Publish
+ * and abort happen later under a short critical section.
  */
-static void hw_uart_driver_stop_rx_dma_for_reconfig(hw_uart_driver_t *driver)
+static void hw_uart_driver_pause_rx_dma_for_reconfig(hw_uart_driver_t *driver)
 {
     uint channel = (uint)driver->rx_dma_channel;
 
     dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
     uart_dma_rx_wait_paused_progress_stable(channel);
+}
+
+/**
+ * @brief Publish paused RX progress, abort the channel, and ack its IRQ.
+ *
+ * Caller must hold IRQs disabled (or otherwise exclude concurrent re-arm).
+ */
+static void hw_uart_driver_finish_rx_dma_stop_locked(hw_uart_driver_t *driver)
+{
+    uint channel = (uint)driver->rx_dma_channel;
+
     hw_uart_driver_publish_rx(driver);
     dma_channel_abort(channel);
     dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
@@ -417,15 +426,15 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
     }
 
     /*
-     * Mask the RX re-arm IRQ, pause the channel (clear EN), wait for a stable
-     * TRANS_COUNT sample, publish, then abort/ack. Re-check the RX FIFO under
-     * the lock before uart_deinit so a late byte cannot be destroyed. Keep IRQs
-     * masked through deinit to close that TOCTOU window.
+     * Pause + settle with global IRQs enabled (this channel's re-arm IRQ is
+     * masked). Then take a short critical section for publish/abort, RX FIFO
+     * re-check, TX abort, and uart_deinit.
      */
+    hw_uart_driver_pause_rx_dma_for_reconfig(driver);
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
-        hw_uart_driver_stop_rx_dma_for_reconfig(driver);
+        hw_uart_driver_finish_rx_dma_stop_locked(driver);
         if (uart_is_readable(driver->config.instance)) {
             hw_uart_driver_start_rx_dma(driver);
             restore_interrupts(interrupt_status);
