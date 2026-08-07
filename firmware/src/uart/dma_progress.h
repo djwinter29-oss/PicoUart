@@ -79,6 +79,9 @@ static inline uint32_t uart_dma_rx_progress(uint channel)
  * Publish must still happen before abort: abort does not promise a usable
  * TRANS_COUNT on every target. On timeout, take one final grace sample so the
  * caller still publishes the best available count.
+ *
+ * Call with global IRQs enabled when possible: per-channel IRQ masking already
+ * stops this channel's re-arm; settling under CPSID stalls sibling port IRQs.
  */
 static inline void uart_dma_rx_wait_paused_progress_stable(uint channel)
 {
@@ -86,34 +89,22 @@ static inline void uart_dma_rx_wait_paused_progress_stable(uint channel)
     uint32_t stable = 0u;
     absolute_time_t deadline;
 
-    /*
-     * Floor settle so a typical in-flight AHB beat can retire after EN clear
-     * before we start sampling for stability (a few core cycles is not enough).
-     */
-    busy_wait_us_32(5u);
+    busy_wait_us_32(UART_DMA_RX_PAUSE_SETTLE_FLOOR_US);
 
     last = uart_dma_rx_transfer_count_remaining(channel);
-    deadline = make_timeout_time_us(50u);
+    deadline = make_timeout_time_us(UART_DMA_RX_PAUSE_SETTLE_TIMEOUT_US);
 
     while (!time_reached(deadline)) {
         tight_loop_contents();
-        {
-            uint32_t now = uart_dma_rx_transfer_count_remaining(channel);
-
-            if (now == last) {
-                stable += 1u;
-                if (stable >= 3u) {
-                    return;
-                }
-            } else {
-                last = now;
-                stable = 0u;
-            }
+        if (uart_dma_rx_paused_progress_sample(uart_dma_rx_transfer_count_remaining(channel),
+                                               &last,
+                                               &stable,
+                                               UART_DMA_RX_PAUSE_STABLE_SAMPLES)) {
+            return;
         }
     }
 
-    /* Timed out while still moving: brief grace, then caller publishes. */
-    busy_wait_us_32(2u);
+    busy_wait_us_32(UART_DMA_RX_PAUSE_SETTLE_GRACE_US);
 }
 
 #endif

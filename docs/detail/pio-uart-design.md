@@ -101,7 +101,9 @@ Before reconfiguring a PIO UART backend, core 1:
 
 - pauses new USB-to-UART writes for that port through the shared control-pending state
 - drains any pending RX bytes into the RX ring (publish RX DMA progress)
-- aborts the port's RX DMA channel before pausing the state machines
+- pauses the port's RX DMA channel (clear EN), waits for a stable `TRANS_COUNT`
+  with global IRQs enabled, then publishes and aborts under a short critical section
+  before pausing the state machines
 - harvests TX DMA completion if one just finished
 - retries on later worker sweeps while TX DMA is still active, TX ring data remains, the TX FIFO is not empty,
   the TX state machine has not re-asserted `TXSTALL` after a write-clear (last frame still shifting), or the RX FIFO is not empty
@@ -109,10 +111,11 @@ Before reconfiguring a PIO UART backend, core 1:
 
 When stopping RX DMA for baud reconfig, firmware clears channel EN (pause), waits
 with a real-time floor until `TRANS_COUNT` is stable (so an in-flight beat is
-counted), publishes ring progress, then aborts. It must not wait on DMA `BUSY`
-after clearing EN — paused channels keep `BUSY` high until `CHAN_ABORT`. Publish
-stays before abort because abort does not promise a usable `TRANS_COUNT` on every
-target.
+counted) **without** holding global IRQs disabled, then publishes ring progress and
+aborts under a short critical section that also pauses the state machines and
+re-checks FIFOs. It must not wait on DMA `BUSY` after clearing EN — paused channels
+keep `BUSY` high until `CHAN_ABORT`. Publish stays before abort because abort does
+not promise a usable `TRANS_COUNT` on every target.
 
 TX idle for baud apply uses sticky `TXSTALL` write-clear then re-assert, waiting up
 to a few PIO cycles derived from the current baud (not a fixed CPU-iteration poll).

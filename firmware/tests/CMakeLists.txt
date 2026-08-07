@@ -47,6 +47,15 @@ target_include_directories(test_dma_progress PRIVATE
 target_link_libraries(test_dma_progress PRIVATE unity)
 add_test(NAME dma_progress COMMAND test_dma_progress)
 
+add_executable(test_txstall_wait
+    test_txstall_wait.c
+)
+target_include_directories(test_txstall_wait PRIVATE
+    ${FIRMWARE_ROOT}/src
+)
+target_link_libraries(test_txstall_wait PRIVATE unity)
+add_test(NAME txstall_wait COMMAND test_txstall_wait)
+
 add_executable(test_cdc_soft_pending
     test_cdc_soft_pending.c
 )

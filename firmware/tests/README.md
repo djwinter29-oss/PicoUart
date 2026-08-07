@@ -7,7 +7,8 @@
 | `firmware/tests/` | Native C unit tests (Unity + CMake/CTest) for firmware logic |
 | `firmware/tests/test_ring_buffer.c` | Ring-buffer occupancy, wrap, overwrite recovery |
 | `firmware/tests/test_line_coding.c` | USB CDC line-coding parse table, baud bounds, PIO 8N1 gate |
-| `firmware/tests/test_dma_progress.c` | RX DMA progress wrap + RP2040/RP2350 COUNT mask math |
+| `firmware/tests/test_dma_progress.c` | RX DMA progress wrap, COUNT mask math, pause-settle sample policy |
+| `firmware/tests/test_txstall_wait.c` | PIO TXSTALL re-assert wait microseconds vs baud |
 | `firmware/tests/test_cdc_soft_pending.c` | Soft-pending deadline coalesce, reject generation bump policy, CONTROL_PENDING ownership |
 | `firmware/tests/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |
 | `firmware/tests/third_party/unity/` | Vendored [Unity](https://github.com/ThrowTheSwitch/Unity) v2.6.0 |
