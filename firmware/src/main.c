@@ -23,7 +23,9 @@ int main(void)
     while (true) {
         usb_cdc_poll();
         usb_hid_poll();
-        system_watchdog_update();
+        if (uart_driver_worker_heartbeat_is_fresh()) {
+            system_watchdog_update();
+        }
         tight_loop_contents();
     }
 }

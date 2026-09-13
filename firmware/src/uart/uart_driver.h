@@ -242,6 +242,12 @@ uint8_t uart_driver_port_status(uart_port_id_t port_id);
 bool uart_driver_worker_is_running(void);
 
 /**
+ * @brief Return whether the UART worker core is still publishing heartbeats.
+ * @return `true` when the worker counter advanced within the stale window.
+ */
+bool uart_driver_worker_heartbeat_is_fresh(void);
+
+/**
  * @brief Return public metadata for one logical UART port.
  * @param port_id Logical port identifier.
  * @return Pointer to port metadata, or `NULL` when the index is invalid.

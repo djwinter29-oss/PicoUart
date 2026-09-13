@@ -118,11 +118,9 @@ static void __isr pio_uart_driver_rx_dma_irq_handler(void)
     for (uint channel = 0u; channel < NUM_DMA_CHANNELS; ++channel) {
         pio_uart_driver_t *driver = pio_uart_driver_rx_irq_owners[channel];
 
-        if (driver == NULL) {
-            continue;
-        }
-
-        if (!dma_irqn_get_channel_status(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel)) {
+        if (!uart_dma_irq_should_service_owner(
+                driver != NULL,
+                dma_irqn_get_channel_status(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel))) {
             continue;
         }
 

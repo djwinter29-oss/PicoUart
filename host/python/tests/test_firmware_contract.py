@@ -10,6 +10,7 @@ from contract import (
     firmware_hid_status_report_count,
     firmware_uart_board_ports,
     firmware_usb_ids,
+    firmware_usb_product_string,
     is_lab_placeholder_identity,
 )
 
@@ -82,6 +83,12 @@ def test_usb_identity_gate_script_matches_tree_identity(repo_root):
     else:
         assert blocked.returncode == 0
         assert allowed.returncode == 0
+
+
+def test_usb_product_string_advertises_pio_8n1(repo_root):
+    product = firmware_usb_product_string(repo_root)
+    assert product == "PicoUart CDC+HID PIO 8N1"
+    assert len(product) <= 32
 
 
 def test_cdc_interface_strings_advertise_hw_and_pio_8n1(repo_root):

@@ -75,7 +75,7 @@ jobs:
           " "$BIN"
           strings "$BIN" | grep -Fqx "CDC0 HW"
           strings "$BIN" | grep -Fqx "CDC5 PIO 8N1"
-          strings "$BIN" | grep -Fqx "PicoUart USB CDC + HID"
+          strings "$BIN" | grep -Fqx "PicoUart CDC+HID PIO 8N1"
           # Default CMake version stamp when --firmware-version is not passed
           strings "$BIN" | grep -Fqx "0.0.0-dev"
 

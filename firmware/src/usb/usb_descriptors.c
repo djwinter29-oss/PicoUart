@@ -29,8 +29,10 @@ _Static_assert(USB_CDC_COUNT == UART_PORT_COUNT,
 
 /** @brief Manufacturer string exposed in the USB string table. */
 #define USB_STR_MANUFACTURER "PicoUart"
-/** @brief Product string exposed in the USB string table. */
-#define USB_STR_PRODUCT "PicoUart USB CDC + HID"
+/** @brief Product string exposed in the USB string table (UTF-16, max 32 chars). */
+#define USB_STR_PRODUCT "PicoUart CDC+HID PIO 8N1"
+_Static_assert((sizeof(USB_STR_PRODUCT) - 1u) <= 32u,
+               "USB product string must fit one TinyUSB string descriptor");
 
 /** @brief USB interface numbering used inside the configuration descriptor. */
 typedef enum {

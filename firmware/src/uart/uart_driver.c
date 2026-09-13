@@ -6,6 +6,7 @@
 #include "uart/uart_driver.h"
 
 #include "config/uart_board.h"
+#include "uart/backend_policy.h"
 #include "uart/control_pending.h"
 #include "uart/hw/driver.h"
 #include "uart/line_coding.h"
@@ -78,6 +79,8 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT];
 static uart_driver_mailbox_t uart_driver_mailbox;
 /** @brief True after the dedicated UART worker core has been launched. */
 static bool uart_driver_worker_started;
+/** @brief Worker-loop counter published for core-0 watchdog gating. */
+static volatile uint32_t uart_driver_worker_heartbeat;
 /** @brief Per-port status flags for monitoring and HID reporting. */
 static volatile uint8_t uart_driver_port_status_flags[UART_PORT_COUNT];
 /** @brief Cross-core lock protecting @ref uart_driver_port_status_flags. */
@@ -248,6 +251,8 @@ static void uart_driver_worker_core_main(void)
         uart_driver_poll_backends();
         uart_driver_poll_hardware();
         uart_driver_poll_pio();
+        uart_driver_worker_heartbeat += 1u;
+        __dmb();
         tight_loop_contents();
     }
 }
@@ -504,6 +509,7 @@ bool uart_driver_init(void)
         uart_driver_mailbox.result_port_id = UART_PORT_COUNT;
         uart_driver_mailbox.result_status = UART_DRIVER_COMMAND_STATUS_WORKER_NOT_STARTED;
         uart_driver_poll_start_index = 0u;
+        uart_driver_worker_heartbeat = 0u;
 
         if (uart_driver_init_backends(NULL) != UART_DRIVER_COMMAND_STATUS_OK) {
             uart_driver_rollback_initialized_backends();
@@ -892,6 +898,22 @@ uint8_t uart_driver_port_status(uart_port_id_t port_id)
 bool uart_driver_worker_is_running(void)
 {
     return uart_driver_worker_started;
+}
+
+bool uart_driver_worker_heartbeat_is_fresh(void)
+{
+    static uint32_t last_heartbeat;
+    static uint32_t last_change_ms;
+    uint32_t heartbeat;
+    uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+
+    __dmb();
+    heartbeat = uart_driver_worker_heartbeat;
+    return uart_worker_heartbeat_is_fresh(heartbeat,
+                                          &last_heartbeat,
+                                          now_ms,
+                                          &last_change_ms,
+                                          UART_WORKER_HEARTBEAT_STALE_MS);
 }
 
 const uart_driver_port_info_t *uart_driver_port_info(uart_port_id_t port_id)

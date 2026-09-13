@@ -16,6 +16,21 @@ def parse_c_u_define(text: str, name: str) -> int:
     raise ValueError(f"define {name} not found")
 
 
+def firmware_usb_product_string(repo_root: Path) -> str:
+    """Parse the USB product string from usb_descriptors.c."""
+    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r'^\s*#define\s+USB_STR_PRODUCT\s+"([^"]+)"\s*$',
+        text,
+        flags=re.MULTILINE,
+    )
+    if not match:
+        raise ValueError("USB_STR_PRODUCT not found")
+    return match.group(1)
+
+
 def firmware_cdc_interface_strings(repo_root: Path) -> list[str]:
     """Parse CDC interface string literals from usb_descriptors.c."""
     text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(

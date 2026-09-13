@@ -39,7 +39,7 @@ void system_init_clock(void);
 void system_watchdog_enable(void);
 
 /**
- * @brief Pet the watchdog from the USB poll loop.
+ * @brief Pet the watchdog from the USB poll loop when the UART worker is alive.
  */
 void system_watchdog_update(void);
 

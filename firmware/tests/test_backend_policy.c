@@ -1,6 +1,6 @@
 /**
  * @file test_backend_policy.c
- * @brief Unity tests for UART backend idle, RX DMA re-arm, and PIO TX policy.
+ * @brief Unity tests for UART backend idle, DMA IRQ, PIO TX, and worker heartbeat policy.
  */
 
 #include "unity.h"
@@ -58,6 +58,59 @@ void test_pio_tx_dma_transfer_bytes_clamps_to_occupancy(void)
     TEST_ASSERT_EQUAL_UINT(0u, uart_pio_tx_dma_transfer_bytes(0u, 256u));
 }
 
+void test_dma_irq_services_only_pending_owners(void)
+{
+    TEST_ASSERT_TRUE(uart_dma_irq_should_service_owner(true, true));
+    TEST_ASSERT_FALSE(uart_dma_irq_should_service_owner(false, true));
+    TEST_ASSERT_FALSE(uart_dma_irq_should_service_owner(true, false));
+    TEST_ASSERT_FALSE(uart_dma_irq_should_service_owner(false, false));
+}
+
+void test_worker_heartbeat_fresh_on_increment(void)
+{
+    uint32_t last = 4u;
+    uint32_t last_change_ms = 100u;
+
+    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(5u, &last, 2500u, &last_change_ms,
+                                                    UART_WORKER_HEARTBEAT_STALE_MS));
+    TEST_ASSERT_EQUAL_UINT32(5u, last);
+    TEST_ASSERT_EQUAL_UINT32(2500u, last_change_ms);
+}
+
+void test_worker_heartbeat_stale_when_silent(void)
+{
+    uint32_t last = 9u;
+    uint32_t last_change_ms = 1000u;
+
+    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(9u, &last, 2999u, &last_change_ms,
+                                                    UART_WORKER_HEARTBEAT_STALE_MS));
+    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(9u, &last, 3000u, &last_change_ms,
+                                                     UART_WORKER_HEARTBEAT_STALE_MS));
+    TEST_ASSERT_EQUAL_UINT32(9u, last);
+    TEST_ASSERT_EQUAL_UINT32(1000u, last_change_ms);
+}
+
+void test_worker_heartbeat_boot_window_is_fresh(void)
+{
+    uint32_t last = 0u;
+    uint32_t last_change_ms = 0u;
+
+    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(0u, &last, 1999u, &last_change_ms,
+                                                    UART_WORKER_HEARTBEAT_STALE_MS));
+    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(0u, &last, 2000u, &last_change_ms,
+                                                     UART_WORKER_HEARTBEAT_STALE_MS));
+}
+
+void test_worker_heartbeat_rejects_null_state(void)
+{
+    uint32_t last = 0u;
+    uint32_t last_change_ms = 0u;
+
+    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(1u, NULL, 0u, &last_change_ms, 2000u));
+    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(1u, &last, 0u, NULL, 2000u));
+    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(1u, &last, 0u, &last_change_ms, 0u));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -66,5 +119,10 @@ int main(void)
     RUN_TEST(test_rx_dma_poll_rearm_only_when_countdown_exhausted);
     RUN_TEST(test_pio_tx_action_prefers_dma_above_threshold);
     RUN_TEST(test_pio_tx_dma_transfer_bytes_clamps_to_occupancy);
+    RUN_TEST(test_dma_irq_services_only_pending_owners);
+    RUN_TEST(test_worker_heartbeat_fresh_on_increment);
+    RUN_TEST(test_worker_heartbeat_stale_when_silent);
+    RUN_TEST(test_worker_heartbeat_boot_window_is_fresh);
+    RUN_TEST(test_worker_heartbeat_rejects_null_state);
     return UNITY_END();
 }
