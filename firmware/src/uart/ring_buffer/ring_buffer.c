@@ -223,13 +223,36 @@ bool ring_buffer_commit_produced(ring_buffer_t *ring, size_t count)
 
 bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count)
 {
+    uint32_t producer_now;
+
     if ((ring == NULL) ||
         (ring->consumer != ring->consumer_reserved_sequence) ||
         (count > ring->consumer_reserved_count)) {
         return false;
     }
 
+    /*
+     * Unlike the write side, a live RX producer (DMA/ISR via
+     * ring_buffer_produce_external()) keeps advancing while the consumer is
+     * still copying bytes out of the span returned by ring_buffer_read_span().
+     * If it wrapped the whole ring during that window, the storage backing
+     * the span was overwritten mid-read and the bytes the caller just copied
+     * are torn/stale. Detect that here instead of trusting them: resync the
+     * consumer past the corrupted window (mirroring
+     * ring_buffer_recover_overflow()) and reject the commit so the caller
+     * does not account the stale bytes as validly consumed.
+     */
     __dmb();
+    producer_now = ring->producer;
+    if ((producer_now - ring->consumer_reserved_sequence) > ring->size) {
+        uint32_t safe_consumer = producer_now - ring->size;
+
+        ring->overflow_count += safe_consumer - ring->consumer;
+        ring->consumer = safe_consumer;
+        ring->consumer_reserved_count = 0u;
+        return false;
+    }
+
     ring->consumer += (uint32_t)count;
     ring->consumer_reserved_count = 0u;
     return true;
