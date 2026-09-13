@@ -47,6 +47,7 @@ add_executable(pico_uart
     src/uart/line_coding.c
     src/uart/pio/driver.c
     src/uart/ring_buffer/ring_buffer.c
+    src/uart/topology.c
     src/uart/uart_driver.c
     src/usb/usb_cdc.c
     src/usb/usb_hid.c

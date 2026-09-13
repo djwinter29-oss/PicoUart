@@ -185,6 +185,13 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
                                    uint32_t control_generation);
 
 /**
+ * @brief Return whether the worker owns an active line-coding transition.
+ * @param port_id Logical UART port identifier.
+ * @return `true` while the mailbox or worker has accepted the request.
+ */
+bool uart_driver_port_tx_is_blocked(uart_port_id_t port_id);
+
+/**
  * @brief Return whether @p line_coding can ever be applied to @p port_id.
  * @param port_id Logical port identifier.
  * @param line_coding Host-requested baud/data/parity/stop configuration.

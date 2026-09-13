@@ -64,3 +64,13 @@ target_include_directories(test_cdc_soft_pending PRIVATE
 )
 target_link_libraries(test_cdc_soft_pending PRIVATE unity)
 add_test(NAME cdc_soft_pending COMMAND test_cdc_soft_pending)
+
+add_executable(test_topology
+    test_topology.c
+    ${FIRMWARE_ROOT}/src/uart/topology.c
+)
+target_include_directories(test_topology PRIVATE
+    ${FIRMWARE_ROOT}/src
+)
+target_link_libraries(test_topology PRIVATE unity)
+add_test(NAME topology COMMAND test_topology)

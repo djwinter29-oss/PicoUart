@@ -43,15 +43,6 @@ if [ -z "$GENERATOR" ]; then
     fi
 fi
 
-if [ "$SKIP_PYTHON" -eq 0 ] && ! "$PYTHON_EXE" -m pip --version >/dev/null 2>&1; then
-    if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
-        PYTHON_EXE="$REPO_ROOT/.venv/bin/python"
-    else
-        echo "Python pip is unavailable for '$PYTHON_EXE' and no repo virtualenv was found." >&2
-        exit 1
-    fi
-fi
-
 if [ "$SKIP_C" -eq 0 ]; then
     echo "=== Host C unit tests (Unity / CTest) ==="
     cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR"
@@ -60,6 +51,16 @@ if [ "$SKIP_C" -eq 0 ]; then
 fi
 
 if [ "$SKIP_PYTHON" -eq 0 ]; then
+    if ! "$PYTHON_EXE" -m pip --version >/dev/null 2>&1; then
+        if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+            PYTHON_EXE="$REPO_ROOT/.venv/bin/python"
+        else
+            echo "Python pip is unavailable for '$PYTHON_EXE' and no repo virtualenv was found." >&2
+            echo "Install python3-venv, create .venv, and rerun, or use --skip-python for C tests only." >&2
+            exit 1
+        fi
+    fi
+
     echo "=== Host Python tests (pytest) ==="
     "$PYTHON_EXE" -m pip install -q -r "$REPO_ROOT/host/python/requirements-dev.txt"
     (

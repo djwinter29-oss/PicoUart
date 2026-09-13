@@ -80,6 +80,13 @@ size_t ring_buffer_free_space(const ring_buffer_t *ring);
 ring_buffer_span_t ring_buffer_read_span(ring_buffer_t *ring);
 
 /**
+ * @brief Check whether the current readable span remains safe to consume.
+ * @param ring Ring with a readable span reservation.
+ * @return `true` when the reservation is current and has not been overwritten.
+ */
+bool ring_buffer_read_span_is_current(const ring_buffer_t *ring);
+
+/**
  * @brief Return the next contiguous writable span in the ring.
  * @param ring Ring to inspect.
  * @return Writable contiguous span.

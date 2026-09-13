@@ -173,6 +173,38 @@ void test_commit_consumed_rejects_span_overwritten_during_read(void)
     TEST_ASSERT_TRUE(ring_buffer_commit_consumed(&ring, span.length));
 }
 
+void test_read_span_current_rejects_overwrite_before_writer(void)
+{
+    ring_buffer_t ring;
+    uint8_t storage[4];
+    ring_buffer_span_t span;
+
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    TEST_ASSERT_EQUAL_UINT(4u, ring_buffer_write(&ring, (const uint8_t *)"abcd", 4u));
+    span = ring_buffer_read_span(&ring);
+    TEST_ASSERT_TRUE(ring_buffer_read_span_is_current(&ring));
+
+    ring_buffer_produce_external(&ring, 4u);
+    TEST_ASSERT_FALSE(ring_buffer_read_span_is_current(&ring));
+}
+
+void test_read_span_current_allows_partial_producer_advance(void)
+{
+    ring_buffer_t ring;
+    uint8_t storage[512];
+    ring_buffer_span_t span;
+
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    ring_buffer_produce_external(&ring, 300u);
+    span = ring_buffer_read_span(&ring);
+    TEST_ASSERT_EQUAL_UINT(300u, span.length);
+
+    /* A snapshot may consume only part of this span; the remainder stays queued. */
+    TEST_ASSERT_TRUE(ring_buffer_read_span_is_current(&ring));
+    TEST_ASSERT_TRUE(ring_buffer_commit_consumed(&ring, 256u));
+    TEST_ASSERT_EQUAL_UINT(44u, ring_buffer_occupancy(&ring));
+}
+
 void test_write_returns_short_count_when_full(void)
 {
     ring_buffer_t ring;
@@ -196,6 +228,36 @@ void test_producer_index_tracks_writes(void)
     TEST_ASSERT_EQUAL_UINT32(3u, ring_buffer_producer_index(&ring));
 }
 
+void test_occupancy_wraps_across_uint32_boundary(void)
+{
+    ring_buffer_t ring;
+    uint8_t storage[8];
+
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    ring.producer = UINT32_MAX - 1u;
+    ring.consumer = UINT32_MAX - 1u;
+    ring_buffer_produce_external(&ring, 3u);
+
+    TEST_ASSERT_EQUAL_UINT(3u, ring_buffer_occupancy(&ring));
+    TEST_ASSERT_EQUAL_UINT(5u, ring_buffer_free_space(&ring));
+}
+
+void test_overflow_recovery_wraps_across_uint32_boundary(void)
+{
+    ring_buffer_t ring;
+    uint8_t storage[8];
+
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    ring.producer = UINT32_MAX - 1u;
+    ring.consumer = UINT32_MAX - 1u;
+    ring_buffer_produce_external(&ring, 10u);
+
+    TEST_ASSERT_EQUAL_UINT(2u, ring_buffer_pending_overflow(&ring));
+    TEST_ASSERT_EQUAL_UINT(2u, ring_buffer_recover_overflow(&ring));
+    TEST_ASSERT_EQUAL_UINT(0u, ring_buffer_pending_overflow(&ring));
+    TEST_ASSERT_EQUAL_UINT(2u, ring_buffer_overflow_count(&ring));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -206,9 +268,13 @@ int main(void)
     RUN_TEST(test_read_span_recovers_before_returning_data);
     RUN_TEST(test_commit_rejects_oversized_counts);
     RUN_TEST(test_commit_consumed_rejects_span_overwritten_during_read);
+    RUN_TEST(test_read_span_current_rejects_overwrite_before_writer);
+    RUN_TEST(test_read_span_current_allows_partial_producer_advance);
     RUN_TEST(test_producer_advance_invalidates_prior_write_span_commit);
     RUN_TEST(test_write_returns_short_count_when_full);
     RUN_TEST(test_producer_index_tracks_writes);
+    RUN_TEST(test_occupancy_wraps_across_uint32_boundary);
+    RUN_TEST(test_overflow_recovery_wraps_across_uint32_boundary);
     RUN_TEST(test_builtin_self_check);
     return UNITY_END();
 }

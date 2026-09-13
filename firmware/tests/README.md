@@ -10,6 +10,7 @@
 | `firmware/tests/test_dma_progress.c` | RX DMA progress wrap, COUNT mask math, pause-settle sample policy |
 | `firmware/tests/test_txstall_wait.c` | PIO TXSTALL re-assert wait microseconds vs baud |
 | `firmware/tests/test_cdc_soft_pending.c` | Soft-pending deadline coalesce, reject generation bump policy, CONTROL_PENDING ownership |
+| `firmware/tests/test_topology.c` | Logical port, GPIO, UART, and PIO state-machine assignment validation |
 | `firmware/tests/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |
 | `firmware/tests/third_party/unity/` | Vendored [Unity](https://github.com/ThrowTheSwitch/Unity) v2.6.0 |
 | `host/python/src/` | HID host tool package/scripts |
@@ -23,6 +24,13 @@ arithmetic and CDC soft-pending policy helpers are covered by host Unity tests.
 
 ```sh
 tools/linux/test-host.sh
+```
+
+The native C tests run before Python dependency checks. Use `--skip-python` in
+minimal environments that do not have pip or the host-test virtual environment:
+
+```sh
+tools/linux/test-host.sh --skip-python
 ```
 
 Or via the combined script (also builds firmware unless `--skip-build`):
@@ -41,7 +49,14 @@ ctest --test-dir build/host-tests --output-on-failure
 
 ## Python tests only
 
+CI uses Python 3.12. On Debian/Ubuntu, install `python3-venv` before creating
+the repository virtual environment:
+
 ```sh
-python3 -m pip install -r host/python/requirements-dev.txt
-python3 -m pytest
+python3 -m venv .venv
+.venv/bin/python -m pip install -r host/python/requirements-dev.txt
+.venv/bin/python -m pytest
 ```
+
+Use `tools/linux/test-host.sh` after setup to run the native C and Python suites
+together.
