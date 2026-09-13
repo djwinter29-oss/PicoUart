@@ -8,6 +8,7 @@
 #include "uart.pio.h"
 #include "uart/dma_progress.h"
 #include "uart/line_coding.h"
+#include "uart/pio/txstall_wait.h"
 
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
@@ -77,20 +78,28 @@ static void pio_uart_driver_abort_dma_channel(uint channel)
 }
 
 /**
- * @brief Stop RX DMA for line-coding reconfig with a stable progress sample.
+ * @brief Pause RX DMA for reconfig: mask channel IRQ, clear EN, settle TRANS_COUNT.
  *
- * Clear EN (RP2350-E5 / pause), wait until TRANS_COUNT is stable so any
- * in-flight beat is counted, publish while paused, then abort. Do not wait on
- * BUSY after clearing EN: paused channels keep BUSY high until CHAN_ABORT.
- * Publish stays before abort because abort does not promise a usable TRANS_COUNT.
+ * Settle runs with global IRQs enabled so sibling ports can still re-arm.
  */
-static void pio_uart_driver_stop_rx_dma_for_reconfig(pio_uart_driver_t *driver)
+static void pio_uart_driver_pause_rx_dma_for_reconfig(pio_uart_driver_t *driver)
 {
     uint channel = (uint)driver->rx_dma_channel;
 
     dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
     uart_dma_rx_wait_paused_progress_stable(channel);
+}
+
+/**
+ * @brief Publish paused RX progress, abort the channel, and ack its IRQ.
+ *
+ * Caller must hold IRQs disabled (or otherwise exclude concurrent re-arm).
+ */
+static void pio_uart_driver_finish_rx_dma_stop_locked(pio_uart_driver_t *driver)
+{
+    uint channel = (uint)driver->rx_dma_channel;
+
     pio_uart_driver_publish_rx(driver);
     dma_channel_abort(channel);
     dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
@@ -573,26 +582,11 @@ static bool pio_uart_driver_tx_shifter_idle(pio_uart_driver_t *driver)
 {
     uint32_t mask = 1u << (PIO_FDEBUG_TXSTALL_LSB + driver->config.tx_state_machine);
     PIO pio = driver->config.pio;
-    uint32_t baud = driver->config.baud_rate;
-    uint32_t wait_us;
+    uint32_t wait_us = pio_uart_txstall_reassert_wait_us(driver->config.baud_rate);
     absolute_time_t deadline;
 
     if ((pio->fdebug & mask) == 0u) {
         return false;
-    }
-
-    if (baud == 0u) {
-        baud = 1u;
-    }
-
-    /*
-     * Wait up to three PIO cycles for TXSTALL to re-assert after W1C:
-     * ceil(3e6 / (8 * baud)) us. Floor at 2 us for high bauds / APB latency.
-     * At BAUD_MIN (50) this is 7.5 ms — acceptable for a once-per-sweep gate.
-     */
-    wait_us = (375000u + baud - 1u) / baud;
-    if (wait_us < 2u) {
-        wait_us = 2u;
     }
 
     pio->fdebug = mask; /* W1C sticky stall flag */
@@ -622,30 +616,41 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
         return false;
     }
 
+    /* Pause + settle with global IRQs enabled (this channel's re-arm is masked). */
+    if (driver->rx_dma_channel >= 0) {
+        pio_uart_driver_pause_rx_dma_for_reconfig(driver);
+    }
+
+    /*
+     * Short critical section: finish DMA stop, pause SMs, and re-check FIFOs /
+     * RX line before committing to the baud apply.
+     */
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
         if (driver->rx_dma_channel >= 0) {
-            pio_uart_driver_stop_rx_dma_for_reconfig(driver);
+            pio_uart_driver_finish_rx_dma_stop_locked(driver);
         }
+
+        /* Preserve unread RX bytes; restart DMA at the live producer index. */
+        driver->rx_dma_last_progress = 0u;
+
+        pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, false);
+        pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, false);
+
+        if (!pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
+            !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
+            !pio_uart_driver_rx_line_idle(driver)) {
+            pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, true);
+            pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, true);
+            if (driver->rx_dma_channel >= 0) {
+                pio_uart_driver_start_rx_dma(driver);
+            }
+            restore_interrupts(interrupt_status);
+            return false;
+        }
+
         restore_interrupts(interrupt_status);
-    }
-
-    /* Preserve unread RX bytes; restart DMA at the live producer index. */
-    driver->rx_dma_last_progress = 0u;
-
-    pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, false);
-    pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, false);
-
-    if (!pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
-        !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
-        !pio_uart_driver_rx_line_idle(driver)) {
-        pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, true);
-        pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, true);
-        if (driver->rx_dma_channel >= 0) {
-            pio_uart_driver_start_rx_dma(driver);
-        }
-        return false;
     }
 
     return true;

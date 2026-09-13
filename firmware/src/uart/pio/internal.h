@@ -26,7 +26,7 @@ struct pio_uart_driver {
     size_t tx_dma_bytes; /**< Bytes sent through the TX DMA path. */
     uint32_t controller_rx_bytes; /**< Valid received bytes published into the RX ring. */
     uint32_t rx_error_count; /**< Framing (stop-bit) errors observed since initialization. */
-    uint32_t rx_dma_last_progress; /**< Last observed RX DMA progress (0xffffffff - TRANS_COUNT). */
+    uint32_t rx_dma_last_progress; /**< Last published RX DMA progress (`max - remaining`). */
     ring_buffer_t rx_ring; /**< PIO RX producer ring shared with the USB bridge. */
     ring_buffer_t tx_ring; /**< USB-core TX producer ring drained by core-1 PIO polling. */
     /**

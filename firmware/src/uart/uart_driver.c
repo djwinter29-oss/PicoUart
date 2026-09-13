@@ -523,10 +523,11 @@ bool uart_driver_init(void)
 
 void uart_driver_poll(void)
 {
-    /* ponytail: UART live service now runs on core 1 so core 0 only owns USB.
-     * Ceiling: core-0 callers no longer advance UART state directly.
-     * Acceptable now because the dedicated worker loop polls continuously.
-     * Upgrade path: remove this shim after callers no longer reference it.
+    /*
+     * Deprecated no-op: UART live service runs on core 1. Kept so older
+     * single-core call sites compile without conditionalizing on the execution
+     * model. Prefer uart_driver_poll_hardware / uart_driver_poll_pio only from
+     * the worker core.
      */
 }
 

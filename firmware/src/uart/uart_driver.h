@@ -129,11 +129,11 @@ void uart_driver_poll_hardware(void);
 void uart_driver_poll_pio(void);
 
 /**
- * @brief Compatibility shim for older single-core call sites.
+ * @brief Deprecated no-op compatibility shim for older single-core call sites.
  *
- * The current firmware runs deferred control changes plus UART hardware and PIO
- * polling on the dedicated worker core. This function remains as a no-op so
- * existing callers do not need to conditionalize on the execution model.
+ * UART hardware/PIO polling and deferred control apply run on the dedicated
+ * worker core. This symbol remains so existing callers need not conditionalize
+ * on the execution model; it does not advance UART state.
  */
 void uart_driver_poll(void);
 

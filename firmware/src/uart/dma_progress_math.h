@@ -9,6 +9,7 @@
 #ifndef UART_DMA_PROGRESS_MATH_H
 #define UART_DMA_PROGRESS_MATH_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /** @brief Full 32-bit TRANS_COUNT countdown used on RP2040. */
@@ -60,4 +61,41 @@ static inline uint32_t uart_dma_rx_progress_from_remaining(uint32_t remaining,
     return transfer_count_max - remaining;
 }
 
+/** @brief Floor settle after clearing DMA EN before sampling TRANS_COUNT (µs). */
+#define UART_DMA_RX_PAUSE_SETTLE_FLOOR_US 5u
+/** @brief Max time to wait for consecutive identical TRANS_COUNT samples (µs). */
+#define UART_DMA_RX_PAUSE_SETTLE_TIMEOUT_US 50u
+/** @brief Extra grace sample delay when the stability timeout expires (µs). */
+#define UART_DMA_RX_PAUSE_SETTLE_GRACE_US 2u
+/** @brief Identical TRANS_COUNT samples required to treat progress as stable. */
+#define UART_DMA_RX_PAUSE_STABLE_SAMPLES 3u
+
+/**
+ * @brief Feed one TRANS_COUNT sample into the paused-progress stability tracker.
+ * @param now Latest masked remaining count.
+ * @param last In/out previous sample.
+ * @param stable_count In/out consecutive identical-sample streak.
+ * @param needed Samples required for stability (@ref UART_DMA_RX_PAUSE_STABLE_SAMPLES).
+ * @return `true` when @p needed consecutive identical samples have been seen.
+ */
+static inline bool uart_dma_rx_paused_progress_sample(uint32_t now,
+                                                     uint32_t *last,
+                                                     uint32_t *stable_count,
+                                                     uint32_t needed)
+{
+    if ((last == NULL) || (stable_count == NULL) || (needed == 0u)) {
+        return false;
+    }
+
+    if (now == *last) {
+        *stable_count += 1u;
+        return *stable_count >= needed;
+    }
+
+    *last = now;
+    *stable_count = 0u;
+    return false;
+}
+
 #endif
+
