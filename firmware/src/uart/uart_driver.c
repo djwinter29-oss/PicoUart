@@ -88,6 +88,7 @@ static volatile uint32_t uart_driver_port_stats_sequence[UART_PORT_COUNT];
 /** @brief Worker-loop port index that starts the next backend poll sweep. */
 static size_t uart_driver_poll_start_index;
 static uart_driver_command_status_t uart_driver_init_backends(uint32_t *result_port_id);
+static void uart_driver_rollback_initialized_backends(void);
 static void uart_driver_load_board_config(void);
 static void uart_driver_poll_backends(void);
 static uart_parity_t uart_driver_hw_parity(uart_driver_parity_t parity);
@@ -368,53 +369,52 @@ static uart_driver_command_status_t uart_driver_init_backends(uint32_t *result_p
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
         uart_driver_port_t *port = &uart_ports[index];
+        bool port_ok = false;
 
         if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-            if (!port->backend.hw.initialized) {
-                if (!hw_uart_driver_init(&port->backend.hw)) {
-                    init_ok = false;
-                    uart_driver_clear_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
-                    uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_INIT_FAILED);
-                    if ((result_port_id != NULL) && (*result_port_id == UART_PORT_COUNT)) {
-                        *result_port_id = (uint32_t)index;
-                    }
-                } else {
-                    uart_driver_clear_port_status_flag((uart_port_id_t)index,
-                                                       UART_DRIVER_PORT_STATUS_INIT_FAILED |
-                                                           UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
-                    uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
-                }
-            } else {
-                uart_driver_clear_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_INIT_FAILED);
-                uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
+            port_ok = port->backend.hw.initialized || hw_uart_driver_init(&port->backend.hw);
+        } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
+            port_ok = port->backend.pio.initialized || pio_uart_driver_init(&port->backend.pio);
+        }
+
+        if (!port_ok) {
+            init_ok = false;
+            uart_driver_clear_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
+            uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_INIT_FAILED);
+            if ((result_port_id != NULL) && (*result_port_id == UART_PORT_COUNT)) {
+                *result_port_id = (uint32_t)index;
             }
             continue;
         }
 
-        if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-            if (!port->backend.pio.initialized) {
-                if (!pio_uart_driver_init(&port->backend.pio)) {
-                    init_ok = false;
-                    uart_driver_clear_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
-                    uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_INIT_FAILED);
-                    if ((result_port_id != NULL) && (*result_port_id == UART_PORT_COUNT)) {
-                        *result_port_id = (uint32_t)index;
-                    }
-                } else {
-                    uart_driver_clear_port_status_flag((uart_port_id_t)index,
-                                                       UART_DRIVER_PORT_STATUS_INIT_FAILED |
-                                                           UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
-                    uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
-                }
-            } else {
-                uart_driver_clear_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_INIT_FAILED);
-                uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
-            }
-        }
+        uart_driver_clear_port_status_flag((uart_port_id_t)index,
+                                           UART_DRIVER_PORT_STATUS_INIT_FAILED |
+                                               UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+        uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
     }
 
     return init_ok ? UART_DRIVER_COMMAND_STATUS_OK : UART_DRIVER_COMMAND_STATUS_INIT_FAILED;
 }
+
+static void uart_driver_rollback_initialized_backends(void)
+{
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        uart_driver_port_t *port = &uart_ports[index];
+
+        if (port->info.backend == UART_DRIVER_BACKEND_HW) {
+            if (port->backend.hw.initialized) {
+                hw_uart_driver_deinit(&port->backend.hw);
+            }
+        } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
+            if (port->backend.pio.initialized) {
+                pio_uart_driver_deinit(&port->backend.pio);
+            }
+        }
+
+        uart_driver_port_status_flags[index] = 0u;
+    }
+}
+
 
 static void uart_driver_poll_backends(void)
 {
@@ -511,6 +511,7 @@ bool uart_driver_init(void)
         uart_driver_poll_start_index = 0u;
 
         if (uart_driver_init_backends(NULL) != UART_DRIVER_COMMAND_STATUS_OK) {
+            uart_driver_rollback_initialized_backends();
             return false;
         }
 
