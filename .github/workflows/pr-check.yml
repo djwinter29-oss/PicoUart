@@ -73,9 +73,9 @@ jobs:
           assert bytes([0x95, 0x3F]) in data, 'HID status Report Count 0x3F missing'
           print(f'USB {vid:#06x}:{pid:#06x} bcdDevice=0x0000 OK')
           " "$BIN"
-          strings "$BIN" | grep -qx "CDC0"
-          strings "$BIN" | grep -qx "CDC5"
-          strings "$BIN" | grep -Fqx "PicoUart USB CDC + HID"
+          strings "$BIN" | grep -Fqx "CDC0 HW"
+          strings "$BIN" | grep -Fqx "CDC5 PIO 8N1"
+          strings "$BIN" | grep -Fqx "PicoUart CDC+HID PIO 8N1"
           # Default CMake version stamp when --firmware-version is not passed
           strings "$BIN" | grep -Fqx "0.0.0-dev"
 
@@ -129,10 +129,27 @@ jobs:
           python3 -m py_compile \
             host/python/src/pico_uart_hid.py \
             tools/linux/serial_bridge_test.py \
-            tools/linux/serial_stress_benchmark.py
+            tools/linux/serial_stress_benchmark.py \
+            tools/linux/check-usb-identity.py
 
       - name: Run host unit tests (C Unity + Python pytest)
-        run: tools/linux/test-host.sh
+        run: tools/linux/test-host.sh --sanitize
+
+      - name: Static-analyze host-testable firmware headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cppcheck
+          cppcheck --error-exitcode=1 --enable=warning --inline-suppr \
+            -I firmware/src \
+            --suppress=missingIncludeSystem \
+            --suppress=missingInclude \
+            firmware/src/uart/backend_policy.h \
+            firmware/src/uart/control_pending.h \
+            firmware/src/uart/dma_progress_math.h \
+            firmware/src/uart/line_coding.c \
+            firmware/src/uart/topology.c \
+            firmware/src/uart/pio/txstall_wait.h \
+            firmware/src/usb/cdc_soft_pending.h
 
       - name: Import hidapi and exercise HID CLI help
         run: |
@@ -140,3 +157,28 @@ jobs:
           python3 host/python/src/pico_uart_hid.py --help
           python3 tools/linux/serial_bridge_test.py --help
           python3 tools/linux/serial_stress_benchmark.py --help
+
+  host-tools-windows:
+    name: Host tools (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install host dependencies
+        run: python -m pip install -r host/python/requirements-dev.txt
+
+      - name: Run host C unit tests
+        run: |
+          cmake -S firmware/tests -B build/host-tests
+          cmake --build build/host-tests --config Release --parallel
+          ctest --test-dir build/host-tests -C Release --output-on-failure
+
+      - name: Run host Python tests
+        run: python -m pytest

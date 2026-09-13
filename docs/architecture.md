@@ -85,6 +85,8 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   hosts must watch HID health bit 2 (`CONTROL_ERROR`). Shared validation lives in
   `firmware/src/uart/line_coding.c` (50–3 000 000 baud). PIO also rejects bauds its
   clock divider cannot represent (fail-fast, no 1 s pending window).
+- USB product string `PicoUart CDC+HID PIO 8N1` and CDC2–CDC5 interface strings
+  advertise the PIO 8N1 limit; TinyUSB still cannot STALL `SET_LINE_CODING`.
 - Hardware UART RX DMA re-arms from a DMA IRQ when the transfer counter exhausts; the
   worker poll path is a safety net. Line-format restarts continue DMA at the live ring
   producer index after publishing all bytes accepted before DMA stops. With HW FC off
@@ -92,6 +94,10 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   that case in HIL before advertising flow control.
 - HID reset is **disabled by default**. Compile with `-DPICO_UART_ALLOW_HID_RESET=1`
   to enable arm (`3`) then reset (`2`) within 2 s.
+- After USB and UART init, core 0 arms an 8 s watchdog (`pause_on_debug`) and
+  pets it from the USB poll loop only while the UART worker heartbeat is fresh
+  (2 s stale window). A wedged TinyUSB/bridge loop or a silent core 1 resets;
+  a debugger can still inspect `isr_hardfault`.
 
 ## Open Items
 

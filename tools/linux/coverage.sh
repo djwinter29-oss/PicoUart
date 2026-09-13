@@ -96,6 +96,12 @@ run_gcovr() {
         --object-directory "$BUILD_DIR_PATH" \
         --filter 'firmware/src/uart/ring_buffer' \
         --filter 'firmware/src/uart/line_coding.c' \
+        --filter 'firmware/src/uart/dma_progress_math.h' \
+        --filter 'firmware/src/uart/control_pending.h' \
+        --filter 'firmware/src/uart/backend_policy.h' \
+        --filter 'firmware/src/uart/topology.c' \
+        --filter 'firmware/src/uart/pio/txstall_wait.h' \
+        --filter 'firmware/src/usb/cdc_soft_pending.h' \
         --exclude '.*CMakeFiles/.*' \
         --exclude-unreachable-branches \
         --exclude-throw-branches \

@@ -7,6 +7,9 @@ PicoUart currently enumerates as USB **`cafe:4010`**. These IDs are a
 [`firmware/src/config/usb_identity.h`](firmware/src/config/usb_identity.h).
 They are not an allocated USB-IF or [pid.codes](https://pid.codes) identity.
 
+Release tags fail CI while this placeholder remains, unless
+`ALLOW_LAB_USB_IDENTITY` is set (lab images only). See `docs/releasing.md`.
+
 Do **not** ship production devices with the placeholder IDs:
 
 - Other projects may collide on the same VID/PID.

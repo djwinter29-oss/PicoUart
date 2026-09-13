@@ -9,6 +9,7 @@ GENERATOR="${GENERATOR:-}"
 PYTHON_EXE="${PYTHON_EXE:-python3}"
 SKIP_C=0
 SKIP_PYTHON=0
+SANITIZE=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -28,6 +29,10 @@ while [ "$#" -gt 0 ]; do
             SKIP_PYTHON=1
             shift
             ;;
+        --sanitize)
+            SANITIZE=1
+            shift
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             exit 1
@@ -45,7 +50,17 @@ fi
 
 if [ "$SKIP_C" -eq 0 ]; then
     echo "=== Host C unit tests (Unity / CTest) ==="
-    cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR"
+    if [ "$SANITIZE" -ne 0 ]; then
+        if [ "$HOST_TEST_BUILD_DIR" = "$REPO_ROOT/build/host-tests" ]; then
+            HOST_TEST_BUILD_DIR="$REPO_ROOT/build/host-tests-asan"
+        fi
+        echo "ASan/UBSan enabled in $HOST_TEST_BUILD_DIR"
+        cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR" \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+    else
+        cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR"
+    fi
     cmake --build "$HOST_TEST_BUILD_DIR" --parallel
     ctest --test-dir "$HOST_TEST_BUILD_DIR" --output-on-failure
 fi

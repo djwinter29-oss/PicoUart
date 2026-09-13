@@ -10,7 +10,11 @@ monitoring only.
 The HID interface uses vendor usage page `0xFF00`, vendor usage `0x01`, no boot
 protocol, and a 63-byte status report alongside compact board-status and
 command feature reports. The device is identified as USB
-`cafe:4010` and has one HID interface after the twelve CDC control/data interfaces.
+`cafe:4010` (lab placeholder; release CI refuses this identity unless
+`ALLOW_LAB_USB_IDENTITY` is set) and has one HID interface after the twelve CDC
+control/data interfaces. The USB product string is `PicoUart CDC+HID PIO 8N1`.
+CDC interface strings advertise backend limits:
+`CDC0 HW` / `CDC1 HW` and `CDC2`–`CDC5 PIO 8N1`.
 
 ## Ownership
 
@@ -84,7 +88,8 @@ at least that large. The ring peak is cumulative from boot and saturates at
 
 Hosts typically treat CDC `SET_LINE_CODING` as fire-and-forget. PicoUart cannot
 STALL that transfer after TinyUSB has already accepted it, so firmware surfaces
-rejects through HID:
+rejects through HID and advertises PIO 8N1 in the USB product string and CDC
+interface strings:
 
 1. Watch health bit 3 (`control_pending`) while the worker applies a change, and
    while CDC soft-pending waits for the worker mailbox (up to 1 s from the first

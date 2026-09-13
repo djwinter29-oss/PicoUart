@@ -101,8 +101,9 @@ requirement applies.
   PIO TX fills the joined FIFO for short queues and lazily claims DMA only when
   deeper backlog makes it worthwhile.
 - Hardware UART ports accept supported baud/data/parity/stop updates and leave
-  RTS/CTS disabled by default; PIO UART ports remain 8N1-only with docs-reserved
-  RTS/CTS pins (not GPIO-owned).
+  RTS/CTS disabled by default; PIO UART ports remain 8N1-only (CDC interface
+  strings `CDC2`–`CDC5 PIO 8N1`; USB product string `PicoUart CDC+HID PIO 8N1`)
+  with docs-reserved RTS/CTS pins (not GPIO-owned).
 - PIO UART line-coding changes are deferred on the worker core until the port reaches a safe idle point, to avoid discarding queued traffic.
 - PIO UART RX validates stop bits and counts framing errors (see `docs/detail/pio-uart-design.md`).
 - CDC line-coding rejects are visible through HID `CONTROL_ERROR` because TinyUSB accepts `SET_LINE_CODING` before firmware validation (`docs/hid-monitor.md`).
@@ -115,4 +116,6 @@ requirement applies.
 - HID reset is disabled by default. Enable the two-step arm/reset sequence only
   for a trusted lab build with `-DPICO_UART_ALLOW_HID_RESET=1`.
 - CDC DTR updates HID `opened` only and does not gate bridging; host CDC RTS is ignored.
+- After init, core 0 arms an 8 s watchdog (pause-on-debug) and pets it in the USB
+  poll loop only while the UART worker heartbeat is fresh (2 s stale window).
 - HID does not yet report full ring occupancy/overflow **counts** (only high-water blocks and a sticky overrun bit).

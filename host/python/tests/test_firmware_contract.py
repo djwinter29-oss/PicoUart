@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from contract import (
+    firmware_cdc_interface_strings,
     firmware_hid_constants,
     firmware_hid_report_count,
     firmware_hid_reset_default_enabled,
     firmware_hid_status_report_count,
     firmware_uart_board_ports,
     firmware_usb_ids,
+    firmware_usb_product_string,
     is_lab_placeholder_identity,
 )
 
@@ -49,12 +51,55 @@ def test_hid_descriptor_command_report_count_matches_host_payload(hid_module, re
     assert firmware_hid_report_count(repo_root, 4) == 1
 
 
-def test_lab_placeholder_helper_and_current_tree_identity(repo_root):
+def test_lab_placeholder_helper_is_independent_of_tree_identity():
     assert is_lab_placeholder_identity(0xCAFE, 0x4010) is True
     assert is_lab_placeholder_identity(0x1209, 0x0001) is False
-    # Development tree ships the lab placeholder until a release identity is allocated.
+
+
+def test_usb_identity_gate_script_matches_tree_identity(repo_root):
+    import os
+    import subprocess
+    import sys
+
+    script = repo_root / "tools" / "linux" / "check-usb-identity.py"
+    env = os.environ.copy()
+    env.pop("ALLOW_LAB_USB_IDENTITY", None)
+    blocked = subprocess.run(
+        [sys.executable, str(script), "--repo-root", str(repo_root)],
+        env=env,
+        cwd=repo_root,
+        check=False,
+    )
+    allowed = subprocess.run(
+        [sys.executable, str(script), "--repo-root", str(repo_root)],
+        env={**env, "ALLOW_LAB_USB_IDENTITY": "true"},
+        cwd=repo_root,
+        check=False,
+    )
     vid, pid = firmware_usb_ids(repo_root)
-    assert is_lab_placeholder_identity(vid, pid) is True
+    if is_lab_placeholder_identity(vid, pid):
+        assert blocked.returncode == 1
+        assert allowed.returncode == 0
+    else:
+        assert blocked.returncode == 0
+        assert allowed.returncode == 0
+
+
+def test_usb_product_string_advertises_pio_8n1(repo_root):
+    product = firmware_usb_product_string(repo_root)
+    assert product == "PicoUart CDC+HID PIO 8N1"
+    assert len(product) <= 32
+
+
+def test_cdc_interface_strings_advertise_hw_and_pio_8n1(repo_root):
+    assert firmware_cdc_interface_strings(repo_root) == [
+        "CDC0 HW",
+        "CDC1 HW",
+        "CDC2 PIO 8N1",
+        "CDC3 PIO 8N1",
+        "CDC4 PIO 8N1",
+        "CDC5 PIO 8N1",
+    ]
 
 
 def test_hid_reset_disabled_by_default(repo_root):

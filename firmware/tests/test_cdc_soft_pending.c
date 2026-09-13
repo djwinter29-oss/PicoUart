@@ -41,6 +41,7 @@ void test_worker_completion_keeps_newer_control_pending_owner(void)
 
 void test_soft_pending_does_not_block_tx_until_worker_owns_request(void)
 {
+    /* The pure admission rule is shared by uart_driver_fill_tx(). */
     TEST_ASSERT_FALSE(uart_control_tx_should_block(false, false));
     TEST_ASSERT_TRUE(uart_control_tx_should_block(false, true));
     TEST_ASSERT_TRUE(uart_control_tx_should_block(true, false));

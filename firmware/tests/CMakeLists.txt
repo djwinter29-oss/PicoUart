@@ -74,3 +74,26 @@ target_include_directories(test_topology PRIVATE
 )
 target_link_libraries(test_topology PRIVATE unity)
 add_test(NAME topology COMMAND test_topology)
+
+add_executable(test_backend_policy
+    test_backend_policy.c
+)
+target_include_directories(test_backend_policy PRIVATE
+    ${FIRMWARE_ROOT}/src
+)
+target_link_libraries(test_backend_policy PRIVATE unity)
+add_test(NAME backend_policy COMMAND test_backend_policy)
+
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    set(_pico_uart_host_warnings -Wall -Wextra -Werror)
+    foreach(_pico_uart_host_target
+            test_ring_buffer
+            test_line_coding
+            test_dma_progress
+            test_txstall_wait
+            test_cdc_soft_pending
+            test_topology
+            test_backend_policy)
+        target_compile_options(${_pico_uart_host_target} PRIVATE ${_pico_uart_host_warnings})
+    endforeach()
+endif()

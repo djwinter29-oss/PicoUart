@@ -6,6 +6,7 @@
 #include "uart/uart_driver.h"
 
 #include "config/uart_board.h"
+#include "uart/backend_policy.h"
 #include "uart/control_pending.h"
 #include "uart/hw/driver.h"
 #include "uart/line_coding.h"
@@ -16,6 +17,7 @@
 #include "uart/pio/internal.h"
 #include "uart/ring_buffer/ring_buffer.h"
 #include "uart/topology.h"
+#include "uart/worker_health.h"
 
 #include <string.h>
 
@@ -78,6 +80,8 @@ static uart_driver_port_t uart_ports[UART_PORT_COUNT];
 static uart_driver_mailbox_t uart_driver_mailbox;
 /** @brief True after the dedicated UART worker core has been launched. */
 static bool uart_driver_worker_started;
+/** @brief Worker-loop counter published for core-0 watchdog gating. */
+static volatile uint32_t uart_driver_worker_heartbeat;
 /** @brief Per-port status flags for monitoring and HID reporting. */
 static volatile uint8_t uart_driver_port_status_flags[UART_PORT_COUNT];
 /** @brief Cross-core lock protecting @ref uart_driver_port_status_flags. */
@@ -124,16 +128,6 @@ static void uart_driver_end_port_stats_update(uart_port_id_t port_id)
 {
     __dmb();
     uart_driver_port_stats_sequence[port_id] += 1u;
-}
-
-/**
- * @brief Halt after a HardFault so the debugger can inspect the fault.
- */
-void isr_hardfault(void)
-{
-    while (true) {
-        tight_loop_contents();
-    }
 }
 
 static void uart_driver_set_port_status_flag(uart_port_id_t port_id, uint8_t flag)
@@ -258,6 +252,8 @@ static void uart_driver_worker_core_main(void)
         uart_driver_poll_backends();
         uart_driver_poll_hardware();
         uart_driver_poll_pio();
+        uart_driver_worker_heartbeat += 1u;
+        __dmb();
         tight_loop_contents();
     }
 }
@@ -514,6 +510,7 @@ bool uart_driver_init(void)
         uart_driver_mailbox.result_port_id = UART_PORT_COUNT;
         uart_driver_mailbox.result_status = UART_DRIVER_COMMAND_STATUS_WORKER_NOT_STARTED;
         uart_driver_poll_start_index = 0u;
+        uart_driver_worker_heartbeat = 0u;
 
         if (uart_driver_init_backends(NULL) != UART_DRIVER_COMMAND_STATUS_OK) {
             uart_driver_rollback_initialized_backends();
@@ -525,16 +522,6 @@ bool uart_driver_init(void)
     }
 
     return true;
-}
-
-void uart_driver_poll(void)
-{
-    /*
-     * Deprecated no-op: UART live service runs on core 1. Kept so older
-     * single-core call sites compile without conditionalizing on the execution
-     * model. Prefer uart_driver_poll_hardware / uart_driver_poll_pio only from
-     * the worker core.
-     */
 }
 
 bool uart_driver_port_is_ready(uart_port_id_t port_id)
@@ -671,7 +658,7 @@ size_t uart_driver_fill_tx(uart_port_id_t port_id,
     size_t total_read = 0u;
 
     if ((port == NULL) || !uart_driver_port_is_ready(port_id) || (reader == NULL) ||
-        ((uart_driver_port_status(port_id) & UART_DRIVER_PORT_STATUS_CONTROL_PENDING) != 0u)) {
+        uart_driver_port_tx_is_blocked(port_id)) {
         return 0u;
     }
 
@@ -912,6 +899,22 @@ uint8_t uart_driver_port_status(uart_port_id_t port_id)
 bool uart_driver_worker_is_running(void)
 {
     return uart_driver_worker_started;
+}
+
+bool uart_driver_worker_heartbeat_is_fresh(void)
+{
+    static uint32_t last_heartbeat;
+    static uint32_t last_change_ms;
+    uint32_t heartbeat;
+    uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+
+    __dmb();
+    heartbeat = uart_driver_worker_heartbeat;
+    return uart_worker_heartbeat_is_fresh(heartbeat,
+                                          &last_heartbeat,
+                                          now_ms,
+                                          &last_change_ms,
+                                          UART_WORKER_HEARTBEAT_STALE_MS);
 }
 
 const uart_driver_port_info_t *uart_driver_port_info(uart_port_id_t port_id)

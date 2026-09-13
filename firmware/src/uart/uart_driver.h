@@ -129,15 +129,6 @@ void uart_driver_poll_hardware(void);
 void uart_driver_poll_pio(void);
 
 /**
- * @brief Deprecated no-op compatibility shim for older single-core call sites.
- *
- * UART hardware/PIO polling and deferred control apply run on the dedicated
- * worker core. This symbol remains so existing callers need not conditionalize
- * on the execution model; it does not advance UART state.
- */
-void uart_driver_poll(void);
-
-/**
  * @brief Drain RX bytes from one logical UART port into a caller-owned writer.
  * @param port_id Logical port identifier.
  * @param capacity Maximum byte count to drain across contiguous RX spans.
@@ -249,6 +240,12 @@ uint8_t uart_driver_port_status(uart_port_id_t port_id);
  * @return `true` after the worker core has been launched.
  */
 bool uart_driver_worker_is_running(void);
+
+/**
+ * @brief Return whether the UART worker core is still publishing heartbeats.
+ * @return `true` when the worker counter advanced within the stale window.
+ */
+bool uart_driver_worker_heartbeat_is_fresh(void);
 
 /**
  * @brief Return public metadata for one logical UART port.

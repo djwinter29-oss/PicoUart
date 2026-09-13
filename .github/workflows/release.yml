@@ -11,11 +11,39 @@ on:
         description: "Release version without leading v (for dry-run artifact naming)"
         required: true
         type: string
+      allow_lab_usb_identity:
+        description: "Allow cafe:4010 lab placeholder (dry-run / lab images only)"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
+  usb-identity:
+    name: USB identity gate
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Refuse lab USB placeholder unless explicitly allowed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_ALLOW_LAB: ${{ inputs.allow_lab_usb_identity }}
+          REPO_ALLOW_LAB: ${{ vars.ALLOW_LAB_USB_IDENTITY }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ALLOW_LAB_USB_IDENTITY="$DISPATCH_ALLOW_LAB"
+          else
+            ALLOW_LAB_USB_IDENTITY="$REPO_ALLOW_LAB"
+          fi
+          export ALLOW_LAB_USB_IDENTITY
+          python3 tools/linux/check-usb-identity.py
+
   host-tools:
     name: Host tools
     runs-on: ubuntu-24.04
@@ -37,10 +65,11 @@ jobs:
           python3 -m py_compile \
             host/python/src/pico_uart_hid.py \
             tools/linux/serial_bridge_test.py \
-            tools/linux/serial_stress_benchmark.py
+            tools/linux/serial_stress_benchmark.py \
+            tools/linux/check-usb-identity.py
 
       - name: Run host unit tests (C Unity + Python pytest)
-        run: tools/linux/test-host.sh
+        run: tools/linux/test-host.sh --sanitize
 
       - name: Import hidapi and exercise HID CLI help
         run: |
@@ -51,6 +80,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.board }})
+    needs: [usb-identity]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -154,7 +184,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [build, host-tools]
+    needs: [build, host-tools, usb-identity]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
