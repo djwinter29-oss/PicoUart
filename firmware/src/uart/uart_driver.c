@@ -15,6 +15,9 @@
 #include "pico/time.h"
 #include "uart/pio/internal.h"
 #include "uart/ring_buffer/ring_buffer.h"
+#include "uart/topology.h"
+
+#include <string.h>
 
 /** @brief Default startup baud rate applied to all logical UART ports. */
 #define UART_DRIVER_DEFAULT_BAUD_RATE 115200u
@@ -22,6 +25,8 @@
 #define UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS 1000u
 /** @brief Maximum attempts to acquire a coherent worker-owned telemetry snapshot. */
 #define UART_DRIVER_PORT_STATS_SNAPSHOT_ATTEMPTS 3u
+/** @brief Maximum RX snapshot copied before handing bytes to a USB writer. */
+#define UART_DRIVER_RX_SNAPSHOT_SIZE 256u
 
 /**
  * @brief Commands accepted by the cross-core UART control mailbox.
@@ -585,6 +590,7 @@ size_t uart_driver_drain_rx(uart_port_id_t port_id,
     uart_driver_port_t *port = uart_driver_port_mutable(port_id);
     ring_buffer_t *rx_ring;
     size_t total_written = 0u;
+    uint8_t snapshot[UART_DRIVER_RX_SNAPSHOT_SIZE];
 
     if ((port == NULL) || !uart_driver_port_is_ready(port_id) || (writer == NULL)) {
         return 0u;
@@ -610,7 +616,17 @@ size_t uart_driver_drain_rx(uart_port_id_t port_id,
             offered = (uint32_t)(capacity - total_written);
         }
 
-        written = writer(context, span.data, offered);
+        if (offered > sizeof(snapshot)) {
+            offered = sizeof(snapshot);
+        }
+
+        memcpy(snapshot, span.data, offered);
+        if (!ring_buffer_read_span_is_current(rx_ring)) {
+            (void)ring_buffer_recover_overflow(rx_ring);
+            return total_written;
+        }
+
+        written = writer(context, snapshot, offered);
         if (written == 0u) {
             break;
         }
@@ -774,6 +790,7 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
                                    uint32_t control_generation)
 {
     uint32_t request_sequence;
+    uint32_t save;
 
     if (!uart_driver_worker_started) {
         return false;
@@ -784,12 +801,14 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
         return false;
     }
 
-    if (uart_driver_mailbox.request_sequence != uart_driver_mailbox.response_sequence) {
+    save = spin_lock_blocking(uart_driver_status_lock);
+    if (!uart_control_mailbox_is_empty(uart_driver_mailbox.request_sequence,
+                                       uart_driver_mailbox.response_sequence)) {
+        spin_unlock(uart_driver_status_lock, save);
         return false;
     }
 
-    request_sequence = uart_driver_mailbox.request_sequence + 1u;
-    uint32_t save = spin_lock_blocking(uart_driver_status_lock);
+    request_sequence = uart_control_mailbox_next_sequence(uart_driver_mailbox.request_sequence);
 
     uart_driver_soft_pending_controls[port_id] = false;
     uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
@@ -801,6 +820,22 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
     uart_driver_mailbox.request_sequence = request_sequence;
     spin_unlock(uart_driver_status_lock, save);
     return true;
+}
+
+bool uart_driver_port_tx_is_blocked(uart_port_id_t port_id)
+{
+    bool blocked;
+    uint32_t save;
+
+    if (port_id >= UART_PORT_COUNT) {
+        return true;
+    }
+
+    save = spin_lock_blocking(uart_driver_status_lock);
+    blocked = uart_control_tx_should_block(uart_driver_pending_controls[port_id].pending,
+                                           uart_driver_mailbox_has_pending_port(port_id));
+    spin_unlock(uart_driver_status_lock, save);
+    return blocked;
 }
 
 void uart_driver_report_control_error(uart_port_id_t port_id)
@@ -945,38 +980,29 @@ bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *st
 
 bool uart_driver_validate_topology(void)
 {
-    size_t hw_count = 0u;
-    size_t pio_count = 0u;
+    uart_topology_port_t topology[UART_PORT_COUNT];
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
         const uart_board_port_config_t *board = &uart_board_ports[index];
 
-        if (board->info.id != (uart_port_id_t)index) {
+        if (board->info.backend == UART_DRIVER_BACKEND_HW) {
+            topology[index] = (uart_topology_port_t){
+                board->info.id, board->info.backend, board->info.baud_rate,
+                board->info.tx_pin, board->info.rx_pin, (uintptr_t)board->backend.hw.instance,
+                board->backend.hw.baud_rate, board->backend.hw.tx_pin, board->backend.hw.rx_pin,
+                0u, 0u,
+            };
+        } else if (board->info.backend == UART_DRIVER_BACKEND_PIO) {
+            topology[index] = (uart_topology_port_t){
+                board->info.id, board->info.backend, board->info.baud_rate,
+                board->info.tx_pin, board->info.rx_pin, (uintptr_t)board->backend.pio.pio,
+                board->backend.pio.baud_rate, board->backend.pio.tx_pin, board->backend.pio.rx_pin,
+                board->backend.pio.tx_state_machine, board->backend.pio.rx_state_machine,
+            };
+        } else {
             return false;
         }
-
-        if (board->info.backend == UART_DRIVER_BACKEND_HW) {
-            if ((board->info.tx_pin != board->backend.hw.tx_pin) ||
-                (board->info.rx_pin != board->backend.hw.rx_pin) ||
-                (board->info.baud_rate != board->backend.hw.baud_rate)) {
-                return false;
-            }
-            hw_count += 1u;
-            continue;
-        }
-
-        if (board->info.backend == UART_DRIVER_BACKEND_PIO) {
-            if ((board->info.tx_pin != board->backend.pio.tx_pin) ||
-                (board->info.rx_pin != board->backend.pio.rx_pin) ||
-                (board->info.baud_rate != board->backend.pio.baud_rate)) {
-                return false;
-            }
-            pio_count += 1u;
-            continue;
-        }
-
-        return false;
     }
 
-    return (hw_count == 2u) && (pio_count == 4u);
+    return uart_topology_validate(topology, UART_PORT_COUNT);
 }

@@ -10,6 +10,28 @@
 #include <stdint.h>
 
 /**
+ * @brief Return whether a single-slot mailbox can accept a new request.
+ * @param request_sequence Sequence most recently published by the producer.
+ * @param response_sequence Sequence most recently completed by the worker.
+ * @return `true` when the mailbox slot is empty.
+ */
+static inline bool uart_control_mailbox_is_empty(uint32_t request_sequence,
+                                                  uint32_t response_sequence)
+{
+    return request_sequence == response_sequence;
+}
+
+/**
+ * @brief Advance a mailbox request sequence with defined unsigned wraparound.
+ * @param request_sequence Current producer sequence.
+ * @return Next producer sequence.
+ */
+static inline uint32_t uart_control_mailbox_next_sequence(uint32_t request_sequence)
+{
+    return request_sequence + 1u;
+}
+
+/**
  * @brief Decide whether a worker completion may clear CONTROL_PENDING.
  * @param soft_pending True while core 0 has a request waiting for the mailbox.
  * @param mailbox_pending True while the mailbox contains a request for this port.
@@ -18,6 +40,17 @@
 static inline bool uart_control_pending_should_clear(bool soft_pending, bool mailbox_pending)
 {
     return !soft_pending && !mailbox_pending;
+}
+
+/**
+ * @brief Decide whether UART TX ingress must wait for control ownership.
+ * @param worker_pending True while the worker has a deferred backend change.
+ * @param mailbox_pending True while the worker mailbox owns a request.
+ * @return `true` while the UART format may be changing or is about to change.
+ */
+static inline bool uart_control_tx_should_block(bool worker_pending, bool mailbox_pending)
+{
+    return worker_pending || mailbox_pending;
 }
 
 /**

@@ -206,6 +206,18 @@ ring_buffer_span_t ring_buffer_write_span(ring_buffer_t *ring)
     return span;
 }
 
+bool ring_buffer_read_span_is_current(const ring_buffer_t *ring)
+{
+    if ((ring == NULL) ||
+        (ring->consumer != ring->consumer_reserved_sequence) ||
+        (ring->consumer_reserved_count == 0u)) {
+        return false;
+    }
+
+    __dmb();
+    return (ring->producer - ring->consumer_reserved_sequence) <= ring->size;
+}
+
 bool ring_buffer_commit_produced(ring_buffer_t *ring, size_t count)
 {
     if ((ring == NULL) ||

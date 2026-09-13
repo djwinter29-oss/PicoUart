@@ -119,7 +119,7 @@ static void usb_cdc_bridge_usb_to_uart(uint8_t itf)
 {
     uint32_t available;
 
-    if ((uart_driver_port_status((uart_port_id_t)itf) & UART_DRIVER_PORT_STATUS_CONTROL_PENDING) != 0u) {
+    if (uart_driver_port_tx_is_blocked((uart_port_id_t)itf)) {
         return;
     }
 
