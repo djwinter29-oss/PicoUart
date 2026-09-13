@@ -17,6 +17,7 @@
 #include "uart/pio/internal.h"
 #include "uart/ring_buffer/ring_buffer.h"
 #include "uart/topology.h"
+#include "uart/worker_health.h"
 
 #include <string.h>
 
@@ -657,7 +658,7 @@ size_t uart_driver_fill_tx(uart_port_id_t port_id,
     size_t total_read = 0u;
 
     if ((port == NULL) || !uart_driver_port_is_ready(port_id) || (reader == NULL) ||
-        ((uart_driver_port_status(port_id) & UART_DRIVER_PORT_STATUS_CONTROL_PENDING) != 0u)) {
+        uart_driver_port_tx_is_blocked(port_id)) {
         return 0u;
     }
 

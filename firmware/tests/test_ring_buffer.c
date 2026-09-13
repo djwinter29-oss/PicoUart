@@ -177,11 +177,10 @@ void test_read_span_current_rejects_overwrite_before_writer(void)
 {
     ring_buffer_t ring;
     uint8_t storage[4];
-    ring_buffer_span_t span;
 
     TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
     TEST_ASSERT_EQUAL_UINT(4u, ring_buffer_write(&ring, (const uint8_t *)"abcd", 4u));
-    span = ring_buffer_read_span(&ring);
+    (void)ring_buffer_read_span(&ring);
     TEST_ASSERT_TRUE(ring_buffer_read_span_is_current(&ring));
 
     ring_buffer_produce_external(&ring, 4u);

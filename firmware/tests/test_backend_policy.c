@@ -5,6 +5,7 @@
 
 #include "unity.h"
 #include "uart/backend_policy.h"
+#include "uart/worker_health.h"
 
 void setUp(void)
 {
@@ -101,6 +102,17 @@ void test_worker_heartbeat_boot_window_is_fresh(void)
                                                      UART_WORKER_HEARTBEAT_STALE_MS));
 }
 
+void test_worker_heartbeat_handles_timestamp_wrap(void)
+{
+    uint32_t last = 12u;
+    uint32_t last_change_ms = UINT32_MAX - 100u;
+
+    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(12u, &last, 50u, &last_change_ms,
+                                                    200u));
+    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(12u, &last, 150u, &last_change_ms,
+                                                     200u));
+}
+
 void test_worker_heartbeat_rejects_null_state(void)
 {
     uint32_t last = 0u;
@@ -123,6 +135,7 @@ int main(void)
     RUN_TEST(test_worker_heartbeat_fresh_on_increment);
     RUN_TEST(test_worker_heartbeat_stale_when_silent);
     RUN_TEST(test_worker_heartbeat_boot_window_is_fresh);
+    RUN_TEST(test_worker_heartbeat_handles_timestamp_wrap);
     RUN_TEST(test_worker_heartbeat_rejects_null_state);
     return UNITY_END();
 }

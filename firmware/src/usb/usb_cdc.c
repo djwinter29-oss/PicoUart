@@ -119,10 +119,6 @@ static void usb_cdc_bridge_usb_to_uart(uint8_t itf)
 {
     uint32_t available;
 
-    if (uart_driver_port_tx_is_blocked((uart_port_id_t)itf)) {
-        return;
-    }
-
     available = tud_cdc_n_available(itf);
     if (available != 0u) {
         if (available > USB_CDC_BRIDGE_PASS_BUDGET) {

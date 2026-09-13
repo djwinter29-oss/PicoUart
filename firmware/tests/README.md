@@ -11,7 +11,7 @@
 | `firmware/tests/test_txstall_wait.c` | PIO TXSTALL re-assert wait microseconds vs baud |
 | `firmware/tests/test_cdc_soft_pending.c` | Soft-pending deadline coalesce, reject generation bump policy, CONTROL_PENDING ownership |
 | `firmware/tests/test_topology.c` | Logical port, GPIO, UART, and PIO state-machine assignment validation |
-| `firmware/tests/test_backend_policy.c` | HW/PIO line-format idle gates, RX DMA poll re-arm, PIO TX DMA vs FIFO, DMA IRQ owner table, worker heartbeat freshness |
+| `firmware/tests/test_backend_policy.c` | Backend idle, DMA, PIO TX, IRQ-owner, and worker-heartbeat policy |
 | `firmware/tests/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |
 | `firmware/tests/third_party/unity/` | Vendored [Unity](https://github.com/ThrowTheSwitch/Unity) v2.6.0 |
 | `host/python/src/` | HID host tool package/scripts |
