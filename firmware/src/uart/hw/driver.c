@@ -278,7 +278,11 @@ static void hw_uart_driver_publish_rx(hw_uart_driver_t *driver)
     /*
      * After an IRQ (or poll) re-arm, progress drops back toward 0. Treat that as
      * a wrap so bytes between last_progress and the end of the previous countdown
-     * are still published.
+     * are still published. Wrap-safe: the RPM-style subtraction is correct even
+     * when 32-bit producer/consumer counters wrap (ring size is 4 KiB, so more
+     * than one full 32-bit wrap of the 4 GiB sequence space guarantees a
+     * producer—consumer distance greater than size, which is caught by the
+     * overflow-recovery paths in read_span and commit_consumed).
      */
     produced = uart_dma_rx_bytes_produced(progress,
                                          driver->rx_dma_last_progress,
