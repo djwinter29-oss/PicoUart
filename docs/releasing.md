@@ -14,6 +14,17 @@ review draft → publish.
 Lab images may keep the development placeholder `cafe:4010`. **Do not** ship a
 public or production release on that identity.
 
+Release CI enforces this: `.github/workflows/release.yml` runs
+`tools/linux/check-usb-identity.py` and **fails** while the tree still uses
+`cafe:4010`, unless you explicitly allow a lab image:
+
+- Tag pushes: set repository variable `ALLOW_LAB_USB_IDENTITY=true`
+- `workflow_dispatch` dry-runs: the `allow_lab_usb_identity` input defaults to
+  true so lab artifact builds still work
+
+PR CI does not fail on the placeholder; host tests only require the Python HID
+tool VID/PID to match `usb_identity.h`.
+
 Before promoting a non-lab draft:
 
 1. Obtain an allocated VID/PID (pid.codes or a commercial USB-IF vendor ID).
@@ -53,7 +64,8 @@ need a recorded hardware-in-the-loop (HIL) pass:
    default build leaves HW flow control off.
 6. Attach or link the transcript (and any HID `monitor` snippets showing
    `control_error` / `rx_overrun` expectations) to the GitHub Release notes or a
-   linked issue.
+   linked issue. Cloud CI cannot record HIL; a draft without this attachment is
+   lab-only even if the USB-identity gate passed.
 
 A release without a recorded HIL pass is lab-only.
 

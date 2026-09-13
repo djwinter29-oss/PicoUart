@@ -16,6 +16,25 @@ def parse_c_u_define(text: str, name: str) -> int:
     raise ValueError(f"define {name} not found")
 
 
+def firmware_cdc_interface_strings(repo_root: Path) -> list[str]:
+    """Parse CDC interface string literals from usb_descriptors.c."""
+    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r"static char const \*string_desc_arr\[\] = \{(.*?)\};",
+        text,
+        flags=re.DOTALL,
+    )
+    if not match:
+        raise ValueError("USB string_desc_arr not found")
+    strings = re.findall(r'"([^"]+)"', match.group(1))
+    cdc = [value for value in strings if value.startswith("CDC")]
+    if len(cdc) != 6:
+        raise ValueError(f"expected 6 CDC interface strings, found {cdc!r}")
+    return cdc
+
+
 def firmware_usb_ids(repo_root: Path) -> tuple[int, int]:
     text = (repo_root / "firmware" / "src" / "config" / "usb_identity.h").read_text(
         encoding="utf-8"

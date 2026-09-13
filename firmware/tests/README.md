@@ -11,14 +11,16 @@
 | `firmware/tests/test_txstall_wait.c` | PIO TXSTALL re-assert wait microseconds vs baud |
 | `firmware/tests/test_cdc_soft_pending.c` | Soft-pending deadline coalesce, reject generation bump policy, CONTROL_PENDING ownership |
 | `firmware/tests/test_topology.c` | Logical port, GPIO, UART, and PIO state-machine assignment validation |
+| `firmware/tests/test_backend_policy.c` | HW/PIO line-format idle gates, RX DMA poll re-arm, PIO TX DMA vs FIFO |
 | `firmware/tests/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |
 | `firmware/tests/third_party/unity/` | Vendored [Unity](https://github.com/ThrowTheSwitch/Unity) v2.6.0 |
 | `host/python/src/` | HID host tool package/scripts |
 | `host/python/tests/` | HID parsers/contracts, HID descriptor report-count sync, serial tool arg validation |
 
 Mailbox, TinyUSB CDC callbacks, and on-target DMA IRQ re-arm are exercised via
-the board-testing skill / `docs/releasing.md` HIL gate. Pure RX DMA progress
-arithmetic and CDC soft-pending policy helpers are covered by host Unity tests.
+the board-testing skill / `docs/releasing.md` HIL gate. Host Unity tests cover
+pure policy helpers used by those paths (RX DMA progress, pause-settle samples,
+TXSTALL wait, backend idle/re-arm/TX action, CDC soft-pending, topology).
 
 ## Run everything
 
@@ -27,11 +29,16 @@ tools/linux/test-host.sh
 ```
 
 The native C tests run before Python dependency checks. Use `--skip-python` in
-minimal environments that do not have pip or the host-test virtual environment:
+minimal environments that do not have pip or the host-test virtual environment.
+CI also runs `tools/linux/test-host.sh --sanitize` (ASan/UBSan) for the Unity
+targets.
 
 ```sh
 tools/linux/test-host.sh --skip-python
 ```
+
+Use `--sanitize` to rebuild the Unity tests with ASan/UBSan (CI does this on
+Linux).
 
 Or via the combined script (also builds firmware unless `--skip-build`):
 

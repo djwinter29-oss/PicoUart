@@ -9,6 +9,8 @@ import pytest
 
 BRIDGE = Path(__file__).resolve().parents[3] / "tools" / "linux" / "serial_bridge_test.py"
 
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
+
 
 def _load_bridge():
     spec = importlib.util.spec_from_file_location("serial_bridge_test_under_test", BRIDGE)

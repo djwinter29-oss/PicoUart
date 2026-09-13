@@ -129,15 +129,6 @@ void uart_driver_poll_hardware(void);
 void uart_driver_poll_pio(void);
 
 /**
- * @brief Deprecated no-op compatibility shim for older single-core call sites.
- *
- * UART hardware/PIO polling and deferred control apply run on the dedicated
- * worker core. This symbol remains so existing callers need not conditionalize
- * on the execution model; it does not advance UART state.
- */
-void uart_driver_poll(void);
-
-/**
  * @brief Drain RX bytes from one logical UART port into a caller-owned writer.
  * @param port_id Logical port identifier.
  * @param capacity Maximum byte count to drain across contiguous RX spans.

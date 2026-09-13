@@ -126,16 +126,6 @@ static void uart_driver_end_port_stats_update(uart_port_id_t port_id)
     uart_driver_port_stats_sequence[port_id] += 1u;
 }
 
-/**
- * @brief Halt after a HardFault so the debugger can inspect the fault.
- */
-void isr_hardfault(void)
-{
-    while (true) {
-        tight_loop_contents();
-    }
-}
-
 static void uart_driver_set_port_status_flag(uart_port_id_t port_id, uint8_t flag)
 {
     uint32_t save;
@@ -525,16 +515,6 @@ bool uart_driver_init(void)
     }
 
     return true;
-}
-
-void uart_driver_poll(void)
-{
-    /*
-     * Deprecated no-op: UART live service runs on core 1. Kept so older
-     * single-core call sites compile without conditionalizing on the execution
-     * model. Prefer uart_driver_poll_hardware / uart_driver_poll_pio only from
-     * the worker core.
-     */
 }
 
 bool uart_driver_port_is_ready(uart_port_id_t port_id)

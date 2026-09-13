@@ -172,12 +172,12 @@ static char const *string_desc_arr[] = {
     USB_STR_MANUFACTURER,
     USB_STR_PRODUCT,
     NULL,
-    "CDC0",
-    "CDC1",
-    "CDC2",
-    "CDC3",
-    "CDC4",
-    "CDC5",
+    "CDC0 HW",
+    "CDC1 HW",
+    "CDC2 PIO 8N1",
+    "CDC3 PIO 8N1",
+    "CDC4 PIO 8N1",
+    "CDC5 PIO 8N1",
     "Status Monitor",
 };
 

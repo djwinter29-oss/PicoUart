@@ -18,10 +18,12 @@ int main(void)
     hard_assert(uart_driver_init());
     usb_cdc_init();
     usb_hid_init();
+    system_watchdog_enable();
 
     while (true) {
         usb_cdc_poll();
         usb_hid_poll();
+        system_watchdog_update();
         tight_loop_contents();
     }
 }

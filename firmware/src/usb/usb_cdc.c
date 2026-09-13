@@ -216,6 +216,8 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
      * TinyUSB accepts SET_LINE_CODING at the USB layer before this callback.
      * Parse failures and later backend rejects are therefore invisible on the
      * CDC control pipe; surface them through HID CONTROL_ERROR instead.
+     * PIO interface strings advertise "PIO 8N1" so hosts that ignore HID still
+     * see the format limit in Device Manager / lsusb.
      */
     if ((p_line_coding == NULL) ||
         !uart_line_coding_from_usb(p_line_coding->bit_rate,

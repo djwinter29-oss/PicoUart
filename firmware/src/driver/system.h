@@ -20,10 +20,28 @@
 #endif
 #endif
 
+/** @brief Watchdog timeout that covers USB poll plus a 1 s line-coding apply. */
+#ifndef PICO_UART_WATCHDOG_TIMEOUT_MS
+#define PICO_UART_WATCHDOG_TIMEOUT_MS 8000u
+#endif
+
 /**
  * @brief Configure the system clock before initializing timing-sensitive hardware.
  */
 void system_init_clock(void);
+
+/**
+ * @brief Arm the watchdog so a wedged USB poll loop recovers without a power cycle.
+ *
+ * Pauses the watchdog while a debugger is attached so HardFault can still be
+ * inspected. Without a debugger, `isr_hardfault` spins until this timeout resets.
+ */
+void system_watchdog_enable(void);
+
+/**
+ * @brief Pet the watchdog from the USB poll loop.
+ */
+void system_watchdog_update(void);
 
 /**
  * @brief Reboot the board immediately through the watchdog.

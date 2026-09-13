@@ -5,6 +5,7 @@
 
 #include "uart/hw/driver.h"
 
+#include "uart/backend_policy.h"
 #include "uart/dma_progress.h"
 
 #include "hardware/dma.h"
@@ -316,12 +317,16 @@ void hw_uart_driver_poll(hw_uart_driver_t *driver)
     hw_uart_driver_publish_rx(driver);
     hw_uart_driver_record_rx_errors(driver);
     /* Safety net if the DMA IRQ was masked or delayed past transfer completion. */
-    if (!dma_channel_is_busy((uint)driver->rx_dma_channel) &&
-        (uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel) == 0u)) {
+    if (uart_rx_dma_poll_should_rearm(true,
+                                      dma_channel_is_busy((uint)driver->rx_dma_channel),
+                                      uart_dma_rx_transfer_count_remaining(
+                                          (uint)driver->rx_dma_channel))) {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
-        if (!dma_channel_is_busy((uint)driver->rx_dma_channel) &&
-            (uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel) == 0u)) {
+        if (uart_rx_dma_poll_should_rearm(true,
+                                          dma_channel_is_busy((uint)driver->rx_dma_channel),
+                                          uart_dma_rx_transfer_count_remaining(
+                                              (uint)driver->rx_dma_channel))) {
             hw_uart_driver_rearm_rx_dma(driver);
         }
         restore_interrupts(interrupt_status);
@@ -417,21 +422,16 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
         return false;
     }
 
-    if ((ring_buffer_occupancy(&driver->tx_ring) != 0u) || driver->tx_active) {
-        return false;
-    }
-
     /*
      * Do not spin waiting for UARTFR_BUSY. CTS (or a late shifter byte) must
      * defer the apply without stalling the UART worker's RX publish loop.
      * The worker's 1 s deferred-apply deadline fails the request if BUSY sticks.
      */
-    if ((uart_get_hw(driver->config.instance)->fr & UART_UARTFR_BUSY_BITS) != 0u) {
-        return false;
-    }
-
-    /* Defer while the HW RX FIFO still holds bytes DMA has not drained. */
-    if (uart_is_readable(driver->config.instance)) {
+    if (!uart_hw_line_format_idle(ring_buffer_occupancy(&driver->tx_ring) != 0u,
+                                  driver->tx_active,
+                                  (uart_get_hw(driver->config.instance)->fr &
+                                   UART_UARTFR_BUSY_BITS) != 0u,
+                                  uart_is_readable(driver->config.instance))) {
         return false;
     }
 

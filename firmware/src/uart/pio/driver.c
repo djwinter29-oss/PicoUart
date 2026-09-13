@@ -6,6 +6,7 @@
 #include "uart/pio/internal.h"
 
 #include "uart.pio.h"
+#include "uart/backend_policy.h"
 #include "uart/dma_progress.h"
 #include "uart/line_coding.h"
 #include "uart/pio/txstall_wait.h"
@@ -425,23 +426,24 @@ static void pio_uart_driver_service_tx(pio_uart_driver_t *driver)
 
     if (driver->tx_dma_active) {
         pio_uart_driver_poll_tx_dma(driver);
-        if (driver->tx_dma_active) {
-            return;
-        }
     }
 
     occupancy = ring_buffer_occupancy(&driver->tx_ring);
     threshold = pio_uart_driver_dma_threshold(driver);
 
-    if (occupancy >= threshold) {
-        if (max_transfer_bytes > occupancy) {
-            max_transfer_bytes = occupancy;
-        }
-
+    switch (uart_pio_tx_action(driver->tx_dma_active, occupancy, threshold)) {
+    case UART_PIO_TX_KEEP_DMA:
+        return;
+    case UART_PIO_TX_START_DMA:
+        max_transfer_bytes = uart_pio_tx_dma_transfer_bytes(occupancy, max_transfer_bytes);
         (void)pio_uart_driver_start_tx_dma(driver, max_transfer_bytes);
         if (driver->tx_dma_active) {
             return;
         }
+        /* DMA claim failed; fall through to the FIFO drain path. */
+        break;
+    case UART_PIO_TX_DRAIN_FIFO:
+        break;
     }
 
     pio_uart_driver_drain_tx_fifo(driver);
@@ -526,12 +528,16 @@ void pio_uart_driver_poll(pio_uart_driver_t *driver)
     pio_uart_driver_harvest_framing_errors(driver);
     /* Safety net if the DMA IRQ was masked or delayed past transfer completion. */
     if ((driver->rx_dma_channel >= 0) &&
-        !dma_channel_is_busy((uint)driver->rx_dma_channel) &&
-        (uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel) == 0u)) {
+        uart_rx_dma_poll_should_rearm(true,
+                                      dma_channel_is_busy((uint)driver->rx_dma_channel),
+                                      uart_dma_rx_transfer_count_remaining(
+                                          (uint)driver->rx_dma_channel))) {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
-        if (!dma_channel_is_busy((uint)driver->rx_dma_channel) &&
-            (uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel) == 0u)) {
+        if (uart_rx_dma_poll_should_rearm(true,
+                                          dma_channel_is_busy((uint)driver->rx_dma_channel),
+                                          uart_dma_rx_transfer_count_remaining(
+                                              (uint)driver->rx_dma_channel))) {
             pio_uart_driver_rearm_rx_dma(driver);
         }
         restore_interrupts(interrupt_status);
@@ -606,6 +612,11 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
     pio_uart_driver_publish_rx(driver);
     pio_uart_driver_poll_tx_dma(driver);
 
+    /*
+     * Short-circuit before TXSTALL W1C. The boolean table is
+     * uart_pio_baud_change_idle(); evaluating that helper here would clear
+     * sticky TXSTALL while DMA or TX backlog still owns the port.
+     */
     if (driver->tx_dma_active ||
         (ring_buffer_occupancy(&driver->tx_ring) != 0u) ||
         !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
