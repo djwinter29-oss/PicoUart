@@ -101,7 +101,15 @@ bool ring_buffer_commit_produced(ring_buffer_t *ring, size_t count);
  * @brief Commit bytes consumed from the ring.
  * @param ring Ring to update.
  * @param count Number of bytes consumed.
- * @return `true` when @p count fits the consumer's most recently returned span.
+ * @return `true` when @p count fits the consumer's most recently returned span
+ * and the producer has not overwritten that span while it was outstanding.
+ *
+ * A live RX producer (DMA/ISR via @ref ring_buffer_produce_external) keeps
+ * advancing while the consumer copies bytes out of a span returned by
+ * @ref ring_buffer_read_span. If it wraps the whole ring before this call,
+ * the span's storage was overwritten mid-read; this function detects that,
+ * resynchronizes the consumer past the corrupted window, and returns `false`
+ * instead of accepting the stale bytes as validly consumed.
  */
 bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count);
 

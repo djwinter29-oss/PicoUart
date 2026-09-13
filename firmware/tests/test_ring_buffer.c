@@ -144,6 +144,35 @@ void test_producer_advance_invalidates_prior_write_span_commit(void)
     TEST_ASSERT_FALSE(ring_buffer_commit_produced(&ring, span.length));
 }
 
+void test_commit_consumed_rejects_span_overwritten_during_read(void)
+{
+    ring_buffer_t ring;
+    uint8_t storage[4];
+    ring_buffer_span_t span;
+
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    TEST_ASSERT_EQUAL_UINT(4u, ring_buffer_write(&ring, (const uint8_t *)"abcd", 4u));
+
+    /* Consumer reserves a span but has not yet committed it (e.g. it is
+     * still copying the bytes out to a slow USB endpoint). */
+    span = ring_buffer_read_span(&ring);
+    TEST_ASSERT_EQUAL_UINT(4u, span.length);
+
+    /* A live producer (DMA/ISR) fully wraps the ring while the span is
+     * outstanding, overwriting the storage the consumer is reading. */
+    ring_buffer_produce_external(&ring, 4u);
+
+    /* The stale span must be rejected rather than accounted as consumed. */
+    TEST_ASSERT_FALSE(ring_buffer_commit_consumed(&ring, span.length));
+    TEST_ASSERT_EQUAL_UINT(4u, ring_buffer_overflow_count(&ring));
+    TEST_ASSERT_EQUAL_UINT(0u, ring_buffer_pending_overflow(&ring));
+
+    /* The ring must remain internally consistent and readable afterward. */
+    span = ring_buffer_read_span(&ring);
+    TEST_ASSERT_EQUAL_UINT(4u, span.length);
+    TEST_ASSERT_TRUE(ring_buffer_commit_consumed(&ring, span.length));
+}
+
 void test_write_returns_short_count_when_full(void)
 {
     ring_buffer_t ring;
@@ -176,6 +205,7 @@ int main(void)
     RUN_TEST(test_overwrite_recovery_on_read_span);
     RUN_TEST(test_read_span_recovers_before_returning_data);
     RUN_TEST(test_commit_rejects_oversized_counts);
+    RUN_TEST(test_commit_consumed_rejects_span_overwritten_during_read);
     RUN_TEST(test_producer_advance_invalidates_prior_write_span_commit);
     RUN_TEST(test_write_returns_short_count_when_full);
     RUN_TEST(test_producer_index_tracks_writes);

@@ -350,12 +350,18 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver)
         return false;
     }
 
-    driver->rx_dma_channel = dma_claim_unused_channel(true);
+    /*
+     * Use required=false so DMA-channel exhaustion is reported and rolled
+     * back gracefully (mirroring the PIO backend) instead of panicking via
+     * required=true, which would skip our own cleanup and any remaining
+     * ports' initialization.
+     */
+    driver->rx_dma_channel = dma_claim_unused_channel(false);
     if (driver->rx_dma_channel < 0) {
         return false;
     }
 
-    driver->tx_dma_channel = dma_claim_unused_channel(true);
+    driver->tx_dma_channel = dma_claim_unused_channel(false);
     if (driver->tx_dma_channel < 0) {
         hw_uart_driver_release_dma(driver);
         return false;
