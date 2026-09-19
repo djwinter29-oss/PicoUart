@@ -70,14 +70,22 @@ def open_device() -> Any:
     if len(exact_matches) > 1:
         raise RuntimeError("multiple PicoUart HID interfaces matched the expected usage")
 
-    # Some hidapi backends omit usage metadata. Only trust a unique collection
-    # with PicoUart's exact product and no contradictory interface number.
+    # Some hidapi backends omit usage metadata. Trust PicoUart's exact product
+    # string, or an empty product string only when the interface number is
+    # known to be the vendor HID interface. Keep the interface constraint for
+    # every fallback match.
     fallback_matches = [
         device_info
         for device_info in devices
         if not device_info.get("usage_page")
         and not device_info.get("usage")
-        and device_info.get("product_string") == PRODUCT_STRING
+        and (
+            device_info.get("product_string") == PRODUCT_STRING
+            or (
+                not device_info.get("product_string")
+                and device_info.get("interface_number") == HID_INTERFACE_NUMBER
+            )
+        )
         and device_info.get("interface_number") in (None, -1, HID_INTERFACE_NUMBER)
     ]
     if len(fallback_matches) == 1:
