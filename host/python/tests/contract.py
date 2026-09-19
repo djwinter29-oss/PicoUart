@@ -67,6 +67,7 @@ def firmware_hid_constants(repo_root: Path) -> dict[str, int]:
         "USB_HID_REPORT_ID_STATUS",
         "USB_HID_REPORT_ID_BOARD_STATUS",
         "USB_HID_REPORT_ID_COMMAND",
+        "USB_HID_REPORT_ID_OVERFLOW_COUNTS",
         "USB_HID_COMMAND_TOGGLE_LED",
         "USB_HID_COMMAND_RESET_BOARD",
         "USB_HID_COMMAND_ARM_RESET",

@@ -18,6 +18,9 @@ the HID monitor. At runtime:
 - core 0 services TinyUSB tasks
 - core 0 moves CDC OUT traffic into shared per-port TX rings
 - core 0 moves shared per-port RX ring data back to the matching CDC IN endpoint
+- CDC bridge work uses bounded 1 KiB per-port batches, a 1 ms partial-buffer
+  flush deadline, and rotates the first interface serviced on each poll to limit
+  cross-port starvation under load
 - core 0 emits a periodic HID status report when the host is ready and serves
   HID feature reads for board temperature
 
@@ -29,10 +32,10 @@ This means the codebase is already at the multi-port bridge stage, not the earli
 | --- | --- | --- |
 | CDC0 | Hardware UART0 | TX GP0, RX GP1; RTS GP3 / CTS GP2 reserved (FC off by default) |
 | CDC1 | Hardware UART1 | TX GP4, RX GP5; RTS GP7 / CTS GP6 reserved (FC off by default) |
-| CDC2 | PIO UART | TX GP8, RX GP9; RTS GP10 / CTS GP11 docs-reserved only (not GPIO-owned) |
-| CDC3 | PIO UART | TX GP12, RX GP13; RTS GP14 / CTS GP15 docs-reserved only (not GPIO-owned) |
-| CDC4 | PIO UART | TX GP16, RX GP17; RTS GP18 / CTS GP19 docs-reserved only (not GPIO-owned) |
-| CDC5 | PIO UART | TX GP20, RX GP21; RTS GP22 / CTS GP26 docs-reserved only (not GPIO-owned) |
+| CDC2 | PIO UART | TX GP8, RX GP9; RTS GP10 / CTS GP11 opt-in |
+| CDC3 | PIO UART | TX GP12, RX GP13; RTS GP14 / CTS GP15 opt-in |
+| CDC4 | PIO UART | TX GP16, RX GP17; RTS GP18 / CTS GP19 opt-in |
+| CDC5 | PIO UART | TX GP20, RX GP21; RTS GP22 / CTS GP26 opt-in |
 
 ## Data Flow
 
@@ -45,7 +48,7 @@ Host application
 Each port should work independently so traffic on one UART does not block the others more than necessary.
 Hardware UART ports use DMA-backed RX and TX rings. PIO UART ports use per-port software rings with
 DMA-backed RX (PIO RX FIFO → ring) and a hybrid core-1 TX path that fills the joined TX FIFO for short
-queues, then lazily claims DMA when deeper backlog makes that path cheaper. Each ring has one producer and
+queues, then uses a persistent DMA channel when deeper backlog makes that path cheaper. Each ring has one producer and
 one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and produces RX.
 
 ## Main Blocks
@@ -54,7 +57,7 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
 - USB HID status-monitor function with LED-toggle, watchdog-reset, temperature, and firmware-version feature reports
 - Per-port CDC-to-UART routing in the USB poll loop
 - Per-port RX and TX ring buffers inside each UART backend
-- 2 hardware UART backends with RTS/CTS pins exposed but disabled by default
+- 2 hardware UART backends with optional RTS/CTS backpressure
 - 4 PIO UART backends
 - Board-specific GPIO and peripheral mapping in `firmware/src/config/uart_board.c`
 - CDC DTR is recorded for HID monitoring only and does not gate bridging; HID board controls are restricted to LED toggle and reset
@@ -71,9 +74,10 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   per-port rings and the control mailbox.
 - Core 1 also installs and services the DMA RX re-arm IRQ handlers. Core 0
   configures backends during startup but does not execute live UART IRQ work.
-- Hardware UART0/UART1 leave RTS/CTS disabled by default. The pins stay available
-  for explicit future flow-control enablement, but the default bench wiring and
-  Debug Probe validation use TX, RX, and GND only.
+- Hardware UART0/UART1 keep RTS/CTS disabled by default. When enabled in the
+  board configuration, CTS remains a hardware TX input and RTS is driven from
+  RX-ring occupancy with hysteresis. PIO RX RTS and CTS TX gating are similarly
+  opt-in; CTS pauses the PIO state machine before starting the next frame.
 - PIO UART ports support 8N1 with stop-bit framing validation; hardware UART ports additionally apply valid CDC data-bit,
   stop-bit, and parity settings.
 - Deferred line-coding applies fail with `CONTROL_ERROR` if the backend cannot reach a
@@ -101,8 +105,7 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
 
 ## Open Items
 
-- RTS and CTS runtime behavior for PIO UART ports
-- Whether full ring occupancy/overflow counters should be added to the compact HID report
-  (high-water mark blocks and a sticky overrun health bit are already present)
+- Whether full ring occupancy should be added to the compact HID report
+  (high-water mark blocks, sticky overrun health, and exact overflow counts are already present)
 - Replace development USB IDs (`cafe:4010`) before production releases (see `docs/releasing.md`)
 - Sustained multi-port 1 Mbaud remains bounded by USB full-speed aggregate bandwidth

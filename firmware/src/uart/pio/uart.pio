@@ -14,6 +14,20 @@ bitloop:
     jmp x-- bitloop [6]    ; 8 data bits × 8 clocks
 .wrap
 
+.program pio_uart_tx_cts
+.side_set 1 opt
+
+; CTS is active-low. Wait only at the frame boundary so a CTS transition can
+; defer the next byte without truncating the one already on the wire.
+.wrap_target
+    pull        side 1 [6] ; Hold the completed frame's stop bit high.
+    wait 0 pin 0          ; Keep that idle-high level until CTS permits TX.
+    set x, 7    side 0 [7]
+bitloop_cts:
+    out pins, 1
+    jmp x-- bitloop_cts [6]
+.wrap
+
 .program pio_uart_rx
 ; 8N1 RX with stop-bit framing check.
 ; On a framing error (stop bit low): raise irq 0 rel for this SM, discard the

@@ -42,6 +42,7 @@ typedef struct {
     int tx_dma_channel; /**< Claimed DMA channel used for UART TX. */
     size_t tx_dma_bytes_in_flight; /**< Bytes currently owned by the active TX DMA transfer. */
     bool tx_active; /**< True while a TX DMA transfer is still in flight. */
+    bool rx_rts_asserted; /**< True while manual RTS permits the peer to transmit. */
     uint32_t controller_tx_bytes; /**< Bytes completed by the UART TX DMA engine. */
     uint32_t controller_rx_bytes; /**< Bytes accepted by the UART RX DMA engine. */
     uint32_t rx_error_count; /**< Hardware UART receive-status events observed since initialization. */

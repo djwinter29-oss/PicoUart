@@ -15,8 +15,8 @@
 
 /** @brief Number of USB CDC functions exposed by the firmware. */
 #define USB_CDC_PORT_COUNT 6u
-/** @brief Maximum bytes moved per interface and direction in one bridge pass. */
-#define USB_CDC_BRIDGE_PASS_BUDGET 256u
+/** @brief Maximum delay before a partial CDC IN buffer is flushed. */
+#define USB_CDC_FLUSH_LATENCY_US 1000u
 /**
  * @brief How long a CDC soft-pending line-coding request may wait for the mailbox.
  *
@@ -42,6 +42,19 @@ typedef struct {
 static usb_cdc_pending_line_coding_t usb_cdc_line_coding_pending[USB_CDC_PORT_COUNT];
 /** @brief Per-port host-side CDC transport state. */
 static usb_cdc_port_stats_t usb_cdc_stats[USB_CDC_PORT_COUNT];
+/** @brief Interface serviced first on the next bounded CDC bridge pass. */
+static uint8_t usb_cdc_poll_start_itf;
+/** @brief True when a partial CDC IN buffer is waiting for its latency deadline. */
+static bool usb_cdc_tx_flush_pending[USB_CDC_PORT_COUNT];
+/** @brief Flush deadlines for partial CDC IN buffers. */
+static absolute_time_t usb_cdc_tx_flush_deadline[USB_CDC_PORT_COUNT];
+
+static void usb_cdc_update_high_watermark(uint16_t *high_watermark, uint32_t occupancy)
+{
+    if (occupancy > *high_watermark) {
+        *high_watermark = (occupancy > UINT16_MAX) ? UINT16_MAX : (uint16_t)occupancy;
+    }
+}
 
 static bool usb_cdc_apply_line_coding(uint8_t itf,
                                       const uart_driver_line_coding_t *line_coding,
@@ -120,9 +133,10 @@ static void usb_cdc_bridge_usb_to_uart(uint8_t itf)
     uint32_t available;
 
     available = tud_cdc_n_available(itf);
+    usb_cdc_update_high_watermark(&usb_cdc_stats[itf].rx_fifo_high_watermark, available);
     if (available != 0u) {
-        if (available > USB_CDC_BRIDGE_PASS_BUDGET) {
-            available = USB_CDC_BRIDGE_PASS_BUDGET;
+        if (available > PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET) {
+            available = PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET;
         }
 
         size_t drained = uart_driver_fill_tx((uart_port_id_t)itf,
@@ -142,10 +156,23 @@ static uint32_t usb_cdc_usb_writer(void *context, const uint8_t *data, uint32_t 
     return tud_cdc_n_write(itf, data, length);
 }
 
+static void usb_cdc_flush_if_due(uint8_t itf)
+{
+    if (usb_cdc_tx_flush_pending[itf] && time_reached(usb_cdc_tx_flush_deadline[itf])) {
+        tud_cdc_n_write_flush(itf);
+        usb_cdc_tx_flush_pending[itf] = false;
+    }
+}
+
 static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
 {
-    uint32_t writable = tud_cdc_n_write_available(itf);
+    uint32_t writable;
     size_t written = 0u;
+
+    usb_cdc_flush_if_due(itf);
+    writable = tud_cdc_n_write_available(itf);
+    usb_cdc_update_high_watermark(&usb_cdc_stats[itf].tx_fifo_high_watermark,
+                                  PICO_UART_USB_CDC_TX_BUFFER_SIZE - writable);
 
     if (writable == 0u) {
         /* Still retire RX overruns so a stalled host cannot wrap the ring. */
@@ -153,8 +180,8 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
         return;
     }
 
-    if (writable > USB_CDC_BRIDGE_PASS_BUDGET) {
-        writable = USB_CDC_BRIDGE_PASS_BUDGET;
+    if (writable > PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET) {
+        writable = PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET;
     }
 
     written = uart_driver_drain_rx((uart_port_id_t)itf,
@@ -163,18 +190,36 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
                                    &itf);
     if (written != 0u) {
         usb_cdc_stats[itf].tx_bytes += (uint32_t)written;
-        tud_cdc_n_write_flush(itf);
+        if (!usb_cdc_tx_flush_pending[itf]) {
+            usb_cdc_tx_flush_deadline[itf] = make_timeout_time_us(USB_CDC_FLUSH_LATENCY_US);
+        }
+        usb_cdc_tx_flush_pending[itf] = true;
+
+        if ((written >= PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET) ||
+            (tud_cdc_n_write_available(itf) == 0u)) {
+            tud_cdc_n_write_flush(itf);
+            usb_cdc_tx_flush_pending[itf] = false;
+        }
     }
 }
 
 void usb_cdc_init(void) {
+    usb_cdc_poll_start_itf = 0u;
+    for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
+        usb_cdc_tx_flush_pending[itf] = false;
+        usb_cdc_tx_flush_deadline[itf] = nil_time;
+    }
     tusb_init();
 }
 
 void usb_cdc_poll(void) {
+    uint8_t start_itf = usb_cdc_poll_start_itf;
+
     tud_task();
 
-    for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
+    for (uint8_t offset = 0u; offset < USB_CDC_PORT_COUNT; ++offset) {
+        uint8_t itf = (uint8_t)((start_itf + offset) % USB_CDC_PORT_COUNT);
+
         usb_cdc_apply_pending_line_coding(itf);
 
         if (!uart_driver_port_is_ready((uart_port_id_t)itf)) {
@@ -184,6 +229,8 @@ void usb_cdc_poll(void) {
         usb_cdc_bridge_usb_to_uart(itf);
         usb_cdc_bridge_uart_to_usb(itf);
     }
+
+    usb_cdc_poll_start_itf = (uint8_t)((start_itf + 1u) % USB_CDC_PORT_COUNT);
 }
 
 /**

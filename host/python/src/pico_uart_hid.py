@@ -20,6 +20,7 @@ USAGE = 0x0001
 REPORT_ID_STATUS = 1
 REPORT_ID_BOARD_STATUS = 3
 REPORT_ID_COMMAND = 4
+REPORT_ID_OVERFLOW_COUNTS = 5
 
 COMMAND_TOGGLE_LED = 1
 COMMAND_RESET_BOARD = 2
@@ -27,6 +28,7 @@ COMMAND_ARM_RESET = 3
 
 STATUS_SIZE = 63
 BOARD_STATUS_SIZE = 8
+OVERFLOW_COUNTS_SIZE = 25
 BOARD_STATUS_LAYOUT_VERSION = 15
 STATUS_LAYOUT_VERSION = 15
 RESET_ARM_WINDOW_S = 2.0
@@ -106,6 +108,15 @@ def read_board_temperature(device: Any) -> float:
 def read_firmware_version(device: Any) -> str:
     """Read the firmware semantic version (MAJOR.MINOR.PATCH) from HID."""
     return read_board_status(device)["firmware_version"]
+
+
+def read_overflow_counts(device: Any) -> list[int]:
+    """Read cumulative UART-to-USB dropped-byte counts for CDC0 through CDC5."""
+    payload = read_feature(device, REPORT_ID_OVERFLOW_COUNTS, OVERFLOW_COUNTS_SIZE)
+    version, *overflow_counts = struct.unpack("<B6I", payload)
+    if version != STATUS_LAYOUT_VERSION:
+        raise RuntimeError(f"unsupported overflow-count report version {version}")
+    return overflow_counts
 
 
 def parse_status(payload: bytes) -> dict[str, Any]:
@@ -200,6 +211,7 @@ def parse_arguments() -> argparse.Namespace:
     monitor_parser.add_argument("--duration", type=float, default=5.0, help="monitor duration in seconds")
     commands.add_parser("temperature", help="read the internal board temperature")
     commands.add_parser("version", help="read the firmware semantic version (MAJOR.MINOR.PATCH)")
+    commands.add_parser("overruns", help="read cumulative UART RX dropped-byte counts")
     commands.add_parser("toggle-led", help="toggle the board's default LED")
     commands.add_parser(
         "reset",
@@ -223,6 +235,8 @@ def main() -> int:
                 print(f"temperature={read_board_temperature(device):.2f} C")
             elif arguments.command == "version":
                 print(read_firmware_version(device))
+            elif arguments.command == "overruns":
+                print(" ".join(f"cdc{index}={count}" for index, count in enumerate(read_overflow_counts(device))))
             elif arguments.command == "toggle-led":
                 send_command(device, COMMAND_TOGGLE_LED)
             elif arguments.command == "reset":
