@@ -84,6 +84,31 @@ target_include_directories(test_backend_policy PRIVATE
 target_link_libraries(test_backend_policy PRIVATE unity)
 add_test(NAME backend_policy COMMAND test_backend_policy)
 
+# Fault-injection test: HW UART DMA claim/rollback via injectable ops seam.
+# Links the real dma_claim.c (production claim algorithm, no SDK deps) with a
+# fake ops table that controls claim success/failure and logs every call.
+add_executable(test_dma_claim
+    test_dma_claim.c
+    ${FIRMWARE_ROOT}/src/uart/hw/dma_claim.c
+)
+target_include_directories(test_dma_claim PRIVATE
+    ${FIRMWARE_ROOT}/src
+)
+target_link_libraries(test_dma_claim PRIVATE unity)
+add_test(NAME dma_claim COMMAND test_dma_claim)
+
+# Fault-injection test: PIO state-machine/DMA claim rollback via injectable
+# ops seam. Links the real resource_claim.c algorithm without SDK headers.
+add_executable(test_resource_claim
+    test_resource_claim.c
+    ${FIRMWARE_ROOT}/src/uart/pio/resource_claim.c
+)
+target_include_directories(test_resource_claim PRIVATE
+    ${FIRMWARE_ROOT}/src
+)
+target_link_libraries(test_resource_claim PRIVATE unity)
+add_test(NAME resource_claim COMMAND test_resource_claim)
+
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set(_pico_uart_host_warnings -Wall -Wextra -Werror)
     foreach(_pico_uart_host_target
@@ -93,7 +118,9 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
             test_txstall_wait
             test_cdc_soft_pending
             test_topology
-            test_backend_policy)
+            test_backend_policy
+            test_dma_claim
+            test_resource_claim)
         target_compile_options(${_pico_uart_host_target} PRIVATE ${_pico_uart_host_warnings})
     endforeach()
 endif()

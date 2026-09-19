@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 env:
-  PICO_SDK_VERSION: "2.2.0"
-  PICO_SDK_REVISION: "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779"
+  PICO_SDK_VERSION: "2.3.0"
+  PICO_SDK_REVISION: "98a542c1a62fb549ffb5d66a3e5892b06276b670"
 
 jobs:
   firmware:

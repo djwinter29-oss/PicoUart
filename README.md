@@ -36,7 +36,7 @@ microcontroller platform.
 CI builds both firmware targets on Linux and runs host tests on Linux and Windows.
 
 ```sh
-. tools/linux/setup-sdk-env.sh --sdk-version 2.2.0
+. tools/linux/setup-sdk-env.sh --sdk-version 2.3.0
 tools/linux/build.sh --board pico
 tools/linux/build.sh --board pico2
 tools/linux/test-host.sh
@@ -52,8 +52,8 @@ the draft only after `docs/releasing.md` (USB identity note + recorded HIL). Aft
 flashing, `python3 host/python/src/pico_uart_hid.py version` should print
 `1.2.3`.
 
-CI and release builds pin Pico SDK 2.2.0 at commit
-`a1438dff1d38bd9c65dbd693f0e5db4b9ae91779` and verify the checkout before
+CI and release builds pin Pico SDK 2.3.0 at commit
+`98a542c1a62fb549ffb5d66a3e5892b06276b670` and verify the checkout before
 compiling. Published version components are limited to major
 and minor `0-99` and patch `0-255`, matching USB BCD and HID report storage.
 

@@ -1,6 +1,6 @@
 param(
-    [string]$SdkVersion = "2.2.0",
-    [string]$SdkRevision = "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779"
+    [string]$SdkVersion = "2.3.0",
+    [string]$SdkRevision = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
 )
 
 $ErrorActionPreference = "Stop"

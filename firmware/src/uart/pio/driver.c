@@ -9,6 +9,7 @@
 #include "uart/backend_policy.h"
 #include "uart/dma_progress.h"
 #include "uart/line_coding.h"
+#include "uart/pio/resource_claim.h"
 #include "uart/pio/txstall_wait.h"
 
 #include "hardware/clocks.h"
@@ -289,20 +290,6 @@ static bool pio_uart_driver_ensure_programs(pio_uart_driver_t *driver)
         state->rx_loaded = true;
     }
 
-    return true;
-}
-
-static bool pio_uart_driver_claim_state_machines(pio_uart_driver_t *driver)
-{
-    if (pio_sm_is_claimed(driver->config.pio, driver->config.tx_state_machine) ||
-        pio_sm_is_claimed(driver->config.pio, driver->config.rx_state_machine)) {
-        return false;
-    }
-
-    pio_sm_claim(driver->config.pio, driver->config.tx_state_machine);
-    driver->tx_sm_claimed = true;
-    pio_sm_claim(driver->config.pio, driver->config.rx_state_machine);
-    driver->rx_sm_claimed = true;
     return true;
 }
 
@@ -680,21 +667,31 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
         return false;
     }
 
-    if (!pio_uart_driver_ensure_programs(driver) ||
-        !pio_uart_driver_claim_state_machines(driver)) {
+    if (!pio_uart_driver_ensure_programs(driver)) {
         return false;
     }
 
-    driver->rx_dma_channel = dma_claim_unused_channel(false);
-    if (driver->rx_dma_channel < 0) {
-        pio_uart_driver_unclaim_state_machines(driver);
-        return false;
-    }
-
-    driver->tx_dma_channel = dma_claim_unused_channel(false);
-    if (driver->tx_dma_channel < 0) {
-        pio_uart_driver_release_dma(driver);
-        pio_uart_driver_unclaim_state_machines(driver);
+    /*
+     * Test seam: the SM-then-DMA claim-and-rollback sequence lives in
+     * resource_claim.c so host unit tests can fault-inject an RX/TX DMA
+     * claim failure after successful state-machine claims and verify the
+     * state machines (and any already-claimed DMA channel) are released,
+     * through the same production code path used here
+     * (pio_uart_resource_claim_ops_default binds to the real
+     * pio_sm_claim/pio_sm_unclaim/dma_claim_unused_channel/
+     * dma_channel_unclaim SDK calls with no behavior change). Rolling back
+     * via a plain unclaim here (rather than the fuller
+     * pio_uart_driver_release_dma) is equivalent because neither DMA channel
+     * was ever armed at this point.
+     */
+    if (!pio_uart_driver_claim_resources(&pio_uart_resource_claim_ops_default,
+                                         driver->config.pio,
+                                         driver->config.tx_state_machine,
+                                         driver->config.rx_state_machine,
+                                         &driver->tx_sm_claimed,
+                                         &driver->rx_sm_claimed,
+                                         &driver->rx_dma_channel,
+                                         &driver->tx_dma_channel)) {
         return false;
     }
 

@@ -16,7 +16,7 @@ These are installed once and captured in the snapshot:
 - `libstdc++-14-dev` (apt) — **required gotcha**: the default `/usr/bin/c++` is clang, which
   selects the gcc-14 toolchain dir. Without `libstdc++-14-dev` the **native host-tool build
   (picotool) fails with `cannot find -lstdc++`** even though `libstdc++-13-dev` is present.
-- Pico SDK 2.2.0 with submodules, cloned into the gitignored `.pico-sdk/` by
+- Pico SDK 2.3.0 with submodules, cloned into the gitignored `.pico-sdk/` by
   `tools/linux/setup-sdk-env.sh`. Persisted in the snapshot; the setup script is idempotent
   (skips the clone if `.pico-sdk/` already exists).
 

@@ -7,6 +7,7 @@
 
 #include "uart/backend_policy.h"
 #include "uart/dma_progress.h"
+#include "uart/hw/dma_claim.h"
 
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
@@ -440,15 +441,19 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver)
      * back gracefully (mirroring the PIO backend) instead of panicking via
      * required=true, which would skip our own cleanup and any remaining
      * ports' initialization.
+     *
+     * Test seam: the claim-then-rollback sequence lives in dma_claim.c so
+     * host unit tests can fault-inject a TX claim failure after a successful
+     * RX claim and verify the RX channel is released, through the same
+     * production code path used here (hw_uart_driver_dma_claim_ops_default
+     * binds to the real dma_claim_unused_channel/dma_channel_unclaim SDK
+     * calls with no behavior change). Rolling back via a plain unclaim here
+     * (rather than the fuller hw_uart_driver_release_dma) is equivalent
+     * because the RX channel was never armed at this point.
      */
-    driver->rx_dma_channel = dma_claim_unused_channel(false);
-    if (driver->rx_dma_channel < 0) {
-        return false;
-    }
-
-    driver->tx_dma_channel = dma_claim_unused_channel(false);
-    if (driver->tx_dma_channel < 0) {
-        hw_uart_driver_release_dma(driver);
+    if (!hw_uart_driver_claim_dma_channels(&hw_uart_driver_dma_claim_ops_default,
+                                           &driver->rx_dma_channel,
+                                           &driver->tx_dma_channel)) {
         return false;
     }
 
