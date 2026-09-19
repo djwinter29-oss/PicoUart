@@ -20,6 +20,10 @@ on:
 permissions:
   contents: read
 
+env:
+  PICO_SDK_VERSION: "2.2.0"
+  PICO_SDK_REVISION: "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779"
+
 jobs:
   usb-identity:
     name: USB identity gate
@@ -66,7 +70,8 @@ jobs:
             host/python/src/pico_uart_hid.py \
             tools/linux/serial_bridge_test.py \
             tools/linux/serial_stress_benchmark.py \
-            tools/linux/check-usb-identity.py
+            tools/linux/check-usb-identity.py \
+            tools/linux/verify-build.py
 
       - name: Run host unit tests (C Unity + Python pytest)
         run: tools/linux/test-host.sh --sanitize
@@ -104,8 +109,16 @@ jobs:
           else
             VERSION="${REF_NAME#v}"
           fi
-          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          if ! printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
             echo "Refusing version '$VERSION' (expected plain MAJOR.MINOR.PATCH like 1.2.3)" >&2
+            exit 1
+          fi
+          OLD_IFS=$IFS
+          IFS=.
+          set -- $VERSION
+          IFS=$OLD_IFS
+          if [ "$1" -gt 99 ] || [ "$2" -gt 99 ] || [ "$3" -gt 255 ]; then
+            echo "Refusing version '$VERSION' (major/minor must be 0-99; patch must be 0-255)" >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -125,12 +138,14 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .pico-sdk
-          key: pico-sdk-2.2.0-${{ runner.os }}
+          key: pico-sdk-${{ env.PICO_SDK_VERSION }}-${{ env.PICO_SDK_REVISION }}-${{ runner.os }}
 
       - name: Setup Pico SDK
         run: |
           set --
-          . tools/linux/setup-sdk-env.sh
+          . tools/linux/setup-sdk-env.sh \
+            --sdk-version "$PICO_SDK_VERSION" \
+            --sdk-revision "$PICO_SDK_REVISION"
 
       - name: Build firmware
         env:
@@ -153,25 +168,7 @@ jobs:
           for ext in uf2 elf bin hex; do
             cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${BOARD}.$ext"
           done
-          strings "$SRC/pico_uart.bin" | grep -Fqx "${VERSION}"
-          python3 -c "
-          import pathlib, re, sys
-          sys.path.insert(0, 'host/python/tests')
-          from contract import firmware_usb_ids, usb_identity_needle_le
-          version = sys.argv[2]
-          data = pathlib.Path(sys.argv[1]).read_bytes()
-          m = re.match(r'^([0-9]+)\\.([0-9]+)\\.([0-9]+)$', version)
-          assert m, version
-          major, minor = int(m.group(1)), int(m.group(2))
-          assert 0 <= major <= 99 and 0 <= minor <= 99
-          bcd = ((major // 10) << 12) | ((major % 10) << 8) | ((minor // 10) << 4) | (minor % 10)
-          vid, pid = firmware_usb_ids(pathlib.Path('.'))
-          needle = usb_identity_needle_le(vid, pid, bcd)
-          assert needle in data, needle.hex()
-          # HID status Report Count 0x3F (63) must remain in the descriptor.
-          assert bytes([0x95, 0x3F]) in data, 'HID status Report Count 0x3F missing'
-          print(f'USB {vid:#06x}:{pid:#06x} bcdDevice=0x{bcd:04x} OK')
-          " "$SRC/pico_uart.bin" "$VERSION"
+          python3 tools/linux/verify-build.py --build-dir "$SRC" --board "$BOARD" --version "$VERSION"
           (cd "$OUT" && sha256sum pico_uart-v${VERSION}-${BOARD}.* > "SHA256SUMS-${BOARD}.txt")
           ls -la "$OUT"
 

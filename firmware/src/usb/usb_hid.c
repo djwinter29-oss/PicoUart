@@ -211,10 +211,10 @@ static void usb_hid_build_status_report(
     report->sequence = usb_hid_sequence;
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        const uart_driver_port_info_t *port_info = uart_driver_port_info((uart_port_id_t)index);
+        uart_driver_port_info_t port_info;
         uint32_t ring_high_watermark;
 
-        if (port_info == NULL) {
+        if (!uart_driver_port_info((uart_port_id_t)index, &port_info)) {
             continue;
         }
 
@@ -222,7 +222,7 @@ static void usb_hid_build_status_report(
         if (cdc_stats[index].opened) {
             report->channel[index].health |= USB_HID_CHANNEL_STATUS_CDC_OPEN;
         }
-        if (port_info->backend == UART_DRIVER_BACKEND_PIO) {
+        if (port_info.backend == UART_DRIVER_BACKEND_PIO) {
             report->channel[index].health |= USB_HID_CHANNEL_STATUS_PIO_BACKEND;
         }
         if ((uart_stats[index].rx_ring_overflow_count != 0u) ||
@@ -386,4 +386,9 @@ void tud_hid_set_report_cb(uint8_t instance,
     default:
         break;
     }
+}
+
+void usb_hid_reset_host_state(void)
+{
+    usb_hid_reset_armed_deadline = nil_time;
 }

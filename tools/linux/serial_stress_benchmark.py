@@ -2,6 +2,7 @@
 """Stress PicoUart UART0, optional UART1/UART4, UART2/UART3, and UART5 concurrently."""
 
 import argparse
+import math
 import os
 import select
 import sys
@@ -26,20 +27,24 @@ DEFAULT_RATES = tuple(BAUD_RATES)
 
 def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
     file_descriptor = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-    original_settings = termios.tcgetattr(file_descriptor)
-    settings = termios.tcgetattr(file_descriptor)
+    try:
+        original_settings = termios.tcgetattr(file_descriptor)
+        settings = termios.tcgetattr(file_descriptor)
 
-    settings[0] = 0
-    settings[1] = 0
-    settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-    settings[3] = 0
-    settings[4] = BAUD_RATES[baud_rate]
-    settings[5] = BAUD_RATES[baud_rate]
-    settings[6][termios.VMIN] = 0
-    settings[6][termios.VTIME] = 0
-    termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
-    termios.tcflush(file_descriptor, termios.TCIOFLUSH)
-    return file_descriptor, original_settings
+        settings[0] = 0
+        settings[1] = 0
+        settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+        settings[3] = 0
+        settings[4] = BAUD_RATES[baud_rate]
+        settings[5] = BAUD_RATES[baud_rate]
+        settings[6][termios.VMIN] = 0
+        settings[6][termios.VTIME] = 0
+        termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
+        termios.tcflush(file_descriptor, termios.TCIOFLUSH)
+        return file_descriptor, original_settings
+    except Exception:
+        os.close(file_descriptor)
+        raise
 
 
 def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
@@ -148,13 +153,28 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def close_port(file_descriptor: int, settings: list) -> None:
-    termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
-    os.close(file_descriptor)
+    try:
+        termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
+    finally:
+        os.close(file_descriptor)
+
+
+def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
+    """Close every configured port and return the first terminal cleanup error."""
+    first_error = None
+    for file_descriptor, settings in reversed(ports):
+        try:
+            close_port(file_descriptor, settings)
+        except OSError as error:
+            if first_error is None:
+                first_error = error
+    return first_error
 
 
 def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     ports: list[tuple[int, list]] = []
     results: dict[str, tuple[int, str | None]] = {}
+    passed = False
 
     try:
         uart0_pico, uart0_pico_settings = configure_port(arguments.uart0_pico, arguments.uart0_baud)
@@ -220,24 +240,26 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             else:
                 print(f"FAIL {label}: {bytes_verified} bytes, {error}", file=sys.stderr)
                 passed = False
-        return passed
     except OSError as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
-        return False
+        passed = False
     finally:
-        for file_descriptor, settings in reversed(ports):
-            close_port(file_descriptor, settings)
+        cleanup_error = close_ports(ports)
+        if cleanup_error is not None:
+            print(f"Serial cleanup failed: {cleanup_error}", file=sys.stderr)
+            passed = False
+    return passed
 
 
 def main() -> int:
     arguments = parse_arguments()
-    if arguments.duration <= 0:
+    if not math.isfinite(arguments.duration) or arguments.duration <= 0:
         print("--duration must be greater than zero", file=sys.stderr)
         return 2
     if arguments.payload_bytes < 32 or arguments.payload_bytes > 4096:
         print("--payload-bytes must be between 32 and 4096", file=sys.stderr)
         return 2
-    if arguments.timeout <= 0:
+    if not math.isfinite(arguments.timeout) or arguments.timeout <= 0:
         print("--timeout must be greater than zero", file=sys.stderr)
         return 2
 

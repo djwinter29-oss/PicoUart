@@ -12,4 +12,7 @@ void usb_hid_init(void);
 /** @brief Poll the HID monitor and publish the next status report when ready. */
 void usb_hid_poll(void);
 
+/** @brief Revoke host-session authorization after USB disconnect. */
+void usb_hid_reset_host_state(void);
+
 #endif

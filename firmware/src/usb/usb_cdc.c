@@ -9,6 +9,7 @@
 #include "uart/line_coding.h"
 #include "uart/uart_driver.h"
 #include "usb/cdc_soft_pending.h"
+#include "usb/usb_hid.h"
 
 #include "pico/time.h"
 #include "tusb.h"
@@ -75,10 +76,15 @@ static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_
 {
     usb_cdc_pending_line_coding_t *pending = &usb_cdc_line_coding_pending[itf];
     bool was_pending = pending->pending;
+    bool same_request = was_pending &&
+                        (pending->line_coding.baud_rate == line_coding->baud_rate) &&
+                        (pending->line_coding.data_bits == line_coding->data_bits) &&
+                        (pending->line_coding.stop_bits == line_coding->stop_bits) &&
+                        (pending->line_coding.parity == line_coding->parity);
 
     pending->line_coding = *line_coding;
-    /* Coalesce retries onto the original deadline so hosts cannot refresh forever. */
-    if (usb_cdc_soft_pending_should_set_deadline(was_pending)) {
+    /* Identical retries cannot refresh forever; a distinct replacement gets its own window. */
+    if (usb_cdc_soft_pending_should_set_deadline(was_pending, same_request)) {
         pending->deadline = make_timeout_time_ms(USB_CDC_SOFT_PENDING_TIMEOUT_MS);
     }
     pending->pending = true;
@@ -210,6 +216,24 @@ void usb_cdc_init(void) {
         usb_cdc_tx_flush_deadline[itf] = nil_time;
     }
     tusb_init();
+}
+
+void usb_cdc_reset_host_state(void)
+{
+    for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
+        usb_cdc_stats[itf].opened = false;
+        usb_cdc_line_coding_pending[itf].pending = false;
+        usb_cdc_line_coding_pending[itf].deadline = nil_time;
+        usb_cdc_tx_flush_pending[itf] = false;
+        usb_cdc_tx_flush_deadline[itf] = nil_time;
+        uart_driver_reset_soft_pending((uart_port_id_t)itf);
+    }
+}
+
+void tud_umount_cb(void)
+{
+    usb_cdc_reset_host_state();
+    usb_hid_reset_host_state();
 }
 
 void usb_cdc_poll(void) {

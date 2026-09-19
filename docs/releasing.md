@@ -89,6 +89,11 @@ Before clicking **Publish** on the GitHub draft:
 ## Versioning
 
 Tag form is `vMAJOR.MINOR.PATCH` (no `-rc` / pre-release suffixes for publish).
+Major and minor must be `0-99`; patch must be `0-255`.
 The tag stamps HID firmware version `MAJOR.MINOR.PATCH` and USB `bcdDevice` as
 major.minor BCD only (for example `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
 Details are in the root README.
+
+Release and PR workflows build against Pico SDK 2.2.0 at commit
+`a1438dff1d38bd9c65dbd693f0e5db4b9ae91779` and print the verified revision in
+the job log.

@@ -16,6 +16,8 @@ VENDOR_ID = 0xCAFE  # Keep in sync with firmware/src/config/usb_identity.h
 PRODUCT_ID = 0x4010  # Development placeholder; see SECURITY.md
 USAGE_PAGE = 0xFF00
 USAGE = 0x0001
+PRODUCT_STRING = "PicoUart CDC+HID PIO 8N1"
+HID_INTERFACE_NUMBER = 12
 
 REPORT_ID_STATUS = 1
 REPORT_ID_BOARD_STATUS = 3
@@ -31,6 +33,10 @@ BOARD_STATUS_SIZE = 8
 OVERFLOW_COUNTS_SIZE = 25
 BOARD_STATUS_LAYOUT_VERSION = 15
 STATUS_LAYOUT_VERSION = 15
+STATUS_SIGNATURE = ord("P")
+UART_CHANNEL_COUNT = 6
+STATUS_HEADER_SIZE = 3
+STATUS_CHANNEL_SIZE = 10
 RESET_ARM_WINDOW_S = 2.0
 
 
@@ -54,19 +60,33 @@ def open_enumerated_device(device_info: dict[str, Any]) -> Any:
 def open_device() -> Any:
     """Open PicoUart's vendor-defined HID collection."""
     devices = hid.enumerate(VENDOR_ID, PRODUCT_ID)
-    fallback = None
-    for device_info in devices:
-        if device_info.get("usage_page") == USAGE_PAGE and device_info.get("usage") == USAGE:
-            return open_enumerated_device(device_info)
+    exact_matches = [
+        device_info
+        for device_info in devices
+        if device_info.get("usage_page") == USAGE_PAGE and device_info.get("usage") == USAGE
+    ]
+    if len(exact_matches) == 1:
+        return open_enumerated_device(exact_matches[0])
+    if len(exact_matches) > 1:
+        raise RuntimeError("multiple PicoUart HID interfaces matched the expected usage")
 
-        if fallback is None:
-            fallback = device_info
-
-    if fallback is not None:
-        return open_enumerated_device(fallback)
+    # Some hidapi backends omit usage metadata. Only trust a unique collection
+    # with PicoUart's exact product and no contradictory interface number.
+    fallback_matches = [
+        device_info
+        for device_info in devices
+        if not device_info.get("usage_page")
+        and not device_info.get("usage")
+        and device_info.get("product_string") == PRODUCT_STRING
+        and device_info.get("interface_number") in (None, -1, HID_INTERFACE_NUMBER)
+    ]
+    if len(fallback_matches) == 1:
+        return open_enumerated_device(fallback_matches[0])
+    if len(fallback_matches) > 1:
+        raise RuntimeError("multiple PicoUart HID interfaces lacked usage metadata")
 
     raise RuntimeError(
-        "PicoUart HID interface not found. Check that the firmware is connected and enumerated."
+        "PicoUart HID interface not found with the expected usage metadata"
     )
 
 
@@ -88,9 +108,11 @@ def read_feature(device: Any, report_id: int, payload_size: int) -> bytes:
 def read_board_status(device: Any) -> dict[str, Any]:
     """Read board temperature and firmware semantic version from feature report 3."""
     payload = read_feature(device, REPORT_ID_BOARD_STATUS, BOARD_STATUS_SIZE)
-    version, _reserved0, centidegrees, major, minor, patch, _reserved1 = struct.unpack("<BBhBBBB", payload)
+    version, reserved0, centidegrees, major, minor, patch, reserved1 = struct.unpack("<BBhBBBB", payload)
     if version != BOARD_STATUS_LAYOUT_VERSION:
         raise RuntimeError(f"unsupported board-status report version {version}")
+    if reserved0 != 0 or reserved1 != 0:
+        raise RuntimeError("unsupported board-status report with nonzero reserved fields")
     return {
         "temperature_celsius": centidegrees / 100.0,
         "firmware_version": f"{major}.{minor}.{patch}",
@@ -125,12 +147,17 @@ def parse_status(payload: bytes) -> dict[str, Any]:
         raise RuntimeError(f"unexpected status report size {len(payload)}")
 
     signature0, version, sequence = payload[:3]
-    if signature0 != ord("P"):
+    if signature0 != STATUS_SIGNATURE:
         raise RuntimeError("received a status report with an invalid signature")
     if version != STATUS_LAYOUT_VERSION:
         raise RuntimeError(f"unsupported status report version {version}")
 
-    channels = [struct.unpack_from("<BB4H", payload, 3 + index * 10) for index in range(6)]
+    channels = [
+        struct.unpack_from(
+            "<BB4H", payload, STATUS_HEADER_SIZE + index * STATUS_CHANNEL_SIZE
+        )
+        for index in range(UART_CHANNEL_COUNT)
+    ]
     return {
         "sequence": sequence,
         "channels": [
@@ -180,11 +207,25 @@ def print_status(status: dict[str, Any]) -> None:
 def monitor(device: Any, duration: float) -> None:
     """Print periodic status reports for the requested duration."""
     deadline = time.monotonic() + duration
+    valid_reports = 0
+    wrong_report_ids: set[int] = set()
     while time.monotonic() < deadline:
         report = device.read(STATUS_SIZE + 1, 250)
-        if not report or report[0] != REPORT_ID_STATUS:
+        if not report:
+            continue
+        if report[0] != REPORT_ID_STATUS:
+            wrong_report_ids.add(report[0])
             continue
         print_status(parse_status(bytes(report[1:])))
+        valid_reports += 1
+
+    if valid_reports == 0:
+        if wrong_report_ids:
+            received = ", ".join(str(report_id) for report_id in sorted(wrong_report_ids))
+            raise RuntimeError(
+                f"monitor received unexpected HID report ID(s) {received}, but no valid status report"
+            )
+        raise RuntimeError("monitor timed out without receiving a valid status report")
 
 
 def send_command(device: Any, command: int) -> None:

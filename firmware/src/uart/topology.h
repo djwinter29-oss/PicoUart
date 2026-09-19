@@ -30,6 +30,11 @@ typedef struct {
     uint32_t backend_rx_pin; /**< Backend-configured RX GPIO. */
     uint32_t tx_state_machine; /**< PIO TX state machine; ignored for hardware UART. */
     uint32_t rx_state_machine; /**< PIO RX state machine; ignored for hardware UART. */
+    uint32_t target_gpio_count; /**< Number of valid GPIO indices on the selected target. */
+    uint32_t rts_pin; /**< Backend RTS GPIO; ignored unless @ref rts_enabled. */
+    uint32_t cts_pin; /**< Backend CTS GPIO; ignored unless @ref cts_enabled. */
+    bool rts_enabled; /**< True when RTS is an active topology resource. */
+    bool cts_enabled; /**< True when CTS is an active topology resource. */
 } uart_topology_port_t;
 
 /**

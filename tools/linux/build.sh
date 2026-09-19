@@ -47,9 +47,15 @@ if [ -n "$BOARD" ]; then
     fi
 fi
 
-if [ -n "$SYSTEM_CLOCK_KHZ" ] && ! printf '%s' "$SYSTEM_CLOCK_KHZ" | grep -Eq '^[0-9]+$'; then
-    echo "System clock must be an integer kHz value." >&2
-    exit 1
+if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
+    if ! printf '%s' "$SYSTEM_CLOCK_KHZ" | grep -Eq '^[1-9][0-9]*$'; then
+        echo "System clock must be a positive integer kHz value." >&2
+        exit 1
+    fi
+    if [ "${#SYSTEM_CLOCK_KHZ}" -gt 6 ] || [ "$SYSTEM_CLOCK_KHZ" -gt 400000 ]; then
+        echo "System clock must be no greater than 400000 kHz." >&2
+        exit 1
+    fi
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)

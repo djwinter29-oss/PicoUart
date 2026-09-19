@@ -4,10 +4,18 @@ param(
     [string]$Generator,
     [string]$PicoSdkPath,
     [string]$FirmwareVersion = $env:PICO_UART_VERSION,
-    [int]$SystemClockKhz = 0
+    [string]$SystemClockKhz
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not [string]::IsNullOrWhiteSpace($SystemClockKhz)) {
+    [int]$parsedSystemClockKhz = 0
+    if (-not [int]::TryParse($SystemClockKhz, [ref]$parsedSystemClockKhz) -or
+        $parsedSystemClockKhz -le 0 -or $parsedSystemClockKhz -gt 400000) {
+        throw "System clock must be a positive integer no greater than 400000 kHz."
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($Board)) {
     $Board = $env:PICO_BOARD
@@ -50,8 +58,8 @@ if (-not [string]::IsNullOrWhiteSpace($FirmwareVersion)) {
     $cmakeArgs += "-DPICO_UART_VERSION=$FirmwareVersion"
 }
 
-if ($SystemClockKhz -gt 0) {
-    $cmakeArgs += "-DPICO_UART_SYSTEM_CLOCK_KHZ=$SystemClockKhz"
+if (-not [string]::IsNullOrWhiteSpace($SystemClockKhz)) {
+    $cmakeArgs += "-DPICO_UART_SYSTEM_CLOCK_KHZ=$parsedSystemClockKhz"
 }
 
 if (-not [string]::IsNullOrWhiteSpace($Board)) {
@@ -59,4 +67,6 @@ if (-not [string]::IsNullOrWhiteSpace($Board)) {
 }
 
 & cmake @cmakeArgs
+if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 cmake --build $buildDirPath --parallel
+if ($LASTEXITCODE -ne 0) { throw "firmware build failed" }

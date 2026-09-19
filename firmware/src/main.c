@@ -10,6 +10,8 @@
 
 int main(void)
 {
+    /* Cover clock, topology, and backend initialization failures as well as runtime stalls. */
+    system_watchdog_enable();
     system_init_clock();
     led_init();
     temperature_init();
@@ -18,7 +20,6 @@ int main(void)
     hard_assert(uart_driver_init());
     usb_cdc_init();
     usb_hid_init();
-    system_watchdog_enable();
 
     while (true) {
         usb_cdc_poll();

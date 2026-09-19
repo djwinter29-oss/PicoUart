@@ -121,6 +121,20 @@ bool ring_buffer_commit_produced(ring_buffer_t *ring, size_t count);
 bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count);
 
 /**
+ * @brief Commit bytes already copied from a validated readable span.
+ * @param ring Ring to update.
+ * @param count Number of copied bytes accepted by the external consumer.
+ * @return `true` when @p count fits the current consumer reservation.
+ *
+ * Call this only after copying a span to private storage and confirming it with
+ * @ref ring_buffer_read_span_is_current. If the producer wraps while the copied
+ * snapshot is being delivered, those accepted bytes remain valid; this helper
+ * advances past them and records only subsequently overwritten, undelivered
+ * bytes as overflow.
+ */
+bool ring_buffer_commit_snapshot_consumed(ring_buffer_t *ring, size_t count);
+
+/**
  * @brief Advance an externally-owned producer by a byte count.
  * @param ring Ring to update.
  * @param count Number of newly produced bytes.

@@ -66,8 +66,9 @@ void pio_uart_driver_enable_rx_dma_irq(void);
  * path publishes producer progress and re-arms exhausted transfers. TX uses FIFO
  * polling for short queues and DMA for deeper backlog.
  * @param driver Driver instance to poll.
+ * @param tx_launch_allowed False while a control change waits for a TX boundary.
  */
-void pio_uart_driver_poll(pio_uart_driver_t *driver);
+void pio_uart_driver_poll(pio_uart_driver_t *driver, bool tx_launch_allowed);
 
 /**
  * @brief Deinitialize one PIO UART backend.

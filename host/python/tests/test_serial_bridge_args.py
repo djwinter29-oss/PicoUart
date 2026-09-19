@@ -41,6 +41,109 @@ def test_write_all_honors_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
         bridge.write_all(3, b"payload", 10.0)
 
 
+@pytest.mark.parametrize("failure", ["tcgetattr", "tcsetattr", "tcflush"])
+def test_configure_port_closes_once_on_failure(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    bridge = _load_bridge()
+    closes = []
+    get_calls = 0
+
+    def tcgetattr(_fd):
+        nonlocal get_calls
+        get_calls += 1
+        if failure == "tcgetattr" and get_calls == 1:
+            raise OSError("get failed")
+        return [0, 0, 0, 0, 0, 0, [0] * 32]
+
+    monkeypatch.setattr(bridge.os, "open", lambda *_args: 17)
+    monkeypatch.setattr(bridge.os, "close", closes.append)
+    monkeypatch.setattr(bridge.termios, "tcgetattr", tcgetattr)
+    monkeypatch.setattr(
+        bridge.termios,
+        "tcsetattr",
+        lambda *_args: (_ for _ in ()).throw(OSError("set failed"))
+        if failure == "tcsetattr" else None,
+    )
+    monkeypatch.setattr(
+        bridge.termios,
+        "tcflush",
+        lambda *_args: (_ for _ in ()).throw(OSError("flush failed"))
+        if failure == "tcflush" else None,
+    )
+
+    with pytest.raises(OSError):
+        bridge.configure_port("/dev/fake", 115200)
+    assert closes == [17]
+
+
+def test_configure_port_success_remains_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+    closes = []
+    settings = [0, 0, 0, 0, 0, 0, [0] * 32]
+    monkeypatch.setattr(bridge.os, "open", lambda *_args: 17)
+    monkeypatch.setattr(bridge.os, "close", closes.append)
+    monkeypatch.setattr(bridge.termios, "tcgetattr", lambda _fd: settings.copy())
+    monkeypatch.setattr(bridge.termios, "tcsetattr", lambda *_args: None)
+    monkeypatch.setattr(bridge.termios, "tcflush", lambda *_args: None)
+
+    file_descriptor, _ = bridge.configure_port("/dev/fake", 115200)
+
+    assert file_descriptor == 17
+    assert closes == []
+
+
+def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+    closes = []
+
+    def restore(file_descriptor, *_args):
+        if file_descriptor == 17:
+            raise OSError("restore failed")
+
+    monkeypatch.setattr(bridge.termios, "tcsetattr", restore)
+    monkeypatch.setattr(bridge.os, "close", closes.append)
+
+    error = bridge.close_ports([(17, []), (18, [])])
+    assert isinstance(error, OSError)
+    assert str(error) == "restore failed"
+    assert closes == [17, 18]
+
+
+def test_run_test_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+    arguments = type(
+        "Arguments",
+        (),
+        {
+            "pico_port": "/dev/fake",
+            "loopback": True,
+            "settle_seconds": 0.0,
+            "label": "test",
+            "payload_bytes": 64,
+            "timeout": 1.0,
+        },
+    )()
+    monkeypatch.setattr(bridge, "configure_port", lambda *_args: (17, []))
+    monkeypatch.setattr(bridge, "test_direction", lambda *_args: True)
+    monkeypatch.setattr(bridge, "close_ports", lambda *_args: OSError("restore failed"))
+
+    assert bridge.run_test(arguments, 115200) == 2
+
+
+@pytest.mark.parametrize(("option", "value"), [("--timeout", "nan"), ("--settle-seconds", "inf")])
+def test_non_finite_timing_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, option: str, value: str
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["serial_bridge_test.py", "--pico-port", "/dev/null", "--loopback", option, value],
+    )
+    bridge = _load_bridge()
+    assert bridge.main() == 2
+
+
 def test_payload_bytes_rejects_above_max(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,
