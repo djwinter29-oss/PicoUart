@@ -14,17 +14,21 @@ static void test_topology_make_valid(uart_topology_port_t ports[UART_PORT_COUNT]
         uint32_t state_machine = (uint32_t)((index % 2u) * 2u);
 
         ports[index] = (uart_topology_port_t){
-            (uart_port_id_t)index,
-            is_hardware ? UART_DRIVER_BACKEND_HW : UART_DRIVER_BACKEND_PIO,
-            115200u,
-            (uint32_t)(index * 4u),
-            (uint32_t)(index * 4u + 1u),
-            is_hardware ? (uintptr_t)(index + 1u) : (uintptr_t)(index < 4u ? 3u : 4u),
-            115200u,
-            (uint32_t)(index * 4u),
-            (uint32_t)(index * 4u + 1u),
-            state_machine,
-            state_machine + 1u,
+            .id = (uart_port_id_t)index,
+            .backend = is_hardware ? UART_DRIVER_BACKEND_HW : UART_DRIVER_BACKEND_PIO,
+            .baud_rate = 115200u,
+            .tx_pin = (uint32_t)(index * 4u),
+            .rx_pin = (uint32_t)(index * 4u + 1u),
+            .backend_instance = is_hardware ? (uintptr_t)(index + 1u) :
+                                               (uintptr_t)(index < 4u ? 3u : 4u),
+            .backend_baud_rate = 115200u,
+            .backend_tx_pin = (uint32_t)(index * 4u),
+            .backend_rx_pin = (uint32_t)(index * 4u + 1u),
+            .tx_state_machine = state_machine,
+            .rx_state_machine = state_machine + 1u,
+            .target_gpio_count = 30u,
+            .rts_pin = UART_TOPOLOGY_PIN_UNASSIGNED,
+            .cts_pin = UART_TOPOLOGY_PIN_UNASSIGNED,
         };
     }
 }
@@ -70,6 +74,35 @@ void test_rejects_invalid_pin_assignments(void)
 
     test_topology_make_valid(ports);
     ports[3].tx_pin = ports[2].rx_pin;
+    TEST_ASSERT_FALSE(uart_topology_validate(ports, UART_PORT_COUNT));
+
+    test_topology_make_valid(ports);
+    ports[5].rx_pin = 30u;
+    TEST_ASSERT_FALSE(uart_topology_validate(ports, UART_PORT_COUNT));
+}
+
+void test_optional_flow_control_pins_collide_only_when_enabled(void)
+{
+    uart_topology_port_t ports[UART_PORT_COUNT];
+
+    test_topology_make_valid(ports);
+    ports[0].rts_pin = ports[1].tx_pin;
+    TEST_ASSERT_TRUE(uart_topology_validate(ports, UART_PORT_COUNT));
+
+    ports[0].rts_enabled = true;
+    TEST_ASSERT_FALSE(uart_topology_validate(ports, UART_PORT_COUNT));
+
+    test_topology_make_valid(ports);
+    ports[2].cts_pin = 29u;
+    ports[2].cts_enabled = true;
+    TEST_ASSERT_TRUE(uart_topology_validate(ports, UART_PORT_COUNT));
+    ports[3].rts_pin = 29u;
+    ports[3].rts_enabled = true;
+    TEST_ASSERT_FALSE(uart_topology_validate(ports, UART_PORT_COUNT));
+
+    test_topology_make_valid(ports);
+    ports[4].cts_pin = 30u;
+    ports[4].cts_enabled = true;
     TEST_ASSERT_FALSE(uart_topology_validate(ports, UART_PORT_COUNT));
 }
 
@@ -122,6 +155,7 @@ int main(void)
     RUN_TEST(test_valid_six_port_topology);
     RUN_TEST(test_rejects_wrong_port_count_or_identity);
     RUN_TEST(test_rejects_invalid_pin_assignments);
+    RUN_TEST(test_optional_flow_control_pins_collide_only_when_enabled);
     RUN_TEST(test_rejects_backend_metadata_mismatches);
     RUN_TEST(test_rejects_duplicate_hardware_or_pio_resources);
     RUN_TEST(test_rejects_invalid_backend_balance);

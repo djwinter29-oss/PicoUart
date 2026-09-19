@@ -18,7 +18,7 @@
 /** @brief USB product ID used by the PicoUart firmware image. */
 #define USB_PID PICO_UART_USB_PID
 /** @brief USB 2.0 revision advertised in the device descriptor. */
-#define USB_BCD  0x0210
+#define USB_BCD  0x0200
 #ifndef PICO_UART_BCD_DEVICE
 /** @brief Fallback USB bcdDevice when CMake does not inject a build version. */
 #define PICO_UART_BCD_DEVICE 0x0000

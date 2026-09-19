@@ -118,4 +118,5 @@ requirement applies.
 - CDC DTR updates HID `opened` only and does not gate bridging; host CDC RTS is ignored.
 - After init, core 0 arms an 8 s watchdog (pause-on-debug) and pets it in the USB
   poll loop only while the UART worker heartbeat is fresh (2 s stale window).
-- HID does not yet report full ring occupancy/overflow **counts** (only high-water blocks and a sticky overrun bit).
+- HID feature report 5 exposes cumulative RX overflow counts for all six ports;
+  `python3 host/python/src/pico_uart_hid.py overruns` prints them.

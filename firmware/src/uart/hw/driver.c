@@ -23,6 +23,8 @@ _Static_assert((offsetof(hw_uart_driver_t, rx_storage) % PICO_UART_HW_UART_RX_BU
 
 /** @brief Shared DMA IRQ used for HW UART RX transfer-count re-arm. */
 #define HW_UART_DRIVER_RX_DMA_IRQ_INDEX 0
+/** @brief Target maximum wire time represented by one TX DMA launch. */
+#define HW_UART_DRIVER_TX_DMA_BUDGET_MS 25u
 
 /** @brief Drivers that own an RX DMA channel armed on @ref HW_UART_DRIVER_RX_DMA_IRQ_INDEX. */
 static hw_uart_driver_t *hw_uart_driver_rx_irq_owners[NUM_DMA_CHANNELS];
@@ -44,15 +46,20 @@ static void hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
 
 static void hw_uart_driver_configure_rts(hw_uart_driver_t *driver)
 {
+    size_t occupancy;
     if (!driver->config.hardware_flow_control) {
         return;
     }
 
-    /* RTS is active-low: low permits the peer to transmit. */
+    occupancy = ring_buffer_occupancy(&driver->rx_ring);
+    driver->rx_rts_asserted = uart_rx_rts_should_assert(driver->rx_rts_asserted,
+                                                        occupancy,
+                                                        driver->rx_ring.size);
+
+    /* Set the SIO latch before enabling output to avoid a permissive pulse. */
+    gpio_put(driver->config.rts_pin, driver->rx_rts_asserted ? 0u : 1u);
     gpio_set_function(driver->config.rts_pin, GPIO_FUNC_SIO);
     gpio_set_dir(driver->config.rts_pin, GPIO_OUT);
-    gpio_put(driver->config.rts_pin, 0u);
-    driver->rx_rts_asserted = true;
 }
 
 static void hw_uart_driver_update_rts(hw_uart_driver_t *driver)
@@ -99,15 +106,19 @@ static void __isr hw_uart_driver_rx_dma_irq_handler(void)
 {
     for (uint channel = 0u; channel < NUM_DMA_CHANNELS; ++channel) {
         hw_uart_driver_t *driver = hw_uart_driver_rx_irq_owners[channel];
+        bool irq_pending = dma_irqn_get_channel_status(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
 
-        if (!uart_dma_irq_should_service_owner(
-                driver != NULL,
-                dma_irqn_get_channel_status(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel))) {
+        if (!uart_dma_irq_should_service_owner(driver != NULL, irq_pending)) {
             continue;
         }
 
         dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
-        hw_uart_driver_rearm_rx_dma(driver);
+        if (uart_rx_dma_irq_should_rearm(true,
+                                         irq_pending,
+                                         dma_channel_is_busy(channel),
+                                         uart_dma_rx_transfer_count_remaining(channel))) {
+            hw_uart_driver_rearm_rx_dma(driver);
+        }
     }
 }
 
@@ -257,13 +268,28 @@ static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
 {
     dma_channel_config tx_dma_config;
     ring_buffer_span_t span;
+    uint32_t bits_per_frame;
+    size_t transfer_length;
 
-    if ((driver == NULL) || driver->tx_active) {
+    if ((driver == NULL) || driver->tx_active ||
+        ((uart_get_hw(driver->config.instance)->fr & UART_UARTFR_BUSY_BITS) != 0u)) {
         return false;
     }
 
     span = ring_buffer_read_span(&driver->tx_ring);
     if (span.length == 0u) {
+        return false;
+    }
+
+    /* Start + data + optional parity + stop bits, rounded conservatively. */
+    bits_per_frame = 1u + driver->config.data_bits + driver->config.stop_bits +
+                     ((driver->config.parity == UART_PARITY_NONE) ? 0u : 1u);
+    transfer_length = uart_tx_transfer_bytes(span.length,
+                                             span.length,
+                                             driver->config.baud_rate,
+                                             bits_per_frame,
+                                             HW_UART_DRIVER_TX_DMA_BUDGET_MS);
+    if (transfer_length == 0u) {
         return false;
     }
 
@@ -277,15 +303,15 @@ static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
         &tx_dma_config,
         &uart_get_hw(driver->config.instance)->dr,
         span.data,
-        (uint32_t)span.length,
+        (uint32_t)transfer_length,
         true);
 
-    driver->tx_dma_bytes_in_flight = span.length;
+    driver->tx_dma_bytes_in_flight = transfer_length;
     driver->tx_active = true;
     return true;
 }
 
-static void hw_uart_driver_poll_tx(hw_uart_driver_t *driver)
+static void hw_uart_driver_poll_tx(hw_uart_driver_t *driver, bool tx_launch_allowed)
 {
     if ((driver == NULL) || !driver->tx_active) {
         return;
@@ -296,7 +322,9 @@ static void hw_uart_driver_poll_tx(hw_uart_driver_t *driver)
         driver->controller_tx_bytes += (uint32_t)driver->tx_dma_bytes_in_flight;
         driver->tx_active = false;
         driver->tx_dma_bytes_in_flight = 0u;
-        (void)hw_uart_driver_start_tx_dma(driver);
+        if (tx_launch_allowed) {
+            (void)hw_uart_driver_start_tx_dma(driver);
+        }
     }
 }
 
@@ -342,7 +370,7 @@ static void hw_uart_driver_record_rx_errors(hw_uart_driver_t *driver)
     }
 }
 
-void hw_uart_driver_poll(hw_uart_driver_t *driver)
+void hw_uart_driver_poll(hw_uart_driver_t *driver, bool tx_launch_allowed)
 {
     if ((driver == NULL) || !driver->initialized) {
         return;
@@ -360,14 +388,17 @@ void hw_uart_driver_poll(hw_uart_driver_t *driver)
 
         if (uart_rx_dma_poll_should_rearm(true,
                                           dma_channel_is_busy((uint)driver->rx_dma_channel),
-                                          uart_dma_rx_transfer_count_remaining(
-                                              (uint)driver->rx_dma_channel))) {
+                                           uart_dma_rx_transfer_count_remaining(
+                                               (uint)driver->rx_dma_channel))) {
+            /* Consume a sticky completion before restart so a delayed ISR cannot rearm twice. */
+            dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX,
+                                         (uint)driver->rx_dma_channel);
             hw_uart_driver_rearm_rx_dma(driver);
         }
         restore_interrupts(interrupt_status);
     }
-    hw_uart_driver_poll_tx(driver);
-    if (!driver->tx_active) {
+    hw_uart_driver_poll_tx(driver, tx_launch_allowed);
+    if (tx_launch_allowed && !driver->tx_active) {
         (void)hw_uart_driver_start_tx_dma(driver);
     }
 }

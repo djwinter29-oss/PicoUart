@@ -18,21 +18,6 @@ typedef enum {
     UART_DRIVER_BACKEND_PIO, /**< PIO UART backend. */
 } uart_driver_backend_t;
 
-/**
- * @brief Result code returned by cross-core UART control commands.
- */
-typedef enum {
-    UART_DRIVER_COMMAND_STATUS_OK = 0, /**< Command completed successfully. */
-    UART_DRIVER_COMMAND_STATUS_WORKER_NOT_STARTED = 1, /**< UART worker core has not started yet. */
-    UART_DRIVER_COMMAND_STATUS_INVALID_PORT = 2, /**< Command referenced an invalid logical port. */
-    UART_DRIVER_COMMAND_STATUS_INVALID_ARGUMENT = 3, /**< Command arguments were malformed or unsupported. */
-    UART_DRIVER_COMMAND_STATUS_INIT_FAILED = 4, /**< One or more UART backends failed during init. */
-    UART_DRIVER_COMMAND_STATUS_BACKEND_REJECTED = 5, /**< Backend rejected the requested control change. */
-    UART_DRIVER_COMMAND_STATUS_UNSUPPORTED = 6, /**< Command could not be applied to the selected backend. */
-    UART_DRIVER_COMMAND_STATUS_QUEUED = 7, /**< Command was accepted and queued for deferred worker-side apply. */
-    UART_DRIVER_COMMAND_STATUS_TIMEOUT = 8, /**< Worker did not complete the command before its deadline. */
-} uart_driver_command_status_t;
-
 /** @brief Port status flag: backend is initialized and available. */
 #define UART_DRIVER_PORT_STATUS_READY (1u << 0)
 /** @brief Port status flag: backend init failed for this port. */
@@ -215,7 +200,14 @@ void uart_driver_report_control_error(uart_port_id_t port_id);
  * accepted the request for deferred application.
  */
 void uart_driver_report_soft_pending_error(uart_port_id_t port_id,
-                                           uint32_t control_generation);
+                                            uint32_t control_generation);
+
+/**
+ * @brief Drop USB-core soft-pending ownership after host disconnect.
+ *
+ * Worker/mailbox-owned requests remain untouched and finish on core 1.
+ */
+void uart_driver_reset_soft_pending(uart_port_id_t port_id);
 
 /**
  * @brief Mark one logical UART port as having a control request in flight.
@@ -250,10 +242,11 @@ bool uart_driver_worker_heartbeat_is_fresh(void);
 /**
  * @brief Return public metadata for one logical UART port.
  * @param port_id Logical port identifier.
- * @return Pointer to port metadata, or `NULL` when the index is invalid.
+ * @param info Output storage for a coherent metadata snapshot.
+ * @return `true` when @p info was written, otherwise `false`.
  * @note `baud_rate` reflects the last successfully applied line coding.
  */
-const uart_driver_port_info_t *uart_driver_port_info(uart_port_id_t port_id);
+bool uart_driver_port_info(uart_port_id_t port_id, uart_driver_port_info_t *info);
 
 /**
  * @brief Snapshot transport counters for one logical UART port.

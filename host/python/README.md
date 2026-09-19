@@ -41,9 +41,14 @@ devices. Run the tool with the privileges required by the local HID device node.
 python3 host/python/src/pico_uart_hid.py monitor --duration 10
 python3 host/python/src/pico_uart_hid.py temperature
 python3 host/python/src/pico_uart_hid.py version
+python3 host/python/src/pico_uart_hid.py overruns
 python3 host/python/src/pico_uart_hid.py toggle-led
 python3 host/python/src/pico_uart_hid.py reset
 ```
+
+`monitor` exits nonzero if its duration expires without a valid status report.
+Ordinary read timeouts, unexpected report IDs, and malformed status reports are
+reported distinctly so missing telemetry is not mistaken for a successful run.
 
 `version` prints the firmware semantic version (`MAJOR.MINOR.PATCH`) from HID
 feature report 3. USB `bcdDevice` advertises major.minor only (for example
@@ -55,5 +60,9 @@ tag `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
 the command to reboot the board. Otherwise the host tool still sends the
 commands, but firmware ignores reset.
 
-The tool selects the HID collection with vendor usage page `0xFF00`, usage
-`0x0001`; this avoids confusing the HID interface with any CDC ports.
+The tool selects the unique HID collection with vendor usage page `0xFF00`,
+usage `0x0001`; this avoids opening another collection that happens to share the
+VID/PID. On hidapi backends that omit usage metadata, discovery only accepts a
+unique collection with the exact PicoUart product and expected HID interface
+number when that metadata is available. Ambiguous or contradictory discovery
+results fail closed.

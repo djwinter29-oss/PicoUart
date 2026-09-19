@@ -26,6 +26,9 @@ void usb_cdc_init(void);
 /** @brief Run TinyUSB background work. */
 void usb_cdc_poll(void);
 
+/** @brief Clear host-session state after USB disconnect. */
+void usb_cdc_reset_host_state(void);
+
 /**
  * @brief Snapshot host-side transport state for one CDC interface.
  * @param itf TinyUSB CDC interface index.

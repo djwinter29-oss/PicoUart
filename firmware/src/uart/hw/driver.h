@@ -71,8 +71,9 @@ void hw_uart_driver_enable_rx_dma_irq(void);
 /**
  * @brief Poll one hardware UART backend to advance TX DMA completion state.
  * @param driver Driver instance to poll.
+ * @param tx_launch_allowed False while a control change waits for a TX boundary.
  */
-void hw_uart_driver_poll(hw_uart_driver_t *driver);
+void hw_uart_driver_poll(hw_uart_driver_t *driver, bool tx_launch_allowed);
 
 /**
  * @brief Deinitialize one hardware UART backend.

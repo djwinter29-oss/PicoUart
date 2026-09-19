@@ -33,9 +33,11 @@ def test_hid_layout_and_command_constants_match_firmware(hid_module, repo_root):
     assert fw["USB_HID_COMMAND_RESET_BOARD"] == hid_module.COMMAND_RESET_BOARD
     assert fw["USB_HID_COMMAND_ARM_RESET"] == hid_module.COMMAND_ARM_RESET
     assert fw["USB_HID_RESET_ARM_WINDOW_MS"] == int(hid_module.RESET_ARM_WINDOW_S * 1000)
-    assert fw["USB_HID_SIGNATURE0"] == ord("P")
+    assert fw["USB_HID_SIGNATURE0"] == hid_module.STATUS_SIGNATURE
     assert hid_module.STATUS_SIZE == 63
-    assert hid_module.STATUS_SIZE == 3 + (6 * 10)
+    assert hid_module.STATUS_SIZE == hid_module.STATUS_HEADER_SIZE + (
+        hid_module.UART_CHANNEL_COUNT * hid_module.STATUS_CHANNEL_SIZE
+    )
     assert hid_module.BOARD_STATUS_SIZE == 8
     assert hid_module.OVERFLOW_COUNTS_SIZE == 25
     assert hid_module.STATUS_SIZE + 1 <= 64
@@ -46,15 +48,21 @@ def test_hid_descriptor_status_report_count_matches_host_payload(hid_module, rep
 
 
 def test_hid_descriptor_board_status_report_count_matches_host_payload(hid_module, repo_root):
-    assert firmware_hid_report_count(repo_root, 3) == hid_module.BOARD_STATUS_SIZE
+    assert (
+        firmware_hid_report_count(repo_root, hid_module.REPORT_ID_BOARD_STATUS)
+        == hid_module.BOARD_STATUS_SIZE
+    )
 
 
 def test_hid_descriptor_command_report_count_matches_host_payload(hid_module, repo_root):
-    assert firmware_hid_report_count(repo_root, 4) == 1
+    assert firmware_hid_report_count(repo_root, hid_module.REPORT_ID_COMMAND) == 1
 
 
 def test_hid_descriptor_overflow_report_count_matches_host_payload(hid_module, repo_root):
-    assert firmware_hid_report_count(repo_root, 5) == hid_module.OVERFLOW_COUNTS_SIZE
+    assert (
+        firmware_hid_report_count(repo_root, hid_module.REPORT_ID_OVERFLOW_COUNTS)
+        == hid_module.OVERFLOW_COUNTS_SIZE
+    )
 
 
 def test_lab_placeholder_helper_is_independent_of_tree_identity():
@@ -91,9 +99,9 @@ def test_usb_identity_gate_script_matches_tree_identity(repo_root):
         assert allowed.returncode == 0
 
 
-def test_usb_product_string_advertises_pio_8n1(repo_root):
+def test_usb_product_string_advertises_pio_8n1(hid_module, repo_root):
     product = firmware_usb_product_string(repo_root)
-    assert product == "PicoUart CDC+HID PIO 8N1"
+    assert product == hid_module.PRODUCT_STRING
     assert len(product) <= 32
 
 

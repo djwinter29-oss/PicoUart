@@ -10,18 +10,17 @@ fi
 
 PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
 PICO_SDK_REPOSITORY="https://github.com/raspberrypi/pico-sdk.git"
-PICO_SDK_TARGET_VERSION="${PICO_SDK_VERSION:-}"
-PICO_SDK_VERSION_PINNED=0
-
-if [ -n "$PICO_SDK_TARGET_VERSION" ]; then
-    PICO_SDK_VERSION_PINNED=1
-fi
+PICO_SDK_TARGET_VERSION="${PICO_SDK_VERSION:-2.2.0}"
+PICO_SDK_TARGET_REVISION="${PICO_SDK_REVISION:-a1438dff1d38bd9c65dbd693f0e5db4b9ae91779}"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --sdk-version)
             PICO_SDK_TARGET_VERSION="$2"
-            PICO_SDK_VERSION_PINNED=1
+            shift 2
+            ;;
+        --sdk-revision)
+            PICO_SDK_TARGET_REVISION="$2"
             shift 2
             ;;
         *)
@@ -36,17 +35,9 @@ if ! command -v git >/dev/null 2>&1; then
     return 1 2>/dev/null || exit 1
 fi
 
-if [ "$PICO_SDK_VERSION_PINNED" -eq 0 ]; then
-    echo "Checking for the latest Pico SDK release"
-    PICO_SDK_TARGET_VERSION=$(git ls-remote --tags --refs "$PICO_SDK_REPOSITORY" 'refs/tags/[0-9]*' |
-        awk -F/ '{print $3}' |
-        grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' |
-        sort -V |
-        tail -n 1)
-    if [ -z "$PICO_SDK_TARGET_VERSION" ]; then
-        echo "Unable to determine the latest Pico SDK release." >&2
-        return 1 2>/dev/null || exit 1
-    fi
+if [ -z "$PICO_SDK_TARGET_VERSION" ]; then
+    echo "Pico SDK version must not be empty." >&2
+    return 1 2>/dev/null || exit 1
 fi
 
 if [ ! -d "$PICO_SDK_PATH_VALUE" ]; then
@@ -56,7 +47,7 @@ if [ ! -d "$PICO_SDK_PATH_VALUE" ]; then
         echo "Pico SDK download failed." >&2
         return 1 2>/dev/null || exit 1
     fi
-elif [ "$PICO_SDK_VERSION_PINNED" -eq 0 ]; then
+else
     if ! git -C "$PICO_SDK_PATH_VALUE" rev-parse --git-dir >/dev/null 2>&1; then
         echo "Pico SDK is not a git checkout: $PICO_SDK_PATH_VALUE" >&2
         return 1 2>/dev/null || exit 1
@@ -68,11 +59,19 @@ elif [ "$PICO_SDK_VERSION_PINNED" -eq 0 ]; then
         return 1 2>/dev/null || exit 1
     fi
 
+    TAG_SDK_REVISION=$(git -C "$PICO_SDK_PATH_VALUE" rev-parse "$PICO_SDK_TARGET_VERSION^{commit}" 2>/dev/null)
+    if [ -z "$TAG_SDK_REVISION" ]; then
+        echo "Unable to resolve Pico SDK $PICO_SDK_TARGET_VERSION." >&2
+        return 1 2>/dev/null || exit 1
+    fi
+    if [ "$TAG_SDK_REVISION" != "$PICO_SDK_TARGET_REVISION" ]; then
+        echo "Pico SDK tag $PICO_SDK_TARGET_VERSION resolved to $TAG_SDK_REVISION, expected $PICO_SDK_TARGET_REVISION." >&2
+        return 1 2>/dev/null || exit 1
+    fi
     CURRENT_SDK_REVISION=$(git -C "$PICO_SDK_PATH_VALUE" rev-parse HEAD 2>/dev/null)
-    LATEST_SDK_REVISION=$(git -C "$PICO_SDK_PATH_VALUE" rev-parse "$PICO_SDK_TARGET_VERSION^{commit}" 2>/dev/null)
-    if [ "$CURRENT_SDK_REVISION" != "$LATEST_SDK_REVISION" ]; then
-        echo "Updating Pico SDK checkout to $PICO_SDK_TARGET_VERSION"
-        if ! git -C "$PICO_SDK_PATH_VALUE" checkout --detach "$PICO_SDK_TARGET_VERSION"; then
+    if [ "$CURRENT_SDK_REVISION" != "$PICO_SDK_TARGET_REVISION" ]; then
+        echo "Updating Pico SDK checkout to $PICO_SDK_TARGET_REVISION ($PICO_SDK_TARGET_VERSION)"
+        if ! git -C "$PICO_SDK_PATH_VALUE" checkout --detach "$PICO_SDK_TARGET_REVISION"; then
             echo "Pico SDK checkout update failed." >&2
             return 1 2>/dev/null || exit 1
         fi
@@ -84,6 +83,16 @@ elif [ "$PICO_SDK_VERSION_PINNED" -eq 0 ]; then
         echo "Pico SDK submodule update failed." >&2
         return 1 2>/dev/null || exit 1
     fi
+fi
+
+CURRENT_SDK_REVISION=$(git -C "$PICO_SDK_PATH_VALUE" rev-parse HEAD 2>/dev/null)
+if [ "$CURRENT_SDK_REVISION" != "$PICO_SDK_TARGET_REVISION" ]; then
+    echo "Pico SDK revision mismatch: expected $PICO_SDK_TARGET_REVISION, got $CURRENT_SDK_REVISION" >&2
+    return 1 2>/dev/null || exit 1
+fi
+if [ -n "$(git -C "$PICO_SDK_PATH_VALUE" status --porcelain --untracked-files=no)" ]; then
+    echo "Pico SDK checkout or submodules contain tracked modifications." >&2
+    return 1 2>/dev/null || exit 1
 fi
 
 if [ ! -f "$PICO_SDK_PATH_VALUE/external/pico_sdk_import.cmake" ]; then
@@ -98,3 +107,4 @@ fi
 
 export PICO_SDK_PATH="$PICO_SDK_PATH_VALUE"
 echo "PICO_SDK_PATH=$PICO_SDK_PATH"
+echo "Pico SDK $PICO_SDK_TARGET_VERSION revision: $CURRENT_SDK_REVISION"

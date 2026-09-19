@@ -20,6 +20,75 @@ def _load_stress():
     return mod
 
 
+@pytest.mark.parametrize("failure", ["tcgetattr", "tcsetattr", "tcflush"])
+def test_configure_port_closes_once_on_failure(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    stress = _load_stress()
+    closes = []
+    get_calls = 0
+
+    def tcgetattr(_fd):
+        nonlocal get_calls
+        get_calls += 1
+        if failure == "tcgetattr" and get_calls == 1:
+            raise OSError("get failed")
+        return [0, 0, 0, 0, 0, 0, [0] * 32]
+
+    monkeypatch.setattr(stress.os, "open", lambda *_args: 19)
+    monkeypatch.setattr(stress.os, "close", closes.append)
+    monkeypatch.setattr(stress.termios, "tcgetattr", tcgetattr)
+    monkeypatch.setattr(
+        stress.termios,
+        "tcsetattr",
+        lambda *_args: (_ for _ in ()).throw(OSError("set failed"))
+        if failure == "tcsetattr" else None,
+    )
+    monkeypatch.setattr(
+        stress.termios,
+        "tcflush",
+        lambda *_args: (_ for _ in ()).throw(OSError("flush failed"))
+        if failure == "tcflush" else None,
+    )
+
+    with pytest.raises(OSError):
+        stress.configure_port("/dev/fake", 115200)
+    assert closes == [19]
+
+
+def test_configure_port_success_remains_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    stress = _load_stress()
+    closes = []
+    settings = [0, 0, 0, 0, 0, 0, [0] * 32]
+    monkeypatch.setattr(stress.os, "open", lambda *_args: 19)
+    monkeypatch.setattr(stress.os, "close", closes.append)
+    monkeypatch.setattr(stress.termios, "tcgetattr", lambda _fd: settings.copy())
+    monkeypatch.setattr(stress.termios, "tcsetattr", lambda *_args: None)
+    monkeypatch.setattr(stress.termios, "tcflush", lambda *_args: None)
+
+    file_descriptor, _ = stress.configure_port("/dev/fake", 115200)
+
+    assert file_descriptor == 19
+    assert closes == []
+
+
+def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    stress = _load_stress()
+    closes = []
+
+    def restore(file_descriptor, *_args):
+        if file_descriptor == 19:
+            raise OSError("restore failed")
+
+    monkeypatch.setattr(stress.termios, "tcsetattr", restore)
+    monkeypatch.setattr(stress.os, "close", closes.append)
+
+    error = stress.close_ports([(19, []), (20, [])])
+    assert isinstance(error, OSError)
+    assert str(error) == "restore failed"
+    assert closes == [20, 19]
+
+
 def test_payload_bytes_rejects_out_of_range(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,

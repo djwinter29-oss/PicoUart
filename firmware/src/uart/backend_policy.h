@@ -3,8 +3,8 @@
  * @brief Host-testable idle, DMA re-arm, and PIO TX policy for UART backends.
  *
  * Hardware register access stays in the HW/PIO drivers. This header locks the
- * boolean tables those drivers use for line-format apply, RX DMA poll re-arm,
- * and hybrid PIO TX.
+ * boolean tables those drivers use for line-format apply, RX DMA re-arm, and
+ * bounded TX DMA launches.
  */
 
 #ifndef UART_BACKEND_POLICY_H
@@ -25,7 +25,8 @@ typedef enum {
 
 /**
  * @brief Return whether a hardware UART is idle enough to apply line format.
- * @param tx_occupancy_nonzero True when the USB-to-UART ring still holds bytes.
+ * @param tx_occupancy_nonzero Retained for a common backend call shape; queued
+ * bytes may wait in the ring while the format changes.
  * @param tx_dma_active True while a TX DMA transfer is in flight.
  * @param uart_busy True when UARTFR.BUSY is set.
  * @param rx_fifo_readable True when the UART RX FIFO still holds unread bytes.
@@ -36,13 +37,15 @@ static inline bool uart_hw_line_format_idle(bool tx_occupancy_nonzero,
                                             bool uart_busy,
                                             bool rx_fifo_readable)
 {
-    return !tx_occupancy_nonzero && !tx_dma_active && !uart_busy && !rx_fifo_readable;
+    (void)tx_occupancy_nonzero;
+    return !tx_dma_active && !uart_busy && !rx_fifo_readable;
 }
 
 /**
  * @brief Return whether a PIO UART is idle enough to start a baud-change pause.
  * @param tx_dma_active True while a TX DMA transfer is in flight.
- * @param tx_occupancy_nonzero True when the USB-to-UART ring still holds bytes.
+ * @param tx_occupancy_nonzero Retained for a common backend call shape; queued
+ * bytes may wait in the ring while the baud changes.
  * @param tx_fifo_empty True when the PIO TX FIFO is empty.
  * @param tx_shifter_idle True when TXSTALL has re-asserted after write-clear.
  * @param rx_fifo_empty True when the PIO RX FIFO is empty.
@@ -56,7 +59,8 @@ static inline bool uart_pio_baud_change_idle(bool tx_dma_active,
                                              bool rx_fifo_empty,
                                              bool rx_line_idle)
 {
-    return !tx_dma_active && !tx_occupancy_nonzero && tx_fifo_empty && tx_shifter_idle &&
+    (void)tx_occupancy_nonzero;
+    return !tx_dma_active && tx_fifo_empty && tx_shifter_idle &&
            rx_fifo_empty && rx_line_idle;
 }
 
@@ -72,6 +76,38 @@ static inline bool uart_rx_dma_poll_should_rearm(bool channel_valid,
                                                  uint32_t remaining)
 {
     return channel_valid && !channel_busy && (remaining == 0u);
+}
+
+/** @brief Apply active-low RTS hysteresis to the current RX occupancy. */
+static inline bool uart_rx_rts_should_assert(bool currently_asserted,
+                                             size_t occupancy,
+                                             size_t ring_size)
+{
+    size_t high_watermark = (ring_size * 3u) / 4u;
+    size_t low_watermark = ring_size / 2u;
+
+    if (currently_asserted && (occupancy >= high_watermark)) {
+        return false;
+    }
+    if (!currently_asserted && (occupancy <= low_watermark)) {
+        return true;
+    }
+    return currently_asserted;
+}
+
+/**
+ * @brief Decide whether an acknowledged RX completion still needs an ISR re-arm.
+ *
+ * The poll fallback can acknowledge a sticky IRQ and restart the channel before
+ * the ISR runs. Rechecking BUSY and TRANS_COUNT prevents that delayed ISR from
+ * replacing the already-running transfer.
+ */
+static inline bool uart_rx_dma_irq_should_rearm(bool owner_present,
+                                                bool irq_pending,
+                                                bool channel_busy,
+                                                uint32_t remaining)
+{
+    return owner_present && irq_pending && !channel_busy && (remaining == 0u);
 }
 
 /**
@@ -98,14 +134,37 @@ static inline uart_pio_tx_action_t uart_pio_tx_action(bool tx_dma_active,
 }
 
 /**
- * @brief Bound a PIO TX DMA launch to the live ring occupancy.
+ * @brief Bound one TX launch by ring data, configured maximum, and wire time.
  * @param occupancy TX ring occupancy in bytes.
  * @param max_transfer Configured per-launch maximum.
- * @return Bytes to program into TRANS_COUNT.
+ * @param baud_rate Active line rate in bits per second.
+ * @param bits_per_frame Conservative number of wire bits consumed by each byte.
+ * @param budget_ms Target maximum wire time for the launch.
+ * @return Bytes to launch, with a one-frame floor when data is available.
  */
-static inline size_t uart_pio_tx_dma_transfer_bytes(size_t occupancy, size_t max_transfer)
+static inline size_t uart_tx_transfer_bytes(size_t occupancy,
+                                            size_t max_transfer,
+                                            uint32_t baud_rate,
+                                            uint32_t bits_per_frame,
+                                            uint32_t budget_ms)
 {
-    return (max_transfer > occupancy) ? occupancy : max_transfer;
+    uint64_t budget_bits;
+    size_t budget_bytes;
+    size_t transfer_bytes = (max_transfer > occupancy) ? occupancy : max_transfer;
+
+    if ((transfer_bytes == 0u) || (baud_rate == 0u) ||
+        (bits_per_frame == 0u) || (budget_ms == 0u)) {
+        return 0u;
+    }
+
+    budget_bits = (uint64_t)baud_rate * budget_ms;
+    budget_bytes = (size_t)(budget_bits / (1000u * bits_per_frame));
+    /* A frame can exceed the target at very low baud, but progress must continue. */
+    if (budget_bytes == 0u) {
+        budget_bytes = 1u;
+    }
+
+    return (transfer_bytes > budget_bytes) ? budget_bytes : transfer_bytes;
 }
 
 /**

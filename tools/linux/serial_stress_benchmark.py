@@ -26,20 +26,24 @@ DEFAULT_RATES = tuple(BAUD_RATES)
 
 def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
     file_descriptor = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-    original_settings = termios.tcgetattr(file_descriptor)
-    settings = termios.tcgetattr(file_descriptor)
+    try:
+        original_settings = termios.tcgetattr(file_descriptor)
+        settings = termios.tcgetattr(file_descriptor)
 
-    settings[0] = 0
-    settings[1] = 0
-    settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-    settings[3] = 0
-    settings[4] = BAUD_RATES[baud_rate]
-    settings[5] = BAUD_RATES[baud_rate]
-    settings[6][termios.VMIN] = 0
-    settings[6][termios.VTIME] = 0
-    termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
-    termios.tcflush(file_descriptor, termios.TCIOFLUSH)
-    return file_descriptor, original_settings
+        settings[0] = 0
+        settings[1] = 0
+        settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+        settings[3] = 0
+        settings[4] = BAUD_RATES[baud_rate]
+        settings[5] = BAUD_RATES[baud_rate]
+        settings[6][termios.VMIN] = 0
+        settings[6][termios.VTIME] = 0
+        termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
+        termios.tcflush(file_descriptor, termios.TCIOFLUSH)
+        return file_descriptor, original_settings
+    except Exception:
+        os.close(file_descriptor)
+        raise
 
 
 def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
@@ -148,8 +152,22 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def close_port(file_descriptor: int, settings: list) -> None:
-    termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
-    os.close(file_descriptor)
+    try:
+        termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
+    finally:
+        os.close(file_descriptor)
+
+
+def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
+    """Close every configured port and return the first terminal cleanup error."""
+    first_error = None
+    for file_descriptor, settings in reversed(ports):
+        try:
+            close_port(file_descriptor, settings)
+        except OSError as error:
+            if first_error is None:
+                first_error = error
+    return first_error
 
 
 def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
@@ -225,8 +243,9 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         print(f"Serial setup failed: {error}", file=sys.stderr)
         return False
     finally:
-        for file_descriptor, settings in reversed(ports):
-            close_port(file_descriptor, settings)
+        cleanup_error = close_ports(ports)
+        if cleanup_error is not None:
+            print(f"Serial cleanup failed: {cleanup_error}", file=sys.stderr)
 
 
 def main() -> int:

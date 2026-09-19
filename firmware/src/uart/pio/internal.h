@@ -18,6 +18,8 @@
 struct pio_uart_driver {
     pio_uart_driver_config_t config; /**< Immutable PIO UART configuration. */
     bool initialized; /**< True after the PIO state machines and software rings are configured. */
+    bool tx_sm_claimed; /**< True while this instance owns its configured TX state machine. */
+    bool rx_sm_claimed; /**< True while this instance owns its configured RX state machine. */
     int rx_dma_channel; /**< Persistent DMA channel writing PIO RX FIFO bytes into @ref rx_ring. */
     int tx_dma_channel; /**< Persistent DMA channel used for high-backlog TX draining. */
     bool tx_dma_active; /**< True while the active TX DMA channel owns a ring span. */
@@ -40,6 +42,6 @@ struct pio_uart_driver {
     uint8_t tx_storage[PICO_UART_PIO_UART_TX_BUFFER_SIZE]; /**< TX ring storage. */
 };
 
-void pio_uart_driver_poll(pio_uart_driver_t *driver);
+void pio_uart_driver_poll(pio_uart_driver_t *driver, bool tx_launch_allowed);
 
 #endif

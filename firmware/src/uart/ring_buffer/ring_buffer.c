@@ -270,6 +270,40 @@ bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count)
     return true;
 }
 
+bool ring_buffer_commit_snapshot_consumed(ring_buffer_t *ring, size_t count)
+{
+    uint32_t producer_now;
+    uint32_t accepted_consumer;
+    uint32_t safe_consumer;
+
+    if ((ring == NULL) ||
+        (ring->consumer != ring->consumer_reserved_sequence) ||
+        (count > ring->consumer_reserved_count)) {
+        return false;
+    }
+
+    __dmb();
+    producer_now = ring->producer;
+    accepted_consumer = ring->consumer_reserved_sequence + (uint32_t)count;
+    safe_consumer = producer_now - ring->size;
+
+    if ((producer_now - ring->consumer_reserved_sequence) > ring->size) {
+        uint32_t advance_to_safe = safe_consumer - ring->consumer_reserved_sequence;
+
+        if (advance_to_safe > count) {
+            ring->overflow_count += advance_to_safe - (uint32_t)count;
+            ring->consumer = safe_consumer;
+        } else {
+            ring->consumer = accepted_consumer;
+        }
+    } else {
+        ring->consumer = accepted_consumer;
+    }
+
+    ring->consumer_reserved_count = 0u;
+    return true;
+}
+
 void ring_buffer_produce_external(ring_buffer_t *ring, uint32_t count)
 {
     if ((ring == NULL) || (count == 0u)) {

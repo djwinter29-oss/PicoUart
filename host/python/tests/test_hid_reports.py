@@ -29,10 +29,21 @@ def test_rejects_unsupported_board_status_layout(hid_module):
         hid_module.read_board_status(device)
 
 
+@pytest.mark.parametrize("reserved0,reserved1", [(1, 0), (0, 1)])
+def test_rejects_nonzero_board_status_reserved_fields(
+    hid_module, reserved0, reserved1
+):
+    device = FakeHidDevice(
+        board_status_bytes(reserved0=reserved0, reserved1=reserved1)
+    )
+    with pytest.raises(RuntimeError, match="nonzero reserved fields"):
+        hid_module.read_board_status(device)
+
+
 def test_parse_status_channels(hid_module):
     status = hid_module.parse_status(status_report_bytes(sequence=9, health0=0x31))
     assert status["sequence"] == 9
-    assert len(status["channels"]) == 6
+    assert len(status["channels"]) == hid_module.UART_CHANNEL_COUNT
     channel0 = status["channels"][0]
     assert channel0["health"] == 0x31
     assert channel0["ring_high_watermark"] == 32
@@ -62,9 +73,17 @@ def test_rejects_wrong_status_layout_version(hid_module):
 
 def test_require_payload_rejects_bad_prefix(hid_module):
     with pytest.raises(RuntimeError, match="unexpected report"):
-        hid_module.require_payload([3, 1, 2], report_id=1, payload_size=2)
+        hid_module.require_payload(
+            [hid_module.REPORT_ID_BOARD_STATUS, 1, 2],
+            report_id=hid_module.REPORT_ID_STATUS,
+            payload_size=2,
+        )
     with pytest.raises(RuntimeError, match="unexpected report"):
-        hid_module.require_payload([1, 1], report_id=1, payload_size=2)
+        hid_module.require_payload(
+            [hid_module.REPORT_ID_STATUS, 1],
+            report_id=hid_module.REPORT_ID_STATUS,
+            payload_size=2,
+        )
 
 
 def test_send_command_and_reset_sequence(hid_module):
@@ -81,3 +100,44 @@ def test_send_command_and_reset_sequence(hid_module):
     assert writes[0] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_TOGGLE_LED]
     assert writes[1] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_ARM_RESET]
     assert writes[2] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_RESET_BOARD]
+
+
+def _run_one_monitor_iteration(monkeypatch, hid_module, report):
+    times = iter((0.0, 0.0, 1.0))
+    monkeypatch.setattr(hid_module.time, "monotonic", lambda: next(times))
+
+    class FakeReadDevice:
+        def read(self, size, timeout):
+            assert size == hid_module.STATUS_SIZE + 1
+            assert timeout == 250
+            return report
+
+    return FakeReadDevice()
+
+
+def test_monitor_rejects_empty_reads(monkeypatch, hid_module):
+    device = _run_one_monitor_iteration(monkeypatch, hid_module, [])
+    with pytest.raises(RuntimeError, match="timed out without receiving"):
+        hid_module.monitor(device, 1.0)
+
+
+def test_monitor_reports_wrong_report_ids_separately(monkeypatch, hid_module):
+    device = _run_one_monitor_iteration(
+        monkeypatch, hid_module, [hid_module.REPORT_ID_BOARD_STATUS]
+    )
+    with pytest.raises(RuntimeError, match="unexpected HID report ID.*no valid status"):
+        hid_module.monitor(device, 1.0)
+
+
+def test_monitor_rejects_malformed_status(monkeypatch, hid_module):
+    report = [hid_module.REPORT_ID_STATUS, *status_report_bytes()[:-1]]
+    device = _run_one_monitor_iteration(monkeypatch, hid_module, report)
+    with pytest.raises(RuntimeError, match="unexpected status report size"):
+        hid_module.monitor(device, 1.0)
+
+
+def test_monitor_accepts_valid_status(monkeypatch, hid_module, capsys):
+    report = [hid_module.REPORT_ID_STATUS, *status_report_bytes(sequence=9)]
+    device = _run_one_monitor_iteration(monkeypatch, hid_module, report)
+    hid_module.monitor(device, 1.0)
+    assert capsys.readouterr().out.startswith("seq=9 ")
