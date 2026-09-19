@@ -79,6 +79,6 @@ The tag stamps HID firmware version `MAJOR.MINOR.PATCH` and USB `bcdDevice` as
 major.minor BCD only (for example `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
 Details are in the root README.
 
-Release and PR workflows build against Pico SDK 2.2.0 at commit
-`a1438dff1d38bd9c65dbd693f0e5db4b9ae91779` and print the verified revision in
+Release and PR workflows build against Pico SDK 2.3.0 at commit
+`98a542c1a62fb549ffb5d66a3e5892b06276b670` and print the verified revision in
 the job log.

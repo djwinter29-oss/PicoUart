@@ -37,12 +37,12 @@ CDC RTS is ignored.
    tools/linux/build.sh
    ```
 
-   This downloads Pico SDK `2.2.0` with submodules into the project-local,
+   This downloads Pico SDK `2.3.0` with submodules into the project-local,
    ignored `.pico-sdk` directory when it is not already present. To select a
    different Pico SDK release for this project:
 
    ```sh
-   . tools/linux/setup-sdk-env.sh --sdk-version 2.2.0
+   . tools/linux/setup-sdk-env.sh --sdk-version 2.3.0
    ```
 
 2. Connect the Debug Probe SWDIO, SWCLK, and GND signals to the PicoUart board,

@@ -66,9 +66,13 @@ add_executable(pico_uart
     src/driver/system.c
     src/driver/temperature.c
     src/main.c
+    src/uart/hw/dma_claim.c
+    src/uart/hw/dma_claim_ops.c
     src/uart/hw/driver.c
     src/uart/line_coding.c
     src/uart/pio/driver.c
+    src/uart/pio/resource_claim.c
+    src/uart/pio/resource_claim_ops.c
     src/uart/ring_buffer/ring_buffer.c
     src/uart/topology.c
     src/uart/uart_driver.c
