@@ -33,7 +33,7 @@ static size_t fake_claim_result_index;
 
 static int fake_claim_channel(bool required)
 {
-    (void)required;
+    TEST_ASSERT_FALSE(required);
     TEST_ASSERT_LESS_THAN_size_t(FAKE_CALL_LOG_CAPACITY, fake_call_count);
     fake_call_log[fake_call_count].kind = FAKE_CALL_CLAIM;
     fake_call_log[fake_call_count].channel = -1;
