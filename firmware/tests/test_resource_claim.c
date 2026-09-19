@@ -62,7 +62,7 @@ static void fake_sm_unclaim(void *pio, unsigned int sm)
 
 static int fake_dma_claim(bool required)
 {
-    (void)required;
+    TEST_ASSERT_FALSE(required);
     record_call(FAKE_DMA_CLAIM, (unsigned int)dma_result_index);
     return dma_results[dma_result_index++];
 }
