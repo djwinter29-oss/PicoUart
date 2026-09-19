@@ -686,6 +686,8 @@ static void uart_driver_set_line_coding_local(
      * the live producer index instead of resetting the shared RX ring.
      */
     uart_driver_pending_control_t *pending_control;
+    bool was_pending;
+    bool same_request;
 
     if (port == NULL) {
         return;
@@ -697,6 +699,13 @@ static void uart_driver_set_line_coding_local(
         uart_driver_finish_mailbox_control(port_id, control_generation, false);
         return;
     }
+
+    was_pending = pending_control->pending;
+    same_request = was_pending &&
+                   (pending_control->line_coding.baud_rate == line_coding->baud_rate) &&
+                   (pending_control->line_coding.data_bits == line_coding->data_bits) &&
+                   (pending_control->line_coding.stop_bits == line_coding->stop_bits) &&
+                   (pending_control->line_coding.parity == line_coding->parity);
 
     if (uart_driver_line_coding_matches_current(port, line_coding)) {
         if (pending_control->pending) {
@@ -723,7 +732,9 @@ static void uart_driver_set_line_coding_local(
         return;
     }
 
-    pending_control->deadline = make_timeout_time_ms(UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS);
+    if (uart_control_worker_should_set_deadline(was_pending, same_request)) {
+        pending_control->deadline = make_timeout_time_ms(UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS);
+    }
     uart_driver_set_worker_control_pending(port_id, control_generation);
 }
 
@@ -789,7 +800,8 @@ bool uart_driver_port_tx_is_blocked(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_status_lock);
-    blocked = uart_control_tx_should_block(uart_driver_pending_controls[port_id].pending,
+    blocked = uart_control_tx_should_block(uart_driver_soft_pending_controls[port_id],
+                                           uart_driver_pending_controls[port_id].pending,
                                            uart_driver_mailbox_has_pending_port(port_id));
     spin_unlock(uart_driver_status_lock, save);
     return blocked;

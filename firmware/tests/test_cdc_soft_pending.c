@@ -41,12 +41,21 @@ void test_worker_completion_keeps_newer_control_pending_owner(void)
     TEST_ASSERT_TRUE(uart_control_pending_should_clear(false, false));
 }
 
-void test_soft_pending_does_not_block_tx_until_worker_owns_request(void)
+void test_every_control_owner_blocks_tx_ingress(void)
 {
     /* The pure admission rule is shared by uart_driver_fill_tx(). */
-    TEST_ASSERT_FALSE(uart_control_tx_should_block(false, false));
-    TEST_ASSERT_TRUE(uart_control_tx_should_block(false, true));
-    TEST_ASSERT_TRUE(uart_control_tx_should_block(true, false));
+    TEST_ASSERT_FALSE(uart_control_tx_should_block(false, false, false));
+    TEST_ASSERT_TRUE(uart_control_tx_should_block(true, false, false));
+    TEST_ASSERT_TRUE(uart_control_tx_should_block(false, true, false));
+    TEST_ASSERT_TRUE(uart_control_tx_should_block(false, false, true));
+}
+
+void test_worker_deadline_retained_only_for_identical_retry(void)
+{
+    TEST_ASSERT_TRUE(uart_control_worker_should_set_deadline(false, false));
+    TEST_ASSERT_TRUE(uart_control_worker_should_set_deadline(false, true));
+    TEST_ASSERT_FALSE(uart_control_worker_should_set_deadline(true, true));
+    TEST_ASSERT_TRUE(uart_control_worker_should_set_deadline(true, false));
 }
 
 void test_rejected_follow_up_invalidates_prior_soft_pending_completion(void)
@@ -98,7 +107,8 @@ int main(void)
     RUN_TEST(test_deadline_retained_only_for_identical_retry);
     RUN_TEST(test_mailbox_acceptance_and_sequence_wrap);
     RUN_TEST(test_worker_completion_keeps_newer_control_pending_owner);
-    RUN_TEST(test_soft_pending_does_not_block_tx_until_worker_owns_request);
+    RUN_TEST(test_every_control_owner_blocks_tx_ingress);
+    RUN_TEST(test_worker_deadline_retained_only_for_identical_retry);
     RUN_TEST(test_rejected_follow_up_invalidates_prior_soft_pending_completion);
     RUN_TEST(test_control_generation_wraps_without_matching_stale_completion);
     return UNITY_END();

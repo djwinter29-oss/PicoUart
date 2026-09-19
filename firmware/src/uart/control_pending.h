@@ -44,13 +44,27 @@ static inline bool uart_control_pending_should_clear(bool soft_pending, bool mai
 
 /**
  * @brief Decide whether UART TX ingress must wait for control ownership.
+ * @param soft_pending True while core 0 is waiting to publish the request.
  * @param worker_pending True while the worker has a deferred backend change.
  * @param mailbox_pending True while the worker mailbox owns a request.
  * @return `true` while the UART format may be changing or is about to change.
  */
-static inline bool uart_control_tx_should_block(bool worker_pending, bool mailbox_pending)
+static inline bool uart_control_tx_should_block(bool soft_pending,
+                                                bool worker_pending,
+                                                bool mailbox_pending)
 {
-    return worker_pending || mailbox_pending;
+    return soft_pending || worker_pending || mailbox_pending;
+}
+
+/**
+ * @brief Decide whether a worker-side control request needs a new deadline.
+ * @param was_pending True when the worker already owns a deferred request.
+ * @param same_request True when the replacement requests the same format.
+ * @return `false` only for an identical retry of an existing request.
+ */
+static inline bool uart_control_worker_should_set_deadline(bool was_pending, bool same_request)
+{
+    return !was_pending || !same_request;
 }
 
 /**

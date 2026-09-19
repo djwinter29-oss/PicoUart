@@ -168,7 +168,7 @@ jobs:
           for ext in uf2 elf bin hex; do
             cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${BOARD}.$ext"
           done
-          python3 tools/linux/verify-build.py --build-dir "$SRC" --version "$VERSION"
+          python3 tools/linux/verify-build.py --build-dir "$SRC" --board "$BOARD" --version "$VERSION"
           (cd "$OUT" && sha256sum pico_uart-v${VERSION}-${BOARD}.* > "SHA256SUMS-${BOARD}.txt")
           ls -la "$OUT"
 

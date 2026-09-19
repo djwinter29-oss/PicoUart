@@ -2,6 +2,7 @@
 """Stress PicoUart UART0, optional UART1/UART4, UART2/UART3, and UART5 concurrently."""
 
 import argparse
+import math
 import os
 import select
 import sys
@@ -173,6 +174,7 @@ def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
 def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     ports: list[tuple[int, list]] = []
     results: dict[str, tuple[int, str | None]] = {}
+    passed = False
 
     try:
         uart0_pico, uart0_pico_settings = configure_port(arguments.uart0_pico, arguments.uart0_baud)
@@ -238,25 +240,26 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             else:
                 print(f"FAIL {label}: {bytes_verified} bytes, {error}", file=sys.stderr)
                 passed = False
-        return passed
     except OSError as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
-        return False
+        passed = False
     finally:
         cleanup_error = close_ports(ports)
         if cleanup_error is not None:
             print(f"Serial cleanup failed: {cleanup_error}", file=sys.stderr)
+            passed = False
+    return passed
 
 
 def main() -> int:
     arguments = parse_arguments()
-    if arguments.duration <= 0:
+    if not math.isfinite(arguments.duration) or arguments.duration <= 0:
         print("--duration must be greater than zero", file=sys.stderr)
         return 2
     if arguments.payload_bytes < 32 or arguments.payload_bytes > 4096:
         print("--payload-bytes must be between 32 and 4096", file=sys.stderr)
         return 2
-    if arguments.timeout <= 0:
+    if not math.isfinite(arguments.timeout) or arguments.timeout <= 0:
         print("--timeout must be greater than zero", file=sys.stderr)
         return 2
 

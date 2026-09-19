@@ -110,6 +110,40 @@ def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.Monkey
     assert closes == [17, 18]
 
 
+def test_run_test_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+    arguments = type(
+        "Arguments",
+        (),
+        {
+            "pico_port": "/dev/fake",
+            "loopback": True,
+            "settle_seconds": 0.0,
+            "label": "test",
+            "payload_bytes": 64,
+            "timeout": 1.0,
+        },
+    )()
+    monkeypatch.setattr(bridge, "configure_port", lambda *_args: (17, []))
+    monkeypatch.setattr(bridge, "test_direction", lambda *_args: True)
+    monkeypatch.setattr(bridge, "close_ports", lambda *_args: OSError("restore failed"))
+
+    assert bridge.run_test(arguments, 115200) == 2
+
+
+@pytest.mark.parametrize(("option", "value"), [("--timeout", "nan"), ("--settle-seconds", "inf")])
+def test_non_finite_timing_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, option: str, value: str
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["serial_bridge_test.py", "--pico-port", "/dev/null", "--loopback", option, value],
+    )
+    bridge = _load_bridge()
+    assert bridge.main() == 2
+
+
 def test_payload_bytes_rejects_above_max(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,

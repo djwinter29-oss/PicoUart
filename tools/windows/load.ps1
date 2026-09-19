@@ -4,7 +4,7 @@ param(
     [string]$ElfPath,
     [string]$Generator,
     [string]$PicoSdkPath,
-    [int]$SystemClockKhz = 0,
+    [string]$SystemClockKhz,
     [string]$OpenOcdExe = $env:OPENOCD_EXE,
     [string]$OpenOcdTarget = $env:PICO_OPENOCD_TARGET,
     [int]$AdapterSpeedKhz = 5000,
@@ -31,7 +31,16 @@ if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
 }
 
 if (-not $SkipBuild) {
-    & (Join-Path $PSScriptRoot "build.ps1") -BuildDir $BuildDir -Board $Board -Generator $Generator -PicoSdkPath $PicoSdkPath -SystemClockKhz $SystemClockKhz
+    $buildArguments = @{
+        BuildDir = $BuildDir
+        Board = $Board
+        Generator = $Generator
+        PicoSdkPath = $PicoSdkPath
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SystemClockKhz)) {
+        $buildArguments.SystemClockKhz = $SystemClockKhz
+    }
+    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
 }
 
 if ([string]::IsNullOrWhiteSpace($ElfPath)) {

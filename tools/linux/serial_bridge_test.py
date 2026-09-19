@@ -2,6 +2,7 @@
 """Verify bidirectional traffic through one PicoUart CDC-to-UART bridge."""
 
 import argparse
+import math
 import os
 import secrets
 import select
@@ -214,6 +215,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
     peer_fd = -1
     pico_settings = None
     peer_settings = None
+    result = 2
 
     try:
         expect_drain = True
@@ -282,24 +284,24 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
 
         if written <= 0:
             print(f"FAIL flood: wrote {written} bytes", file=sys.stderr)
-            return 1
-        if expect_drain and drained <= 0:
+            result = 1
+        elif expect_drain and drained <= 0:
             print(
                 f"FAIL flood: wrote {written} bytes but drained {drained} "
                 f"(CDC open window produced no RX)",
                 file=sys.stderr,
             )
-            return 1
-
-        print(f"PASS flood: wrote {written} bytes, drained {drained} bytes")
-        print(
-            "Note: flood PASS checks write/drain activity only; pair with "
-            "HID monitor for rx_overrun / rx_error claims."
-        )
-        return 0
+            result = 1
+        else:
+            print(f"PASS flood: wrote {written} bytes, drained {drained} bytes")
+            print(
+                "Note: flood PASS checks write/drain activity only; pair with "
+                "HID monitor for rx_overrun / rx_error claims."
+            )
+            result = 0
     except OSError as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
-        return 2
+        result = 2
     finally:
         ports = []
         if pico_fd >= 0 and pico_settings is not None:
@@ -309,6 +311,9 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
         cleanup_error = close_ports(ports)
         if cleanup_error is not None:
             print(f"Serial cleanup failed: {cleanup_error}", file=sys.stderr)
+            if result == 0:
+                result = 2
+    return result
 
 
 def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
@@ -316,6 +321,7 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
     peer_fd = -1
     pico_settings = None
     peer_settings = None
+    result = 2
 
     try:
         pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
@@ -327,25 +333,25 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
                                     "pico-loopback",
                                     arguments.payload_bytes,
                                     arguments.timeout)
-            return 0 if passed else 1
-
-        peer_fd, peer_settings = configure_port(arguments.peer_port, baud_rate)
-        time.sleep(arguments.settle_seconds)
-        print(f"Testing {arguments.label} at {baud_rate} baud")
-        pico_to_peer = test_direction(pico_fd,
-                                      peer_fd,
-                                      "pico-to-peer",
-                                      arguments.payload_bytes,
-                                      arguments.timeout)
-        peer_to_pico = test_direction(peer_fd,
-                                      pico_fd,
-                                      "peer-to-pico",
-                                      arguments.payload_bytes,
-                                      arguments.timeout)
-        return 0 if pico_to_peer and peer_to_pico else 1
+            result = 0 if passed else 1
+        else:
+            peer_fd, peer_settings = configure_port(arguments.peer_port, baud_rate)
+            time.sleep(arguments.settle_seconds)
+            print(f"Testing {arguments.label} at {baud_rate} baud")
+            pico_to_peer = test_direction(pico_fd,
+                                          peer_fd,
+                                          "pico-to-peer",
+                                          arguments.payload_bytes,
+                                          arguments.timeout)
+            peer_to_pico = test_direction(peer_fd,
+                                          pico_fd,
+                                          "peer-to-pico",
+                                          arguments.payload_bytes,
+                                          arguments.timeout)
+            result = 0 if pico_to_peer and peer_to_pico else 1
     except OSError as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
-        return 2
+        result = 2
     finally:
         ports = []
         if pico_fd >= 0 and pico_settings is not None:
@@ -355,6 +361,9 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
         cleanup_error = close_ports(ports)
         if cleanup_error is not None:
             print(f"Serial cleanup failed: {cleanup_error}", file=sys.stderr)
+            if result == 0:
+                result = 2
+    return result
 
 
 def main() -> int:
@@ -362,16 +371,16 @@ def main() -> int:
     if arguments.payload_bytes < 1 or arguments.payload_bytes > 4096:
         print("--payload-bytes must be between 1 and 4096", file=sys.stderr)
         return 2
-    if arguments.timeout <= 0:
+    if not math.isfinite(arguments.timeout) or arguments.timeout <= 0:
         print("--timeout must be greater than zero", file=sys.stderr)
         return 2
-    if arguments.settle_seconds < 0:
+    if not math.isfinite(arguments.settle_seconds) or arguments.settle_seconds < 0:
         print("--settle-seconds must be >= 0", file=sys.stderr)
         return 2
-    if arguments.flood_seconds < 0:
+    if not math.isfinite(arguments.flood_seconds) or arguments.flood_seconds < 0:
         print("--flood-seconds must be >= 0", file=sys.stderr)
         return 2
-    if arguments.hold_cdc_seconds < 0:
+    if not math.isfinite(arguments.hold_cdc_seconds) or arguments.hold_cdc_seconds < 0:
         print("--hold-cdc-seconds must be >= 0", file=sys.stderr)
         return 2
     if arguments.hold_cdc_seconds > 0 and arguments.flood_seconds <= 0:

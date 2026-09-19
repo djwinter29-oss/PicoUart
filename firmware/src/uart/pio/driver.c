@@ -318,7 +318,7 @@ static void pio_uart_driver_unclaim_state_machines(pio_uart_driver_t *driver)
     }
 }
 
-static void pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
+static bool pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
 {
     uint offset = driver->tx_cts_enabled ? pio_uart_driver_tx_cts_offset(driver->config.pio)
                                          : pio_uart_driver_tx_offset(driver->config.pio);
@@ -345,15 +345,18 @@ static void pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
                                        1u,
                                        false);
     }
-    pio_sm_init(driver->config.pio, driver->config.tx_state_machine, offset, &config);
+    if (pio_sm_init(driver->config.pio, driver->config.tx_state_machine, offset, &config) != PICO_OK) {
+        return false;
+    }
     pio_sm_set_pins_with_mask(driver->config.pio,
                                driver->config.tx_state_machine,
                                1u << driver->config.tx_pin,
                                1u << driver->config.tx_pin);
     pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, true);
+    return true;
 }
 
-static void pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
+static bool pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
 {
     uint offset = pio_uart_driver_rx_offset(driver->config.pio);
     pio_sm_config config = pio_uart_rx_program_get_default_config(offset);
@@ -375,8 +378,11 @@ static void pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
     }
     pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.rx_state_machine, driver->config.rx_pin, 1u, false);
     pio_interrupt_clear(driver->config.pio, driver->config.rx_state_machine);
-    pio_sm_init(driver->config.pio, driver->config.rx_state_machine, offset, &config);
+    if (pio_sm_init(driver->config.pio, driver->config.rx_state_machine, offset, &config) != PICO_OK) {
+        return false;
+    }
     pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, true);
+    return true;
 }
 
 static void pio_uart_driver_start_rx_dma(pio_uart_driver_t *driver)
@@ -672,8 +678,13 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
     pio_sm_restart(driver->config.pio, driver->config.tx_state_machine);
     pio_sm_restart(driver->config.pio, driver->config.rx_state_machine);
 
-    pio_uart_driver_init_tx_sm(driver);
-    pio_uart_driver_init_rx_sm(driver);
+    if (!pio_uart_driver_init_tx_sm(driver) || !pio_uart_driver_init_rx_sm(driver)) {
+        pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, false);
+        pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, false);
+        pio_uart_driver_release_dma(driver);
+        pio_uart_driver_unclaim_state_machines(driver);
+        return false;
+    }
     pio_uart_driver_configure_rts(driver);
     pio_uart_driver_start_rx_dma(driver);
     driver->initialized = true;

@@ -33,7 +33,7 @@ microcontroller platform.
 
 ## Build and CI
 
-Linux CI only (see `tools/windows/` for local Windows helpers).
+CI builds both firmware targets on Linux and runs host tests on Linux and Windows.
 
 ```sh
 . tools/linux/setup-sdk-env.sh --sdk-version 2.2.0

@@ -62,7 +62,7 @@ jobs:
           BOARD: ${{ matrix.board }}
         run: |
           set -eu
-          python3 tools/linux/verify-build.py --build-dir "build/firmware-${BOARD}"
+          python3 tools/linux/verify-build.py --build-dir "build/firmware-${BOARD}" --board "$BOARD"
 
       - name: Smoke-check stamped version / bcdDevice
         if: matrix.board == 'pico'
@@ -71,6 +71,7 @@ jobs:
           tools/linux/build.sh --board pico --firmware-version 1.2.3 --build-dir build/firmware-pico-stamp
           python3 tools/linux/verify-build.py \
             --build-dir build/firmware-pico-stamp \
+            --board pico \
             --version 1.2.3
 
       - name: Upload build artifacts

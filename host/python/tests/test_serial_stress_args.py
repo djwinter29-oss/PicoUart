@@ -89,6 +89,70 @@ def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.Monkey
     assert closes == [20, 19]
 
 
+def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    stress = _load_stress()
+    arguments = type(
+        "Arguments",
+        (),
+        {
+            "uart0_pico": "/dev/uart0-pico",
+            "uart0_peer": "/dev/uart0-peer",
+            "uart1": None,
+            "uart2": "/dev/uart2",
+            "uart3": "/dev/uart3",
+            "uart4": None,
+            "uart5": "/dev/uart5",
+            "uart0_baud": 115200,
+            "duration": 0.1,
+            "payload_bytes": 64,
+            "timeout": 1.0,
+        },
+    )()
+    next_descriptor = iter(range(20, 25))
+
+    class ImmediateThread:
+        def __init__(self, target, args):
+            self.target = target
+            self.args = args
+
+        def start(self):
+            self.target(*self.args)
+
+        def join(self):
+            return None
+
+    def complete_stream(label, _source, _destination, _duration, _payload, _timeout, _start, result):
+        result[label] = (64, None)
+
+    monkeypatch.setattr(stress, "configure_port", lambda *_args: (next(next_descriptor), []))
+    monkeypatch.setattr(stress, "run_stream", complete_stream)
+    monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(stress, "close_ports", lambda *_args: OSError("restore failed"))
+
+    assert stress.benchmark_rate(arguments, 115200) is False
+
+
+@pytest.mark.parametrize(("option", "value"), [("--duration", "nan"), ("--timeout", "inf")])
+def test_non_finite_timing_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, option: str, value: str
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serial_stress_benchmark.py",
+            "--uart0-pico", "/dev/null",
+            "--uart0-peer", "/dev/null",
+            "--uart2", "/dev/null",
+            "--uart3", "/dev/null",
+            "--uart5", "/dev/null",
+            option, value,
+        ],
+    )
+    stress = _load_stress()
+    assert stress.main() == 2
+
+
 def test_payload_bytes_rejects_out_of_range(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,
