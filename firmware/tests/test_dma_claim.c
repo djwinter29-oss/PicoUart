@@ -33,7 +33,7 @@ static size_t fake_claim_result_index;
 
 static int fake_claim_channel(bool required)
 {
-    (void)required;
+    TEST_ASSERT_FALSE(required);
     TEST_ASSERT_LESS_THAN_size_t(FAKE_CALL_LOG_CAPACITY, fake_call_count);
     fake_call_log[fake_call_count].kind = FAKE_CALL_CLAIM;
     fake_call_log[fake_call_count].channel = -1;
@@ -110,20 +110,48 @@ void test_rx_claim_released_when_tx_claim_fails(void)
     TEST_ASSERT_EQUAL_INT(2, fake_call_log[2].channel);
 }
 
-/** @brief RX DMA claim itself fails: no unclaim should be attempted,
- *          and `tx_dma_channel` is not written by the production code
- *          (its output is undefined on failure). */
+/** @brief RX DMA claim itself fails: no unclaim should be attempted, and
+ *          both outputs are reset to -1 per the documented contract. */
 void test_no_unclaim_when_rx_claim_fails(void)
 {
     int rx = 7;
-    int tx_dummy = 7;
+    int tx = 7;
 
     fake_claim_results[0] = -1;
 
-    TEST_ASSERT_FALSE(hw_uart_driver_claim_dma_channels(&fake_ops, &rx, &tx_dummy));
+    TEST_ASSERT_FALSE(hw_uart_driver_claim_dma_channels(&fake_ops, &rx, &tx));
     TEST_ASSERT_EQUAL_INT(-1, rx);
-    /* tx_dma_channel is not written by production code on early RX failure. */
+    TEST_ASSERT_EQUAL_INT(-1, tx);
     TEST_ASSERT_EQUAL_size_t(1u, fake_call_count);
+}
+
+void test_null_ops_rejected_without_claims(void)
+{
+    int rx = 3;
+    int tx = 5;
+
+    TEST_ASSERT_FALSE(hw_uart_driver_claim_dma_channels(NULL, &rx, &tx));
+    TEST_ASSERT_EQUAL_INT(3, rx);
+    TEST_ASSERT_EQUAL_INT(5, tx);
+    TEST_ASSERT_EQUAL_size_t(0u, fake_call_count);
+}
+
+void test_null_rx_output_rejected_without_claims(void)
+{
+    int tx = 5;
+
+    TEST_ASSERT_FALSE(hw_uart_driver_claim_dma_channels(&fake_ops, NULL, &tx));
+    TEST_ASSERT_EQUAL_INT(5, tx);
+    TEST_ASSERT_EQUAL_size_t(0u, fake_call_count);
+}
+
+void test_null_tx_output_rejected_without_claims(void)
+{
+    int rx = 3;
+
+    TEST_ASSERT_FALSE(hw_uart_driver_claim_dma_channels(&fake_ops, &rx, NULL));
+    TEST_ASSERT_EQUAL_INT(3, rx);
+    TEST_ASSERT_EQUAL_size_t(0u, fake_call_count);
 }
 
 int main(void)
@@ -132,5 +160,8 @@ int main(void)
     RUN_TEST(test_both_channels_claimed_on_success);
     RUN_TEST(test_rx_claim_released_when_tx_claim_fails);
     RUN_TEST(test_no_unclaim_when_rx_claim_fails);
+    RUN_TEST(test_null_ops_rejected_without_claims);
+    RUN_TEST(test_null_rx_output_rejected_without_claims);
+    RUN_TEST(test_null_tx_output_rejected_without_claims);
     return UNITY_END();
 }

@@ -12,6 +12,8 @@
 | `firmware/tests/test_cdc_soft_pending.c` | Soft-pending deadline coalesce, reject generation bump policy, CONTROL_PENDING ownership |
 | `firmware/tests/test_topology.c` | Logical port, GPIO, UART, and PIO state-machine assignment validation |
 | `firmware/tests/test_backend_policy.c` | Backend idle, DMA, PIO TX, IRQ-owner, and worker-heartbeat policy |
+| `firmware/tests/test_dma_claim.c` | HW UART RX/TX DMA channel claim/rollback and NULL-input fast-fail fault injection |
+| `firmware/tests/test_resource_claim.c` | PIO UART SM + DMA channel claim/rollback and NULL-input fast-fail fault injection |
 | `firmware/tests/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |
 | `firmware/tests/third_party/unity/` | Vendored [Unity](https://github.com/ThrowTheSwitch/Unity) v2.6.0 |
 | `host/python/src/` | HID host tool package/scripts |
@@ -20,7 +22,9 @@
 Mailbox, TinyUSB CDC callbacks, and on-target DMA IRQ re-arm are exercised via
 the board-testing skill / `docs/releasing.md` HIL gate. Host Unity tests cover
 pure policy helpers used by those paths (RX DMA progress, pause-settle samples,
-TXSTALL wait, backend idle/re-arm/TX action/IRQ owner/heartbeat, CDC soft-pending, topology).
+TXSTALL wait, backend idle/re-arm/TX action/IRQ owner/heartbeat, CDC soft-pending,
+topology) plus the seam-based HW/PIO resource-claim helpers and their NULL-input
+fast-fail branches.
 
 ## Run everything
 
