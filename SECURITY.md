@@ -7,8 +7,9 @@ PicoUart currently enumerates as USB **`cafe:4010`**. These IDs are a
 [`firmware/src/config/usb_identity.h`](firmware/src/config/usb_identity.h).
 They are not an allocated USB-IF or [pid.codes](https://pid.codes) identity.
 
-Release tags fail CI while this placeholder remains, unless
-`ALLOW_LAB_USB_IDENTITY` is set (lab images only). See `docs/releasing.md`.
+PicoUart releases are lab/project artifacts, so release CI permits this identity.
+See [`docs/releasing.md`](docs/releasing.md). Commercial derivatives must use an
+allocated identity.
 
 Do **not** ship production devices with the placeholder IDs:
 
@@ -16,10 +17,9 @@ Do **not** ship production devices with the placeholder IDs:
 - OS driver/association behavior is undefined across machines.
 - Changing the identity later is a breaking USB change for existing installs.
 
-### Before a public or production release
+### Commercial derivatives
 
-Follow the USB-identity and recorded-HIL gates in
-[`docs/releasing.md`](docs/releasing.md):
+Before shipping a commercial derivative:
 
 1. Obtain an allocated VID/PID (pid.codes or a commercial USB-IF vendor ID).
 2. Update `PICO_UART_USB_VID` / `PICO_UART_USB_PID` in `usb_identity.h`.

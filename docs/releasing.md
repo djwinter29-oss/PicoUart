@@ -9,32 +9,18 @@ this checklist passes.
 Suggested flow: `workflow_dispatch` dry-run → HIL on those artifacts → tag →
 review draft → publish.
 
-## USB identity (gate)
+## USB identity
 
-Lab images may keep the development placeholder `cafe:4010`. **Do not** ship a
-public or production release on that identity.
+PicoUart publishes lab and test artifacts using `cafe:4010`, an unallocated
+development USB identity. This project is not a commercial product, so the
+release workflow deliberately permits this identity and does not gate tag
+releases on a VID/PID allocation.
 
-Release CI enforces this: `.github/workflows/release.yml` runs
-`tools/linux/check-usb-identity.py` and **fails** while the tree still uses
-`cafe:4010`, unless you explicitly allow a lab image:
-
-- Tag pushes: set repository variable `ALLOW_LAB_USB_IDENTITY=true`
-- `workflow_dispatch` dry-runs: the `allow_lab_usb_identity` input defaults to
-  true so lab artifact builds still work
-
-PR CI does not fail on the placeholder; host tests only require the Python HID
-tool VID/PID to match `usb_identity.h`.
-
-Before promoting a non-lab draft:
-
-1. Obtain an allocated VID/PID (pid.codes or a commercial USB-IF vendor ID).
-2. Update `PICO_UART_USB_VID` / `PICO_UART_USB_PID` in
-   [`firmware/src/config/usb_identity.h`](../firmware/src/config/usb_identity.h).
-3. Keep [`host/python/src/pico_uart_hid.py`](../host/python/src/pico_uart_hid.py)
-   in sync (CI parses the header defines; no manual needle edits in
-   `release.yml`).
-4. Call out the identity change in release notes as a breaking USB change.
-
+Do not reuse these IDs for a commercial device: another project may collide on
+the same identity and operating-system driver association is undefined. A
+commercial derivative must obtain its own VID/PID and update
+[`firmware/src/config/usb_identity.h`](../firmware/src/config/usb_identity.h)
+and [`host/python/src/pico_uart_hid.py`](../host/python/src/pico_uart_hid.py).
 See also [`SECURITY.md`](../SECURITY.md).
 
 ## Recorded HIL pass (gate)
@@ -80,11 +66,10 @@ Before clicking **Publish** on the GitHub draft:
    `SHA256SUMS-*`) are bit-identical to the images used for the recorded HIL
    pass on **each** board (`pico` and `pico2`). Do not promote if HIL ran on a
    different local rebuild or only one of the two targets.
-2. **USB identity**: for non-lab releases, `PICO_UART_USB_VID` /
-   `PICO_UART_USB_PID` are **not** the development placeholder `0xCAFE` /
-   `0x4010` (confirm in release notes and in the packaged binaries).
+2. **USB identity note**: release notes retain the `0xCAFE:0x4010` lab-project
+   identity warning unless the artifact deliberately uses an allocated identity.
 3. **HIL transcript** is linked or attached (see above), covering both boards.
-4. Release notes call out any breaking USB identity or HID layout changes.
+4. Release notes call out any breaking HID layout changes.
 
 ## Versioning
 

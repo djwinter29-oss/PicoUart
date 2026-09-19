@@ -10,9 +10,9 @@ monitoring only.
 The HID interface uses vendor usage page `0xFF00`, vendor usage `0x01`, no boot
 protocol, and a 63-byte status report alongside compact board-status and
 command feature reports. The device is identified as USB
-`cafe:4010` (lab placeholder; release CI refuses this identity unless
-`ALLOW_LAB_USB_IDENTITY` is set) and has one HID interface after the twelve CDC
-control/data interfaces. The USB product string is `PicoUart CDC+HID PIO 8N1`.
+`cafe:4010` (the project's unallocated lab identity, permitted for published
+project artifacts) and has one HID interface after the twelve CDC control/data
+interfaces. The USB product string is `PicoUart CDC+HID PIO 8N1`.
 CDC interface strings advertise backend limits:
 `CDC0 HW` / `CDC1 HW` and `CDC2`–`CDC5 PIO 8N1`.
 
