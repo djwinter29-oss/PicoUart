@@ -68,6 +68,36 @@ def test_discovery_allows_unique_validated_missing_usage_fallback(
     assert opened_paths == [b"fallback"]
 
 
+def test_discovery_allows_empty_product_on_expected_interface(
+    monkeypatch, hid_module
+):
+    devices = [{
+        "path": b"linux-hidraw",
+        "product_string": "",
+        "interface_number": hid_module.HID_INTERFACE_NUMBER,
+    }]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    hid_module.open_device()
+
+    assert opened_paths == [b"linux-hidraw"]
+
+
+def test_discovery_rejects_empty_product_with_unknown_interface(
+    monkeypatch, hid_module
+):
+    devices = [{
+        "path": b"ambiguous",
+        "product_string": "",
+        "interface_number": None,
+    }]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    with pytest.raises(RuntimeError, match="expected usage metadata"):
+        hid_module.open_device()
+    assert opened_paths == []
+
+
 @pytest.mark.parametrize("interface_number", [None, -1])
 def test_discovery_allows_unknown_interface_metadata(
     monkeypatch, hid_module, interface_number
