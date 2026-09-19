@@ -28,7 +28,7 @@
 /** @brief Maximum attempts to acquire a coherent worker-owned telemetry snapshot. */
 #define UART_DRIVER_PORT_STATS_SNAPSHOT_ATTEMPTS 3u
 /** @brief Maximum RX snapshot copied before handing bytes to a USB writer. */
-#define UART_DRIVER_RX_SNAPSHOT_SIZE 256u
+#define UART_DRIVER_RX_SNAPSHOT_SIZE 1024u
 
 /**
  * @brief Commands accepted by the cross-core UART control mailbox.

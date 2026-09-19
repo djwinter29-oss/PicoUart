@@ -81,7 +81,7 @@
  */
 typedef struct {
     uint8_t health; /**< UART status flags plus @ref USB_HID_CHANNEL_STATUS_* flags. */
-    uint8_t ring_high_watermark_blocks; /**< Largest RX or TX ring occupancy in 16-byte blocks. */
+    uint8_t ring_high_watermark_blocks; /**< Largest UART RX/TX ring occupancy in 16-byte blocks. */
     uint16_t controller_tx_bytes; /**< Saturated controller TX byte delta since the preceding report. */
     uint16_t controller_rx_bytes; /**< Saturated controller RX byte delta since the preceding report. */
     uint16_t cdc_tx_bytes; /**< Saturated CDC-to-host byte delta since the preceding report. */

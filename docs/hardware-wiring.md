@@ -29,8 +29,9 @@ Each UART channel should expose TX, RX, and GND for bring-up.
 
 - Hardware UART0/UART1: RTS/CTS are optional and only needed when
   `hardware_flow_control` is enabled in firmware and the peer supports FC.
-- PIO UART: RTS/CTS numbers in the pin tables are **docs-reserved only** (not
-  GPIO-owned by firmware).
+- PIO UART: RX RTS is available when
+  `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL` is enabled; CTS/TX gating remains
+  unavailable.
 
 Hardware UART bring-up requires TX, RX, and GND. RTS/CTS stay disabled in
 firmware by default; cross-connect them only when validating explicit hardware
@@ -65,8 +66,8 @@ Notes:
 
 - TX/RX columns match `firmware/src/config/uart_board.c` (source of truth).
 - RTS/CTS columns are the intended allocation. HW RTS/CTS are not claimed unless
-  `hardware_flow_control` is enabled; PIO RTS/CTS are documentation reservations
-  only (not GPIO-owned by firmware).
+  `hardware_flow_control` is enabled; PIO RTS is not claimed unless the RX flow
+  control pin flag is enabled.
 - GP27 and GP28 remain free for future use.
 - GP23 and GP24 are not used because they are not generally available on standard Pico headers.
 - GP25 is reserved for the selected board's default LED when `PICO_DEFAULT_LED_PIN` is defined.

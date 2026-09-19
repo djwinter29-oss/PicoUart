@@ -11,11 +11,13 @@
 /** @brief USB CDC notification endpoint transfer capacity in bytes. */
 #define PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE 8u
 /** @brief USB CDC receive FIFO capacity in bytes per CDC interface. */
-#define PICO_UART_USB_CDC_RX_BUFFER_SIZE 1024u
+#define PICO_UART_USB_CDC_RX_BUFFER_SIZE 2048u
 /** @brief USB CDC transmit FIFO capacity in bytes per CDC interface. */
-#define PICO_UART_USB_CDC_TX_BUFFER_SIZE 1024u
+#define PICO_UART_USB_CDC_TX_BUFFER_SIZE 2048u
 /** @brief USB CDC endpoint transfer capacity in bytes per CDC interface. */
 #define PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE 64u
+/** @brief Maximum bytes moved per CDC interface and direction in one bridge pass. */
+#define PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET 1024u
 /** @brief USB HID endpoint transfer capacity in bytes. */
 #define PICO_UART_USB_HID_ENDPOINT_BUFFER_SIZE 64u
 

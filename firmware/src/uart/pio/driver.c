@@ -66,6 +66,42 @@ static size_t pio_uart_driver_dma_threshold(const pio_uart_driver_t *driver)
     return PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD;
 }
 
+static void pio_uart_driver_configure_rts(pio_uart_driver_t *driver)
+{
+    if ((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) == 0u) {
+        return;
+    }
+
+    /* RTS is active-low: low permits the peer to transmit. */
+    gpio_set_function(driver->config.rts_pin, GPIO_FUNC_SIO);
+    gpio_set_dir(driver->config.rts_pin, GPIO_OUT);
+    gpio_put(driver->config.rts_pin, 0u);
+    driver->rx_rts_asserted = true;
+}
+
+static void pio_uart_driver_update_rts(pio_uart_driver_t *driver)
+{
+    size_t occupancy;
+    size_t high_watermark;
+    size_t low_watermark;
+
+    if ((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) == 0u) {
+        return;
+    }
+
+    occupancy = ring_buffer_occupancy(&driver->rx_ring);
+    high_watermark = ((size_t)driver->rx_ring.size * 3u) / 4u;
+    low_watermark = (size_t)driver->rx_ring.size / 2u;
+
+    if (driver->rx_rts_asserted && (occupancy >= high_watermark)) {
+        gpio_put(driver->config.rts_pin, 1u);
+        driver->rx_rts_asserted = false;
+    } else if (!driver->rx_rts_asserted && (occupancy <= low_watermark)) {
+        gpio_put(driver->config.rts_pin, 0u);
+        driver->rx_rts_asserted = true;
+    }
+}
+
 /**
  * @brief Abort one DMA channel safely on RP2040 and RP2350.
  *
@@ -356,19 +392,16 @@ static bool pio_uart_driver_start_tx_dma(pio_uart_driver_t *driver, size_t max_t
     ring_buffer_span_t span;
     size_t transfer_length;
 
-    if ((driver == NULL) || (driver->tx_dma_channel >= 0) || driver->tx_dma_active) {
+    if ((driver == NULL) || driver->tx_dma_active) {
         return false;
     }
 
-    driver->tx_dma_channel = dma_claim_unused_channel(false);
     if (driver->tx_dma_channel < 0) {
         return false;
     }
 
     span = ring_buffer_read_span(&driver->tx_ring);
     if (span.length == 0u) {
-        dma_channel_unclaim((uint)driver->tx_dma_channel);
-        driver->tx_dma_channel = -1;
         return false;
     }
 
@@ -467,6 +500,11 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
         return false;
     }
 
+    if (((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) != 0u) &&
+        (driver->config.rts_pin == PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+        return false;
+    }
+
     if (driver->config.tx_state_machine == driver->config.rx_state_machine) {
         return false;
     }
@@ -482,6 +520,7 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
     driver->rx_dma_channel = -1;
     driver->tx_dma_channel = -1;
     driver->tx_dma_active = false;
+    driver->rx_rts_asserted = false;
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_polled_bytes = 0u;
     driver->tx_dma_bytes = 0u;
@@ -502,6 +541,12 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
         return false;
     }
 
+    driver->tx_dma_channel = dma_claim_unused_channel(false);
+    if (driver->tx_dma_channel < 0) {
+        pio_uart_driver_release_dma(driver);
+        return false;
+    }
+
     pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, false);
     pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, false);
     pio_sm_clear_fifos(driver->config.pio, driver->config.tx_state_machine);
@@ -511,6 +556,7 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
 
     pio_uart_driver_init_tx_sm(driver);
     pio_uart_driver_init_rx_sm(driver);
+    pio_uart_driver_configure_rts(driver);
     pio_uart_driver_start_rx_dma(driver);
     driver->initialized = true;
     return true;
@@ -523,6 +569,7 @@ void pio_uart_driver_poll(pio_uart_driver_t *driver)
     }
 
     pio_uart_driver_publish_rx(driver);
+    pio_uart_driver_update_rts(driver);
     pio_uart_driver_harvest_framing_errors(driver);
     /* Safety net if the DMA IRQ was masked or delayed past transfer completion. */
     if ((driver->rx_dma_channel >= 0) &&

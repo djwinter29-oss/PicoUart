@@ -34,12 +34,48 @@ static void hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
     uart_init(driver->config.instance, driver->config.baud_rate);
     uart_set_hw_flow(driver->config.instance,
                      driver->config.hardware_flow_control,
-                     driver->config.hardware_flow_control);
+                     false);
     uart_set_format(driver->config.instance,
                     driver->config.data_bits,
                     driver->config.stop_bits,
                     driver->config.parity);
     uart_set_fifo_enabled(driver->config.instance, true);
+}
+
+static void hw_uart_driver_configure_rts(hw_uart_driver_t *driver)
+{
+    if (!driver->config.hardware_flow_control) {
+        return;
+    }
+
+    /* RTS is active-low: low permits the peer to transmit. */
+    gpio_set_function(driver->config.rts_pin, GPIO_FUNC_SIO);
+    gpio_set_dir(driver->config.rts_pin, GPIO_OUT);
+    gpio_put(driver->config.rts_pin, 0u);
+    driver->rx_rts_asserted = true;
+}
+
+static void hw_uart_driver_update_rts(hw_uart_driver_t *driver)
+{
+    size_t occupancy;
+    size_t high_watermark;
+    size_t low_watermark;
+
+    if (!driver->config.hardware_flow_control) {
+        return;
+    }
+
+    occupancy = ring_buffer_occupancy(&driver->rx_ring);
+    high_watermark = ((size_t)driver->rx_ring.size * 3u) / 4u;
+    low_watermark = (size_t)driver->rx_ring.size / 2u;
+
+    if (driver->rx_rts_asserted && (occupancy >= high_watermark)) {
+        gpio_put(driver->config.rts_pin, 1u);
+        driver->rx_rts_asserted = false;
+    } else if (!driver->rx_rts_asserted && (occupancy <= low_watermark)) {
+        gpio_put(driver->config.rts_pin, 0u);
+        driver->rx_rts_asserted = true;
+    }
 }
 
 static void hw_uart_driver_rearm_rx_dma(hw_uart_driver_t *driver)
@@ -313,6 +349,7 @@ void hw_uart_driver_poll(hw_uart_driver_t *driver)
     }
 
     hw_uart_driver_publish_rx(driver);
+    hw_uart_driver_update_rts(driver);
     hw_uart_driver_record_rx_errors(driver);
     /* Safety net if the DMA IRQ was masked or delayed past transfer completion. */
     if (uart_rx_dma_poll_should_rearm(true,
@@ -353,6 +390,7 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver)
     driver->tx_dma_channel = -1;
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_active = false;
+    driver->rx_rts_asserted = false;
     driver->controller_tx_bytes = 0u;
     driver->controller_rx_bytes = 0u;
     driver->rx_error_count = 0u;
@@ -387,11 +425,11 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver)
     gpio_set_function(driver->config.rx_pin, GPIO_FUNC_UART);
     if (driver->config.hardware_flow_control) {
         gpio_set_function(driver->config.cts_pin, GPIO_FUNC_UART);
-        gpio_set_function(driver->config.rts_pin, GPIO_FUNC_UART);
         /* CTS is active-low; pull-down keeps TX flowing when the peer omits CTS. */
         gpio_pull_down(driver->config.cts_pin);
     }
     hw_uart_driver_configure_uart(driver);
+    hw_uart_driver_configure_rts(driver);
     hw_uart_driver_start_rx_dma(driver);
 
     driver->initialized = true;
@@ -465,6 +503,7 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
     driver->config.parity = parity;
 
     hw_uart_driver_configure_uart(driver);
+    hw_uart_driver_configure_rts(driver);
     uart_get_hw(driver->config.instance)->rsr = 0u;
     hw_uart_driver_start_rx_dma(driver);
     return true;
