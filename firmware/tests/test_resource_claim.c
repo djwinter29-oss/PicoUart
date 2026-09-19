@@ -187,6 +187,88 @@ void test_preclaimed_state_machine_rejects_without_cleanup(void)
     TEST_ASSERT_EQUAL_UINT(1u << 1, claimed_sm_mask);
 }
 
+void test_null_ops_rejected_without_claims(void)
+{
+    bool tx_sm_claimed = true;
+    bool rx_sm_claimed = true;
+    int rx_dma = 9;
+    int tx_dma = 9;
+
+    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(NULL, (void *)1u, 1u, 2u,
+                                                      &tx_sm_claimed, &rx_sm_claimed,
+                                                      &rx_dma, &tx_dma));
+    TEST_ASSERT_TRUE(tx_sm_claimed);
+    TEST_ASSERT_TRUE(rx_sm_claimed);
+    TEST_ASSERT_EQUAL_INT(9, rx_dma);
+    TEST_ASSERT_EQUAL_INT(9, tx_dma);
+    TEST_ASSERT_EQUAL_UINT(0u, call_count);
+    TEST_ASSERT_EQUAL_UINT(0u, claimed_sm_mask);
+}
+
+void test_null_tx_sm_claimed_output_rejected_without_claims(void)
+{
+    bool rx_sm_claimed = true;
+    int rx_dma = 9;
+    int tx_dma = 9;
+
+    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
+                                                      NULL, &rx_sm_claimed,
+                                                      &rx_dma, &tx_dma));
+    TEST_ASSERT_TRUE(rx_sm_claimed);
+    TEST_ASSERT_EQUAL_INT(9, rx_dma);
+    TEST_ASSERT_EQUAL_INT(9, tx_dma);
+    TEST_ASSERT_EQUAL_UINT(0u, call_count);
+    TEST_ASSERT_EQUAL_UINT(0u, claimed_sm_mask);
+}
+
+void test_null_rx_sm_claimed_output_rejected_without_claims(void)
+{
+    bool tx_sm_claimed = true;
+    int rx_dma = 9;
+    int tx_dma = 9;
+
+    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
+                                                      &tx_sm_claimed, NULL,
+                                                      &rx_dma, &tx_dma));
+    TEST_ASSERT_TRUE(tx_sm_claimed);
+    TEST_ASSERT_EQUAL_INT(9, rx_dma);
+    TEST_ASSERT_EQUAL_INT(9, tx_dma);
+    TEST_ASSERT_EQUAL_UINT(0u, call_count);
+    TEST_ASSERT_EQUAL_UINT(0u, claimed_sm_mask);
+}
+
+void test_null_rx_dma_output_rejected_without_claims(void)
+{
+    bool tx_sm_claimed = true;
+    bool rx_sm_claimed = true;
+    int tx_dma = 9;
+
+    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
+                                                      &tx_sm_claimed, &rx_sm_claimed,
+                                                      NULL, &tx_dma));
+    TEST_ASSERT_TRUE(tx_sm_claimed);
+    TEST_ASSERT_TRUE(rx_sm_claimed);
+    TEST_ASSERT_EQUAL_INT(9, tx_dma);
+    TEST_ASSERT_EQUAL_UINT(0u, call_count);
+    TEST_ASSERT_EQUAL_UINT(0u, claimed_sm_mask);
+}
+
+void test_null_tx_dma_output_rejected_without_claims(void)
+{
+    bool tx_sm_claimed = true;
+    bool rx_sm_claimed = true;
+    int rx_dma = 9;
+
+    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
+                                                      &tx_sm_claimed, &rx_sm_claimed,
+                                                      &rx_dma, NULL));
+    TEST_ASSERT_TRUE(tx_sm_claimed);
+    TEST_ASSERT_TRUE(rx_sm_claimed);
+    TEST_ASSERT_EQUAL_INT(9, rx_dma);
+    TEST_ASSERT_EQUAL_UINT(0u, call_count);
+    TEST_ASSERT_EQUAL_UINT(0u, claimed_sm_mask);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -194,5 +276,10 @@ int main(void)
     RUN_TEST(test_rx_dma_failure_releases_both_state_machines);
     RUN_TEST(test_tx_dma_failure_releases_rx_dma_and_both_state_machines);
     RUN_TEST(test_preclaimed_state_machine_rejects_without_cleanup);
+    RUN_TEST(test_null_ops_rejected_without_claims);
+    RUN_TEST(test_null_tx_sm_claimed_output_rejected_without_claims);
+    RUN_TEST(test_null_rx_sm_claimed_output_rejected_without_claims);
+    RUN_TEST(test_null_rx_dma_output_rejected_without_claims);
+    RUN_TEST(test_null_tx_dma_output_rejected_without_claims);
     return UNITY_END();
 }

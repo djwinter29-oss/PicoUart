@@ -43,7 +43,7 @@ tools/linux/test-host.sh
 ```
 
 Pull requests run `.github/workflows/pr-check.yml` (firmware build for `pico` /
-`pico2`, stamped-version smoke, host C Unity tests, Python pytest, plus host-tool syntax checks). Pushing a tag matching `vMAJOR.MINOR.PATCH` (for example
+`pico2`, stamped-version smoke, host C Unity tests, Python pytest, plus host-tool syntax checks and cppcheck on the host-testable UART claim helpers and their production consumers). Pushing a tag matching `vMAJOR.MINOR.PATCH` (for example
 `v1.2.3`) runs `.github/workflows/release.yml`, which builds both boards with
 version `1.2.3` stamped into binary info and HID, sets USB `bcdDevice` to
 major.minor BCD (`0x0102` for `1.2.3`), runs host unit tests, and opens a

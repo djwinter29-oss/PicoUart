@@ -127,9 +127,11 @@ jobs:
             firmware/src/uart/line_coding.c \
             firmware/src/uart/topology.c \
             firmware/src/uart/hw/dma_claim.c \
+            firmware/src/uart/hw/driver.c \
             firmware/src/uart/hw/dma_claim_ops.c \
             firmware/src/uart/hw/dma_claim.h \
             firmware/src/uart/pio/resource_claim.c \
+            firmware/src/uart/pio/driver.c \
             firmware/src/uart/pio/resource_claim_ops.c \
             firmware/src/uart/pio/resource_claim.h \
             firmware/src/uart/pio/txstall_wait.h \
