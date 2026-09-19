@@ -28,6 +28,7 @@ def test_hid_layout_and_command_constants_match_firmware(hid_module, repo_root):
     assert fw["USB_HID_REPORT_ID_STATUS"] == hid_module.REPORT_ID_STATUS
     assert fw["USB_HID_REPORT_ID_BOARD_STATUS"] == hid_module.REPORT_ID_BOARD_STATUS
     assert fw["USB_HID_REPORT_ID_COMMAND"] == hid_module.REPORT_ID_COMMAND
+    assert fw["USB_HID_REPORT_ID_OVERFLOW_COUNTS"] == hid_module.REPORT_ID_OVERFLOW_COUNTS
     assert fw["USB_HID_COMMAND_TOGGLE_LED"] == hid_module.COMMAND_TOGGLE_LED
     assert fw["USB_HID_COMMAND_RESET_BOARD"] == hid_module.COMMAND_RESET_BOARD
     assert fw["USB_HID_COMMAND_ARM_RESET"] == hid_module.COMMAND_ARM_RESET
@@ -36,6 +37,7 @@ def test_hid_layout_and_command_constants_match_firmware(hid_module, repo_root):
     assert hid_module.STATUS_SIZE == 63
     assert hid_module.STATUS_SIZE == 3 + (6 * 10)
     assert hid_module.BOARD_STATUS_SIZE == 8
+    assert hid_module.OVERFLOW_COUNTS_SIZE == 25
     assert hid_module.STATUS_SIZE + 1 <= 64
 
 
@@ -49,6 +51,10 @@ def test_hid_descriptor_board_status_report_count_matches_host_payload(hid_modul
 
 def test_hid_descriptor_command_report_count_matches_host_payload(hid_module, repo_root):
     assert firmware_hid_report_count(repo_root, 4) == 1
+
+
+def test_hid_descriptor_overflow_report_count_matches_host_payload(hid_module, repo_root):
+    assert firmware_hid_report_count(repo_root, 5) == hid_module.OVERFLOW_COUNTS_SIZE
 
 
 def test_lab_placeholder_helper_is_independent_of_tree_identity():

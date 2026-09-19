@@ -45,6 +45,8 @@
 #define USB_HID_REPORT_ID_BOARD_STATUS 3u
 /** @brief HID feature report ID for board control commands. */
 #define USB_HID_REPORT_ID_COMMAND 4u
+/** @brief HID feature report ID for cumulative per-port RX overflow counts. */
+#define USB_HID_REPORT_ID_OVERFLOW_COUNTS 5u
 
 /** @brief HID command value that toggles the board LED. */
 #define USB_HID_COMMAND_TOGGLE_LED 1u
@@ -121,6 +123,17 @@ typedef struct {
 _Static_assert(sizeof(usb_hid_board_status_report_t) == 8u,
                "HID board-status report must match the HID report descriptor");
 
+/**
+ * @brief Feature report containing cumulative UART-to-USB drop counts.
+ */
+typedef struct {
+    uint8_t version; /**< HID report layout version. */
+    uint32_t rx_overflow_count[UART_PORT_COUNT]; /**< Per-port dropped RX bytes, including pending recovery. */
+} __attribute__((packed)) usb_hid_overflow_counts_report_t;
+
+_Static_assert(sizeof(usb_hid_overflow_counts_report_t) == 25u,
+               "HID overflow report must match the HID report descriptor");
+
 /** @brief Next absolute time, in milliseconds, when a HID report may be published. */
 static uint32_t usb_hid_next_report_ms;
 /** @brief Sequence number inserted into HID reports. */
@@ -172,6 +185,19 @@ static void usb_hid_build_board_status_report(usb_hid_board_status_report_t *rep
     report->firmware_major = (uint8_t)PICO_UART_VERSION_MAJOR;
     report->firmware_minor = (uint8_t)PICO_UART_VERSION_MINOR;
     report->firmware_patch = (uint8_t)PICO_UART_VERSION_PATCH;
+}
+
+static void usb_hid_build_overflow_counts_report(
+    usb_hid_overflow_counts_report_t *report,
+    const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT])
+{
+    memset(report, 0, sizeof(*report));
+    report->version = USB_HID_REPORT_VERSION;
+
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        report->rx_overflow_count[index] = uart_stats[index].rx_ring_overflow_count +
+                                           uart_stats[index].rx_ring_pending_overflow_count;
+    }
 }
 
 static void usb_hid_build_status_report(
@@ -280,6 +306,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance,
                                uint16_t reqlen)
 {
     usb_hid_board_status_report_t board_status_report;
+    usb_hid_overflow_counts_report_t overflow_counts_report;
     usb_hid_status_report_t report;
     uart_driver_port_stats_t uart_stats[UART_PORT_COUNT];
     usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT];
@@ -293,6 +320,18 @@ uint16_t tud_hid_get_report_cb(uint8_t instance,
         }
 
         memcpy(buffer, &board_status_report, reqlen);
+        return reqlen;
+    }
+
+    if ((report_type == HID_REPORT_TYPE_FEATURE) &&
+        (report_id == USB_HID_REPORT_ID_OVERFLOW_COUNTS)) {
+        usb_hid_sample_stats(uart_stats, cdc_stats);
+        usb_hid_build_overflow_counts_report(&overflow_counts_report, uart_stats);
+        if (reqlen > sizeof(overflow_counts_report)) {
+            reqlen = sizeof(overflow_counts_report);
+        }
+
+        memcpy(buffer, &overflow_counts_report, reqlen);
         return reqlen;
     }
 

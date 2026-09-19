@@ -32,10 +32,10 @@ This means the codebase is already at the multi-port bridge stage, not the earli
 | --- | --- | --- |
 | CDC0 | Hardware UART0 | TX GP0, RX GP1; RTS GP3 / CTS GP2 reserved (FC off by default) |
 | CDC1 | Hardware UART1 | TX GP4, RX GP5; RTS GP7 / CTS GP6 reserved (FC off by default) |
-| CDC2 | PIO UART | TX GP8, RX GP9; RTS GP10 / CTS GP11 docs-reserved only (not GPIO-owned) |
-| CDC3 | PIO UART | TX GP12, RX GP13; RTS GP14 / CTS GP15 docs-reserved only (not GPIO-owned) |
-| CDC4 | PIO UART | TX GP16, RX GP17; RTS GP18 / CTS GP19 docs-reserved only (not GPIO-owned) |
-| CDC5 | PIO UART | TX GP20, RX GP21; RTS GP22 / CTS GP26 docs-reserved only (not GPIO-owned) |
+| CDC2 | PIO UART | TX GP8, RX GP9; RTS GP10 / CTS GP11 opt-in |
+| CDC3 | PIO UART | TX GP12, RX GP13; RTS GP14 / CTS GP15 opt-in |
+| CDC4 | PIO UART | TX GP16, RX GP17; RTS GP18 / CTS GP19 opt-in |
+| CDC5 | PIO UART | TX GP20, RX GP21; RTS GP22 / CTS GP26 opt-in |
 
 ## Data Flow
 
@@ -76,8 +76,8 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   configures backends during startup but does not execute live UART IRQ work.
 - Hardware UART0/UART1 keep RTS/CTS disabled by default. When enabled in the
   board configuration, CTS remains a hardware TX input and RTS is driven from
-  RX-ring occupancy with hysteresis. PIO RX RTS is similarly opt-in; PIO CTS
-  TX gating remains unimplemented.
+  RX-ring occupancy with hysteresis. PIO RX RTS and CTS TX gating are similarly
+  opt-in; CTS pauses the PIO state machine before starting the next frame.
 - PIO UART ports support 8N1 with stop-bit framing validation; hardware UART ports additionally apply valid CDC data-bit,
   stop-bit, and parity settings.
 - Deferred line-coding applies fail with `CONTROL_ERROR` if the backend cannot reach a
@@ -105,8 +105,7 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
 
 ## Open Items
 
-- RTS and CTS runtime behavior for PIO UART ports
-- Whether full ring occupancy/overflow counters should be added to the compact HID report
-  (high-water mark blocks and a sticky overrun health bit are already present)
+- Whether full ring occupancy should be added to the compact HID report
+  (high-water mark blocks, sticky overrun health, and exact overflow counts are already present)
 - Replace development USB IDs (`cafe:4010`) before production releases (see `docs/releasing.md`)
 - Sustained multi-port 1 Mbaud remains bounded by USB full-speed aggregate bandwidth

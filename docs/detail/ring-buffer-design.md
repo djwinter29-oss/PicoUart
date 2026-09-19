@@ -53,7 +53,7 @@ Implemented now:
 Not implemented yet:
 
 - HID reporting of full ring overflow **counts** (sticky overrun bit is present)
-- PIO RX RTS runtime flow control is opt-in through the board pin flag; PIO CTS/TX gating is not implemented
+- PIO RX RTS and CTS TX gating are opt-in through separate board pin flags
 - Host CDC RTS acting as UART flow control
 - Clearable / resettable overrun and framing-error counters
 

@@ -62,6 +62,9 @@ need a recorded hardware-in-the-loop (HIL) pass:
    backpressure behavior. To claim hardware RTS/CTS, explicitly enable
    `hardware_flow_control` in `firmware/src/config/uart_board.c` first — the
    default build leaves HW flow control off.
+   To claim PIO RTS/CTS, enable both PIO flow-control pin flags for a tested
+   port and run the PIO CTS hold/release and RTS backpressure procedure in the
+   board-testing skill.
 6. Attach or link the transcript (and any HID `monitor` snippets showing
    `control_error` / `rx_overrun` expectations) to the GitHub Release notes or a
    linked issue. Cloud CI cannot record HIL; a draft without this attachment is

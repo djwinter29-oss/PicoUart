@@ -20,6 +20,12 @@ def board_status_bytes(
     return struct.pack("<BBhBBBB", layout_version, 0, centi, major, minor, patch, 0)
 
 
+def overflow_counts_bytes(layout_version: int | None = None) -> bytes:
+    if layout_version is None:
+        layout_version = hid.STATUS_LAYOUT_VERSION
+    return struct.pack("<B6I", layout_version, 1, 2, 3, 4, 5, 6)
+
+
 def status_report_bytes(sequence: int = 7, health0: int = 0x11) -> bytes:
     header = struct.pack("<BBB", ord("P"), hid.STATUS_LAYOUT_VERSION, sequence)
     channels = b""

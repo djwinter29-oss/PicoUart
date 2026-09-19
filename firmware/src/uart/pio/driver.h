@@ -22,6 +22,8 @@
 #define PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH (1u << 1)
 /** @brief Drive the configured RTS pin from RX-ring occupancy. */
 #define PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL (1u << 2)
+/** @brief Gate TX frame starts on the configured active-low CTS pin. */
+#define PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL (1u << 3)
 /**
  * @brief Static configuration for one PIO UART instance.
  */
@@ -33,6 +35,7 @@ typedef struct {
     uint32_t tx_pin; /**< GPIO used for TX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
     uint32_t rx_pin; /**< GPIO used for RX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
     uint32_t rts_pin; /**< GPIO used for active-low RTS, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t cts_pin; /**< GPIO used for active-low CTS, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
     uint32_t pin_flags; /**< Explicit board-level GPIO policy flags. */
     uint32_t tx_dma_start_threshold; /**< TX backlog threshold that triggers a DMA transfer, or 0 for the default. */
 } pio_uart_driver_config_t;

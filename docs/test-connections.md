@@ -150,5 +150,5 @@ also valid and has passed repeated smoke tests plus 120-second concurrent soaks.
 The current firmware leaves RTS/CTS disabled by default on hardware UART0 and
 UART1. Debug Probe and PIO loopback tests therefore only need TX, RX, and GND.
 Cross-connect RTS/CTS only when validating explicit hardware flow control with a
-peer that supports it. PIO RX RTS is opt-in through the board pin flag; PIO CTS
-TX gating is not implemented.
+peer that supports it. PIO RX RTS and CTS TX gating are opt-in through separate
+board pin flags.

@@ -24,8 +24,9 @@ Debug Probe UART. The common bench wiring keeps UART2↔UART3 and UART5 fitted,
 while UART1 and UART4 loopbacks are optional.
 Hardware UART0/UART1 leave RTS/CTS disabled by default in firmware. Cross-connect
 RTS/CTS only when validating an explicit flow-control configuration against a
-peer that drives CTS. PIO UART RTS/CTS pins remain reserved with no runtime
-flow-control behavior. Host CDC RTS is ignored.
+peer that drives CTS. PIO RX RTS is opt-in through its board pin flag; PIO CTS
+TX gating is separately opt-in and pauses only before a new UART frame. Host
+CDC RTS is ignored.
 
 ## Procedure
 
@@ -171,6 +172,16 @@ flow-control behavior. Host CDC RTS is ignored.
    Flood `PASS` only proves write/drain activity; pair with HID `monitor` for
    `rx_overrun` / `rx_error`. Capture command lines, baud, duration, HID lines,
    and `PASS`/`FAIL` output as a recorded HIL artifact for `docs/releasing.md`.
+
+9. **PIO RTS/CTS validation** (required only when release notes claim PIO flow
+  control). Enable both `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL` and
+  `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL` for one PIO port in `uart_board.c`,
+  then cross-connect its RTS to the peer CTS and its CTS to the peer RTS. Hold
+  peer CTS high during a host-to-peer transfer, confirm no new PIO UART frame
+  starts, release CTS, and verify the complete payload arrives in order. Repeat
+  while holding the Pico CDC IN side to make Pico RTS deassert; verify the peer
+  pauses without RX overrun. Record the wiring, CTS hold/release result, and
+  `pico_uart_hid.py overruns` output.
 
 ## Diagnose Failures
 

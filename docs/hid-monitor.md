@@ -36,6 +36,7 @@ alter ring-buffer behavior. The three command values are board-scoped only.
 | `1` | Input | Device to host | 63 bytes | Periodic compact status report. |
 | `3` | Feature | Host reads from device | 8 bytes | Temperature estimate and firmware semantic version. |
 | `4` | Feature | Host writes to device | 1 byte | Board-control command. |
+| `5` | Feature | Host reads from device | 25 bytes | Cumulative UART-to-USB RX dropped-byte counts. |
 
 Report ID bytes are managed by the HID transport and are not included in the
 payload layouts below. Status is 63 bytes so Report ID + payload fit in one
@@ -138,12 +139,23 @@ reset is disabled by default; enable it only for a trusted lab build with
 `-DPICO_UART_ALLOW_HID_RESET=1`. The reference host tool's `reset` command
 sends `3` then `2` when reset support is enabled.
 
+## Report ID 5: RX Overflow Counts
+
+Request feature report ID `5` to read cumulative dropped UART RX bytes for all
+six ports. This includes bytes already retired by overflow recovery and bytes
+known to have been overwritten but not yet retired by the CDC drain path.
+
+| Offset | Size | Field | Meaning |
+| --- | ---: | --- | --- |
+| 0 | 1 | `version` | Report layout version, currently `15`. |
+| 1 | 24 | `rx_overflow_count[6]` | Six little-endian `uint32_t` values for CDC0 through CDC5. |
+
 ## Host Tool
 
 The reference client at [host/python](../host/python) (`src/pico_uart_hid.py`)
 discovers this vendor HID collection and offers `monitor`, `temperature`,
-`version`, `toggle-led`, and `reset` commands. Install its `hidapi` dependency
-before use.
+`version`, `overruns`, `toggle-led`, and `reset` commands. Install its `hidapi`
+dependency before use.
 
 ## Compatibility
 

@@ -38,8 +38,10 @@ _Static_assert((offsetof(pio_uart_driver_t, rx_storage) % PICO_UART_PIO_UART_RX_
  */
 typedef struct {
     bool tx_loaded; /**< True after the TX program is loaded into this PIO block. */
+    bool tx_cts_loaded; /**< True after the CTS-gated TX program is loaded into this PIO block. */
     bool rx_loaded; /**< True after the RX program is loaded into this PIO block. */
     uint tx_offset; /**< Instruction-memory offset for the TX program. */
+    uint tx_cts_offset; /**< Instruction-memory offset for the CTS-gated TX program. */
     uint rx_offset; /**< Instruction-memory offset for the RX program. */
 } pio_uart_program_state_t;
 
@@ -239,6 +241,19 @@ static uint pio_uart_driver_tx_offset(PIO pio)
     return pio_uart_program_state[block_index].tx_offset;
 }
 
+static uint pio_uart_driver_tx_cts_offset(PIO pio)
+{
+    uint block_index = pio_uart_driver_block_index(pio);
+
+    if (!pio_uart_program_state[block_index].tx_cts_loaded) {
+        pio_uart_program_state[block_index].tx_cts_offset =
+            pio_add_program(pio, &pio_uart_tx_cts_program);
+        pio_uart_program_state[block_index].tx_cts_loaded = true;
+    }
+
+    return pio_uart_program_state[block_index].tx_cts_offset;
+}
+
 static uint pio_uart_driver_rx_offset(PIO pio)
 {
     uint block_index = pio_uart_driver_block_index(pio);
@@ -253,17 +268,31 @@ static uint pio_uart_driver_rx_offset(PIO pio)
 
 static void pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
 {
-    uint offset = pio_uart_driver_tx_offset(driver->config.pio);
-    pio_sm_config config = pio_uart_tx_program_get_default_config(offset);
+    uint offset = driver->tx_cts_enabled ? pio_uart_driver_tx_cts_offset(driver->config.pio)
+                                         : pio_uart_driver_tx_offset(driver->config.pio);
+    pio_sm_config config = driver->tx_cts_enabled ? pio_uart_tx_cts_program_get_default_config(offset)
+                                                   : pio_uart_tx_program_get_default_config(offset);
 
     sm_config_set_out_pins(&config, driver->config.tx_pin, 1u);
     sm_config_set_sideset_pins(&config, driver->config.tx_pin);
     sm_config_set_out_shift(&config, true, false, 32u);
     sm_config_set_fifo_join(&config, PIO_FIFO_JOIN_TX);
     sm_config_set_clkdiv(&config, pio_uart_driver_clock_divider(driver->config.baud_rate));
+    if (driver->tx_cts_enabled) {
+        sm_config_set_in_pins(&config, driver->config.cts_pin);
+    }
 
     pio_gpio_init(driver->config.pio, driver->config.tx_pin);
     pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.tx_state_machine, driver->config.tx_pin, 1u, true);
+    if (driver->tx_cts_enabled) {
+        pio_gpio_init(driver->config.pio, driver->config.cts_pin);
+        gpio_pull_down(driver->config.cts_pin);
+        pio_sm_set_consecutive_pindirs(driver->config.pio,
+                                       driver->config.tx_state_machine,
+                                       driver->config.cts_pin,
+                                       1u,
+                                       false);
+    }
     pio_sm_init(driver->config.pio, driver->config.tx_state_machine, offset, &config);
     pio_sm_set_pins_with_mask(driver->config.pio,
                                driver->config.tx_state_machine,
@@ -441,8 +470,6 @@ static void pio_uart_driver_poll_tx_dma(pio_uart_driver_t *driver)
     driver->tx_dma_bytes += driver->tx_dma_bytes_in_flight;
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_dma_active = false;
-    dma_channel_unclaim((uint)driver->tx_dma_channel);
-    driver->tx_dma_channel = -1;
 }
 
 static void pio_uart_driver_service_tx(pio_uart_driver_t *driver)
@@ -505,6 +532,11 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
         return false;
     }
 
+    if (((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL) != 0u) &&
+        (driver->config.cts_pin == PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+        return false;
+    }
+
     if (driver->config.tx_state_machine == driver->config.rx_state_machine) {
         return false;
     }
@@ -521,6 +553,8 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
     driver->tx_dma_channel = -1;
     driver->tx_dma_active = false;
     driver->rx_rts_asserted = false;
+    driver->tx_cts_enabled =
+        (driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL) != 0u;
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_polled_bytes = 0u;
     driver->tx_dma_bytes = 0u;

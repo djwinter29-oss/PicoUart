@@ -132,9 +132,10 @@ worker loop responsive while the port drains toward a safe reconfiguration point
 
 - 8N1 only
 - no parity handling
-- RX RTS runtime behavior is opt-in through `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL`;
-  PIO CTS/TX gating is not implemented, and hardware UART0/UART1 keep RTS/CTS
-  runtime flow control disabled by default
+- RX RTS and CTS TX gating are opt-in through
+  `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL` and
+  `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL`; CTS is sampled before each frame,
+  and hardware UART0/UART1 keep RTS/CTS runtime flow control disabled by default
 - TX DMA thresholds are configurable per port but still use static defaults rather than adaptive tuning
 - TX fairness across the 4 PIO ports is improved by worker-loop round-robin polling, but still lacks an explicit scheduler
 - per-launch TX DMA size is a fixed bound today, not adaptive to live peer pressure
@@ -151,6 +152,4 @@ outside the PIO divider range are rejected fail-fast.
 ## Follow-Up Options
 
 1. Tune TX DMA threshold and max DMA launch size from measured worker-core load and end-to-end latency.
-2. Persist PIO TX DMA channels (today they are claimed per launch) if sustained multi-port 1 Mbaud TX needs lower setup cost.
-3. Add an explicit worker-side TX scheduler if multiple PIO ports sustain high TX pressure at the same time.
-4. Optional PIO RTS pacing when USB consumers stall.
+2. Add an explicit worker-side TX scheduler if multiple PIO ports sustain high TX pressure at the same time.

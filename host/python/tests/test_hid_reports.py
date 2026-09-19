@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from helpers import FakeHidDevice, board_status_bytes, status_report_bytes
+from helpers import FakeHidDevice, board_status_bytes, overflow_counts_bytes, status_report_bytes
 
 
 def test_version_and_temperature(hid_module):
@@ -14,6 +14,13 @@ def test_version_and_temperature(hid_module):
     assert status["temperature_celsius"] == pytest.approx(25.30, abs=0.01)
     assert hid_module.read_firmware_version(device) == "1.2.3"
     assert hid_module.read_board_temperature(device) == pytest.approx(25.30, abs=0.01)
+
+
+def test_overflow_counts(hid_module):
+    device = FakeHidDevice(
+        overflow_counts_bytes(), report_id=hid_module.REPORT_ID_OVERFLOW_COUNTS
+    )
+    assert hid_module.read_overflow_counts(device) == [1, 2, 3, 4, 5, 6]
 
 
 def test_rejects_unsupported_board_status_layout(hid_module):
