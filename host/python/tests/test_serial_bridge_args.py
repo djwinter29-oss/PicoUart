@@ -20,6 +20,27 @@ def _load_bridge():
     return mod
 
 
+def test_write_all_rejects_zero_progress(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+    monkeypatch.setattr(bridge.os, "write", lambda *_args: 0)
+
+    with pytest.raises(OSError, match="zero bytes"):
+        bridge.write_all(3, b"payload", bridge.time.monotonic() + 1.0)
+
+
+def test_write_all_honors_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+    monkeypatch.setattr(
+        bridge.os,
+        "write",
+        lambda *_args: (_ for _ in ()).throw(BlockingIOError()),
+    )
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: 10.0)
+
+    with pytest.raises(TimeoutError, match="write timed out"):
+        bridge.write_all(3, b"payload", 10.0)
+
+
 def test_payload_bytes_rejects_above_max(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,

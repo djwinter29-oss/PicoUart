@@ -42,14 +42,19 @@ def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
     return file_descriptor, original_settings
 
 
-def write_all(file_descriptor: int, data: bytes) -> None:
+def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
     offset = 0
     while offset < len(data):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("serial write timed out")
         try:
             count = os.write(file_descriptor, data[offset:])
         except BlockingIOError:
-            select.select([], [file_descriptor], [], 0.1)
+            select.select([], [file_descriptor], [], min(0.1, remaining))
             continue
+        if count == 0:
+            raise OSError("serial write returned zero bytes")
         offset += count
 
 
@@ -86,9 +91,10 @@ def test_direction(source_fd: int,
         + secrets.token_bytes(payload_size)
     )
     termios.tcflush(destination_fd, termios.TCIFLUSH)
-    write_all(source_fd, marker)
+    deadline = time.monotonic() + timeout
+    write_all(source_fd, marker, deadline)
 
-    if wait_for_marker(destination_fd, marker, timeout):
+    if wait_for_marker(destination_fd, marker, max(0.0, deadline - time.monotonic())):
         print(f"PASS {direction}: {len(marker)} bytes")
         return True
 
@@ -126,7 +132,7 @@ def run_flood(source_fd: int,
 
     while time.monotonic() < deadline:
         try:
-            write_all(source_fd, pattern)
+            write_all(source_fd, pattern, deadline)
             written += len(pattern)
         except OSError:
             break
