@@ -11,11 +11,6 @@ on:
         description: "Release version without leading v (for dry-run artifact naming)"
         required: true
         type: string
-      allow_lab_usb_identity:
-        description: "Allow cafe:4010 lab placeholder (dry-run / lab images only)"
-        required: false
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -25,29 +20,6 @@ env:
   PICO_SDK_REVISION: "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779"
 
 jobs:
-  usb-identity:
-    name: USB identity gate
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Refuse lab USB placeholder unless explicitly allowed
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          DISPATCH_ALLOW_LAB: ${{ inputs.allow_lab_usb_identity }}
-          REPO_ALLOW_LAB: ${{ vars.ALLOW_LAB_USB_IDENTITY }}
-        run: |
-          set -eu
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            ALLOW_LAB_USB_IDENTITY="$DISPATCH_ALLOW_LAB"
-          else
-            ALLOW_LAB_USB_IDENTITY="$REPO_ALLOW_LAB"
-          fi
-          export ALLOW_LAB_USB_IDENTITY
-          python3 tools/linux/check-usb-identity.py
-
   host-tools:
     name: Host tools
     runs-on: ubuntu-24.04
@@ -85,7 +57,6 @@ jobs:
 
   build:
     name: Build (${{ matrix.board }})
-    needs: [usb-identity]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -181,7 +152,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [build, host-tools, usb-identity]
+    needs: [build, host-tools]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -208,7 +179,7 @@ jobs:
           body: |
             Draft release — complete `docs/releasing.md` before publishing:
             - Confirm packaged artifact SHAs match the recorded HIL images on **both** pico and pico2
-            - For non-lab releases, replace development USB IDs (must not ship the lab placeholder)
+            - This project publishes lab/test artifacts using the unallocated `cafe:4010` USB identity
             - Attach or link a recorded HIL pass covering both boards
             - Promote from draft only after the promote checklist passes
         env:

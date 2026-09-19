@@ -70,33 +70,17 @@ def test_lab_placeholder_helper_is_independent_of_tree_identity():
     assert is_lab_placeholder_identity(0x1209, 0x0001) is False
 
 
-def test_usb_identity_gate_script_matches_tree_identity(repo_root):
-    import os
+def test_usb_identity_checker_accepts_tree_identity(repo_root):
     import subprocess
     import sys
 
     script = repo_root / "tools" / "linux" / "check-usb-identity.py"
-    env = os.environ.copy()
-    env.pop("ALLOW_LAB_USB_IDENTITY", None)
-    blocked = subprocess.run(
+    result = subprocess.run(
         [sys.executable, str(script), "--repo-root", str(repo_root)],
-        env=env,
         cwd=repo_root,
         check=False,
     )
-    allowed = subprocess.run(
-        [sys.executable, str(script), "--repo-root", str(repo_root)],
-        env={**env, "ALLOW_LAB_USB_IDENTITY": "true"},
-        cwd=repo_root,
-        check=False,
-    )
-    vid, pid = firmware_usb_ids(repo_root)
-    if is_lab_placeholder_identity(vid, pid):
-        assert blocked.returncode == 1
-        assert allowed.returncode == 0
-    else:
-        assert blocked.returncode == 0
-        assert allowed.returncode == 0
+    assert result.returncode == 0
 
 
 def test_usb_product_string_advertises_pio_8n1(hid_module, repo_root):

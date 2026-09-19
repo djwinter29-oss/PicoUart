@@ -5,17 +5,17 @@
  * ## Policy
  *
  * `0xCAFE:0x4010` is a **development / lab placeholder**. It is not an
- * allocated USB-IF or pid.codes identity. Do not ship production devices with
- * these IDs: collisions with other projects are likely, and Windows/macOS may
- * treat the device inconsistently across machines.
+ * allocated USB-IF or pid.codes identity. PicoUart publishes lab/project
+ * artifacts under these IDs; they are not suitable for commercial devices
+ * because collisions with other projects are likely.
  *
- * Before any public or production release:
+ * Before shipping a commercial derivative:
  * 1. Obtain an allocated VID/PID (for example via https://pid.codes or a
  *    commercial USB-IF vendor ID).
  * 2. Update @ref PICO_UART_USB_VID and @ref PICO_UART_USB_PID here.
  * 3. Keep @ref host/python/src/pico_uart_hid.py in sync (same numeric values).
  * 4. Call out the identity change in release notes as a breaking USB change.
- * 5. See docs/releasing.md for the full non-lab release checklist (identity + HIL).
+ * 5. See docs/releasing.md for the release and HIL checklist.
  */
 
 #ifndef PICO_UART_USB_IDENTITY_H
