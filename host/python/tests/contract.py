@@ -72,6 +72,7 @@ def firmware_hid_constants(repo_root: Path) -> dict[str, int]:
         "USB_HID_COMMAND_RESET_BOARD",
         "USB_HID_COMMAND_ARM_RESET",
         "USB_HID_RESET_ARM_WINDOW_MS",
+        "USB_HID_BOARD_STATUS_FLAG_HID_RESET",
     )
     constants = {name: parse_c_u_define(text, name) for name in names}
     match = re.search(r"^\s*#define\s+USB_HID_SIGNATURE0\s+'([^']+)'\s*$", text, flags=re.MULTILINE)
@@ -134,6 +135,18 @@ def firmware_hid_reset_default_enabled(repo_root: Path) -> bool:
     if not match:
         raise ValueError("PICO_UART_ALLOW_HID_RESET default not found")
     return int(match.group(1)) != 0
+
+
+def firmware_hid_reset_cmake_default_enabled(repo_root: Path) -> bool:
+    """Return whether the firmware CMake option enables HID reset by default."""
+    text = (repo_root / "firmware" / "CMakeLists.txt").read_text(encoding="utf-8")
+    match = re.search(
+        r'option\(\s*PICO_UART_ALLOW_HID_RESET\s+"[^"]*"\s+(ON|OFF)\s*\)',
+        text,
+    )
+    if not match:
+        raise ValueError("PICO_UART_ALLOW_HID_RESET CMake option default not found")
+    return match.group(1) == "ON"
 
 
 def firmware_uart_board_ports(repo_root: Path) -> list[dict[str, object]]:

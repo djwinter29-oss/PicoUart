@@ -24,7 +24,7 @@ CDC interface strings advertise backend limits:
 | Baud, data bits, parity, stop bits | CDC line-coding request | Parsed from `SET_LINE_CODING` and queued to the matching UART backend. TinyUSB accepts the USB transfer before firmware validation; rejected or unsupported requests set health bit 2 (`control_error`) instead of stalling the CDC control pipe. PIO ports accept 8N1 only. |
 | Health, traffic, ring peak, temperature, and firmware version | HID | Read-only monitoring data. |
 | Toggle default board LED | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one. |
-| Reset board | HID command feature report | Disabled by default; trusted lab builds may enable arm (`3`) then reset (`2`) within 2 seconds with `PICO_UART_ALLOW_HID_RESET=1`. |
+| Reset board | HID command feature report | Disabled by default; trusted lab builds may enable arm (`3`) then reset (`2`) within 2 seconds with `PICO_UART_ALLOW_HID_RESET=1`. Enabled builds set board-status `reserved0` bit 0; the host `reset` command fails closed when that bit is clear. |
 
 HID must not be used to select a UART, set baud rate, change GPIO mapping, or
 alter ring-buffer behavior. The three command values are board-scoped only.
@@ -117,7 +117,7 @@ as BCD (so `1.2.3` → `0x0102`, commonly shown as `1.02` / `1.2`).
 | Offset | Size | Field | Meaning |
 | --- | ---: | --- | --- |
 | 0 | 1 | `version` | Report layout version, currently `15`. |
-| 1 | 1 | `reserved0` | Always zero; reserved for board-status flags. |
+| 1 | 1 | `reserved0` | Board-status flags. Bit 0 is set when HID arm/reset is compiled in (`PICO_UART_ALLOW_HID_RESET=1`). Other bits remain reserved and must be zero. |
 | 2 | 2 | `temperature_centidegrees_celsius` | Signed little-endian temperature estimate in hundredths of a degree Celsius. |
 | 4 | 1 | `firmware_major` | Firmware semantic version major component. |
 | 5 | 1 | `firmware_minor` | Firmware semantic version minor component. |
@@ -136,8 +136,9 @@ Write feature report ID `4` with one payload byte:
 
 Unknown command values are ignored. The report has no response payload. Remote
 reset is disabled by default; enable it only for a trusted lab build with
-`-DPICO_UART_ALLOW_HID_RESET=1`. The reference host tool's `reset` command
-sends `3` then `2` when reset support is enabled.
+`-DPICO_UART_ALLOW_HID_RESET=1`. Enabled builds advertise that capability in
+board-status `reserved0` bit 0. The reference host tool's `reset` command
+reads that flag first and refuses to send arm/reset when it is clear.
 
 ## Report ID 5: RX Overflow Counts
 
@@ -160,8 +161,11 @@ dependency before use.
 ## Compatibility
 
 Hosts must validate `signature0` and `version` before decoding a status report.
-Treat unknown report IDs, newer versions, and reserved bits as unsupported rather
-than attempting to infer behavior.
+Treat unknown report IDs, newer versions, and unknown reserved bits as
+unsupported rather than attempting to infer behavior. Board-status `reserved0`
+bit 0 is a defined v15 capability flag (HID reset compiled in); default
+firmware still sends `0`. Older host tools that rejected any nonzero `reserved0`
+will fail board-status reads only against reset-enabled lab builds.
 
 The source of truth for the implementation is [usb_hid.c](../firmware/src/usb/usb_hid.c)
 and the report descriptor in [usb_descriptors.c](../firmware/src/usb/usb_descriptors.c).

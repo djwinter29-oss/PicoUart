@@ -48,7 +48,7 @@ Pull requests run `.github/workflows/pr-check.yml` (firmware build for `pico` /
 version `1.2.3` stamped into binary info and HID, sets USB `bcdDevice` to
 major.minor BCD (`0x0102` for `1.2.3`), runs host unit tests, and opens a
 **draft** GitHub Release with board-qualified artifacts plus SHA256SUMS. Promote
-the draft only after `docs/releasing.md` (USB identity + recorded HIL). After
+the draft only after `docs/releasing.md` (USB identity note + recorded HIL). After
 flashing, `python3 host/python/src/pico_uart_hid.py version` should print
 `1.2.3`.
 
@@ -115,9 +115,10 @@ The firmware currently handles:
 - Buffering and scheduling so multiple active ports can run at the same time
 
 The HID interface publishes a compact per-port status report (byte deltas,
-health flags, ring peaks), board temperature, and firmware version. It also
-supports narrowly scoped board commands to toggle the default LED and reset the
-board; it does not configure UART transport settings.
+health flags, ring peaks), board temperature, firmware version, and whether
+HID reset is compiled in. It also supports narrowly scoped board commands to
+toggle the default LED and, when enabled, reset the board; it does not
+configure UART transport settings.
 
 ## Design Considerations
 
@@ -146,7 +147,7 @@ Known gaps in the current implementation:
 3. PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or data-bit changes (HID `control_error`).
 4. HID exposes ring high-water marks and a sticky RX-overrun health bit; full occupancy/overflow **counts** are not in the compact HID report.
 
-Release process (USB identity gate + recorded HIL pass): [docs/releasing.md](docs/releasing.md).
+Release process (USB identity note + recorded HIL pass): [docs/releasing.md](docs/releasing.md).
 
 ## Possible Future Enhancements
 

@@ -38,6 +38,8 @@ UART_CHANNEL_COUNT = 6
 STATUS_HEADER_SIZE = 3
 STATUS_CHANNEL_SIZE = 10
 RESET_ARM_WINDOW_S = 2.0
+BOARD_STATUS_FLAG_HID_RESET = 1 << 0
+BOARD_STATUS_RESERVED0_KNOWN_FLAGS = BOARD_STATUS_FLAG_HID_RESET
 
 
 def open_enumerated_device(device_info: dict[str, Any]) -> Any:
@@ -111,14 +113,15 @@ def read_board_status(device: Any) -> dict[str, Any]:
     version, reserved0, centidegrees, major, minor, patch, reserved1 = struct.unpack("<BBhBBBB", payload)
     if version != BOARD_STATUS_LAYOUT_VERSION:
         raise RuntimeError(f"unsupported board-status report version {version}")
-    if reserved0 != 0 or reserved1 != 0:
-        raise RuntimeError("unsupported board-status report with nonzero reserved fields")
+    if (reserved0 & ~BOARD_STATUS_RESERVED0_KNOWN_FLAGS) != 0 or reserved1 != 0:
+        raise RuntimeError("unsupported board-status report with unknown reserved fields")
     return {
         "temperature_celsius": centidegrees / 100.0,
         "firmware_version": f"{major}.{minor}.{patch}",
         "firmware_major": major,
         "firmware_minor": minor,
         "firmware_patch": patch,
+        "hid_reset_enabled": bool(reserved0 & BOARD_STATUS_FLAG_HID_RESET),
     }
 
 
@@ -236,7 +239,11 @@ def send_command(device: Any, command: int) -> None:
 
 
 def reset_board(device: Any) -> None:
-    """Arm then reset the board (two-step HID sequence)."""
+    """Arm then reset the board (two-step HID sequence) when firmware enables it."""
+    if not read_board_status(device)["hid_reset_enabled"]:
+        raise RuntimeError(
+            "firmware HID reset is disabled; rebuild with -DPICO_UART_ALLOW_HID_RESET=1"
+        )
     send_command(device, COMMAND_ARM_RESET)
     # Stay well inside the firmware arm window without waiting the full period.
     time.sleep(min(0.05, RESET_ARM_WINDOW_S / 10.0))

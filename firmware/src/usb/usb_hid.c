@@ -69,6 +69,9 @@
 #define PICO_UART_ALLOW_HID_RESET 0
 #endif
 
+/** @brief Board-status reserved0 bit 0: HID arm/reset commands are compiled in. */
+#define USB_HID_BOARD_STATUS_FLAG_HID_RESET 1u
+
 /** @brief Per-channel health bit: the host opened the matching CDC interface. */
 #define USB_HID_CHANNEL_STATUS_CDC_OPEN (1u << 4)
 /** @brief Per-channel health bit: the matching UART uses PIO rather than hardware UART. */
@@ -112,7 +115,7 @@ _Static_assert(sizeof(usb_hid_status_report_t) + 1u <= PICO_UART_USB_HID_ENDPOIN
  */
 typedef struct {
     uint8_t version; /**< Report layout version. */
-    uint8_t reserved0; /**< Reserved for board-status flags. */
+    uint8_t reserved0; /**< Board-status flags; bit 0 is @ref USB_HID_BOARD_STATUS_FLAG_HID_RESET. */
     int16_t temperature_centidegrees_celsius; /**< Internal temperature in hundredths of a degree Celsius. */
     uint8_t firmware_major; /**< Firmware semantic version major component. */
     uint8_t firmware_minor; /**< Firmware semantic version minor component. */
@@ -181,6 +184,9 @@ static void usb_hid_build_board_status_report(usb_hid_board_status_report_t *rep
 {
     memset(report, 0, sizeof(*report));
     report->version = USB_HID_REPORT_VERSION;
+#if PICO_UART_ALLOW_HID_RESET
+    report->reserved0 = USB_HID_BOARD_STATUS_FLAG_HID_RESET;
+#endif
     report->temperature_centidegrees_celsius = (int16_t)(temperature_read_celsius() * 100.0f);
     report->firmware_major = (uint8_t)PICO_UART_VERSION_MAJOR;
     report->firmware_minor = (uint8_t)PICO_UART_VERSION_MINOR;

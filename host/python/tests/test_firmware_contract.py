@@ -6,6 +6,7 @@ from contract import (
     firmware_cdc_interface_strings,
     firmware_hid_constants,
     firmware_hid_report_count,
+    firmware_hid_reset_cmake_default_enabled,
     firmware_hid_reset_default_enabled,
     firmware_hid_status_report_count,
     firmware_uart_board_ports,
@@ -33,6 +34,8 @@ def test_hid_layout_and_command_constants_match_firmware(hid_module, repo_root):
     assert fw["USB_HID_COMMAND_RESET_BOARD"] == hid_module.COMMAND_RESET_BOARD
     assert fw["USB_HID_COMMAND_ARM_RESET"] == hid_module.COMMAND_ARM_RESET
     assert fw["USB_HID_RESET_ARM_WINDOW_MS"] == int(hid_module.RESET_ARM_WINDOW_S * 1000)
+    assert fw["USB_HID_BOARD_STATUS_FLAG_HID_RESET"] == hid_module.BOARD_STATUS_FLAG_HID_RESET
+    assert hid_module.BOARD_STATUS_RESERVED0_KNOWN_FLAGS == hid_module.BOARD_STATUS_FLAG_HID_RESET
     assert fw["USB_HID_SIGNATURE0"] == hid_module.STATUS_SIGNATURE
     assert hid_module.STATUS_SIZE == 63
     assert hid_module.STATUS_SIZE == hid_module.STATUS_HEADER_SIZE + (
@@ -102,6 +105,7 @@ def test_cdc_interface_strings_advertise_hw_and_pio_8n1(repo_root):
 
 def test_hid_reset_disabled_by_default(repo_root):
     assert firmware_hid_reset_default_enabled(repo_root) is False
+    assert firmware_hid_reset_cmake_default_enabled(repo_root) is False
 
 
 def test_uart_board_map_matches_documented_tx_rx_and_hw_fc_default(repo_root):
