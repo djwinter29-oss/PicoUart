@@ -15,6 +15,9 @@ bool hw_uart_driver_claim_dma_channels(const hw_uart_dma_claim_ops_t *ops,
         return false;
     }
 
+    *rx_dma_channel = -1;
+    *tx_dma_channel = -1;
+
     *rx_dma_channel = ops->claim_channel(false);
     if (*rx_dma_channel < 0) {
         return false;

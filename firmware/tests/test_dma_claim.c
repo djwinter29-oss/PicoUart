@@ -110,19 +110,18 @@ void test_rx_claim_released_when_tx_claim_fails(void)
     TEST_ASSERT_EQUAL_INT(2, fake_call_log[2].channel);
 }
 
-/** @brief RX DMA claim itself fails: no unclaim should be attempted,
- *          and `tx_dma_channel` is not written by the production code
- *          (its output is undefined on failure). */
+/** @brief RX DMA claim itself fails: no unclaim should be attempted, and
+ *          both outputs are reset to -1 per the documented contract. */
 void test_no_unclaim_when_rx_claim_fails(void)
 {
     int rx = 7;
-    int tx_dummy = 7;
+    int tx = 7;
 
     fake_claim_results[0] = -1;
 
-    TEST_ASSERT_FALSE(hw_uart_driver_claim_dma_channels(&fake_ops, &rx, &tx_dummy));
+    TEST_ASSERT_FALSE(hw_uart_driver_claim_dma_channels(&fake_ops, &rx, &tx));
     TEST_ASSERT_EQUAL_INT(-1, rx);
-    /* tx_dma_channel is not written by production code on early RX failure. */
+    TEST_ASSERT_EQUAL_INT(-1, tx);
     TEST_ASSERT_EQUAL_size_t(1u, fake_call_count);
 }
 

@@ -126,6 +126,10 @@ jobs:
             firmware/src/uart/dma_progress_math.h \
             firmware/src/uart/line_coding.c \
             firmware/src/uart/topology.c \
+            firmware/src/uart/hw/dma_claim.c \
+            firmware/src/uart/hw/dma_claim.h \
+            firmware/src/uart/pio/resource_claim.c \
+            firmware/src/uart/pio/resource_claim.h \
             firmware/src/uart/pio/txstall_wait.h \
             firmware/src/usb/cdc_soft_pending.h
 
