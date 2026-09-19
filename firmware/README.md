@@ -114,7 +114,8 @@ requirement applies.
   sets `CONTROL_ERROR`. Core 1 acknowledges mailbox receipt, then may defer the
   backend apply for up to a further 1 second while waiting for a safe idle point.
 - HID reset is disabled by default. Enable the two-step arm/reset sequence only
-  for a trusted lab build with `-DPICO_UART_ALLOW_HID_RESET=1`.
+  for a trusted lab build with `-DPICO_UART_ALLOW_HID_RESET=1`. Enabled builds
+  advertise that capability in HID board-status `reserved0` bit 0.
 - CDC DTR updates HID `opened` only and does not gate bridging; host CDC RTS is ignored.
 - After init, core 0 arms an 8 s watchdog (pause-on-debug) and pets it in the USB
   poll loop only while the UART worker heartbeat is fresh (2 s stale window).

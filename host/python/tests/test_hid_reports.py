@@ -12,8 +12,16 @@ def test_version_and_temperature(hid_module):
     status = hid_module.read_board_status(device)
     assert status["firmware_version"] == "1.2.3"
     assert status["temperature_celsius"] == pytest.approx(25.30, abs=0.01)
+    assert status["hid_reset_enabled"] is False
     assert hid_module.read_firmware_version(device) == "1.2.3"
     assert hid_module.read_board_temperature(device) == pytest.approx(25.30, abs=0.01)
+
+
+def test_board_status_reports_hid_reset_capability(hid_module):
+    device = FakeHidDevice(
+        board_status_bytes(reserved0=hid_module.BOARD_STATUS_FLAG_HID_RESET)
+    )
+    assert hid_module.read_board_status(device)["hid_reset_enabled"] is True
 
 
 def test_overflow_counts(hid_module):
@@ -29,14 +37,14 @@ def test_rejects_unsupported_board_status_layout(hid_module):
         hid_module.read_board_status(device)
 
 
-@pytest.mark.parametrize("reserved0,reserved1", [(1, 0), (0, 1)])
-def test_rejects_nonzero_board_status_reserved_fields(
+@pytest.mark.parametrize("reserved0,reserved1", [(0x02, 0), (0, 1), (0x03, 0)])
+def test_rejects_unknown_board_status_reserved_fields(
     hid_module, reserved0, reserved1
 ):
     device = FakeHidDevice(
         board_status_bytes(reserved0=reserved0, reserved1=reserved1)
     )
-    with pytest.raises(RuntimeError, match="nonzero reserved fields"):
+    with pytest.raises(RuntimeError, match="unknown reserved fields"):
         hid_module.read_board_status(device)
 
 
@@ -90,6 +98,12 @@ def test_send_command_and_reset_sequence(hid_module):
     writes: list[list[int]] = []
 
     class FakeWriteDevice:
+        def get_feature_report(self, report_id: int, size: int) -> list[int]:
+            assert report_id == hid_module.REPORT_ID_BOARD_STATUS
+            payload = board_status_bytes(reserved0=hid_module.BOARD_STATUS_FLAG_HID_RESET)
+            assert size == len(payload) + 1
+            return [report_id, *payload]
+
         def send_feature_report(self, report: list[int]) -> int:
             writes.append(report)
             return len(report)
@@ -100,6 +114,24 @@ def test_send_command_and_reset_sequence(hid_module):
     assert writes[0] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_TOGGLE_LED]
     assert writes[1] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_ARM_RESET]
     assert writes[2] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_RESET_BOARD]
+
+
+def test_reset_fails_closed_when_firmware_disables_hid_reset(hid_module):
+    writes: list[list[int]] = []
+
+    class FakeWriteDevice:
+        def get_feature_report(self, report_id: int, size: int) -> list[int]:
+            payload = board_status_bytes()
+            assert size == len(payload) + 1
+            return [report_id, *payload]
+
+        def send_feature_report(self, report: list[int]) -> int:
+            writes.append(report)
+            return len(report)
+
+    with pytest.raises(RuntimeError, match="HID reset is disabled"):
+        hid_module.reset_board(FakeWriteDevice())
+    assert writes == []
 
 
 def _run_one_monitor_iteration(monkeypatch, hid_module, report):

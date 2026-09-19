@@ -54,7 +54,7 @@ need a recorded hardware-in-the-loop (HIL) pass:
 6. Attach or link the transcript (and any HID `monitor` snippets showing
    `control_error` / `rx_overrun` expectations) to the GitHub Release notes or a
    linked issue. Cloud CI cannot record HIL; a draft without this attachment is
-   lab-only even if the USB-identity gate passed.
+   lab-only even if USB identity review passed.
 
 A release without a recorded HIL pass is lab-only.
 

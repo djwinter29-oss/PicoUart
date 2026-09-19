@@ -97,7 +97,9 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   (default), a sustained peer flood can still overrun the UART FIFO / ring — exercise
   that case in HIL before advertising flow control.
 - HID reset is **disabled by default**. Compile with `-DPICO_UART_ALLOW_HID_RESET=1`
-  to enable arm (`3`) then reset (`2`) within 2 s.
+  to enable arm (`3`) then reset (`2`) within 2 s. Enabled builds advertise that
+  capability in HID board-status `reserved0` bit 0; the host `reset` command
+  fails closed when the bit is clear.
 - After USB and UART init, core 0 arms an 8 s watchdog (`pause_on_debug`) and
   pets it from the USB poll loop only while the UART worker heartbeat is fresh
   (2 s stale window). A wedged TinyUSB/bridge loop or a silent core 1 resets;
@@ -107,5 +109,6 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
 
 - Whether full ring occupancy should be added to the compact HID report
   (high-water mark blocks, sticky overrun health, and exact overflow counts are already present)
-- Replace development USB IDs (`cafe:4010`) before production releases (see `docs/releasing.md`)
+- Commercial derivatives must replace the lab USB identity (`cafe:4010`); this
+  project publishes artifacts under that unallocated identity (see `docs/releasing.md`)
 - Sustained multi-port 1 Mbaud remains bounded by USB full-speed aggregate bandwidth

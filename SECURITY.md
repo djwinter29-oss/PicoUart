@@ -31,8 +31,10 @@ Before shipping a commercial derivative:
 The vendor HID interface accepts commands that toggle the board LED. Remote
 reset is disabled by default. Trusted lab builds may enable it with
 `-DPICO_UART_ALLOW_HID_RESET=1`; reset then requires a two-step sequence (arm,
-then reset within 2 seconds). Any local user who can open the HID node can
-still reboot a build that enables it.
+then reset within 2 seconds). Enabled builds advertise that capability in HID
+board-status `reserved0` bit 0; the reference host tool refuses `reset` when
+the bit is clear. Any local user who can open the HID node can still reboot a
+build that enables it.
 
 Mitigations:
 

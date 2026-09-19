@@ -779,6 +779,8 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
 
     request_sequence = uart_control_mailbox_next_sequence(uart_driver_mailbox.request_sequence);
 
+    /* A later reject bumps the latest generation so this completion cannot
+     * clear CONTROL_ERROR, but a prior valid request must still be applied. */
     uart_driver_soft_pending_controls[port_id] = false;
     uart_driver_port_status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     uart_driver_mailbox.port_id = (uint32_t)port_id;
