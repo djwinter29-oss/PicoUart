@@ -318,6 +318,33 @@ static void pio_uart_driver_unclaim_state_machines(pio_uart_driver_t *driver)
     }
 }
 
+static void pio_uart_driver_release_gpio(pio_uart_driver_t *driver)
+{
+    if (driver->config.tx_pin != PIO_UART_DRIVER_PIN_UNASSIGNED) {
+        gpio_deinit(driver->config.tx_pin);
+    }
+    if (driver->config.rx_pin != PIO_UART_DRIVER_PIN_UNASSIGNED) {
+        gpio_deinit(driver->config.rx_pin);
+    }
+    if (driver->tx_cts_enabled &&
+        (driver->config.cts_pin != PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+        gpio_deinit(driver->config.cts_pin);
+    }
+    if (((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) != 0u) &&
+        (driver->config.rts_pin != PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+        gpio_deinit(driver->config.rts_pin);
+    }
+}
+
+static void pio_uart_driver_cleanup_partial(pio_uart_driver_t *driver)
+{
+    pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, false);
+    pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, false);
+    pio_uart_driver_release_dma(driver);
+    pio_uart_driver_unclaim_state_machines(driver);
+    pio_uart_driver_release_gpio(driver);
+}
+
 static bool pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
 {
     uint offset = driver->tx_cts_enabled ? pio_uart_driver_tx_cts_offset(driver->config.pio)
@@ -679,10 +706,7 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
     pio_sm_restart(driver->config.pio, driver->config.rx_state_machine);
 
     if (!pio_uart_driver_init_tx_sm(driver) || !pio_uart_driver_init_rx_sm(driver)) {
-        pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, false);
-        pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, false);
-        pio_uart_driver_release_dma(driver);
-        pio_uart_driver_unclaim_state_machines(driver);
+        pio_uart_driver_cleanup_partial(driver);
         return false;
     }
     pio_uart_driver_configure_rts(driver);
@@ -740,10 +764,7 @@ void pio_uart_driver_deinit(pio_uart_driver_t *driver)
 
     if (driver->initialized) {
         pio_uart_driver_publish_rx(driver);
-        pio_uart_driver_release_dma(driver);
-        pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, false);
-        pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, false);
-        pio_uart_driver_unclaim_state_machines(driver);
+        pio_uart_driver_cleanup_partial(driver);
     }
 
     driver->initialized = false;
