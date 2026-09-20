@@ -37,9 +37,9 @@ The repository provides runners that implement the documented workflow:
 Use `run_hardware_test.py` for the normal end-to-end run. It runs functional
 testing before performance testing and records a concise result entry. Use the
 individual runners when diagnosing one phase. Add `--no-record` for a dry run.
-Use `run_functional_test.py --stage 1|2|3|4` when jumpers must be changed
-between stages; use `--stage all --confirm-rewire` only when the operator can
-confirm each rewire interactively.
+Install all four independent links before starting and do not change wiring
+during the run. Use `run_functional_test.py --stage 1|2|3|4` only to diagnose
+one link on the same fixed fixture.
 
 ## Preconditions
 

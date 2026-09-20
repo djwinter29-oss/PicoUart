@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +17,7 @@ READY_BIT = 1 << 0
 BAD_HEALTH_BITS = 0xCE  # init_failed, control_error, control_pending, rx_overrun, rx_error
 
 
-def collect_hid_health() -> dict:
+def _collect_hid_health_once() -> dict:
     """Collect one HID monitor sample and overflow snapshot."""
     monitor = subprocess.run(
         [sys.executable, str(HID_TOOL), "monitor", "--duration", "1"],
@@ -56,6 +57,17 @@ def collect_hid_health() -> dict:
         "version_output": version.stdout + version.stderr,
         "error": "; ".join(errors) if errors else None,
     }
+
+
+def collect_hid_health() -> dict:
+    """Collect HID health, retrying transient post-reset enumeration failures."""
+    snapshot = _collect_hid_health_once()
+    for _ in range(2):
+        if not snapshot.get("error"):
+            break
+        time.sleep(0.5)
+        snapshot = _collect_hid_health_once()
+    return snapshot
 
 
 def health_is_clean(snapshot: dict | None, baseline: dict | None = None) -> bool:

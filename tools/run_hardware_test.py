@@ -39,8 +39,6 @@ def build_functional_command(arguments: argparse.Namespace) -> list[str]:
         "--firmware-commit", arguments.firmware_commit,
         "--no-record",
     ]
-    if getattr(arguments, "confirm_rewire", False):
-        command.append("--confirm-rewire")
     if getattr(arguments, "artifact", None):
         command.extend(["--artifact", str(arguments.artifact)])
     return command
@@ -165,8 +163,6 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--skip-functional", action="store_true")
     parser.add_argument("--skip-performance", action="store_true")
     parser.add_argument("--continue-after-functional-failure", action="store_true")
-    parser.add_argument("--confirm-rewire", action="store_true",
-                        help="confirm each functional fixture rewire")
     parser.add_argument("--no-record", action="store_true")
     return parser.parse_args()
 
@@ -181,9 +177,6 @@ def main() -> int:
         return 2
     if not arguments.skip_functional and (not arguments.pico_cdc1 or not arguments.pico_cdc4):
         print("--pico-cdc1 and --pico-cdc4 are required for the functional test", file=sys.stderr)
-        return 2
-    if not arguments.skip_functional and not arguments.confirm_rewire:
-        print("--confirm-rewire is required for the staged functional fixture", file=sys.stderr)
         return 2
     arguments.full_fixture = bool(arguments.pico_cdc1 and arguments.pico_cdc4)
 

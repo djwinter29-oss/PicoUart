@@ -117,9 +117,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--no-record", action="store_true")
     parser.add_argument("--continue-on-failure", action="store_true")
     parser.add_argument("--stage", choices=("all", "1", "2", "3", "4"), default="all",
-                        help="Run one staged connection, or all stages")
-    parser.add_argument("--confirm-rewire", action="store_true",
-                        help="Prompt before each stage after the first")
+                        help="Run one connection, or all prewired connections")
     return parser.parse_args()
 
 
@@ -154,17 +152,10 @@ def main() -> int:
         return 2
     if not fixture_paths_valid(arguments):
         return 2
-    if arguments.stage == "all" and not arguments.confirm_rewire:
-        print("--stage all requires --confirm-rewire; use --stage 1|2|3|4 for manual runs",
-              file=sys.stderr)
-        return 2
-
     stages: list[tuple[str, int, str]] = []
     health_before = collect_hid_health()
     print(health_evidence(health_before), end="")
-    for stage_index, (label, command) in enumerate(build_stage_commands(arguments)):
-        if arguments.confirm_rewire and stage_index > 0:
-            input(f"Rewire for {label}, then press Enter to continue... ")
+    for label, command in build_stage_commands(arguments):
         print(f"RUN {label}: {' '.join(shlex.quote(part) for part in command)}")
         completed = subprocess.run(command, cwd=REPO_ROOT, stdout=subprocess.PIPE,
                        stderr=subprocess.STDOUT, text=True)

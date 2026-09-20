@@ -45,8 +45,8 @@ need a recorded hardware-in-the-loop (HIL) pass:
    COUNT behavior differs from RP2040 and must not be skipped.
 3. Run the four staged bridge cases and keep the full console transcript:
    UART0 Debug Probe, HW UART1↔PIO UART2, PIO UART3↔PIO UART4, and UART5
-   loopback. Change the jumpers between stages as described in
-   `docs/tests/self-test-setup.md`.
+   loopback. Install the complete fixed fixture before starting and do not
+   change wiring during the run, as described in `docs/tests/self-test-setup.md`.
 4. Run `serial_stress_benchmark.py` at the default rate sweep (or the rates
    claimed in the release notes). Pass `--uart1` with `--uart1-peer <uart2>`
    and `--uart4` with `--uart4-peer <uart3>` when the full staged fixture is

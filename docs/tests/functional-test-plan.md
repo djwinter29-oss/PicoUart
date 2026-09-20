@@ -15,7 +15,7 @@ The functional test covers:
 - Default UART configuration at 115200 baud, 8N1
 - HID health status, RX errors, and RX overflow reporting
 
-The staged wiring is defined in [Self-Test Setup](self-test-setup.md).
+The fixed, all-links wiring is defined in [Self-Test Setup](self-test-setup.md).
 
 ## Hardware Requirement
 
@@ -32,7 +32,7 @@ the connected hardware. Record the outcome in
 2. Connect the PicoUart USB device to the host.
 3. Confirm CDC0 through CDC5 and the HID interface enumerate.
 4. Use stable paths under `/dev/serial/by-id` where available.
-5. Confirm the selected test stage is wired exactly as documented.
+5. Confirm all four links are wired exactly as documented before starting.
 6. Confirm RTS/CTS is disconnected unless the flow-control variant is being
    tested explicitly.
 
@@ -83,12 +83,10 @@ For the complete functional-plus-performance sequence, use
 `run_hardware_test.py` instead. It records one combined entry and controls
 whether performance starts after the functional stages pass.
 
-The runner stops at the first failed stage by default. Add
-`--continue-on-failure` to collect every stage result. Add `--no-record` to
-run without modifying the results file. Because jumpers must change between
-stages, use `--stage 1`, `--stage 2`, `--stage 3`, or `--stage 4` for manual
-execution. Use `--stage all --confirm-rewire` only when the operator can
-confirm each rewire interactively.
+The runner tests all four links without pausing for rewiring. Add
+`--continue-on-failure` to collect every result. Add `--no-record` to run
+without modifying the results file. Use `--stage 1`, `--stage 2`, `--stage 3`,
+or `--stage 4` only to diagnose one link on the same fixed fixture.
 
 Pass `--artifact /path/to/pico_uart.elf` or the flashed UF2 to record its
 SHA-256 and the HID-reported firmware version. A successful single-stage run

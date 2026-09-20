@@ -1,8 +1,8 @@
 # Self-Test Setup
 
-This procedure validates all six PicoUart channels in four staged wiring
-configurations. Change the jumpers between stages; do not connect every stage
-at the same time.
+This procedure validates all six PicoUart channels with four independent links
+installed at the same time. Do not change wiring during the test. Verify the
+complete fixture before starting the runner.
 
 The USB host sees the channels as CDC0 through CDC5:
 
@@ -70,7 +70,7 @@ default firmware configuration.
 The Debug Probe SWD connection is only needed for flashing and debugging. Its
 UART connection is used as the external peer in stage 1.
 
-## Stage 1: Debug Probe to Hardware UART
+## Link 1: Debug Probe to Hardware UART
 
 Use UART0/CDC0. Cross the signal directions:
 
@@ -91,10 +91,9 @@ python3 tools/serial_bridge_test.py \
 
 The test must report both `PASS pico-to-peer` and `PASS peer-to-pico`.
 
-## Stage 2: Hardware UART to PIO UART
+## Link 2: Hardware UART to PIO UART
 
-Remove the stage 1 signal jumpers. Connect hardware UART1/CDC1 to PIO
-UART2/CDC2, crossing TX and RX:
+Connect hardware UART1/CDC1 to PIO UART2/CDC2, crossing TX and RX:
 
 | UART1 signal | GPIO | UART2 signal | GPIO |
 | --- | --- | --- | --- |
@@ -113,9 +112,9 @@ python3 tools/serial_bridge_test.py \
 
 The test must report both `PASS pico-to-peer` and `PASS peer-to-pico`.
 
-## Stage 3: PIO UART to PIO UART
+## Link 3: PIO UART to PIO UART
 
-Remove the stage 2 jumpers. Connect PIO UART3/CDC3 to PIO UART4/CDC4:
+Connect PIO UART3/CDC3 to PIO UART4/CDC4:
 
 | UART3 signal | GPIO | UART4 signal | GPIO |
 | --- | --- | --- | --- |
@@ -134,10 +133,9 @@ python3 tools/serial_bridge_test.py \
 
 The test must report both `PASS pico-to-peer` and `PASS peer-to-pico`.
 
-## Stage 4: PIO UART Loopback
+## Link 4: PIO UART Loopback
 
-Remove the stage 3 jumpers. Loop back PIO UART5/CDC5 by connecting its TX to
-its RX:
+Loop back PIO UART5/CDC5 by connecting its TX to its RX:
 
 | PicoUart signal | GPIO | PicoUart signal | GPIO |
 | --- | --- | --- | --- |
@@ -159,8 +157,8 @@ The test must report `PASS pico-loopback`.
 1. Flash the firmware and connect the PicoUart USB device to the host.
 2. Confirm that CDC0 through CDC5 enumerate. Prefer stable paths under
    `/dev/serial/by-id` instead of `/dev/ttyACM*`.
-3. Complete stages 1 through 4 in order, moving the jumpers between stages.
-4. Record the command output and firmware version for each stage.
+3. Confirm all four links are installed before starting the full test.
+4. Run the full functional/performance runner without changing wiring.
 5. Remove all test jumpers before connecting external UART equipment.
 
 Never connect UART TX to TX or RX to RX. Do not connect RS-232 voltage-level

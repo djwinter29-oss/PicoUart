@@ -82,19 +82,6 @@ def test_functional_runner_selects_one_stage() -> None:
     assert [label for label, _ in commands] == ["HW UART1 to PIO UART2"]
 
 
-def test_functional_all_requires_rewire_confirmation() -> None:
-    script = TOOLS / "run_functional_test.py"
-    command = [sys.executable, str(script), "--no-record"]
-    for index in range(6):
-        command.extend([f"--pico-cdc{index}", f"/dev/cdc{index}"])
-    command.extend(["--debug-probe", "/dev/probe", "--stage", "all"])
-
-    completed = subprocess.run(command, capture_output=True, text=True)
-
-    assert completed.returncode == 2
-    assert "--stage all requires --confirm-rewire" in completed.stderr
-
-
 def test_hardware_runner_streams_child_output_and_status() -> None:
     runner = _load("run_hardware_test")
     command = [sys.executable, "-c", "print('child-output', flush=True)"]
