@@ -835,8 +835,8 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
     }
 
     /*
-     * Short critical section: finish DMA stop, pause SMs, and re-check FIFOs /
-     * RX line before committing to the baud apply.
+    * Short critical section: finish DMA stop, pause SMs, and re-check FIFOs /
+    * RX quiescence before committing to the baud apply.
      */
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
@@ -853,7 +853,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
 
         if (!pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
             !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
-            !gpio_get(driver->config.rx_pin)) {
+            !pio_uart_driver_rx_quiescent(driver)) {
             pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, true);
             pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, true);
             if (driver->rx_dma_channel >= 0) {

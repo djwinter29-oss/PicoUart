@@ -68,15 +68,36 @@ if ([string]::IsNullOrWhiteSpace($SystemClockKhz)) {
 $cachePath = Join-Path $buildDirPath "CMakeCache.txt"
 if (Test-Path $cachePath) {
     $cache = Get-Content $cachePath -Raw
+    $cachedSdkPathMatch = [regex]::Match(
+        $cache,
+        "(?m)^PICO_SDK_PATH:(?:PATH|UNINITIALIZED)=(.+)`r?$"
+    )
+    $sdkPathMatches = $false
+    if ($cachedSdkPathMatch.Success) {
+        $cachedSdkPath = [System.IO.Path]::GetFullPath(
+            $cachedSdkPathMatch.Groups[1].Value
+        ).TrimEnd([char[]]"\/")
+        $expectedSdkPath = $PicoSdkPath.TrimEnd([char[]]"\/")
+        $sdkPathMatches = [string]::Equals(
+            $cachedSdkPath,
+            $expectedSdkPath,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    }
     if ($cache -notmatch [regex]::Escape("CMAKE_GENERATOR:INTERNAL=$Generator") -or
         $cache -notmatch [regex]::Escape("PICO_BOARD:STRING=$Board") -or
-        $cache -notmatch "(?m)^PICO_SDK_PATH:(PATH|UNINITIALIZED)=$([regex]::Escape($PicoSdkPath))$") {
+        -not $sdkPathMatches) {
         Write-Host "Build configuration changed; resetting generated CMake state in $buildDirPath"
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
             (Join-Path $buildDirPath "CMakeCache.txt"),
             (Join-Path $buildDirPath "CMakeFiles"),
             (Join-Path $buildDirPath "build.ninja"),
-            (Join-Path $buildDirPath "Makefile")
+            (Join-Path $buildDirPath "cmake_install.cmake"),
+            (Join-Path $buildDirPath "Makefile"),
+            (Join-Path $buildDirPath "_deps"),
+            (Join-Path $buildDirPath "pico-sdk"),
+            (Join-Path $buildDirPath "pioasm"),
+            (Join-Path $buildDirPath "pioasm-install")
     }
 }
 

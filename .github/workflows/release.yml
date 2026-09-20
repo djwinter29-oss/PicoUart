@@ -34,7 +34,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install host dependencies
-        run: python3 -m pip install -r host/python/requirements-dev.txt
+        run: python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
 
       - name: Syntax-check Python tools
         run: |

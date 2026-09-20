@@ -81,6 +81,9 @@ Before clicking **Publish** on the GitHub draft:
    identity warning unless the artifact deliberately uses an allocated identity.
 3. **HIL transcript** is linked or attached (see above), covering both boards.
 4. Release notes call out any breaking HID layout changes.
+5. **Python dependency lock**: release CI installed
+   `host/python/requirements-lock.txt` with `pip --require-hashes`; any lock
+   regeneration is present in the reviewed release change.
 
 ## Versioning
 
@@ -94,6 +97,7 @@ Release and PR workflows build against Pico SDK 2.3.0 at commit
 `98a542c1a62fb549ffb5d66a3e5892b06276b670` and print the verified revision in
 the job log.
 
-Python release qualification must use a reviewed, fully transitive requirements
-lock with artifact hashes. Regenerate that lock only in a packaging-enabled,
-reviewed change; the pinned direct requirements are not a full release lock.
+Python release qualification uses the reviewed, fully transitive
+`host/python/requirements-lock.txt` with artifact hashes. Regenerate it only in
+a packaging-enabled, reviewed change; the pinned direct requirements remain the
+human-edited inputs rather than the release installation source.

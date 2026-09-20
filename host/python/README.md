@@ -16,8 +16,11 @@ Older hosts expecting v14 / 64-byte `PU` headers are incompatible — see
 | `tests/` | Pytest suite (no hardware required) |
 | `requirements.txt` | Runtime dependency (`hidapi`) |
 | `requirements-dev.txt` | Test extras (`pytest`) |
+| `requirements-lock.txt` | Python 3.10+ release/CI dependency lock with artifact hashes |
 
 ## Install
+
+Python 3.10 or newer is required.
 
 ```sh
 python3 -m pip install -r host/python/requirements.txt
@@ -28,6 +31,14 @@ For host automated tests (pytest):
 ```sh
 python3 -m pip install -r host/python/requirements-dev.txt
 python3 -m pytest
+```
+
+CI and release qualification install `requirements-lock.txt` with
+`pip --require-hashes`. Regenerate it from the repository root with:
+
+```sh
+uv pip compile host/python/requirements-dev.txt --universal --python-version 3.10 \
+	--generate-hashes --no-emit-index-url --output-file host/python/requirements-lock.txt
 ```
 
 Firmware host C tests plus this pytest suite: [`firmware/tests/README.md`](../../firmware/tests/README.md).
