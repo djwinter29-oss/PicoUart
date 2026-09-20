@@ -3,6 +3,30 @@
 Newest result first. Add future results below the heading and keep the
 reusable template at the bottom.
 
+## 2026-09-20T13:59:50+00:00 - pico - Hardware Test
+
+**Result:** `PASS`
+**Firmware:** 0.0.0, `working-tree`
+**Board:** `pico`
+**Test date/time:** `2026-09-20T13:59:50+00:00`
+**Wiring:** Self-test stages 1-4 and performance fixture
+**RTS/CTS:** disabled
+**Artifact:** /home/home/repo/PicoUart/build/firmware-pico/pico_uart.elf
+**Artifact SHA-256:** `bc1941b0a4d82a06e74744008109915203138df4e0034a43280a0fe6d31610be`
+
+### Results
+
+- Functional test: PASS
+- Performance test: PASS
+
+### Health
+
+- RX overflows: check with `pico_uart_hid.py overruns`
+- HID errors: check with `pico_uart_hid.py monitor`
+- Raw log: /home/home/repo/PicoUart/docs/tests/raw/hardware-test-2026-09-20T13_59_50_00_00.log
+
+---
+
 ## 2026-09-20 - Pico - Full Hardware Matrix
 
 **Result:** `PASS`
