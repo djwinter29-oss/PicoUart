@@ -107,6 +107,22 @@ void test_activity_window_times_out_and_clears(void)
     TEST_ASSERT_FALSE(led_activity_window_poll(&window, 1600u));
 }
 
+void test_activity_window_expires_exactly_at_deadline_boundary(void)
+{
+    led_activity_window_t window;
+
+    led_activity_window_reset(&window);
+    led_activity_window_note(&window, 1000u, 500u);
+
+    /* One microsecond before the deadline the window is still open... */
+    TEST_ASSERT_TRUE(led_activity_window_poll(&window, 1499u));
+
+    led_activity_window_note(&window, 1000u, 500u);
+    /* ...but `now_us == deadline_us` (1500) already expires it: the poll
+     * uses `>=`, so the boundary microsecond itself counts as expired. */
+    TEST_ASSERT_FALSE(led_activity_window_poll(&window, 1500u));
+}
+
 void test_activity_window_repeated_activity_extends_deadline(void)
 {
     led_activity_window_t window;
@@ -131,6 +147,7 @@ int main(void)
     RUN_TEST(test_activity_window_starts_closed);
     RUN_TEST(test_activity_window_open_until_deadline);
     RUN_TEST(test_activity_window_times_out_and_clears);
+    RUN_TEST(test_activity_window_expires_exactly_at_deadline_boundary);
     RUN_TEST(test_activity_window_repeated_activity_extends_deadline);
     return UNITY_END();
 }

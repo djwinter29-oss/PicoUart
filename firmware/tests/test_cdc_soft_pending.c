@@ -26,6 +26,16 @@ void test_deadline_retained_only_for_identical_retry(void)
     TEST_ASSERT_TRUE(usb_cdc_soft_pending_should_set_deadline(true, false));
 }
 
+void test_nil_deadline_is_never_a_timeout(void)
+{
+    /* A reset cancels a request by nil-ing its deadline; that must never
+     * read as "timed out", even if time_reached(nil_time) would say yes. */
+    TEST_ASSERT_FALSE(usb_cdc_soft_pending_has_timed_out(true, true));
+    TEST_ASSERT_FALSE(usb_cdc_soft_pending_has_timed_out(true, false));
+    TEST_ASSERT_TRUE(usb_cdc_soft_pending_has_timed_out(false, true));
+    TEST_ASSERT_FALSE(usb_cdc_soft_pending_has_timed_out(false, false));
+}
+
 void test_mailbox_acceptance_and_sequence_wrap(void)
 {
     TEST_ASSERT_TRUE(uart_control_mailbox_is_empty(4u, 4u));
@@ -112,6 +122,7 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_deadline_retained_only_for_identical_retry);
+    RUN_TEST(test_nil_deadline_is_never_a_timeout);
     RUN_TEST(test_mailbox_acceptance_and_sequence_wrap);
     RUN_TEST(test_worker_completion_keeps_newer_control_pending_owner);
     RUN_TEST(test_every_control_owner_blocks_tx_ingress);
