@@ -65,7 +65,7 @@ the repository virtual environment:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install -r host/python/requirements-dev.txt
+.venv/bin/python -m pip install --require-hashes -r host/python/requirements-lock.txt
 .venv/bin/python -m pytest
 ```
 

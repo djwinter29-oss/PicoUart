@@ -29,7 +29,7 @@ python3 -m pip install -r host/python/requirements.txt
 For host automated tests (pytest):
 
 ```sh
-python3 -m pip install -r host/python/requirements-dev.txt
+python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
 python3 -m pytest
 ```
 

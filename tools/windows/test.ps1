@@ -45,7 +45,7 @@ if (-not $SkipHost) {
 
     if (-not $SkipPython) {
         Write-Host "=== Host Python tests (pytest) ==="
-        python -m pip install -q -r (Join-Path $repoRoot "host\python\requirements-dev.txt")
+        python -m pip install -q --require-hashes -r (Join-Path $repoRoot "host\python\requirements-lock.txt")
         Push-Location $repoRoot
         try {
             python -m pytest

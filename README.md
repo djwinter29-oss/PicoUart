@@ -63,6 +63,10 @@ Host-side tests (no board required):
 tools/linux/test-host.sh
 ```
 
+The host tools require Python 3.10 or newer. CI and the test wrapper install
+the checked-in, hash-verified dependency lock at
+`host/python/requirements-lock.txt`.
+
 See [`firmware/tests/README.md`](firmware/tests/README.md).
 
 ## Repository Layout
