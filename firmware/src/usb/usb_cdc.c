@@ -11,6 +11,7 @@
 #include "usb/cdc_soft_pending.h"
 #include "usb/usb_hid.h"
 
+#include "driver/led.h"
 #include "pico/time.h"
 #include "tusb.h"
 
@@ -49,6 +50,10 @@ static uint8_t usb_cdc_poll_start_itf;
 static bool usb_cdc_tx_flush_pending[USB_CDC_PORT_COUNT];
 /** @brief Flush deadlines for partial CDC IN buffers. */
 static absolute_time_t usb_cdc_tx_flush_deadline[USB_CDC_PORT_COUNT];
+/** @brief Last time any CDC port transferred data (or nil_time after startup). */
+static absolute_time_t usb_cdc_last_activity_time;
+/** @brief How long the LED stays on after USB activity (µs). */
+#define USB_CDC_ACTIVITY_LED_ON_US 50000u
 
 static void usb_cdc_update_high_watermark(uint16_t *high_watermark, uint32_t occupancy)
 {
@@ -152,6 +157,7 @@ static void usb_cdc_bridge_usb_to_uart(uint8_t itf)
 
         if (drained != 0u) {
             usb_cdc_stats[itf].rx_bytes += (uint32_t)drained;
+            usb_cdc_last_activity_time = make_timeout_time_us(USB_CDC_ACTIVITY_LED_ON_US);
         }
     }
 }
@@ -167,6 +173,27 @@ static void usb_cdc_flush_if_due(uint8_t itf)
     if (usb_cdc_tx_flush_pending[itf] && time_reached(usb_cdc_tx_flush_deadline[itf])) {
         tud_cdc_n_write_flush(itf);
         usb_cdc_tx_flush_pending[itf] = false;
+    }
+}
+
+/**
+ * @brief Blink the board LED briefly when USB data transfers, then turn it off.
+ *
+ * Called once per poll cycle after the bridge pass. The LED lights for
+ * @ref USB_CDC_ACTIVITY_LED_ON_US µs following any transfer on any CDC port,
+ * providing a visible heartbeat without staying on continuously.
+ */
+static void usb_cdc_activity_led(void)
+{
+    if (is_nil_time(usb_cdc_last_activity_time)) {
+        led_set(false);
+        return;
+    }
+    if (time_reached(usb_cdc_last_activity_time)) {
+        led_set(false);
+        usb_cdc_last_activity_time = nil_time;
+    } else {
+        led_set(true);
     }
 }
 
@@ -196,6 +223,7 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
                                    &itf);
     if (written != 0u) {
         usb_cdc_stats[itf].tx_bytes += (uint32_t)written;
+        usb_cdc_last_activity_time = make_timeout_time_us(USB_CDC_ACTIVITY_LED_ON_US);
         if (!usb_cdc_tx_flush_pending[itf]) {
             usb_cdc_tx_flush_deadline[itf] = make_timeout_time_us(USB_CDC_FLUSH_LATENCY_US);
         }
@@ -272,6 +300,7 @@ void usb_cdc_poll(void) {
     }
 
     usb_cdc_poll_start_itf = (uint8_t)((start_itf + 1u) % USB_CDC_PORT_COUNT);
+    usb_cdc_activity_led();
 }
 
 /**

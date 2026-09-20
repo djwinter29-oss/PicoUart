@@ -28,10 +28,15 @@ foreach(_pico_uart_version_part MAJOR MINOR PATCH)
             "(got ${_pico_uart_version_value})")
     endif()
 endforeach()
+# USB bcdDevice can only encode major/minor 0-99 in BCD. When major or
+# minor exceeds 99 the bcdDevice field stays 0x0000 (no meaningful BCD value).
 if(PICO_UART_VERSION_MAJOR GREATER 99 OR PICO_UART_VERSION_MINOR GREATER 99)
-    message(FATAL_ERROR
-        "PICO_UART_VERSION major/minor must be 0-99 for USB bcdDevice BCD encoding "
-        "(got ${PICO_UART_VERSION_MAJOR}.${PICO_UART_VERSION_MINOR})")
+    message(STATUS "PICO_UART_VERSION ${PICO_UART_VERSION_MAJOR}.${PICO_UART_VERSION_MINOR}.${PICO_UART_VERSION_PATCH} major/minor > 99; USB bcdDevice set to 0x0000")
+    set(PICO_UART_BCD_DEVICE 0)
+else()
+    # USB bcdDevice advertises major.minor only (1.2.3 -> 0x0102, shown as 1.02 / 1.2).
+    math(EXPR PICO_UART_BCD_DEVICE
+        "((${PICO_UART_VERSION_MAJOR} / 10) * 4096) + ((${PICO_UART_VERSION_MAJOR} % 10) * 256) + ((${PICO_UART_VERSION_MINOR} / 10) * 16) + (${PICO_UART_VERSION_MINOR} % 10)")
 endif()
 
 if(NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
@@ -45,9 +50,6 @@ if(NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
             "(got ${PICO_UART_SYSTEM_CLOCK_KHZ})")
     endif()
 endif()
-# USB bcdDevice advertises major.minor only (1.2.3 -> 0x0102, shown as 1.02 / 1.2).
-math(EXPR PICO_UART_BCD_DEVICE
-    "((${PICO_UART_VERSION_MAJOR} / 10) * 4096) + ((${PICO_UART_VERSION_MAJOR} % 10) * 256) + ((${PICO_UART_VERSION_MINOR} / 10) * 16) + (${PICO_UART_VERSION_MINOR} % 10)")
 
 if(DEFINED PICO_SDK_PATH)
     include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
