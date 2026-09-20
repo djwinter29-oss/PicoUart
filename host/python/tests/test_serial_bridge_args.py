@@ -225,6 +225,18 @@ def test_flood_seconds_parses(monkeypatch: pytest.MonkeyPatch) -> None:
     assert bridge.main() == 0
 
 
+def test_flood_propagates_write_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+
+    def fail_write(*_args):
+        raise OSError("device disconnected")
+
+    monkeypatch.setattr(bridge, "write_all", fail_write)
+
+    with pytest.raises(OSError, match="device disconnected"):
+        bridge.run_flood(3, None, 1.0, 64, 0.0)
+
+
 def test_settle_seconds_rejects_negative(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,

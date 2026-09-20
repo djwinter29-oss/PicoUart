@@ -51,6 +51,27 @@ python3 tools/linux/serial_stress_benchmark.py \
   --duration 10
 ```
 
+To run only the benchmark and prepend a structured result entry automatically:
+
+```sh
+python3 tools/linux/run_performance_test.py \
+  --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
+  --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
+  --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
+  --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
+  --uart5 /dev/serial/by-id/<pico-uart-cdc5> \
+  --board pico --firmware-version 1.2.3 --firmware-commit <commit>
+```
+
+Pass `--uart1` and `--uart4` when those optional links are included. The
+runner preserves the benchmark exit code and records its complete output. Use
+`--no-record` for a dry run.
+
+For the complete functional-plus-performance sequence and one combined result
+entry, use `tools/linux/run_hardware_test.py`. It runs the functional stages
+first and starts performance only when they pass unless
+`--continue-after-functional-failure` is supplied.
+
 The benchmark's current interface uses UART2, UART3, and UART5 for its
 standard concurrent fixture. For the complete staged matrix in this document,
 run the equivalent UART1-to-UART2 and UART3-to-UART4 pair tests individually,

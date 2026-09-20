@@ -443,6 +443,26 @@ static uint32_t pio_uart_driver_rx_progress(const pio_uart_driver_t *driver)
     return uart_dma_rx_progress((uint)driver->rx_dma_channel);
 }
 
+bool pio_uart_driver_rx_snapshot_is_current(const pio_uart_driver_t *driver,
+                                            uint32_t consumer_sequence)
+{
+    uint32_t progress;
+    uint32_t produced;
+    uint32_t live_producer;
+
+    if ((driver == NULL) || !driver->initialized || (driver->rx_dma_channel < 0)) {
+        return false;
+    }
+
+    progress = pio_uart_driver_rx_progress(driver);
+    produced = uart_dma_rx_bytes_produced(progress,
+                                         driver->rx_dma_last_progress,
+                                         uart_dma_rx_transfer_count_max());
+    live_producer = driver->rx_ring.producer + produced;
+    __dmb();
+    return (live_producer - consumer_sequence) <= driver->rx_ring.size;
+}
+
 static void pio_uart_driver_publish_rx(pio_uart_driver_t *driver)
 {
     uint32_t progress;
@@ -770,12 +790,14 @@ void pio_uart_driver_deinit(pio_uart_driver_t *driver)
 static bool pio_uart_driver_rx_quiescent(const pio_uart_driver_t *driver)
 {
     uint instruction = pio_sm_get_pc(driver->config.pio, driver->config.rx_state_machine);
+    bool require_idle_high =
+        (driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH) != 0u;
 
-    /* The RX program waits for its next start bit at instruction zero. Requiring
-     * both that state and a high pin rejects a start bit which has arrived but
-     * has not yet advanced the state machine. */
+    /* The RX program waits for its next start bit at instruction zero. When the
+     * policy flag is enabled, also require a high pin to reject a start bit
+     * which arrived but has not yet advanced the state machine. */
     return (instruction == pio_uart_driver_rx_offset(driver->config.pio)) &&
-           gpio_get(driver->config.rx_pin);
+           (!require_idle_high || gpio_get(driver->config.rx_pin));
 }
 
 /**

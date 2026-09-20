@@ -75,8 +75,11 @@ Before clicking **Publish** on the GitHub draft:
 
 1. **Artifact ↔ HIL SHA match**: the UF2/ELF/BIN attached to the draft (or their
    `SHA256SUMS-*`) are bit-identical to the images used for the recorded HIL
-   pass on **each** board (`pico` and `pico2`). Do not promote if HIL ran on a
-   different local rebuild or only one of the two targets.
+   pass on **each** board (`pico` and `pico2`). Copy the hashes into the
+   [performance result log](tests/performance-test-results.md), then compare
+   them against the downloaded release `SHA256SUMS-*` files before promoting.
+   Do not promote if HIL ran on a different local rebuild or only one of the two
+   targets.
 2. **USB identity note**: release notes retain the `0xCAFE:0x4010` lab-project
    identity warning unless the artifact deliberately uses an allocated identity.
 3. **HIL transcript** is linked or attached (see above), covering both boards.

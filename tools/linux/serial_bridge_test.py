@@ -154,11 +154,8 @@ def run_flood(source_fd: int,
     destination_open_at = start + max(0.0, hold_destination_seconds)
 
     while time.monotonic() < deadline:
-        try:
-            write_all(source_fd, pattern, deadline)
-            written += len(pattern)
-        except OSError:
-            break
+        write_all(source_fd, pattern, deadline)
+        written += len(pattern)
 
         if destination_fd is not None and time.monotonic() >= destination_open_at:
             drained += drain_available(destination_fd)

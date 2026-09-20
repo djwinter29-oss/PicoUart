@@ -140,6 +140,10 @@ jobs:
             host/python/src/pico_uart_hid.py \
             tools/linux/serial_bridge_test.py \
             tools/linux/serial_stress_benchmark.py \
+            tools/linux/run_functional_test.py \
+            tools/linux/run_performance_test.py \
+            tools/linux/run_hardware_test.py \
+            tools/linux/hardware_test_result.py \
             tools/linux/check-usb-identity.py \
             tools/linux/verify-build.py
 

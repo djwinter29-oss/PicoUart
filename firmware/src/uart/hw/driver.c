@@ -272,6 +272,26 @@ static uint32_t hw_uart_driver_rx_progress(const hw_uart_driver_t *driver)
     return uart_dma_rx_progress((uint)driver->rx_dma_channel);
 }
 
+bool hw_uart_driver_rx_snapshot_is_current(const hw_uart_driver_t *driver,
+                                           uint32_t consumer_sequence)
+{
+    uint32_t progress;
+    uint32_t produced;
+    uint32_t live_producer;
+
+    if ((driver == NULL) || !driver->initialized || (driver->rx_dma_channel < 0)) {
+        return false;
+    }
+
+    progress = hw_uart_driver_rx_progress(driver);
+    produced = uart_dma_rx_bytes_produced(progress,
+                                         driver->rx_dma_last_progress,
+                                         uart_dma_rx_transfer_count_max());
+    live_producer = driver->rx_ring.producer + produced;
+    __dmb();
+    return (live_producer - consumer_sequence) <= driver->rx_ring.size;
+}
+
 static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
 {
     dma_channel_config tx_dma_config;

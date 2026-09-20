@@ -42,6 +42,28 @@ and for recording physical test results:
 - [`docs/tests/performance-test-results.md`](../../docs/tests/performance-test-results.md):
   newest-first result log and test-result template.
 
+The repository provides result-recording runners around the low-level serial
+tools:
+
+```sh
+python3 tools/linux/run_functional_test.py --help
+python3 tools/linux/run_performance_test.py --help
+python3 tools/linux/run_hardware_test.py --help
+```
+
+Use `run_functional_test.py` for the four staged bridge/loopback checks. It
+stops on the first failure by default, returns nonzero when the matrix does not
+pass, and prepends the captured commands and output to the result log. Use
+`--continue-on-failure` to collect all stages or `--no-record` for a dry run.
+Use `run_performance_test.py` for the concurrent stress benchmark; it preserves
+the benchmark exit code and records the measured bytes, throughput, and raw
+output in the same newest-first log.
+Use `run_hardware_test.py` for the normal end-to-end run. It starts the
+functional matrix first, starts performance only after functional success by
+default, and records one combined result entry. Add
+`--continue-after-functional-failure` only when deliberately collecting
+performance diagnostics after a failed functional stage.
+
 When the requested test uses the full staged fixture, run the four stages in
 the functional plan: Debug Probe to HW UART0, HW UART1 to PIO UART2, PIO UART3
 to PIO UART4, and PIO UART5 loopback. The older individual loopback examples

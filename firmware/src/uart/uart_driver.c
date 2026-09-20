@@ -112,6 +112,8 @@ static void uart_driver_finish_mailbox_control(uart_port_id_t port_id,
 static bool uart_driver_mailbox_has_pending_port(uart_port_id_t port_id);
 static bool uart_driver_tx_boundary_drained(uart_driver_port_t *port,
                                             uint32_t boundary_sequence);
+static bool uart_driver_rx_snapshot_is_current(const uart_driver_port_t *port,
+                                               uint32_t consumer_sequence);
 
 static void uart_driver_begin_port_stats_update(uart_port_id_t port_id)
 {
@@ -359,6 +361,26 @@ static bool uart_driver_tx_boundary_drained(uart_driver_port_t *port,
     return (tx_ring != NULL) && (tx_ring->consumer == boundary_sequence);
 }
 
+static bool uart_driver_rx_snapshot_is_current(const uart_driver_port_t *port,
+                                               uint32_t consumer_sequence)
+{
+    if (port == NULL) {
+        return false;
+    }
+
+    if (port->info.backend == UART_DRIVER_BACKEND_HW) {
+        return hw_uart_driver_rx_snapshot_is_current(&port->backend.hw,
+                                                     consumer_sequence);
+    }
+
+    if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
+        return pio_uart_driver_rx_snapshot_is_current(&port->backend.pio,
+                                                      consumer_sequence);
+    }
+
+    return false;
+}
+
 size_t uart_driver_port_count(void)
 {
     return UART_PORT_COUNT;
@@ -600,7 +622,7 @@ size_t uart_driver_drain_rx(uart_port_id_t port_id,
     uart_driver_port_t *port = uart_driver_port_mutable(port_id);
     ring_buffer_t *rx_ring;
     size_t total_written = 0u;
-    uint8_t snapshot[UART_DRIVER_RX_SNAPSHOT_SIZE];
+    static uint8_t snapshot[UART_DRIVER_RX_SNAPSHOT_SIZE];
 
     if ((port == NULL) || !uart_driver_port_is_ready(port_id) || (writer == NULL)) {
         return 0u;
@@ -630,8 +652,18 @@ size_t uart_driver_drain_rx(uart_port_id_t port_id,
             offered = sizeof(snapshot);
         }
 
+        uint32_t consumer_sequence = rx_ring->consumer_reserved_sequence;
+        uint32_t stats_sequence = uart_driver_port_stats_sequence[port_id];
+
+        if ((stats_sequence & 1u) != 0u) {
+            return total_written;
+        }
+
         memcpy(snapshot, span.data, offered);
-        if (!ring_buffer_read_span_is_current(rx_ring)) {
+        __dmb();
+        if (!ring_buffer_read_span_is_current(rx_ring) ||
+            !uart_driver_rx_snapshot_is_current(port, consumer_sequence) ||
+            (uart_driver_port_stats_sequence[port_id] != stats_sequence)) {
             (void)ring_buffer_recover_overflow(rx_ring);
             return total_written;
         }

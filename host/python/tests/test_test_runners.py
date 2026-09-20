@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+TOOLS = Path(__file__).resolve().parents[3] / "tools" / "linux"
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+
+
+def _load(name: str):
+    path = TOOLS / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def functional_arguments() -> SimpleNamespace:
+    return SimpleNamespace(
+        pico_cdc0="cdc0",
+        debug_probe="probe",
+        pico_cdc1="cdc1",
+        pico_cdc2="cdc2",
+        pico_cdc3="cdc3",
+        pico_cdc4="cdc4",
+        pico_cdc5="cdc5",
+        baud=115200,
+        payload_bytes=64,
+        timeout=3.0,
+    )
+
+
+def performance_arguments() -> SimpleNamespace:
+    return SimpleNamespace(
+        uart0_pico="cdc0",
+        uart0_peer="probe",
+        uart1=None,
+        uart2="cdc2",
+        uart3="cdc3",
+        uart4=None,
+        uart5="cdc5",
+        uart0_baud=115200,
+        rates="115200,460800",
+        duration=10.0,
+        payload_bytes=1024,
+        timeout=3.0,
+    )
+
+
+def test_functional_runner_builds_all_documented_stages() -> None:
+    runner = _load("run_functional_test")
+    commands = runner.build_stage_commands(functional_arguments())
+
+    assert [label for label, _ in commands] == [
+        "Debug Probe to HW UART0",
+        "HW UART1 to PIO UART2",
+        "PIO UART3 to PIO UART4",
+        "PIO UART5 loopback",
+    ]
+    assert "--loopback" in commands[-1][1]
+    assert "--peer-port" in commands[1][1]
+
+
+def test_performance_runner_parses_pass_and_fail_lines() -> None:
+    runner = _load("run_performance_test")
+    output = (
+        "PASS uart0-pico-to-peer: 100 bytes, 20.0 B/s\n"
+        "FAIL uart5-loopback: received data did not match\n"
+    )
+
+    assert runner.parse_benchmark_output(output) == {
+        "uart0-pico-to-peer": ("PASS", "100", "20.0"),
+        "uart5-loopback": ("FAIL", "-", "received data did not match"),
+    }
+
+
+def test_hardware_runner_marks_failed_functional_phase_as_fail() -> None:
+    runner = _load("run_hardware_test")
+    arguments = SimpleNamespace(
+        board="pico", tester="test", firmware_version="1.2.3",
+        firmware_commit="abc1234",
+    )
+
+    entry = runner.format_result_entry(arguments, "2026-09-20T00:00:00+00:00",
+                                       (1, "functional failed"), None)
+
+    assert "**Result:** `FAIL`" in entry
+
+
+def test_result_helper_prepends_before_template(tmp_path: Path) -> None:
+    helper = _load("hardware_test_result")
+    results = tmp_path / "results.md"
+    results.write_text("# Results\n\n## Template\n", encoding="utf-8")
+
+    helper.prepend_result(results, "## New result\n\n**Result:** `PASS`")
+
+    assert results.read_text(encoding="utf-8") == (
+        "# Results\n\n## New result\n\n**Result:** `PASS`\n\n## Template\n"
+    )
+
+
+def test_result_helper_rejects_missing_template(tmp_path: Path) -> None:
+    helper = _load("hardware_test_result")
+    results = tmp_path / "results.md"
+    results.write_text("# Results\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="template marker"):
+        helper.prepend_result(results, "## New result")

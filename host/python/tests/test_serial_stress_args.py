@@ -177,6 +177,17 @@ def test_payload_bytes_rejects_out_of_range(monkeypatch: pytest.MonkeyPatch) -> 
     assert stress.main() == 2
 
 
+def test_minimum_payload_contains_distinct_sequence_marker() -> None:
+    stress = _load_stress()
+
+    first = stress.payload_for("uart2-to-uart3", 0, 32)
+    second = stress.payload_for("uart2-to-uart3", 1, 32)
+
+    assert len(first) == 32
+    assert len(second) == 32
+    assert first != second
+
+
 def test_optional_uart1_uart4_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,

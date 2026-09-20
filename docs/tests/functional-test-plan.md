@@ -56,6 +56,28 @@ python3 tools/linux/serial_bridge_test.py \
   --label stage4-pio-loopback
 ```
 
+To run all four stages in order and record one newest-first result entry:
+
+```sh
+python3 tools/linux/run_functional_test.py \
+  --pico-cdc0 /dev/serial/by-id/<pico-uart-cdc0> \
+  --debug-probe /dev/serial/by-id/<debug-probe-uart> \
+  --pico-cdc1 /dev/serial/by-id/<pico-uart-cdc1> \
+  --pico-cdc2 /dev/serial/by-id/<pico-uart-cdc2> \
+  --pico-cdc3 /dev/serial/by-id/<pico-uart-cdc3> \
+  --pico-cdc4 /dev/serial/by-id/<pico-uart-cdc4> \
+  --pico-cdc5 /dev/serial/by-id/<pico-uart-cdc5> \
+  --board pico --firmware-version 1.2.3 --firmware-commit <commit>
+```
+
+For the complete functional-plus-performance sequence, use
+`run_hardware_test.py` instead. It records one combined entry and controls
+whether performance starts after the functional stages pass.
+
+The runner stops at the first failed stage by default. Add
+`--continue-on-failure` to collect every stage result. Add `--no-record` to
+run without modifying the results file.
+
 ## Pass Criteria
 
 The functional run passes only when:

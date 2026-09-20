@@ -5,6 +5,7 @@ import argparse
 import math
 import os
 import select
+import struct
 import sys
 import termios
 import threading
@@ -83,7 +84,8 @@ def read_exact(file_descriptor: int, expected: bytes, deadline: float) -> None:
 
 
 def payload_for(label: str, sequence: int, size: int) -> bytes:
-    prefix = f"PICO_UART_BENCH:{label}:{sequence:08x}:".encode("ascii")
+    prefix = (b"PU:" + label.encode("ascii")[:8].ljust(8, b"_") +
+              struct.pack(">Q", sequence))
     if len(prefix) >= size:
         return prefix[:size]
     pattern = bytes(range(256))
@@ -113,7 +115,10 @@ def run_stream(label: str,
             read_exact(destination_fd, payload, time.monotonic() + timeout)
             bytes_verified += len(payload)
             sequence += 1
-        result[label] = (bytes_verified, None)
+        if bytes_verified == 0:
+            result[label] = (0, "stream completed without verifying a payload")
+        else:
+            result[label] = (bytes_verified, None)
     except (OSError, TimeoutError, ValueError, threading.BrokenBarrierError) as error:
         result[label] = (bytes_verified, str(error))
 

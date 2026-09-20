@@ -20,6 +20,17 @@ older entries.
 **Wiring:** See [Self-Test Setup](self-test-setup.md), stage(s):  
 **RTS/CTS:** `disabled` / `enabled`  
 
+#### HIL Artifact Identity
+
+Record the exact packaged artifacts used for this run. These hashes are the
+binding between the physical test and the release files; never record a hash
+from a separate local rebuild.
+
+| Board | Artifact | SHA256 |
+| --- | --- | --- |
+| pico | `pico_uart-vX.Y.Z-pico.elf` |  |
+| pico2 | `pico_uart-vX.Y.Z-pico2.elf` |  |
+
 #### Test Configuration
 
 | Setting | Value |
@@ -71,6 +82,12 @@ After:
 **Test date/time:** `2026-09-20T00:00:00Z`  
 **Wiring:** Self-test stages 1-4  
 **RTS/CTS:** `disabled`  
+
+#### HIL Artifact Identity
+
+| Board | Artifact | SHA256 |
+| --- | --- | --- |
+| pico2 | `build/firmware-pico2/pico_uart.elf` | `<record hash>` |
 
 #### Test Configuration
 

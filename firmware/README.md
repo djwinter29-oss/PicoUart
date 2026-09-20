@@ -44,8 +44,8 @@ They also accept `--system-clock-khz` or `-SystemClockKhz` to override the
 system clock for a build. For example:
 
 ```sh
-tools/linux/build.sh --board pico --system-clock-khz 250000
-tools/linux/build.sh --board pico2 --system-clock-khz 300000
+tools/linux/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
+tools/linux/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
 ```
 
 Those examples are intentionally unsafe overrides. Production builds use the

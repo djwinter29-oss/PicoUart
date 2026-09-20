@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Run the staged PicoUart functional test and record its result."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+from hardware_test_result import prepend_result
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parents[1]
+DEFAULT_RESULTS_FILE = REPO_ROOT / "docs/tests/performance-test-results.md"
+
+
+def build_stage_commands(arguments: SimpleNamespace) -> list[tuple[str, list[str]]]:
+    """Build the four documented serial_bridge_test invocations."""
+    bridge = str(SCRIPT_DIR / "serial_bridge_test.py")
+    common = [sys.executable, bridge, "--payload-bytes", str(arguments.payload_bytes),
+              "--timeout", str(arguments.timeout), "--baud", str(arguments.baud)]
+    return [
+        ("Debug Probe to HW UART0", common + [
+            "--pico-port", arguments.pico_cdc0, "--peer-port", arguments.debug_probe,
+            "--label", "stage1-debug-probe-hw-uart",
+        ]),
+        ("HW UART1 to PIO UART2", common + [
+            "--pico-port", arguments.pico_cdc1, "--peer-port", arguments.pico_cdc2,
+            "--label", "stage2-hw-to-pio",
+        ]),
+        ("PIO UART3 to PIO UART4", common + [
+            "--pico-port", arguments.pico_cdc3, "--peer-port", arguments.pico_cdc4,
+            "--label", "stage3-pio-to-pio",
+        ]),
+        ("PIO UART5 loopback", common + [
+            "--pico-port", arguments.pico_cdc5, "--loopback",
+            "--label", "stage4-pio-loopback",
+        ]),
+    ]
+
+
+def format_result_entry(arguments: SimpleNamespace,
+                        timestamp: str,
+                        stages: list[tuple[str, int, str]]) -> str:
+    overall = "PASS" if stages and all(code == 0 for _, code, _ in stages) else "FAIL"
+    lines = [
+        f"## {timestamp} - {arguments.board} - Functional Test",
+        "",
+        f"**Result:** `{overall}`  ",
+        f"**Tester:** {arguments.tester}  ",
+        f"**Firmware version:** {arguments.firmware_version}  ",
+        f"**Firmware commit:** `{arguments.firmware_commit}`  ",
+        f"**Board:** `{arguments.board}`  ",
+        f"**Test date/time:** `{timestamp}`  ",
+        "**Wiring:** Self-test stages 1-4  ",
+        "**RTS/CTS:** `disabled`  ",
+        "",
+        "#### Stage Results",
+        "",
+        "| Stage | Exit code | Result |",
+        "| --- | ---: | --- |",
+    ]
+    for label, code, _ in stages:
+        lines.append(f"| {label} | {code} | {'PASS' if code == 0 else 'FAIL'} |")
+    lines.extend(["", "#### Command Output", "", "```text"])
+    for label, code, output in stages:
+        lines.extend([f"[{label}] exit={code}", output.rstrip(), ""])
+    lines.extend(["```", "", "---"])
+    return "\n".join(lines)
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pico-cdc0", required=True)
+    parser.add_argument("--debug-probe", required=True)
+    parser.add_argument("--pico-cdc1", required=True)
+    parser.add_argument("--pico-cdc2", required=True)
+    parser.add_argument("--pico-cdc3", required=True)
+    parser.add_argument("--pico-cdc4", required=True)
+    parser.add_argument("--pico-cdc5", required=True)
+    parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--payload-bytes", type=int, default=64)
+    parser.add_argument("--timeout", type=float, default=3.0)
+    parser.add_argument("--board", default="unknown")
+    parser.add_argument("--tester", default="unknown")
+    parser.add_argument("--firmware-version", default="unknown")
+    parser.add_argument("--firmware-commit", default="unknown")
+    parser.add_argument("--results-file", type=Path, default=DEFAULT_RESULTS_FILE)
+    parser.add_argument("--no-record", action="store_true")
+    parser.add_argument("--continue-on-failure", action="store_true")
+    return parser.parse_args()
+
+
+def main() -> int:
+    arguments = parse_arguments()
+    if arguments.payload_bytes < 1 or arguments.timeout <= 0 or arguments.baud <= 0:
+        print("baud, payload, and timeout must be greater than zero", file=sys.stderr)
+        return 2
+
+    stages: list[tuple[str, int, str]] = []
+    for label, command in build_stage_commands(arguments):
+        print(f"RUN {label}: {' '.join(shlex.quote(part) for part in command)}")
+        completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True)
+        output = completed.stdout + completed.stderr
+        print(output, end="")
+        stages.append((label, completed.returncode, output))
+        if completed.returncode != 0 and not arguments.continue_on_failure:
+            break
+
+    timestamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+    entry = format_result_entry(arguments, timestamp, stages)
+    if not arguments.no_record:
+        prepend_result(arguments.results_file.resolve(), entry)
+        print(f"Recorded result in {arguments.results_file}")
+
+    return 0 if len(stages) == 4 and all(code == 0 for _, code, _ in stages) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

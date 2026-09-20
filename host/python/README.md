@@ -26,6 +26,13 @@ Python 3.10 or newer is required.
 python3 -m pip install -r host/python/requirements.txt
 ```
 
+For an installed command-line tool from the repository root:
+
+```sh
+python3 -m pip install .
+pico-uart-hid --help
+```
+
 For host automated tests (pytest):
 
 ```sh
