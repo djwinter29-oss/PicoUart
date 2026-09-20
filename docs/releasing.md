@@ -41,14 +41,15 @@ need a recorded hardware-in-the-loop (HIL) pass:
    build containing that flash-table entry and pass it with `--openocd-exe`.
    Repeat the full matrix below on **both** packaged board images — RP2350 DMA
    COUNT behavior differs from RP2040 and must not be skipped.
-3. Run the required bridge cases and keep the full console transcript:
-   UART0 Debug Probe, UART2↔UART3 cross, and UART5 loopback. Include UART1
-   and UART4 loopbacks when those jumpers are fitted (optional for promote;
-   recommended when claiming six-port coverage).
+3. Run the four staged bridge cases and keep the full console transcript:
+   UART0 Debug Probe, HW UART1↔PIO UART2, PIO UART3↔PIO UART4, and UART5
+   loopback. Change the jumpers between stages as described in
+   `docs/tests/self-test-setup.md`.
 4. Run `serial_stress_benchmark.py` at the default rate sweep (or the rates
    claimed in the release notes). Pass `--uart1` / `--uart4` only when those
    jumpers are fitted.
-   Record the command line, board, clock, duration, verified bytes, and every
+   Use `--uart1` and `--uart4` with the topology-aware benchmark when the full
+   staged fixture is connected. Record the command line, board, clock, duration, verified bytes, and every
    reported stream throughput. A promoted result has no byte mismatch, timeout,
    `rx_overrun`, `rx_error`, or `control_error` in the captured HID monitor.
 5. Run rapid line-coding changes on both a hardware UART and a PIO UART while

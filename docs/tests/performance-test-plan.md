@@ -3,6 +3,15 @@
 This plan measures sustained, bidirectional UART throughput and data integrity
 across the PicoUart bridge. Run the functional test plan first.
 
+## Hardware Requirement
+
+Performance testing is user-run hardware-in-the-loop testing. CI does not
+provide a physical Pico/Pico 2, Debug Probe, USB cable, or jumper fixture, so
+the pipeline cannot execute these UART links or measure real throughput.
+Assemble the fixture using [Self-Test Setup](self-test-setup.md), complete the
+[Functional Test Plan](functional-test-plan.md), then run this plan locally.
+Record measured results in [Performance Test Results](performance-test-results.md).
+
 ## Test Matrix
 
 Test both supported board targets when hardware is available:
@@ -75,8 +84,9 @@ first and starts performance only when they pass unless
 `--continue-after-functional-failure` is supplied.
 
 When `--uart1` and `--uart4` are supplied, the benchmark uses the documented
-cross-fixture: UART1 to UART2 and UART3 to UART4. Without those options it
-retains the legacy UART2-to-UART3 plus optional loopback fixture.
+cross-fixture: UART1 to UART2 and UART3 to UART4. This is the required form for
+the full staged fixture. Without those options it retains the legacy
+UART2-to-UART3 plus optional loopback fixture for partial bench setups.
 
 ## Soak Run
 

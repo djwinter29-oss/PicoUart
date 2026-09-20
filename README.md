@@ -39,6 +39,14 @@ microcontroller platform.
 
 CI builds both firmware targets on Linux and runs host tests on Linux and Windows.
 
+CI does not provide a Pico/Pico 2 board, Debug Probe, or jumper-wire fixture,
+so physical UART, USB, HID, and performance tests cannot run automatically in
+the pipeline. Users must assemble the hardware fixture and run the documented
+tests locally. Start with [Self-Test Setup](docs/tests/self-test-setup.md),
+then follow the [Functional Test Plan](docs/tests/functional-test-plan.md) and
+[Performance Test Plan](docs/tests/performance-test-plan.md). Record results
+in [Performance Test Results](docs/tests/performance-test-results.md).
+
 ```sh
 . tools/linux/setup-sdk-env.sh --sdk-version 2.3.0
 tools/linux/build.sh --board pico

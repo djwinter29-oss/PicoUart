@@ -17,6 +17,15 @@ The functional test covers:
 
 The staged wiring is defined in [Self-Test Setup](self-test-setup.md).
 
+## Hardware Requirement
+
+The CI pipeline runs firmware builds and host tests only; it does not provide
+the Pico/Pico 2, Raspberry Pi Debug Probe, USB cable, or jumper-wire fixture
+needed for this plan. Assemble the fixture yourself by following
+[Self-Test Setup](self-test-setup.md), flash the board, and run this plan on
+the connected hardware. Record the outcome in
+[Performance Test Results](performance-test-results.md).
+
 ## Preconditions
 
 1. Build and flash the intended firmware image.

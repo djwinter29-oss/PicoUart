@@ -23,6 +23,11 @@ These are installed once and captured in the snapshot:
 The update script refreshes Python host dependencies (`requirements.txt` and
 `requirements-dev.txt` when present).
 
+Physical hardware testing is not available in CI. Users must provide the
+Pico/Pico 2 board, Raspberry Pi Debug Probe, USB cable, and jumper-wire fixture
+and run the documented functional/performance plans locally. Record results in
+`docs/tests/performance-test-results.md`.
+
 ### Build / test / run (standard commands live in the scripts; see `.github/skills/pico-uart-board-testing/SKILL.md`)
 
 - Build firmware: `tools/linux/build.sh --board pico` (RP2040) and `--board pico2` (RP2350).
