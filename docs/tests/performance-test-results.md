@@ -33,8 +33,9 @@ reusable template at the bottom.
 - RX overflow counts: zero on CDC0 through CDC5
 - HID health: all channels clean
 
-The generic concurrent benchmark was not used for the full fixture because it
-hardcodes UART2 <-> UART3. The topology-correct staged tests were used instead.
+The topology-aware benchmark uses the staged HW1-to-PIO2 and PIO3-to-PIO4
+peers when `--uart1` and `--uart4` are supplied. The result above records the
+topology-correct staged matrix.
 
 ---
 
