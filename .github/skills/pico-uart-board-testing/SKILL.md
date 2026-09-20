@@ -28,6 +28,25 @@ peer that drives CTS. PIO RX RTS is opt-in through its board pin flag; PIO CTS
 TX gating is separately opt-in and pauses only before a new UART frame. Host
 CDC RTS is ignored.
 
+## Repository Test Documents
+
+Use the repository documents as the source of truth for the staged self-test
+and for recording physical test results:
+
+- [`docs/tests/self-test-setup.md`](../../docs/tests/self-test-setup.md): pin
+  assignments, staged wiring, and RTS/CTS connections.
+- [`docs/tests/functional-test-plan.md`](../../docs/tests/functional-test-plan.md):
+  functional test sequence and pass criteria.
+- [`docs/tests/performance-test-plan.md`](../../docs/tests/performance-test-plan.md):
+  performance matrix, soak runs, measurements, and acceptance criteria.
+- [`docs/tests/performance-test-results.md`](../../docs/tests/performance-test-results.md):
+  newest-first result log and test-result template.
+
+When the requested test uses the full staged fixture, run the four stages in
+the functional plan: Debug Probe to HW UART0, HW UART1 to PIO UART2, PIO UART3
+to PIO UART4, and PIO UART5 loopback. The older individual loopback examples
+below remain useful for partial bench wiring.
+
 ## Procedure
 
 1. Source the SDK environment script, then build:
