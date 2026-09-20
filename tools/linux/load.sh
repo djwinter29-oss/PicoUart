@@ -140,8 +140,7 @@ if [ -z "$DEBUG_PROBE_SERIAL" ] && command -v lsusb >/dev/null 2>&1; then
         exit 1
     fi
 elif [ -z "$DEBUG_PROBE_SERIAL" ]; then
-    echo "Cannot verify CMSIS-DAP probe uniqueness without lsusb; pass --probe-serial." >&2
-    exit 1
+    echo "lsusb unavailable; proceeding without CMSIS-DAP probe uniqueness verification. Pass --probe-serial to select one explicitly." >&2
 fi
 
 tcl_brace_escape() {

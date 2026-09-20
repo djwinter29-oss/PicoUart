@@ -9,6 +9,7 @@ import re
 import shlex
 import subprocess
 import sys
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -46,11 +47,16 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
     ]
     if arguments.uart1:
         command.extend(["--uart1", arguments.uart1])
-        command.extend(["--uart1-peer", arguments.uart2])
+        command.extend(["--uart1-peer", arguments.uart1_peer or arguments.uart2])
     if arguments.uart4:
         command.extend(["--uart4", arguments.uart4])
-        command.extend(["--uart4-peer", arguments.uart3])
+        command.extend(["--uart4-peer", arguments.uart4_peer or arguments.uart3])
     return command
+
+
+def peer_path_matches(peer: str | None, expected: str) -> bool:
+    """Return whether an explicitly supplied peer names the expected endpoint."""
+    return peer is None or os.path.realpath(peer) == os.path.realpath(expected)
 
 
 def parse_benchmark_output(output: str) -> dict[str, tuple[str, str, str]]:
@@ -150,7 +156,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--uart3", required=True)
     parser.add_argument("--uart5", required=True)
     parser.add_argument("--uart1")
+    parser.add_argument("--uart1-peer")
     parser.add_argument("--uart4")
+    parser.add_argument("--uart4-peer")
     parser.add_argument("--uart0-baud", type=int, default=115200)
     parser.add_argument("--rates", default="115200,460800,921600,1000000")
     parser.add_argument("--duration", type=float, default=10.0)
@@ -174,6 +182,18 @@ def main() -> int:
     if (arguments.duration <= 0 or arguments.timeout <= 0 or
             arguments.payload_bytes < 32 or arguments.uart0_baud <= 0):
         print("duration, timeout, UART0 baud, and payload must be valid", file=sys.stderr)
+        return 2
+    for option, peer, expected in (
+            ("--uart1-peer", arguments.uart1_peer, arguments.uart2),
+            ("--uart4-peer", arguments.uart4_peer, arguments.uart3)):
+        if not peer_path_matches(peer, expected):
+            print(f"{option} must resolve to the corresponding peer endpoint", file=sys.stderr)
+            return 2
+    if arguments.uart1_peer and not arguments.uart1:
+        print("--uart1-peer requires --uart1", file=sys.stderr)
+        return 2
+    if arguments.uart4_peer and not arguments.uart4:
+        print("--uart4-peer requires --uart4", file=sys.stderr)
         return 2
 
     command = build_command(arguments)

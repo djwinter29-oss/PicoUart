@@ -125,16 +125,21 @@ jobs:
         shell: powershell
         run: |
           $generator = "Ninja"
-          $objcopy = (Get-Command arm-none-eabi-objcopy -ErrorAction Stop).Source
-          .\tools\windows\build.ps1 -Board pico -Generator $generator
-          python tools/linux/verify-build.py --build-dir build/firmware-pico --board pico --objcopy $objcopy
-          $secondBuild = .\tools\windows\build.ps1 -Board pico -Generator $generator 2>&1
+          $repoRoot = (Get-Location).Path
+          $sdkPath = Join-Path $repoRoot ".pico-sdk"
+          $objcopy = (Get-Command arm-none-eabi-objcopy -ErrorAction Stop).Path
+          $verify = Join-Path $repoRoot "tools/linux/verify-build.py"
+          $buildPico = Join-Path $repoRoot "build/firmware-pico"
+          $buildPico2 = Join-Path $repoRoot "build/firmware-pico2"
+          .\tools\windows\build.ps1 -Board pico -Generator $generator -BuildDir $buildPico -PicoSdkPath $sdkPath
+          python $verify --build-dir $buildPico --board pico --objcopy $objcopy --repo-root $repoRoot
+          $secondBuild = .\tools\windows\build.ps1 -Board pico -Generator $generator -BuildDir $buildPico -PicoSdkPath $sdkPath 2>&1
           $secondBuild | Write-Host
           if ($secondBuild -match "Build configuration changed") {
               throw "An identical Windows build unexpectedly reset CMake state."
           }
-          .\tools\windows\build.ps1 -Board pico2 -Generator $generator
-          python tools/linux/verify-build.py --build-dir build/firmware-pico2 --board pico2 --objcopy $objcopy
+          .\tools\windows\build.ps1 -Board pico2 -Generator $generator -BuildDir $buildPico2 -PicoSdkPath $sdkPath
+          python $verify --build-dir $buildPico2 --board pico2 --objcopy $objcopy --repo-root $repoRoot
 
   host-tools:
     name: Host tools

@@ -44,9 +44,11 @@ def performance_arguments() -> SimpleNamespace:
         uart0_pico="cdc0",
         uart0_peer="probe",
         uart1=None,
+        uart1_peer=None,
         uart2="cdc2",
         uart3="cdc3",
         uart4=None,
+        uart4_peer=None,
         uart5="cdc5",
         uart0_baud=115200,
         rates="115200,460800",
@@ -91,6 +93,17 @@ def test_functional_all_requires_rewire_confirmation() -> None:
 
     assert completed.returncode == 2
     assert "--stage all requires --confirm-rewire" in completed.stderr
+
+
+def test_hardware_runner_streams_child_output_and_status() -> None:
+    runner = _load("run_hardware_test")
+    command = [sys.executable, "-c", "print('child-output', flush=True)"]
+
+    status, transcript = runner.run_child("stream check", command)
+
+    assert status == 0
+    assert "Command:" in transcript
+    assert "child-output" in transcript
 
 
 def test_hid_health_module_resolves_repository_root() -> None:
