@@ -3,8 +3,14 @@ name: Release
 on:
   push:
     tags:
-      # Plain semver only (matches docs/releasing.md); reject v1.2.3-rc1 etc.
-      - "v[0-9]+.[0-9]+.[0-9]+"
+      # GitHub Actions tag filters are glob patterns, not regex: '+' is a
+      # literal character here, not a "one or more digits" quantifier, so
+      # "v[0-9]+.[0-9]+.[0-9]+" only matches tags with literal '+' characters
+      # (e.g. "v1+.2+.3+") and never matches a real tag like v1.2.3. Use '*'
+      # to trigger reliably on any vMAJOR.MINOR.PATCH tag; the "Resolve
+      # version" step below still rejects anything that isn't plain semver
+      # and enforces the 0-99 major/minor release policy.
+      - "v[0-9]*.[0-9]*.[0-9]*"
   workflow_dispatch:
     inputs:
       version:
@@ -150,27 +156,7 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -eu
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            VERSION="$INPUT_VERSION"
-          else
-            VERSION="${REF_NAME#v}"
-          fi
-          if ! printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
-            echo "Refusing version '$VERSION' (expected plain MAJOR.MINOR.PATCH like 1.2.3)" >&2
-            exit 1
-          fi
-          OLD_IFS=$IFS
-          IFS=.
-          set -- $VERSION
-          IFS=$OLD_IFS
-          if [ "$1" -gt 99 ] || [ "$2" -gt 99 ] || [ "$3" -gt 255 ]; then
-            # This 0-99 major/minor cap is a release-tag policy, not a
-            # firmware build limit: local builds via tools/build.sh accept
-            # major/minor/patch up to 255 (see firmware/CMakeLists.txt),
-            # falling back to USB bcdDevice 0x0000 above 99.
-            echo "Refusing version '$VERSION' (major/minor must be 0-99; patch must be 0-255)" >&2
-            exit 1
-          fi
+          VERSION=$(tools/resolve-release-version.sh "$EVENT_NAME" "$INPUT_VERSION" "$REF_NAME")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved firmware version: $VERSION"
 

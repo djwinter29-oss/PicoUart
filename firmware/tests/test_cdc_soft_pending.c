@@ -104,6 +104,51 @@ void test_rejected_follow_up_invalidates_prior_soft_pending_completion(void)
     TEST_ASSERT_EQUAL_UINT8(0u, status);
 }
 
+/**
+ * @brief Regression/integration-style test for the CDC soft-pending
+ * cancellation path in usb_cdc_apply_pending_line_coding() /
+ * usb_cdc_reset_host_state() (usb/usb_cdc.c).
+ *
+ * That state (the per-port `usb_cdc_pending_line_coding_t` array) is file-static
+ * and its update functions call live TinyUSB (`tud_cdc_n_*`), `uart_driver_*`,
+ * and LED-window APIs, so exercising the real callbacks host-side would need a
+ * full TinyUSB device-stack + UART-driver mock rather than a small seam (unlike
+ * test_dma_claim.c/test_resource_claim.c, which fault-inject a narrow ops
+ * table around an otherwise self-contained algorithm). That integration is
+ * covered on-target by the board-testing skill / docs/releasing.md HIL gate
+ * instead (rapid line-coding changes with a queued TX backlog, per
+ * docs/releasing.md step 5).
+ *
+ * This test instead walks the exact sequence usb_cdc.c performs around a host
+ * reset (tud_mount_cb/tud_umount_cb -> usb_cdc_reset_host_state), using the
+ * same pure helpers production code calls, to pin the cancellation contract:
+ * arming a request starts a fresh deadline, a reset cancels it by nil-ing the
+ * deadline, and polling after a cancellation must never manufacture a
+ * CONTROL_ERROR timeout for the cancelled request.
+ */
+void test_reset_cancellation_suppresses_pending_timeout(void)
+{
+    bool was_pending = false;
+    bool deadline_is_nil = true;
+
+    /* usb_cdc_arm_soft_pending(): first request arms a fresh deadline. */
+    TEST_ASSERT_TRUE(usb_cdc_soft_pending_should_set_deadline(was_pending, false));
+    was_pending = true;
+    deadline_is_nil = false;
+
+    /* Host resets before the deadline elapses (tud_mount_cb/tud_umount_cb ->
+     * usb_cdc_reset_host_state, which clears `pending` and `deadline` together). */
+    was_pending = false;
+    deadline_is_nil = true;
+
+    /* usb_cdc_apply_pending_line_coding() would short-circuit on `pending`
+     * being false, but even if a future refactor evaluated the timeout check
+     * unconditionally, it must not report a timeout for the cancelled request. */
+    TEST_ASSERT_FALSE(was_pending);
+    TEST_ASSERT_FALSE(usb_cdc_soft_pending_has_timed_out(deadline_is_nil, true));
+    TEST_ASSERT_FALSE(usb_cdc_soft_pending_has_timed_out(deadline_is_nil, false));
+}
+
 void test_control_generation_wraps_without_matching_stale_completion(void)
 {
     uint32_t generation = UINT32_MAX;
@@ -128,6 +173,7 @@ int main(void)
     RUN_TEST(test_every_control_owner_blocks_tx_ingress);
     RUN_TEST(test_tx_boundary_drains_only_at_the_snapped_sequence);
     RUN_TEST(test_worker_deadline_retained_only_for_identical_retry);
+    RUN_TEST(test_reset_cancellation_suppresses_pending_timeout);
     RUN_TEST(test_rejected_follow_up_invalidates_prior_soft_pending_completion);
     RUN_TEST(test_control_generation_wraps_without_matching_stale_completion);
     return UNITY_END();
