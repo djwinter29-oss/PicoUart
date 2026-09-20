@@ -230,6 +230,13 @@ void usb_cdc_reset_host_state(void)
     }
 }
 
+void tud_mount_cb(void)
+{
+    /* Reinitialize host-facing state after every USB enumeration. */
+    usb_cdc_reset_host_state();
+    usb_hid_reset_host_state();
+}
+
 void tud_umount_cb(void)
 {
     usb_cdc_reset_host_state();
