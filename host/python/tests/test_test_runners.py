@@ -132,6 +132,15 @@ def test_performance_runner_parses_pass_and_fail_lines() -> None:
     }
 
 
+def test_full_hardware_runner_defaults_to_usb_sustainable_rate(monkeypatch) -> None:
+    runner = _load("run_hardware_test")
+    arguments = ["run_hardware_test.py", "--pico-cdc0", "cdc0", "--debug-probe", "probe",
+                 "--pico-cdc2", "cdc2", "--pico-cdc3", "cdc3", "--pico-cdc5", "cdc5"]
+    monkeypatch.setattr(sys, "argv", arguments)
+
+    assert runner.parse_arguments().rates == "115200"
+
+
 def test_performance_runner_preserves_rate_results() -> None:
     runner = _load("run_performance_test")
     output = (

@@ -149,7 +149,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--functional-baud", type=int, default=115200)
     parser.add_argument("--functional-payload-bytes", type=int, default=64)
     parser.add_argument("--uart0-baud", type=int, default=115200)
-    parser.add_argument("--rates", default="115200,460800,921600,1000000")
+    parser.add_argument("--rates", default="115200",
+                        help="Concurrent full-fixture rate; use individual tests for higher baud rates")
     parser.add_argument("--duration", type=float, default=10.0)
     parser.add_argument("--performance-payload-bytes", type=int, default=1024)
     parser.add_argument("--timeout", type=float, default=3.0)

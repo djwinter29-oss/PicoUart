@@ -43,9 +43,11 @@ For each link, run an individual test at these rates:
 Use a 10-second duration and the default payload size for the first pass. The
 test must verify every returned byte, not only that traffic was transmitted.
 
-After the individual runs pass, run all four links concurrently for 10 seconds
-at each selected rate. Keep the Debug Probe at 115200 baud if it is not known
-to be reliable at higher rates; record that exception in the result.
+After the individual runs pass, run all four links concurrently at 115200 baud
+for 10 seconds. Full-speed USB bandwidth is the limiting resource for the
+seven bidirectional streams; do not interpret a multi-link 460800+ failure as
+a single-UART baud failure. Higher rates remain required as individual-link
+tests and may be selected explicitly with `--rates` for experimental runs.
 
 Example concurrent run using the existing benchmark tool:
 
@@ -60,7 +62,7 @@ python3 tools/serial_stress_benchmark.py \
   --uart4 /dev/serial/by-id/<pico-cdc4> \
   --uart4-peer /dev/serial/by-id/<pico-cdc3> \
   --uart5 /dev/serial/by-id/<pico-cdc5> \
-  --rates 115200,460800,921600,1000000 \
+  --rates 115200 \
   --duration 10
 ```
 
@@ -103,8 +105,8 @@ UF2 to bind the result to a SHA-256 digest and HID-reported firmware version.
 ## Soak Run
 
 After the baseline passes, repeat the concurrent test for 60 seconds at
-115200, 921600, and 1000000 baud. Capture HID status before and after each
-run:
+115200 baud. Run the individual-link soak at 921600 and 1000000 baud. Capture
+HID status before and after each run:
 
 ```sh
 python3 host/python/src/pico_uart_hid.py monitor --duration 5

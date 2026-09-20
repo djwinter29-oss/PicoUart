@@ -146,7 +146,10 @@ also valid and has passed repeated smoke tests plus 120-second concurrent soaks.
   in the Performance Test Plan with both peer arguments supplied.
 7. Remove the test jumpers before connecting external UART targets.
 
-The current firmware leaves RTS/CTS disabled by default on hardware UART0 and
+The full concurrent fixture is qualified at 115200 baud because USB full-speed
+bandwidth is shared by all bidirectional streams. Higher baud rates are
+individual-link tests, not full-matrix throughput claims. The current firmware
+leaves RTS/CTS disabled by default on hardware UART0 and
 UART1. Debug Probe and PIO loopback tests therefore only need TX, RX, and GND.
 Cross-connect RTS/CTS only when validating explicit hardware flow control with a
 peer that supports it. PIO RX RTS and CTS TX gating are opt-in through separate
