@@ -3,7 +3,7 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 HOST_TEST_BUILD_DIR="${HOST_TEST_BUILD_DIR:-$REPO_ROOT/build/host-tests}"
 GENERATOR="${GENERATOR:-}"
 PYTHON_EXE="${PYTHON_EXE:-python3}"
@@ -79,7 +79,7 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
     fi
 
     echo "=== Host Python tests (pytest) ==="
-    "$PYTHON_EXE" -m pip install -q -r "$REPO_ROOT/host/python/requirements-dev.txt"
+    "$PYTHON_EXE" -m pip install -q --require-hashes -r "$REPO_ROOT/host/python/requirements-lock.txt"
     (
         CDPATH= cd -- "$REPO_ROOT"
         "$PYTHON_EXE" -m pytest

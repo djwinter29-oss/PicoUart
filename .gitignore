@@ -59,8 +59,9 @@ build/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+docs/tests/raw/
 .venv/
 venv/
 
-# Project-local Pico SDK downloaded by tools/linux/setup-sdk-env.sh
+# Project-local Pico SDK downloaded by tools/setup-sdk-env.sh
 .pico-sdk/

@@ -43,5 +43,12 @@ Mitigations:
 
 ## Reporting issues
 
-Open a GitHub issue for security-relevant findings. There is no separate
-private disclosure channel yet.
+Enable private vulnerability reporting in the repository's GitHub **Settings →
+Security → Code security and analysis** before publishing a release. Once
+enabled, report vulnerabilities through the repository's **Security → Advisories
+→ Report a vulnerability** flow; maintainers must acknowledge the report before
+requesting any public GitHub issue or CVE disclosure.
+
+Do not include exploit details in a public issue while a private advisory is
+open. If private reporting is unavailable, maintainers must enable it rather
+than asking the reporter to disclose a vulnerability publicly.

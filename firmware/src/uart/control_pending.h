@@ -57,6 +57,18 @@ static inline bool uart_control_tx_should_block(bool soft_pending,
 }
 
 /**
+ * @brief Return whether all TX bytes admitted before a control boundary drained.
+ * @param consumer_sequence Current TX consumer sequence.
+ * @param boundary_sequence Last TX producer sequence admitted before the change.
+ * @return `true` when the old-format TX boundary has drained.
+ */
+static inline bool uart_control_tx_boundary_drained(uint32_t consumer_sequence,
+                                                    uint32_t boundary_sequence)
+{
+    return consumer_sequence == boundary_sequence;
+}
+
+/**
  * @brief Decide whether a worker-side control request needs a new deadline.
  * @param was_pending True when the worker already owns a deferred request.
  * @param same_request True when the replacement requests the same format.

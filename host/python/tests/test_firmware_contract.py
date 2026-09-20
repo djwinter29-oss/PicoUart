@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from contract import (
     firmware_cdc_interface_strings,
     firmware_hid_constants,
@@ -14,6 +16,20 @@ from contract import (
     firmware_usb_product_string,
     is_lab_placeholder_identity,
 )
+
+
+def test_release_lock_matches_direct_requirement_pins(repo_root):
+    requirement_dir = repo_root / "host" / "python"
+    pin_pattern = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;\\]+)", re.MULTILINE)
+    direct_pins = {}
+
+    for name in ("requirements.txt", "requirements-dev.txt"):
+        direct_pins.update(pin_pattern.findall((requirement_dir / name).read_text()))
+
+    locked_pins = dict(
+        pin_pattern.findall((requirement_dir / "requirements-lock.txt").read_text())
+    )
+    assert direct_pins.items() <= locked_pins.items()
 
 
 def test_usb_ids_parse_from_firmware_defines(hid_module, repo_root):
@@ -77,7 +93,7 @@ def test_usb_identity_checker_accepts_tree_identity(repo_root):
     import subprocess
     import sys
 
-    script = repo_root / "tools" / "linux" / "check-usb-identity.py"
+    script = repo_root / "tools" / "check-usb-identity.py"
     result = subprocess.run(
         [sys.executable, str(script), "--repo-root", str(repo_root)],
         cwd=repo_root,

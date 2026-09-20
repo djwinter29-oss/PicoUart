@@ -8,6 +8,7 @@ set(PICO_BOARD pico CACHE STRING "Target board")
 set(PICO_UART_VERSION "0.0.0-dev" CACHE STRING "Firmware semantic version string")
 set(PICO_UART_SYSTEM_CLOCK_KHZ "" CACHE STRING "Optional system clock target override in kHz")
 option(PICO_UART_ALLOW_HID_RESET "Enable the trusted-host HID watchdog reset command" OFF)
+option(PICO_UART_ALLOW_UNSAFE_OVERCLOCK "Allow a system clock above the target's rated default" OFF)
 
 # Tag form is v1.2.3; CMake receives 1.2.3. Local builds may use -dev or -rcN.
 if(NOT PICO_UART_VERSION MATCHES "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(dev|rc[1-9][0-9]*))?$")
@@ -59,6 +60,22 @@ endif()
 project(pico_uart C CXX ASM)
 
 pico_sdk_init()
+
+if(PICO_BOARD MATCHES "^(pico2|rp2350)")
+    set(PICO_UART_RATED_SYSTEM_CLOCK_KHZ 150000)
+else()
+    set(PICO_UART_RATED_SYSTEM_CLOCK_KHZ 125000)
+endif()
+if(PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
+    set(PICO_UART_SYSTEM_CLOCK_KHZ "${PICO_UART_RATED_SYSTEM_CLOCK_KHZ}" CACHE STRING
+        "Optional system clock target override in kHz" FORCE)
+endif()
+if(NOT PICO_UART_ALLOW_UNSAFE_OVERCLOCK AND
+   NOT PICO_UART_SYSTEM_CLOCK_KHZ EQUAL PICO_UART_RATED_SYSTEM_CLOCK_KHZ)
+    message(FATAL_ERROR
+        "PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ} exceeds the supported build contract for ${PICO_BOARD}; "
+        "use the rated ${PICO_UART_RATED_SYSTEM_CLOCK_KHZ} kHz clock or explicitly set PICO_UART_ALLOW_UNSAFE_OVERCLOCK=ON")
+endif()
 
 add_executable(pico_uart
     src/config/uart_board.c

@@ -48,28 +48,28 @@ jobs:
       - name: Setup Pico SDK
         run: |
           set --
-          . tools/linux/setup-sdk-env.sh \
+          . tools/setup-sdk-env.sh \
             --sdk-version "$PICO_SDK_VERSION" \
             --sdk-revision "$PICO_SDK_REVISION"
 
       - name: Build firmware
         env:
           BOARD: ${{ matrix.board }}
-        run: tools/linux/build.sh --board "$BOARD"
+        run: tools/build.sh --board "$BOARD"
 
       - name: Verify build contract
         env:
           BOARD: ${{ matrix.board }}
         run: |
           set -eu
-          python3 tools/linux/verify-build.py --build-dir "build/firmware-${BOARD}" --board "$BOARD"
+          python3 tools/verify-build.py --build-dir "build/firmware-${BOARD}" --board "$BOARD"
 
       - name: Smoke-check stamped version / bcdDevice
         if: matrix.board == 'pico'
         run: |
           set -eu
-          tools/linux/build.sh --board pico --firmware-version 1.2.3 --build-dir build/firmware-pico-stamp
-          python3 tools/linux/verify-build.py \
+          tools/build.sh --board pico --firmware-version 1.2.3 --build-dir build/firmware-pico-stamp
+          python3 tools/verify-build.py \
             --build-dir build/firmware-pico-stamp \
             --board pico \
             --version 1.2.3
@@ -99,19 +99,24 @@ jobs:
           python-version: "3.12"
 
       - name: Install host dependencies
-        run: python3 -m pip install -r host/python/requirements-dev.txt
+        run: python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
 
       - name: Syntax-check Python tools
         run: |
           python3 -m py_compile \
             host/python/src/pico_uart_hid.py \
-            tools/linux/serial_bridge_test.py \
-            tools/linux/serial_stress_benchmark.py \
-            tools/linux/check-usb-identity.py \
-            tools/linux/verify-build.py
+            tools/serial_bridge_test.py \
+            tools/serial_stress_benchmark.py \
+            tools/run_functional_test.py \
+            tools/run_performance_test.py \
+            tools/run_hardware_test.py \
+            tools/hardware_test_result.py \
+            tools/hardware_test_health.py \
+            tools/check-usb-identity.py \
+            tools/verify-build.py
 
       - name: Run host unit tests (C Unity + Python pytest)
-        run: tools/linux/test-host.sh --sanitize
+        run: tools/test-host.sh --sanitize
 
       - name: Static-analyze host-testable firmware headers
         run: |
@@ -124,6 +129,7 @@ jobs:
             firmware/src/uart/backend_policy.h \
             firmware/src/uart/control_pending.h \
             firmware/src/uart/dma_progress_math.h \
+            firmware/src/uart/hw/baud_rate.h \
             firmware/src/uart/line_coding.c \
             firmware/src/uart/topology.c \
             firmware/src/uart/hw/dma_claim.c \
@@ -141,8 +147,27 @@ jobs:
         run: |
           python3 -c "import hid; print('hidapi OK')"
           python3 host/python/src/pico_uart_hid.py --help
-          python3 tools/linux/serial_bridge_test.py --help
-          python3 tools/linux/serial_stress_benchmark.py --help
+          python3 tools/serial_bridge_test.py --help
+          python3 tools/serial_stress_benchmark.py --help
+
+  host-python-minimum:
+    name: Host Python (3.10 minimum)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.10"
+
+      - name: Install locked dependencies
+        run: python -m pip install --require-hashes -r host/python/requirements-lock.txt
+
+      - name: Run host Python tests
+        run: python -m pytest
 
   host-tools-windows:
     name: Host tools (Windows)
@@ -158,7 +183,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install host dependencies
-        run: python -m pip install -r host/python/requirements-dev.txt
+        run: python -m pip install --require-hashes -r host/python/requirements-lock.txt
 
       - name: Run host C unit tests
         run: |

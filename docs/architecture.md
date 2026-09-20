@@ -82,6 +82,18 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   stop-bit, and parity settings.
 - Deferred line-coding applies fail with `CONTROL_ERROR` if the backend cannot reach a
   safe idle boundary within 1 second (avoids pausing USB ingress indefinitely).
+- When core 0 accepts a line-coding request, it snapshots the TX-ring producer
+  sequence and stops new CDC OUT ingress for that port. Core 1 drains exactly
+  that captured old-format backlog before it waits for DMA/FIFO/shifter idle
+  and applies the new format. Bytes that arrive after the request remain in
+  USB until the new format is active.
+- PIO transitions require an empty RX FIFO, the RX state machine to be at its
+  `wait for start bit` instruction, and an idle-high RX pin, proving it
+  completed the prior frame and has not yet observed another start bit.
+  Hardware UART transitions re-check only the RX FIFO because PL011 exposes no
+  RX-shifter-idle bit. A peer that starts a frame during the forced hardware
+  DMA/peripheral restart can lose that frame; use a peer-level pause or RTS/CTS
+  when loss is not acceptable.
 - A posted mailbox command keeps USB-to-UART ingress paused until core 1 either
   accepts it for deferred application or completes/rejects it; repeated host
   requests cannot reopen ingress during that ownership handoff.
@@ -89,6 +101,9 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   hosts must watch HID health bit 2 (`CONTROL_ERROR`). Shared validation lives in
   `firmware/src/uart/line_coding.c` (50–3 000 000 baud). PIO also rejects bauds its
   clock divider cannot represent (fail-fast, no 1 s pending window).
+- Hardware UART rates are accepted only when the PL011 divisor is representable
+  from `clk_peri` within 2% error. The driver stores and reports the actual
+  SDK-programmed rate after a successful transition.
 - USB product string `PicoUart CDC+HID PIO 8N1` and CDC2–CDC5 interface strings
   advertise the PIO 8N1 limit; TinyUSB still cannot STALL `SET_LINE_CODING`.
 - Hardware UART RX DMA re-arms from a DMA IRQ when the transfer counter exhausts; the
@@ -104,6 +119,9 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   pets it from the USB poll loop only while the UART worker heartbeat is fresh
   (2 s stale window). A wedged TinyUSB/bridge loop or a silent core 1 resets;
   a debugger can still inspect `isr_hardfault`.
+- Production builds use the rated 125 MHz RP2040 or 150 MHz RP2350 system
+  clock. `tools/build.sh --unsafe-overclock --system-clock-khz ...` is
+  required for another clock and is intended only for recorded qualification.
 
 ## Open Items
 

@@ -30,7 +30,7 @@ struct pio_uart_driver {
     size_t tx_dma_bytes; /**< Bytes sent through the TX DMA path. */
     uint32_t controller_rx_bytes; /**< Valid received bytes published into the RX ring. */
     uint32_t rx_error_count; /**< Framing (stop-bit) errors observed since initialization. */
-    uint32_t rx_dma_last_progress; /**< Last published RX DMA progress (`max - remaining`). */
+    volatile uint32_t rx_dma_last_progress; /**< Last published RX DMA progress (`max - remaining`). */
     ring_buffer_t rx_ring; /**< PIO RX producer ring shared with the USB bridge. */
     ring_buffer_t tx_ring; /**< USB-core TX producer ring drained by core-1 PIO polling. */
     /**
@@ -43,5 +43,14 @@ struct pio_uart_driver {
 };
 
 void pio_uart_driver_poll(pio_uart_driver_t *driver, bool tx_launch_allowed);
+
+/**
+ * @brief Check a consumer reservation against the live RX DMA write position.
+ * @param driver PIO UART backend to inspect.
+ * @param consumer_sequence Consumer sequence captured for the RX span.
+ * @return `true` when live DMA progress has not overwritten the reservation.
+ */
+bool pio_uart_driver_rx_snapshot_is_current(const pio_uart_driver_t *driver,
+                                            uint32_t consumer_sequence);
 
 #endif

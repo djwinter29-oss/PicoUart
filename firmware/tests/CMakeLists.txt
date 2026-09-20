@@ -84,6 +84,15 @@ target_include_directories(test_backend_policy PRIVATE
 target_link_libraries(test_backend_policy PRIVATE unity)
 add_test(NAME backend_policy COMMAND test_backend_policy)
 
+add_executable(test_hw_baud_rate
+    test_hw_baud_rate.c
+)
+target_include_directories(test_hw_baud_rate PRIVATE
+    ${FIRMWARE_ROOT}/src
+)
+target_link_libraries(test_hw_baud_rate PRIVATE unity)
+add_test(NAME hw_baud_rate COMMAND test_hw_baud_rate)
+
 # Fault-injection test: HW UART DMA claim/rollback via injectable ops seam.
 # Links the real dma_claim.c (production claim algorithm, no SDK deps) with a
 # fake ops table that controls claim success/failure and logs every call.
@@ -119,6 +128,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
             test_cdc_soft_pending
             test_topology
             test_backend_policy
+            test_hw_baud_rate
             test_dma_claim
             test_resource_claim)
         target_compile_options(${_pico_uart_host_target} PRIVATE ${_pico_uart_host_warnings})

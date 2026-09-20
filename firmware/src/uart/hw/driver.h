@@ -46,7 +46,7 @@ typedef struct {
     uint32_t controller_tx_bytes; /**< Bytes completed by the UART TX DMA engine. */
     uint32_t controller_rx_bytes; /**< Bytes accepted by the UART RX DMA engine. */
     uint32_t rx_error_count; /**< Hardware UART receive-status events observed since initialization. */
-    uint32_t rx_dma_last_progress; /**< Last current-transfer RX DMA progress used for accounting. */
+    volatile uint32_t rx_dma_last_progress; /**< Last current-transfer RX DMA progress used for accounting. */
     ring_buffer_t rx_ring; /**< UART-to-USB receive ring. */
     ring_buffer_t tx_ring; /**< USB-to-UART transmit ring. */
     uint8_t rx_storage[PICO_UART_HW_UART_RX_BUFFER_SIZE] __attribute__((aligned(PICO_UART_HW_UART_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
@@ -67,6 +67,15 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver);
  * owns steady-state UART service.
  */
 void hw_uart_driver_enable_rx_dma_irq(void);
+
+/**
+ * @brief Clear receive-status errors accumulated during board bring-up.
+ * @param driver Initialized hardware UART backend to baseline.
+ *
+ * Call after every configured backend has started so transient startup line
+ * activity is not reported as a runtime receive error.
+ */
+void hw_uart_driver_clear_rx_error_baseline(hw_uart_driver_t *driver);
 
 /**
  * @brief Poll one hardware UART backend to advance TX DMA completion state.
@@ -95,5 +104,14 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
                                     uint8_t data_bits,
                                     uint8_t stop_bits,
                                     uart_parity_t parity);
+
+/**
+ * @brief Check a consumer reservation against the live RX DMA write position.
+ * @param driver Hardware UART backend to inspect.
+ * @param consumer_sequence Consumer sequence captured for the RX span.
+ * @return `true` when live DMA progress has not overwritten the reservation.
+ */
+bool hw_uart_driver_rx_snapshot_is_current(const hw_uart_driver_t *driver,
+                                           uint32_t consumer_sequence);
 
 #endif

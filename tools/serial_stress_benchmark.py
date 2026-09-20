@@ -5,6 +5,7 @@ import argparse
 import math
 import os
 import select
+import struct
 import sys
 import termios
 import threading
@@ -23,6 +24,7 @@ BAUD_RATES = {
     1000000: termios.B1000000,
 }
 DEFAULT_RATES = tuple(BAUD_RATES)
+LINE_CODING_SETTLE_SECONDS = 2.0
 
 
 def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
@@ -83,7 +85,8 @@ def read_exact(file_descriptor: int, expected: bytes, deadline: float) -> None:
 
 
 def payload_for(label: str, sequence: int, size: int) -> bytes:
-    prefix = f"PICO_UART_BENCH:{label}:{sequence:08x}:".encode("ascii")
+    prefix = (b"PU:" + label.encode("ascii")[:8].ljust(8, b"_") +
+              struct.pack(">Q", sequence))
     if len(prefix) >= size:
         return prefix[:size]
     pattern = bytes(range(256))
@@ -113,7 +116,10 @@ def run_stream(label: str,
             read_exact(destination_fd, payload, time.monotonic() + timeout)
             bytes_verified += len(payload)
             sequence += 1
-        result[label] = (bytes_verified, None)
+        if bytes_verified == 0:
+            result[label] = (0, "stream completed without verifying a payload")
+        else:
+            result[label] = (bytes_verified, None)
     except (OSError, TimeoutError, ValueError, threading.BrokenBarrierError) as error:
         result[label] = (bytes_verified, str(error))
 
@@ -135,9 +141,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--uart0-pico", required=True, help="PicoUart CDC0 device")
     parser.add_argument("--uart0-peer", required=True, help="Debug Probe UART device")
     parser.add_argument("--uart1", help="Optional PicoUart CDC1 loopback device")
+    parser.add_argument("--uart1-peer", help="PicoUart CDC2 peer for UART1 cross-connection")
     parser.add_argument("--uart2", required=True, help="PicoUart CDC2 device")
     parser.add_argument("--uart3", required=True, help="PicoUart CDC3 device")
     parser.add_argument("--uart4", help="Optional PicoUart CDC4 loopback device")
+    parser.add_argument("--uart4-peer", help="PicoUart CDC3 peer for UART4 cross-connection")
     parser.add_argument("--uart5", required=True, help="PicoUart CDC5 device")
     parser.add_argument("--uart0-baud", type=int, default=115200, choices=BAUD_RATES,
                         help="UART0 and Debug Probe rate; defaults to 115200")
@@ -171,10 +179,64 @@ def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
     return first_error
 
 
+def _same_serial_path(left: str, right: str) -> bool:
+    return os.path.realpath(left) == os.path.realpath(right)
+
+
+def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
+    """Require cross-fixture peer arguments to name the opened CDC peers."""
+    cross_values = [getattr(arguments, name, None)
+                    for name in ("uart1", "uart1_peer", "uart4", "uart4_peer")]
+    if any(cross_values) and not all(cross_values):
+        print("cross-fixture mode requires --uart1 --uart1-peer --uart4 --uart4-peer",
+              file=sys.stderr)
+        return False
+
+    if not all(hasattr(arguments, name) for name in
+               ("uart0_pico", "uart0_peer", "uart2", "uart3", "uart5")):
+        if not any(cross_values):
+            return True
+        return False
+
+    endpoints = [
+        ("--uart0-pico", arguments.uart0_pico),
+        ("--uart0-peer", arguments.uart0_peer),
+        ("--uart2", arguments.uart2),
+        ("--uart3", arguments.uart3),
+        ("--uart5", arguments.uart5),
+    ]
+    if arguments.uart1:
+        endpoints.append(("--uart1", arguments.uart1))
+    if arguments.uart4:
+        endpoints.append(("--uart4", arguments.uart4))
+    seen: dict[str, str] = {}
+    for name, path in endpoints:
+        resolved = os.path.realpath(path)
+        if resolved in seen:
+            print(f"{name} resolves to the same endpoint as {seen[resolved]}", file=sys.stderr)
+            return False
+        seen[resolved] = name
+
+    if not any(cross_values):
+        return True
+
+    if not _same_serial_path(arguments.uart1_peer, arguments.uart2):
+        print("--uart1-peer must resolve to the same device as --uart2", file=sys.stderr)
+        return False
+    if not _same_serial_path(arguments.uart4_peer, arguments.uart3):
+        print("--uart4-peer must resolve to the same device as --uart3", file=sys.stderr)
+        return False
+
+    return True
+
+
 def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     ports: list[tuple[int, list]] = []
     results: dict[str, tuple[int, str | None]] = {}
     passed = False
+
+    if not cross_fixture_paths_valid(arguments):
+        return False
 
     try:
         uart0_pico, uart0_pico_settings = configure_port(arguments.uart0_pico, arguments.uart0_baud)
@@ -191,21 +253,40 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         streams: list[tuple[str, int, int]] = [
             ("uart0-pico-to-peer", uart0_pico, uart0_peer),
             ("uart0-peer-to-pico", uart0_peer, uart0_pico),
-            ("uart2-to-uart3", uart2, uart3),
-            ("uart3-to-uart2", uart3, uart2),
             ("uart5-loopback", uart5, uart5),
         ]
 
-        if arguments.uart1:
+        use_cross_fixture = bool(getattr(arguments, "uart1_peer", None) and
+                                 getattr(arguments, "uart4_peer", None))
+        if not use_cross_fixture:
+            streams.extend([("uart2-to-uart3", uart2, uart3),
+                            ("uart3-to-uart2", uart3, uart2)])
+
+        if arguments.uart1 and getattr(arguments, "uart1_peer", None):
+            uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
+            ports.append((uart1, uart1_settings))
+            # The peer path is the already opened CDC2 descriptor. Reusing it
+            # avoids a second termios configuration and input flush on the same node.
+            uart1_peer = uart2
+            streams.extend([("uart1-to-uart2", uart1, uart1_peer),
+                            ("uart2-to-uart1", uart1_peer, uart1)])
+        elif arguments.uart1:
             uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
             ports.append((uart1, uart1_settings))
             streams.append(("uart1-loopback", uart1, uart1))
-        if arguments.uart4:
+        if arguments.uart4 and getattr(arguments, "uart4_peer", None):
+            uart4, uart4_settings = configure_port(arguments.uart4, stream_baud)
+            ports.append((uart4, uart4_settings))
+            # The peer path is the already opened CDC3 descriptor.
+            uart4_peer = uart3
+            streams.extend([("uart3-to-uart4", uart4_peer, uart4),
+                            ("uart4-to-uart3", uart4, uart4_peer)])
+        elif arguments.uart4:
             uart4, uart4_settings = configure_port(arguments.uart4, stream_baud)
             ports.append((uart4, uart4_settings))
             streams.append(("uart4-loopback", uart4, uart4))
 
-        time.sleep(0.1)
+        time.sleep(LINE_CODING_SETTLE_SECONDS)
         start = threading.Barrier(len(streams))
         threads = [
             threading.Thread(target=run_stream,

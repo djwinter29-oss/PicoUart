@@ -1,3 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pico-uart-host-tools"
+version = "0.1.0"
+description = "Host HID monitor and control tools for PicoUart"
+requires-python = ">=3.10"
+dependencies = ["hidapi==0.14.0"]
+
+[project.scripts]
+pico-uart-hid = "pico_uart_hid:main"
+
+[tool.setuptools]
+package-dir = {"" = "host/python/src"}
+py-modules = ["pico_uart_hid"]
+
 [tool.pytest.ini_options]
 testpaths = ["host/python/tests"]
 pythonpath = ["host/python/src", "host/python/tests"]

@@ -62,7 +62,7 @@ typedef struct {
     uint32_t tx_ring_overflow_count; /**< Bytes rejected by the USB-to-UART ring. */
     uint32_t rx_ring_overflow_count; /**< Bytes dropped by the UART-to-USB ring. */
     uint32_t rx_ring_pending_overflow_count; /**< Unread UART-to-USB bytes already overwritten. */
-    uint32_t rx_error_count; /**< Hardware UART receive-status events observed since initialization. */
+    uint32_t rx_error_count; /**< Hardware UART receive-status events observed since the post-boot baseline. */
 } uart_driver_port_stats_t;
 
 /**

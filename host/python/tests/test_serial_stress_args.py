@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-STRESS = Path(__file__).resolve().parents[3] / "tools" / "linux" / "serial_stress_benchmark.py"
+STRESS = Path(__file__).resolve().parents[3] / "tools" / "serial_stress_benchmark.py"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
 
@@ -177,6 +177,17 @@ def test_payload_bytes_rejects_out_of_range(monkeypatch: pytest.MonkeyPatch) -> 
     assert stress.main() == 2
 
 
+def test_minimum_payload_contains_distinct_sequence_marker() -> None:
+    stress = _load_stress()
+
+    first = stress.payload_for("uart2-to-uart3", 0, 32)
+    second = stress.payload_for("uart2-to-uart3", 1, 32)
+
+    assert len(first) == 32
+    assert len(second) == 32
+    assert first != second
+
+
 def test_optional_uart1_uart4_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,
@@ -209,3 +220,56 @@ def test_optional_uart1_uart4_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     assert args.uart4 == "/dev/ttyACM4"
     monkeypatch.setattr(stress, "benchmark_rate", lambda *_a, **_k: True)
     assert stress.main() == 0
+
+
+def test_cross_fixture_arguments_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serial_stress_benchmark.py",
+            "--uart0-pico", "/dev/ttyACM0", "--uart0-peer", "/dev/ttyACM7",
+            "--uart1", "/dev/ttyACM1", "--uart1-peer", "/dev/ttyACM2",
+            "--uart2", "/dev/ttyACM2", "--uart3", "/dev/ttyACM3",
+            "--uart4", "/dev/ttyACM4", "--uart4-peer", "/dev/ttyACM3",
+            "--uart5", "/dev/ttyACM5",
+        ],
+    )
+    stress = _load_stress()
+    args = stress.parse_arguments()
+    assert args.uart1_peer == "/dev/ttyACM2"
+    assert args.uart4_peer == "/dev/ttyACM3"
+
+
+def test_cross_fixture_rejects_mismatched_peer_paths() -> None:
+    stress = _load_stress()
+    arguments = type(
+        "Arguments",
+        (),
+        {
+            "uart1_peer": "/dev/ttyACM9",
+            "uart2": "/dev/ttyACM2",
+            "uart4_peer": "/dev/ttyACM3",
+            "uart3": "/dev/ttyACM3",
+        },
+    )()
+
+    assert stress.cross_fixture_paths_valid(arguments) is False
+
+
+def test_cross_fixture_rejects_partial_arguments() -> None:
+    stress = _load_stress()
+    arguments = type(
+        "Arguments",
+        (),
+        {"uart1": "/dev/ttyACM1", "uart1_peer": None,
+         "uart4": None, "uart4_peer": None},
+    )()
+
+    assert stress.cross_fixture_paths_valid(arguments) is False
+
+
+def test_benchmark_allows_time_for_concurrent_line_coding() -> None:
+    stress = _load_stress()
+
+    assert stress.LINE_CODING_SETTLE_SECONDS >= 2.0

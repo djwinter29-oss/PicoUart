@@ -7,21 +7,13 @@ Each CDC port is bridged to one logical UART backend.
 
 ## Build
 
-1. Install CMake, Ninja, an ARM GCC toolchain, and the Pico SDK.
-2. Set `PICO_SDK_PATH` to your `pico-sdk` checkout.
-3. Configure and build:
-
-```powershell
-cmake -S firmware -B build/firmware -G Ninja
-cmake --build build/firmware
-```
-
-For the project-local Pico SDK and board-specific builds on Linux:
+On Ubuntu/Linux, install CMake, Ninja, an ARM GCC toolchain, and use the
+project-local Pico SDK:
 
 ```sh
-. tools/linux/setup-sdk-env.sh
-tools/linux/build.sh --board pico
-tools/linux/build.sh --board pico2
+. tools/setup-sdk-env.sh
+tools/build.sh --board pico
+tools/build.sh --board pico2
 ```
 
 Optional: stamp a release version into the firmware with `--firmware-version`
@@ -29,34 +21,37 @@ Optional: stamp a release version into the firmware with `--firmware-version`
 as `MAJOR.MINOR.PATCH`, while USB `bcdDevice` receives major.minor BCD only
 (`1.2.3` → `0x0102`). Untagged local builds default to `0.0.0-dev`.
 
-On Windows PowerShell, download the same project-local SDK and build with:
-
-```powershell
-. .\tools\windows\setup-sdk-env.ps1
-.\tools\windows\build.ps1 -Board pico
-.\tools\windows\build.ps1 -Board pico2
-```
-
 All generated output is stored under the repository-root `build/` directory.
-Use a separate build directory per board. The Linux and Windows build/load tools
-accept `--board` or `-Board` values supported by the installed Pico SDK.
-They also accept `--system-clock-khz` or `-SystemClockKhz` to override the
-system clock for a build. For example:
+Use a separate build directory per board. The Linux build/load tools accept
+`--board` values supported by the installed Pico SDK. They also accept
+`--system-clock-khz` to override the system clock for a build. For example:
 
 ```sh
-tools/linux/build.sh --board pico --system-clock-khz 250000
-tools/linux/build.sh --board pico2 --system-clock-khz 300000
+tools/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
+tools/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
 ```
+
+Those examples are intentionally unsafe overrides. Production builds use the
+rated 125000 kHz (`pico`) or 150000 kHz (`pico2`) target by default. Pass
+`--unsafe-overclock` with an override only for a board-specific, recorded HIL
+qualification; CMake otherwise rejects a non-rated clock.
 
 ## Load
 
-The Linux and Windows load tools program the ELF remotely through a Raspberry
-Pi Debug Probe using CMSIS-DAP OpenOCD. Connect the probe's SWDIO, SWCLK, and
-GND signals to PicoUart before loading; UART TX/RX wiring is separate from SWD.
+The Linux load tool programs the ELF remotely through a Raspberry Pi Debug Probe
+using CMSIS-DAP OpenOCD. Connect the probe's SWDIO, SWCLK, and GND signals to
+PicoUart before loading; UART TX/RX wiring is separate from SWD.
 
 ```sh
-tools/linux/load.sh --board pico
-tools/linux/load.sh --board pico2
+tools/load.sh --board pico
+tools/load.sh --board pico2
+```
+
+For an explicitly qualified non-rated clock image, pass the unsafe override to
+both the build and load wrappers:
+
+```sh
+tools/load.sh --board pico --system-clock-khz 250000 --unsafe-overclock
 ```
 
 ## Configuration
@@ -106,6 +101,16 @@ requirement applies.
   with docs-reserved RTS/CTS pins (not GPIO-owned).
 - PIO UART line-coding changes are deferred on the worker core until the port reaches a safe idle point, to avoid discarding queued traffic.
 - PIO UART RX validates stop bits and counts framing errors (see `docs/detail/pio-uart-design.md`).
+- A queued line-format change snapshots the TX producer sequence, blocks new
+  CDC ingress, drains the captured old-format backlog, then waits for backend
+  TX/RX idle before applying. PIO requires an empty RX FIFO, its receiver to
+  be waiting for the next start bit, and an idle-high RX pin; hardware UART can only re-check its RX
+  FIFO because PL011 does not expose RX-shifter state. An external peer that
+  starts a frame during a hardware peripheral restart can lose that frame, so
+  quiesce the peer or use flow control for loss-intolerant transitions.
+- Hardware UART line coding is validated against the live `clk_peri` PL011
+  divisor with a 2% maximum error. `uart_driver_port_info()` reports the
+  actual programmed rate, which can differ slightly from the host request.
 - CDC line-coding rejects are visible through HID `CONTROL_ERROR` because TinyUSB accepts `SET_LINE_CODING` before firmware validation (`docs/hid-monitor.md`).
 - PIO baud/format rejects fail fast on core 0 (no deferred 1 s pause) when the divider is out of range or the request is not 8N1.
 - Cross-core mailbox: core 0 posts a line-coding request immediately when the

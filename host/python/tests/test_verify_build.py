@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-VERIFY_BUILD = Path(__file__).resolve().parents[3] / "tools" / "linux" / "verify-build.py"
+VERIFY_BUILD = Path(__file__).resolve().parents[3] / "tools" / "verify-build.py"
 
 
 def _load_verifier():
@@ -122,3 +122,19 @@ def test_uf2_rejects_missing_declared_block() -> None:
 
     with pytest.raises(ValueError, match="missing"):
         verifier._verify_uf2_payload(uf2, b"firmware", verifier.UF2_FAMILY_IDS["pico"])
+
+
+def test_intel_hex_requires_final_canonical_eof() -> None:
+    verifier = _load_verifier()
+
+    assert verifier._intel_hex_load_base(b":01000000AA55\n:00000001FF\n") == 0
+
+    with pytest.raises(ValueError, match="canonical EOF"):
+        verifier._intel_hex_load_base(b":01000000AA55\n:00000101FE\n")
+
+
+def test_intel_hex_rejects_records_after_eof() -> None:
+    verifier = _load_verifier()
+
+    with pytest.raises(ValueError, match="EOF"):
+        verifier._intel_hex_load_base(b":00000001FF\n:01000000AA55\n")

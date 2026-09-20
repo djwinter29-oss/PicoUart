@@ -7,8 +7,10 @@
 
 #include "uart/backend_policy.h"
 #include "uart/dma_progress.h"
+#include "uart/hw/baud_rate.h"
 #include "uart/hw/dma_claim.h"
 
+#include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
@@ -34,7 +36,12 @@ static bool hw_uart_driver_rx_dma_irq_installed;
 
 static void hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
 {
-    uart_init(driver->config.instance, driver->config.baud_rate);
+    uint32_t actual_rate;
+
+    hard_assert(hw_uart_baud_rate_supported(driver->config.baud_rate,
+                                             clock_get_hz(clk_peri),
+                                             &actual_rate));
+    driver->config.baud_rate = uart_init(driver->config.instance, driver->config.baud_rate);
     uart_set_hw_flow(driver->config.instance,
                      driver->config.hardware_flow_control,
                      false);
@@ -138,6 +145,16 @@ void hw_uart_driver_enable_rx_dma_irq(void)
             dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, true);
         }
     }
+}
+
+void hw_uart_driver_clear_rx_error_baseline(hw_uart_driver_t *driver)
+{
+    if ((driver == NULL) || !driver->initialized) {
+        return;
+    }
+
+    uart_get_hw(driver->config.instance)->rsr = 0u;
+    driver->rx_error_count = 0u;
 }
 
 static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
@@ -263,6 +280,26 @@ static void hw_uart_driver_release_dma(hw_uart_driver_t *driver)
 static uint32_t hw_uart_driver_rx_progress(const hw_uart_driver_t *driver)
 {
     return uart_dma_rx_progress((uint)driver->rx_dma_channel);
+}
+
+bool hw_uart_driver_rx_snapshot_is_current(const hw_uart_driver_t *driver,
+                                           uint32_t consumer_sequence)
+{
+    uint32_t progress;
+    uint32_t produced;
+    uint32_t live_producer;
+
+    if ((driver == NULL) || !driver->initialized || (driver->rx_dma_channel < 0)) {
+        return false;
+    }
+
+    progress = hw_uart_driver_rx_progress(driver);
+    produced = uart_dma_rx_bytes_produced(progress,
+                                         driver->rx_dma_last_progress,
+                                         uart_dma_rx_transfer_count_max());
+    live_producer = driver->rx_ring.producer + produced;
+    __dmb();
+    return (live_producer - consumer_sequence) <= driver->rx_ring.size;
 }
 
 static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
@@ -489,8 +526,14 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
                                     uint8_t stop_bits,
                                     uart_parity_t parity)
 {
+    uint32_t actual_rate;
+
     if ((driver == NULL) || !driver->initialized ||
         !hw_uart_driver_line_format_supported(baud_rate, data_bits, stop_bits, parity)) {
+        return false;
+    }
+
+    if (!hw_uart_baud_rate_supported(baud_rate, clock_get_hz(clk_peri), &actual_rate)) {
         return false;
     }
 
@@ -533,7 +576,7 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
         restore_interrupts(interrupt_status);
     }
 
-    driver->config.baud_rate = baud_rate;
+    driver->config.baud_rate = actual_rate;
     driver->config.data_bits = data_bits;
     driver->config.stop_bits = stop_bits;
     driver->config.parity = parity;

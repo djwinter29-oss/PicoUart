@@ -8,6 +8,7 @@ GENERATOR="${GENERATOR:-}"
 PICO_SDK_PATH_VALUE=""
 SKIP_BUILD=0
 SYSTEM_CLOCK_KHZ=""
+ALLOW_UNSAFE_OVERCLOCK="OFF"
 OPENOCD_EXE="${OPENOCD_EXE:-openocd}"
 OPENOCD_TARGET="${PICO_OPENOCD_TARGET:-}"
 ADAPTER_SPEED_KHZ="${PICO_DEBUG_PROBE_SPEED_KHZ:-5000}"
@@ -41,6 +42,10 @@ while [ "$#" -gt 0 ]; do
             ADAPTER_SPEED_KHZ="$2"
             shift 2
             ;;
+        --probe-serial)
+            DEBUG_PROBE_SERIAL="$2"
+            shift 2
+            ;;
         --generator)
             GENERATOR="$2"
             shift 2
@@ -57,6 +62,10 @@ while [ "$#" -gt 0 ]; do
             SYSTEM_CLOCK_KHZ="$2"
             shift 2
             ;;
+        --unsafe-overclock)
+            ALLOW_UNSAFE_OVERCLOCK="ON"
+            shift
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             exit 1
@@ -71,8 +80,11 @@ if [ -n "$BOARD" ]; then
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
-BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR"
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+case "$BUILD_DIR" in
+    /*) BUILD_DIR_PATH="$BUILD_DIR" ;;
+    *) BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR" ;;
+esac
 
 if [ -z "$PICO_SDK_PATH_VALUE" ]; then
     PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
@@ -80,8 +92,13 @@ fi
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
     if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
-        BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
-            "$SCRIPT_DIR/build.sh" --system-clock-khz "$SYSTEM_CLOCK_KHZ"
+        if [ "$ALLOW_UNSAFE_OVERCLOCK" = "ON" ]; then
+            BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
+                "$SCRIPT_DIR/build.sh" --system-clock-khz "$SYSTEM_CLOCK_KHZ" --unsafe-overclock
+        else
+            BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
+                "$SCRIPT_DIR/build.sh" --system-clock-khz "$SYSTEM_CLOCK_KHZ"
+        fi
     else
         BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" "$SCRIPT_DIR/build.sh"
     fi
@@ -116,20 +133,35 @@ if ! command -v "$OPENOCD_EXE" >/dev/null 2>&1; then
     exit 1
 fi
 
+if [ -z "$DEBUG_PROBE_SERIAL" ] && command -v lsusb >/dev/null 2>&1; then
+    DEBUG_PROBE_COUNT=$(lsusb | awk -v probe_id="${DEBUG_PROBE_VID#0x}:${DEBUG_PROBE_PID#0x}" '$6 == probe_id { count += 1 } END { print count + 0 }')
+    if [ "$DEBUG_PROBE_COUNT" -gt 1 ]; then
+        echo "Multiple CMSIS-DAP probes detected; set PICO_DEBUG_PROBE_SERIAL or pass the probe serial." >&2
+        exit 1
+    fi
+elif [ -z "$DEBUG_PROBE_SERIAL" ]; then
+    echo "lsusb unavailable; proceeding without CMSIS-DAP probe uniqueness verification. Pass --probe-serial to select one explicitly." >&2
+fi
+
+tcl_brace_escape() {
+    printf '%s' "$1" | sed 's/[{}]/\\&/g'
+}
+
 run_openocd() {
     OPENOCD_LOG=$(mktemp)
     set -- "$OPENOCD_EXE" \
-        -f interface/cmsis-dap.cfg \
-        -c "cmsis-dap vid_pid $DEBUG_PROBE_VID $DEBUG_PROBE_PID"
+        -f interface/cmsis-dap.cfg
 
     if [ -n "$DEBUG_PROBE_SERIAL" ]; then
-        set -- "$@" -c "adapter serial $DEBUG_PROBE_SERIAL"
+        DEBUG_PROBE_SERIAL_TCL=$(tcl_brace_escape "$DEBUG_PROBE_SERIAL")
+        set -- "$@" -c "adapter serial {$DEBUG_PROBE_SERIAL_TCL}"
     fi
 
+    ELF_PATH_TCL=$(tcl_brace_escape "$ELF_PATH")
     set -- "$@" \
         -f "$OPENOCD_TARGET" \
         -c "adapter speed $ADAPTER_SPEED_KHZ" \
-        -c "program $ELF_PATH verify reset exit"
+        -c "program {$ELF_PATH_TCL} verify reset exit"
 
     if "$@" >"$OPENOCD_LOG" 2>&1; then
         cat "$OPENOCD_LOG"
@@ -148,7 +180,8 @@ run_openocd() {
         fi
     fi
 
-    if grep -Eq 'Operation timed out|unable to find a matching CMSIS-DAP device' "$OPENOCD_LOG" &&
+     if [ -z "$DEBUG_PROBE_SERIAL" ] &&
+         grep -Eq 'Operation timed out|unable to find a matching CMSIS-DAP device' "$OPENOCD_LOG" &&
        command -v usbreset >/dev/null 2>&1 &&
        command -v lsusb >/dev/null 2>&1 &&
        command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then

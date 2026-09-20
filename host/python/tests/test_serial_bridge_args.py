@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-BRIDGE = Path(__file__).resolve().parents[3] / "tools" / "linux" / "serial_bridge_test.py"
+BRIDGE = Path(__file__).resolve().parents[3] / "tools" / "serial_bridge_test.py"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
 
@@ -223,6 +223,18 @@ def test_flood_seconds_parses(monkeypatch: pytest.MonkeyPatch) -> None:
     assert args.hold_cdc_seconds == 1.0
     monkeypatch.setattr(bridge, "run_flood_test", lambda *_args, **_kwargs: 0)
     assert bridge.main() == 0
+
+
+def test_flood_propagates_write_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+
+    def fail_write(*_args):
+        raise OSError("device disconnected")
+
+    monkeypatch.setattr(bridge, "write_all", fail_write)
+
+    with pytest.raises(OSError, match="device disconnected"):
+        bridge.run_flood(3, None, 1.0, 64, 0.0)
 
 
 def test_settle_seconds_rejects_negative(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -443,6 +443,26 @@ static uint32_t pio_uart_driver_rx_progress(const pio_uart_driver_t *driver)
     return uart_dma_rx_progress((uint)driver->rx_dma_channel);
 }
 
+bool pio_uart_driver_rx_snapshot_is_current(const pio_uart_driver_t *driver,
+                                            uint32_t consumer_sequence)
+{
+    uint32_t progress;
+    uint32_t produced;
+    uint32_t live_producer;
+
+    if ((driver == NULL) || !driver->initialized || (driver->rx_dma_channel < 0)) {
+        return false;
+    }
+
+    progress = pio_uart_driver_rx_progress(driver);
+    produced = uart_dma_rx_bytes_produced(progress,
+                                         driver->rx_dma_last_progress,
+                                         uart_dma_rx_transfer_count_max());
+    live_producer = driver->rx_ring.producer + produced;
+    __dmb();
+    return (live_producer - consumer_sequence) <= driver->rx_ring.size;
+}
+
 static void pio_uart_driver_publish_rx(pio_uart_driver_t *driver)
 {
     uint32_t progress;
@@ -767,13 +787,17 @@ void pio_uart_driver_deinit(pio_uart_driver_t *driver)
     driver->initialized = false;
 }
 
-static bool pio_uart_driver_rx_line_idle(const pio_uart_driver_t *driver)
+static bool pio_uart_driver_rx_quiescent(const pio_uart_driver_t *driver)
 {
-    if ((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH) == 0u) {
-        return true;
-    }
+    uint instruction = pio_sm_get_pc(driver->config.pio, driver->config.rx_state_machine);
+    bool require_idle_high =
+        (driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH) != 0u;
 
-    return gpio_get(driver->config.rx_pin);
+    /* The RX program waits for its next start bit at instruction zero. When the
+     * policy flag is enabled, also require a high pin to reject a start bit
+     * which arrived but has not yet advanced the state machine. */
+    return (instruction == pio_uart_driver_rx_offset(driver->config.pio)) &&
+           (!require_idle_high || gpio_get(driver->config.rx_pin));
 }
 
 /**
@@ -822,7 +846,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
         !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
         !pio_uart_driver_tx_shifter_idle(driver) ||
         !pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
-        !pio_uart_driver_rx_line_idle(driver)) {
+        !pio_uart_driver_rx_quiescent(driver)) {
         /* Continuous traffic defers the change; uart_driver applies a bounded timeout. */
         return false;
     }
@@ -833,8 +857,8 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
     }
 
     /*
-     * Short critical section: finish DMA stop, pause SMs, and re-check FIFOs /
-     * RX line before committing to the baud apply.
+    * Short critical section: finish DMA stop, pause SMs, and re-check FIFOs /
+    * RX quiescence before committing to the baud apply.
      */
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
@@ -851,7 +875,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
 
         if (!pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
             !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
-            !pio_uart_driver_rx_line_idle(driver)) {
+            !pio_uart_driver_rx_quiescent(driver)) {
             pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, true);
             pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, true);
             if (driver->rx_dma_channel >= 0) {
@@ -874,6 +898,9 @@ static void pio_uart_driver_apply_baud_locked(pio_uart_driver_t *driver, uint32_
     driver->config.baud_rate = baud_rate;
     pio_sm_set_clkdiv(driver->config.pio, driver->config.tx_state_machine, divider);
     pio_sm_set_clkdiv(driver->config.pio, driver->config.rx_state_machine, divider);
+    pio_clkdiv_restart_sm_mask(driver->config.pio,
+                               (1u << driver->config.tx_state_machine) |
+                                   (1u << driver->config.rx_state_machine));
     pio_sm_clear_fifos(driver->config.pio, driver->config.tx_state_machine);
     pio_sm_clear_fifos(driver->config.pio, driver->config.rx_state_machine);
     pio_sm_restart(driver->config.pio, driver->config.tx_state_machine);

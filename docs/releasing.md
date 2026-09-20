@@ -33,17 +33,36 @@ need a recorded hardware-in-the-loop (HIL) pass:
 2. Flash the **exact** UF2/ELF attached to the GitHub Release (or the
    `workflow_dispatch` dry-run artifacts). Do **not** rebuild for release HIL.
    Record `SHA256SUMS-*` and flash with
-   `tools/linux/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>`.
+   `tools/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>`.
+   Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached
+   or when USB enumeration tools are unavailable.
+   Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash
+   device` after detecting the SWD target, update OpenOCD and retry with
+   `--adapter-speed-khz 1000` before treating the HIL attempt as a firmware
+   failure. Flash ID `0x00154068` is a Boya BY25Q16ES device; use an OpenOCD
+   build containing that flash-table entry and pass it with `--openocd-exe`.
    Repeat the full matrix below on **both** packaged board images — RP2350 DMA
    COUNT behavior differs from RP2040 and must not be skipped.
-3. Run the required bridge cases and keep the full console transcript:
-   UART0 Debug Probe, UART2↔UART3 cross, and UART5 loopback. Include UART1
-   and UART4 loopbacks when those jumpers are fitted (optional for promote;
-   recommended when claiming six-port coverage).
+3. Run the four staged bridge cases and keep the full console transcript:
+   UART0 Debug Probe, HW UART1↔PIO UART2, PIO UART3↔PIO UART4, and UART5
+   loopback. Install the complete fixed fixture before starting and do not
+   change wiring during the run, as described in `docs/tests/self-test-setup.md`.
 4. Run `serial_stress_benchmark.py` at the default rate sweep (or the rates
-   claimed in the release notes). Pass `--uart1` / `--uart4` only when those
-   jumpers are fitted.
-5. Optionally run the CDC-hold / RX flood step from the board-testing skill
+   claimed in the release notes). Pass `--uart1` with `--uart1-peer <uart2>`
+   and `--uart4` with `--uart4-peer <uart3>` when the full staged fixture is
+   connected so the benchmark exercises HW1↔PIO2 and PIO3↔PIO4. Record the
+   command line, board, clock, duration, verified bytes, and every
+   reported stream throughput. A promoted result has no byte mismatch, timeout,
+   `rx_overrun`, `rx_error`, or `control_error` in the captured HID monitor.
+5. Run rapid line-coding changes on both a hardware UART and a PIO UART while
+   the port has queued TX data, while an RX peer is active, and after repeated
+   equivalent requests. Verify the captured old-format TX backlog drains before
+   the change, unsupported/timeout requests raise `CONTROL_ERROR`, and the
+   peer is quiescent before claiming loss-free RX behavior.
+6. Run disconnect/remount, watchdog recovery, DMA wrap/re-arm flood, and the
+   six-port full-duplex saturation matrix on each board image. HIL must record
+   any expected receive loss during a forced format transition.
+7. Optionally run the CDC-hold / RX flood step from the board-testing skill
    (`--flood-seconds` / `--hold-cdc-seconds`) when advertising ring/DMA
    backpressure behavior. To claim hardware RTS/CTS, explicitly enable
    `hardware_flow_control` in `firmware/src/config/uart_board.c` first — the
@@ -51,7 +70,7 @@ need a recorded hardware-in-the-loop (HIL) pass:
    To claim PIO RTS/CTS, enable both PIO flow-control pin flags for a tested
    port and run the PIO CTS hold/release and RTS backpressure procedure in the
    board-testing skill.
-6. Attach or link the transcript (and any HID `monitor` snippets showing
+8. Attach or link the transcript (and any HID `monitor` snippets showing
    `control_error` / `rx_overrun` expectations) to the GitHub Release notes or a
    linked issue. Cloud CI cannot record HIL; a draft without this attachment is
    lab-only even if USB identity review passed.
@@ -64,12 +83,18 @@ Before clicking **Publish** on the GitHub draft:
 
 1. **Artifact ↔ HIL SHA match**: the UF2/ELF/BIN attached to the draft (or their
    `SHA256SUMS-*`) are bit-identical to the images used for the recorded HIL
-   pass on **each** board (`pico` and `pico2`). Do not promote if HIL ran on a
-   different local rebuild or only one of the two targets.
+   pass on **each** board (`pico` and `pico2`). Copy the hashes into the
+   [performance result log](tests/performance-test-results.md), then compare
+   them against the downloaded release `SHA256SUMS-*` files before promoting.
+   Do not promote if HIL ran on a different local rebuild or only one of the two
+   targets.
 2. **USB identity note**: release notes retain the `0xCAFE:0x4010` lab-project
    identity warning unless the artifact deliberately uses an allocated identity.
 3. **HIL transcript** is linked or attached (see above), covering both boards.
 4. Release notes call out any breaking HID layout changes.
+5. **Python dependency lock**: release CI installed
+   `host/python/requirements-lock.txt` with `pip --require-hashes`; any lock
+   regeneration is present in the reviewed release change.
 
 ## Versioning
 
@@ -82,3 +107,8 @@ Details are in the root README.
 Release and PR workflows build against Pico SDK 2.3.0 at commit
 `98a542c1a62fb549ffb5d66a3e5892b06276b670` and print the verified revision in
 the job log.
+
+Python release qualification uses the reviewed, fully transitive
+`host/python/requirements-lock.txt` with artifact hashes. Regenerate it only in
+a packaging-enabled, reviewed change; the pinned direct requirements remain the
+human-edited inputs rather than the release installation source.

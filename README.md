@@ -26,6 +26,10 @@ microcontroller platform.
 - [Hardware Wiring](docs/hardware-wiring.md)
 - [HID Monitor and Board Control](docs/hid-monitor.md)
 - [Test Connections](docs/test-connections.md)
+- [Self-Test Setup](docs/tests/self-test-setup.md)
+- [Functional Test Plan](docs/tests/functional-test-plan.md)
+- [Performance Test Plan](docs/tests/performance-test-plan.md)
+- [Performance Test Results](docs/tests/performance-test-results.md)
 - [Releasing](docs/releasing.md)
 - [Ring Buffer Design](docs/detail/ring-buffer-design.md)
 - [PIO UART Design](docs/detail/pio-uart-design.md)
@@ -33,13 +37,26 @@ microcontroller platform.
 
 ## Build and CI
 
+Firmware development, flashing, release builds, and physical HIL are supported
+on Ubuntu/Linux. Windows remains supported for host-side Python HID and CDC
+operation, and host-tool CI continues to run there; use WSL2 Ubuntu when
+working from a Windows workstation.
+
 CI builds both firmware targets on Linux and runs host tests on Linux and Windows.
 
+CI does not provide a Pico/Pico 2 board, Debug Probe, or jumper-wire fixture,
+so physical UART, USB, HID, and performance tests cannot run automatically in
+the pipeline. Users must assemble the hardware fixture and run the documented
+tests locally. Start with [Self-Test Setup](docs/tests/self-test-setup.md),
+then follow the [Functional Test Plan](docs/tests/functional-test-plan.md) and
+[Performance Test Plan](docs/tests/performance-test-plan.md). Record results
+in [Performance Test Results](docs/tests/performance-test-results.md).
+
 ```sh
-. tools/linux/setup-sdk-env.sh --sdk-version 2.3.0
-tools/linux/build.sh --board pico
-tools/linux/build.sh --board pico2
-tools/linux/test-host.sh
+. tools/setup-sdk-env.sh --sdk-version 2.3.0
+tools/build.sh --board pico
+tools/build.sh --board pico2
+tools/test-host.sh
 ```
 
 Pull requests run `.github/workflows/pr-check.yml` (firmware build for `pico` /
@@ -60,8 +77,12 @@ and minor `0-99` and patch `0-255`, matching USB BCD and HID report storage.
 Host-side tests (no board required):
 
 ```sh
-tools/linux/test-host.sh
+tools/test-host.sh
 ```
+
+The host tools require Python 3.10 or newer. CI and the test wrapper install
+the checked-in, hash-verified dependency lock at
+`host/python/requirements-lock.txt`.
 
 See [`firmware/tests/README.md`](firmware/tests/README.md).
 
