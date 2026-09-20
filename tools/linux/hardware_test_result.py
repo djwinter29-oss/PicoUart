@@ -11,9 +11,12 @@ def prepend_result(results_file: Path, entry: str) -> None:
 
     document = results_file.read_text(encoding="utf-8")
     template_marker = "\n## Template"
-    insertion_point = document.find(template_marker)
-    if insertion_point < 0:
+    template_point = document.find(template_marker)
+    if template_point < 0:
         raise ValueError(f"results file has no template marker: {results_file}")
+
+    first_result = document.find("\n## ", document.find("# Performance Test Results") + 1)
+    insertion_point = first_result if 0 <= first_result < template_point else template_point
 
     updated = document[:insertion_point].rstrip() + "\n\n" + entry.strip() + "\n" + document[insertion_point:]
     results_file.write_text(updated, encoding="utf-8")

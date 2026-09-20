@@ -64,6 +64,13 @@ tools/linux/load.sh --board pico
 tools/linux/load.sh --board pico2
 ```
 
+For an explicitly qualified non-rated clock image, pass the unsafe override to
+both the build and load wrappers:
+
+```sh
+tools/linux/load.sh --board pico --system-clock-khz 250000 --unsafe-overclock
+```
+
 ## Configuration
 
 Shared fixed capacities are defined in [src/config/config.h](src/config/config.h).

@@ -11,7 +11,8 @@ param(
     [string]$DebugProbeVid = $(if ($env:PICO_DEBUG_PROBE_VID) { $env:PICO_DEBUG_PROBE_VID } else { "0x2e8a" }),
     [string]$DebugProbePid = $(if ($env:PICO_DEBUG_PROBE_PID) { $env:PICO_DEBUG_PROBE_PID } else { "0x000c" }),
     [string]$DebugProbeSerial = $env:PICO_DEBUG_PROBE_SERIAL,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$UnsafeOverclock
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,6 +43,9 @@ if (-not $SkipBuild) {
     }
     if (-not [string]::IsNullOrWhiteSpace($SystemClockKhz)) {
         $buildArguments.SystemClockKhz = $SystemClockKhz
+    }
+    if ($UnsafeOverclock) {
+        $buildArguments.UnsafeOverclock = $true
     }
     & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
 }

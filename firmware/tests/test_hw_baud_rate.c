@@ -10,6 +10,7 @@ void setUp(void)
 {
 }
 
+
 void tearDown(void)
 {
 }
@@ -26,6 +27,30 @@ void test_standard_rates_are_accurate_at_125mhz(void)
     TEST_ASSERT_EQUAL_UINT32(1000000u, actual_rate);
     TEST_ASSERT_TRUE(hw_uart_baud_rate_supported(3000000u, 125000000u, &actual_rate));
     TEST_ASSERT_EQUAL_UINT32(2994011u, actual_rate);
+}
+
+void test_standard_rates_are_accurate_at_150mhz(void)
+{
+    uint32_t actual_rate;
+
+    TEST_ASSERT_TRUE(hw_uart_baud_rate_supported(115200u, 150000000u, &actual_rate));
+    TEST_ASSERT_EQUAL_UINT32(115207u, actual_rate);
+    TEST_ASSERT_TRUE(hw_uart_baud_rate_supported(1000000u, 150000000u, &actual_rate));
+    TEST_ASSERT_EQUAL_UINT32(1000000u, actual_rate);
+    TEST_ASSERT_TRUE(hw_uart_baud_rate_supported(3000000u, 150000000u, &actual_rate));
+    TEST_ASSERT_EQUAL_UINT32(3000000u, actual_rate);
+}
+
+void test_divisor_limits_are_checked_at_both_clock_rates(void)
+{
+    uint32_t actual_rate;
+
+    TEST_ASSERT_TRUE(hw_uart_baud_rate_supported(3000000u, 125000000u, &actual_rate));
+    TEST_ASSERT_EQUAL_UINT32(2994011u, actual_rate);
+    TEST_ASSERT_TRUE(hw_uart_baud_rate_supported(350u, 150000000u, &actual_rate));
+    TEST_ASSERT_EQUAL_UINT32(349u, actual_rate);
+    TEST_ASSERT_FALSE(hw_uart_baud_rate_supported(50u, 125000000u, &actual_rate));
+    TEST_ASSERT_FALSE(hw_uart_baud_rate_supported(50u, 150000000u, &actual_rate));
 }
 
 void test_impossible_divisors_are_rejected(void)
@@ -54,6 +79,8 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_standard_rates_are_accurate_at_125mhz);
+    RUN_TEST(test_standard_rates_are_accurate_at_150mhz);
+    RUN_TEST(test_divisor_limits_are_checked_at_both_clock_rates);
     RUN_TEST(test_impossible_divisors_are_rejected);
     RUN_TEST(test_actual_rate_and_error_are_reported);
     return UNITY_END();

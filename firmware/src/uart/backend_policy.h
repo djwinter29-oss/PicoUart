@@ -49,7 +49,7 @@ static inline bool uart_hw_line_format_idle(bool tx_occupancy_nonzero,
  * @param tx_fifo_empty True when the PIO TX FIFO is empty.
  * @param tx_shifter_idle True when TXSTALL has re-asserted after write-clear.
  * @param rx_fifo_empty True when the PIO RX FIFO is empty.
- * @param rx_line_idle True when the RX pin is idle-high (or the check is disabled).
+ * @param rx_line_idle Driver-provided result of the configured RX idle policy.
  * @return `true` when the worker may pause RX DMA and change baud.
  */
 static inline bool uart_pio_baud_change_idle(bool tx_dma_active,

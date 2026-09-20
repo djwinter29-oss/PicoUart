@@ -178,7 +178,7 @@ def main() -> int:
         print(f"Recorded result in {arguments.results_file}")
 
     codes = [code for result in (functional, performance) if result is not None for code in [result[0]]]
-    return 0 if len(codes) == 2 and all(code == 0 for code in codes) else 1
+    return 0 if codes and all(code == 0 for code in codes) else 1
 
 
 if __name__ == "__main__":

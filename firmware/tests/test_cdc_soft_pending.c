@@ -50,6 +50,13 @@ void test_every_control_owner_blocks_tx_ingress(void)
     TEST_ASSERT_TRUE(uart_control_tx_should_block(false, false, true));
 }
 
+void test_tx_boundary_drains_only_at_the_snapped_sequence(void)
+{
+    TEST_ASSERT_TRUE(uart_control_tx_boundary_drained(32u, 32u));
+    TEST_ASSERT_FALSE(uart_control_tx_boundary_drained(31u, 32u));
+    TEST_ASSERT_FALSE(uart_control_tx_boundary_drained(33u, 32u));
+}
+
 void test_worker_deadline_retained_only_for_identical_retry(void)
 {
     TEST_ASSERT_TRUE(uart_control_worker_should_set_deadline(false, false));
@@ -108,6 +115,7 @@ int main(void)
     RUN_TEST(test_mailbox_acceptance_and_sequence_wrap);
     RUN_TEST(test_worker_completion_keeps_newer_control_pending_owner);
     RUN_TEST(test_every_control_owner_blocks_tx_ingress);
+    RUN_TEST(test_tx_boundary_drains_only_at_the_snapped_sequence);
     RUN_TEST(test_worker_deadline_retained_only_for_identical_retry);
     RUN_TEST(test_rejected_follow_up_invalidates_prior_soft_pending_completion);
     RUN_TEST(test_control_generation_wraps_without_matching_stale_completion);

@@ -8,6 +8,7 @@ GENERATOR="${GENERATOR:-}"
 PICO_SDK_PATH_VALUE=""
 SKIP_BUILD=0
 SYSTEM_CLOCK_KHZ=""
+ALLOW_UNSAFE_OVERCLOCK="OFF"
 OPENOCD_EXE="${OPENOCD_EXE:-openocd}"
 OPENOCD_TARGET="${PICO_OPENOCD_TARGET:-}"
 ADAPTER_SPEED_KHZ="${PICO_DEBUG_PROBE_SPEED_KHZ:-5000}"
@@ -57,6 +58,10 @@ while [ "$#" -gt 0 ]; do
             SYSTEM_CLOCK_KHZ="$2"
             shift 2
             ;;
+        --unsafe-overclock)
+            ALLOW_UNSAFE_OVERCLOCK="ON"
+            shift
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             exit 1
@@ -80,8 +85,13 @@ fi
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
     if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
-        BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
-            "$SCRIPT_DIR/build.sh" --system-clock-khz "$SYSTEM_CLOCK_KHZ"
+        if [ "$ALLOW_UNSAFE_OVERCLOCK" = "ON" ]; then
+            BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
+                "$SCRIPT_DIR/build.sh" --system-clock-khz "$SYSTEM_CLOCK_KHZ" --unsafe-overclock
+        else
+            BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
+                "$SCRIPT_DIR/build.sh" --system-clock-khz "$SYSTEM_CLOCK_KHZ"
+        fi
     else
         BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" "$SCRIPT_DIR/build.sh"
     fi

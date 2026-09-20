@@ -41,6 +41,49 @@ def test_discovery_opens_correct_collection_among_incorrect(monkeypatch, hid_mod
     assert opened_paths == [b"correct"]
 
 
+def test_discovery_resolves_linux_interface_path_to_hidraw(
+    monkeypatch, hid_module
+):
+    devices = [_exact_device(hid_module, b"1-3:1.12")]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda path: "/dev/hidraw7")
+
+    hid_module.open_device()
+
+    assert opened_paths == [b"1-3:1.12", b"/dev/hidraw7"]
+
+
+def test_discovery_uses_hidraw_adapter_when_hidapi_open_fails(
+    monkeypatch, hid_module
+):
+    devices = [_exact_device(hid_module, b"1-3:1.12")]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+    fallback_device = object()
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda path: "/dev/hidraw7")
+    monkeypatch.setattr(hid_module, "_open_hidraw_device", lambda path: fallback_device)
+
+    class FailingDevice:
+        def open_path(self, path):
+            opened_paths.append(path)
+            raise OSError("libusb open failed")
+
+    monkeypatch.setattr(hid_module.hid, "device", FailingDevice)
+
+    assert hid_module.open_device() is fallback_device
+    assert opened_paths == [b"1-3:1.12"]
+
+
+def test_discovery_reports_original_path_when_hidraw_resolution_fails(
+    monkeypatch, hid_module
+):
+    devices = [_exact_device(hid_module, b"1-3:1.12")]
+    _install_hid_mock(monkeypatch, hid_module, devices)
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda path: None)
+
+    with pytest.raises(RuntimeError, match="1-3:1.12"):
+        hid_module.open_device()
+
+
 def test_discovery_rejects_only_incorrect_collection(monkeypatch, hid_module):
     opened_paths = _install_hid_mock(
         monkeypatch,
@@ -151,6 +194,15 @@ def test_discovery_selects_exact_match_by_serial(monkeypatch, hid_module):
     hid_module.open_device(serial_number="second-serial")
 
     assert opened_paths == [b"second"]
+
+
+def test_discovery_rejects_unknown_serial(monkeypatch, hid_module):
+    devices = [{**_exact_device(hid_module), "serial_number": "known-serial"}]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    with pytest.raises(RuntimeError, match="interface not found"):
+        hid_module.open_device(serial_number="unknown-serial")
+    assert opened_paths == []
 
 
 def test_discovery_selects_exact_match_by_path(monkeypatch, hid_module):

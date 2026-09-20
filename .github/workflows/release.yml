@@ -63,6 +63,7 @@ jobs:
             firmware/src/uart/backend_policy.h \
             firmware/src/uart/control_pending.h \
             firmware/src/uart/dma_progress_math.h \
+            firmware/src/uart/hw/baud_rate.h \
             firmware/src/uart/line_coding.c \
             firmware/src/uart/topology.c \
             firmware/src/uart/hw/dma_claim.c \

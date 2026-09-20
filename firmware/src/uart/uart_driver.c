@@ -358,7 +358,8 @@ static bool uart_driver_tx_boundary_drained(uart_driver_port_t *port,
 {
     ring_buffer_t *tx_ring = uart_driver_tx_ring_mutable(port);
 
-    return (tx_ring != NULL) && (tx_ring->consumer == boundary_sequence);
+    return (tx_ring != NULL) &&
+           uart_control_tx_boundary_drained(tx_ring->consumer, boundary_sequence);
 }
 
 static bool uart_driver_rx_snapshot_is_current(const uart_driver_port_t *port,

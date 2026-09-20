@@ -41,7 +41,8 @@ python3 -m pytest
 ```
 
 CI and release qualification install `requirements-lock.txt` with
-`pip --require-hashes`. Regenerate it from the repository root with:
+`pip --require-hashes`. Dependabot is configured to update the lock file
+directly; regenerate it manually from the repository root with:
 
 ```sh
 uv pip compile host/python/requirements-dev.txt --universal --python-version 3.10 \

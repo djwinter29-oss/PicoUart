@@ -7,6 +7,7 @@
 #define HW_UART_BAUD_RATE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /** @brief Maximum allowed hardware UART baud-rate error in parts per million. */
