@@ -59,6 +59,7 @@ build/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+docs/tests/raw/
 .venv/
 venv/
 

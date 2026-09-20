@@ -36,6 +36,7 @@ def build_functional_command(arguments: argparse.Namespace) -> list[str]:
         "--tester", arguments.tester,
         "--firmware-version", arguments.firmware_version,
         "--firmware-commit", arguments.firmware_commit,
+        "--confirm-rewire",
         "--no-record",
     ]
 

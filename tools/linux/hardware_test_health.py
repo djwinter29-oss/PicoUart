@@ -8,11 +8,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 HID_TOOL = REPO_ROOT / "host/python/src/pico_uart_hid.py"
 HEALTH_PATTERN = re.compile(r"cdc([0-5]) health=0x([0-9a-fA-F]+)\[[^]]*\]")
 OVERRUN_PATTERN = re.compile(r"cdc([0-5])=([0-9]+)")
-BAD_HEALTH_BITS = 0xCC  # control_error, control_pending, rx_overrun, rx_error
+BAD_HEALTH_BITS = 0xCE  # init_failed, control_error, control_pending, rx_overrun, rx_error
 
 
 def collect_hid_health() -> dict:

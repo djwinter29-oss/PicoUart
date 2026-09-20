@@ -7,7 +7,7 @@ name = "pico-uart-host-tools"
 version = "0.1.0"
 description = "Host HID monitor and control tools for PicoUart"
 requires-python = ">=3.10"
-dependencies = ["hidapi>=0.14.0"]
+dependencies = ["hidapi==0.14.0"]
 
 [project.scripts]
 pico-uart-hid = "pico_uart_hid:main"

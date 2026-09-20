@@ -29,9 +29,13 @@ python3 -m pip install -r host/python/requirements.txt
 For an installed command-line tool from the repository root:
 
 ```sh
-python3 -m pip install .
+python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
+python3 -m pip install --no-deps .
 pico-uart-hid --help
 ```
+
+The first command installs the hash-locked runtime dependency; `--no-deps`
+prevents the local package install from bypassing that lock.
 
 For host automated tests (pytest):
 

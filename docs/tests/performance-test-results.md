@@ -7,6 +7,7 @@ reusable template at the bottom.
 
 **Result:** `PASS`
 **Firmware:** `0.0.0`, latest working tree
+**Qualification:** local development HIL; not a release qualification record
 **Firmware commit:** `1150ed4`
 **Test date/time:** `2026-09-20`
 **OpenOCD:** upstream `0.12.0+dev-g853c016`

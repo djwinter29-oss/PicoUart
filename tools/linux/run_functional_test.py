@@ -121,6 +121,10 @@ def main() -> int:
     if arguments.payload_bytes < 1 or arguments.timeout <= 0 or arguments.baud <= 0:
         print("baud, payload, and timeout must be greater than zero", file=sys.stderr)
         return 2
+    if arguments.stage == "all" and not arguments.confirm_rewire:
+        print("--stage all requires --confirm-rewire; use --stage 1|2|3|4 for manual runs",
+              file=sys.stderr)
+        return 2
 
     stages: list[tuple[str, int, str]] = []
     health_before = collect_hid_health()
@@ -147,7 +151,7 @@ def main() -> int:
         prepend_result(arguments.results_file.resolve(), entry)
         print(f"Recorded result in {arguments.results_file}")
 
-    return 0 if len(stages) == 4 and all(code == 0 for _, code, _ in stages) and \
+    return 0 if stages and all(code == 0 for _, code, _ in stages) and \
         health_is_clean(health_after, health_before) else 1
 
 
