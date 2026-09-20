@@ -78,7 +78,10 @@ fi
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 SOURCE_DIR="$REPO_ROOT/firmware"
-BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR"
+case "$BUILD_DIR" in
+    /*) BUILD_DIR_PATH="$BUILD_DIR" ;;
+    *) BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR" ;;
+esac
 
 if [ -z "$PICO_SDK_PATH_VALUE" ]; then
     # Prefer an explicit CLI path, then a sourced/exported PICO_SDK_PATH, then the

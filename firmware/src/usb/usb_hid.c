@@ -290,6 +290,9 @@ void usb_hid_poll(void)
     uint32_t now_ms;
 
     if (!tud_hid_ready()) {
+        /* Keep the signed deadline comparison bounded across very long outages. */
+        usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time()) +
+                                 USB_HID_STATUS_INTERVAL_MS;
         return;
     }
 

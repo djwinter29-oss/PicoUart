@@ -187,13 +187,38 @@ def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
     """Require cross-fixture peer arguments to name the opened CDC peers."""
     cross_values = [getattr(arguments, name, None)
                     for name in ("uart1", "uart1_peer", "uart4", "uart4_peer")]
-    if not any(cross_values):
-        return True
-
-    if not all(cross_values):
+    if any(cross_values) and not all(cross_values):
         print("cross-fixture mode requires --uart1 --uart1-peer --uart4 --uart4-peer",
               file=sys.stderr)
         return False
+
+    if not all(hasattr(arguments, name) for name in
+               ("uart0_pico", "uart0_peer", "uart2", "uart3", "uart5")):
+        if not any(cross_values):
+            return True
+        return False
+
+    endpoints = [
+        ("--uart0-pico", arguments.uart0_pico),
+        ("--uart0-peer", arguments.uart0_peer),
+        ("--uart2", arguments.uart2),
+        ("--uart3", arguments.uart3),
+        ("--uart5", arguments.uart5),
+    ]
+    if arguments.uart1:
+        endpoints.append(("--uart1", arguments.uart1))
+    if arguments.uart4:
+        endpoints.append(("--uart4", arguments.uart4))
+    seen: dict[str, str] = {}
+    for name, path in endpoints:
+        resolved = os.path.realpath(path)
+        if resolved in seen:
+            print(f"{name} resolves to the same endpoint as {seen[resolved]}", file=sys.stderr)
+            return False
+        seen[resolved] = name
+
+    if not any(cross_values):
+        return True
 
     if not _same_serial_path(arguments.uart1_peer, arguments.uart2):
         print("--uart1-peer must resolve to the same device as --uart2", file=sys.stderr)
@@ -201,6 +226,7 @@ def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
     if not _same_serial_path(arguments.uart4_peer, arguments.uart3):
         print("--uart4-peer must resolve to the same device as --uart3", file=sys.stderr)
         return False
+
     return True
 
 

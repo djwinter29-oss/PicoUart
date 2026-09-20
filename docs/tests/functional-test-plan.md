@@ -90,6 +90,10 @@ stages, use `--stage 1`, `--stage 2`, `--stage 3`, or `--stage 4` for manual
 execution. Use `--stage all --confirm-rewire` only when the operator can
 confirm each rewire interactively.
 
+Pass `--artifact /path/to/pico_uart.elf` or the flashed UF2 to record its
+SHA-256 and the HID-reported firmware version. A successful single-stage run
+is recorded as `PARTIAL`, because skipped stages are not coverage.
+
 ## Pass Criteria
 
 The functional run passes only when:

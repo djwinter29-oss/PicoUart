@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import prepend_result, write_raw_log
+from hardware_test_result import artifact_metadata, prepend_result, write_raw_log
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
@@ -19,7 +20,7 @@ DEFAULT_RESULTS_FILE = REPO_ROOT / "docs/tests/performance-test-results.md"
 
 
 def build_functional_command(arguments: argparse.Namespace) -> list[str]:
-    return [
+    command = [
         sys.executable,
         str(SCRIPT_DIR / "run_functional_test.py"),
         "--pico-cdc0", arguments.pico_cdc0,
@@ -36,9 +37,13 @@ def build_functional_command(arguments: argparse.Namespace) -> list[str]:
         "--tester", arguments.tester,
         "--firmware-version", arguments.firmware_version,
         "--firmware-commit", arguments.firmware_commit,
-        "--confirm-rewire",
         "--no-record",
     ]
+    if getattr(arguments, "confirm_rewire", False):
+        command.append("--confirm-rewire")
+    if getattr(arguments, "artifact", None):
+        command.extend(["--artifact", str(arguments.artifact)])
+    return command
 
 
 def build_performance_command(arguments: argparse.Namespace) -> list[str]:
@@ -61,6 +66,8 @@ def build_performance_command(arguments: argparse.Namespace) -> list[str]:
         "--firmware-commit", arguments.firmware_commit,
         "--no-record",
     ]
+    if getattr(arguments, "artifact", None):
+        command.extend(["--artifact", str(arguments.artifact)])
     if arguments.pico_cdc1:
         command.extend(["--uart1", arguments.pico_cdc1])
     if arguments.pico_cdc4:
@@ -69,11 +76,22 @@ def build_performance_command(arguments: argparse.Namespace) -> list[str]:
 
 
 def run_child(label: str, command: list[str]) -> tuple[int, str]:
-    print(f"RUN {label}: {' '.join(shlex.quote(part) for part in command)}")
-    completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True)
-    output = completed.stdout + completed.stderr
-    print(output, end="")
-    return completed.returncode, output
+    command_text = shlex.join(command)
+    print(f"RUN {label}: {command_text}")
+    process = subprocess.Popen(command, cwd=REPO_ROOT, stdin=None,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    chunks: list[bytes] = []
+    assert process.stdout is not None
+    while True:
+        chunk = os.read(process.stdout.fileno(), 4096)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        sys.stdout.buffer.write(chunk)
+        sys.stdout.buffer.flush()
+    returncode = process.wait()
+    output = b"".join(chunks).decode(errors="replace")
+    return returncode, f"Command: {command_text}\n{output}"
 
 
 def format_result_entry(arguments: argparse.Namespace,
@@ -85,10 +103,11 @@ def format_result_entry(arguments: argparse.Namespace,
     performance_code = performance[0] if performance else None
     if any(code not in (None, 0) for code in (functional_code, performance_code)):
         overall = "FAIL"
+    elif (functional_code is None or performance_code is None or
+          not getattr(arguments, "full_fixture", False)):
+        overall = "PARTIAL"
     elif functional_code == 0 and performance_code == 0:
         overall = "PASS"
-    elif functional_code is None or performance_code is None:
-        overall = "PARTIAL"
     else:
         overall = "FAIL"
 
@@ -101,6 +120,8 @@ def format_result_entry(arguments: argparse.Namespace,
         f"**Test date/time:** `{timestamp}`",
         "**Wiring:** Self-test stages 1-4 and performance fixture",
         "**RTS/CTS:** disabled",
+        f"**Artifact:** {getattr(arguments, 'artifact_path', 'not supplied')}",
+        f"**Artifact SHA-256:** `{getattr(arguments, 'artifact_sha256', 'not supplied')}`",
         "",
         "### Results",
         "",
@@ -138,22 +159,33 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--tester", default="unknown")
     parser.add_argument("--firmware-version", default="unknown")
     parser.add_argument("--firmware-commit", default="unknown")
+    parser.add_argument("--artifact", type=Path,
+                        help="flashed ELF/UF2 artifact to hash into the evidence")
     parser.add_argument("--results-file", type=Path, default=DEFAULT_RESULTS_FILE)
     parser.add_argument("--skip-functional", action="store_true")
     parser.add_argument("--skip-performance", action="store_true")
     parser.add_argument("--continue-after-functional-failure", action="store_true")
+    parser.add_argument("--confirm-rewire", action="store_true",
+                        help="confirm each functional fixture rewire")
     parser.add_argument("--no-record", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     arguments = parse_arguments()
+    artifact = artifact_metadata(arguments.artifact)
+    arguments.artifact_path = artifact["path"]
+    arguments.artifact_sha256 = artifact["sha256"]
     if arguments.skip_functional and arguments.skip_performance:
         print("at least one test phase must run", file=sys.stderr)
         return 2
     if not arguments.skip_functional and (not arguments.pico_cdc1 or not arguments.pico_cdc4):
         print("--pico-cdc1 and --pico-cdc4 are required for the functional test", file=sys.stderr)
         return 2
+    if not arguments.skip_functional and not arguments.confirm_rewire:
+        print("--confirm-rewire is required for the staged functional fixture", file=sys.stderr)
+        return 2
+    arguments.full_fixture = bool(arguments.pico_cdc1 and arguments.pico_cdc4)
 
     functional = None
     performance = None
@@ -171,8 +203,10 @@ def main() -> int:
     if not arguments.no_record:
         raw_log = write_raw_log(
             arguments.results_file.resolve(), timestamp,
-            "\n\n".join(result[1] for result in (functional, performance)
-                           if result is not None))
+            f"Command: {shlex.join(sys.argv)}\n"
+            f"Artifact: {arguments.artifact_path}\nSHA-256: {arguments.artifact_sha256}\n\n"
+            + "\n\n".join(result[1] for result in (functional, performance)
+                             if result is not None))
     entry = format_result_entry(arguments, timestamp, functional, performance, raw_log)
     if not arguments.no_record:
         prepend_result(arguments.results_file.resolve(), entry)

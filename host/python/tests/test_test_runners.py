@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -77,6 +78,45 @@ def test_functional_runner_selects_one_stage() -> None:
     commands = runner.build_stage_commands(arguments)
 
     assert [label for label, _ in commands] == ["HW UART1 to PIO UART2"]
+
+
+def test_functional_all_requires_rewire_confirmation() -> None:
+    script = TOOLS / "run_functional_test.py"
+    command = [sys.executable, str(script), "--no-record"]
+    for index in range(6):
+        command.extend([f"--pico-cdc{index}", f"/dev/cdc{index}"])
+    command.extend(["--debug-probe", "/dev/probe", "--stage", "all"])
+
+    completed = subprocess.run(command, capture_output=True, text=True)
+
+    assert completed.returncode == 2
+    assert "--stage all requires --confirm-rewire" in completed.stderr
+
+
+def test_hid_health_module_resolves_repository_root() -> None:
+    health = _load("hardware_test_health")
+
+    assert health.REPO_ROOT == Path(__file__).resolve().parents[3]
+    assert health.HID_TOOL == health.REPO_ROOT / "host/python/src/pico_uart_hid.py"
+
+
+def test_single_functional_stage_is_recorded_partial() -> None:
+    runner = _load("run_functional_test")
+    arguments = SimpleNamespace(
+        board="pico", firmware_version="0.0.0", firmware_commit="local",
+        baud=115200, payload_bytes=64,
+    )
+    clean = {
+        "channels": {index: 1 for index in range(6)},
+        "overruns": {index: 0 for index in range(6)},
+        "error": None,
+    }
+
+    entry = runner.format_result_entry(
+        arguments, "2026-09-20T00:00:00+00:00",
+        [("HW UART1 to PIO UART2", 0, "PASS")], clean, clean)
+
+    assert "**Result:** `PARTIAL`" in entry
 
 
 def test_performance_runner_parses_pass_and_fail_lines() -> None:

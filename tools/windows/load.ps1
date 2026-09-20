@@ -28,7 +28,11 @@ if (-not [string]::IsNullOrWhiteSpace($Board)) {
 }
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
-$buildDirPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $BuildDir))
+$buildDirPath = if ([System.IO.Path]::IsPathRooted($BuildDir)) {
+    [System.IO.Path]::GetFullPath($BuildDir)
+} else {
+    [System.IO.Path]::GetFullPath((Join-Path $repoRoot $BuildDir))
+}
 
 if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
     $PicoSdkPath = Join-Path $repoRoot ".pico-sdk"
@@ -80,12 +84,36 @@ if (-not (Get-Command $OpenOcdExe -ErrorAction SilentlyContinue)) {
     throw "OpenOCD executable not found: $OpenOcdExe"
 }
 
-& $OpenOcdExe `
-    -f interface/cmsis-dap.cfg `
-    -f $OpenOcdTarget `
-    -c "adapter speed $AdapterSpeedKhz" `
-    $(if ([string]::IsNullOrWhiteSpace($DebugProbeSerial)) { @() } else { @("-c", "adapter serial $DebugProbeSerial") }) `
-    -c "program {$ElfPath} verify reset exit"
+if ([string]::IsNullOrWhiteSpace($DebugProbeSerial) -and
+    (Get-Command Get-PnpDevice -ErrorAction SilentlyContinue)) {
+    $vid = $DebugProbeVid -replace '^0x', ''
+    $pid = $DebugProbePid -replace '^0x', ''
+    $probePattern = "VID_${vid.ToUpper()}&PID_${pid.ToUpper()}"
+    $probeCount = @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+        Where-Object { $_.InstanceId -match $probePattern }).Count
+    if ($probeCount -gt 1) {
+        throw "Multiple CMSIS-DAP probes detected; pass -DebugProbeSerial."
+    }
+}
+
+function Escape-TclBraced([string]$Value) {
+    return $Value.Replace('{', '\{').Replace('}', '\}')
+}
+
+$escapedElfPath = Escape-TclBraced $ElfPath
+$programCommand = "program {$escapedElfPath} verify reset exit"
+$openOcdArguments = @(
+    '-f', 'interface/cmsis-dap.cfg',
+    '-f', $OpenOcdTarget,
+    '-c', "adapter speed $AdapterSpeedKhz"
+)
+if (-not [string]::IsNullOrWhiteSpace($DebugProbeSerial)) {
+    $escapedSerial = Escape-TclBraced $DebugProbeSerial
+    $openOcdArguments += @('-c', "adapter serial {$escapedSerial}")
+}
+$openOcdArguments += @('-c', $programCommand)
+
+& $OpenOcdExe @openOcdArguments
 
 if ($LASTEXITCODE -ne 0) {
     throw "OpenOCD failed to program $ElfPath"

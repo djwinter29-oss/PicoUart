@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import re
+import hashlib
 
 
 def prepend_result(results_file: Path, entry: str) -> None:
@@ -31,3 +32,17 @@ def write_raw_log(results_file: Path, timestamp: str, content: str) -> Path:
     path = raw_dir / f"hardware-test-{safe_timestamp}.log"
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def artifact_metadata(artifact: Path | None) -> dict[str, str]:
+    """Return the selected firmware artifact and its SHA-256 digest."""
+    if artifact is None:
+        return {"path": "not supplied", "sha256": "not supplied"}
+    artifact = artifact.resolve()
+    if not artifact.is_file():
+        raise FileNotFoundError(f"artifact not found: {artifact}")
+    digest = hashlib.sha256()
+    with artifact.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {"path": str(artifact), "sha256": digest.hexdigest()}

@@ -53,8 +53,12 @@ Example concurrent run using the existing benchmark tool:
 python3 tools/linux/serial_stress_benchmark.py \
   --uart0-pico /dev/serial/by-id/<pico-cdc0> \
   --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
+  --uart1 /dev/serial/by-id/<pico-cdc1> \
+  --uart1-peer /dev/serial/by-id/<pico-cdc2> \
   --uart2 /dev/serial/by-id/<pico-cdc2> \
   --uart3 /dev/serial/by-id/<pico-cdc3> \
+  --uart4 /dev/serial/by-id/<pico-cdc4> \
+  --uart4-peer /dev/serial/by-id/<pico-cdc3> \
   --uart5 /dev/serial/by-id/<pico-cdc5> \
   --rates 115200,460800,921600,1000000 \
   --duration 10
@@ -67,9 +71,11 @@ python3 tools/linux/run_performance_test.py \
   --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
   --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
   --uart1 /dev/serial/by-id/<pico-cdc1> \
+  --uart1-peer /dev/serial/by-id/<pico-cdc2> \
   --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
   --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
   --uart4 /dev/serial/by-id/<pico-cdc4> \
+  --uart4-peer /dev/serial/by-id/<pico-cdc3> \
   --uart5 /dev/serial/by-id/<pico-uart-cdc5> \
   --board pico --firmware-version 1.2.3 --firmware-commit <commit>
 ```
@@ -87,6 +93,10 @@ When `--uart1` and `--uart4` are supplied, the benchmark uses the documented
 cross-fixture: UART1 to UART2 and UART3 to UART4. This is the required form for
 the full staged fixture. Without those options it retains the legacy
 UART2-to-UART3 plus optional loopback fixture for partial bench setups.
+
+Omitting either optional link records a successful run as `PARTIAL`, not a
+full-matrix `PASS`. Pass `--artifact /path/to/pico_uart.elf` or the flashed
+UF2 to bind the result to a SHA-256 digest and HID-reported firmware version.
 
 ## Soak Run
 

@@ -34,6 +34,8 @@ need a recorded hardware-in-the-loop (HIL) pass:
    `workflow_dispatch` dry-run artifacts). Do **not** rebuild for release HIL.
    Record `SHA256SUMS-*` and flash with
    `tools/linux/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>`.
+   Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached
+   or when USB enumeration tools are unavailable.
    Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash
    device` after detecting the SWD target, update OpenOCD and retry with
    `--adapter-speed-khz 1000` before treating the HIL attempt as a firmware
@@ -46,9 +48,10 @@ need a recorded hardware-in-the-loop (HIL) pass:
    loopback. Change the jumpers between stages as described in
    `docs/tests/self-test-setup.md`.
 4. Run `serial_stress_benchmark.py` at the default rate sweep (or the rates
-   claimed in the release notes). Pass `--uart1` and `--uart4` when the full
-   staged fixture is connected so the benchmark exercises HW1↔PIO2 and
-   PIO3↔PIO4. Record the command line, board, clock, duration, verified bytes, and every
+   claimed in the release notes). Pass `--uart1` with `--uart1-peer <uart2>`
+   and `--uart4` with `--uart4-peer <uart3>` when the full staged fixture is
+   connected so the benchmark exercises HW1↔PIO2 and PIO3↔PIO4. Record the
+   command line, board, clock, duration, verified bytes, and every
    reported stream throughput. A promoted result has no byte mismatch, timeout,
    `rx_overrun`, `rx_error`, or `control_error` in the captured HID monitor.
 5. Run rapid line-coding changes on both a hardware UART and a PIO UART while

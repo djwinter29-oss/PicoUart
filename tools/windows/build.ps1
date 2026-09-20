@@ -34,7 +34,11 @@ if (-not [string]::IsNullOrWhiteSpace($Board)) {
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $sourceDir = Join-Path $repoRoot "firmware"
-$buildDirPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $BuildDir))
+$buildDirPath = if ([System.IO.Path]::IsPathRooted($BuildDir)) {
+    [System.IO.Path]::GetFullPath($BuildDir)
+} else {
+    [System.IO.Path]::GetFullPath((Join-Path $repoRoot $BuildDir))
+}
 
 if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
     $PicoSdkPath = $env:PICO_SDK_PATH

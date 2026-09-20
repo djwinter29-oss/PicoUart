@@ -42,6 +42,10 @@ while [ "$#" -gt 0 ]; do
             ADAPTER_SPEED_KHZ="$2"
             shift 2
             ;;
+        --probe-serial)
+            DEBUG_PROBE_SERIAL="$2"
+            shift 2
+            ;;
         --generator)
             GENERATOR="$2"
             shift 2
@@ -77,7 +81,10 @@ fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
-BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR"
+case "$BUILD_DIR" in
+    /*) BUILD_DIR_PATH="$BUILD_DIR" ;;
+    *) BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR" ;;
+esac
 
 if [ -z "$PICO_SDK_PATH_VALUE" ]; then
     PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
@@ -132,7 +139,14 @@ if [ -z "$DEBUG_PROBE_SERIAL" ] && command -v lsusb >/dev/null 2>&1; then
         echo "Multiple CMSIS-DAP probes detected; set PICO_DEBUG_PROBE_SERIAL or pass the probe serial." >&2
         exit 1
     fi
+elif [ -z "$DEBUG_PROBE_SERIAL" ]; then
+    echo "Cannot verify CMSIS-DAP probe uniqueness without lsusb; pass --probe-serial." >&2
+    exit 1
 fi
+
+tcl_brace_escape() {
+    printf '%s' "$1" | sed 's/[{}]/\\&/g'
+}
 
 run_openocd() {
     OPENOCD_LOG=$(mktemp)
@@ -140,13 +154,15 @@ run_openocd() {
         -f interface/cmsis-dap.cfg
 
     if [ -n "$DEBUG_PROBE_SERIAL" ]; then
-        set -- "$@" -c "adapter serial $DEBUG_PROBE_SERIAL"
+        DEBUG_PROBE_SERIAL_TCL=$(tcl_brace_escape "$DEBUG_PROBE_SERIAL")
+        set -- "$@" -c "adapter serial {$DEBUG_PROBE_SERIAL_TCL}"
     fi
 
+    ELF_PATH_TCL=$(tcl_brace_escape "$ELF_PATH")
     set -- "$@" \
         -f "$OPENOCD_TARGET" \
         -c "adapter speed $ADAPTER_SPEED_KHZ" \
-        -c "program {$ELF_PATH} verify reset exit"
+        -c "program {$ELF_PATH_TCL} verify reset exit"
 
     if "$@" >"$OPENOCD_LOG" 2>&1; then
         cat "$OPENOCD_LOG"
@@ -165,7 +181,8 @@ run_openocd() {
         fi
     fi
 
-    if grep -Eq 'Operation timed out|unable to find a matching CMSIS-DAP device' "$OPENOCD_LOG" &&
+     if [ -z "$DEBUG_PROBE_SERIAL" ] &&
+         grep -Eq 'Operation timed out|unable to find a matching CMSIS-DAP device' "$OPENOCD_LOG" &&
        command -v usbreset >/dev/null 2>&1 &&
        command -v lsusb >/dev/null 2>&1 &&
        command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then

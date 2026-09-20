@@ -13,7 +13,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from hardware_test_result import prepend_result, write_raw_log
-from hardware_test_health import collect_hid_health, health_is_clean, health_summary
+from hardware_test_health import (collect_hid_health, health_evidence, health_is_clean,
+                                  health_summary)
+from hardware_test_result import artifact_metadata
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
@@ -94,7 +96,8 @@ def format_result_entry(arguments: SimpleNamespace,
                         health_after: dict | None = None,
                         raw_log: Path | None = None) -> str:
     parsed = parse_benchmark_output_by_rate(output)
-    overall = "PASS" if result == 0 and health_is_clean(health_after, health_before) else "FAIL"
+    clean = result == 0 and health_is_clean(health_after, health_before)
+    overall = "PASS" if clean and arguments.uart1 and arguments.uart4 else "PARTIAL" if clean else "FAIL"
     expected_labels = ["uart0-pico-to-peer", "uart0-peer-to-pico", "uart5-loopback"]
     if arguments.uart1:
         expected_labels.extend(["uart1-to-uart2", "uart2-to-uart1"])
@@ -119,6 +122,9 @@ def format_result_entry(arguments: SimpleNamespace,
         f"- UART0 baud: {arguments.uart0_baud}",
         f"- Duration per rate: {arguments.duration} seconds",
         f"- Payload: {arguments.payload_bytes} bytes",
+        f"- Artifact: {getattr(arguments, 'artifact_path', 'not supplied')}",
+        f"- Artifact SHA-256: `{getattr(arguments, 'artifact_sha256', 'not supplied')}`",
+        f"- HID firmware version: `{health_after.get('firmware_version', 'unknown') if health_after else 'unknown'}`",
         "",
         "### Results",
         "",
@@ -154,6 +160,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--tester", default="unknown")
     parser.add_argument("--firmware-version", default="unknown")
     parser.add_argument("--firmware-commit", default="unknown")
+    parser.add_argument("--artifact", type=Path)
     parser.add_argument("--results-file", type=Path, default=DEFAULT_RESULTS_FILE)
     parser.add_argument("--no-record", action="store_true")
     return parser.parse_args()
@@ -161,6 +168,9 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> int:
     arguments = parse_arguments()
+    artifact = artifact_metadata(arguments.artifact)
+    arguments.artifact_path = artifact["path"]
+    arguments.artifact_sha256 = artifact["sha256"]
     if (arguments.duration <= 0 or arguments.timeout <= 0 or
             arguments.payload_bytes < 32 or arguments.uart0_baud <= 0):
         print("duration, timeout, UART0 baud, and payload must be valid", file=sys.stderr)
@@ -168,16 +178,24 @@ def main() -> int:
 
     command = build_command(arguments)
     health_before = collect_hid_health()
+    print(health_evidence(health_before), end="")
     print(f"RUN performance benchmark: {' '.join(shlex.quote(part) for part in command)}")
-    completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True)
-    output = completed.stdout + completed.stderr
+    completed = subprocess.run(command, cwd=REPO_ROOT, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True)
+    output = completed.stdout
     print(output, end="")
 
     timestamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
     health_after = collect_hid_health()
+    print(health_evidence(health_after), end="")
     raw_log = None
     if not arguments.no_record:
-        raw_log = write_raw_log(arguments.results_file.resolve(), timestamp, output)
+        raw_log = write_raw_log(
+            arguments.results_file.resolve(), timestamp,
+            f"Command: {shlex.join(sys.argv)}\n"
+            f"Artifact: {arguments.artifact_path}\nSHA-256: {arguments.artifact_sha256}\n"
+            + health_evidence(health_before) + "\n"
+            + output + "\n" + health_evidence(health_after))
     entry = format_result_entry(arguments, timestamp, completed.returncode, output,
                                 health_before, health_after, raw_log)
     if not arguments.no_record:
