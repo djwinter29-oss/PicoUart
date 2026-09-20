@@ -82,7 +82,6 @@ if (-not (Get-Command $OpenOcdExe -ErrorAction SilentlyContinue)) {
 
 & $OpenOcdExe `
     -f interface/cmsis-dap.cfg `
-    -c "cmsis-dap vid_pid $DebugProbeVid $DebugProbePid" `
     -f $OpenOcdTarget `
     -c "adapter speed $AdapterSpeedKhz" `
     $(if ([string]::IsNullOrWhiteSpace($DebugProbeSerial)) { @() } else { @("-c", "adapter serial $DebugProbeSerial") }) `

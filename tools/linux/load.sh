@@ -129,8 +129,7 @@ fi
 run_openocd() {
     OPENOCD_LOG=$(mktemp)
     set -- "$OPENOCD_EXE" \
-        -f interface/cmsis-dap.cfg \
-        -c "cmsis-dap vid_pid $DEBUG_PROBE_VID $DEBUG_PROBE_PID"
+        -f interface/cmsis-dap.cfg
 
     if [ -n "$DEBUG_PROBE_SERIAL" ]; then
         set -- "$@" -c "adapter serial $DEBUG_PROBE_SERIAL"

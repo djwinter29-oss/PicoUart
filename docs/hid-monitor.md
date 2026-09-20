@@ -83,7 +83,7 @@ at least that large. The ring peak is cumulative from boot and saturates at
 | 4 | Host has opened the matching CDC interface (DTR asserted). |
 | 5 | The matching UART uses PIO; clear for hardware UART. |
 | 6 | UART RX data has been overwritten since boot; drain the CDC interface or apply flow control. |
-| 7 | The UART has observed a receive-status / framing error since the post-boot baseline (hardware UART RSR, or PIO stop-bit framing fail). |
+| 7 | The hardware UART has observed an RSR error since the post-boot baseline, or the PIO UART has observed a stop-bit framing error since initialization. |
 
 ## Line-coding rejects
 

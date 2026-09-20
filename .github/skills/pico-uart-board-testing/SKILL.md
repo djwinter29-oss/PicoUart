@@ -89,6 +89,21 @@ below remain useful for partial bench wiring.
 2. Connect the Debug Probe SWDIO, SWCLK, and GND signals to the PicoUart board,
    then flash through CMSIS-DAP OpenOCD.
 
+  Use a current OpenOCD build with CMSIS-DAP support. Some older or distro
+  patched versions fail before programming with `cmsis-dap <cmd>` usage output
+  or `Unknown flash device`; treat that as a tool/flash-support issue first.
+  Check the version and retry at a lower SWD speed when needed:
+
+  ```sh
+  openocd --version
+  tools/linux/load.sh --board pico --adapter-speed-khz 1000
+  ```
+
+  The loader uses `interface/cmsis-dap.cfg` and does not need a
+  `cmsis-dap vid_pid` command. Confirm the log reaches `SWD DPIDR`, target
+  detection, and `Programming Started`. Record the OpenOCD version, flash ID,
+  board, and adapter speed if `Unknown flash device` remains.
+
    **Bring-up / local rebuild** (default rebuilds then flashes):
 
    ```sh
@@ -229,6 +244,9 @@ below remain useful for partial bench wiring.
 - No `cafe:4010` device: verify the UF2 was flashed and use a USB data cable.
 - OpenOCD cannot find the target: verify Debug Probe SWDIO, SWCLK, GND, and
    target power; the Debug Probe UART pins are not SWD pins.
+- `cmsis-dap <cmd>` usage or `Unknown flash device`: update OpenOCD, verify the
+  CMSIS-DAP config, reconnect target power, and retry with
+  `--adapter-speed-khz 1000` before diagnosing firmware.
 - Permission error: ensure the current user can access the serial device,
    typically through `dialout` or `plugdev` group membership.
 - UART2-to-UART3 failure: confirm GP8-to-GP13 and GP12-to-GP9 are fitted.

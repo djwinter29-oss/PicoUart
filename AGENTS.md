@@ -57,3 +57,7 @@ best available end-to-end check here.
 - Host unit tests: `tools/linux/test-host.sh`. Host coverage: `tools/linux/coverage.sh`.
 - Each CDC/UART can be set to 1 Mbaud; PIO RX is DMA-backed. Sustained multi-port 1 Mbaud
   full-duplex is still limited by USB full-speed aggregate bandwidth.
+- Flashing requires a current OpenOCD CMSIS-DAP build. If loading reaches SWD
+  target detection but reports `Unknown flash device`, update OpenOCD and retry
+  at `--adapter-speed-khz 1000`; classify the result as a tooling or flash-
+  support issue until the loader succeeds.
