@@ -147,6 +147,16 @@ void hw_uart_driver_enable_rx_dma_irq(void)
     }
 }
 
+void hw_uart_driver_clear_rx_error_baseline(hw_uart_driver_t *driver)
+{
+    if ((driver == NULL) || !driver->initialized) {
+        return;
+    }
+
+    uart_get_hw(driver->config.instance)->rsr = 0u;
+    driver->rx_error_count = 0u;
+}
+
 static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
 {
     dma_channel_config rx_dma_config;

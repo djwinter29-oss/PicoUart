@@ -553,6 +553,10 @@ bool uart_driver_init(void)
             return false;
         }
 
+        for (size_t index = UART_PORT_0; index <= UART_PORT_1; ++index) {
+            hw_uart_driver_clear_rx_error_baseline(&uart_ports[index].backend.hw);
+        }
+
         multicore_launch_core1(uart_driver_worker_core_main);
         uart_driver_worker_started = true;
     }

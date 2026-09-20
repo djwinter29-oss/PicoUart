@@ -69,6 +69,15 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver);
 void hw_uart_driver_enable_rx_dma_irq(void);
 
 /**
+ * @brief Clear receive-status errors accumulated during board bring-up.
+ * @param driver Initialized hardware UART backend to baseline.
+ *
+ * Call after every configured backend has started so transient startup line
+ * activity is not reported as a runtime receive error.
+ */
+void hw_uart_driver_clear_rx_error_baseline(hw_uart_driver_t *driver);
+
+/**
  * @brief Poll one hardware UART backend to advance TX DMA completion state.
  * @param driver Driver instance to poll.
  * @param tx_launch_allowed False while a control change waits for a TX boundary.
