@@ -16,15 +16,15 @@ results. Do not duplicate pin mappings or connection diagrams here.
 
 Read the relevant document before testing:
 
-- [`docs/tests/self-test-setup.md`](../../docs/tests/self-test-setup.md):
+- [`docs/tests/self-test-setup.md`](../../../docs/tests/self-test-setup.md):
   equipment, staged wiring, GPIO assignments, and RTS/CTS.
-- [`docs/tests/functional-test-plan.md`](../../docs/tests/functional-test-plan.md):
+- [`docs/tests/functional-test-plan.md`](../../../docs/tests/functional-test-plan.md):
   functional sequence and pass criteria.
-- [`docs/tests/performance-test-plan.md`](../../docs/tests/performance-test-plan.md):
+- [`docs/tests/performance-test-plan.md`](../../../docs/tests/performance-test-plan.md):
   rate matrix, benchmark, soak testing, and acceptance criteria.
-- [`docs/tests/performance-test-results.md`](../../docs/tests/performance-test-results.md):
+- [`docs/tests/performance-test-results.md`](../../../docs/tests/performance-test-results.md):
   concise newest-first result log and template.
-- [`docs/releasing.md`](../../docs/releasing.md): release HIL and artifact-hash gates.
+- [`docs/releasing.md`](../../../docs/releasing.md): release HIL and artifact-hash gates.
 
 The repository provides runners that implement the documented workflow:
 
@@ -37,6 +37,9 @@ python3 tools/linux/run_hardware_test.py --help
 Use `run_hardware_test.py` for the normal end-to-end run. It runs functional
 testing before performance testing and records a concise result entry. Use the
 individual runners when diagnosing one phase. Add `--no-record` for a dry run.
+Use `run_functional_test.py --stage 1|2|3|4` when jumpers must be changed
+between stages; use `--stage all --confirm-rewire` only when the operator can
+confirm each rewire interactively.
 
 ## Preconditions
 

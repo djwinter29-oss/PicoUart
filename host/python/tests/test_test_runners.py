@@ -34,6 +34,7 @@ def functional_arguments() -> SimpleNamespace:
         baud=115200,
         payload_bytes=64,
         timeout=3.0,
+        stage="all",
     )
 
 
@@ -68,6 +69,16 @@ def test_functional_runner_builds_all_documented_stages() -> None:
     assert "--peer-port" in commands[1][1]
 
 
+def test_functional_runner_selects_one_stage() -> None:
+    runner = _load("run_functional_test")
+    arguments = functional_arguments()
+    arguments.stage = "2"
+
+    commands = runner.build_stage_commands(arguments)
+
+    assert [label for label, _ in commands] == ["HW UART1 to PIO UART2"]
+
+
 def test_performance_runner_parses_pass_and_fail_lines() -> None:
     runner = _load("run_performance_test")
     output = (
@@ -78,6 +89,21 @@ def test_performance_runner_parses_pass_and_fail_lines() -> None:
     assert runner.parse_benchmark_output(output) == {
         "uart0-pico-to-peer": ("PASS", "100", "20.0"),
         "uart5-loopback": ("FAIL", "-", "received data did not match"),
+    }
+
+
+def test_performance_runner_preserves_rate_results() -> None:
+    runner = _load("run_performance_test")
+    output = (
+        "Benchmarking PIO/loopbacks at 115200 baud; UART0 at 115200 baud\n"
+        "PASS uart5-loopback: 100 bytes, 20.0 B/s\n"
+        "Benchmarking PIO/loopbacks at 1000000 baud; UART0 at 115200 baud\n"
+        "FAIL uart5-loopback: timeout\n"
+    )
+
+    assert runner.parse_benchmark_output_by_rate(output) == {
+        (115200, "uart5-loopback"): ("PASS", "100", "20.0"),
+        (1000000, "uart5-loopback"): ("FAIL", "-", "timeout"),
     }
 
 

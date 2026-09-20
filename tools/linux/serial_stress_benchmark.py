@@ -185,9 +185,15 @@ def _same_serial_path(left: str, right: str) -> bool:
 
 def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
     """Require cross-fixture peer arguments to name the opened CDC peers."""
-    if not (getattr(arguments, "uart1_peer", None) and
-            getattr(arguments, "uart4_peer", None)):
+    cross_values = [getattr(arguments, name, None)
+                    for name in ("uart1", "uart1_peer", "uart4", "uart4_peer")]
+    if not any(cross_values):
         return True
+
+    if not all(cross_values):
+        print("cross-fixture mode requires --uart1 --uart1-peer --uart4 --uart4-peer",
+              file=sys.stderr)
+        return False
 
     if not _same_serial_path(arguments.uart1_peer, arguments.uart2):
         print("--uart1-peer must resolve to the same device as --uart2", file=sys.stderr)

@@ -255,3 +255,15 @@ def test_cross_fixture_rejects_mismatched_peer_paths() -> None:
     )()
 
     assert stress.cross_fixture_paths_valid(arguments) is False
+
+
+def test_cross_fixture_rejects_partial_arguments() -> None:
+    stress = _load_stress()
+    arguments = type(
+        "Arguments",
+        (),
+        {"uart1": "/dev/ttyACM1", "uart1_peer": None,
+         "uart4": None, "uart4_peer": None},
+    )()
+
+    assert stress.cross_fixture_paths_valid(arguments) is False

@@ -85,7 +85,10 @@ whether performance starts after the functional stages pass.
 
 The runner stops at the first failed stage by default. Add
 `--continue-on-failure` to collect every stage result. Add `--no-record` to
-run without modifying the results file.
+run without modifying the results file. Because jumpers must change between
+stages, use `--stage 1`, `--stage 2`, `--stage 3`, or `--stage 4` for manual
+execution. Use `--stage all --confirm-rewire` only when the operator can
+confirm each rewire interactively.
 
 ## Pass Criteria
 

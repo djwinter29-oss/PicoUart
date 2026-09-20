@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import prepend_result
+from hardware_test_result import prepend_result, write_raw_log
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
@@ -78,7 +78,8 @@ def run_child(label: str, command: list[str]) -> tuple[int, str]:
 def format_result_entry(arguments: argparse.Namespace,
                         timestamp: str,
                         functional: tuple[int, str] | None,
-                        performance: tuple[int, str] | None) -> str:
+                        performance: tuple[int, str] | None,
+                        raw_log: Path | None = None) -> str:
     functional_code = functional[0] if functional else None
     performance_code = performance[0] if performance else None
     if any(code not in (None, 0) for code in (functional_code, performance_code)):
@@ -109,6 +110,7 @@ def format_result_entry(arguments: argparse.Namespace,
         "",
         "- RX overflows: check with `pico_uart_hid.py overruns`",
         "- HID errors: check with `pico_uart_hid.py monitor`",
+        f"- Raw log: {raw_log or 'not recorded'}",
         "",
         "---",
     ]
@@ -164,7 +166,13 @@ def main() -> int:
         print("SKIP performance test: functional test failed", file=sys.stderr)
 
     timestamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
-    entry = format_result_entry(arguments, timestamp, functional, performance)
+    raw_log = None
+    if not arguments.no_record:
+        raw_log = write_raw_log(
+            arguments.results_file.resolve(), timestamp,
+            "\n\n".join(result[1] for result in (functional, performance)
+                           if result is not None))
+    entry = format_result_entry(arguments, timestamp, functional, performance, raw_log)
     if not arguments.no_record:
         prepend_result(arguments.results_file.resolve(), entry)
         print(f"Recorded result in {arguments.results_file}")

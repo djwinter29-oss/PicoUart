@@ -85,7 +85,7 @@ if (-not (Get-Command $OpenOcdExe -ErrorAction SilentlyContinue)) {
     -f $OpenOcdTarget `
     -c "adapter speed $AdapterSpeedKhz" `
     $(if ([string]::IsNullOrWhiteSpace($DebugProbeSerial)) { @() } else { @("-c", "adapter serial $DebugProbeSerial") }) `
-    -c "program $ElfPath verify reset exit"
+    -c "program {$ElfPath} verify reset exit"
 
 if ($LASTEXITCODE -ne 0) {
     throw "OpenOCD failed to program $ElfPath"

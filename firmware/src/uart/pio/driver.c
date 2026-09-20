@@ -898,6 +898,9 @@ static void pio_uart_driver_apply_baud_locked(pio_uart_driver_t *driver, uint32_
     driver->config.baud_rate = baud_rate;
     pio_sm_set_clkdiv(driver->config.pio, driver->config.tx_state_machine, divider);
     pio_sm_set_clkdiv(driver->config.pio, driver->config.rx_state_machine, divider);
+    pio_sm_clkdiv_restart(driver->config.pio,
+                          (1u << driver->config.tx_state_machine) |
+                              (1u << driver->config.rx_state_machine));
     pio_sm_clear_fifos(driver->config.pio, driver->config.tx_state_machine);
     pio_sm_clear_fifos(driver->config.pio, driver->config.rx_state_machine);
     pio_sm_restart(driver->config.pio, driver->config.tx_state_machine);

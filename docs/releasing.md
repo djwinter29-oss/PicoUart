@@ -46,10 +46,9 @@ need a recorded hardware-in-the-loop (HIL) pass:
    loopback. Change the jumpers between stages as described in
    `docs/tests/self-test-setup.md`.
 4. Run `serial_stress_benchmark.py` at the default rate sweep (or the rates
-   claimed in the release notes). Pass `--uart1` / `--uart4` only when those
-   jumpers are fitted.
-   Use `--uart1` and `--uart4` with the topology-aware benchmark when the full
-   staged fixture is connected. Record the command line, board, clock, duration, verified bytes, and every
+   claimed in the release notes). Pass `--uart1` and `--uart4` when the full
+   staged fixture is connected so the benchmark exercises HW1↔PIO2 and
+   PIO3↔PIO4. Record the command line, board, clock, duration, verified bytes, and every
    reported stream throughput. A promoted result has no byte mismatch, timeout,
    `rx_overrun`, `rx_error`, or `control_error` in the captured HID monitor.
 5. Run rapid line-coding changes on both a hardware UART and a PIO UART while

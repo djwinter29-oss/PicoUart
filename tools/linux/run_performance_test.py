@@ -12,7 +12,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import prepend_result
+from hardware_test_result import prepend_result, write_raw_log
+from hardware_test_health import collect_hid_health, health_is_clean, health_summary
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
@@ -22,6 +23,7 @@ PASS_PATTERN = re.compile(
     re.MULTILINE,
 )
 FAIL_PATTERN = re.compile(r"^FAIL (?P<label>[^:]+): (?P<error>.+)$", re.MULTILINE)
+RATE_PATTERN = re.compile(r"^Benchmarking .*? at (?P<rate>[0-9]+) baud", re.MULTILINE)
 
 
 def build_command(arguments: SimpleNamespace) -> list[str]:
@@ -62,12 +64,37 @@ def parse_benchmark_output(output: str) -> dict[str, tuple[str, str, str]]:
     return results
 
 
+def parse_benchmark_output_by_rate(output: str) -> dict[tuple[int, str], tuple[str, str, str]]:
+    """Parse benchmark results without collapsing repeated link labels across rates."""
+    results: dict[tuple[int, str], tuple[str, str, str]] = {}
+    current_rate: int | None = None
+    for line in output.splitlines():
+        rate_match = RATE_PATTERN.match(line)
+        if rate_match:
+            current_rate = int(rate_match.group("rate"))
+            continue
+        pass_match = PASS_PATTERN.match(line)
+        fail_match = FAIL_PATTERN.match(line)
+        if current_rate is None:
+            continue
+        if pass_match:
+            results[(current_rate, pass_match.group("label"))] = (
+                "PASS", pass_match.group("bytes"), pass_match.group("throughput"))
+        elif fail_match:
+            results[(current_rate, fail_match.group("label"))] = (
+                "FAIL", "-", fail_match.group("error"))
+    return results
+
+
 def format_result_entry(arguments: SimpleNamespace,
                         timestamp: str,
                         result: int,
-                        output: str) -> str:
-    parsed = parse_benchmark_output(output)
-    overall = "PASS" if result == 0 else "FAIL"
+                        output: str,
+                        health_before: dict | None = None,
+                        health_after: dict | None = None,
+                        raw_log: Path | None = None) -> str:
+    parsed = parse_benchmark_output_by_rate(output)
+    overall = "PASS" if result == 0 and health_is_clean(health_after, health_before) else "FAIL"
     expected_labels = ["uart0-pico-to-peer", "uart0-peer-to-pico", "uart5-loopback"]
     if arguments.uart1:
         expected_labels.extend(["uart1-to-uart2", "uart2-to-uart1"])
@@ -95,13 +122,17 @@ def format_result_entry(arguments: SimpleNamespace,
         "",
         "### Results",
         "",
-        "| Link | Result | Verified bytes | Throughput / error |",
-        "| --- | --- | ---: | --- |",
+        "| Rate | Link | Result | Verified bytes | Throughput / error |",
+        "| ---: | --- | --- | ---: | --- |",
     ]
-    for label in expected_labels:
-        status, verified, throughput = parsed.get(label, ("NOT REPORTED", "-", "-"))
-        lines.append(f"| {label} | {status} | {verified} | {throughput} |")
-    lines.extend(["", "### Health", "", "- RX overflows: check with `pico_uart_hid.py overruns`", "- HID errors: check with `pico_uart_hid.py monitor`", "", "---"])
+    for rate in (int(item) for item in arguments.rates.split(",")):
+        for label in expected_labels:
+            status, verified, throughput = parsed.get(
+                (rate, label), ("NOT REPORTED", "-", "-"))
+            lines.append(f"| {rate} | {label} | {status} | {verified} | {throughput} |")
+    lines.extend(["", "### Health", "", f"- Before: {health_summary(health_before)}",
+                  f"- After: {health_summary(health_after)}",
+                  f"- Raw log: {raw_log or 'not recorded'}", "", "---"])
     return "\n".join(lines)
 
 
@@ -136,17 +167,23 @@ def main() -> int:
         return 2
 
     command = build_command(arguments)
+    health_before = collect_hid_health()
     print(f"RUN performance benchmark: {' '.join(shlex.quote(part) for part in command)}")
     completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True)
     output = completed.stdout + completed.stderr
     print(output, end="")
 
     timestamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
-    entry = format_result_entry(arguments, timestamp, completed.returncode, output)
+    health_after = collect_hid_health()
+    raw_log = None
+    if not arguments.no_record:
+        raw_log = write_raw_log(arguments.results_file.resolve(), timestamp, output)
+    entry = format_result_entry(arguments, timestamp, completed.returncode, output,
+                                health_before, health_after, raw_log)
     if not arguments.no_record:
         prepend_result(arguments.results_file.resolve(), entry)
         print(f"Recorded result in {arguments.results_file}")
-    return completed.returncode
+    return completed.returncode if health_is_clean(health_after, health_before) else 1
 
 
 if __name__ == "__main__":

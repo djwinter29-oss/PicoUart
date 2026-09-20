@@ -7,10 +7,16 @@ reusable template at the bottom.
 
 **Result:** `PASS`
 **Firmware:** `0.0.0`, latest working tree
+**Firmware commit:** `1150ed4`
+**Test date/time:** `2026-09-20`
 **OpenOCD:** upstream `0.12.0+dev-g853c016`
 **Flash:** Boya BY25Q16ES, `0x00154068`, 2048 KiB
 **Wiring:** Self-test stages 1-4
 **RTS/CTS:** disabled
+
+**Artifacts:** `build/firmware-pico/pico_uart.elf`
+**ELF SHA256:** `9a417879968ae8703ce2c69541f4fd9feecefec94602ba2134c4f925cdfa3e00`
+**UF2 SHA256:** `91cae04c45f6a02c3b7c9908666fd5b30aebe5db4d03a496783e1b6fd1786fbf`
 
 ### Test Configuration
 

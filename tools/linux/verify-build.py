@@ -169,7 +169,7 @@ def _intel_hex_load_base(hex_data: bytes) -> int:
     except UnicodeDecodeError as error:
         raise ValueError("pico_uart.hex is not ASCII Intel HEX") from error
 
-    for line in lines:
+    for line_index, line in enumerate(lines):
         if not line.startswith(":"):
             raise ValueError("pico_uart.hex has an invalid record prefix")
         try:
@@ -181,10 +181,14 @@ def _intel_hex_load_base(hex_data: bytes) -> int:
         address = int.from_bytes(record[1:3], "big")
         record_type = record[3]
         payload = record[4:-1]
+        if saw_eof:
+            raise ValueError("pico_uart.hex contains data after its EOF record")
         if record_type == 0:
             if payload:
                 load_addresses.append(upper_address + address)
         elif record_type == 1:
+            if len(payload) != 0 or address != 0 or line_index != len(lines) - 1:
+                raise ValueError("pico_uart.hex has a non-canonical EOF record")
             saw_eof = True
         elif record_type == 2 and len(payload) == 2:
             upper_address = int.from_bytes(payload, "big") << 4

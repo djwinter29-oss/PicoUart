@@ -126,6 +126,14 @@ if ! command -v "$OPENOCD_EXE" >/dev/null 2>&1; then
     exit 1
 fi
 
+if [ -z "$DEBUG_PROBE_SERIAL" ] && command -v lsusb >/dev/null 2>&1; then
+    DEBUG_PROBE_COUNT=$(lsusb | awk -v probe_id="${DEBUG_PROBE_VID#0x}:${DEBUG_PROBE_PID#0x}" '$6 == probe_id { count += 1 } END { print count + 0 }')
+    if [ "$DEBUG_PROBE_COUNT" -gt 1 ]; then
+        echo "Multiple CMSIS-DAP probes detected; set PICO_DEBUG_PROBE_SERIAL or pass the probe serial." >&2
+        exit 1
+    fi
+fi
+
 run_openocd() {
     OPENOCD_LOG=$(mktemp)
     set -- "$OPENOCD_EXE" \
@@ -138,7 +146,7 @@ run_openocd() {
     set -- "$@" \
         -f "$OPENOCD_TARGET" \
         -c "adapter speed $ADAPTER_SPEED_KHZ" \
-        -c "program $ELF_PATH verify reset exit"
+        -c "program {$ELF_PATH} verify reset exit"
 
     if "$@" >"$OPENOCD_LOG" 2>&1; then
         cat "$OPENOCD_LOG"
