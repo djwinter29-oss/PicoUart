@@ -767,13 +767,14 @@ void pio_uart_driver_deinit(pio_uart_driver_t *driver)
     driver->initialized = false;
 }
 
-static bool pio_uart_driver_rx_line_idle(const pio_uart_driver_t *driver)
+static bool pio_uart_driver_rx_quiescent(const pio_uart_driver_t *driver)
 {
-    if ((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH) == 0u) {
-        return true;
-    }
+    uint instruction = pio_sm_get_pc(driver->config.pio, driver->config.rx_state_machine);
 
-    return gpio_get(driver->config.rx_pin);
+    /* The RX program waits for its next start bit at instruction zero. Unlike
+     * sampling a high data bit, this proves the PIO receiver has completed the
+     * prior frame and returned to its idle wait state. */
+    return instruction == pio_uart_driver_rx_offset(driver->config.pio);
 }
 
 /**
@@ -822,7 +823,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
         !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
         !pio_uart_driver_tx_shifter_idle(driver) ||
         !pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
-        !pio_uart_driver_rx_line_idle(driver)) {
+        !pio_uart_driver_rx_quiescent(driver)) {
         /* Continuous traffic defers the change; uart_driver applies a bounded timeout. */
         return false;
     }
@@ -851,7 +852,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
 
         if (!pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
             !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
-            !pio_uart_driver_rx_line_idle(driver)) {
+            !pio_uart_driver_rx_quiescent(driver)) {
             pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, true);
             pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, true);
             if (driver->rx_dma_channel >= 0) {

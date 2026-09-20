@@ -2,4 +2,4 @@
 -r requirements.txt
 
 # Host-side test runner.
-pytest>=8.0
+pytest==8.3.5

@@ -2,6 +2,7 @@
 """Control and monitor PicoUart's vendor HID interface."""
 
 import argparse
+import math
 import struct
 import sys
 import time
@@ -59,14 +60,35 @@ def open_enumerated_device(device_info: dict[str, Any]) -> Any:
     return device
 
 
-def open_device() -> Any:
+def _device_path_matches(device_info: dict[str, Any], requested_path: str) -> bool:
+    """Return whether a hidapi path matches a command-line path string."""
+    path = device_info.get("path", b"")
+    if isinstance(path, bytes):
+        path = path.decode("utf-8", errors="surrogateescape")
+    return path == requested_path
+
+
+def open_device(serial_number: str | None = None, device_path: str | None = None) -> Any:
     """Open PicoUart's vendor-defined HID collection."""
+    if serial_number is not None and device_path is not None:
+        raise RuntimeError("--serial and --device-path cannot be used together")
+
     devices = hid.enumerate(VENDOR_ID, PRODUCT_ID)
     exact_matches = [
         device_info
         for device_info in devices
         if device_info.get("usage_page") == USAGE_PAGE and device_info.get("usage") == USAGE
     ]
+    if serial_number is not None:
+        exact_matches = [
+            device_info for device_info in exact_matches
+            if device_info.get("serial_number") == serial_number
+        ]
+    if device_path is not None:
+        exact_matches = [
+            device_info for device_info in exact_matches
+            if _device_path_matches(device_info, device_path)
+        ]
     if len(exact_matches) == 1:
         return open_enumerated_device(exact_matches[0])
     if len(exact_matches) > 1:
@@ -90,6 +112,16 @@ def open_device() -> Any:
         )
         and device_info.get("interface_number") in (None, -1, HID_INTERFACE_NUMBER)
     ]
+    if serial_number is not None:
+        fallback_matches = [
+            device_info for device_info in fallback_matches
+            if device_info.get("serial_number") == serial_number
+        ]
+    if device_path is not None:
+        fallback_matches = [
+            device_info for device_info in fallback_matches
+            if _device_path_matches(device_info, device_path)
+        ]
     if len(fallback_matches) == 1:
         return open_enumerated_device(fallback_matches[0])
     if len(fallback_matches) > 1:
@@ -261,6 +293,9 @@ def reset_board(device: Any) -> None:
 def parse_arguments() -> argparse.Namespace:
     """Parse the HID command-line interface."""
     parser = argparse.ArgumentParser(description=__doc__)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--serial", help="select a PicoUart HID interface by USB serial number")
+    selection.add_argument("--device-path", help="select a PicoUart HID interface by hidapi path")
     commands = parser.add_subparsers(dest="command", required=True)
 
     monitor_parser = commands.add_parser("monitor", help="print periodic status reports")
@@ -279,11 +314,13 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> int:
     """Run the selected PicoUart HID command."""
     arguments = parse_arguments()
-    if arguments.command == "monitor" and arguments.duration <= 0:
-        raise SystemExit("--duration must be greater than zero")
+    if arguments.command == "monitor" and (
+        not math.isfinite(arguments.duration) or arguments.duration <= 0
+    ):
+        raise SystemExit("--duration must be a finite value greater than zero")
 
     try:
-        device = open_device()
+        device = open_device(arguments.serial, arguments.device_path)
         try:
             if arguments.command == "monitor":
                 monitor(device, arguments.duration)

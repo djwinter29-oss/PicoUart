@@ -8,6 +8,9 @@ param(
     [string]$OpenOcdExe = $env:OPENOCD_EXE,
     [string]$OpenOcdTarget = $env:PICO_OPENOCD_TARGET,
     [int]$AdapterSpeedKhz = 5000,
+    [string]$DebugProbeVid = $(if ($env:PICO_DEBUG_PROBE_VID) { $env:PICO_DEBUG_PROBE_VID } else { "0x2e8a" }),
+    [string]$DebugProbePid = $(if ($env:PICO_DEBUG_PROBE_PID) { $env:PICO_DEBUG_PROBE_PID } else { "0x000c" }),
+    [string]$DebugProbeSerial = $env:PICO_DEBUG_PROBE_SERIAL,
     [switch]$SkipBuild
 )
 
@@ -75,8 +78,10 @@ if (-not (Get-Command $OpenOcdExe -ErrorAction SilentlyContinue)) {
 
 & $OpenOcdExe `
     -f interface/cmsis-dap.cfg `
+    -c "cmsis-dap vid_pid $DebugProbeVid $DebugProbePid" `
     -f $OpenOcdTarget `
     -c "adapter speed $AdapterSpeedKhz" `
+    $(if ([string]::IsNullOrWhiteSpace($DebugProbeSerial)) { @() } else { @("-c", "adapter serial $DebugProbeSerial") }) `
     -c "program $ElfPath verify reset exit"
 
 if ($LASTEXITCODE -ne 0) {

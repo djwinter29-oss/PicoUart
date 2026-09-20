@@ -4,7 +4,9 @@ param(
     [string]$Generator,
     [string]$PicoSdkPath,
     [string]$FirmwareVersion = $env:PICO_UART_VERSION,
-    [string]$SystemClockKhz
+    [string]$SystemClockKhz,
+    [switch]$AllowHidReset,
+    [switch]$UnsafeOverclock
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,6 +22,9 @@ if (-not [string]::IsNullOrWhiteSpace($SystemClockKhz)) {
 if ([string]::IsNullOrWhiteSpace($Board)) {
     $Board = $env:PICO_BOARD
 }
+if ([string]::IsNullOrWhiteSpace($Board)) {
+    $Board = "pico"
+}
 
 if (-not [string]::IsNullOrWhiteSpace($Board)) {
     if ($BuildDir -eq "build/firmware") {
@@ -32,7 +37,10 @@ $sourceDir = Join-Path $repoRoot "firmware"
 $buildDirPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $BuildDir))
 
 if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
-    $PicoSdkPath = Join-Path $repoRoot ".pico-sdk"
+    $PicoSdkPath = $env:PICO_SDK_PATH
+    if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
+        $PicoSdkPath = Join-Path $repoRoot ".pico-sdk"
+    }
 }
 
 if (-not (Test-Path (Join-Path $PicoSdkPath "external\pico_sdk_import.cmake"))) {
@@ -47,24 +55,41 @@ if ([string]::IsNullOrWhiteSpace($Generator)) {
     }
 }
 
+if ([string]::IsNullOrWhiteSpace($SystemClockKhz)) {
+    if ($Board -match "^(pico2|pico2_w|rp2350)") {
+        $SystemClockKhz = "150000"
+    } else {
+        $SystemClockKhz = "125000"
+    }
+    $parsedSystemClockKhz = [int]$SystemClockKhz
+}
+
+$cachePath = Join-Path $buildDirPath "CMakeCache.txt"
+if (Test-Path $cachePath) {
+    $cache = Get-Content $cachePath -Raw
+    if ($cache -notmatch [regex]::Escape("CMAKE_GENERATOR:INTERNAL=$Generator") -or
+        $cache -notmatch [regex]::Escape("PICO_BOARD:STRING=$Board") -or
+        $cache -notmatch [regex]::Escape("PICO_SDK_PATH:UNINITIALIZED=$PicoSdkPath")) {
+        Write-Host "Build configuration changed; resetting generated CMake state in $buildDirPath"
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
+            (Join-Path $buildDirPath "CMakeCache.txt"),
+            (Join-Path $buildDirPath "CMakeFiles"),
+            (Join-Path $buildDirPath "build.ninja"),
+            (Join-Path $buildDirPath "Makefile")
+    }
+}
+
 $cmakeArgs = @(
     "-S", $sourceDir,
     "-B", $buildDirPath,
     "-G", $Generator,
-    "-DPICO_SDK_PATH=$PicoSdkPath"
+    "-DPICO_SDK_PATH=$PicoSdkPath",
+    "-DPICO_BOARD=$Board",
+    "-DPICO_UART_VERSION=$($FirmwareVersion ?? '0.0.0-dev')",
+    "-DPICO_UART_SYSTEM_CLOCK_KHZ=$parsedSystemClockKhz",
+    "-DPICO_UART_ALLOW_HID_RESET=$($AllowHidReset.IsPresent)",
+    "-DPICO_UART_ALLOW_UNSAFE_OVERCLOCK=$($UnsafeOverclock.IsPresent)"
 )
-
-if (-not [string]::IsNullOrWhiteSpace($FirmwareVersion)) {
-    $cmakeArgs += "-DPICO_UART_VERSION=$FirmwareVersion"
-}
-
-if (-not [string]::IsNullOrWhiteSpace($SystemClockKhz)) {
-    $cmakeArgs += "-DPICO_UART_SYSTEM_CLOCK_KHZ=$parsedSystemClockKhz"
-}
-
-if (-not [string]::IsNullOrWhiteSpace($Board)) {
-    $cmakeArgs += "-DPICO_BOARD=$Board"
-}
 
 & cmake @cmakeArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }

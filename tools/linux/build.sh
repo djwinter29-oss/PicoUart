@@ -2,11 +2,13 @@
 set -eu
 
 BUILD_DIR="${BUILD_DIR:-build/firmware}"
-BOARD="${PICO_BOARD:-}"
+BOARD="${PICO_BOARD:-pico}"
 GENERATOR="${GENERATOR:-}"
 PICO_SDK_PATH_VALUE=""
 FIRMWARE_VERSION="${PICO_UART_VERSION:-}"
 SYSTEM_CLOCK_KHZ=""
+ALLOW_HID_RESET="${PICO_UART_ALLOW_HID_RESET:-OFF}"
+ALLOW_UNSAFE_OVERCLOCK="OFF"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -34,6 +36,14 @@ while [ "$#" -gt 0 ]; do
             SYSTEM_CLOCK_KHZ="$2"
             shift 2
             ;;
+        --allow-hid-reset)
+            ALLOW_HID_RESET="ON"
+            shift
+            ;;
+        --unsafe-overclock)
+            ALLOW_UNSAFE_OVERCLOCK="ON"
+            shift
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             exit 1
@@ -45,6 +55,13 @@ if [ -n "$BOARD" ]; then
     if [ "$BUILD_DIR" = "build/firmware" ]; then
         BUILD_DIR="build/firmware-$BOARD"
     fi
+fi
+
+if [ -z "$SYSTEM_CLOCK_KHZ" ]; then
+    case "$BOARD" in
+        pico2|pico2_w|rp2350*) SYSTEM_CLOCK_KHZ=150000 ;;
+        *) SYSTEM_CLOCK_KHZ=125000 ;;
+    esac
 fi
 
 if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
@@ -79,8 +96,10 @@ if [ ! -f "$PICO_SDK_PATH_VALUE/external/pico_sdk_import.cmake" ]; then
 fi
 
 if [ -f "$BUILD_DIR_PATH/CMakeCache.txt" ] &&
-    ! grep -F -q "CMAKE_TOOLCHAIN_FILE:FILEPATH=$PICO_SDK_PATH_VALUE/" "$BUILD_DIR_PATH/CMakeCache.txt"; then
-    echo "Pico SDK changed; resetting generated CMake state in $BUILD_DIR_PATH"
+        { ! grep -F -q "CMAKE_TOOLCHAIN_FILE:FILEPATH=$PICO_SDK_PATH_VALUE/" "$BUILD_DIR_PATH/CMakeCache.txt" ||
+            ! grep -F -q "CMAKE_GENERATOR:INTERNAL=$GENERATOR" "$BUILD_DIR_PATH/CMakeCache.txt" ||
+            ! grep -F -q "PICO_BOARD:STRING=$BOARD" "$BUILD_DIR_PATH/CMakeCache.txt"; }; then
+        echo "Build configuration changed; resetting generated CMake state in $BUILD_DIR_PATH"
     rm -rf "$BUILD_DIR_PATH/CMakeCache.txt" \
            "$BUILD_DIR_PATH/CMakeFiles" \
            "$BUILD_DIR_PATH/build.ninja" \
@@ -103,19 +122,12 @@ set -- \
     -S "$SOURCE_DIR" \
     -B "$BUILD_DIR_PATH" \
     -G "$GENERATOR" \
-    -DPICO_SDK_PATH="$PICO_SDK_PATH_VALUE"
-
-if [ -n "$FIRMWARE_VERSION" ]; then
-    set -- "$@" -DPICO_UART_VERSION="$FIRMWARE_VERSION"
-fi
-
-if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
-    set -- "$@" -DPICO_UART_SYSTEM_CLOCK_KHZ="$SYSTEM_CLOCK_KHZ"
-fi
-
-if [ -n "$BOARD" ]; then
-    set -- "$@" -DPICO_BOARD="$BOARD"
-fi
+    -DPICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
+    -DPICO_BOARD="$BOARD" \
+    -DPICO_UART_VERSION="${FIRMWARE_VERSION:-0.0.0-dev}" \
+    -DPICO_UART_SYSTEM_CLOCK_KHZ="$SYSTEM_CLOCK_KHZ" \
+    -DPICO_UART_ALLOW_HID_RESET="$ALLOW_HID_RESET" \
+    -DPICO_UART_ALLOW_UNSAFE_OVERCLOCK="$ALLOW_UNSAFE_OVERCLOCK"
 
 cmake "$@"
 cmake --build "$BUILD_DIR_PATH" --parallel

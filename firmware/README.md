@@ -48,6 +48,11 @@ tools/linux/build.sh --board pico --system-clock-khz 250000
 tools/linux/build.sh --board pico2 --system-clock-khz 300000
 ```
 
+Those examples are intentionally unsafe overrides. Production builds use the
+rated 125000 kHz (`pico`) or 150000 kHz (`pico2`) target by default. Pass
+`--unsafe-overclock` with an override only for a board-specific, recorded HIL
+qualification; CMake otherwise rejects a non-rated clock.
+
 ## Load
 
 The Linux and Windows load tools program the ELF remotely through a Raspberry
@@ -106,6 +111,16 @@ requirement applies.
   with docs-reserved RTS/CTS pins (not GPIO-owned).
 - PIO UART line-coding changes are deferred on the worker core until the port reaches a safe idle point, to avoid discarding queued traffic.
 - PIO UART RX validates stop bits and counts framing errors (see `docs/detail/pio-uart-design.md`).
+- A queued line-format change snapshots the TX producer sequence, blocks new
+  CDC ingress, drains the captured old-format backlog, then waits for backend
+  TX/RX idle before applying. PIO requires an empty RX FIFO and its receiver
+  to be waiting for the next start bit; hardware UART can only re-check its RX
+  FIFO because PL011 does not expose RX-shifter state. An external peer that
+  starts a frame during a hardware peripheral restart can lose that frame, so
+  quiesce the peer or use flow control for loss-intolerant transitions.
+- Hardware UART line coding is validated against the live `clk_peri` PL011
+  divisor with a 2% maximum error. `uart_driver_port_info()` reports the
+  actual programmed rate, which can differ slightly from the host request.
 - CDC line-coding rejects are visible through HID `CONTROL_ERROR` because TinyUSB accepts `SET_LINE_CODING` before firmware validation (`docs/hid-monitor.md`).
 - PIO baud/format rejects fail fast on core 0 (no deferred 1 s pause) when the divider is out of range or the request is not 8N1.
 - Cross-core mailbox: core 0 posts a line-coding request immediately when the

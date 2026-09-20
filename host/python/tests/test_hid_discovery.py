@@ -141,6 +141,27 @@ def test_discovery_rejects_multiple_exact_matches(monkeypatch, hid_module):
     assert opened_paths == []
 
 
+def test_discovery_selects_exact_match_by_serial(monkeypatch, hid_module):
+    devices = [
+        {**_exact_device(hid_module, b"first"), "serial_number": "first-serial"},
+        {**_exact_device(hid_module, b"second"), "serial_number": "second-serial"},
+    ]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    hid_module.open_device(serial_number="second-serial")
+
+    assert opened_paths == [b"second"]
+
+
+def test_discovery_selects_exact_match_by_path(monkeypatch, hid_module):
+    devices = [_exact_device(hid_module, b"first"), _exact_device(hid_module, b"second")]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    hid_module.open_device(device_path="second")
+
+    assert opened_paths == [b"second"]
+
+
 def test_discovery_rejects_multiple_missing_usage_fallbacks(monkeypatch, hid_module):
     devices = [
         {

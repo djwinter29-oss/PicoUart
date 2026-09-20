@@ -43,7 +43,18 @@ need a recorded hardware-in-the-loop (HIL) pass:
 4. Run `serial_stress_benchmark.py` at the default rate sweep (or the rates
    claimed in the release notes). Pass `--uart1` / `--uart4` only when those
    jumpers are fitted.
-5. Optionally run the CDC-hold / RX flood step from the board-testing skill
+   Record the command line, board, clock, duration, verified bytes, and every
+   reported stream throughput. A promoted result has no byte mismatch, timeout,
+   `rx_overrun`, `rx_error`, or `control_error` in the captured HID monitor.
+5. Run rapid line-coding changes on both a hardware UART and a PIO UART while
+   the port has queued TX data, while an RX peer is active, and after repeated
+   equivalent requests. Verify the captured old-format TX backlog drains before
+   the change, unsupported/timeout requests raise `CONTROL_ERROR`, and the
+   peer is quiescent before claiming loss-free RX behavior.
+6. Run disconnect/remount, watchdog recovery, DMA wrap/re-arm flood, and the
+   six-port full-duplex saturation matrix on each board image. HIL must record
+   any expected receive loss during a forced format transition.
+7. Optionally run the CDC-hold / RX flood step from the board-testing skill
    (`--flood-seconds` / `--hold-cdc-seconds`) when advertising ring/DMA
    backpressure behavior. To claim hardware RTS/CTS, explicitly enable
    `hardware_flow_control` in `firmware/src/config/uart_board.c` first — the
@@ -51,7 +62,7 @@ need a recorded hardware-in-the-loop (HIL) pass:
    To claim PIO RTS/CTS, enable both PIO flow-control pin flags for a tested
    port and run the PIO CTS hold/release and RTS backpressure procedure in the
    board-testing skill.
-6. Attach or link the transcript (and any HID `monitor` snippets showing
+8. Attach or link the transcript (and any HID `monitor` snippets showing
    `control_error` / `rx_overrun` expectations) to the GitHub Release notes or a
    linked issue. Cloud CI cannot record HIL; a draft without this attachment is
    lab-only even if USB identity review passed.
