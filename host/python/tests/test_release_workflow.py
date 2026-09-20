@@ -53,8 +53,14 @@ def test_release_tag_glob_rejects_non_v_prefixed_or_non_numeric_tags(tag: str) -
 
 
 def _resolve(event_name: str, input_version: str, ref_name: str) -> subprocess.CompletedProcess:
+    # Invoke via "sh" explicitly rather than executing the script path
+    # directly: Windows has no shebang support, so running the POSIX
+    # script as a bare executable fails with WinError 193 ("%1 is not a
+    # valid Win32 application"). Git-for-Windows' sh.exe (on PATH for
+    # GitHub-hosted windows-latest runners) and every POSIX sh both honor
+    # this invocation the same way.
     return subprocess.run(
-        [str(RESOLVE_SCRIPT), event_name, input_version, ref_name],
+        ["sh", str(RESOLVE_SCRIPT), event_name, input_version, ref_name],
         capture_output=True,
         text=True,
     )
