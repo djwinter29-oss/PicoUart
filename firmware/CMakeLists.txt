@@ -136,6 +136,14 @@ if (NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
     target_compile_definitions(pico_uart PRIVATE PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ}u)
 endif ()
 
+if(PICO_BOARD MATCHES "^pico$")
+    # RP2040 silicon can miss the first SET_ADDRESS after a bus reset, so the host
+    # re-enumerates the device (seen here as the HID/CDC interfaces dropping and
+    # reappearing). TinyUSB ships a workaround (rp2040_usb_device_enumeration_fix())
+    # but leaves it opt-in; enable it only for RP2040 boards, where the errata applies.
+    target_compile_definitions(pico_uart PRIVATE PICO_RP2040_USB_DEVICE_ENUMERATION_FIX=1)
+endif()
+
 pico_enable_stdio_uart(pico_uart 0)
 pico_enable_stdio_usb(pico_uart 0)
 
