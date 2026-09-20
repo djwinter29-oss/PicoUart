@@ -57,8 +57,10 @@ To run only the benchmark and prepend a structured result entry automatically:
 python3 tools/linux/run_performance_test.py \
   --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
   --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
+  --uart1 /dev/serial/by-id/<pico-cdc1> \
   --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
   --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
+  --uart4 /dev/serial/by-id/<pico-cdc4> \
   --uart5 /dev/serial/by-id/<pico-uart-cdc5> \
   --board pico --firmware-version 1.2.3 --firmware-commit <commit>
 ```
@@ -72,10 +74,9 @@ entry, use `tools/linux/run_hardware_test.py`. It runs the functional stages
 first and starts performance only when they pass unless
 `--continue-after-functional-failure` is supplied.
 
-The benchmark's current interface uses UART2, UART3, and UART5 for its
-standard concurrent fixture. For the complete staged matrix in this document,
-run the equivalent UART1-to-UART2 and UART3-to-UART4 pair tests individually,
-then record which links were included in the concurrent run.
+When `--uart1` and `--uart4` are supplied, the benchmark uses the documented
+cross-fixture: UART1 to UART2 and UART3 to UART4. Without those options it
+retains the legacy UART2-to-UART3 plus optional loopback fixture.
 
 ## Soak Run
 

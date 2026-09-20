@@ -47,29 +47,36 @@ def format_result_entry(arguments: SimpleNamespace,
                         timestamp: str,
                         stages: list[tuple[str, int, str]]) -> str:
     overall = "PASS" if stages and all(code == 0 for _, code, _ in stages) else "FAIL"
+    stage_results = {label: code == 0 for label, code, _ in stages}
     lines = [
         f"## {timestamp} - {arguments.board} - Functional Test",
         "",
-        f"**Result:** `{overall}`  ",
-        f"**Tester:** {arguments.tester}  ",
-        f"**Firmware version:** {arguments.firmware_version}  ",
-        f"**Firmware commit:** `{arguments.firmware_commit}`  ",
-        f"**Board:** `{arguments.board}`  ",
-        f"**Test date/time:** `{timestamp}`  ",
-        "**Wiring:** Self-test stages 1-4  ",
-        "**RTS/CTS:** `disabled`  ",
+        f"**Result:** `{overall}`",
+        f"**Firmware:** {arguments.firmware_version}, `{arguments.firmware_commit}`",
+        f"**Board:** `{arguments.board}`",
+        f"**Test date/time:** `{timestamp}`",
+        "**Wiring:** Self-test stages 1-4",
+        "**RTS/CTS:** disabled",
         "",
-        "#### Stage Results",
+        "### Configuration",
         "",
-        "| Stage | Exit code | Result |",
-        "| --- | ---: | --- |",
+        f"- Baud rate: {arguments.baud}",
+        f"- Payload: {arguments.payload_bytes} bytes",
+        "",
+        "### Results",
+        "",
+        "| Link | Result |",
+        "| --- | --- |",
     ]
-    for label, code, _ in stages:
-        lines.append(f"| {label} | {code} | {'PASS' if code == 0 else 'FAIL'} |")
-    lines.extend(["", "#### Command Output", "", "```text"])
-    for label, code, output in stages:
-        lines.extend([f"[{label}] exit={code}", output.rstrip(), ""])
-    lines.extend(["```", "", "---"])
+    for label in (
+        "Debug Probe to HW UART0",
+        "HW UART1 to PIO UART2",
+        "PIO UART3 to PIO UART4",
+        "PIO UART5 loopback",
+    ):
+        if label in stage_results:
+            lines.append(f"| {label} | {'PASS' if stage_results[label] else 'FAIL'} |")
+    lines.extend(["", "### Health", "", "- RX overflows: check with `pico_uart_hid.py overruns`", "- HID errors: check with `pico_uart_hid.py monitor`", "", "---"])
     return "\n".join(lines)
 
 

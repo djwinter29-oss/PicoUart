@@ -90,6 +90,11 @@ The functional run passes only when:
 - HID monitoring reports no new `rx_error` or `control_error` flags.
 - The overflow count remains unchanged during the test.
 
+When using `--all-baud-rates`, retain the default settle interval so deferred
+CDC line-coding changes finish before traffic starts. Repeat any failed rate at
+a fixed baud after the port has settled before treating it as a steady-state
+link failure.
+
 Record the result in [Performance Test Results](performance-test-results.md)
 when the functional checks are run as part of a performance session. Record
 standalone functional runs in the same file with a clear test type.

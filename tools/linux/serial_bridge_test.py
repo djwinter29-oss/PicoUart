@@ -189,8 +189,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--settle-seconds",
         type=float,
-        default=0.05,
-        help="Wait after opening and configuring ports before sending a marker or flood",
+        default=0.5,
+        help="Wait after configuring ports before traffic; allows deferred line coding to settle",
     )
     parser.add_argument(
         "--flood-seconds",

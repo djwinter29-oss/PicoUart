@@ -218,5 +218,24 @@ def test_optional_uart1_uart4_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     args = stress.parse_arguments()
     assert args.uart1 == "/dev/ttyACM1"
     assert args.uart4 == "/dev/ttyACM4"
+
+
+def test_cross_fixture_arguments_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "serial_stress_benchmark.py",
+            "--uart0-pico", "/dev/ttyACM0", "--uart0-peer", "/dev/ttyACM7",
+            "--uart1", "/dev/ttyACM1", "--uart1-peer", "/dev/ttyACM2",
+            "--uart2", "/dev/ttyACM2", "--uart3", "/dev/ttyACM3",
+            "--uart4", "/dev/ttyACM4", "--uart4-peer", "/dev/ttyACM3",
+            "--uart5", "/dev/ttyACM5",
+        ],
+    )
+    stress = _load_stress()
+    args = stress.parse_arguments()
+    assert args.uart1_peer == "/dev/ttyACM2"
+    assert args.uart4_peer == "/dev/ttyACM3"
     monkeypatch.setattr(stress, "benchmark_rate", lambda *_a, **_k: True)
     assert stress.main() == 0

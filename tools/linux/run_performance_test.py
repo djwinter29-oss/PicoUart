@@ -42,8 +42,10 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
     ]
     if arguments.uart1:
         command.extend(["--uart1", arguments.uart1])
+        command.extend(["--uart1-peer", arguments.uart2])
     if arguments.uart4:
         command.extend(["--uart4", arguments.uart4])
+        command.extend(["--uart4-peer", arguments.uart3])
     return command
 
 
@@ -66,39 +68,32 @@ def format_result_entry(arguments: SimpleNamespace,
                         output: str) -> str:
     parsed = parse_benchmark_output(output)
     overall = "PASS" if result == 0 else "FAIL"
-    expected_labels = [
-        "uart0-pico-to-peer", "uart0-peer-to-pico", "uart2-to-uart3",
-        "uart3-to-uart2", "uart5-loopback",
-    ]
+    expected_labels = ["uart0-pico-to-peer", "uart0-peer-to-pico", "uart5-loopback"]
     if arguments.uart1:
-        expected_labels.append("uart1-loopback")
+        expected_labels.extend(["uart1-to-uart2", "uart2-to-uart1"])
+    else:
+        expected_labels.extend(["uart2-to-uart3", "uart3-to-uart2"])
     if arguments.uart4:
-        expected_labels.append("uart4-loopback")
+        expected_labels.extend(["uart3-to-uart4", "uart4-to-uart3"])
 
     lines = [
         f"## {timestamp} - {arguments.board} - Performance Test",
         "",
-        f"**Result:** `{overall}`  ",
-        f"**Tester:** {arguments.tester}  ",
-        f"**Firmware version:** {arguments.firmware_version}  ",
-        f"**Firmware commit:** `{arguments.firmware_commit}`  ",
-        f"**Board:** `{arguments.board}`  ",
-        f"**Test date/time:** `{timestamp}`  ",
-        "**Wiring:** Performance benchmark fixture  ",
-        "**RTS/CTS:** `disabled`  ",
+        f"**Result:** `{overall}`",
+        f"**Firmware:** {arguments.firmware_version}, `{arguments.firmware_commit}`",
+        f"**Board:** `{arguments.board}`",
+        f"**Test date/time:** `{timestamp}`",
+        "**Wiring:** Performance benchmark fixture",
+        "**RTS/CTS:** disabled",
         "",
-        "#### Test Configuration",
+        "### Configuration",
         "",
-        "| Setting | Value |",
-        "| --- | --- |",
-        f"| Baud rate(s) | {arguments.rates} |",
-        f"| UART0 baud | {arguments.uart0_baud} |",
-        f"| Duration per rate | {arguments.duration} seconds |",
-        f"| Payload size | {arguments.payload_bytes} bytes |",
-        f"| Timeout | {arguments.timeout} seconds |",
-        f"| Command | `{' '.join(shlex.quote(part) for part in build_command(arguments))}` |",
+        f"- Baud rates: {arguments.rates}",
+        f"- UART0 baud: {arguments.uart0_baud}",
+        f"- Duration per rate: {arguments.duration} seconds",
+        f"- Payload: {arguments.payload_bytes} bytes",
         "",
-        "#### Results",
+        "### Results",
         "",
         "| Link | Result | Verified bytes | Throughput / error |",
         "| --- | --- | ---: | --- |",
@@ -106,7 +101,7 @@ def format_result_entry(arguments: SimpleNamespace,
     for label in expected_labels:
         status, verified, throughput = parsed.get(label, ("NOT REPORTED", "-", "-"))
         lines.append(f"| {label} | {status} | {verified} | {throughput} |")
-    lines.extend(["", "#### Command Output", "", "```text", output.rstrip(), "```", "", "---"])
+    lines.extend(["", "### Health", "", "- RX overflows: check with `pico_uart_hid.py overruns`", "- HID errors: check with `pico_uart_hid.py monitor`", "", "---"])
     return "\n".join(lines)
 
 

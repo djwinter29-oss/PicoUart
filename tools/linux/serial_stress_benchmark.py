@@ -24,6 +24,7 @@ BAUD_RATES = {
     1000000: termios.B1000000,
 }
 DEFAULT_RATES = tuple(BAUD_RATES)
+LINE_CODING_SETTLE_SECONDS = 0.5
 
 
 def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
@@ -140,9 +141,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--uart0-pico", required=True, help="PicoUart CDC0 device")
     parser.add_argument("--uart0-peer", required=True, help="Debug Probe UART device")
     parser.add_argument("--uart1", help="Optional PicoUart CDC1 loopback device")
+    parser.add_argument("--uart1-peer", help="PicoUart CDC2 peer for UART1 cross-connection")
     parser.add_argument("--uart2", required=True, help="PicoUart CDC2 device")
     parser.add_argument("--uart3", required=True, help="PicoUart CDC3 device")
     parser.add_argument("--uart4", help="Optional PicoUart CDC4 loopback device")
+    parser.add_argument("--uart4-peer", help="PicoUart CDC3 peer for UART4 cross-connection")
     parser.add_argument("--uart5", required=True, help="PicoUart CDC5 device")
     parser.add_argument("--uart0-baud", type=int, default=115200, choices=BAUD_RATES,
                         help="UART0 and Debug Probe rate; defaults to 115200")
@@ -196,21 +199,39 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         streams: list[tuple[str, int, int]] = [
             ("uart0-pico-to-peer", uart0_pico, uart0_peer),
             ("uart0-peer-to-pico", uart0_peer, uart0_pico),
-            ("uart2-to-uart3", uart2, uart3),
-            ("uart3-to-uart2", uart3, uart2),
             ("uart5-loopback", uart5, uart5),
         ]
 
-        if arguments.uart1:
+        use_cross_fixture = bool(getattr(arguments, "uart1_peer", None) and
+                                 getattr(arguments, "uart4_peer", None))
+        if not use_cross_fixture:
+            streams.extend([("uart2-to-uart3", uart2, uart3),
+                            ("uart3-to-uart2", uart3, uart2)])
+
+        if arguments.uart1 and getattr(arguments, "uart1_peer", None):
+            uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
+            ports.append((uart1, uart1_settings))
+            uart1_peer, uart1_peer_settings = configure_port(arguments.uart1_peer, stream_baud)
+            ports.append((uart1_peer, uart1_peer_settings))
+            streams.extend([("uart1-to-uart2", uart1, uart1_peer),
+                            ("uart2-to-uart1", uart1_peer, uart1)])
+        elif arguments.uart1:
             uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
             ports.append((uart1, uart1_settings))
             streams.append(("uart1-loopback", uart1, uart1))
-        if arguments.uart4:
+        if arguments.uart4 and getattr(arguments, "uart4_peer", None):
+            uart4, uart4_settings = configure_port(arguments.uart4, stream_baud)
+            ports.append((uart4, uart4_settings))
+            uart4_peer, uart4_peer_settings = configure_port(arguments.uart4_peer, stream_baud)
+            ports.append((uart4_peer, uart4_peer_settings))
+            streams.extend([("uart3-to-uart4", uart4_peer, uart4),
+                            ("uart4-to-uart3", uart4, uart4_peer)])
+        elif arguments.uart4:
             uart4, uart4_settings = configure_port(arguments.uart4, stream_baud)
             ports.append((uart4, uart4_settings))
             streams.append(("uart4-loopback", uart4, uart4))
 
-        time.sleep(0.1)
+        time.sleep(LINE_CODING_SETTLE_SECONDS)
         start = threading.Barrier(len(streams))
         threads = [
             threading.Thread(target=run_stream,

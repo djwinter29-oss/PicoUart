@@ -199,15 +199,18 @@ below remain useful for partial bench wiring.
    python3 tools/linux/serial_stress_benchmark.py \
      --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
      --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
+    --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
      --uart2 /dev/serial/by-id/<pico-uart-cdc2> \
      --uart3 /dev/serial/by-id/<pico-uart-cdc3> \
+    --uart4 /dev/serial/by-id/<pico-uart-cdc4> \
      --uart5 /dev/serial/by-id/<pico-uart-cdc5>
    # Optional when jumpers are fitted:
    #   --uart1 /dev/serial/by-id/<pico-uart-cdc1> \
    #   --uart4 /dev/serial/by-id/<pico-uart-cdc4>
    ```
 
-  The default 10-second window reports verified bytes and measured throughput
+  With UART1/UART4 supplied, the benchmark runs the staged HW1-to-PIO2 and
+  PIO3-to-PIO4 cross-connections. The default 10-second window reports verified bytes and measured throughput
   for every stream at 9600, 19200, 38400, 57600, 115200, 230400, 460800,
   921600, and 1000000 baud. Use `--rates`, `--duration`, and `--uart0-baud`
   for a focused longer run. `--uart1` / `--uart4` are optional; omit them when

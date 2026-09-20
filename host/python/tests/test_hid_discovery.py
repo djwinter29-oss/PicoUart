@@ -50,7 +50,7 @@ def test_discovery_resolves_linux_interface_path_to_hidraw(
 
     hid_module.open_device()
 
-    assert opened_paths == [b"1-3:1.12", b"/dev/hidraw7"]
+    assert opened_paths == [b"1-3:1.12"]
 
 
 def test_discovery_uses_hidraw_adapter_when_hidapi_open_fails(
@@ -70,15 +70,22 @@ def test_discovery_uses_hidraw_adapter_when_hidapi_open_fails(
     monkeypatch.setattr(hid_module.hid, "device", FailingDevice)
 
     assert hid_module.open_device() is fallback_device
-    assert opened_paths == [b"1-3:1.12"]
+    assert opened_paths == [b"1-3:1.12", b"/dev/hidraw7"]
 
 
 def test_discovery_reports_original_path_when_hidraw_resolution_fails(
     monkeypatch, hid_module
 ):
     devices = [_exact_device(hid_module, b"1-3:1.12")]
-    _install_hid_mock(monkeypatch, hid_module, devices)
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
     monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda path: None)
+
+    class FailingDevice:
+        def open_path(self, path):
+            opened_paths.append(path)
+            raise OSError("libusb open failed")
+
+    monkeypatch.setattr(hid_module.hid, "device", FailingDevice)
 
     with pytest.raises(RuntimeError, match="1-3:1.12"):
         hid_module.open_device()
