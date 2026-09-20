@@ -128,8 +128,11 @@ jobs:
 
       - name: Run host C unit tests
         shell: bash
+        # windows-latest has cmake pre-installed. Use bash shell + explicit Ninja
+        # generator via choco (fast, deterministic on Windows).
         run: |
-          cmake -S firmware/tests -B build/host-tests
+          choco install ninja --no-progress -y 2>&1 | tail -3
+          cmake -S firmware/tests -B build/host-tests -G Ninja
           cmake --build build/host-tests --config Release --parallel
           ctest --test-dir build/host-tests -C Release --output-on-failure
 
