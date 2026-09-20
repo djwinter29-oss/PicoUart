@@ -12,6 +12,7 @@
 | `firmware/tests/test_cdc_soft_pending.c` | Soft-pending deadline coalesce, reject generation bump policy, CONTROL_PENDING ownership |
 | `firmware/tests/test_topology.c` | Logical port, GPIO, UART, and PIO state-machine assignment validation |
 | `firmware/tests/test_backend_policy.c` | Backend idle, DMA, PIO TX, IRQ-owner, and worker-heartbeat policy |
+| `firmware/tests/test_led_policy.c` | Manual/USB-activity board LED merge and activity-window timeout/extension |
 | `firmware/tests/test_dma_claim.c` | HW UART RX/TX DMA channel claim/rollback and NULL-input fast-fail fault injection |
 | `firmware/tests/test_resource_claim.c` | PIO UART SM + DMA channel claim/rollback and NULL-input fast-fail fault injection |
 | `firmware/tests/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |

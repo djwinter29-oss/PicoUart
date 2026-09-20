@@ -138,3 +138,34 @@ def test_intel_hex_rejects_records_after_eof() -> None:
 
     with pytest.raises(ValueError, match="EOF"):
         verifier._intel_hex_load_base(b":00000001FF\n:01000000AA55\n")
+
+
+@pytest.mark.parametrize(
+    ("major", "minor", "expected"),
+    [
+        (0, 0, 0x0000),
+        (1, 2, 0x0102),
+        (9, 9, 0x0909),
+        (10, 0, 0x1000),
+        (99, 99, 0x9999),
+    ],
+)
+def test_bcd_device_encodes_major_minor_within_range(major: int, minor: int, expected: int) -> None:
+    verifier = _load_verifier()
+
+    assert verifier._bcd_device(major, minor) == expected
+
+
+@pytest.mark.parametrize(
+    ("major", "minor"),
+    [
+        (100, 0),
+        (0, 100),
+        (100, 100),
+        (255, 255),
+    ],
+)
+def test_bcd_device_is_zero_above_99(major: int, minor: int) -> None:
+    verifier = _load_verifier()
+
+    assert verifier._bcd_device(major, minor) == 0

@@ -8,16 +8,25 @@
 
 #include <stdbool.h>
 
-/** @brief Initialize the default board LED GPIO when the selected board defines one. */
+/**
+ * @brief Initialize the default board LED GPIO when the selected board defines
+ * one, and clear both the manual and USB-activity LED states.
+ */
 void led_init(void);
 
-/** @brief Toggle the default board LED state when one is available. */
+/**
+ * @brief Toggle the manual board LED state (HID `toggle-led`), independent of
+ * any USB-activity indication.
+ */
 void led_toggle(void);
 
 /**
- * @brief Set the default board LED state when one is available.
- * @param on `true` requests LED on; `false` requests LED off.
+ * @brief Set the transient USB-activity LED state, independent of the manual state.
+ *
+ * The physical LED output is the OR of the manual state and this activity
+ * state; see @ref led_policy_output.
+ * @param active `true` while a USB-activity window is open.
  */
-void led_set(bool on);
+void led_set_usb_activity(bool active);
 
 #endif

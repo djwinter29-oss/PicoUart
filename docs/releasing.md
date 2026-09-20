@@ -99,7 +99,12 @@ Before clicking **Publish** on the GitHub draft:
 ## Versioning
 
 Tag form is `vMAJOR.MINOR.PATCH` (no `-rc` / pre-release suffixes for publish).
-Major and minor must be `0-99`; patch must be `0-255`.
+Major and minor must be `0-99`; patch must be `0-255`. This range is a
+**release-tag policy** (enforced by the `Resolve version` step in
+`release.yml`), not a firmware build limit: local/manual builds via
+`tools/build.sh --firmware-version ...` accept major, minor, and patch each up
+to `255`, and USB `bcdDevice` falls back to `0x0000` once major or minor
+exceeds `99` (see `firmware/CMakeLists.txt`).
 The tag stamps HID firmware version `MAJOR.MINOR.PATCH` and USB `bcdDevice` as
 major.minor BCD only (for example `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
 Details are in the root README.
