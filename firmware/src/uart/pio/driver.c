@@ -771,10 +771,11 @@ static bool pio_uart_driver_rx_quiescent(const pio_uart_driver_t *driver)
 {
     uint instruction = pio_sm_get_pc(driver->config.pio, driver->config.rx_state_machine);
 
-    /* The RX program waits for its next start bit at instruction zero. Unlike
-     * sampling a high data bit, this proves the PIO receiver has completed the
-     * prior frame and returned to its idle wait state. */
-    return instruction == pio_uart_driver_rx_offset(driver->config.pio);
+    /* The RX program waits for its next start bit at instruction zero. Requiring
+     * both that state and a high pin rejects a start bit which has arrived but
+     * has not yet advanced the state machine. */
+    return (instruction == pio_uart_driver_rx_offset(driver->config.pio)) &&
+           gpio_get(driver->config.rx_pin);
 }
 
 /**
@@ -852,7 +853,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
 
         if (!pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
             !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
-            !pio_uart_driver_rx_quiescent(driver)) {
+            !gpio_get(driver->config.rx_pin)) {
             pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, true);
             pio_sm_set_enabled(driver->config.pio, driver->config.rx_state_machine, true);
             if (driver->rx_dma_channel >= 0) {

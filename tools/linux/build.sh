@@ -95,6 +95,14 @@ if [ ! -f "$PICO_SDK_PATH_VALUE/external/pico_sdk_import.cmake" ]; then
     exit 1
 fi
 
+if [ -z "$GENERATOR" ]; then
+    if command -v ninja >/dev/null 2>&1; then
+        GENERATOR="Ninja"
+    else
+        GENERATOR="Unix Makefiles"
+    fi
+fi
+
 if [ -f "$BUILD_DIR_PATH/CMakeCache.txt" ] &&
         { ! grep -F -q "CMAKE_TOOLCHAIN_FILE:FILEPATH=$PICO_SDK_PATH_VALUE/" "$BUILD_DIR_PATH/CMakeCache.txt" ||
             ! grep -F -q "CMAKE_GENERATOR:INTERNAL=$GENERATOR" "$BUILD_DIR_PATH/CMakeCache.txt" ||
@@ -108,14 +116,6 @@ if [ -f "$BUILD_DIR_PATH/CMakeCache.txt" ] &&
            "$BUILD_DIR_PATH/_deps" \
            "$BUILD_DIR_PATH/pico-sdk" \
            "$BUILD_DIR_PATH/pioasm"
-fi
-
-if [ -z "$GENERATOR" ]; then
-    if command -v ninja >/dev/null 2>&1; then
-        GENERATOR="Ninja"
-    else
-        GENERATOR="Unix Makefiles"
-    fi
 fi
 
 set -- \

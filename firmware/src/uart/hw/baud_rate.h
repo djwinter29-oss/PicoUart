@@ -11,6 +11,8 @@
 
 /** @brief Maximum allowed hardware UART baud-rate error in parts per million. */
 #define HW_UART_BAUD_RATE_MAX_ERROR_PPM 20000u
+/** @brief Smallest PL011 integer-plus-fractional baud divisor encoded in 1/64 units. */
+#define HW_UART_BAUD_RATE_DIVISOR_MIN 64u
 /** @brief Largest PL011 integer-plus-fractional baud divisor encoded in 1/64 units. */
 #define HW_UART_BAUD_RATE_DIVISOR_MAX ((65535u * 64u) + 63u)
 
@@ -38,7 +40,8 @@ static inline bool hw_uart_baud_rate_calculate(uint32_t requested_rate,
 
     divisor = (((uint64_t)peripheral_hz * 4u) + ((uint64_t)requested_rate / 2u)) /
               (uint64_t)requested_rate;
-    if ((divisor == 0u) || (divisor > HW_UART_BAUD_RATE_DIVISOR_MAX)) {
+    if ((divisor < HW_UART_BAUD_RATE_DIVISOR_MIN) ||
+        (divisor > HW_UART_BAUD_RATE_DIVISOR_MAX)) {
         return false;
     }
 

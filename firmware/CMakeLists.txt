@@ -61,7 +61,7 @@ project(pico_uart C CXX ASM)
 
 pico_sdk_init()
 
-if(PICO_BOARD MATCHES "^pico2")
+if(PICO_BOARD MATCHES "^(pico2|rp2350)")
     set(PICO_UART_RATED_SYSTEM_CLOCK_KHZ 150000)
 else()
     set(PICO_UART_RATED_SYSTEM_CLOCK_KHZ 125000)

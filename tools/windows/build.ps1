@@ -42,6 +42,7 @@ if ([string]::IsNullOrWhiteSpace($PicoSdkPath)) {
         $PicoSdkPath = Join-Path $repoRoot ".pico-sdk"
     }
 }
+$PicoSdkPath = [System.IO.Path]::GetFullPath($PicoSdkPath)
 
 if (-not (Test-Path (Join-Path $PicoSdkPath "external\pico_sdk_import.cmake"))) {
     throw "Pico SDK is not available at $PicoSdkPath. Run . .\tools\windows\setup-sdk-env.ps1 first."
@@ -69,7 +70,7 @@ if (Test-Path $cachePath) {
     $cache = Get-Content $cachePath -Raw
     if ($cache -notmatch [regex]::Escape("CMAKE_GENERATOR:INTERNAL=$Generator") -or
         $cache -notmatch [regex]::Escape("PICO_BOARD:STRING=$Board") -or
-        $cache -notmatch [regex]::Escape("PICO_SDK_PATH:UNINITIALIZED=$PicoSdkPath")) {
+        $cache -notmatch "(?m)^PICO_SDK_PATH:(PATH|UNINITIALIZED)=$([regex]::Escape($PicoSdkPath))$") {
         Write-Host "Build configuration changed; resetting generated CMake state in $buildDirPath"
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
             (Join-Path $buildDirPath "CMakeCache.txt"),
@@ -79,13 +80,17 @@ if (Test-Path $cachePath) {
     }
 }
 
+if ([string]::IsNullOrWhiteSpace($FirmwareVersion)) {
+    $FirmwareVersion = "0.0.0-dev"
+}
+
 $cmakeArgs = @(
     "-S", $sourceDir,
     "-B", $buildDirPath,
     "-G", $Generator,
     "-DPICO_SDK_PATH=$PicoSdkPath",
     "-DPICO_BOARD=$Board",
-    "-DPICO_UART_VERSION=$($FirmwareVersion ?? '0.0.0-dev')",
+    "-DPICO_UART_VERSION=$FirmwareVersion",
     "-DPICO_UART_SYSTEM_CLOCK_KHZ=$parsedSystemClockKhz",
     "-DPICO_UART_ALLOW_HID_RESET=$($AllowHidReset.IsPresent)",
     "-DPICO_UART_ALLOW_UNSAFE_OVERCLOCK=$($UnsafeOverclock.IsPresent)"

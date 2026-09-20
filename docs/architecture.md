@@ -87,8 +87,9 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   that captured old-format backlog before it waits for DMA/FIFO/shifter idle
   and applies the new format. Bytes that arrive after the request remain in
   USB until the new format is active.
-- PIO transitions require an empty RX FIFO and the RX state machine to be at
-  its `wait for start bit` instruction, proving it completed the prior frame.
+- PIO transitions require an empty RX FIFO, the RX state machine to be at its
+  `wait for start bit` instruction, and an idle-high RX pin, proving it
+  completed the prior frame and has not yet observed another start bit.
   Hardware UART transitions re-check only the RX FIFO because PL011 exposes no
   RX-shifter-idle bit. A peer that starts a frame during the forced hardware
   DMA/peripheral restart can lose that frame; use a peer-level pause or RTS/CTS

@@ -388,6 +388,11 @@ static bool uart_driver_init_backends(void)
         uart_driver_clear_port_status_flag((uart_port_id_t)index,
                                            UART_DRIVER_PORT_STATUS_INIT_FAILED |
                                                UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
+        if (port->info.backend == UART_DRIVER_BACKEND_HW) {
+            port->info.baud_rate = port->backend.hw.config.baud_rate;
+        } else {
+            port->info.baud_rate = port->backend.pio.config.baud_rate;
+        }
         uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
     }
 
@@ -443,6 +448,9 @@ static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_dri
     }
 
     if (!uart_driver_tx_boundary_drained(port, pending_control->tx_boundary_sequence)) {
+        if (time_reached(pending_control->deadline)) {
+            uart_driver_finish_worker_control(port_id, pending_control->control_generation, false);
+        }
         return;
     }
 
@@ -473,7 +481,9 @@ static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_dri
 
     {
         uint32_t save = spin_lock_blocking(uart_driver_status_lock);
-        port->info.baud_rate = pending_control->line_coding.baud_rate;
+        port->info.baud_rate = (port->info.backend == UART_DRIVER_BACKEND_HW)
+                                   ? port->backend.hw.config.baud_rate
+                                   : port->backend.pio.config.baud_rate;
         spin_unlock(uart_driver_status_lock, save);
     }
     uart_driver_finish_worker_control(port_id, pending_control->control_generation, true);

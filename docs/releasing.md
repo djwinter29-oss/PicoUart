@@ -93,3 +93,7 @@ Details are in the root README.
 Release and PR workflows build against Pico SDK 2.3.0 at commit
 `98a542c1a62fb549ffb5d66a3e5892b06276b670` and print the verified revision in
 the job log.
+
+Python release qualification must use a reviewed, fully transitive requirements
+lock with artifact hashes. Regenerate that lock only in a packaging-enabled,
+reviewed change; the pinned direct requirements are not a full release lock.

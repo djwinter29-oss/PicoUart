@@ -113,8 +113,8 @@ requirement applies.
 - PIO UART RX validates stop bits and counts framing errors (see `docs/detail/pio-uart-design.md`).
 - A queued line-format change snapshots the TX producer sequence, blocks new
   CDC ingress, drains the captured old-format backlog, then waits for backend
-  TX/RX idle before applying. PIO requires an empty RX FIFO and its receiver
-  to be waiting for the next start bit; hardware UART can only re-check its RX
+  TX/RX idle before applying. PIO requires an empty RX FIFO, its receiver to
+  be waiting for the next start bit, and an idle-high RX pin; hardware UART can only re-check its RX
   FIFO because PL011 does not expose RX-shifter state. An external peer that
   starts a frame during a hardware peripheral restart can lose that frame, so
   quiesce the peer or use flow control for loss-intolerant transitions.

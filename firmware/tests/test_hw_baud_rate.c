@@ -31,6 +31,7 @@ void test_impossible_divisors_are_rejected(void)
     TEST_ASSERT_FALSE(hw_uart_baud_rate_calculate(0u, 125000000u, &actual_rate, &error_ppm));
     TEST_ASSERT_FALSE(hw_uart_baud_rate_calculate(1u, 125000000u, &actual_rate, &error_ppm));
     TEST_ASSERT_FALSE(hw_uart_baud_rate_calculate(115200u, 0u, &actual_rate, &error_ppm));
+    TEST_ASSERT_FALSE(hw_uart_baud_rate_calculate(3000000u, 1000000u, &actual_rate, &error_ppm));
 }
 
 void test_actual_rate_and_error_are_reported(void)
