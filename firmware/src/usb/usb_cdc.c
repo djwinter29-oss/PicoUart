@@ -216,6 +216,16 @@ void usb_cdc_init(void) {
         usb_cdc_tx_flush_deadline[itf] = nil_time;
     }
     tusb_init();
+
+    /*
+     * A debugger reset can leave the host USB controller holding the previous
+     * configuration while the RP2040 USB peripheral starts fresh. Force a
+     * visible disconnect before advertising the pull-up so the host performs
+     * a complete enumeration instead of sending stale HID control requests.
+     */
+    tud_disconnect();
+    sleep_ms(10u);
+    tud_connect();
 }
 
 void usb_cdc_reset_host_state(void)
