@@ -92,12 +92,23 @@ below remain useful for partial bench wiring.
   Use a current OpenOCD build with CMSIS-DAP support. Some older or distro
   patched versions fail before programming with `cmsis-dap <cmd>` usage output
   or `Unknown flash device`; treat that as a tool/flash-support issue first.
+  Flash ID `0x00154068` identifies a Boya BY25Q16ES 2 MiB device that is
+  present in current upstream OpenOCD but may be missing from older distro
+  packages.
   Check the version and retry at a lower SWD speed when needed:
 
   ```sh
   openocd --version
   tools/linux/load.sh --board pico --adapter-speed-khz 1000
   ```
+
+   If the distro OpenOCD lacks the flash entry, install/build current upstream
+   OpenOCD and select it explicitly:
+
+   ```sh
+   tools/linux/load.sh --openocd-exe /path/to/current/openocd \
+     --board pico --adapter-speed-khz 1000
+   ```
 
   The loader uses `interface/cmsis-dap.cfg` and does not need a
   `cmsis-dap vid_pid` command. Confirm the log reaches `SWD DPIDR`, target

@@ -37,7 +37,8 @@ need a recorded hardware-in-the-loop (HIL) pass:
    Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash
    device` after detecting the SWD target, update OpenOCD and retry with
    `--adapter-speed-khz 1000` before treating the HIL attempt as a firmware
-   failure.
+   failure. Flash ID `0x00154068` is a Boya BY25Q16ES device; use an OpenOCD
+   build containing that flash-table entry and pass it with `--openocd-exe`.
    Repeat the full matrix below on **both** packaged board images — RP2350 DMA
    COUNT behavior differs from RP2040 and must not be skipped.
 3. Run the required bridge cases and keep the full console transcript:

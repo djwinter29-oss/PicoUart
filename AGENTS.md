@@ -59,5 +59,7 @@ best available end-to-end check here.
   full-duplex is still limited by USB full-speed aggregate bandwidth.
 - Flashing requires a current OpenOCD CMSIS-DAP build. If loading reaches SWD
   target detection but reports `Unknown flash device`, update OpenOCD and retry
-  at `--adapter-speed-khz 1000`; classify the result as a tooling or flash-
-  support issue until the loader succeeds.
+  at `--adapter-speed-khz 1000`; flash ID `0x00154068` is Boya BY25Q16ES and
+  needs an OpenOCD build with that flash-table entry. Use `--openocd-exe` to
+  select a current upstream binary and classify the result as a tooling or
+  flash-support issue until the loader succeeds.
