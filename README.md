@@ -73,6 +73,10 @@ CI and release builds pin Pico SDK 2.3.0 at commit
 `98a542c1a62fb549ffb5d66a3e5892b06276b670` and verify the checkout before
 compiling. Published version components are limited to major
 and minor `0-99` and patch `0-255`, matching USB BCD and HID report storage.
+This is a **release-tag policy** enforced by `release.yml`: local/manual
+builds (`tools/build.sh --firmware-version ...`) accept major, minor, and
+patch each up to `255`, and USB `bcdDevice` falls back to `0x0000` whenever
+major or minor exceeds `99` (see `firmware/CMakeLists.txt`).
 
 Host-side tests (no board required):
 

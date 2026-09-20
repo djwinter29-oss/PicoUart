@@ -12,6 +12,7 @@
 #include "usb/usb_hid.h"
 
 #include "driver/led.h"
+#include "driver/led_activity.h"
 #include "pico/time.h"
 #include "tusb.h"
 
@@ -50,8 +51,8 @@ static uint8_t usb_cdc_poll_start_itf;
 static bool usb_cdc_tx_flush_pending[USB_CDC_PORT_COUNT];
 /** @brief Flush deadlines for partial CDC IN buffers. */
 static absolute_time_t usb_cdc_tx_flush_deadline[USB_CDC_PORT_COUNT];
-/** @brief Last time any CDC port transferred data (or nil_time after startup). */
-static absolute_time_t usb_cdc_last_activity_time;
+/** @brief Open activity-LED deadline extended by any CDC transfer. */
+static led_activity_window_t usb_cdc_activity_window;
 /** @brief How long the LED stays on after USB activity (µs). */
 #define USB_CDC_ACTIVITY_LED_ON_US 50000u
 
@@ -157,7 +158,9 @@ static void usb_cdc_bridge_usb_to_uart(uint8_t itf)
 
         if (drained != 0u) {
             usb_cdc_stats[itf].rx_bytes += (uint32_t)drained;
-            usb_cdc_last_activity_time = make_timeout_time_us(USB_CDC_ACTIVITY_LED_ON_US);
+            led_activity_window_note(&usb_cdc_activity_window,
+                                     to_us_since_boot(get_absolute_time()),
+                                     USB_CDC_ACTIVITY_LED_ON_US);
         }
     }
 }
@@ -185,16 +188,9 @@ static void usb_cdc_flush_if_due(uint8_t itf)
  */
 static void usb_cdc_activity_led(void)
 {
-    if (is_nil_time(usb_cdc_last_activity_time)) {
-        led_set(false);
-        return;
-    }
-    if (time_reached(usb_cdc_last_activity_time)) {
-        led_set(false);
-        usb_cdc_last_activity_time = nil_time;
-    } else {
-        led_set(true);
-    }
+    bool active = led_activity_window_poll(&usb_cdc_activity_window,
+                                           to_us_since_boot(get_absolute_time()));
+    led_set_usb_activity(active);
 }
 
 static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
@@ -223,7 +219,9 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
                                    &itf);
     if (written != 0u) {
         usb_cdc_stats[itf].tx_bytes += (uint32_t)written;
-        usb_cdc_last_activity_time = make_timeout_time_us(USB_CDC_ACTIVITY_LED_ON_US);
+        led_activity_window_note(&usb_cdc_activity_window,
+                                 to_us_since_boot(get_absolute_time()),
+                                 USB_CDC_ACTIVITY_LED_ON_US);
         if (!usb_cdc_tx_flush_pending[itf]) {
             usb_cdc_tx_flush_deadline[itf] = make_timeout_time_us(USB_CDC_FLUSH_LATENCY_US);
         }
@@ -243,6 +241,8 @@ void usb_cdc_init(void) {
         usb_cdc_tx_flush_pending[itf] = false;
         usb_cdc_tx_flush_deadline[itf] = nil_time;
     }
+    led_activity_window_reset(&usb_cdc_activity_window);
+    led_set_usb_activity(false);
     tusb_init();
 
     /*
@@ -266,6 +266,9 @@ void usb_cdc_reset_host_state(void)
         usb_cdc_tx_flush_deadline[itf] = nil_time;
         uart_driver_reset_soft_pending((uart_port_id_t)itf);
     }
+    /* Stale activity from before a (re)enumeration should not keep the LED lit. */
+    led_activity_window_reset(&usb_cdc_activity_window);
+    led_set_usb_activity(false);
 }
 
 void tud_mount_cb(void)

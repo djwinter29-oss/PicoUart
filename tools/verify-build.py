@@ -121,6 +121,18 @@ def _hid_reports(data: bytes, length: int) -> list[dict[int, tuple[int, int, int
     return candidates
 
 
+def _bcd_device(major: int, minor: int) -> int:
+    """Mirror firmware/CMakeLists.txt: BCD-encode major.minor, or 0 above 99.
+
+    USB bcdDevice can only encode two BCD digits per byte (0-99 per field).
+    When major or minor exceeds 99, the firmware advertises bcdDevice 0x0000
+    instead of a truncated/wrapped BCD value.
+    """
+    if major > 99 or minor > 99:
+        return 0
+    return ((major // 10) << 12) | ((major % 10) << 8) | ((minor // 10) << 4) | (minor % 10)
+
+
 def _objcopy_binary(source: Path, input_format: str | None, objcopy: str) -> bytes:
     with tempfile.TemporaryDirectory() as temporary_directory:
         output = Path(temporary_directory) / "artifact.bin"
@@ -339,7 +351,7 @@ def main() -> int:
     vid, pid = firmware_usb_ids(args.repo_root)
     core_version = args.version.split("-", 1)[0]
     major, minor, _patch = (int(part) for part in core_version.split("."))
-    bcd_device = ((major // 10) << 12) | ((major % 10) << 8) | ((minor // 10) << 4) | (minor % 10)
+    bcd_device = _bcd_device(major, minor)
     matching_devices = [
         descriptor
         for descriptor in _device_descriptors(data)
