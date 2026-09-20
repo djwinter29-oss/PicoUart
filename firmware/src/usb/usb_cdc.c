@@ -116,10 +116,22 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
         return;
     }
 
-    if (time_reached(pending->deadline)) {
-        pending->pending = false;
-        uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
-        return;
+    /*
+     * A reset (tud_mount_cb/tud_umount_cb) clears both `pending` and
+     * `deadline` together, so this pairing should already hold. Short-circuit
+     * on `is_nil_time` so `time_reached(nil_time)` (trivially true) is never
+     * evaluated for a request that was cancelled rather than timed out; a
+     * future call site that only clears one of the two fields cannot then
+     * manufacture a spurious control_error. See usb_cdc_soft_pending_has_timed_out.
+     */
+    {
+        bool deadline_is_nil = is_nil_time(pending->deadline);
+        bool deadline_reached = !deadline_is_nil && time_reached(pending->deadline);
+        if (usb_cdc_soft_pending_has_timed_out(deadline_is_nil, deadline_reached)) {
+            pending->pending = false;
+            uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
+            return;
+        }
     }
 
     /* Permanent rejects must not retry forever with soft-pending stuck true. */

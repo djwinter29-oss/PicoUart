@@ -9,7 +9,7 @@
 | `firmware/tests/test_line_coding.c` | USB CDC line-coding parse table, baud bounds, PIO 8N1 gate |
 | `firmware/tests/test_dma_progress.c` | RX DMA progress wrap, COUNT mask math, pause-settle sample policy |
 | `firmware/tests/test_txstall_wait.c` | PIO TXSTALL re-assert wait microseconds vs baud |
-| `firmware/tests/test_cdc_soft_pending.c` | Soft-pending deadline coalesce, reject generation bump policy, CONTROL_PENDING ownership |
+| `firmware/tests/test_cdc_soft_pending.c` | Soft-pending deadline coalesce, reset-cancellation-suppresses-timeout regression, reject generation bump policy, CONTROL_PENDING ownership |
 | `firmware/tests/test_topology.c` | Logical port, GPIO, UART, and PIO state-machine assignment validation |
 | `firmware/tests/test_backend_policy.c` | Backend idle, DMA, PIO TX, IRQ-owner, and worker-heartbeat policy |
 | `firmware/tests/test_led_policy.c` | Manual/USB-activity board LED merge and activity-window timeout/extension |
