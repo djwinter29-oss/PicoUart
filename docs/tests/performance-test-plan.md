@@ -94,7 +94,9 @@ cross-fixture: UART1 to UART2 and UART3 to UART4. This is the required form for
 the full staged fixture. Without those options it retains the legacy
 UART2-to-UART3 plus optional loopback fixture for partial bench setups.
 
-Omitting either optional link records a successful run as `PARTIAL`, not a
+The concurrent runner waits 2 seconds after each multi-port line-coding setup
+before starting traffic so deferred PIO changes settle. Omitting either
+optional link records a successful run as `PARTIAL`, not a
 full-matrix `PASS`. Pass `--artifact /path/to/pico_uart.elf` or the flashed
 UF2 to bind the result to a SHA-256 digest and HID-reported firmware version.
 

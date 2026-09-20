@@ -267,3 +267,9 @@ def test_cross_fixture_rejects_partial_arguments() -> None:
     )()
 
     assert stress.cross_fixture_paths_valid(arguments) is False
+
+
+def test_benchmark_allows_time_for_concurrent_line_coding() -> None:
+    stress = _load_stress()
+
+    assert stress.LINE_CODING_SETTLE_SECONDS >= 2.0

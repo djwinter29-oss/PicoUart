@@ -24,7 +24,7 @@ BAUD_RATES = {
     1000000: termios.B1000000,
 }
 DEFAULT_RATES = tuple(BAUD_RATES)
-LINE_CODING_SETTLE_SECONDS = 0.5
+LINE_CODING_SETTLE_SECONDS = 2.0
 
 
 def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
