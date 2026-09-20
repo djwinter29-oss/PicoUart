@@ -132,6 +132,25 @@ def test_performance_runner_parses_pass_and_fail_lines() -> None:
     }
 
 
+def test_performance_runner_accepts_documented_peer_options(monkeypatch) -> None:
+    runner = _load("run_performance_test")
+    monkeypatch.setattr(sys, "argv", [
+        "run_performance_test.py",
+        "--uart0-pico", "cdc0", "--uart0-peer", "probe",
+        "--uart1", "cdc1", "--uart1-peer", "cdc2",
+        "--uart2", "cdc2", "--uart3", "cdc3",
+        "--uart4", "cdc4", "--uart4-peer", "cdc3",
+        "--uart5", "cdc5",
+    ])
+
+    arguments = runner.parse_arguments()
+    command = runner.build_command(arguments)
+
+    assert arguments.uart1_peer == "cdc2"
+    assert arguments.uart4_peer == "cdc3"
+    assert command[-4:] == ["--uart4", "cdc4", "--uart4-peer", "cdc3"]
+
+
 def test_full_hardware_runner_defaults_to_usb_sustainable_rate(monkeypatch) -> None:
     runner = _load("run_hardware_test")
     arguments = ["run_hardware_test.py", "--pico-cdc0", "cdc0", "--debug-probe", "probe",
