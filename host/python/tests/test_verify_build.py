@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-VERIFY_BUILD = Path(__file__).resolve().parents[3] / "tools" / "linux" / "verify-build.py"
+VERIFY_BUILD = Path(__file__).resolve().parents[3] / "tools" / "verify-build.py"
 
 
 def _load_verifier():

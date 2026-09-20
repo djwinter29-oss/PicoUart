@@ -76,7 +76,7 @@ if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 SOURCE_DIR="$REPO_ROOT/firmware"
 case "$BUILD_DIR" in
     /*) BUILD_DIR_PATH="$BUILD_DIR" ;;
@@ -94,7 +94,7 @@ if [ -z "$PICO_SDK_PATH_VALUE" ]; then
 fi
 
 if [ ! -f "$PICO_SDK_PATH_VALUE/external/pico_sdk_import.cmake" ]; then
-    echo "Pico SDK is not available at $PICO_SDK_PATH_VALUE. Run . tools/linux/setup-sdk-env.sh first." >&2
+    echo "Pico SDK is not available at $PICO_SDK_PATH_VALUE. Run . tools/setup-sdk-env.sh first." >&2
     exit 1
 fi
 

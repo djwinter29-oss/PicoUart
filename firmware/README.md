@@ -7,21 +7,13 @@ Each CDC port is bridged to one logical UART backend.
 
 ## Build
 
-1. Install CMake, Ninja, an ARM GCC toolchain, and the Pico SDK.
-2. Set `PICO_SDK_PATH` to your `pico-sdk` checkout.
-3. Configure and build:
-
-```powershell
-cmake -S firmware -B build/firmware -G Ninja
-cmake --build build/firmware
-```
-
-For the project-local Pico SDK and board-specific builds on Linux:
+On Ubuntu/Linux, install CMake, Ninja, an ARM GCC toolchain, and use the
+project-local Pico SDK:
 
 ```sh
-. tools/linux/setup-sdk-env.sh
-tools/linux/build.sh --board pico
-tools/linux/build.sh --board pico2
+. tools/setup-sdk-env.sh
+tools/build.sh --board pico
+tools/build.sh --board pico2
 ```
 
 Optional: stamp a release version into the firmware with `--firmware-version`
@@ -29,23 +21,14 @@ Optional: stamp a release version into the firmware with `--firmware-version`
 as `MAJOR.MINOR.PATCH`, while USB `bcdDevice` receives major.minor BCD only
 (`1.2.3` → `0x0102`). Untagged local builds default to `0.0.0-dev`.
 
-On Windows PowerShell, download the same project-local SDK and build with:
-
-```powershell
-. .\tools\windows\setup-sdk-env.ps1
-.\tools\windows\build.ps1 -Board pico
-.\tools\windows\build.ps1 -Board pico2
-```
-
 All generated output is stored under the repository-root `build/` directory.
-Use a separate build directory per board. The Linux and Windows build/load tools
-accept `--board` or `-Board` values supported by the installed Pico SDK.
-They also accept `--system-clock-khz` or `-SystemClockKhz` to override the
-system clock for a build. For example:
+Use a separate build directory per board. The Linux build/load tools accept
+`--board` values supported by the installed Pico SDK. They also accept
+`--system-clock-khz` to override the system clock for a build. For example:
 
 ```sh
-tools/linux/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
-tools/linux/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
+tools/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
+tools/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
 ```
 
 Those examples are intentionally unsafe overrides. Production builds use the
@@ -55,20 +38,20 @@ qualification; CMake otherwise rejects a non-rated clock.
 
 ## Load
 
-The Linux and Windows load tools program the ELF remotely through a Raspberry
-Pi Debug Probe using CMSIS-DAP OpenOCD. Connect the probe's SWDIO, SWCLK, and
-GND signals to PicoUart before loading; UART TX/RX wiring is separate from SWD.
+The Linux load tool programs the ELF remotely through a Raspberry Pi Debug Probe
+using CMSIS-DAP OpenOCD. Connect the probe's SWDIO, SWCLK, and GND signals to
+PicoUart before loading; UART TX/RX wiring is separate from SWD.
 
 ```sh
-tools/linux/load.sh --board pico
-tools/linux/load.sh --board pico2
+tools/load.sh --board pico
+tools/load.sh --board pico2
 ```
 
 For an explicitly qualified non-rated clock image, pass the unsafe override to
 both the build and load wrappers:
 
 ```sh
-tools/linux/load.sh --board pico --system-clock-khz 250000 --unsafe-overclock
+tools/load.sh --board pico --system-clock-khz 250000 --unsafe-overclock
 ```
 
 ## Configuration

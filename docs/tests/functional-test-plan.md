@@ -50,7 +50,7 @@ Run the stages in this order:
 For stages 1 through 3, run:
 
 ```sh
-python3 tools/linux/serial_bridge_test.py \
+python3 tools/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-endpoint> \
   --peer-port /dev/serial/by-id/<peer-endpoint> \
   --label <stage-label>
@@ -59,7 +59,7 @@ python3 tools/linux/serial_bridge_test.py \
 For stage 4, run:
 
 ```sh
-python3 tools/linux/serial_bridge_test.py \
+python3 tools/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-cdc5> \
   --loopback \
   --label stage4-pio-loopback
@@ -68,7 +68,7 @@ python3 tools/linux/serial_bridge_test.py \
 To run all four stages in order and record one newest-first result entry:
 
 ```sh
-python3 tools/linux/run_functional_test.py \
+python3 tools/run_functional_test.py \
   --pico-cdc0 /dev/serial/by-id/<pico-uart-cdc0> \
   --debug-probe /dev/serial/by-id/<debug-probe-uart> \
   --pico-cdc1 /dev/serial/by-id/<pico-uart-cdc1> \

@@ -19,7 +19,7 @@ from hardware_test_health import (collect_hid_health, health_evidence, health_is
 from hardware_test_result import artifact_metadata
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[1]
+REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_RESULTS_FILE = REPO_ROOT / "docs/tests/performance-test-results.md"
 PASS_PATTERN = re.compile(
     r"^PASS (?P<label>[^:]+): (?P<bytes>[0-9]+) bytes, (?P<throughput>[0-9.]+) B/s$",

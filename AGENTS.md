@@ -17,7 +17,7 @@ These are installed once and captured in the snapshot:
   selects the gcc-14 toolchain dir. Without `libstdc++-14-dev` the **native host-tool build
   (picotool) fails with `cannot find -lstdc++`** even though `libstdc++-13-dev` is present.
 - Pico SDK 2.3.0 with submodules, cloned into the gitignored `.pico-sdk/` by
-  `tools/linux/setup-sdk-env.sh`. Persisted in the snapshot; the setup script is idempotent
+  `tools/setup-sdk-env.sh`. Persisted in the snapshot; the setup script is idempotent
   (skips the clone if `.pico-sdk/` already exists).
 
 The update script refreshes Python host dependencies (`requirements.txt` and
@@ -28,18 +28,23 @@ Pico/Pico 2 board, Raspberry Pi Debug Probe, USB cable, and jumper-wire fixture
 and run the documented functional/performance plans locally. Record results in
 `docs/tests/performance-test-results.md`.
 
+Firmware development, flashing, and HIL use the Linux wrappers under
+`tools/`. Native Windows firmware-development wrappers are not supported;
+Windows users should use WSL2 Ubuntu. The Python host tools remain usable from
+Windows for CDC/HID operation.
+
 ### Build / test / run (standard commands live in the scripts; see `.github/skills/pico-uart-board-testing/SKILL.md`)
 
-- Build firmware: `tools/linux/build.sh --board pico` (RP2040) and `--board pico2` (RP2350).
+- Build firmware: `tools/build.sh --board pico` (RP2040) and `--board pico2` (RP2350).
   Artifacts land in `build/firmware-<board>/pico_uart.{elf,uf2,bin,hex}`.
 - If you build in a shell that hasn't sourced `setup-sdk-env.sh`, `build.sh` still finds
   `.pico-sdk/` automatically (defaults `PICO_SDK_PATH` to `<repo>/.pico-sdk`).
-- Host unit tests (no board): `tools/linux/test-host.sh` — native C Unity/CTest under
+- Host unit tests (no board): `tools/test-host.sh` — native C Unity/CTest under
   `firmware/tests/` plus Python pytest under `host/python/tests/`. See
   `firmware/tests/README.md`.
-- Combined: `tools/linux/test.sh` builds firmware (unless `--skip-build`) then runs host tests.
+- Combined: `tools/test.sh` builds firmware (unless `--skip-build`) then runs host tests.
 - Host HID tool: `python3 host/python/src/pico_uart_hid.py {monitor,temperature,version,toggle-led,reset}`.
-- Serial bridge/stress tests: `tools/linux/serial_bridge_test.py`, `serial_stress_benchmark.py`.
+- Serial bridge/stress tests: `tools/serial_bridge_test.py`, `serial_stress_benchmark.py`.
 
 ### Expected without hardware
 
@@ -59,7 +64,7 @@ best available end-to-end check here.
   one full-speed interrupt packet; older host tools expecting 64-byte/`PU` headers
   need updating.
 - Tag releases open as **draft**; promote only after `docs/releasing.md` gates.
-- Host unit tests: `tools/linux/test-host.sh`. Host coverage: `tools/linux/coverage.sh`.
+- Host unit tests: `tools/test-host.sh`. Host coverage: `tools/coverage.sh`.
 - Each CDC/UART can be set to 1 Mbaud; PIO RX is DMA-backed. Sustained multi-port 1 Mbaud
   full-duplex is still limited by USB full-speed aggregate bandwidth.
 - Flashing requires a current OpenOCD CMSIS-DAP build. If loading reaches SWD

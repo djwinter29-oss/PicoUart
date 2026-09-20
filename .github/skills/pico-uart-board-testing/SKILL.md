@@ -29,9 +29,9 @@ Read the relevant document before testing:
 The repository provides runners that implement the documented workflow:
 
 ```sh
-python3 tools/linux/run_functional_test.py --help
-python3 tools/linux/run_performance_test.py --help
-python3 tools/linux/run_hardware_test.py --help
+  python3 tools/run_functional_test.py --help
+  python3 tools/run_performance_test.py --help
+  python3 tools/run_hardware_test.py --help
 ```
 
 Use `run_hardware_test.py` for the normal end-to-end run. It runs functional
@@ -50,13 +50,13 @@ USB cable, or jumper fixture. Assemble the fixture using
 1. Build the intended board image:
 
    ```sh
-   . tools/linux/setup-sdk-env.sh
-   tools/linux/build.sh --board pico
+  . tools/setup-sdk-env.sh
+  tools/build.sh --board pico
    ```
 
    Use `--board pico2` for RP2350 hardware.
 2. Connect the Debug Probe and target power.
-3. Flash the intended ELF with `tools/linux/load.sh`.
+3. Flash the intended ELF with `tools/load.sh`.
 4. Connect the Pico USB device and confirm CDC/HID enumeration.
 5. Run the functional plan before the performance plan.
 

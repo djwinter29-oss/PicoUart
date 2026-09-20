@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-TOOLS = Path(__file__).resolve().parents[3] / "tools" / "linux"
+TOOLS = Path(__file__).resolve().parents[3] / "tools"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 

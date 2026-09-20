@@ -120,7 +120,7 @@ one consumer: core 0 produces TX and consumes RX, while core 1 consumes TX and p
   (2 s stale window). A wedged TinyUSB/bridge loop or a silent core 1 resets;
   a debugger can still inspect `isr_hardfault`.
 - Production builds use the rated 125 MHz RP2040 or 150 MHz RP2350 system
-  clock. `tools/linux/build.sh --unsafe-overclock --system-clock-khz ...` is
+  clock. `tools/build.sh --unsafe-overclock --system-clock-khz ...` is
   required for another clock and is intended only for recorded qualification.
 
 ## Open Items

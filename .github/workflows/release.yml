@@ -40,18 +40,18 @@ jobs:
         run: |
           python3 -m py_compile \
             host/python/src/pico_uart_hid.py \
-            tools/linux/serial_bridge_test.py \
-            tools/linux/serial_stress_benchmark.py \
-            tools/linux/run_functional_test.py \
-            tools/linux/run_performance_test.py \
-            tools/linux/run_hardware_test.py \
-            tools/linux/hardware_test_result.py \
-            tools/linux/hardware_test_health.py \
-            tools/linux/check-usb-identity.py \
-            tools/linux/verify-build.py
+            tools/serial_bridge_test.py \
+            tools/serial_stress_benchmark.py \
+            tools/run_functional_test.py \
+            tools/run_performance_test.py \
+            tools/run_hardware_test.py \
+            tools/hardware_test_result.py \
+            tools/hardware_test_health.py \
+            tools/check-usb-identity.py \
+            tools/verify-build.py
 
       - name: Run host unit tests (C Unity + Python pytest)
-        run: tools/linux/test-host.sh --sanitize
+        run: tools/test-host.sh --sanitize
 
       - name: Static-analyze host-testable firmware headers
         run: |
@@ -82,8 +82,8 @@ jobs:
         run: |
           python3 -c "import hid; print('hidapi OK')"
           python3 host/python/src/pico_uart_hid.py --help
-          python3 tools/linux/serial_bridge_test.py --help
-          python3 tools/linux/serial_stress_benchmark.py --help
+          python3 tools/serial_bridge_test.py --help
+          python3 tools/serial_stress_benchmark.py --help
 
   host-python-minimum:
     name: Host Python (3.10 minimum)
@@ -189,7 +189,7 @@ jobs:
       - name: Setup Pico SDK
         run: |
           set --
-          . tools/linux/setup-sdk-env.sh \
+          . tools/setup-sdk-env.sh \
             --sdk-version "$PICO_SDK_VERSION" \
             --sdk-revision "$PICO_SDK_REVISION"
 
@@ -198,7 +198,7 @@ jobs:
           BOARD: ${{ matrix.board }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          tools/linux/build.sh \
+          tools/build.sh \
             --board "$BOARD" \
             --firmware-version "$VERSION"
 
@@ -214,7 +214,7 @@ jobs:
           for ext in uf2 elf bin hex; do
             cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${BOARD}.$ext"
           done
-          python3 tools/linux/verify-build.py --build-dir "$SRC" --board "$BOARD" --version "$VERSION"
+          python3 tools/verify-build.py --build-dir "$SRC" --board "$BOARD" --version "$VERSION"
           (cd "$OUT" && sha256sum pico_uart-v${VERSION}-${BOARD}.* > "SHA256SUMS-${BOARD}.txt")
           ls -la "$OUT"
 

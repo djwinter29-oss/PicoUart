@@ -83,7 +83,7 @@ Use UART0/CDC0. Cross the signal directions:
 Run the bidirectional bridge test:
 
 ```sh
-python3 tools/linux/serial_bridge_test.py \
+python3 tools/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-uart-cdc0> \
   --peer-port /dev/serial/by-id/<debug-probe-uart> \
   --label stage1-debug-probe-hw-uart
@@ -105,7 +105,7 @@ UART2/CDC2, crossing TX and RX:
 Run:
 
 ```sh
-python3 tools/linux/serial_bridge_test.py \
+python3 tools/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-uart-cdc1> \
   --peer-port /dev/serial/by-id/<pico-uart-cdc2> \
   --label stage2-hw-to-pio
@@ -126,7 +126,7 @@ Remove the stage 2 jumpers. Connect PIO UART3/CDC3 to PIO UART4/CDC4:
 Run:
 
 ```sh
-python3 tools/linux/serial_bridge_test.py \
+python3 tools/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-uart-cdc3> \
   --peer-port /dev/serial/by-id/<pico-uart-cdc4> \
   --label stage3-pio-to-pio
@@ -146,7 +146,7 @@ its RX:
 Run:
 
 ```sh
-python3 tools/linux/serial_bridge_test.py \
+python3 tools/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-uart-cdc5> \
   --loopback \
   --label stage4-pio-loopback

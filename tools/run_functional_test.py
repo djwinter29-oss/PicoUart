@@ -17,7 +17,7 @@ from hardware_test_health import (collect_hid_health, health_evidence, health_is
                                   health_summary)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[1]
+REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_RESULTS_FILE = REPO_ROOT / "docs/tests/performance-test-results.md"
 
 

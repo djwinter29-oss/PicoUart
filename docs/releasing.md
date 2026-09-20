@@ -33,7 +33,7 @@ need a recorded hardware-in-the-loop (HIL) pass:
 2. Flash the **exact** UF2/ELF attached to the GitHub Release (or the
    `workflow_dispatch` dry-run artifacts). Do **not** rebuild for release HIL.
    Record `SHA256SUMS-*` and flash with
-   `tools/linux/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>`.
+   `tools/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>`.
    Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached
    or when USB enumeration tools are unavailable.
    Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash
