@@ -218,6 +218,8 @@ def test_optional_uart1_uart4_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     args = stress.parse_arguments()
     assert args.uart1 == "/dev/ttyACM1"
     assert args.uart4 == "/dev/ttyACM4"
+    monkeypatch.setattr(stress, "benchmark_rate", lambda *_a, **_k: True)
+    assert stress.main() == 0
 
 
 def test_cross_fixture_arguments_parse(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -237,5 +239,19 @@ def test_cross_fixture_arguments_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     args = stress.parse_arguments()
     assert args.uart1_peer == "/dev/ttyACM2"
     assert args.uart4_peer == "/dev/ttyACM3"
-    monkeypatch.setattr(stress, "benchmark_rate", lambda *_a, **_k: True)
-    assert stress.main() == 0
+
+
+def test_cross_fixture_rejects_mismatched_peer_paths() -> None:
+    stress = _load_stress()
+    arguments = type(
+        "Arguments",
+        (),
+        {
+            "uart1_peer": "/dev/ttyACM9",
+            "uart2": "/dev/ttyACM2",
+            "uart4_peer": "/dev/ttyACM3",
+            "uart3": "/dev/ttyACM3",
+        },
+    )()
+
+    assert stress.cross_fixture_paths_valid(arguments) is False

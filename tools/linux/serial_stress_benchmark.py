@@ -179,10 +179,32 @@ def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
     return first_error
 
 
+def _same_serial_path(left: str, right: str) -> bool:
+    return os.path.realpath(left) == os.path.realpath(right)
+
+
+def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
+    """Require cross-fixture peer arguments to name the opened CDC peers."""
+    if not (getattr(arguments, "uart1_peer", None) and
+            getattr(arguments, "uart4_peer", None)):
+        return True
+
+    if not _same_serial_path(arguments.uart1_peer, arguments.uart2):
+        print("--uart1-peer must resolve to the same device as --uart2", file=sys.stderr)
+        return False
+    if not _same_serial_path(arguments.uart4_peer, arguments.uart3):
+        print("--uart4-peer must resolve to the same device as --uart3", file=sys.stderr)
+        return False
+    return True
+
+
 def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     ports: list[tuple[int, list]] = []
     results: dict[str, tuple[int, str | None]] = {}
     passed = False
+
+    if not cross_fixture_paths_valid(arguments):
+        return False
 
     try:
         uart0_pico, uart0_pico_settings = configure_port(arguments.uart0_pico, arguments.uart0_baud)
@@ -211,8 +233,9 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         if arguments.uart1 and getattr(arguments, "uart1_peer", None):
             uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
             ports.append((uart1, uart1_settings))
-            uart1_peer, uart1_peer_settings = configure_port(arguments.uart1_peer, stream_baud)
-            ports.append((uart1_peer, uart1_peer_settings))
+            # The peer path is the already opened CDC2 descriptor. Reusing it
+            # avoids a second termios configuration and input flush on the same node.
+            uart1_peer = uart2
             streams.extend([("uart1-to-uart2", uart1, uart1_peer),
                             ("uart2-to-uart1", uart1_peer, uart1)])
         elif arguments.uart1:
@@ -222,8 +245,8 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         if arguments.uart4 and getattr(arguments, "uart4_peer", None):
             uart4, uart4_settings = configure_port(arguments.uart4, stream_baud)
             ports.append((uart4, uart4_settings))
-            uart4_peer, uart4_peer_settings = configure_port(arguments.uart4_peer, stream_baud)
-            ports.append((uart4_peer, uart4_peer_settings))
+            # The peer path is the already opened CDC3 descriptor.
+            uart4_peer = uart3
             streams.extend([("uart3-to-uart4", uart4_peer, uart4),
                             ("uart4-to-uart3", uart4, uart4_peer)])
         elif arguments.uart4:
