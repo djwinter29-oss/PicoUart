@@ -28,9 +28,10 @@ Test links:
 | PIO UART3 to PIO UART4 | CDC3 and CDC4 | Stage 3 |
 | PIO UART5 loopback | CDC5 | Stage 4 |
 
-Use the wiring and pin assignments in [Self-Test Setup](self-test-setup.md).
-RTS/CTS is excluded from the baseline performance test because it is disabled
-by default. Test flow control separately after enabling and documenting it.
+Use the fixture wiring in [Self-Test Setup](self-test-setup.md). The board GPIO
+pinout is documented in [UART Pinout and Wiring](../uart-pinout.md). RTS/CTS is
+excluded from the baseline performance test because it is disabled by default.
+Test flow control separately after enabling and documenting it.
 
 ## Baseline Run
 
@@ -82,25 +83,31 @@ python3 tools/run_performance_test.py \
   --board pico --firmware-version 1.2.3 --firmware-commit <commit>
 ```
 
-Pass `--uart1` and `--uart4` when those optional links are included. The
-runner preserves the benchmark exit code and records its complete output. Use
-`--no-record` for a dry run.
+Pass `--uart1`, `--uart1-peer`, `--uart4`, and `--uart4-peer` for the full
+staged fixture. The runner preserves the benchmark exit code and records its
+complete output. Use `--no-record` for a dry run.
 
 For the complete functional-plus-performance sequence and one combined result
 entry, use `tools/run_hardware_test.py`. It runs the functional stages
 first and starts performance only when they pass unless
 `--continue-after-functional-failure` is supplied.
 
-When `--uart1` and `--uart4` are supplied, the benchmark uses the documented
-cross-fixture: UART1 to UART2 and UART3 to UART4. This is the required form for
-the full staged fixture. Without those options it retains the legacy
-UART2-to-UART3 plus optional loopback fixture for partial bench setups.
+When the full staged-fixture options are supplied, the benchmark uses the
+documented cross-fixture: UART1 to UART2 and UART3 to UART4. This is the
+required form for a full-matrix performance result.
 
 The concurrent runner waits 2 seconds after each multi-port line-coding setup
-before starting traffic so deferred PIO changes settle. Omitting either
-optional link records a successful run as `PARTIAL`, not a
-full-matrix `PASS`. Pass `--artifact /path/to/pico_uart.elf` or the flashed
-UF2 to bind the result to a SHA-256 digest and HID-reported firmware version.
+before starting traffic so deferred PIO changes settle. Omitting UART1 or UART4
+records a successful run as `PARTIAL`, not a full-matrix `PASS`. Pass
+`--artifact /path/to/pico_uart.elf` or the flashed UF2 to bind the result to a
+SHA-256 digest and HID-reported firmware version.
+
+### Partial Bench Mode
+
+`serial_stress_benchmark.py` still supports a smaller bench that omits UART1
+and UART4. In that mode it uses the older UART2-to-UART3 cross-link plus the
+UART5 loopback. Use this only for bring-up or diagnosis; record it as
+`PARTIAL`, not as full HIL coverage.
 
 ## Soak Run
 

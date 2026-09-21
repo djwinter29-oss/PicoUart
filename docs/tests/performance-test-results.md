@@ -3,10 +3,15 @@
 Newest result first. Add future results below the heading and keep the
 reusable template at the bottom.
 
+Result entries are development evidence unless they explicitly say
+`release qualification` and include the exact flashed artifact hash for each
+required board.
+
 ## 2026-09-20T20:28:00+00:00 - pico - Full Matrix Performance + Functional
 
 **Result:** `PASS`
 **Firmware:** `0.0.0`, `accdb59`
+**Qualification:** development HIL; not release qualification
 **Board:** `pico`
 **Test date/time:** `2026-09-20T20:28:00+00:00`
 **Wiring:** Self-test stages 1-4 (full staged fixture)
@@ -49,6 +54,7 @@ with all four fixture links active (`--uart1 --uart1-peer --uart4 --uart4-peer`)
 
 **Result:** `PASS`
 **Firmware:** 0.0.0-dev, `850c8ff`
+**Qualification:** development HIL; functional phase only
 **Board:** `pico`
 **Test date/time:** `2026-09-20T19:51:12+00:00`
 **Wiring:** Self-test stages 1-4
@@ -105,6 +111,7 @@ with all four fixture links active (`--uart1 --uart1-peer --uart4 --uart4-peer`)
 
 **Result:** `PASS`
 **Firmware:** 0.0.0, `working-tree`
+**Qualification:** development HIL; not release qualification
 **Board:** `pico`
 **Test date/time:** `2026-09-20T13:59:50+00:00`
 **Wiring:** Self-test stages 1-4 and performance fixture
@@ -168,6 +175,7 @@ topology-correct staged matrix.
 
 **Result:** `PASS` / `FAIL` / `PARTIAL`
 **Firmware:**
+**Qualification:** development HIL / release qualification / partial
 **Board:** `pico` / `pico2`
 **Firmware commit:**
 **Test date/time:**

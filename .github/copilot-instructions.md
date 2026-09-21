@@ -6,12 +6,9 @@
 - Use Pico SDK and TinyUSB conventions when adding firmware code.
 - Keep board pin mapping separate from USB and UART transport logic.
 - Prefer clear, explicit code over heavy abstraction.
-- For physical flashing, use a current OpenOCD CMSIS-DAP build. Treat
-	`cmsis-dap <cmd>` usage output or `Unknown flash device` as an OpenOCD or
-	flash-support issue first: check `openocd --version`, reconnect target power,
-	and retry at a lower SWD speed before diagnosing firmware. Flash ID
-	`0x00154068` is Boya BY25Q16ES; use a current upstream binary with
-	`--openocd-exe` when the distro package lacks that flash-table entry.
+- Do not duplicate runbook details here. Use [README.md](../README.md) as the
+  docs index. Use [docs/releasing.md](../docs/releasing.md) for physical
+  flashing, OpenOCD recovery, and release HIL gates.
 
 ## Engineering Style
 

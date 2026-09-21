@@ -77,7 +77,7 @@ requirement applies.
   through `temperature_read_celsius()`.
 - HID report ID `3` exposes temperature and firmware version; report ID `4`
   accepts board-scoped LED-toggle and watchdog-reset commands. HID does not
-  own UART configuration. See [the HID protocol](../docs/hid-monitor.md) and
+  own UART configuration. See [the HID protocol](../docs/usb/hid-report-reference.md) and
   [the Python host utility](../host/python/README.md).
 - Override the board with `-DPICO_BOARD=<board>` when needed.
 - Firmware initializes all 6 UART backends during startup on core 0, then runs steady-state UART service on core 1 while core 0 owns TinyUSB.
@@ -111,7 +111,7 @@ requirement applies.
 - Hardware UART line coding is validated against the live `clk_peri` PL011
   divisor with a 2% maximum error. `uart_driver_port_info()` reports the
   actual programmed rate, which can differ slightly from the host request.
-- CDC line-coding rejects are visible through HID `CONTROL_ERROR` because TinyUSB accepts `SET_LINE_CODING` before firmware validation (`docs/hid-monitor.md`).
+- CDC line-coding rejects are visible through HID `CONTROL_ERROR` because TinyUSB accepts `SET_LINE_CODING` before firmware validation (`docs/usb/hid-report-reference.md`).
 - PIO baud/format rejects fail fast on core 0 (no deferred 1 s pause) when the divider is out of range or the request is not 8N1.
 - Cross-core mailbox: core 0 posts a line-coding request immediately when the
   single slot is idle. When it is busy, the matching CDC request stays

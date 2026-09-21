@@ -1,4 +1,4 @@
-# HID Monitor
+# HID Report Reference
 
 PicoUart exposes one vendor-defined USB HID interface named `Status Monitor`.
 It provides diagnostics for the six UART bridges plus narrowly scoped board
@@ -14,7 +14,7 @@ command feature reports. The device is identified as USB
 project artifacts) and has one HID interface after the twelve CDC control/data
 interfaces. The USB product string is `PicoUart CDC+HID PIO 8N1`.
 CDC interface strings advertise backend limits:
-`CDC0 HW` / `CDC1 HW` and `CDC2`–`CDC5 PIO 8N1`.
+`CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
 
 ## Ownership
 
@@ -100,19 +100,19 @@ interface strings:
    newer reject.
 2. Watch health bit 2 (`control_error`) after a parse failure, PIO non-8N1 reject,
    deferred-apply timeout (1 s), or CDC soft-pending mailbox timeout (1 s).
-3. Use `python3 host/python/src/pico_uart_hid.py monitor` — the tool decodes those
+3. Use `python3 host/python/src/pico_uart_hid.py monitor` - the tool decodes those
    bits into `control_pending` / `control_error` labels.
 
 PIO UART ports remain 8N1-only. Hardware UART0/UART1 accept supported
-baud/data/parity/stop combinations within firmware bounds (50–3 000 000 baud,
-5–8 data bits, 1/2 stop, none/odd/even parity).
+baud/data/parity/stop combinations within firmware bounds (50-3 000 000 baud,
+5-8 data bits, 1/2 stop, none/odd/even parity).
 
 ## Report ID 3: Board Status
 
 Request feature report ID `3` to read the internal RP2 temperature-sensor
 estimate and the firmware semantic version. Tag `v1.2.3` builds advertise
 `1.2.3` here. The USB device descriptor `bcdDevice` carries only major.minor
-as BCD (so `1.2.3` → `0x0102`, commonly shown as `1.02` / `1.2`).
+as BCD (so `1.2.3` -> `0x0102`, commonly shown as `1.02` / `1.2`).
 
 | Offset | Size | Field | Meaning |
 | --- | ---: | --- | --- |
@@ -153,7 +153,7 @@ known to have been overwritten but not yet retired by the CDC drain path.
 
 ## Host Tool
 
-The reference client at [host/python](../host/python) (`src/pico_uart_hid.py`)
+The reference client at [host/python](../../host/python) (`src/pico_uart_hid.py`)
 discovers this vendor HID collection and offers `monitor`, `temperature`,
 `version`, `overruns`, `toggle-led`, and `reset` commands. Install its `hidapi`
 dependency before use.
@@ -167,5 +167,5 @@ bit 0 is a defined v15 capability flag (HID reset compiled in); default
 firmware still sends `0`. Older host tools that rejected any nonzero `reserved0`
 will fail board-status reads only against reset-enabled lab builds.
 
-The source of truth for the implementation is [usb_hid.c](../firmware/src/usb/usb_hid.c)
-and the report descriptor in [usb_descriptors.c](../firmware/src/usb/usb_descriptors.c).
+The source of truth for the implementation is [usb_hid.c](../../firmware/src/usb/usb_hid.c)
+and the report descriptor in [usb_descriptors.c](../../firmware/src/usb/usb_descriptors.c).

@@ -4,44 +4,58 @@ PicoUart is a USB-to-UART converter project for the Raspberry Pi RP2040 and RP23
 The current firmware exposes 6 independent USB CDC interfaces to the host, with each CDC
 interface mapped to one UART channel on the target side.
 
-## Project Goal
-
-This project is intended to provide a compact multi-port USB serial adapter built on the
-Pico platform:
+## What It Provides
 
 - 6 USB CDC ACM interfaces presented to the host PC
 - 1 USB HID status-monitor interface presented to the host PC
 - 6 UART channels on the device side
 - 2 UARTs implemented with RP2040/RP2350 hardware UART peripherals
 - 4 UARTs implemented with PIO-based software UARTs
-- RTS/CTS hardware flow-control signals included in the intended channel design
-  (HW FC off by default; PIO RTS/CTS docs-reserved only / not GPIO-owned)
+- RTS/CTS pins assigned for future or explicit flow-control testing, disabled
+  by default
 
 This makes the board act like a 6-port USB serial converter while still using a low-cost
 microcontroller platform.
 
 ## Documentation
 
+Start here:
+
 - [Architecture](docs/architecture.md)
 - [UART Pinout and Wiring](docs/uart-pinout.md)
-- [HID Monitor and Board Control](docs/hid-monitor.md)
+- [CDC/HID Overview](docs/usb/cdc-hid-overview.md)
+
+Hardware testing:
+
 - [Self-Test Setup](docs/tests/self-test-setup.md)
 - [Functional Test Plan](docs/tests/functional-test-plan.md)
 - [Performance Test Plan](docs/tests/performance-test-plan.md)
 - [Performance Test Results](docs/tests/performance-test-results.md)
+
+Release and policy:
+
 - [Releasing](docs/releasing.md)
-- [Ring Buffer Design](docs/detail/ring-buffer-design.md)
-- [PIO UART Design](docs/detail/pio-uart-design.md)
 - [Security / USB identity policy](SECURITY.md)
 
-## Build and CI
+Design notes:
 
-Firmware development, flashing, release builds, and physical HIL are supported
-on Ubuntu/Linux. Windows remains supported for host-side Python HID and CDC
-operation, and host-tool CI continues to run there; use WSL2 Ubuntu when
-working from a Windows workstation.
+- [HID Report Reference](docs/usb/hid-report-reference.md)
+- [Control Plane Design](docs/detail/control-plane-design.md)
+- [Ring Buffer Design](docs/detail/ring-buffer-design.md)
+- [PIO UART Design](docs/detail/pio-uart-design.md)
 
-CI builds both firmware targets on Linux and runs host tests on Linux and Windows.
+## Quick Start
+
+Firmware development, flashing, release builds, and physical HIL are supported on
+Ubuntu/Linux. Windows remains supported for host-side Python HID and CDC tools;
+use WSL2 Ubuntu for firmware work from Windows.
+
+```sh
+. tools/setup-sdk-env.sh --sdk-version 2.3.0
+tools/build.sh --board pico
+tools/build.sh --board pico2
+tools/test-host.sh
+```
 
 CI does not provide a Pico/Pico 2 board, Debug Probe, or jumper-wire fixture,
 so physical UART, USB, HID, and performance tests cannot run automatically in
@@ -51,67 +65,15 @@ then follow the [Functional Test Plan](docs/tests/functional-test-plan.md) and
 [Performance Test Plan](docs/tests/performance-test-plan.md). Record results
 in [Performance Test Results](docs/tests/performance-test-results.md).
 
-```sh
-. tools/setup-sdk-env.sh --sdk-version 2.3.0
-tools/build.sh --board pico
-tools/build.sh --board pico2
-tools/test-host.sh
-```
-
-Pull requests run `.github/workflows/pr-check.yml` (firmware build for `pico` /
-`pico2`, stamped-version smoke, host C Unity tests, Python pytest, plus host-tool syntax checks and cppcheck on the host-testable UART claim helpers and their production consumers). Pushing a tag matching `vMAJOR.MINOR.PATCH` (for example
-`v1.2.3`) runs `.github/workflows/release.yml`, which builds both boards with
-version `1.2.3` stamped into binary info and HID, sets USB `bcdDevice` to
-major.minor BCD (`0x0102` for `1.2.3`), runs host unit tests, and opens a
-**draft** GitHub Release with board-qualified artifacts plus SHA256SUMS. Promote
-the draft only after `docs/releasing.md` (USB identity note + recorded HIL). After
-flashing, `python3 host/python/src/pico_uart_hid.py version` should print
-`1.2.3`.
-
-CI and release builds pin Pico SDK 2.3.0 at commit
-`98a542c1a62fb549ffb5d66a3e5892b06276b670` and verify the checkout before
-compiling. Published version components are limited to major
-and minor `0-99` and patch `0-255`, matching USB BCD and HID report storage.
-This is a **release-tag policy** enforced by `release.yml`: local/manual
-builds (`tools/build.sh --firmware-version ...`) accept major, minor, and
-patch each up to `255`, and USB `bcdDevice` falls back to `0x0000` whenever
-major or minor exceeds `99` (see `firmware/CMakeLists.txt`).
-
-Host-side tests (no board required):
-
-```sh
-tools/test-host.sh
-```
-
-The host tools require Python 3.10 or newer. CI and the test wrapper install
-the checked-in, hash-verified dependency lock at
-`host/python/requirements-lock.txt`.
-
-See [`firmware/tests/README.md`](firmware/tests/README.md).
+CI builds both firmware targets on Linux and runs host tests on Linux and
+Windows. Release tags open a draft GitHub Release; publish only after the gates
+in [Releasing](docs/releasing.md).
 
 ## Repository Layout
 
 - [docs](docs)
 - [firmware](firmware)
 - [host/python](host/python) - Python HID monitor and board-control utility (`src/`, tests in `tests/`)
-
-## Current Architecture
-
-Each USB CDC channel is mapped 1:1 to a UART instance:
-
-| USB CDC | UART backend | TX | RX |
-| --- | --- | --- | --- |
-| CDC0 | HW UART0 | GP0 | GP1 |
-| CDC1 | HW UART1 | GP4 | GP5 |
-| CDC2 | PIO UART | GP8 | GP9 |
-| CDC3 | PIO UART | GP12 | GP13 |
-| CDC4 | PIO UART | GP16 | GP17 |
-| CDC5 | PIO UART | GP20 | GP21 |
-
-The current transport uses TX and RX on every port. Hardware UART0/UART1 leave
-board-side RTS/CTS disabled by default, while retaining their assigned pins for
-future explicit enablement. PIO UART RTS/CTS pins remain reserved without
-runtime flow-control behavior. Host CDC RTS is ignored.
 
 ## Target Devices
 
@@ -120,73 +82,29 @@ runtime flow-control behavior. Host CDC RTS is ignored.
 
 CI builds both targets. The transport model stays consistent across both families.
 
-## Core Features
-
-- Multi-port USB CDC device
-- Up to 6 simultaneous UART channels
-- Mix of hardware UART and PIO UART implementations
-- Independent data path for each USB-to-UART pair
-- Intended for test fixtures, embedded bring-up, and multi-device debug setups
-
-## Firmware Scope
-
-The firmware currently handles:
-
-- USB enumeration with 6 CDC ACM functions
-- USB enumeration with 1 HID monitor function for status reporting
-- Routing RX/TX data between each CDC interface and its matching UART
-- UART configuration updates received through USB CDC line coding
-- Buffering and scheduling so multiple active ports can run at the same time
-
-The HID interface publishes a compact per-port status report (byte deltas,
-health flags, ring peaks), board temperature, firmware version, and whether
-HID reset is compiled in. It also supports narrowly scoped board commands to
-toggle the default LED and, when enabled, reset the board; it does not
-configure UART transport settings.
-
-## Design Considerations
-
-- USB stack selection must support composite devices with multiple CDC interfaces
-- PIO UART implementations need careful timing, buffering, and interrupt/DMA handling
-- Aggregate throughput will depend on USB full-speed bandwidth, CPU load, and UART baud rates.
-  Each of the 6 ports can be configured for 1 Mbaud; sustained multi-port 1 Mbaud full-duplex
-  is limited by USB FS aggregate capacity, not by the PIO baud divider.
-- Pin planning is important because 6 UART channels require a significant number of GPIOs
-- RTS/CTS support increases GPIO demand and is likely hardest on the 4 PIO-backed channels
-
 ## Current Status
 
-The firmware has moved beyond the planning stage and now provides a working baseline bridge:
+The firmware currently provides:
 
-1. 6 CDC ACM interfaces enumerate through TinyUSB.
-2. 1 vendor HID interface enumerates for status monitoring and limited board control.
-3. CDC traffic is bridged to 2 hardware UART backends and 4 PIO UART backends.
-4. Hardware UART ports use DMA-backed RX and TX rings.
-5. PIO UART ports use DMA-backed RX rings and hybrid FIFO/DMA TX.
+- USB enumeration with 6 CDC ACM functions
+- 1 vendor HID interface for status and limited board control
+- Routing RX/TX data between each CDC interface and its matching UART
+- CDC line-coding updates, with unsupported requests reported through HID health
+- DMA-backed hardware UART paths
+- DMA-backed PIO RX and hybrid FIFO/DMA PIO TX
 
 Known gaps in the current implementation:
 
-1. PIO UART RTS/CTS pins are reserved in the board docs but not GPIO-owned, and have no runtime flow-control behavior yet. Hardware UART0/UART1 retain RTS/CTS pin assignments with runtime flow control **disabled by default** (`uart_board.c`).
-2. Host CDC RTS is ignored; DTR is recorded for HID monitoring only and does not gate bridging.
-3. PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or data-bit changes (HID `control_error`).
-4. HID exposes ring high-water marks and a sticky RX-overrun health bit; full occupancy/overflow **counts** are not in the compact HID report.
-
-Release process (USB identity note + recorded HIL pass): [docs/releasing.md](docs/releasing.md).
+- Host CDC RTS is ignored; DTR is recorded for HID monitoring only.
+- PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or
+  data-bit changes.
+- Runtime RTS/CTS flow control is opt-in and must be explicitly configured and
+  tested before claiming lossless behavior.
+- Sustained multi-port 1 Mbaud is limited by USB full-speed aggregate bandwidth.
 
 ## Possible Future Enhancements
 
 - Per-port status LEDs
 - Configurable default baud rates
-- PIO UART RTS/CTS runtime flow control
-- Board-specific pinout tables for RP2040 and RP2350 variants
+- PIO RTS/CTS qualification and tuning
 - Replace development USB IDs (`cafe:4010`) with an allocated identity (see [SECURITY.md](SECURITY.md))
-
-## Summary
-
-PicoUart turns an RP2040 or RP2350 into a 6-port USB serial adapter by combining:
-
-- 6 USB CDC interfaces on the host side
-- 2 hardware UARTs
-- 4 PIO-based UARTs
-
-The result should be a flexible multi-UART bridge for development and automated test use.

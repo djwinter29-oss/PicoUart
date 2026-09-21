@@ -6,7 +6,7 @@ owner of UART line coding.
 
 Status input reports use layout **v15** (63-byte payload after the Report ID).
 Older hosts expecting v14 / 64-byte `PU` headers are incompatible — see
-[`docs/hid-monitor.md`](../../docs/hid-monitor.md).
+[`docs/usb/hid-report-reference.md`](../../docs/usb/hid-report-reference.md).
 
 ## Layout
 
