@@ -23,9 +23,8 @@ microcontroller platform.
 ## Documentation
 
 - [Architecture](docs/architecture.md)
-- [Hardware Wiring](docs/hardware-wiring.md)
+- [UART Pinout and Wiring](docs/uart-pinout.md)
 - [HID Monitor and Board Control](docs/hid-monitor.md)
-- [Test Connections](docs/test-connections.md)
 - [Self-Test Setup](docs/tests/self-test-setup.md)
 - [Functional Test Plan](docs/tests/functional-test-plan.md)
 - [Performance Test Plan](docs/tests/performance-test-plan.md)

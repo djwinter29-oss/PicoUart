@@ -165,6 +165,7 @@ Never connect UART TX to TX or RX to RX. Do not connect RS-232 voltage-level
 signals directly to Pico GPIOs. Stop the test and inspect the wiring if a
 channel fails in both directions or if the board resets unexpectedly.
 
-For flashing, USB enumeration, and extended stress testing, see
-[`docs/test-connections.md`](../test-connections.md) and the board-testing
+For flashing, USB enumeration, and extended stress testing, see the
+[Functional Test Plan](functional-test-plan.md),
+[Performance Test Plan](performance-test-plan.md), and the board-testing
 procedure in the repository skill documentation.

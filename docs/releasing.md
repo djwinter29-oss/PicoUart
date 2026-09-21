@@ -29,7 +29,7 @@ Cloud / CI builds prove compilation and host unit tests only. Release candidates
 need a recorded hardware-in-the-loop (HIL) pass:
 
 1. Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md)
-   and [`docs/test-connections.md`](test-connections.md).
+   and [`docs/tests/self-test-setup.md`](tests/self-test-setup.md).
 2. Flash the **exact** UF2/ELF attached to the GitHub Release (or the
    `workflow_dispatch` dry-run artifacts). Do **not** rebuild for release HIL.
    Record `SHA256SUMS-*` and flash with
