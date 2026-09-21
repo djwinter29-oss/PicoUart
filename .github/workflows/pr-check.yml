@@ -167,7 +167,7 @@ jobs:
         run: python -m pip install --require-hashes -r host/python/requirements-lock.txt
 
       - name: Run host Python tests
-        run: python -m pytest
+        run: python -m pytest -c host/python/pyproject.toml
 
   host-tools-windows:
     name: Host tools (Windows)
@@ -196,4 +196,4 @@ jobs:
           ctest --test-dir build/host-tests -C Release --output-on-failure
 
       - name: Run host Python tests
-        run: python -m pytest
+        run: python -m pytest -c host/python/pyproject.toml

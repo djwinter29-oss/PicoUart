@@ -55,7 +55,9 @@ if(NOT PICO_UART_ALLOW_UNSAFE_OVERCLOCK AND
         "use the rated ${PICO_UART_RATED_SYSTEM_CLOCK_KHZ} kHz clock or explicitly set PICO_UART_ALLOW_UNSAFE_OVERCLOCK=ON")
 endif()
 
-add_executable(pico_uart
+add_executable(pico_uart)
+
+target_sources(pico_uart PRIVATE
     src/config/uart_board.c
     src/driver/led.c
     src/driver/system.c
@@ -104,15 +106,12 @@ target_compile_definitions(pico_uart PRIVATE
     PICO_UART_VERSION_PATCH=${PICO_UART_VERSION_PATCH}u
     PICO_UART_BCD_DEVICE=${PICO_UART_BCD_DEVICE}u
     PICO_UART_ALLOW_HID_RESET=$<BOOL:${PICO_UART_ALLOW_HID_RESET}>
+    PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ}u
 )
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(pico_uart PRIVATE -Wall -Wextra -Wformat=2)
 endif()
-
-if (NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
-    target_compile_definitions(pico_uart PRIVATE PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ}u)
-endif ()
 
 if(PICO_BOARD MATCHES "^pico$")
     # RP2040 silicon can miss the first SET_ADDRESS after a bus reset, so the host

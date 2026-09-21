@@ -82,6 +82,6 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
     "$PYTHON_EXE" -m pip install -q --require-hashes -r "$REPO_ROOT/host/python/requirements-lock.txt"
     (
         CDPATH= cd -- "$REPO_ROOT"
-        "$PYTHON_EXE" -m pytest
+        "$PYTHON_EXE" -m pytest -c host/python/pyproject.toml
     )
 fi

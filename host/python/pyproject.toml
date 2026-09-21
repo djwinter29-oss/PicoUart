@@ -13,10 +13,11 @@ dependencies = ["hidapi==0.14.0"]
 pico-uart-hid = "pico_uart_hid:main"
 
 [tool.setuptools]
-package-dir = {"" = "host/python/src"}
+package-dir = {"" = "src"}
 py-modules = ["pico_uart_hid"]
 
 [tool.pytest.ini_options]
-testpaths = ["host/python/tests"]
-pythonpath = ["host/python/src", "host/python/tests"]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+python_files = ["test_*.py"]
 addopts = "-q"

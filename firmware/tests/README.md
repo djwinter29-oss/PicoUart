@@ -67,7 +67,7 @@ the repository virtual environment:
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install --require-hashes -r host/python/requirements-lock.txt
-.venv/bin/python -m pytest
+.venv/bin/python -m pytest -c host/python/pyproject.toml
 ```
 
 Use `tools/test-host.sh` after setup to run the native C and Python suites

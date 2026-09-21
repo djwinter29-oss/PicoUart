@@ -30,7 +30,7 @@ For an installed command-line tool from the repository root:
 
 ```sh
 python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
-python3 -m pip install --no-deps .
+python3 -m pip install --no-deps host/python
 pico-uart-hid --help
 ```
 
@@ -41,7 +41,7 @@ For host automated tests (pytest):
 
 ```sh
 python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
-python3 -m pytest
+python3 -m pytest -c host/python/pyproject.toml
 ```
 
 CI and release qualification install `requirements-lock.txt` with

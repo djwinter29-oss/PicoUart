@@ -72,7 +72,7 @@ in [Releasing](docs/releasing.md).
 ## Repository Layout
 
 - [docs](docs)
-- [firmware](firmware)
+- [firmware](firmware) - Pico SDK firmware project; see [build and configuration](firmware/build-and-config.md)
 - [host/python](host/python) - Python HID monitor and board-control utility (`src/`, tests in `tests/`)
 
 ## Target Devices
