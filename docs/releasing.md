@@ -41,6 +41,10 @@ HIL on both packaged board images:
 HIL must use the exact UF2/ELF from the draft release or workflow dry-run. Do
 not rebuild locally for release qualification.
 
+This gate is intentionally manual: the repository has no CI-attached Pico,
+Debug Probe, USB cable, or jumper fixture. Automated workflows must not mark a
+release as physically qualified without linked human-run HIL evidence.
+
 Record all of the following in
 [Performance Test Results](tests/performance-test-results.md) or a linked raw
 transcript:

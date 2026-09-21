@@ -44,6 +44,9 @@ Design notes:
 - [Ring Buffer Design](docs/detail/ring-buffer-design.md)
 - [PIO UART Design](docs/detail/pio-uart-design.md)
 
+When firmware behavior changes, update the matching design or test document in
+the same change. This keeps the detailed docs from drifting away from code.
+
 ## Quick Start
 
 Firmware development, flashing, release builds, and physical HIL are supported on
