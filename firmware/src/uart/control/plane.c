@@ -17,8 +17,10 @@
 static bool uart_control_plane_mailbox_has_pending_port(const uart_control_plane_t *control_plane,
                                                          uart_port_id_t port_id)
 {
-    return (control_plane != NULL) &&
-           uart_control_mailbox_has_pending_port(control_plane->mailbox, (uint32_t)port_id);
+    return (control_plane != NULL) && (control_plane->mailboxes != NULL) &&
+           (port_id < UART_PORT_COUNT) &&
+           uart_control_mailbox_has_pending_port(&control_plane->mailboxes[port_id],
+                                                 (uint32_t)port_id);
 }
 
 static void uart_control_plane_finish_worker_control(uart_control_plane_t *control_plane,
@@ -208,10 +210,8 @@ static void uart_control_plane_set_line_coding(uart_control_plane_t *control_pla
 
 void uart_control_plane_service(uart_control_plane_t *control_plane)
 {
-    uart_control_mailbox_request_t request;
-
     if ((control_plane == NULL) || (control_plane->ports == NULL) ||
-        (control_plane->mailbox == NULL) || (control_plane->pending_controls == NULL) ||
+        (control_plane->mailboxes == NULL) || (control_plane->pending_controls == NULL) ||
         (control_plane->soft_pending_controls == NULL) ||
         (control_plane->control_generations == NULL) || (control_plane->status_flags == NULL) ||
         (control_plane->status_lock == NULL) || (control_plane->stats_sequence == NULL) ||
@@ -219,8 +219,13 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
         return;
     }
 
-    if (uart_control_mailbox_take(control_plane->mailbox, &request)) {
-        uart_control_plane_set_line_coding(control_plane, &request);
+    for (size_t offset = 0u; offset < UART_PORT_COUNT; ++offset) {
+        size_t index = (*control_plane->poll_start_index + offset) % UART_PORT_COUNT;
+        uart_control_mailbox_request_t request;
+
+        if (uart_control_mailbox_take(&control_plane->mailboxes[index], &request)) {
+            uart_control_plane_set_line_coding(control_plane, &request);
+        }
     }
 
     for (size_t offset = 0u; offset < UART_PORT_COUNT; ++offset) {

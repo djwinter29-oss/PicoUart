@@ -22,7 +22,9 @@ typedef struct {
 } uart_control_mailbox_request_t;
 
 /**
- * @brief Single-slot mailbox shared by core 0 producer and core 1 consumer.
+ * @brief One request slot shared by a core 0 producer and a core 1 consumer.
+ *
+ * Firmware keeps one instance per UART port. A busy slot blocks only that port.
  */
 typedef struct {
     volatile uint32_t request_sequence; /**< Monotonic sequence published by core 0. */

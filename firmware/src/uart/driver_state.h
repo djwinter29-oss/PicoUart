@@ -18,7 +18,7 @@
  */
 typedef struct {
     uart_runtime_port_t ports[UART_PORT_COUNT]; /**< Backend storage and public metadata. */
-    uart_control_mailbox_t mailbox; /**< Core-0 to core-1 control request slot. */
+    uart_control_mailbox_t mailboxes[UART_PORT_COUNT]; /**< One core-0 to core-1 control slot per port. */
     bool worker_started; /**< True after core 1 has been launched. */
     volatile uint32_t worker_heartbeat; /**< Core-1 worker progress counter. */
     volatile uint8_t status_flags[UART_PORT_COUNT]; /**< Per-port health flags. */

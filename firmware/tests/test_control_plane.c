@@ -58,7 +58,7 @@ static const uart_backend_ops_t test_backend_ops = {
 };
 
 static uart_runtime_port_t test_ports[UART_PORT_COUNT];
-static uart_control_mailbox_t test_mailbox;
+static uart_control_mailbox_t test_mailboxes[UART_PORT_COUNT];
 static uart_control_pending_t test_pending_controls[UART_PORT_COUNT];
 static bool test_soft_pending_controls[UART_PORT_COUNT];
 static uint32_t test_control_generations[UART_PORT_COUNT];
@@ -86,7 +86,10 @@ static void publish_request_for_port(uint32_t port_id, uint32_t tx_boundary_sequ
         .line_coding = test_line_coding(),
     };
 
-    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailbox, &request));
+    uart_control_mailbox_t *slot =
+        &test_mailboxes[(port_id < UART_PORT_COUNT) ? port_id : UART_PORT_0];
+
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(slot, &request));
 }
 
 static void publish_request(uint32_t tx_boundary_sequence)
@@ -102,20 +105,22 @@ void setUp(void)
     apply_result = true;
     line_coding_matches = false;
     pico_test_time_us = 0;
-    test_ports[UART_PORT_0] = (uart_runtime_port_t){.ops = &test_backend_ops};
-    for (size_t index = 1u; index < UART_PORT_COUNT; ++index) {
-        test_ports[index] = (uart_runtime_port_t){0};
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        test_ports[index] = (index == UART_PORT_0)
+                                ? (uart_runtime_port_t){.ops = &test_backend_ops}
+                                : (uart_runtime_port_t){0};
+        uart_control_mailbox_reset(&test_mailboxes[index]);
+        test_pending_controls[index] = (uart_control_pending_t){0};
+        test_soft_pending_controls[index] = false;
+        test_control_generations[index] = (index == UART_PORT_0) ? 1u : 0u;
+        test_status_flags[index] =
+            (index == UART_PORT_0) ? UART_DRIVER_PORT_STATUS_CONTROL_PENDING : 0u;
+        test_stats_sequence[index] = 0u;
     }
-    test_mailbox = (uart_control_mailbox_t){0};
-    test_pending_controls[UART_PORT_0] = (uart_control_pending_t){0};
-    test_soft_pending_controls[UART_PORT_0] = false;
-    test_control_generations[UART_PORT_0] = 1u;
-    test_status_flags[UART_PORT_0] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
-    test_stats_sequence[UART_PORT_0] = 0u;
     test_poll_start_index = 0u;
     test_control_plane = (uart_control_plane_t){
         .ports = test_ports,
-        .mailbox = &test_mailbox,
+        .mailboxes = test_mailboxes,
         .pending_controls = test_pending_controls,
         .soft_pending_controls = test_soft_pending_controls,
         .control_generations = test_control_generations,
@@ -159,7 +164,7 @@ void test_control_plane_drops_invalid_mailbox_port(void)
 
     uart_control_plane_service(&test_control_plane);
 
-    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailbox));
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
 }
 
@@ -184,6 +189,24 @@ void test_control_plane_reports_error_after_apply_timeout(void)
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
 }
 
+void test_control_plane_applies_requests_on_independent_port_slots(void)
+{
+    test_ports[UART_PORT_1] = (uart_runtime_port_t){.ops = &test_backend_ops};
+    test_control_generations[UART_PORT_1] = 1u;
+    test_status_flags[UART_PORT_1] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    test_tx_ring.consumer = 0u;
+    publish_request_for_port(UART_PORT_0, 0u);
+    publish_request_for_port(UART_PORT_1, 0u);
+
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_EQUAL_UINT32(2u, apply_count);
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_1].pending);
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_1]));
+}
+
 void test_control_plane_immediate_completion_clears_pending_when_unowned(void)
 {
     line_coding_matches = true;
@@ -203,6 +226,7 @@ int main(void)
     RUN_TEST(test_control_plane_waits_for_tx_boundary_before_applying);
     RUN_TEST(test_control_plane_drops_invalid_mailbox_port);
     RUN_TEST(test_control_plane_reports_error_after_apply_timeout);
+    RUN_TEST(test_control_plane_applies_requests_on_independent_port_slots);
     RUN_TEST(test_control_plane_immediate_completion_clears_pending_when_unowned);
     return UNITY_END();
 }

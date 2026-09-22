@@ -74,7 +74,9 @@ static void uart_driver_clear_port_status_flag(uart_port_id_t port_id, uint8_t f
 
 static bool uart_driver_mailbox_has_pending_port(uart_port_id_t port_id)
 {
-    return uart_control_mailbox_has_pending_port(&uart_driver_state.mailbox, (uint32_t)port_id);
+    return (port_id < UART_PORT_COUNT) &&
+           uart_control_mailbox_has_pending_port(&uart_driver_state.mailboxes[port_id],
+                                                 (uint32_t)port_id);
 }
 
 static const uart_worker_hooks_t uart_driver_worker_hooks = {
@@ -97,7 +99,7 @@ static void uart_driver_worker_service_control(void)
 static void uart_driver_bind_state_views(void)
 {
     uart_driver_state.control_plane.ports = uart_driver_state.ports;
-    uart_driver_state.control_plane.mailbox = &uart_driver_state.mailbox;
+    uart_driver_state.control_plane.mailboxes = uart_driver_state.mailboxes;
     uart_driver_state.control_plane.pending_controls = uart_driver_state.pending_controls;
     uart_driver_state.control_plane.soft_pending_controls =
         uart_driver_state.soft_pending_controls;
@@ -188,7 +190,8 @@ static void uart_driver_rollback_initialized_backends(void)
 
 static void uart_driver_poll_io(void)
 {
-    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+    for (size_t offset = 0u; offset < UART_PORT_COUNT; ++offset) {
+        size_t index = (uart_driver_state.poll_start_index + offset) % UART_PORT_COUNT;
         uart_runtime_port_t *port = &uart_driver_state.ports[index];
 
         if ((port->ops != NULL) && port->ops->is_initialized(&port->backend)) {
@@ -227,7 +230,9 @@ bool uart_driver_init(void)
             uart_driver_state.pending_controls[index].line_coding.parity = UART_DRIVER_PARITY_NONE;
         }
 
-        uart_control_mailbox_reset(&uart_driver_state.mailbox);
+        for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+            uart_control_mailbox_reset(&uart_driver_state.mailboxes[index]);
+        }
         uart_driver_state.poll_start_index = 0u;
         uart_driver_state.worker_heartbeat = 0u;
 
@@ -320,7 +325,7 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
     }
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
-    if (!uart_control_mailbox_can_publish(&uart_driver_state.mailbox)) {
+    if (!uart_control_mailbox_can_publish(&uart_driver_state.mailboxes[port_id])) {
         spin_unlock(uart_driver_state.status_lock, save);
         return false;
     }
@@ -335,7 +340,7 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
         .tx_boundary_sequence = tx_ring->producer,
         .line_coding = *line_coding,
     };
-    (void)uart_control_mailbox_publish(&uart_driver_state.mailbox, &request);
+    (void)uart_control_mailbox_publish(&uart_driver_state.mailboxes[port_id], &request);
     spin_unlock(uart_driver_state.status_lock, save);
     return true;
 }

@@ -16,7 +16,7 @@ flowchart LR
     end
     subgraph Shared["Shared synchronization"]
         Rings["Per-port RX/TX rings"]
-        Mailbox["Single-slot control mailbox"]
+        Mailbox["Per-port control mailbox"]
         Status["Status flags + generations"]
         Stats["Stats sequence counters"]
     end
@@ -65,8 +65,8 @@ committing the copied bytes.
 
 ## Control Mailbox Ordering
 
-The control mailbox is a single-producer/core-0 and single-consumer/core-1
-slot:
+Each UART port has its own single-producer/core-0 and single-consumer/core-1
+mailbox slot. One port's unpublished response does not block another port:
 
 ```mermaid
 sequenceDiagram

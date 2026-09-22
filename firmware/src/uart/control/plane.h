@@ -28,7 +28,7 @@ typedef struct {
  */
 typedef struct {
     uart_runtime_port_t *ports; /**< Logical UART runtime ports. */
-    uart_control_mailbox_t *mailbox; /**< Core-0 to worker request mailbox. */
+    uart_control_mailbox_t *mailboxes; /**< One core-0 to worker request slot per port. */
     uart_control_pending_t *pending_controls; /**< Worker-owned deferred requests. */
     bool *soft_pending_controls; /**< Core-0 pending-request flags. */
     uint32_t *control_generations; /**< Latest host generation per port. */
@@ -39,7 +39,7 @@ typedef struct {
 } uart_control_plane_t;
 
 /**
- * @brief Consume one mailbox request and service deferred line-coding changes.
+ * @brief Consume each port's mailbox request and service deferred line-coding changes.
  * @param control_plane Private runtime state.
  */
 void uart_control_plane_service(uart_control_plane_t *control_plane);

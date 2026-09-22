@@ -72,6 +72,13 @@ report. They saturate at `65535`; a saturated value means the actual delta was
 at least that large. The ring peak is cumulative from boot and saturates at
 `4080` bytes.
 
+Those deltas and `sequence` advance only after a successful interrupt IN
+publish. A control-pipe `GET_REPORT` of input report 1 returns the same
+uncommitted snapshot and does not advance `sequence` or the delta baseline.
+Use the interrupt stream (`pico_uart_hid.py monitor`) when the delta must be
+committed. `SET_LINE_CODING` can still complete on the bus when firmware
+rejects it; watch health bit 2 on that interrupt stream.
+
 ### `health` Bits
 
 | Bit | Meaning |
