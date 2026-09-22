@@ -6,11 +6,30 @@
 #include "unity.h"
 
 #include "pico/time.h"
+#include "uart/backend/adapter.h"
+#include "uart/control/plane.h"
 #include "uart/port_api.h"
 #include "uart/uart_driver.h"
 
 absolute_time_t pico_test_time_us;
 static uint32_t test_stats_call_count;
+
+void uart_backend_enable_rx_dma_irq(void)
+{
+}
+
+void uart_control_plane_service(uart_control_plane_t *control_plane)
+{
+    (void)control_plane;
+}
+
+bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane,
+                                          uart_port_id_t port_id)
+{
+    (void)control_plane;
+    (void)port_id;
+    return false;
+}
 
 static bool test_backend_is_initialized(const uart_backend_instance_t *instance)
 {
