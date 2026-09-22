@@ -11,7 +11,7 @@
 #ifndef UART_DMA_PROGRESS_H
 #define UART_DMA_PROGRESS_H
 
-#include "uart/dma_progress_math.h"
+#include "uart/dma/progress_math.h"
 
 #include "hardware/dma.h"
 #include "hardware/structs/dma.h"

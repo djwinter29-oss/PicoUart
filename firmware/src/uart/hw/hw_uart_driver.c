@@ -5,8 +5,8 @@
 
 #include "uart/hw/hw_uart_driver.h"
 
-#include "uart/backend_policy.h"
-#include "uart/dma_progress.h"
+#include "uart/backend/policy.h"
+#include "uart/dma/progress.h"
 #include "uart/hw/baud_rate.h"
 #include "uart/hw/dma_claim.h"
 

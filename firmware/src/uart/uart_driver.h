@@ -6,17 +6,11 @@
 #ifndef UART_DRIVER_H
 #define UART_DRIVER_H
 
+#include "uart/types.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-/**
- * @brief Backend class used by a logical UART port.
- */
-typedef enum {
-    UART_DRIVER_BACKEND_HW = 0, /**< Hardware UART peripheral backend. */
-    UART_DRIVER_BACKEND_PIO, /**< PIO UART backend. */
-} uart_driver_backend_t;
 
 /** @brief Port status flag: backend is initialized and available. */
 #define UART_DRIVER_PORT_STATUS_READY (1u << 0)
@@ -27,29 +21,6 @@ typedef enum {
 /** @brief Port status flag: ingress is paused while the worker applies a control change at a safe backend boundary. */
 #define UART_DRIVER_PORT_STATUS_CONTROL_PENDING (1u << 3)
 
-/**
- * @brief Logical UART port identifiers.
- */
-typedef enum {
-    UART_PORT_0 = 0, /**< Logical UART port 0. */
-    UART_PORT_1, /**< Logical UART port 1. */
-    UART_PORT_2, /**< Logical UART port 2. */
-    UART_PORT_3, /**< Logical UART port 3. */
-    UART_PORT_4, /**< Logical UART port 4. */
-    UART_PORT_5, /**< Logical UART port 5. */
-    UART_PORT_COUNT /**< Total number of logical UART ports. */
-} uart_port_id_t;
-
-/**
- * @brief Public view of one logical UART port.
- */
-typedef struct {
-    uart_port_id_t id; /**< Logical port identifier. */
-    uart_driver_backend_t backend; /**< Backend class assigned to the port. */
-    uint32_t baud_rate; /**< Current baud rate (startup default; updated after a successful line-coding apply). */
-    uint32_t tx_pin; /**< Configured TX GPIO, or unassigned marker. */
-    uint32_t rx_pin; /**< Configured RX GPIO, or unassigned marker. */
-} uart_driver_port_info_t;
 
 /**
  * @brief Transport counters for one logical UART port.
@@ -64,25 +35,6 @@ typedef struct {
     uint32_t rx_ring_pending_overflow_count; /**< Unread UART-to-USB bytes already overwritten. */
     uint32_t rx_error_count; /**< Hardware UART receive-status events observed since the post-boot baseline. */
 } uart_driver_port_stats_t;
-
-/**
- * @brief Host-requested UART parity mode.
- */
-typedef enum {
-    UART_DRIVER_PARITY_NONE = 0, /**< No parity bit. */
-    UART_DRIVER_PARITY_ODD, /**< Odd parity. */
-    UART_DRIVER_PARITY_EVEN, /**< Even parity. */
-} uart_driver_parity_t;
-
-/**
- * @brief Worker-applied UART line-coding request.
- */
-typedef struct {
-    uint32_t baud_rate; /**< Requested baud rate. */
-    uint8_t data_bits; /**< Requested UART data-bit count. */
-    uint8_t stop_bits; /**< Requested UART stop-bit count. */
-    uart_driver_parity_t parity; /**< Requested parity mode. */
-} uart_driver_line_coding_t;
 
 /**
  * @brief Return the number of logical UART ports in the firmware.
@@ -151,9 +103,9 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id,
                                    uint32_t control_generation);
 
 /**
- * @brief Return whether the worker owns an active line-coding transition.
+ * @brief Return whether TX ingress is paused for an active line-coding transition.
  * @param port_id Logical UART port identifier.
- * @return `true` while the mailbox or worker has accepted the request.
+ * @return `true` while any control-pending owner holds the port.
  */
 bool uart_driver_port_tx_is_blocked(uart_port_id_t port_id);
 

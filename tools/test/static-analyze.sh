@@ -10,9 +10,9 @@ cppcheck --error-exitcode=1 --enable=warning --inline-suppr \
     -I firmware/src \
     --suppress=missingIncludeSystem \
     --suppress=missingInclude \
-    firmware/src/uart/backend_policy.h \
-    firmware/src/uart/control_pending.h \
-    firmware/src/uart/dma_progress_math.h \
+    firmware/src/uart/backend/policy.h \
+    firmware/src/uart/control/ownership.h \
+    firmware/src/uart/dma/progress_math.h \
     firmware/src/uart/hw/baud_rate.h \
     firmware/src/uart/line_coding.c \
     firmware/src/board/uart_topology.c \

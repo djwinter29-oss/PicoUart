@@ -119,7 +119,7 @@ pending request uses a nil deadline and must not later manufacture a timeout
 
 ## Test Coverage
 
-Host unit tests cover the pure ownership rules in `control_pending.h` and
+Host unit tests cover the pure ownership rules in `ownership.h` and
 `cdc_soft_pending.h`:
 
 - deadline refresh policy for identical versus replacement requests

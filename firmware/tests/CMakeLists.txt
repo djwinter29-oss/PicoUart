@@ -38,6 +38,41 @@ target_include_directories(test_ring_buffer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
 )
 
+pico_uart_add_unity_test(test_bridge bridge
+    test_bridge.c
+    ${FIRMWARE_ROOT}/src/uart/bridge.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
+)
+target_include_directories(test_bridge PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+
+pico_uart_add_unity_test(test_worker worker
+    test_worker.c
+    ${FIRMWARE_ROOT}/src/uart/worker.c
+)
+target_include_directories(test_worker PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+
+pico_uart_add_unity_test(test_control_mailbox mailbox
+    test_control_mailbox.c
+    ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
+)
+target_include_directories(test_control_mailbox PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+
+pico_uart_add_unity_test(test_control_plane plane
+    test_control_plane.c
+    ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
+    ${FIRMWARE_ROOT}/src/uart/control/plane.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+)
+target_include_directories(test_control_plane PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+
 pico_uart_add_unity_test(test_line_coding line_coding
     test_line_coding.c
     ${FIRMWARE_ROOT}/src/uart/line_coding.c
@@ -62,6 +97,10 @@ pico_uart_add_unity_test(test_topology topology
 
 pico_uart_add_unity_test(test_backend_policy backend_policy
     test_backend_policy.c
+)
+
+pico_uart_add_unity_test(test_backend_contract backend_contract
+    test_backend_contract.c
 )
 
 pico_uart_add_unity_test(test_hw_baud_rate hw_baud_rate
@@ -90,6 +129,24 @@ pico_uart_add_unity_test(test_resource_claim resource_claim
     test_resource_claim.c
     ${FIRMWARE_ROOT}/src/uart/pio/resource_claim.c
 )
+
+# Public-facade contract test. The real uart_driver.c is linked with host Pico
+# stubs so invalid-port and pre-initialization guards remain testable without
+# pretending to validate physical DMA or multicore startup on the host.
+pico_uart_add_unity_test(test_uart_driver_facade uart_driver_facade
+    test_uart_driver_facade.c
+    ${FIRMWARE_ROOT}/src/uart/uart_driver.c
+    ${FIRMWARE_ROOT}/src/uart/bridge.c
+    ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+    ${FIRMWARE_ROOT}/src/uart/port_api.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
+)
+target_include_directories(test_uart_driver_facade PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+target_compile_options(test_uart_driver_facade PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(test_uart_driver_facade PRIVATE -Wl,--gc-sections)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set(_pico_uart_host_warnings -Wall -Wextra -Werror)

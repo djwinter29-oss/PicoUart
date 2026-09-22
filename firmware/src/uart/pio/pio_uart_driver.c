@@ -3,11 +3,11 @@
  * @brief PIO UART backend for PicoUart logical UART ports.
  */
 
-#include "uart/pio/internal.h"
+#include "uart/pio/pio_uart_driver_internal.h"
 
 #include "uart.pio.h"
-#include "uart/backend_policy.h"
-#include "uart/dma_progress.h"
+#include "uart/backend/policy.h"
+#include "uart/dma/progress.h"
 #include "uart/line_coding.h"
 #include "uart/pio/resource_claim.h"
 #include "uart/pio/txstall_wait.h"

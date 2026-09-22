@@ -1,5 +1,5 @@
 /**
- * @file internal.h
+ * @file pio_uart_driver_internal.h
  * @brief Internal runtime state for the PicoUart PIO UART backend.
  */
 

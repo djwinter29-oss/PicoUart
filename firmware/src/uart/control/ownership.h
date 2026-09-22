@@ -1,10 +1,10 @@
 /**
- * @file control_pending.h
+ * @file ownership.h
  * @brief Pure ownership rule for a UART control-pending status flag.
  */
 
-#ifndef UART_CONTROL_PENDING_H
-#define UART_CONTROL_PENDING_H
+#ifndef UART_CONTROL_OWNERSHIP_H
+#define UART_CONTROL_OWNERSHIP_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,17 +43,19 @@ static inline bool uart_control_pending_should_clear(bool soft_pending, bool mai
 }
 
 /**
- * @brief Decide whether UART TX ingress must wait for control ownership.
- * @param soft_pending True while core 0 is waiting to publish the request.
- * @param worker_pending True while the worker has a deferred backend change.
- * @param mailbox_pending True while the worker mailbox owns a request.
+ * @brief Decide whether UART TX ingress must wait for a control transition.
+ * @param status_flags Lock-protected status flags for one logical UART port.
+ * @param control_pending_bit Status bit representing continuous control ownership.
  * @return `true` while the UART format may be changing or is about to change.
+ *
+ * CONTROL_PENDING spans the soft-pending, mailbox-pending, and worker-pending
+ * phases. Using that continuous flag avoids admitting TX in the handoff between
+ * mailbox acknowledgement and worker-pending ownership.
  */
-static inline bool uart_control_tx_should_block(bool soft_pending,
-                                                bool worker_pending,
-                                                bool mailbox_pending)
+static inline bool uart_control_tx_should_block(uint8_t status_flags,
+                                                uint8_t control_pending_bit)
 {
-    return soft_pending || worker_pending || mailbox_pending;
+    return (status_flags & control_pending_bit) != 0u;
 }
 
 /**

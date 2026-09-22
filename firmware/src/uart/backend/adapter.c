@@ -1,15 +1,15 @@
 /**
- * @file backend.c
+ * @file adapter.c
  * @brief Adapters from the common UART backend contract to concrete drivers.
  */
 
-#include "uart/backend.h"
+#include "uart/backend/adapter.h"
 
 #include "hardware/clocks.h"
 #include "uart/hw/baud_rate.h"
 #include "uart/hw/hw_uart_driver.h"
 #include "uart/line_coding.h"
-#include "uart/pio/internal.h"
+#include "uart/pio/pio_uart_driver_internal.h"
 
 static uart_parity_t uart_backend_hw_parity(uart_driver_parity_t parity)
 {
@@ -229,11 +229,11 @@ static const uart_backend_ops_t uart_backend_pio_ops = {
 const uart_backend_ops_t *uart_backend_ops_for_type(uart_driver_backend_t backend)
 {
     if (backend == UART_DRIVER_BACKEND_HW) {
-        return &uart_backend_hw_ops;
+        return uart_backend_ops_is_complete(&uart_backend_hw_ops) ? &uart_backend_hw_ops : NULL;
     }
 
     if (backend == UART_DRIVER_BACKEND_PIO) {
-        return &uart_backend_pio_ops;
+        return uart_backend_ops_is_complete(&uart_backend_pio_ops) ? &uart_backend_pio_ops : NULL;
     }
 
     return NULL;
