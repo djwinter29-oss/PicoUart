@@ -25,6 +25,10 @@ Use a separate build directory per board. The Linux build/load tools accept
 `--board` values supported by the installed Pico SDK. They also accept
 `--system-clock-khz` to override the system clock for a build. For example:
 
+The scripts honor an exported `PICO_SDK_PATH`; otherwise they use the pinned
+repository-local `.pico-sdk` checkout. `load.sh` uses the same SDK selection as
+`build.sh` when it rebuilds an image.
+
 ```sh
 tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
 tools/firmware/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
@@ -34,6 +38,10 @@ Those examples are intentionally unsafe overrides. Production builds use the
 rated 125000 kHz (`pico`) or 150000 kHz (`pico2`) target by default. Pass
 `--unsafe-overclock` with an override only for a board-specific, recorded HIL
 qualification; CMake otherwise rejects a non-rated clock.
+
+Changing board, SDK path, generator, firmware version, system clock, HID-reset
+option, or unsafe-overclock option causes the build wrapper to reset stale
+CMake cache state before reconfiguring.
 
 ## Load
 
@@ -52,6 +60,11 @@ both the build and load wrappers:
 ```sh
 tools/firmware/load.sh --board pico --system-clock-khz 250000 --unsafe-overclock
 ```
+
+OpenOCD probe recovery and flash-device compatibility require the physical
+Debug Probe and target board; automated CI can validate the command paths but
+cannot prove USB/SWD recovery behavior. Follow [Releasing](../docs/releasing.md)
+for the release HIL and OpenOCD recovery gates.
 
 ## Configuration
 

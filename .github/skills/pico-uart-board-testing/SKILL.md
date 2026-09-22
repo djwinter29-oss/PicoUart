@@ -19,6 +19,8 @@ Read the relevant document before testing:
 
 - [`README.md`](../../../README.md): documentation index and standard local
   build/test entry points.
+- [`tools/README.md`](../../../tools/README.md): tool categories and local
+  runner entry points.
 - [`docs/tests/self-test-setup.md`](../../../docs/tests/self-test-setup.md):
   equipment, fixed fixture wiring, and flow-control policy.
 - [`docs/tests/functional-test-plan.md`](../../../docs/tests/functional-test-plan.md):

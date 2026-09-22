@@ -109,7 +109,11 @@ fi
 if [ -f "$BUILD_DIR_PATH/CMakeCache.txt" ] &&
         { ! grep -F -q "CMAKE_TOOLCHAIN_FILE:FILEPATH=$PICO_SDK_PATH_VALUE/" "$BUILD_DIR_PATH/CMakeCache.txt" ||
             ! grep -F -q "CMAKE_GENERATOR:INTERNAL=$GENERATOR" "$BUILD_DIR_PATH/CMakeCache.txt" ||
-            ! grep -F -q "PICO_BOARD:STRING=$BOARD" "$BUILD_DIR_PATH/CMakeCache.txt"; }; then
+            ! grep -F -q "PICO_BOARD:STRING=$BOARD" "$BUILD_DIR_PATH/CMakeCache.txt" ||
+            ! grep -F -q "PICO_UART_VERSION:STRING=${FIRMWARE_VERSION:-0.0.0-dev}" "$BUILD_DIR_PATH/CMakeCache.txt" ||
+            ! grep -F -q "PICO_UART_SYSTEM_CLOCK_KHZ:STRING=$SYSTEM_CLOCK_KHZ" "$BUILD_DIR_PATH/CMakeCache.txt" ||
+            ! grep -F -q "PICO_UART_ALLOW_HID_RESET:BOOL=$ALLOW_HID_RESET" "$BUILD_DIR_PATH/CMakeCache.txt" ||
+            ! grep -F -q "PICO_UART_ALLOW_UNSAFE_OVERCLOCK:BOOL=$ALLOW_UNSAFE_OVERCLOCK" "$BUILD_DIR_PATH/CMakeCache.txt"; }; then
         echo "Build configuration changed; resetting generated CMake state in $BUILD_DIR_PATH"
     rm -rf "$BUILD_DIR_PATH/CMakeCache.txt" \
            "$BUILD_DIR_PATH/CMakeFiles" \

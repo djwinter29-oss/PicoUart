@@ -1,57 +1,42 @@
-# Host-side automated tests (no Pico board required)
+# Firmware Host Tests
 
-## Layout
+This directory contains native C tests for firmware logic that can run without
+a Pico board. The tests use Unity, CMake, and CTest; they do not exercise the
+TinyUSB device stack, live DMA IRQs, or physical UART wiring.
 
-| Path | Purpose |
-| --- | --- |
-| `firmware/tests/` | Native C unit tests (Unity + CMake/CTest) for firmware logic |
-| `firmware/tests/test_ring_buffer.c` | Ring-buffer occupancy, wrap, overwrite recovery |
-| `firmware/tests/test_line_coding.c` | USB CDC line-coding parse table, baud bounds, PIO 8N1 gate |
-| `firmware/tests/test_dma_progress.c` | RX DMA progress wrap, COUNT mask math, pause-settle sample policy |
-| `firmware/tests/test_txstall_wait.c` | PIO TXSTALL re-assert wait microseconds vs baud |
-| `firmware/tests/test_cdc_soft_pending.c` | Soft-pending deadline coalesce, reset-cancellation-suppresses-timeout regression, reject generation bump policy, CONTROL_PENDING ownership |
-| `firmware/tests/test_topology.c` | Logical port, GPIO, UART, and PIO state-machine assignment validation |
-| `firmware/tests/test_backend_policy.c` | Backend idle, DMA, PIO TX, IRQ-owner, and worker-heartbeat policy |
-| `firmware/tests/test_led_policy.c` | Manual/USB-activity board LED merge and activity-window timeout/extension |
-| `firmware/tests/test_dma_claim.c` | HW UART RX/TX DMA channel claim/rollback and NULL-input fast-fail fault injection |
-| `firmware/tests/test_resource_claim.c` | PIO UART SM + DMA channel claim/rollback and NULL-input fast-fail fault injection |
-| `firmware/tests/stubs/` | Host stubs for Pico SDK headers (for example `hardware/sync.h`) |
-| `firmware/tests/third_party/unity/` | Vendored [Unity](https://github.com/ThrowTheSwitch/Unity) v2.6.0 |
-| `host/python/src/` | HID host tool package/scripts |
-| `host/python/tests/` | HID parsers/contracts, HID descriptor report-count sync, serial tool arg validation |
+## What Is Tested
 
-Mailbox, TinyUSB CDC callbacks, and on-target DMA IRQ re-arm are exercised via
-the board-testing skill / `docs/releasing.md` HIL gate. Host Unity tests cover
-pure policy helpers used by those paths (RX DMA progress, pause-settle samples,
-TXSTALL wait, backend idle/re-arm/TX action/IRQ owner/heartbeat, CDC soft-pending,
-topology) plus the seam-based HW/PIO resource-claim helpers and their NULL-input
-fast-fail branches.
+- Ring-buffer occupancy, wrapping, snapshots, and overflow recovery
+- UART line-coding and topology policy
+- DMA progress, TXSTALL timing, and backend policy helpers
+- CDC soft-pending and control-ownership rules
+- Hardware/PIO resource claim rollback
+- LED policy behavior
 
-## Run everything
+The test source files are the detailed inventory. The production design notes
+are linked from the root [README](../../README.md).
 
-```sh
-tools/test/test-host.sh
-```
+## Run C Tests
 
-The native C tests run before Python dependency checks. Use `--skip-python` in
-minimal environments that do not have pip or the host-test virtual environment.
-CI also runs `tools/test/test-host.sh --sanitize` (ASan/UBSan) for the Unity
-targets.
+From the repository root:
 
 ```sh
 tools/test/test-host.sh --skip-python
 ```
 
-Use `--sanitize` to rebuild the Unity tests with ASan/UBSan (CI does this on
-Linux).
-
-Or via the combined script (also builds firmware unless `--skip-build`):
+For a combined firmware build and host-test run:
 
 ```sh
-tools/test/test.sh --skip-build
+tools/test/check.sh --skip-build
 ```
 
-## C tests only
+For sanitizer coverage:
+
+```sh
+tools/test/test-host.sh --sanitize --skip-python
+```
+
+To configure and run the C tests directly:
 
 ```sh
 cmake -S firmware/tests -B build/host-tests -G Ninja
@@ -59,16 +44,7 @@ cmake --build build/host-tests
 ctest --test-dir build/host-tests --output-on-failure
 ```
 
-## Python tests only
-
-CI uses Python 3.12. On Debian/Ubuntu, install `python3-venv` before creating
-the repository virtual environment:
-
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install --require-hashes -r host/python/requirements-lock.txt
-.venv/bin/python -m pytest -c host/python/pyproject.toml
-```
-
-Use `tools/test/test-host.sh` after setup to run the native C and Python suites
-together.
+Firmware HIL and physical UART behavior are documented in
+[docs/tests](../../docs/tests) and [docs/releasing.md](../../docs/releasing.md).
+Python host-tool tests live under [host/python/tests](../../host/python/tests)
+and use [host/python/pyproject.toml](../../host/python/pyproject.toml).

@@ -77,7 +77,7 @@ in [Releasing](docs/releasing.md).
 - [docs](docs)
 - [firmware](firmware) - Pico SDK firmware project; see [build and configuration](firmware/build-and-config.md)
 - [host/python](host/python) - Python HID monitor and board-control utility (`src/`, tests in `tests/`)
-- [tools](tools) - repo tooling grouped by firmware, hardware/HIL, release, and test helpers
+- [tools](tools/README.md) - repo tooling grouped by firmware, hardware/HIL, release, and test helpers
 
 ## Target Devices
 

@@ -31,8 +31,8 @@ Pico/Pico 2 board, Raspberry Pi Debug Probe, USB cable, and jumper-wire fixture
 and run the documented functional/performance plans locally. Record results in
 `docs/tests/performance-test-results.md`.
 
-Firmware development, flashing, and HIL use the Linux wrappers under
-`tools/`. Native Windows firmware-development wrappers are not supported;
+Firmware development, flashing, and HIL use the Linux wrappers documented in
+[tools/README.md](tools/README.md). Native Windows firmware-development wrappers are not supported;
 Windows users should use WSL2 Ubuntu. The Python host tools remain usable from
 Windows for CDC/HID operation.
 

@@ -5,7 +5,8 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$SCRIPT_PATH")" && pwd)
 REPO_ROOT="${PICO_UART_REPO_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)}"
 
 if [ ! -f "$REPO_ROOT/firmware/CMakeLists.txt" ]; then
-    REPO_ROOT=$(pwd)
+    echo "Repository root not found from $SCRIPT_DIR; run this script from a PicoUart checkout." >&2
+    return 1 2>/dev/null || exit 1
 fi
 
 PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"

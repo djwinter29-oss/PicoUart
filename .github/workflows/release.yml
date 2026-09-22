@@ -26,84 +26,9 @@ env:
   PICO_SDK_REVISION: "98a542c1a62fb549ffb5d66a3e5892b06276b670"
 
 jobs:
-  host-tools:
-    name: Host tools
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-
-      - name: Install host dependencies
-        run: python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
-
-      - name: Syntax-check Python tools
-        run: tools/test/syntax-check-python.sh
-
-      - name: Run host unit tests (C Unity + Python pytest)
-        run: tools/test/test-host.sh --sanitize
-
-      - name: Static-analyze host-testable firmware headers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cppcheck
-          tools/test/static-analyze.sh
-
-      - name: Import hidapi and exercise HID CLI help
-        run: tools/test/smoke-host-tools.sh
-
-  host-python-minimum:
-    name: Host Python (3.10 minimum)
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.10"
-
-      - name: Install locked dependencies
-        run: python -m pip install --require-hashes -r host/python/requirements-lock.txt
-
-      - name: Run host Python tests
-        run: python -m pytest -c host/python/pyproject.toml
-
-  host-tools-windows:
-    name: Host tools (Windows)
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-
-      - name: Install host dependencies
-        run: python -m pip install --require-hashes -r host/python/requirements-lock.txt
-
-      - name: Run host C unit tests
-        shell: bash
-        # windows-latest has cmake pre-installed. Use bash shell + explicit Ninja
-        # generator via choco (fast, deterministic on Windows).
-        run: |
-          choco install ninja --no-progress -y 2>&1 | tail -3
-          cmake -S firmware/tests -B build/host-tests -G Ninja
-          cmake --build build/host-tests --config Release --parallel
-          ctest --test-dir build/host-tests -C Release --output-on-failure
-
-      - name: Run host Python tests
-        run: python -m pytest -c host/python/pyproject.toml
+  host-validation:
+    name: Host validation
+    uses: ./.github/workflows/host-validation.yml
 
   build:
     name: Build (${{ matrix.board }})
@@ -186,7 +111,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [build, host-tools, host-python-minimum, host-tools-windows]
+    needs: [build, host-validation]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

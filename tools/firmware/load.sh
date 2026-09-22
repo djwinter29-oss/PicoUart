@@ -87,7 +87,7 @@ case "$BUILD_DIR" in
 esac
 
 if [ -z "$PICO_SDK_PATH_VALUE" ]; then
-    PICO_SDK_PATH_VALUE="$REPO_ROOT/.pico-sdk"
+    PICO_SDK_PATH_VALUE="${PICO_SDK_PATH:-$REPO_ROOT/.pico-sdk}"
 fi
 
 if [ "$SKIP_BUILD" -eq 0 ]; then

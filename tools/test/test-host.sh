@@ -6,7 +6,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 HOST_TEST_BUILD_DIR="${HOST_TEST_BUILD_DIR:-$REPO_ROOT/build/host-tests}"
 GENERATOR="${GENERATOR:-}"
-PYTHON_EXE="${PYTHON_EXE:-python3}"
+PYTHON_EXE="${PYTHON_EXE:-}"
 SKIP_C=0
 SKIP_PYTHON=0
 SANITIZE=0
@@ -39,6 +39,14 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+if [ -z "$PYTHON_EXE" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_EXE="python3"
+    else
+        PYTHON_EXE="python"
+    fi
+fi
 
 if [ -z "$GENERATOR" ]; then
     if command -v ninja >/dev/null 2>&1; then
