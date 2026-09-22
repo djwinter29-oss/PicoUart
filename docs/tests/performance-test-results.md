@@ -26,8 +26,8 @@ required board.
 
 ### Results
 
-All individual-link sequences were run with `tools/serial_bridge_test.py` at each
-baud rate in sequence. The concurrent run used `tools/serial_stress_benchmark.py`
+All individual-link sequences were run with `tools/hardware/serial_bridge_test.py` at each
+baud rate in sequence. The concurrent run used `tools/hardware/serial_stress_benchmark.py`
 with all four fixture links active (`--uart1 --uart1-peer --uart4 --uart4-peer`).
 
 | Link | 115200 | 460800 | 921600 | 1000000 | Concurrent 115200 |
@@ -42,7 +42,7 @@ with all four fixture links active (`--uart1 --uart1-peer --uart4 --uart4-peer`)
 - **Before:** all overruns 0; firmware `0.0.0`
 - **After:** all overruns 0; firmware `0.0.0`
 - USB: no disconnects, no `-71`, no unexpected errors in dmesg
-- **Note:** `serial_stress_benchmark.py` without `--uart1/--uart4` forces a
+- **Note:** `tools/hardware/serial_stress_benchmark.py` without `--uart1/--uart4` forces a
   UART2↔UART3 link that is not wired in the staged fixture. The earlier observed
   "failure" on that link was expected because those pins have no jumper — it is
   not a regression. The tool path with full `--uart1/--uart1-peer/--uart4/--uart4-peer`

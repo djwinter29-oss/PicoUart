@@ -47,7 +47,7 @@ if ! command -v gcovr >/dev/null 2>&1; then
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 SOURCE_DIR="$REPO_ROOT/firmware/tests"
 BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR"
 OUTPUT_DIR_PATH="$REPO_ROOT/$OUTPUT_DIR"

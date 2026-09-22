@@ -2,7 +2,7 @@
 
 SCRIPT_PATH="${BASH_SOURCE:-$0}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$SCRIPT_PATH")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+REPO_ROOT="${PICO_UART_REPO_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)}"
 
 if [ ! -f "$REPO_ROOT/firmware/CMakeLists.txt" ]; then
     REPO_ROOT=$(pwd)

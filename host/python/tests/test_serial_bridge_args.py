@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-BRIDGE = Path(__file__).resolve().parents[3] / "tools" / "serial_bridge_test.py"
+BRIDGE = Path(__file__).resolve().parents[3] / "tools" / "hardware" / "serial_bridge_test.py"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
 

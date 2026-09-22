@@ -11,9 +11,9 @@ On Ubuntu/Linux, install CMake, Ninja, an ARM GCC toolchain, and use the
 project-local Pico SDK:
 
 ```sh
-. tools/setup-sdk-env.sh
-tools/build.sh --board pico
-tools/build.sh --board pico2
+. tools/firmware/setup-sdk-env.sh
+tools/firmware/build.sh --board pico
+tools/firmware/build.sh --board pico2
 ```
 
 Optional: stamp a release version into the firmware with `--firmware-version`
@@ -26,8 +26,8 @@ Use a separate build directory per board. The Linux build/load tools accept
 `--system-clock-khz` to override the system clock for a build. For example:
 
 ```sh
-tools/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
-tools/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
+tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
+tools/firmware/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
 ```
 
 Those examples are intentionally unsafe overrides. Production builds use the
@@ -42,15 +42,15 @@ using CMSIS-DAP OpenOCD. Connect the probe's SWDIO, SWCLK, and GND signals to
 PicoUart before loading; UART TX/RX wiring is separate from SWD.
 
 ```sh
-tools/load.sh --board pico
-tools/load.sh --board pico2
+tools/firmware/load.sh --board pico
+tools/firmware/load.sh --board pico2
 ```
 
 For an explicitly qualified non-rated clock image, pass the unsafe override to
 both the build and load wrappers:
 
 ```sh
-tools/load.sh --board pico --system-clock-khz 250000 --unsafe-overclock
+tools/firmware/load.sh --board pico --system-clock-khz 250000 --unsafe-overclock
 ```
 
 ## Configuration

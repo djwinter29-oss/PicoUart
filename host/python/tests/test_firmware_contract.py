@@ -93,7 +93,7 @@ def test_usb_identity_checker_accepts_tree_identity(repo_root):
     import subprocess
     import sys
 
-    script = repo_root / "tools" / "check-usb-identity.py"
+    script = repo_root / "tools" / "release" / "check-usb-identity.py"
     result = subprocess.run(
         [sys.executable, str(script), "--repo-root", str(repo_root)],
         cwd=repo_root,

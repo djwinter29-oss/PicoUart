@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from hardware_test_result import artifact_metadata, prepend_result, write_raw_log
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
+REPO_ROOT = SCRIPT_DIR.parents[1]
 DEFAULT_RESULTS_FILE = REPO_ROOT / "docs/tests/performance-test-results.md"
 
 

@@ -37,7 +37,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 
 if [ -z "$PICO_SDK_PATH_VALUE" ]; then
     if [ -n "${PICO_SDK_PATH:-}" ]; then
@@ -49,9 +49,9 @@ fi
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
     BUILD_DIR="$BUILD_DIR" GENERATOR="$GENERATOR" \
-        "$SCRIPT_DIR/build.sh" --pico-sdk-path "$PICO_SDK_PATH_VALUE"
+        "$REPO_ROOT/tools/firmware/build.sh" --pico-sdk-path "$PICO_SDK_PATH_VALUE"
 fi
 
 if [ "$SKIP_HOST" -eq 0 ]; then
-    GENERATOR="$GENERATOR" "$SCRIPT_DIR/test-host.sh"
+    GENERATOR="$GENERATOR" "$REPO_ROOT/tools/test/test-host.sh"
 fi

@@ -30,16 +30,16 @@ fast-fail branches.
 ## Run everything
 
 ```sh
-tools/test-host.sh
+tools/test/test-host.sh
 ```
 
 The native C tests run before Python dependency checks. Use `--skip-python` in
 minimal environments that do not have pip or the host-test virtual environment.
-CI also runs `tools/test-host.sh --sanitize` (ASan/UBSan) for the Unity
+CI also runs `tools/test/test-host.sh --sanitize` (ASan/UBSan) for the Unity
 targets.
 
 ```sh
-tools/test-host.sh --skip-python
+tools/test/test-host.sh --skip-python
 ```
 
 Use `--sanitize` to rebuild the Unity tests with ASan/UBSan (CI does this on
@@ -48,7 +48,7 @@ Linux).
 Or via the combined script (also builds firmware unless `--skip-build`):
 
 ```sh
-tools/test.sh --skip-build
+tools/test/test.sh --skip-build
 ```
 
 ## C tests only
@@ -70,5 +70,5 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -c host/python/pyproject.toml
 ```
 
-Use `tools/test-host.sh` after setup to run the native C and Python suites
+Use `tools/test/test-host.sh` after setup to run the native C and Python suites
 together.

@@ -9,13 +9,15 @@ from types import SimpleNamespace
 
 import pytest
 
-TOOLS = Path(__file__).resolve().parents[3] / "tools"
+TOOLS = Path(__file__).resolve().parents[3] / "tools" / "hardware"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 
 def _load(name: str):
     path = TOOLS / f"{name}.py"
+    if not path.exists():
+        path = TOOLS / "hardware" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

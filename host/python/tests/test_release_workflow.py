@@ -5,7 +5,7 @@ GitHub Actions tag filters are glob patterns, not regexes: '+' has no
 "one or more" meaning there. A prior version of the workflow used
 "v[0-9]+.[0-9]+.[0-9]+", which only matches tags containing a literal '+'
 and never matches a real tag like v1.2.3. These tests pin the fixed glob
-and the release-tag version policy enforced by tools/resolve-release-version.sh.
+and the release-tag version policy enforced by tools/release/resolve-release-version.sh.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
-RESOLVE_SCRIPT = REPO_ROOT / "tools" / "resolve-release-version.sh"
+RESOLVE_SCRIPT = REPO_ROOT / "tools" / "release" / "resolve-release-version.sh"
 
 
 def _tag_glob() -> str:
@@ -47,7 +47,7 @@ def test_release_tag_glob_rejects_non_v_prefixed_or_non_numeric_tags(tag: str) -
     # real vMAJOR.MINOR.PATCH tags (GitHub tag globs can't express "exactly
     # one dot-delimited numeric group" via '+'). Tags like v1.2.3-rc1 or
     # v1.2.3.4 do match this glob and are rejected later by the job-level
-    # "Resolve version" policy in tools/resolve-release-version.sh instead
+    # "Resolve version" policy in tools/release/resolve-release-version.sh instead
     # (see test_resolve_release_version_rejects_outside_policy).
     assert not fnmatch.fnmatch(tag, _tag_glob())
 

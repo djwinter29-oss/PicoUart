@@ -53,7 +53,7 @@ tests and may be selected explicitly with `--rates` for experimental runs.
 Example concurrent run using the existing benchmark tool:
 
 ```sh
-python3 tools/serial_stress_benchmark.py \
+python3 tools/hardware/serial_stress_benchmark.py \
   --uart0-pico /dev/serial/by-id/<pico-cdc0> \
   --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
   --uart1 /dev/serial/by-id/<pico-cdc1> \
@@ -70,7 +70,7 @@ python3 tools/serial_stress_benchmark.py \
 To run only the benchmark and prepend a structured result entry automatically:
 
 ```sh
-python3 tools/run_performance_test.py \
+python3 tools/hardware/run_performance_test.py \
   --uart0-pico /dev/serial/by-id/<pico-uart-cdc0> \
   --uart0-peer /dev/serial/by-id/<debug-probe-uart> \
   --uart1 /dev/serial/by-id/<pico-cdc1> \
@@ -88,7 +88,7 @@ staged fixture. The runner preserves the benchmark exit code and records its
 complete output. Use `--no-record` for a dry run.
 
 For the complete functional-plus-performance sequence and one combined result
-entry, use `tools/run_hardware_test.py`. It runs the functional stages
+entry, use `tools/hardware/run_hardware_test.py`. It runs the functional stages
 first and starts performance only when they pass unless
 `--continue-after-functional-failure` is supplied.
 

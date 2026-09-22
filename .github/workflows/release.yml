@@ -43,53 +43,19 @@ jobs:
         run: python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
 
       - name: Syntax-check Python tools
-        run: |
-          python3 -m py_compile \
-            host/python/src/pico_uart_hid.py \
-            tools/serial_bridge_test.py \
-            tools/serial_stress_benchmark.py \
-            tools/run_functional_test.py \
-            tools/run_performance_test.py \
-            tools/run_hardware_test.py \
-            tools/hardware_test_result.py \
-            tools/hardware_test_health.py \
-            tools/check-usb-identity.py \
-            tools/verify-build.py
+        run: tools/test/syntax-check-python.sh
 
       - name: Run host unit tests (C Unity + Python pytest)
-        run: tools/test-host.sh --sanitize
+        run: tools/test/test-host.sh --sanitize
 
       - name: Static-analyze host-testable firmware headers
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cppcheck
-          cppcheck --error-exitcode=1 --enable=warning --inline-suppr \
-            -I firmware/src \
-            --suppress=missingIncludeSystem \
-            --suppress=missingInclude \
-            firmware/src/uart/backend_policy.h \
-            firmware/src/uart/control_pending.h \
-            firmware/src/uart/dma_progress_math.h \
-            firmware/src/uart/hw/baud_rate.h \
-            firmware/src/uart/line_coding.c \
-            firmware/src/uart/topology.c \
-            firmware/src/uart/hw/dma_claim.c \
-            firmware/src/uart/hw/driver.c \
-            firmware/src/uart/hw/dma_claim_ops.c \
-            firmware/src/uart/hw/dma_claim.h \
-            firmware/src/uart/pio/resource_claim.c \
-            firmware/src/uart/pio/driver.c \
-            firmware/src/uart/pio/resource_claim_ops.c \
-            firmware/src/uart/pio/resource_claim.h \
-            firmware/src/uart/pio/txstall_wait.h \
-            firmware/src/usb/cdc_soft_pending.h
+          tools/test/static-analyze.sh
 
       - name: Import hidapi and exercise HID CLI help
-        run: |
-          python3 -c "import hid; print('hidapi OK')"
-          python3 host/python/src/pico_uart_hid.py --help
-          python3 tools/serial_bridge_test.py --help
-          python3 tools/serial_stress_benchmark.py --help
+        run: tools/test/smoke-host-tools.sh
 
   host-python-minimum:
     name: Host Python (3.10 minimum)
@@ -159,7 +125,7 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -eu
-          VERSION=$(tools/resolve-release-version.sh "$EVENT_NAME" "$INPUT_VERSION" "$REF_NAME")
+          VERSION=$(tools/release/resolve-release-version.sh "$EVENT_NAME" "$INPUT_VERSION" "$REF_NAME")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved firmware version: $VERSION"
 
@@ -182,7 +148,7 @@ jobs:
       - name: Setup Pico SDK
         run: |
           set --
-          . tools/setup-sdk-env.sh \
+          . tools/firmware/setup-sdk-env.sh \
             --sdk-version "$PICO_SDK_VERSION" \
             --sdk-revision "$PICO_SDK_REVISION"
 
@@ -191,7 +157,7 @@ jobs:
           BOARD: ${{ matrix.board }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          tools/build.sh \
+          tools/firmware/build.sh \
             --board "$BOARD" \
             --firmware-version "$VERSION"
 
@@ -207,7 +173,7 @@ jobs:
           for ext in uf2 elf bin hex; do
             cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${BOARD}.$ext"
           done
-          python3 tools/verify-build.py --build-dir "$SRC" --board "$BOARD" --version "$VERSION"
+          python3 tools/release/verify-build.py --build-dir "$SRC" --board "$BOARD" --version "$VERSION"
           (cd "$OUT" && sha256sum pico_uart-v${VERSION}-${BOARD}.* > "SHA256SUMS-${BOARD}.txt")
           ls -la "$OUT"
 

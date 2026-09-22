@@ -31,7 +31,7 @@ IFS=$OLD_IFS
 
 if [ "$1" -gt 99 ] || [ "$2" -gt 99 ] || [ "$3" -gt 255 ]; then
     # This 0-99 major/minor cap is a release-tag policy, not a firmware
-    # build limit: local builds via tools/build.sh accept major/minor/patch
+    # build limit: local builds via tools/firmware/build.sh accept major/minor/patch
     # up to 255 (see firmware/CMakeLists.txt), falling back to USB
     # bcdDevice 0x0000 above 99.
     echo "Refusing version '$VERSION' (major/minor must be 0-99; patch must be 0-255)" >&2

@@ -80,7 +80,7 @@ if [ -n "$BOARD" ]; then
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 case "$BUILD_DIR" in
     /*) BUILD_DIR_PATH="$BUILD_DIR" ;;
     *) BUILD_DIR_PATH="$REPO_ROOT/$BUILD_DIR" ;;

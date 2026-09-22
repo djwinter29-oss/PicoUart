@@ -308,7 +308,7 @@ def main() -> int:
     parser.add_argument("--build-dir", required=True, type=Path)
     parser.add_argument("--board", required=True, choices=sorted(UF2_FAMILY_IDS))
     parser.add_argument("--version", default="0.0.0-dev")
-    parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--objcopy", default="arm-none-eabi-objcopy")
     args = parser.parse_args()
 

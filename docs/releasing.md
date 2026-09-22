@@ -64,7 +64,7 @@ A release without this recorded evidence is lab-only.
 Flash with the packaged ELF/UF2 and skip rebuilding:
 
 ```sh
-tools/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>
+tools/firmware/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>
 ```
 
 Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached or
@@ -136,7 +136,7 @@ Tag form is `vMAJOR.MINOR.PATCH` (no `-rc` / pre-release suffixes for publish).
 Major and minor must be `0-99`; patch must be `0-255`. This range is a
 **release-tag policy** (enforced by the `Resolve version` step in
 `release.yml`), not a firmware build limit: local/manual builds via
-`tools/build.sh --firmware-version ...` accept major, minor, and patch each up
+`tools/firmware/build.sh --firmware-version ...` accept major, minor, and patch each up
 to `255`, and USB `bcdDevice` falls back to `0x0000` once major or minor
 exceeds `99` (see `firmware/CMakeLists.txt`).
 The tag stamps HID firmware version `MAJOR.MINOR.PATCH` and USB `bcdDevice` as

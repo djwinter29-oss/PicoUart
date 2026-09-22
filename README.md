@@ -54,10 +54,10 @@ Ubuntu/Linux. Windows remains supported for host-side Python HID and CDC tools;
 use WSL2 Ubuntu for firmware work from Windows.
 
 ```sh
-. tools/setup-sdk-env.sh --sdk-version 2.3.0
-tools/build.sh --board pico
-tools/build.sh --board pico2
-tools/test-host.sh
+. tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0
+tools/firmware/build.sh --board pico
+tools/firmware/build.sh --board pico2
+tools/test/test-host.sh
 ```
 
 CI does not provide a Pico/Pico 2 board, Debug Probe, or jumper-wire fixture,
@@ -77,6 +77,7 @@ in [Releasing](docs/releasing.md).
 - [docs](docs)
 - [firmware](firmware) - Pico SDK firmware project; see [build and configuration](firmware/build-and-config.md)
 - [host/python](host/python) - Python HID monitor and board-control utility (`src/`, tests in `tests/`)
+- [tools](tools) - repo tooling grouped by firmware, hardware/HIL, release, and test helpers
 
 ## Target Devices
 
