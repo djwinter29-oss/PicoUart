@@ -11,9 +11,9 @@ option(PICO_UART_ALLOW_HID_RESET "Enable the trusted-host HID watchdog reset com
 option(PICO_UART_ALLOW_UNSAFE_OVERCLOCK "Allow a system clock above the target's rated default" OFF)
 
 # Parses PICO_UART_VERSION into PICO_UART_VERSION_{MAJOR,MINOR,PATCH} and
-# PICO_UART_BCD_DEVICE; see firmware/cmake/version.cmake for the policy and
+# PICO_UART_BCD_DEVICE; see firmware/version.cmake for the policy and
 # firmware/tests/test_version_policy.py for standalone `cmake -P` coverage.
-include(${CMAKE_CURRENT_LIST_DIR}/cmake/version.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/version.cmake)
 
 if(NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
     if(NOT PICO_UART_SYSTEM_CLOCK_KHZ MATCHES "^[1-9][0-9]*$")

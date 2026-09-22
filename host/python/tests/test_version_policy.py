@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Automated coverage for the PICO_UART_VERSION acceptance/rejection policy
-in firmware/cmake/version.cmake (extracted from firmware/CMakeLists.txt).
+in firmware/version.cmake (extracted from firmware/CMakeLists.txt).
 
 Runs `cmake -P` against a tiny standalone driver script so the version
 contract (0-255 per part, major/minor > 99 warns but is still a valid local
@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-VERSION_CHECK_SCRIPT = REPO_ROOT / "firmware" / "cmake" / "version_check.cmake"
+VERSION_CHECK_SCRIPT = REPO_ROOT / "firmware" / "version.cmake"
 
 pytestmark = pytest.mark.skipif(shutil.which("cmake") is None, reason="cmake not installed")
 

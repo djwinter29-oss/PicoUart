@@ -21,16 +21,18 @@ foreach(_pico_uart_version_part MAJOR MINOR PATCH)
             "(got ${_pico_uart_version_value})")
     endif()
 endforeach()
-# USB bcdDevice can only encode major/minor 0-99 in BCD. When major or
-# minor exceeds 99 the bcdDevice field stays 0x0000 (no meaningful BCD value).
-# This is allowed for local/dev builds only; the release.yml tag policy
-# (see .github/workflows/release.yml) refuses to cut a release tag with
-# major/minor > 99, so a real release never ships with bcdDevice 0x0000.
+
+# USB bcdDevice can only encode major/minor 0-99 in BCD. When either exceeds
+# 99, local builds remain valid but use 0x0000; release.yml rejects those tags.
 if(PICO_UART_VERSION_MAJOR GREATER 99 OR PICO_UART_VERSION_MINOR GREATER 99)
-    message(WARNING "PICO_UART_VERSION ${PICO_UART_VERSION_MAJOR}.${PICO_UART_VERSION_MINOR}.${PICO_UART_VERSION_PATCH} has major/minor > 99: USB bcdDevice will be 0x0000 (no meaningful BCD value). This build is not releasable as a tag (see .github/workflows/release.yml); use it for local development only.")
+    message(WARNING "PICO_UART_VERSION ${PICO_UART_VERSION_MAJOR}.${PICO_UART_VERSION_MINOR}.${PICO_UART_VERSION_PATCH} has major/minor > 99: USB bcdDevice will be 0x0000 (no meaningful BCD value). This build is not releasable as a tag; use it for local development only.")
     set(PICO_UART_BCD_DEVICE 0)
 else()
-    # USB bcdDevice advertises major.minor only (1.2.3 -> 0x0102, shown as 1.02 / 1.2).
+    # USB bcdDevice advertises major.minor only (1.2.3 -> 0x0102).
     math(EXPR PICO_UART_BCD_DEVICE
         "((${PICO_UART_VERSION_MAJOR} / 10) * 4096) + ((${PICO_UART_VERSION_MAJOR} % 10) * 256) + ((${PICO_UART_VERSION_MINOR} / 10) * 16) + (${PICO_UART_VERSION_MINOR} % 10)")
+endif()
+
+if(CMAKE_SCRIPT_MODE_FILE)
+    message("RESULT major=${PICO_UART_VERSION_MAJOR} minor=${PICO_UART_VERSION_MINOR} patch=${PICO_UART_VERSION_PATCH} bcd=${PICO_UART_BCD_DEVICE}")
 endif()
