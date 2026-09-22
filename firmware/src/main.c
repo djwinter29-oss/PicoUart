@@ -1,3 +1,8 @@
+/**
+ * @file main.c
+ * @brief PicoUart firmware startup and cooperative service loop.
+ */
+
 #include "pico/stdlib.h"
 
 #include "driver/led.h"
@@ -8,13 +13,27 @@
 #include "usb/usb_cdc.h"
 #include "usb/usb_hid.h"
 
+/**
+ * @brief Initialize the board and run the USB/UART bridge forever.
+ *
+ * The watchdog is armed before clock and peripheral setup so initialization
+ * stalls recover automatically. Startup then initializes board services,
+ * validates the ring-buffer and UART topology contracts, starts the UART
+ * worker, and finally initializes the USB CDC/HID services. A failed
+ * unrecoverable startup check intentionally halts until the watchdog resets
+ * the board. During normal operation, the watchdog is fed only while the
+ * UART worker heartbeat remains fresh.
+ *
+ * @return Never returns.
+ */
 int main(void)
 {
-    /* Cover clock, topology, and backend initialization failures as well as runtime stalls. */
     system_watchdog_enable();
     system_init_clock();
     led_init();
     temperature_init();
+
+    /* Validate shared invariants before starting UART and USB services. */
     hard_assert(ring_buffer_self_check());
     hard_assert(uart_driver_validate_topology());
     hard_assert(uart_driver_init());

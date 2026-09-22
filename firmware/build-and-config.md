@@ -87,6 +87,9 @@ requirement applies.
   `PICO_DEFAULT_LED_PIN`; the LED starts off.
 - The internal ADC temperature sensor is enabled at startup and can be sampled
   through `temperature_read_celsius()`.
+- Temperature uses the RP2 nominal sensor formula on both supported MCU
+  families; validate its board-level accuracy during HIL testing before using
+  it as a calibrated measurement.
 - Override the board with `-DPICO_BOARD=<board>` when needed.
 
 Detailed firmware behavior lives in:

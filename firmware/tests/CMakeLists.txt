@@ -72,6 +72,10 @@ pico_uart_add_unity_test(test_led_policy led_policy
     test_led_policy.c
 )
 
+pico_uart_add_unity_test(test_temperature temperature
+    test_temperature.c
+)
+
 # Fault-injection test: HW UART DMA claim/rollback via injectable ops seam.
 # Links the real dma_claim.c (production claim algorithm, no SDK deps) with a
 # fake ops table that controls claim success/failure and logs every call.

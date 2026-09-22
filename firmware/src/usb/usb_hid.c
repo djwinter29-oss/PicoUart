@@ -187,7 +187,8 @@ static void usb_hid_build_board_status_report(usb_hid_board_status_report_t *rep
 #if PICO_UART_ALLOW_HID_RESET
     report->reserved0 = USB_HID_BOARD_STATUS_FLAG_HID_RESET;
 #endif
-    report->temperature_centidegrees_celsius = (int16_t)(temperature_read_celsius() * 100.0f);
+    report->temperature_centidegrees_celsius =
+        temperature_to_hid_centidegrees(temperature_read_celsius());
     report->firmware_major = (uint8_t)PICO_UART_VERSION_MAJOR;
     report->firmware_minor = (uint8_t)PICO_UART_VERSION_MINOR;
     report->firmware_patch = (uint8_t)PICO_UART_VERSION_PATCH;

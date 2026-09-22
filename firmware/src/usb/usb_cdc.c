@@ -18,7 +18,9 @@
 
 /** @brief Number of USB CDC functions exposed by the firmware. */
 #define USB_CDC_PORT_COUNT 6u
-/** @brief Maximum delay before a partial CDC IN buffer is flushed. */
+/**
+ * @brief Maximum delay before a partial CDC IN buffer is flushed.
+ */
 #define USB_CDC_FLUSH_LATENCY_US 1000u
 /**
  * @brief How long a CDC soft-pending line-coding request may wait for the mailbox.
@@ -53,7 +55,12 @@ static bool usb_cdc_tx_flush_pending[USB_CDC_PORT_COUNT];
 static absolute_time_t usb_cdc_tx_flush_deadline[USB_CDC_PORT_COUNT];
 /** @brief Open activity-LED deadline extended by any CDC transfer. */
 static led_activity_window_t usb_cdc_activity_window;
-/** @brief How long the LED stays on after USB activity (µs). */
+/**
+ * @brief How long the LED stays on after any CDC transfer (50 ms).
+ *
+ * Consecutive transfers extend the activity window so sustained traffic
+ * appears continuously active.
+ */
 #define USB_CDC_ACTIVITY_LED_ON_US 50000u
 
 static void usb_cdc_update_high_watermark(uint16_t *high_watermark, uint32_t occupancy)

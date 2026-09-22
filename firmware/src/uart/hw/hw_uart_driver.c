@@ -517,6 +517,13 @@ void hw_uart_driver_deinit(hw_uart_driver_t *driver)
 
     hw_uart_driver_release_dma(driver);
     uart_deinit(driver->config.instance);
+    gpio_set_function(driver->config.tx_pin, GPIO_FUNC_NULL);
+    gpio_set_function(driver->config.rx_pin, GPIO_FUNC_NULL);
+    if (driver->config.hardware_flow_control) {
+        gpio_set_function(driver->config.rts_pin, GPIO_FUNC_NULL);
+        gpio_set_function(driver->config.cts_pin, GPIO_FUNC_NULL);
+        gpio_disable_pulls(driver->config.cts_pin);
+    }
     driver->initialized = false;
 }
 
