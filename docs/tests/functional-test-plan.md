@@ -1,5 +1,8 @@
 # Functional Test Plan
 
+Start with the [Test Documentation Index](README.md) for test levels, result
+semantics, and the boundary between host validation and HIL.
+
 This plan verifies that each PicoUart USB CDC channel transfers data in both
 directions and that the expected UART backend and wiring are operating.
 

@@ -21,6 +21,17 @@
 /** @brief Port status flag: ingress is paused while the worker applies a control change at a safe backend boundary. */
 #define UART_DRIVER_PORT_STATUS_CONTROL_PENDING (1u << 3)
 
+/**
+ * @brief Public view of one logical UART port.
+ */
+typedef struct {
+    uart_port_id_t id; /**< Logical port identifier. */
+    uart_driver_backend_t backend; /**< Backend class assigned to the port. */
+    uint32_t baud_rate; /**< Current baud rate (startup default; updated after a successful line-coding apply). */
+    uint32_t tx_pin; /**< Configured TX GPIO, or unassigned marker. */
+    uint32_t rx_pin; /**< Configured RX GPIO, or unassigned marker. */
+} uart_driver_port_info_t;
+
 
 /**
  * @brief Transport counters for one logical UART port.

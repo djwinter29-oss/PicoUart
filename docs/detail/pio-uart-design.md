@@ -18,6 +18,20 @@ host-visible status bits, see [HID Report Reference](../usb/hid-report-reference
 This keeps TinyUSB isolated from hardware service details and preserves one
 producer and one consumer for each ring direction.
 
+```mermaid
+flowchart LR
+  USB["TinyUSB / core 0"] --> TXRing["TX ring"]
+  TXRing --> Worker["PIO worker / core 1"]
+  Worker --> TXFIFO["Joined PIO TX FIFO"]
+  Worker --> TXDMA["Optional TX DMA"]
+  TXFIFO --> TXSM["PIO TX state machine"]
+  TXDMA --> TXSM
+  RXSM["PIO RX state machine"] --> RXFIFO["PIO RX FIFO"]
+  RXFIFO --> RXDMA["Persistent RX DMA"]
+  RXDMA --> RXRing["RX ring"]
+  RXRing --> USB
+```
+
 ## RX Path
 
 PIO RX is DMA-backed. Each PIO RX state machine assembles UART bytes into its RX
@@ -39,6 +53,26 @@ Important details:
 RX DMA re-arm is handled from DMA IRQ1 on the UART worker core, with the worker
 poll path as a safety net.
 
+```mermaid
+sequenceDiagram
+  participant RX as "PIO RX SM"
+  participant FIFO as "PIO RX FIFO"
+  participant DMA as "RX DMA"
+  participant IRQ as "DMA IRQ1"
+  participant Worker as "core-1 worker"
+  participant Ring as "RX ring"
+  participant USB as "core-0 bridge"
+
+  RX->>FIFO: Assemble 8N1 byte
+  FIFO->>DMA: RX DREQ
+  DMA->>Ring: Write byte to circular storage
+  DMA-->>IRQ: Transfer count exhausted
+  IRQ->>DMA: Acknowledge and re-arm
+  Worker->>DMA: Sample progress fallback
+  Worker->>Ring: Publish producer delta
+  USB->>Ring: Consume validated span
+```
+
 ## TX Path
 
 PIO TX is hybrid. Core 1 chooses one action per port during each worker poll:
@@ -59,6 +93,18 @@ for deeper queues:
 If the backend cannot claim or use TX DMA, FIFO polling continues to make
 progress. While TX DMA is active, it owns exactly `tx_dma_bytes_in_flight` bytes
 from the TX ring; those bytes are committed only after DMA completion.
+
+```mermaid
+flowchart TD
+  Sweep["Worker poll"] --> Active{"TX DMA active?"}
+  Active -->|yes| Complete["Poll DMA completion\ncommit owned span"]
+  Active -->|no| Backlog{"Backlog >= 64 bytes?"}
+  Backlog -->|yes| Launch["Launch bounded TX DMA\nup to 256 bytes"]
+  Backlog -->|no| FIFO["Drain joined TX FIFO"]
+  Launch --> Next["Next worker sweep"]
+  FIFO --> Next
+  Complete --> Next
+```
 
 ## Why TX Is Hybrid
 
@@ -104,6 +150,21 @@ The TXSTALL wait is based on a few PIO cycles at the current baud, with a small
 microsecond floor, rather than a fixed CPU-iteration loop. The RX idle-high gate
 prevents changing the divider mid-frame for boards that can guarantee idle-high
 RX through pull-up.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Running
+  Running --> Pending: supported baud request
+  Pending --> PauseRX: TX boundary reached
+  PauseRX --> Quiesce: RX DMA progress stable
+  Quiesce --> Apply: TX/RX FIFO and TXSTALL safe
+  Quiesce --> Pending: not yet safe
+  Apply --> RestartRX: divider updated
+  RestartRX --> Running: RX DMA armed
+  Pending --> Error: timeout
+  Apply --> Error: backend reject
+  Error --> Running
+```
 
 ## Observability
 

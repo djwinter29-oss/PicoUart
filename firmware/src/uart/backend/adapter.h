@@ -7,6 +7,8 @@
 #define UART_BACKEND_ADAPTER_H
 
 #include "uart/ring_buffer/ring_buffer.h"
+#include "uart/hw/hw_uart_driver.h"
+#include "uart/pio/pio_uart_driver_internal.h"
 #include "uart/types.h"
 
 #include <stdbool.h>
@@ -22,28 +24,36 @@ typedef struct {
 } uart_backend_stats_t;
 
 /**
+ * @brief Tagged storage for one configured HW or PIO backend instance.
+ */
+typedef union {
+    hw_uart_driver_t hw; /**< Hardware UART backend storage. */
+    pio_uart_driver_t pio; /**< PIO UART backend storage. */
+} uart_backend_instance_t;
+
+/**
  * @brief Operations shared by hardware-UART and PIO-UART backend storage.
  *
  * The @p instance pointer always addresses the active member of the logical
  * port's tagged backend union. It is private to the UART implementation.
  */
 typedef struct {
-    bool (*is_initialized)(const void *instance); /**< Return backend ready state. */
-    bool (*init)(void *instance); /**< Initialize one backend. */
-    void (*deinit)(void *instance); /**< Deinitialize one backend. */
-    void (*poll)(void *instance, bool tx_launch_allowed); /**< Advance worker-owned I/O. */
-    ring_buffer_t *(*rx_ring)(void *instance); /**< Return the UART-to-USB ring. */
-    ring_buffer_t *(*tx_ring)(void *instance); /**< Return the USB-to-UART ring. */
-    bool (*line_coding_matches)(const void *instance,
+    bool (*is_initialized)(const uart_backend_instance_t *instance); /**< Return backend ready state. */
+    bool (*init)(uart_backend_instance_t *instance); /**< Initialize one backend. */
+    void (*deinit)(uart_backend_instance_t *instance); /**< Deinitialize one backend. */
+    void (*poll)(uart_backend_instance_t *instance, bool tx_launch_allowed); /**< Advance worker-owned I/O. */
+    ring_buffer_t *(*rx_ring)(uart_backend_instance_t *instance); /**< Return the UART-to-USB ring. */
+    ring_buffer_t *(*tx_ring)(uart_backend_instance_t *instance); /**< Return the USB-to-UART ring. */
+    bool (*line_coding_matches)(const uart_backend_instance_t *instance,
                                 const uart_driver_line_coding_t *line_coding); /**< Compare active line coding. */
     bool (*line_coding_acceptable)(const uart_driver_line_coding_t *line_coding); /**< Check permanent support. */
-    bool (*set_line_coding)(void *instance,
+    bool (*set_line_coding)(uart_backend_instance_t *instance,
                             const uart_driver_line_coding_t *line_coding); /**< Apply a safe line-coding change. */
-    bool (*rx_snapshot_is_current)(const void *instance,
+    bool (*rx_snapshot_is_current)(const uart_backend_instance_t *instance,
                                    uint32_t consumer_sequence); /**< Validate a copied RX span. */
-    void (*clear_rx_error_baseline)(void *instance); /**< Discard startup RX errors. */
-    uint32_t (*baud_rate)(const void *instance); /**< Return active baud rate. */
-    uart_backend_stats_t (*stats)(const void *instance); /**< Return backend counters. */
+    void (*clear_rx_error_baseline)(uart_backend_instance_t *instance); /**< Discard startup RX errors. */
+    uint32_t (*baud_rate)(const uart_backend_instance_t *instance); /**< Return active baud rate. */
+    uart_backend_stats_t (*stats)(const uart_backend_instance_t *instance); /**< Return backend counters. */
 } uart_backend_ops_t;
 
 /**

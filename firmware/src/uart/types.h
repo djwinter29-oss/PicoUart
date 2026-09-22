@@ -30,17 +30,6 @@ typedef enum {
 } uart_port_id_t;
 
 /**
- * @brief Public view of one logical UART port.
- */
-typedef struct {
-    uart_port_id_t id; /**< Logical port identifier. */
-    uart_driver_backend_t backend; /**< Backend class assigned to the port. */
-    uint32_t baud_rate; /**< Current baud rate. */
-    uint32_t tx_pin; /**< Configured TX GPIO, or unassigned marker. */
-    uint32_t rx_pin; /**< Configured RX GPIO, or unassigned marker. */
-} uart_driver_port_info_t;
-
-/**
  * @brief Host-requested UART parity mode.
  */
 typedef enum {

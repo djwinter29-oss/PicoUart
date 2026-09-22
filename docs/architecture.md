@@ -10,22 +10,33 @@ Each CDC interface maps to one UART channel.
 
 ## Runtime Ownership
 
-The current firmware initializes UART backends during startup, then boots core 1
-as a dedicated UART worker before core 0 starts the TinyUSB device stack and
-the HID monitor. At runtime:
+Startup runs on core 0. It validates the board topology, initializes the UART
+backends, starts the core-1 UART worker, and then starts the TinyUSB CDC/HID
+services. After startup, ownership is split by data direction and responsibility:
 
-- core 0 performs startup initialization once, then core 1 owns runtime UART polling and reconfiguration
-- core 0 services TinyUSB tasks
-- core 0 moves CDC OUT traffic into shared per-port TX rings
-- core 0 moves shared per-port RX ring data back to the matching CDC IN endpoint
-- CDC bridge work uses bounded 1 KiB per-port batches, a 1 ms partial-buffer
-  flush deadline, and rotates the first interface serviced on each poll to limit
-  cross-port starvation under load
-- core 0 emits a periodic HID status report when the host is ready and serves
-  HID feature reads for board temperature
+- core 0 services TinyUSB and owns USB-facing bridge calls
+- core 0 produces TX-ring data and consumes RX-ring data
+- core 1 polls backend I/O, owns DMA/PIO steady-state service, and applies deferred line coding
+- HID reads shared status and coherent telemetry snapshots
+- the board layer owns physical mapping; the UART layer owns runtime behavior
 
-This means the codebase is already at the multi-port bridge stage, not the
-earlier local-echo scaffold.
+```mermaid
+flowchart LR
+    Board["board/uart_board.c\nGPIO and backend mapping"] --> Driver["uart_driver.c\nstartup and public facade"]
+    Driver --> Adapter["backend/adapter.c\nHW/PIO operation contract"]
+    Adapter --> HW["hw/\nHardware UART + DMA"]
+    Adapter --> PIO["pio/\nPIO UART + DMA"]
+    Driver --> Worker["worker.c\ncore-1 scheduler"]
+    Driver --> Ports["port_api.c\npublic port bridge and telemetry"]
+    Driver --> Control["control/\nmailbox, ownership, deferred apply"]
+    Ports --> Rings["ring_buffer/\nper-port RX/TX rings"]
+    Worker --> Control
+    Worker --> Adapter
+```
+
+The root UART facade is intentionally small in responsibility: lifecycle,
+worker wiring, backend initialization, and forwarding to the private port and
+control modules. The backend adapter is the only common HW/PIO dispatch point.
 
 ## Port Mapping
 
@@ -35,19 +46,32 @@ is documented in [UART Pinout and Wiring](uart-pinout.md).
 
 ## Data Flow
 
-Host application
--> USB CDC interface
--> per-port bridge logic in `usb_cdc.c`
--> UART TX/RX backend
--> target device
+Each USB CDC interface maps to one logical UART port. Traffic crosses the
+cores through one TX ring and one RX ring per port:
+
+```mermaid
+flowchart LR
+  Host["Host application"] --> CDCOut["TinyUSB CDC OUT"]
+  CDCOut --> BridgeTX["usb_cdc.c\ncore 0"]
+  BridgeTX --> TX["Per-port TX ring\ncore 0 produces"]
+  TX --> BackendTX["HW or PIO TX\ncore 1 consumes"]
+  BackendTX --> Device["Target UART device"]
+
+  Device --> BackendRX["HW or PIO RX\ncore 1 produces"]
+  BackendRX --> RX["Per-port RX ring\ncore 1 produces"]
+  RX --> BridgeRX["usb_cdc.c\ncore 0 consumes"]
+  BridgeRX --> CDCIn["TinyUSB CDC IN"]
+  CDCIn --> Host
+```
 
 Each port should work independently so traffic on one UART does not block the
 others more than necessary. Hardware UART ports use DMA-backed RX and TX rings.
-PIO UART ports use per-port software rings with DMA-backed RX (PIO RX FIFO to
-ring) and a hybrid core-1 TX path that fills the joined TX FIFO for short
-queues, then uses a persistent DMA channel when deeper backlog makes that path
-cheaper. Each ring has one producer and one consumer: core 0 produces TX and
-consumes RX, while core 1 consumes TX and produces RX.
+PIO UART ports use DMA-backed RX and a hybrid core-1 TX path: short queues use
+FIFO polling, while deeper queues use a persistent TX DMA channel.
+
+The `bridge` module provides bounded ring-to-USB operations. The `port_api`
+module supplies readiness, RX/TX bridge, metadata, and telemetry operations to
+the public `uart_driver_*` facade.
 
 ## Main Blocks
 
@@ -74,14 +98,70 @@ consumes RX, while core 1 consumes TX and produces RX.
 - The watchdog is petted from the USB poll loop only while the UART worker
   heartbeat is fresh.
 
+## Line-Coding Control Flow
+
+Line-coding changes use a single-slot mailbox and three ownership states. The
+`CONTROL_PENDING` status bit remains asserted across those states, so TX
+ingress cannot slip through the mailbox-to-worker handoff.
+
+```mermaid
+sequenceDiagram
+    participant Host
+    participant USB as "TinyUSB / core 0"
+    participant Mailbox as "control/mailbox"
+    participant Worker as "UART worker / core 1"
+    participant Backend as "HW or PIO backend"
+    participant HID as "HID status"
+
+    Host->>USB: SET_LINE_CODING
+    USB->>USB: Validate request and mark soft-pending
+    USB->>Mailbox: Publish line coding + TX boundary + generation
+    USB->>HID: Report CONTROL_PENDING
+    Worker->>Mailbox: Take request
+    Mailbox-->>Worker: Request payload acknowledged
+    Worker->>Worker: Validate backend support
+    Worker->>Worker: Wait for TX boundary to drain
+    Worker->>Backend: Apply line coding
+    Backend-->>Worker: Success or failure
+    Worker->>HID: Update CONTROL_PENDING / CONTROL_ERROR
+```
+
+Older completions carry older generations and cannot clear an error belonging
+to a newer host request. A worker apply also has a bounded timeout so continuous
+UART traffic cannot pause USB ingress indefinitely.
+
+## Module Responsibilities
+
+| Module | Responsibility |
+| --- | --- |
+| `uart_driver.c` | Startup, backend lifecycle, worker wiring, public control forwarding |
+| `port_api.c` | Public logical-port readiness, bridge, metadata, and telemetry operations |
+| `backend/adapter.c` | Typed HW/PIO operation-table adapter |
+| `backend/policy.h` | Shared backend policy decisions without hardware access |
+| `control/` | Mailbox transport, ownership rules, deferred line-coding application |
+| `bridge.c` | Bounded ring-to-USB and USB-to-ring transfers |
+| `worker.c` | Core-1 scheduling and heartbeat publication |
+| `hw/` | Hardware UART registers, DMA, flow control, and baud configuration |
+| `pio/` | PIO programs, state machines, DMA, and PIO TX policy |
+| `dma/` | Shared DMA progress/counting helpers |
+| `ring_buffer/` | SPSC ring storage, reservations, overflow recovery, and snapshots |
+
 ## Detailed References
 
+- [Overall UART Design](detail/uart-design.md) is the entry point for the
+  UART facade, core ownership, rings, control plane, and HW/PIO abstraction.
+- [Multicore Ownership Design](detail/multicore-ownership-design.md) defines
+  ring, mailbox, lock, telemetry, and heartbeat synchronization rules.
 - [Ring Buffer Design](detail/ring-buffer-design.md) covers buffer ownership,
   overflow policy, DMA interaction, and HID buffer observability.
 - [PIO UART Design](detail/pio-uart-design.md) covers PIO RX/TX ownership,
   hybrid TX, and PIO line-coding limits.
+- [Hardware UART Design](detail/hw-uart-design.md) covers PL011 UART DMA,
+  flow control, line coding, cleanup, and hardware-specific limits.
 - [Control Plane Design](detail/control-plane-design.md) covers CDC
   line-coding requests, worker mailbox ownership, and HID error reporting.
+- [Backend Adapter Design](detail/backend-adapter-design.md) covers the typed
+  HW/PIO operation contract, lifecycle, readiness, and line-coding dispatch.
 - [CDC/HID Overview](usb/cdc-hid-overview.md) explains the relationship between the
   six CDC ports and the HID status/control interface.
 - [HID Report Reference](usb/hid-report-reference.md) defines status bits,

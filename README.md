@@ -27,6 +27,7 @@ Start here:
 
 Hardware testing:
 
+- [Test Documentation Index](docs/tests/README.md)
 - [Self-Test Setup](docs/tests/self-test-setup.md)
 - [Functional Test Plan](docs/tests/functional-test-plan.md)
 - [Performance Test Plan](docs/tests/performance-test-plan.md)

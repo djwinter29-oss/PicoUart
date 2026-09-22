@@ -12,18 +12,18 @@
 absolute_time_t pico_test_time_us;
 static uint32_t test_stats_call_count;
 
-static bool test_backend_is_initialized(const void *instance)
+static bool test_backend_is_initialized(const uart_backend_instance_t *instance)
 {
     (void)instance;
     return false;
 }
 
-static ring_buffer_t *test_backend_ring(void *instance)
+static ring_buffer_t *test_backend_ring(uart_backend_instance_t *instance)
 {
     return (ring_buffer_t *)instance;
 }
 
-static uart_backend_stats_t test_backend_stats(const void *instance)
+static uart_backend_stats_t test_backend_stats(const uart_backend_instance_t *instance)
 {
     (void)instance;
     test_stats_call_count += 1u;

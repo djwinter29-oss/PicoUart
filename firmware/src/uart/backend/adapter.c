@@ -24,40 +24,40 @@ static uart_parity_t uart_backend_hw_parity(uart_driver_parity_t parity)
     return UART_PARITY_NONE;
 }
 
-static bool uart_backend_hw_is_initialized(const void *instance)
+static bool uart_backend_hw_is_initialized(const uart_backend_instance_t *instance)
 {
-    return ((const hw_uart_driver_t *)instance)->initialized;
+    return instance->hw.initialized;
 }
 
-static bool uart_backend_hw_init(void *instance)
+static bool uart_backend_hw_init(uart_backend_instance_t *instance)
 {
-    return hw_uart_driver_init((hw_uart_driver_t *)instance);
+    return hw_uart_driver_init(&instance->hw);
 }
 
-static void uart_backend_hw_deinit(void *instance)
+static void uart_backend_hw_deinit(uart_backend_instance_t *instance)
 {
-    hw_uart_driver_deinit((hw_uart_driver_t *)instance);
+    hw_uart_driver_deinit(&instance->hw);
 }
 
-static void uart_backend_hw_poll(void *instance, bool tx_launch_allowed)
+static void uart_backend_hw_poll(uart_backend_instance_t *instance, bool tx_launch_allowed)
 {
-    hw_uart_driver_poll((hw_uart_driver_t *)instance, tx_launch_allowed);
+    hw_uart_driver_poll(&instance->hw, tx_launch_allowed);
 }
 
-static ring_buffer_t *uart_backend_hw_rx_ring(void *instance)
+static ring_buffer_t *uart_backend_hw_rx_ring(uart_backend_instance_t *instance)
 {
-    return &((hw_uart_driver_t *)instance)->rx_ring;
+    return &instance->hw.rx_ring;
 }
 
-static ring_buffer_t *uart_backend_hw_tx_ring(void *instance)
+static ring_buffer_t *uart_backend_hw_tx_ring(uart_backend_instance_t *instance)
 {
-    return &((hw_uart_driver_t *)instance)->tx_ring;
+    return &instance->hw.tx_ring;
 }
 
-static bool uart_backend_hw_line_coding_matches(const void *instance,
+static bool uart_backend_hw_line_coding_matches(const uart_backend_instance_t *instance,
                                                  const uart_driver_line_coding_t *line_coding)
 {
-    const hw_uart_driver_t *driver = instance;
+    const hw_uart_driver_t *driver = &instance->hw;
     uint32_t actual_rate;
 
     return hw_uart_baud_rate_supported(line_coding->baud_rate,
@@ -78,35 +78,35 @@ static bool uart_backend_hw_line_coding_acceptable(const uart_driver_line_coding
                                        &actual_rate);
 }
 
-static bool uart_backend_hw_set_line_coding(void *instance,
+static bool uart_backend_hw_set_line_coding(uart_backend_instance_t *instance,
                                              const uart_driver_line_coding_t *line_coding)
 {
-    return hw_uart_driver_set_line_format((hw_uart_driver_t *)instance,
+    return hw_uart_driver_set_line_format(&instance->hw,
                                           line_coding->baud_rate,
                                           line_coding->data_bits,
                                           line_coding->stop_bits,
                                           uart_backend_hw_parity(line_coding->parity));
 }
 
-static bool uart_backend_hw_rx_snapshot_is_current(const void *instance,
+static bool uart_backend_hw_rx_snapshot_is_current(const uart_backend_instance_t *instance,
                                                     uint32_t consumer_sequence)
 {
-    return hw_uart_driver_rx_snapshot_is_current(instance, consumer_sequence);
+    return hw_uart_driver_rx_snapshot_is_current(&instance->hw, consumer_sequence);
 }
 
-static void uart_backend_hw_clear_rx_error_baseline(void *instance)
+static void uart_backend_hw_clear_rx_error_baseline(uart_backend_instance_t *instance)
 {
-    hw_uart_driver_clear_rx_error_baseline(instance);
+    hw_uart_driver_clear_rx_error_baseline(&instance->hw);
 }
 
-static uint32_t uart_backend_hw_baud_rate(const void *instance)
+static uint32_t uart_backend_hw_baud_rate(const uart_backend_instance_t *instance)
 {
-    return ((const hw_uart_driver_t *)instance)->config.baud_rate;
+    return instance->hw.config.baud_rate;
 }
 
-static uart_backend_stats_t uart_backend_hw_stats(const void *instance)
+static uart_backend_stats_t uart_backend_hw_stats(const uart_backend_instance_t *instance)
 {
-    const hw_uart_driver_t *driver = instance;
+    const hw_uart_driver_t *driver = &instance->hw;
 
     return (uart_backend_stats_t){
         .controller_tx_bytes = driver->controller_tx_bytes,
@@ -115,40 +115,40 @@ static uart_backend_stats_t uart_backend_hw_stats(const void *instance)
     };
 }
 
-static bool uart_backend_pio_is_initialized(const void *instance)
+static bool uart_backend_pio_is_initialized(const uart_backend_instance_t *instance)
 {
-    return ((const pio_uart_driver_t *)instance)->initialized;
+    return instance->pio.initialized;
 }
 
-static bool uart_backend_pio_init(void *instance)
+static bool uart_backend_pio_init(uart_backend_instance_t *instance)
 {
-    return pio_uart_driver_init((pio_uart_driver_t *)instance);
+    return pio_uart_driver_init(&instance->pio);
 }
 
-static void uart_backend_pio_deinit(void *instance)
+static void uart_backend_pio_deinit(uart_backend_instance_t *instance)
 {
-    pio_uart_driver_deinit((pio_uart_driver_t *)instance);
+    pio_uart_driver_deinit(&instance->pio);
 }
 
-static void uart_backend_pio_poll(void *instance, bool tx_launch_allowed)
+static void uart_backend_pio_poll(uart_backend_instance_t *instance, bool tx_launch_allowed)
 {
-    pio_uart_driver_poll((pio_uart_driver_t *)instance, tx_launch_allowed);
+    pio_uart_driver_poll(&instance->pio, tx_launch_allowed);
 }
 
-static ring_buffer_t *uart_backend_pio_rx_ring(void *instance)
+static ring_buffer_t *uart_backend_pio_rx_ring(uart_backend_instance_t *instance)
 {
-    return &((pio_uart_driver_t *)instance)->rx_ring;
+    return &instance->pio.rx_ring;
 }
 
-static ring_buffer_t *uart_backend_pio_tx_ring(void *instance)
+static ring_buffer_t *uart_backend_pio_tx_ring(uart_backend_instance_t *instance)
 {
-    return &((pio_uart_driver_t *)instance)->tx_ring;
+    return &instance->pio.tx_ring;
 }
 
-static bool uart_backend_pio_line_coding_matches(const void *instance,
+static bool uart_backend_pio_line_coding_matches(const uart_backend_instance_t *instance,
                                                   const uart_driver_line_coding_t *line_coding)
 {
-    const pio_uart_driver_t *driver = instance;
+    const pio_uart_driver_t *driver = &instance->pio;
 
     return (driver->config.baud_rate == line_coding->baud_rate) &&
            (line_coding->data_bits == 8u) &&
@@ -161,31 +161,31 @@ static bool uart_backend_pio_line_coding_acceptable(const uart_driver_line_codin
     return uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys));
 }
 
-static bool uart_backend_pio_set_line_coding(void *instance,
+static bool uart_backend_pio_set_line_coding(uart_backend_instance_t *instance,
                                               const uart_driver_line_coding_t *line_coding)
 {
-    return pio_uart_driver_set_baud_rate((pio_uart_driver_t *)instance, line_coding->baud_rate);
+    return pio_uart_driver_set_baud_rate(&instance->pio, line_coding->baud_rate);
 }
 
-static bool uart_backend_pio_rx_snapshot_is_current(const void *instance,
+static bool uart_backend_pio_rx_snapshot_is_current(const uart_backend_instance_t *instance,
                                                      uint32_t consumer_sequence)
 {
-    return pio_uart_driver_rx_snapshot_is_current(instance, consumer_sequence);
+    return pio_uart_driver_rx_snapshot_is_current(&instance->pio, consumer_sequence);
 }
 
-static void uart_backend_pio_clear_rx_error_baseline(void *instance)
+static void uart_backend_pio_clear_rx_error_baseline(uart_backend_instance_t *instance)
 {
     (void)instance;
 }
 
-static uint32_t uart_backend_pio_baud_rate(const void *instance)
+static uint32_t uart_backend_pio_baud_rate(const uart_backend_instance_t *instance)
 {
-    return ((const pio_uart_driver_t *)instance)->config.baud_rate;
+    return instance->pio.config.baud_rate;
 }
 
-static uart_backend_stats_t uart_backend_pio_stats(const void *instance)
+static uart_backend_stats_t uart_backend_pio_stats(const uart_backend_instance_t *instance)
 {
-    const pio_uart_driver_t *driver = instance;
+    const pio_uart_driver_t *driver = &instance->pio;
 
     return (uart_backend_stats_t){
         .controller_tx_bytes = (uint32_t)(driver->tx_polled_bytes + driver->tx_dma_bytes),

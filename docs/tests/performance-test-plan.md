@@ -1,5 +1,8 @@
 # Performance Test Plan
 
+Start with the [Test Documentation Index](README.md) for test levels, result
+semantics, and evidence requirements.
+
 This plan measures sustained, bidirectional UART throughput and data integrity
 across the PicoUart bridge. Run the functional test plan first.
 

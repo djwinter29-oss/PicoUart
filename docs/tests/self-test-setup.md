@@ -1,5 +1,8 @@
 # Self-Test Setup
 
+This setup is used by the functional and performance HIL plans. See the [Test
+Documentation Index](README.md) for the complete test sequence.
+
 This procedure validates all six PicoUart channels with four independent links
 installed at the same time. Do not change wiring during the test. Verify the
 complete fixture before starting the runner.

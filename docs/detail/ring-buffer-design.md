@@ -31,7 +31,7 @@ This document defines the full end-to-end buffering path from:
 The design includes:
 
 - the generic ring-buffer helper
-- the per-port bridge state
+- the per-port ring ownership and bridge transfer policy
 - TinyUSB ownership rules
 - UART DMA ownership rules
 - polling and completion flow
@@ -56,11 +56,19 @@ Implemented now:
 - HID health bits for ready/init-failed/control-error/control-pending/CDC-open/PIO/RX-overrun/RX-error
 - HID ring high-water marks (16-byte blocks)
 
-Not implemented yet:
+## Deferred Features And Current Scope
 
-- full ring occupancy in the compact HID input report
-- Host CDC RTS acting as UART flow control
-- Clearable / resettable overrun and framing-error counters
+The following are deliberate scope boundaries, not undocumented gaps:
+
+| Feature | Current behavior | Why it is deferred | Revisit when |
+| --- | --- | --- | --- |
+| Full ring occupancy in compact HID input | Reports high-water blocks; feature report 5 exposes cumulative RX overflow counts | The compact interrupt report has a fixed full-speed packet budget, and high-water/overflow signals are sufficient for current monitoring | A host workflow needs instantaneous occupancy for active backpressure or tuning |
+| Host CDC RTS as UART flow control | CDC DTR is telemetry-only; UART-side RTS/CTS is board-configured and opt-in | Host CDC modem-control semantics must be mapped consistently across HW and PIO backends before claiming flow-control behavior | A defined host API and HIL matrix exist for both backend families |
+| Clearable overrun/framing counters | Counters are cumulative for the firmware session; startup baselining clears only bring-up errors | Clearing counters needs an explicit HID command, generation/reset semantics, and host tooling | Monitoring workflows require interval counters or user-triggered reset |
+
+These decisions preserve a stable telemetry contract while avoiding controls that
+could reset shared counters or change flow behavior without an explicit host and
+HIL design.
 
 ## Current Design: Split RX And TX Rings Per Port
 
@@ -145,9 +153,7 @@ This is the best fit for bursty host traffic and slower UART drain rates.
 
 ## End-To-End Architecture
 
-Each logical port is modeled as one bridge instance.
-
-Each bridge instance owns:
+Each logical port owns a pair of rings and one backend runtime binding:
 
 - one TX ring for USB-to-UART traffic
 - one RX ring for UART-to-USB traffic
@@ -156,7 +162,9 @@ Each bridge instance owns:
 - RX DMA state
 - counters and status flags for monitoring
 
-The current code already uses this model across both the hardware UART and PIO UART backends, and the USB CDC layer now drives the bridge end to end.
+The bridge module provides stateless, bounded transfer helpers. The current
+code uses this model across both the hardware UART and PIO UART backends, and
+the USB CDC layer drives the bridge end to end.
 
 ### Top-Level Blocks
 
@@ -244,14 +252,25 @@ The design assumes a single TinyUSB owner.
 TinyUSB-facing work must run in one execution context only.
 That context may be the main loop or one dedicated core, but TinyUSB APIs should not be called from multiple cores.
 
-Current poll-loop order is conceptually:
+The current runtime is split across two cooperative loops:
+
+Core 0 USB loop:
 
 1. `tud_task()`
-2. drain all CDC OUT endpoints into TX rings
-3. kick idle UART TX DMA channels
-4. sample UART RX DMA progress and update RX producers
-5. drain RX rings into CDC IN endpoints
-6. publish HID status if due
+2. drain CDC OUT endpoints into TX rings, unless control-pending blocks that port
+3. drain RX rings into matching CDC IN endpoints
+4. publish HID status if due
+
+Core 1 UART worker loop:
+
+1. consume one control-mailbox request and service deferred line coding
+2. poll each initialized backend
+3. publish RX DMA progress into RX rings
+4. complete or launch backend TX service, subject to the control boundary
+
+The two loops communicate through the per-port rings, the control mailbox, and
+the worker-owned stats sequence counters. TinyUSB remains core-0-only; backend
+DMA and PIO service remains core-1-only.
 
 ## Ring Semantics
 
@@ -322,8 +341,8 @@ Reason:
 
 ## API Shape
 
-The ring helper is intentionally small and backend-agnostic. The current public
-API is:
+The ring helper is intentionally small and backend-agnostic. The current
+ring-buffer module API is:
 
 ```c
 bool ring_buffer_init(ring_buffer_t *ring, uint8_t *storage, size_t size);
@@ -419,6 +438,11 @@ verifies full-buffer overwrite recovery, wrapped-span commit rejection, and
 32-bit producer-sequence wrap. The check is intentionally small and does not
 exercise concurrent DMA traffic; hardware flow control remains necessary when
 lossless behavior is required.
+
+Host tests exercise ring invariants and the pure bridge helpers. Real backend
+callbacks, DMA timing, and multicore interleavings are validated by the
+firmware build and hardware-in-the-loop plans; they are not reproduced by the
+host ring tests.
 
 ## Failure Modes To Design For
 

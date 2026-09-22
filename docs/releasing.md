@@ -16,6 +16,35 @@ Suggested flow:
 4. Compare draft artifacts with the HIL hashes.
 5. Publish only after the promote checklist passes.
 
+```mermaid
+flowchart LR
+   Change["Reviewed change"] --> CI["CI: host tests + pico/pico2 builds"]
+   CI --> DryRun["workflow_dispatch\ndraft artifacts"]
+   DryRun --> Hash["Record artifact SHA-256"]
+   Hash --> HIL["HIL on exact packaged images"]
+   HIL --> Results["Record commands, hashes, HID health, results"]
+   Results --> Compare{"Artifact hashes match?"}
+   Compare -->|no| Stop["Keep lab-only\nfix or rerun"]
+   Compare -->|yes| Promote["Promote draft release"]
+```
+
+The release unit is the exact packaged artifact, not a source revision or a
+local rebuild. HIL evidence is valid only when its image hash matches the
+artifact attached to the draft release.
+
+## Release Preflight
+
+Before requesting HIL, confirm:
+
+1. The change is reviewed and the working tree contains no unintended files.
+2. The version is a valid `vMAJOR.MINOR.PATCH` release tag.
+3. Both `pico` and `pico2` firmware artifacts build successfully.
+4. The host suite passes, including the UART facade and backend contract tests.
+5. `git diff --check` passes.
+6. The release notes identify any USB/HID compatibility or behavior changes.
+
+Do not begin physical testing from an uncommitted or locally modified image.
+
 ## USB identity
 
 PicoUart publishes lab and test artifacts using `cafe:4010`, an unallocated
@@ -31,6 +60,9 @@ and [`host/python/src/pico_uart_hid.py`](../host/python/src/pico_uart_hid.py).
 See also [`SECURITY.md`](../SECURITY.md).
 
 ## Release HIL Gates
+
+Use the [Test Documentation Index](tests/README.md) for the complete
+automated-to-HIL test sequence and result semantics.
 
 Cloud CI proves builds and host tests only. A publishable release needs recorded
 HIL on both packaged board images:
@@ -58,6 +90,40 @@ transcript:
 - expected `control_error`, `rx_overrun`, or receive-loss notes when applicable
 
 A release without this recorded evidence is lab-only.
+
+## Automated Validation Matrix
+
+Run these checks before starting HIL. They validate the host-testable and
+build-time parts of the UART design; they do not replace physical testing.
+
+| Check | Command | Covers |
+| --- | --- | --- |
+| Host suite | `tools/test/test-host.sh` | Ring, bridge, worker, control, policy, claims, and facade tests |
+| Direct host suite | `ctest --test-dir build/host-tests --output-on-failure` | CTest result detail after host configuration |
+| RP2040 firmware | `tools/firmware/build.sh --board pico` | Full firmware compile/link and UF2 outputs |
+| RP2350 firmware | `tools/firmware/build.sh --board pico2` | RP2350 compile/link and platform-specific paths |
+| Patch hygiene | `git diff --check` | Whitespace and patch formatting |
+
+The host suite should include the backend contract test and the real facade
+contract test. Firmware builds must complete for both board targets before HIL
+results are interpreted as firmware behavior rather than a build artifact
+problem.
+
+## Evidence Package
+
+For each board target, keep one evidence bundle containing:
+
+- exact artifact filename and SHA-256
+- board target and physical board identity
+- firmware version and source commit
+- tool versions or environment details when relevant
+- command lines used for flashing and testing
+- functional and performance result summaries
+- HID health before and after the run
+- raw transcript for failures, partial runs, or unusual expected conditions
+
+The result status must distinguish `PASS`, `FAIL`, and `PARTIAL`. A partial
+run is useful diagnostic evidence but cannot qualify a release gate.
 
 ## Flashing Release Artifacts
 

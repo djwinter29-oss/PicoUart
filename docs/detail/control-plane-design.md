@@ -49,6 +49,27 @@ It does not carry UART bytes; byte traffic remains on the RX/TX rings.
 7. Completion clears `CONTROL_PENDING` only if no newer owner still exists, and
    updates `CONTROL_ERROR` only if the completion generation is still current.
 
+```mermaid
+sequenceDiagram
+  participant Host
+  participant USB as "CDC / core 0"
+  participant Mailbox as "Single-slot mailbox"
+  participant Worker as "UART worker / core 1"
+  participant Backend as "UART backend"
+  participant HID as "HID status"
+
+  Host->>USB: SET_LINE_CODING
+  USB->>USB: Validate and mark soft-pending
+  USB->>Mailbox: Publish request + generation + TX boundary
+  USB->>HID: CONTROL_PENDING = 1
+  Worker->>Mailbox: Take and acknowledge request
+  Worker->>Worker: Validate backend support
+  Worker->>Worker: Wait for TX boundary and backend idle
+  Worker->>Backend: Apply line coding
+  Backend-->>Worker: Applied or rejected
+  Worker->>HID: Update CONTROL_PENDING / CONTROL_ERROR
+```
+
 CDC hosts cannot rely on the USB control transfer result alone. TinyUSB may have
 already completed the request before firmware applies or rejects it. Hosts must
 watch HID health bit 2 (`control_error`) and bit 3 (`control_pending`).
@@ -69,6 +90,19 @@ new bytes from entering the old-format TX ring after the request boundary.
 The worker-side boundary is the TX producer sequence captured when the mailbox
 request is published. Core 1 must drain old-format bytes up to that boundary
 before applying the new format.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> SoftPending: core 0 accepts request
+  SoftPending --> MailboxPending: slot becomes available
+  MailboxPending --> WorkerPending: core 1 takes request
+  WorkerPending --> Applying: TX boundary and backend are safe
+  Applying --> Idle: completion succeeds
+  Applying --> Error: backend reject or timeout
+  SoftPending --> Error: mailbox timeout or permanent reject
+  Error --> Idle
+```
 
 ## Generations and Stale Completions
 
@@ -92,6 +126,15 @@ Two time windows prevent indefinite stalls:
 
 Identical retries do not refresh an existing deadline forever. A distinct
 replacement request gets a new window.
+
+```mermaid
+flowchart TD
+  Request["Host control request"] --> Generation["Increment per-port generation"]
+  Generation --> Current{"Completion generation == latest?"}
+  Current -->|no| Stale["Do not change CONTROL_ERROR"]
+  Current -->|yes and success| Clear["Clear CONTROL_ERROR"]
+  Current -->|yes and failure| Set["Set CONTROL_ERROR"]
+```
 
 ## USB Mount and Unmount Reset
 

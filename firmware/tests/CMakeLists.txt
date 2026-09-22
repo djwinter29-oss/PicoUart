@@ -102,6 +102,9 @@ pico_uart_add_unity_test(test_backend_policy backend_policy
 pico_uart_add_unity_test(test_backend_contract backend_contract
     test_backend_contract.c
 )
+target_include_directories(test_backend_contract PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
 
 pico_uart_add_unity_test(test_hw_baud_rate hw_baud_rate
     test_hw_baud_rate.c

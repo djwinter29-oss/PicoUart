@@ -7,35 +7,35 @@
 
 #include "uart/backend/adapter.h"
 
-static bool test_initialized(const void *instance)
+static bool test_initialized(const uart_backend_instance_t *instance)
 {
     (void)instance;
     return false;
 }
 
-static bool test_init(void *instance)
+static bool test_init(uart_backend_instance_t *instance)
 {
     (void)instance;
     return false;
 }
 
-static void test_deinit(void *instance)
+static void test_deinit(uart_backend_instance_t *instance)
 {
     (void)instance;
 }
 
-static void test_poll(void *instance, bool allowed)
+static void test_poll(uart_backend_instance_t *instance, bool allowed)
 {
     (void)instance;
     (void)allowed;
 }
 
-static ring_buffer_t *test_ring(void *instance)
+static ring_buffer_t *test_ring(uart_backend_instance_t *instance)
 {
-    return instance;
+    return &instance->hw.rx_ring;
 }
 
-static bool test_line_coding_matches(const void *instance,
+static bool test_line_coding_matches(const uart_backend_instance_t *instance,
                                      const uart_driver_line_coding_t *line_coding)
 {
     (void)instance;
@@ -48,32 +48,32 @@ static bool test_line_coding_acceptable(const uart_driver_line_coding_t *line_co
     return line_coding != NULL;
 }
 
-static bool test_set_line_coding(void *instance,
+static bool test_set_line_coding(uart_backend_instance_t *instance,
                                  const uart_driver_line_coding_t *line_coding)
 {
     (void)instance;
     return line_coding != NULL;
 }
 
-static bool test_snapshot(const void *instance, uint32_t sequence)
+static bool test_snapshot(const uart_backend_instance_t *instance, uint32_t sequence)
 {
     (void)instance;
     (void)sequence;
     return true;
 }
 
-static void test_baseline(void *instance)
+static void test_baseline(uart_backend_instance_t *instance)
 {
     (void)instance;
 }
 
-static uint32_t test_baud_rate(const void *instance)
+static uint32_t test_baud_rate(const uart_backend_instance_t *instance)
 {
     (void)instance;
     return 115200u;
 }
 
-static uart_backend_stats_t test_stats(const void *instance)
+static uart_backend_stats_t test_stats(const uart_backend_instance_t *instance)
 {
     (void)instance;
     return (uart_backend_stats_t){0};
