@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 /**
- * @brief Return whether a single-slot mailbox can accept a new request.
+ * @brief Return whether one mailbox slot can accept a new request.
  * @param request_sequence Sequence most recently published by the producer.
  * @param response_sequence Sequence most recently completed by the worker.
  * @return `true` when the mailbox slot is empty.

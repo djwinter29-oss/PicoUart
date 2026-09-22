@@ -613,7 +613,7 @@ static void pio_uart_driver_service_tx(pio_uart_driver_t *driver)
         if (driver->tx_dma_active) {
             return;
         }
-        /* DMA claim failed; fall through to the FIFO drain path. */
+        /* Persistent TX DMA did not start; fall through to the FIFO drain path. */
         break;
     case UART_PIO_TX_DRAIN_FIFO:
         break;

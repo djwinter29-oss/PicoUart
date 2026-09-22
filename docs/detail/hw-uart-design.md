@@ -32,7 +32,7 @@ flowchart LR
 control configuration before claiming resources. It then:
 
 1. initializes the RX and TX rings
-2. claims one RX DMA channel and one TX DMA channel
+2. claims one RX DMA channel and one TX DMA channel and holds both until deinit
 3. assigns UART GPIO functions
 4. configures the PL011 baud rate, format, FIFO, and optional CTS
 5. configures RTS policy when hardware flow control is enabled
@@ -43,6 +43,16 @@ DMA claim failure is reported without panicking. Previously claimed resources
 are released by the claim/rollback path. The top-level UART driver rolls back
 all initialized ports if any configured port fails startup and does not launch
 core 1.
+
+The shipped six-port map claims 12 DMA channels (RX and TX on every port) and
+holds them for the life of the firmware. RP2040 has 12 DMA channels, so a Pico
+build has none spare: another DMA user fails init. RP2350 has 16 channels.
+An unsupported baud in `hw_uart_driver_configure_uart()` returns false. Init
+releases the port's DMA channels. A runtime line-format apply that fails after
+the peripheral was stopped restores the previous format instead of panicking.
+If that restore also fails, the driver releases the port's DMA channels, marks
+the backend uninitialized, and the control plane sets `INIT_FAILED` immediately
+so later polls skip the stopped peripheral.
 
 ## RX Path
 

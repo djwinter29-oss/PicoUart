@@ -14,6 +14,8 @@ static uart_driver_line_coding_t applied_line_coding;
 static uint32_t apply_count;
 static bool apply_result;
 static bool line_coding_matches;
+static bool backend_alive;
+static bool fail_closed;
 
 static ring_buffer_t *test_tx_ring_for_backend(uart_backend_instance_t *instance)
 {
@@ -34,10 +36,21 @@ static bool test_line_coding_acceptable(const uart_driver_line_coding_t *line_co
     return line_coding->data_bits == 8u;
 }
 
+static bool test_is_initialized(const uart_backend_instance_t *instance)
+{
+    (void)instance;
+    return backend_alive;
+}
+
 static bool test_set_line_coding(uart_backend_instance_t *instance,
                                  const uart_driver_line_coding_t *line_coding)
 {
     (void)instance;
+    if (fail_closed) {
+        backend_alive = false;
+        return false;
+    }
+
     applied_line_coding = *line_coding;
     apply_count += 1u;
     return apply_result;
@@ -50,6 +63,7 @@ static uint32_t test_baud_rate(const uart_backend_instance_t *instance)
 }
 
 static const uart_backend_ops_t test_backend_ops = {
+    .is_initialized = test_is_initialized,
     .tx_ring = test_tx_ring_for_backend,
     .line_coding_matches = test_line_coding_matches,
     .line_coding_acceptable = test_line_coding_acceptable,
@@ -58,7 +72,7 @@ static const uart_backend_ops_t test_backend_ops = {
 };
 
 static uart_runtime_port_t test_ports[UART_PORT_COUNT];
-static uart_control_mailbox_t test_mailbox;
+static uart_control_mailbox_t test_mailboxes[UART_PORT_COUNT];
 static uart_control_pending_t test_pending_controls[UART_PORT_COUNT];
 static bool test_soft_pending_controls[UART_PORT_COUNT];
 static uint32_t test_control_generations[UART_PORT_COUNT];
@@ -86,7 +100,10 @@ static void publish_request_for_port(uint32_t port_id, uint32_t tx_boundary_sequ
         .line_coding = test_line_coding(),
     };
 
-    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailbox, &request));
+    uart_control_mailbox_t *slot =
+        &test_mailboxes[(port_id < UART_PORT_COUNT) ? port_id : UART_PORT_0];
+
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(slot, &request));
 }
 
 static void publish_request(uint32_t tx_boundary_sequence)
@@ -101,21 +118,25 @@ void setUp(void)
     apply_count = 0u;
     apply_result = true;
     line_coding_matches = false;
+    backend_alive = true;
+    fail_closed = false;
     pico_test_time_us = 0;
-    test_ports[UART_PORT_0] = (uart_runtime_port_t){.ops = &test_backend_ops};
-    for (size_t index = 1u; index < UART_PORT_COUNT; ++index) {
-        test_ports[index] = (uart_runtime_port_t){0};
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        test_ports[index] = (index == UART_PORT_0)
+                                ? (uart_runtime_port_t){.ops = &test_backend_ops}
+                                : (uart_runtime_port_t){0};
+        uart_control_mailbox_reset(&test_mailboxes[index]);
+        test_pending_controls[index] = (uart_control_pending_t){0};
+        test_soft_pending_controls[index] = false;
+        test_control_generations[index] = (index == UART_PORT_0) ? 1u : 0u;
+        test_status_flags[index] =
+            (index == UART_PORT_0) ? UART_DRIVER_PORT_STATUS_CONTROL_PENDING : 0u;
+        test_stats_sequence[index] = 0u;
     }
-    test_mailbox = (uart_control_mailbox_t){0};
-    test_pending_controls[UART_PORT_0] = (uart_control_pending_t){0};
-    test_soft_pending_controls[UART_PORT_0] = false;
-    test_control_generations[UART_PORT_0] = 1u;
-    test_status_flags[UART_PORT_0] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
-    test_stats_sequence[UART_PORT_0] = 0u;
     test_poll_start_index = 0u;
     test_control_plane = (uart_control_plane_t){
         .ports = test_ports,
-        .mailbox = &test_mailbox,
+        .mailboxes = test_mailboxes,
         .pending_controls = test_pending_controls,
         .soft_pending_controls = test_soft_pending_controls,
         .control_generations = test_control_generations,
@@ -159,8 +180,56 @@ void test_control_plane_drops_invalid_mailbox_port(void)
 
     uart_control_plane_service(&test_control_plane);
 
-    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailbox));
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
+}
+
+void test_control_plane_rejects_payload_aimed_at_another_port(void)
+{
+    uart_control_mailbox_request_t request = {
+        .port_id = UART_PORT_1,
+        .control_generation = 1u,
+        .tx_boundary_sequence = 0u,
+        .line_coding = test_line_coding(),
+    };
+
+    test_ports[UART_PORT_1] = (uart_runtime_port_t){.ops = &test_backend_ops};
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailboxes[UART_PORT_0], &request));
+
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_1].pending);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_EQUAL_UINT8(0u, test_status_flags[UART_PORT_1]);
+}
+
+void test_control_plane_stops_immediately_when_backend_is_retired(void)
+{
+    test_status_flags[UART_PORT_0] |= UART_DRIVER_PORT_STATUS_READY;
+    fail_closed = true;
+    publish_request(0u);
+
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_FALSE(backend_alive);
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_INIT_FAILED,
+                     UART_DRIVER_PORT_STATUS_INIT_FAILED,
+                     test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_READY, 0u, test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
 }
 
 void test_control_plane_reports_error_after_apply_timeout(void)
@@ -184,6 +253,25 @@ void test_control_plane_reports_error_after_apply_timeout(void)
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
 }
 
+void test_control_plane_applies_requests_on_independent_port_slots(void)
+{
+    test_ports[UART_PORT_1] = (uart_runtime_port_t){.ops = &test_backend_ops};
+    test_control_generations[UART_PORT_1] = 1u;
+    test_status_flags[UART_PORT_1] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    test_tx_ring.consumer = 0u;
+    publish_request_for_port(UART_PORT_0, 0u);
+    publish_request_for_port(UART_PORT_1, 0u);
+
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_EQUAL_UINT32(2u, apply_count);
+    TEST_ASSERT_EQUAL_size_t(0u, test_poll_start_index);
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_1].pending);
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_1]));
+}
+
 void test_control_plane_immediate_completion_clears_pending_when_unowned(void)
 {
     line_coding_matches = true;
@@ -202,7 +290,10 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_control_plane_waits_for_tx_boundary_before_applying);
     RUN_TEST(test_control_plane_drops_invalid_mailbox_port);
+    RUN_TEST(test_control_plane_rejects_payload_aimed_at_another_port);
+    RUN_TEST(test_control_plane_stops_immediately_when_backend_is_retired);
     RUN_TEST(test_control_plane_reports_error_after_apply_timeout);
+    RUN_TEST(test_control_plane_applies_requests_on_independent_port_slots);
     RUN_TEST(test_control_plane_immediate_completion_clears_pending_when_unowned);
     return UNITY_END();
 }

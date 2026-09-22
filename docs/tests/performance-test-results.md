@@ -7,6 +7,20 @@ Result entries are development evidence unless they explicitly say
 `release qualification` and include the exact flashed artifact hash for each
 required board.
 
+## Not yet recorded
+
+This file does not yet satisfy the release gate in `docs/releasing.md`:
+
+- No Raspberry Pi Pico 2 / RP2350 result is recorded. RP2350 DMA `TRANS_COUNT`
+  behavior is unverified on hardware.
+- Individual staged RP2040 links have passed through 1 Mbaud. Concurrent
+  fixture runs on record are at 115200 baud. That is not a simultaneous
+  six-port 1 Mbaud full-duplex saturation result.
+- No entry is marked `release qualification`.
+
+Do not promote a draft from these records until both packaged board images have
+a qualification entry.
+
 ## 2026-09-22T17:59:53+00:00 - pico - Hardware Test
 
 **Result:** `PASS`

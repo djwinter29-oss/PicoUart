@@ -19,9 +19,13 @@ bitloop:
 
 ; CTS is active-low. Wait only at the frame boundary so a CTS transition can
 ; defer the next byte without truncating the one already on the wire.
+; When CTS is already granted, the stop bit is still 8 clocks: `pull [6]` is
+; 7 clocks and the following `wait` takes the 8th while side-set stays high.
+; A longer wait extends idle-high until CTS allows the next frame. Do not
+; change `[6]` to `[7]` or the granted-CTS stop bit becomes 9 clocks.
 .wrap_target
-    pull        side 1 [6] ; Hold the completed frame's stop bit high.
-    wait 0 pin 0          ; Keep that idle-high level until CTS permits TX.
+    pull        side 1 [6] ; 7 clocks of stop bit; wait supplies the 8th.
+    wait 0 pin 0          ; Keep idle-high until CTS permits TX.
     set x, 7    side 0 [7]
 bitloop_cts:
     out pins, 1

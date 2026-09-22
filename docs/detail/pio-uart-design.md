@@ -90,9 +90,12 @@ for deeper queues:
 | DMA start threshold | 64 bytes | Minimum TX backlog before DMA is preferred. |
 | DMA max transfer | 256 bytes | Bound one DMA launch so a port cannot monopolize the worker. |
 
-If the backend cannot claim or use TX DMA, FIFO polling continues to make
-progress. While TX DMA is active, it owns exactly `tx_dma_bytes_in_flight` bytes
-from the TX ring; those bytes are committed only after DMA completion.
+Each initialized PIO port claims its TX DMA channel once during init and holds
+that channel until deinit. A launch reuses the claimed channel; it does not
+claim or release a channel per transfer. If that launch does not start, the
+same sweep drains the FIFO instead. While TX DMA is active, it owns exactly
+`tx_dma_bytes_in_flight` bytes from the TX ring; those bytes are committed only
+after DMA completion. The channel stays claimed.
 
 ```mermaid
 flowchart TD
@@ -120,7 +123,7 @@ PIO RTS/CTS support is opt-in through board pin flags:
 | Flag | Behavior |
 | --- | --- |
 | `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL` | Drives the configured active-low RTS pin from RX-ring occupancy. |
-| `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL` | Gates TX frame starts on the configured active-low CTS pin. |
+| `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL` | Gates TX frame starts on the configured active-low CTS pin. The CTS program holds the stop bit for 7 PIO clocks and lets the following `wait` supply the 8th clock when CTS is already granted. |
 | `PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP` | Enables a pull-up on the RX pin during backend init. |
 | `PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH` | Requires idle-high RX before applying a deferred baud change. |
 
@@ -187,8 +190,9 @@ Relevant host-visible signals:
 - PIO baud rates must be representable by the PIO clock divider and are rejected
   fail-fast otherwise.
 - TX DMA thresholds are static defaults, not adaptive to live load.
-- Worker-loop round-robin improves fairness, but there is no explicit TX
-  scheduler across the four PIO ports.
+- Each worker step services every port. Deferred control and backend polling
+  start on the same port in that step. The shared start index advances once,
+  after the I/O sweep. There is no separate TX priority scheduler.
 - Sustained multi-port 1 Mbaud remains bounded by USB full-speed aggregate
   bandwidth and host drain rate.
 

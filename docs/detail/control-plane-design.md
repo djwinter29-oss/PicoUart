@@ -14,7 +14,7 @@ The control plane covers:
 
 - CDC `SET_LINE_CODING` callbacks
 - soft-pending requests waiting for the worker mailbox
-- the single-slot core 0 to core 1 mailbox
+- one core 0 to core 1 mailbox slot per UART port
 - deferred worker-side line-coding changes
 - `CONTROL_PENDING` and `CONTROL_ERROR` HID health bits
 - TX ingress blocking while a UART format may change
@@ -28,7 +28,7 @@ It does not carry UART bytes; byte traffic remains on the RX/TX rings.
 | --- | --- | --- |
 | TinyUSB CDC callback | core 0 | Parses host line-coding requests and accepts/rejects obvious cases. |
 | CDC soft-pending state | core 0 | Holds one per-port request while the worker mailbox is busy. |
-| UART control mailbox | shared | Carries one request at a time from core 0 to core 1. |
+| UART control mailbox | shared | Carries one request per port from core 0 to core 1. |
 | UART worker | core 1 | Waits for a safe backend boundary and applies/rejects the change. |
 | HID status | core 0 reads shared flags | Reports pending/error state to the host. |
 
@@ -53,7 +53,7 @@ It does not carry UART bytes; byte traffic remains on the RX/TX rings.
 sequenceDiagram
   participant Host
   participant USB as "CDC / core 0"
-  participant Mailbox as "Single-slot mailbox"
+  participant Mailbox as "Per-port mailbox"
   participant Worker as "UART worker / core 1"
   participant Backend as "UART backend"
   participant HID as "HID status"
@@ -81,7 +81,7 @@ watch HID health bit 2 (`control_error`) and bit 3 (`control_pending`).
 | Owner | Meaning |
 | --- | --- |
 | Soft-pending | Core 0 accepted a valid host request but has not published it to the mailbox. |
-| Mailbox-pending | The single mailbox slot contains a request for this port. |
+| Mailbox-pending | That port's mailbox slot contains a request. |
 | Worker-pending | Core 1 accepted the request and is waiting for a safe backend boundary. |
 
 TX ingress from USB to that UART is blocked while any owner exists. This keeps
@@ -120,7 +120,8 @@ erase the newer error.
 Two time windows prevent indefinite stalls:
 
 - CDC soft-pending timeout: core 0 reports `CONTROL_ERROR` if a request cannot
-  enter the worker mailbox within 1 second.
+  enter that port's worker mailbox within 1 second. Another port's busy slot
+  does not consume this window.
 - Worker apply timeout: core 1 reports failure if a backend cannot reach a safe
   apply boundary within 1 second.
 
@@ -168,6 +169,7 @@ Host unit tests cover the pure ownership rules in `ownership.h` and
 - deadline refresh policy for identical versus replacement requests
 - nil-deadline cancellation after reset
 - mailbox sequence wrap behavior
+- independent per-port mailbox slots
 - stale completion generation checks
 - TX blocking while any control owner is active
 

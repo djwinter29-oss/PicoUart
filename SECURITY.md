@@ -39,7 +39,8 @@ build that enables it.
 Mitigations:
 
 - Keep the default `PICO_UART_ALLOW_HID_RESET=0` for shared or production hosts.
-- Prefer udev/`dialout` ACLs that limit HID access when reset is enabled.
+- Limit access to the HID `hidraw` node when reset is enabled. CDC `ttyACM`
+  nodes are typically in the `dialout` group; that group does not cover HID.
 
 ## Reporting issues
 

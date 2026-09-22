@@ -1,6 +1,11 @@
 /**
  * @file uart_board.c
  * @brief PicoUart board-specific UART pin and peripheral mapping.
+ *
+ * Each port below claims one RX DMA channel and one TX DMA channel at init and
+ * holds both until deinit. Six ports therefore take 12 channels. RP2040 has
+ * exactly 12 DMA channels, so this map leaves none spare on Pico. RP2350 has
+ * 16. Hardware flow control stays off unless a port sets its enable flag.
  */
 
 #include "board/uart_board.h"

@@ -88,27 +88,31 @@ the public `uart_driver_*` facade.
 
 - TinyUSB is serviced from one execution context on core 0.
 - UART hardware service and line-coding changes run on core 1.
-- Core-to-core data movement uses per-port RX/TX rings and a small control
-  mailbox.
+- Core-to-core data movement uses per-port RX/TX rings and one control-mailbox
+  slot per UART port.
 - Hardware UARTs support the wider CDC line-coding set; PIO UARTs are 8N1-only
   and reject unsupported formats through HID `control_error` status.
 - Flow control pins are assigned but disabled by default. See
   [UART Pinout and Wiring](uart-pinout.md) for pin ownership.
+- Init claims one RX and one TX DMA channel for each of the six ports and holds
+  them until deinit. That is all 12 RP2040 DMA channels. RP2350 has 16, so a
+  Pico 2 build has four channels spare.
 - HID reset is disabled by default and only compiled into trusted lab builds.
 - The watchdog is petted from the USB poll loop only while the UART worker
   heartbeat is fresh.
 
 ## Line-Coding Control Flow
 
-Line-coding changes use a single-slot mailbox and three ownership states. The
-`CONTROL_PENDING` status bit remains asserted across those states, so TX
-ingress cannot slip through the mailbox-to-worker handoff.
+Line-coding changes use one mailbox slot per UART port and three ownership
+states. A request waiting in one port's slot does not block another port from
+publishing. The `CONTROL_PENDING` status bit remains asserted across those
+states, so TX ingress cannot slip through the mailbox-to-worker handoff.
 
 ```mermaid
 sequenceDiagram
     participant Host
     participant USB as "TinyUSB / core 0"
-    participant Mailbox as "control/mailbox"
+    participant Mailbox as "per-port control mailbox"
     participant Worker as "UART worker / core 1"
     participant Backend as "HW or PIO backend"
     participant HID as "HID status"

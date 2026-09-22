@@ -19,8 +19,8 @@
  */
 typedef enum {
     UART_PIO_TX_KEEP_DMA = 0, /**< TX DMA is still active; do not touch the FIFO. */
-    UART_PIO_TX_START_DMA, /**< Backlog crossed the DMA threshold; claim and launch. */
-    UART_PIO_TX_DRAIN_FIFO, /**< Short queue, or DMA claim failed; fill the TX FIFO. */
+    UART_PIO_TX_START_DMA, /**< Backlog crossed the DMA threshold; launch the persistent TX channel. */
+    UART_PIO_TX_DRAIN_FIFO, /**< Short queue, or the persistent TX launch did not start; fill the TX FIFO. */
 } uart_pio_tx_action_t;
 
 /**
@@ -115,8 +115,9 @@ static inline bool uart_rx_dma_irq_should_rearm(bool owner_present,
  * @param tx_dma_active True when a TX DMA transfer still owns a ring span.
  * @param occupancy TX ring occupancy in bytes.
  * @param dma_threshold Occupancy that prefers DMA over FIFO polling.
- * @return The next TX action. @ref UART_PIO_TX_START_DMA may still fall back to
- * FIFO drain when no DMA channel is available.
+ * @return The next TX action. @ref UART_PIO_TX_START_DMA falls back to FIFO
+ * drain when the persistent TX channel cannot start a transfer. Channels are
+ * claimed at init, not on each launch.
  */
 static inline uart_pio_tx_action_t uart_pio_tx_action(bool tx_dma_active,
                                                       size_t occupancy,

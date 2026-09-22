@@ -95,7 +95,7 @@ flowchart LR
 
 Core 0 owns TinyUSB and the ring-side bridge operations. Core 1 owns backend
 polling, DMA/PIO service, and deferred line-coding application. The two cores
-share aligned ring cursors, a single-slot control mailbox, status flags, and
+share aligned ring cursors, one control-mailbox slot per port, status flags, and
 stats sequence counters using Pico SDK barriers and locks where required.
 
 ## Per-Port Data Flow

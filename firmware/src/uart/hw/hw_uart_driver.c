@@ -34,13 +34,18 @@ static hw_uart_driver_t *hw_uart_driver_rx_irq_owners[NUM_DMA_CHANNELS];
 /** @brief True after the shared DMA IRQ0 handler has been installed once. */
 static bool hw_uart_driver_rx_dma_irq_installed;
 
-static void hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
+static bool hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
 {
     uint32_t actual_rate;
 
-    hard_assert(hw_uart_baud_rate_supported(driver->config.baud_rate,
-                                             clock_get_hz(clk_peri),
-                                             &actual_rate));
+    if ((driver == NULL) ||
+        !hw_uart_baud_rate_supported(driver->config.baud_rate,
+                                     clock_get_hz(clk_peri),
+                                     &actual_rate)) {
+        return false;
+    }
+
+    (void)actual_rate;
     driver->config.baud_rate = uart_init(driver->config.instance, driver->config.baud_rate);
     uart_set_hw_flow(driver->config.instance,
                      driver->config.hardware_flow_control,
@@ -50,6 +55,7 @@ static void hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
                     driver->config.stop_bits,
                     driver->config.parity);
     uart_set_fifo_enabled(driver->config.instance, true);
+    return true;
 }
 
 static void hw_uart_driver_configure_rts(hw_uart_driver_t *driver)
@@ -501,7 +507,16 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver)
         /* CTS is active-low; pull-down keeps TX flowing when the peer omits CTS. */
         gpio_pull_down(driver->config.cts_pin);
     }
-    hw_uart_driver_configure_uart(driver);
+    if (!hw_uart_driver_configure_uart(driver)) {
+        hw_uart_driver_release_dma(driver);
+        gpio_set_function(driver->config.tx_pin, GPIO_FUNC_NULL);
+        gpio_set_function(driver->config.rx_pin, GPIO_FUNC_NULL);
+        if (driver->config.hardware_flow_control) {
+            gpio_set_function(driver->config.cts_pin, GPIO_FUNC_NULL);
+            gpio_disable_pulls(driver->config.cts_pin);
+        }
+        return false;
+    }
     hw_uart_driver_configure_rts(driver);
     hw_uart_driver_start_rx_dma(driver);
 
@@ -583,12 +598,42 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
         restore_interrupts(interrupt_status);
     }
 
+    uint32_t previous_baud_rate = driver->config.baud_rate;
+    uint8_t previous_data_bits = driver->config.data_bits;
+    uint8_t previous_stop_bits = driver->config.stop_bits;
+    uart_parity_t previous_parity = driver->config.parity;
+
     driver->config.baud_rate = actual_rate;
     driver->config.data_bits = data_bits;
     driver->config.stop_bits = stop_bits;
     driver->config.parity = parity;
 
-    hw_uart_driver_configure_uart(driver);
+    if (!hw_uart_driver_configure_uart(driver)) {
+        driver->config.baud_rate = previous_baud_rate;
+        driver->config.data_bits = previous_data_bits;
+        driver->config.stop_bits = previous_stop_bits;
+        driver->config.parity = previous_parity;
+        if (hw_uart_driver_configure_uart(driver)) {
+            hw_uart_driver_configure_rts(driver);
+            uart_get_hw(driver->config.instance)->rsr = 0u;
+            hw_uart_driver_start_rx_dma(driver);
+            return false;
+        }
+
+        /* Both the new format and the previous format failed after uart_deinit.
+         * Drop the port so poll does not touch a stopped PL011. */
+        hw_uart_driver_release_dma(driver);
+        gpio_set_function(driver->config.tx_pin, GPIO_FUNC_NULL);
+        gpio_set_function(driver->config.rx_pin, GPIO_FUNC_NULL);
+        if (driver->config.hardware_flow_control) {
+            gpio_set_function(driver->config.rts_pin, GPIO_FUNC_NULL);
+            gpio_set_function(driver->config.cts_pin, GPIO_FUNC_NULL);
+            gpio_disable_pulls(driver->config.cts_pin);
+        }
+        driver->initialized = false;
+        return false;
+    }
+
     hw_uart_driver_configure_rts(driver);
     uart_get_hw(driver->config.instance)->rsr = 0u;
     hw_uart_driver_start_rx_dma(driver);
