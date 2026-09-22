@@ -5,7 +5,7 @@
 
 #include "usb/usb_cdc.h"
 
-#include "config/config.h"
+#include "config/capacity_config.h"
 #include "uart/line_coding.h"
 #include "uart/uart_driver.h"
 #include "usb/cdc_soft_pending.h"

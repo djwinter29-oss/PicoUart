@@ -68,7 +68,7 @@ for the release HIL and OpenOCD recovery gates.
 
 ## Configuration
 
-Shared fixed capacities are defined in [src/config/config.h](src/config/config.h).
+Shared fixed capacities are defined in [src/config/capacity_config.h](src/config/capacity_config.h).
 This includes USB control and CDC endpoint capacities, CDC FIFOs, HID endpoint
 capacity, and the hardware/PIO UART ring capacities. TinyUSB-specific mappings
 remain in [src/config/tusb_config.h](src/config/tusb_config.h).

@@ -6,7 +6,7 @@
 #ifndef PIO_UART_DRIVER_INTERNAL_H
 #define PIO_UART_DRIVER_INTERNAL_H
 
-#include "uart/pio/driver.h"
+#include "uart/pio/pio_uart_driver.h"
 #include "uart/ring_buffer/ring_buffer.h"
 
 #include <stddef.h>

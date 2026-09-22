@@ -6,7 +6,7 @@ hardware-in-the-loop test fixture is documented separately in
 [Self-Test Setup](tests/self-test-setup.md).
 
 The firmware source of truth for this pinout is
-`firmware/src/config/uart_board.c`.
+`firmware/src/board/uart_board.c`.
 
 ## Port Map
 
@@ -28,7 +28,7 @@ assignments, but they are not active in the default firmware configuration.
 
 - Hardware UART0 and UART1 leave RTS/CTS disabled by default
   (`hardware_flow_control = false`). Their RTS/CTS pins are not muxed unless
-  flow control is explicitly enabled in `uart_board.c`.
+  flow control is explicitly enabled in `firmware/src/board/uart_board.c`.
 - PIO UART RTS/CTS pins are assigned but not claimed by default. PIO RX RTS is
   claimed only when `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL` is enabled. CTS
   TX gating is claimed only when `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL` is

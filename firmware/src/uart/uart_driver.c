@@ -5,11 +5,11 @@
 
 #include "uart/uart_driver.h"
 
-#include "config/uart_board.h"
+#include "board/uart_board.h"
 #include "uart/backend_policy.h"
 #include "uart/control_pending.h"
 #include "uart/hw/baud_rate.h"
-#include "uart/hw/driver.h"
+#include "uart/hw/hw_uart_driver.h"
 #include "uart/line_coding.h"
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"

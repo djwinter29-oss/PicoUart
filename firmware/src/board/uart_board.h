@@ -1,13 +1,17 @@
 /**
  * @file uart_board.h
  * @brief Board-specific logical UART port mapping.
+ *
+ * The table declared here is defined by @ref uart_board.c and is the single
+ * source of truth for logical-port backend, peripheral, pin, and startup-rate
+ * assignments.
  */
 
 #ifndef PICO_UART_BOARD_H
 #define PICO_UART_BOARD_H
 
-#include "uart/hw/driver.h"
-#include "uart/pio/driver.h"
+#include "uart/hw/hw_uart_driver.h"
+#include "uart/pio/pio_uart_driver.h"
 #include "uart/uart_driver.h"
 
 /** @brief Startup line rate assigned to every logical UART port. */

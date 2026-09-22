@@ -1,12 +1,12 @@
 /**
- * @file driver.h
+ * @file pio_uart_driver.h
  * @brief PIO UART backend for PicoUart logical UART ports.
  */
 
 #ifndef PIO_UART_DRIVER_H
 #define PIO_UART_DRIVER_H
 
-#include "config/config.h"
+#include "config/capacity_config.h"
 #include "hardware/pio.h"
 
 #include <stdbool.h>

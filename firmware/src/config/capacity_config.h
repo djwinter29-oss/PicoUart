@@ -1,10 +1,14 @@
 /**
- * @file config.h
+ * @file capacity_config.h
  * @brief Shared fixed-capacity configuration for PicoUart firmware.
+ *
+ * These values define statically allocated USB and UART storage as well as
+ * bounded per-poll transfer work. Changes affect memory usage, DMA ring
+ * geometry, or transport latency and must preserve the assertions below.
  */
 
-#ifndef PICO_UART_CONFIG_H
-#define PICO_UART_CONFIG_H
+#ifndef PICO_UART_CAPACITY_CONFIG_H
+#define PICO_UART_CAPACITY_CONFIG_H
 
 /** @brief USB control endpoint transfer capacity in bytes. */
 #define PICO_UART_USB_CONTROL_ENDPOINT_BUFFER_SIZE 64u

@@ -116,7 +116,7 @@ ring.
 
 ### Recommended Buffer Shape
 
-Per port (current firmware defaults in `firmware/src/config/config.h`):
+Per port (current firmware defaults in `firmware/src/config/capacity_config.h`):
 
 - RX ring: 4096 bytes
 - TX ring: 4096 bytes
@@ -437,8 +437,8 @@ Place the implementation under `firmware/src/uart/ring_buffer`.
 
 Expected usage:
 
-- `firmware/src/uart/hw/driver.c` uses RX and TX ring helpers for hardware UART DMA paths
-- `firmware/src/uart/pio/driver.c` uses the same helpers for PIO UART DMA paths
+- `firmware/src/uart/hw/hw_uart_driver.c` uses RX and TX ring helpers for hardware UART DMA paths
+- `firmware/src/uart/pio/pio_uart_driver.c` uses the same helpers for PIO UART DMA paths
 - `firmware/src/usb/usb_cdc.c` reads from and writes to rings through the bridge layer
 
 ## Alternative Considered: Shared Memory Pool

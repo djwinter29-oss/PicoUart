@@ -5,7 +5,7 @@
 
 #include "usb/usb_hid.h"
 
-#include "config/config.h"
+#include "config/capacity_config.h"
 #include "driver/led.h"
 #include "driver/system.h"
 #include "driver/temperature.h"

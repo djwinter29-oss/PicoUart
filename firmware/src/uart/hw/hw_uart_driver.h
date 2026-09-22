@@ -1,12 +1,12 @@
 /**
- * @file driver.h
+ * @file hw_uart_driver.h
  * @brief Hardware UART backend for PicoUart logical UART ports.
  */
 
 #ifndef HW_UART_DRIVER_H
 #define HW_UART_DRIVER_H
 
-#include "config/config.h"
+#include "config/capacity_config.h"
 #include "hardware/uart.h"
 #include "uart/ring_buffer/ring_buffer.h"
 

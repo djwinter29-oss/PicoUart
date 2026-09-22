@@ -58,16 +58,16 @@ endif()
 add_executable(pico_uart)
 
 target_sources(pico_uart PRIVATE
-    src/config/uart_board.c
+    src/board/uart_board.c
     src/driver/led.c
     src/driver/system.c
     src/driver/temperature.c
     src/main.c
     src/uart/hw/dma_claim.c
     src/uart/hw/dma_claim_ops.c
-    src/uart/hw/driver.c
+    src/uart/hw/hw_uart_driver.c
     src/uart/line_coding.c
-    src/uart/pio/driver.c
+    src/uart/pio/pio_uart_driver.c
     src/uart/pio/resource_claim.c
     src/uart/pio/resource_claim_ops.c
     src/uart/ring_buffer/ring_buffer.c
@@ -82,7 +82,6 @@ pico_generate_pio_header(pico_uart ${CMAKE_CURRENT_LIST_DIR}/src/uart/pio/uart.p
 
 target_include_directories(pico_uart PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
-    ${CMAKE_CURRENT_LIST_DIR}/src/config
 )
 
 target_link_libraries(pico_uart

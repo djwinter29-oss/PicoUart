@@ -107,7 +107,7 @@ Run optional tests only when the release notes claim the behavior:
 - CDC-hold / RX flood backpressure (`--flood-seconds` /
   `--hold-cdc-seconds`).
 - Hardware RTS/CTS after enabling `hardware_flow_control` in
-  `firmware/src/config/uart_board.c`.
+   `firmware/src/board/uart_board.c`.
 - PIO RTS/CTS after enabling the selected PIO flow-control pin flags and running
   CTS hold/release plus RTS backpressure checks.
 

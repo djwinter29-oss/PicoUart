@@ -3,7 +3,7 @@
  * @brief PicoUart board-specific UART pin and peripheral mapping.
  */
 
-#include "config/uart_board.h"
+#include "board/uart_board.h"
 
 const uart_board_port_config_t uart_board_ports[UART_PORT_COUNT] = {
     {
