@@ -50,6 +50,9 @@ build has none spare: another DMA user fails init. RP2350 has 16 channels.
 An unsupported baud in `hw_uart_driver_configure_uart()` returns false. Init
 releases the port's DMA channels. A runtime line-format apply that fails after
 the peripheral was stopped restores the previous format instead of panicking.
+If that restore also fails, the driver releases the port's DMA channels, marks
+the backend uninitialized, and the control plane sets `INIT_FAILED` immediately
+so later polls skip the stopped peripheral.
 
 ## RX Path
 

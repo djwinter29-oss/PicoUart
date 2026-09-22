@@ -27,7 +27,7 @@ typedef struct {
     bool soft_pending_controls[UART_PORT_COUNT]; /**< Core-0 mailbox wait state. */
     uint32_t control_generations[UART_PORT_COUNT]; /**< Latest host generation per port. */
     volatile uint32_t stats_sequence[UART_PORT_COUNT]; /**< Coherent stats snapshot sequence. */
-    size_t poll_start_index; /**< First port in the next worker control sweep. */
+    size_t poll_start_index; /**< First port of the next worker step (control and I/O). */
     uart_control_plane_t control_plane; /**< Worker-side deferred control context. */
     uart_port_api_t port_api; /**< Public port facade context. */
 } uart_driver_state_t;

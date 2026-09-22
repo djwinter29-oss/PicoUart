@@ -190,9 +190,9 @@ Relevant host-visible signals:
 - PIO baud rates must be representable by the PIO clock divider and are rejected
   fail-fast otherwise.
 - TX DMA thresholds are static defaults, not adaptive to live load.
-- Each worker step services every port. The first port rotates, for both
-  deferred control and backend polling. There is no separate TX priority
-  scheduler.
+- Each worker step services every port. Deferred control and backend polling
+  start on the same port in that step. The shared start index advances once,
+  after the I/O sweep. There is no separate TX priority scheduler.
 - Sustained multi-port 1 Mbaud remains bounded by USB full-speed aggregate
   bandwidth and host drain rate.
 

@@ -125,6 +125,23 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
 
     applied = port->ops->set_line_coding(&port->backend, &pending_control->line_coding);
     if (!applied) {
+        bool backend_stopped = (port->ops->is_initialized != NULL) &&
+                               !port->ops->is_initialized(&port->backend);
+
+        if (backend_stopped) {
+            uint32_t save = spin_lock_blocking(control_plane->status_lock);
+
+            control_plane->status_flags[port_id] |= UART_DRIVER_PORT_STATUS_INIT_FAILED;
+            control_plane->status_flags[port_id] &=
+                (uint8_t)~UART_DRIVER_PORT_STATUS_READY;
+            spin_unlock(control_plane->status_lock, save);
+            uart_control_plane_finish_worker_control(control_plane,
+                                                      port_id,
+                                                      pending_control->control_generation,
+                                                      false);
+            return;
+        }
+
         if (time_reached(pending_control->deadline)) {
             uart_control_plane_finish_worker_control(control_plane,
                                                       port_id,
@@ -154,8 +171,8 @@ static void uart_control_plane_set_line_coding(uart_control_plane_t *control_pla
     bool was_pending;
     bool same_request;
 
-    /* The mailbox is private, but reject malformed future control requests
-     * after acknowledging them so one bad payload cannot occupy the slot. */
+    /* The service loop rejects a payload whose port_id does not match its slot
+     * before calling here, and clears that slot's pending state. */
     if (port_id >= UART_PORT_COUNT) {
         return;
     }
@@ -223,9 +240,19 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
         size_t index = (*control_plane->poll_start_index + offset) % UART_PORT_COUNT;
         uart_control_mailbox_request_t request;
 
-        if (uart_control_mailbox_take(&control_plane->mailboxes[index], &request)) {
-            uart_control_plane_set_line_coding(control_plane, &request);
+        if (!uart_control_mailbox_take(&control_plane->mailboxes[index], &request)) {
+            continue;
         }
+
+        if (request.port_id != (uint32_t)index) {
+            uart_control_plane_finish_mailbox_control(control_plane,
+                                                      (uart_port_id_t)index,
+                                                      request.control_generation,
+                                                      false);
+            continue;
+        }
+
+        uart_control_plane_set_line_coding(control_plane, &request);
     }
 
     for (size_t offset = 0u; offset < UART_PORT_COUNT; ++offset) {
@@ -238,7 +265,8 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
         control_plane->stats_sequence[index] += 1u;
     }
 
-    *control_plane->poll_start_index = (*control_plane->poll_start_index + 1u) % UART_PORT_COUNT;
+    /* uart_driver_poll_io() advances poll_start_index after this sweep so the
+     * next worker step starts control and I/O on the same port. */
 }
 
 bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane,

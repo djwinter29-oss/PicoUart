@@ -202,6 +202,11 @@ static void uart_driver_poll_io(void)
             uart_driver_end_port_stats_update((uart_port_id_t)index);
         }
     }
+
+    /* Paired with uart_control_plane_service(), which walked this same index
+     * and left it unchanged. Advance once for the next worker step. */
+    uart_driver_state.poll_start_index =
+        (uart_driver_state.poll_start_index + 1u) % UART_PORT_COUNT;
 }
 
 bool uart_driver_init(void)

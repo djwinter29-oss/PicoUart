@@ -617,7 +617,20 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
             hw_uart_driver_configure_rts(driver);
             uart_get_hw(driver->config.instance)->rsr = 0u;
             hw_uart_driver_start_rx_dma(driver);
+            return false;
         }
+
+        /* Both the new format and the previous format failed after uart_deinit.
+         * Drop the port so poll does not touch a stopped PL011. */
+        hw_uart_driver_release_dma(driver);
+        gpio_set_function(driver->config.tx_pin, GPIO_FUNC_NULL);
+        gpio_set_function(driver->config.rx_pin, GPIO_FUNC_NULL);
+        if (driver->config.hardware_flow_control) {
+            gpio_set_function(driver->config.rts_pin, GPIO_FUNC_NULL);
+            gpio_set_function(driver->config.cts_pin, GPIO_FUNC_NULL);
+            gpio_disable_pulls(driver->config.cts_pin);
+        }
+        driver->initialized = false;
         return false;
     }
 
