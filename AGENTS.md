@@ -2,11 +2,14 @@
 
 ## Cursor Cloud specific instructions
 
-PicoUart is embedded firmware (no long-running servers or databases). The "application"
-is the RP2040/RP2350 firmware, and end-to-end product validation requires **physical
-hardware** (a Pico board + Raspberry Pi Debug Probe + jumper wires) that is **not present
-in the cloud VM**. What can be done here is building the firmware and running the host
-tooling.
+PicoUart is embedded firmware. The "application" is the RP2040/RP2350 firmware,
+not a server or database. Use [README.md](README.md) as the documentation index;
+do not duplicate build, test, wiring, release, or USB-interface details here.
+
+End-to-end validation requires physical hardware (Pico/Pico 2, Raspberry Pi
+Debug Probe, USB cable, and jumper-wire fixture) that is not present in the
+cloud VM. In this environment, verify firmware builds, host tooling, host tests,
+and binary USB contracts only.
 
 ### Environment provisioned in the VM snapshot (do not re-add to the update script)
 
@@ -17,7 +20,7 @@ These are installed once and captured in the snapshot:
   selects the gcc-14 toolchain dir. Without `libstdc++-14-dev` the **native host-tool build
   (picotool) fails with `cannot find -lstdc++`** even though `libstdc++-13-dev` is present.
 - Pico SDK 2.3.0 with submodules, cloned into the gitignored `.pico-sdk/` by
-  `tools/setup-sdk-env.sh`. Persisted in the snapshot; the setup script is idempotent
+  `tools/firmware/setup-sdk-env.sh`. Persisted in the snapshot; the setup script is idempotent
   (skips the clone if `.pico-sdk/` already exists).
 
 The update script refreshes Python host dependencies (`requirements.txt` and
@@ -28,23 +31,15 @@ Pico/Pico 2 board, Raspberry Pi Debug Probe, USB cable, and jumper-wire fixture
 and run the documented functional/performance plans locally. Record results in
 `docs/tests/performance-test-results.md`.
 
-Firmware development, flashing, and HIL use the Linux wrappers under
-`tools/`. Native Windows firmware-development wrappers are not supported;
+Firmware development, flashing, and HIL use the Linux wrappers documented in
+[tools/README.md](tools/README.md). Native Windows firmware-development wrappers are not supported;
 Windows users should use WSL2 Ubuntu. The Python host tools remain usable from
 Windows for CDC/HID operation.
 
-### Build / test / run (standard commands live in the scripts; see `.github/skills/pico-uart-board-testing/SKILL.md`)
+### Build / test / run
 
-- Build firmware: `tools/build.sh --board pico` (RP2040) and `--board pico2` (RP2350).
-  Artifacts land in `build/firmware-<board>/pico_uart.{elf,uf2,bin,hex}`.
-- If you build in a shell that hasn't sourced `setup-sdk-env.sh`, `build.sh` still finds
-  `.pico-sdk/` automatically (defaults `PICO_SDK_PATH` to `<repo>/.pico-sdk`).
-- Host unit tests (no board): `tools/test-host.sh` — native C Unity/CTest under
-  `firmware/tests/` plus Python pytest under `host/python/tests/`. See
-  `firmware/tests/README.md`.
-- Combined: `tools/test.sh` builds firmware (unless `--skip-build`) then runs host tests.
-- Host HID tool: `python3 host/python/src/pico_uart_hid.py {monitor,temperature,version,toggle-led,reset}`.
-- Serial bridge/stress tests: `tools/serial_bridge_test.py`, `serial_stress_benchmark.py`.
+Canonical commands live in [README.md](README.md). Hardware/HIL workflow details
+live in [docs/tests](docs/tests) and [docs/releasing.md](docs/releasing.md).
 
 ### Expected without hardware
 
@@ -56,20 +51,8 @@ best available end-to-end check here.
 
 ### Non-obvious firmware caveats
 
-- CDC `SET_LINE_CODING` can succeed at the USB layer while firmware rejects the request
-  (especially PIO non-8N1 or out-of-range PIO baud). Watch HID health bit 2
-  (`control_error`) / use `pico_uart_hid.py monitor`. See `docs/hid-monitor.md`.
-- HID `reset` is arm-then-reset (`command 3` then `2` within 2 s).
-- HID status input layout is **v15** (63-byte payload) so Report ID + payload fit
-  one full-speed interrupt packet; older host tools expecting 64-byte/`PU` headers
-  need updating.
-- Tag releases open as **draft**; promote only after `docs/releasing.md` gates.
-- Host unit tests: `tools/test-host.sh`. Host coverage: `tools/coverage.sh`.
-- Each CDC/UART can be set to 1 Mbaud; PIO RX is DMA-backed. Sustained multi-port 1 Mbaud
-  full-duplex is still limited by USB full-speed aggregate bandwidth.
-- Flashing requires a current OpenOCD CMSIS-DAP build. If loading reaches SWD
-  target detection but reports `Unknown flash device`, update OpenOCD and retry
-  at `--adapter-speed-khz 1000`; flash ID `0x00154068` is Boya BY25Q16ES and
-  needs an OpenOCD build with that flash-table entry. Use `--openocd-exe` to
-  select a current upstream binary and classify the result as a tooling or
-  flash-support issue until the loader succeeds.
+- CDC/HID ownership and report contracts: [docs/usb/cdc-hid-overview.md](docs/usb/cdc-hid-overview.md)
+  and [docs/usb/hid-report-reference.md](docs/usb/hid-report-reference.md).
+- Control-plane lifecycle and `CONTROL_ERROR` / `CONTROL_PENDING` behavior:
+  [docs/detail/control-plane-design.md](docs/detail/control-plane-design.md).
+- Release and OpenOCD/HIL gates: [docs/releasing.md](docs/releasing.md).

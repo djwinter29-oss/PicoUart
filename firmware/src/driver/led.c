@@ -14,11 +14,9 @@ static led_policy_state_t led_state;
 /** @brief Apply the current merged state to the physical LED GPIO, if present. */
 static void led_apply(void)
 {
-    bool on = led_policy_output(&led_state);
 #ifdef PICO_DEFAULT_LED_PIN
+    bool on = led_policy_output(&led_state);
     gpio_put(PICO_DEFAULT_LED_PIN, on ? 1 : 0);
-#else
-    (void)on;
 #endif
 }
 

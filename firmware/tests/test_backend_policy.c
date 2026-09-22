@@ -4,7 +4,7 @@
  */
 
 #include "unity.h"
-#include "uart/backend_policy.h"
+#include "uart/backend/policy.h"
 #include "uart/worker_health.h"
 
 void setUp(void)

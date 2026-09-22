@@ -17,130 +17,143 @@ target_include_directories(unity PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/unity
 )
 
-add_executable(test_ring_buffer
+set(PICO_UART_HOST_TEST_TARGETS)
+
+function(pico_uart_add_unity_test target test_name)
+    add_executable(${target} ${ARGN})
+    target_include_directories(${target} PRIVATE
+        ${FIRMWARE_ROOT}/src
+    )
+    target_link_libraries(${target} PRIVATE unity)
+    add_test(NAME ${test_name} COMMAND ${target})
+    list(APPEND PICO_UART_HOST_TEST_TARGETS ${target})
+    set(PICO_UART_HOST_TEST_TARGETS ${PICO_UART_HOST_TEST_TARGETS} PARENT_SCOPE)
+endfunction()
+
+pico_uart_add_unity_test(test_ring_buffer ring_buffer
     test_ring_buffer.c
     ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
 )
 target_include_directories(test_ring_buffer PRIVATE
-    ${FIRMWARE_ROOT}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
 )
-target_link_libraries(test_ring_buffer PRIVATE unity)
-add_test(NAME ring_buffer COMMAND test_ring_buffer)
 
-add_executable(test_line_coding
+pico_uart_add_unity_test(test_bridge bridge
+    test_bridge.c
+    ${FIRMWARE_ROOT}/src/uart/bridge.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
+)
+target_include_directories(test_bridge PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+
+pico_uart_add_unity_test(test_worker worker
+    test_worker.c
+    ${FIRMWARE_ROOT}/src/uart/worker.c
+)
+target_include_directories(test_worker PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+
+pico_uart_add_unity_test(test_control_mailbox mailbox
+    test_control_mailbox.c
+    ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
+)
+target_include_directories(test_control_mailbox PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+
+pico_uart_add_unity_test(test_control_plane plane
+    test_control_plane.c
+    ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
+    ${FIRMWARE_ROOT}/src/uart/control/plane.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+)
+target_include_directories(test_control_plane PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+
+pico_uart_add_unity_test(test_line_coding line_coding
     test_line_coding.c
     ${FIRMWARE_ROOT}/src/uart/line_coding.c
 )
-target_include_directories(test_line_coding PRIVATE
-    ${FIRMWARE_ROOT}/src
-)
-target_link_libraries(test_line_coding PRIVATE unity)
-add_test(NAME line_coding COMMAND test_line_coding)
 
-add_executable(test_dma_progress
+pico_uart_add_unity_test(test_dma_progress dma_progress
     test_dma_progress.c
 )
-target_include_directories(test_dma_progress PRIVATE
-    ${FIRMWARE_ROOT}/src
-)
-target_link_libraries(test_dma_progress PRIVATE unity)
-add_test(NAME dma_progress COMMAND test_dma_progress)
 
-add_executable(test_txstall_wait
+pico_uart_add_unity_test(test_txstall_wait txstall_wait
     test_txstall_wait.c
 )
-target_include_directories(test_txstall_wait PRIVATE
-    ${FIRMWARE_ROOT}/src
-)
-target_link_libraries(test_txstall_wait PRIVATE unity)
-add_test(NAME txstall_wait COMMAND test_txstall_wait)
 
-add_executable(test_cdc_soft_pending
+pico_uart_add_unity_test(test_cdc_soft_pending cdc_soft_pending
     test_cdc_soft_pending.c
 )
-target_include_directories(test_cdc_soft_pending PRIVATE
-    ${FIRMWARE_ROOT}/src
-)
-target_link_libraries(test_cdc_soft_pending PRIVATE unity)
-add_test(NAME cdc_soft_pending COMMAND test_cdc_soft_pending)
 
-add_executable(test_topology
+pico_uart_add_unity_test(test_topology topology
     test_topology.c
-    ${FIRMWARE_ROOT}/src/uart/topology.c
+    ${FIRMWARE_ROOT}/src/board/uart_topology.c
 )
-target_include_directories(test_topology PRIVATE
-    ${FIRMWARE_ROOT}/src
-)
-target_link_libraries(test_topology PRIVATE unity)
-add_test(NAME topology COMMAND test_topology)
 
-add_executable(test_backend_policy
+pico_uart_add_unity_test(test_backend_policy backend_policy
     test_backend_policy.c
 )
-target_include_directories(test_backend_policy PRIVATE
-    ${FIRMWARE_ROOT}/src
-)
-target_link_libraries(test_backend_policy PRIVATE unity)
-add_test(NAME backend_policy COMMAND test_backend_policy)
 
-add_executable(test_hw_baud_rate
+pico_uart_add_unity_test(test_backend_contract backend_contract
+    test_backend_contract.c
+)
+target_include_directories(test_backend_contract PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+
+pico_uart_add_unity_test(test_hw_baud_rate hw_baud_rate
     test_hw_baud_rate.c
 )
-target_include_directories(test_hw_baud_rate PRIVATE
-    ${FIRMWARE_ROOT}/src
-)
-target_link_libraries(test_hw_baud_rate PRIVATE unity)
-add_test(NAME hw_baud_rate COMMAND test_hw_baud_rate)
 
-add_executable(test_led_policy
+pico_uart_add_unity_test(test_led_policy led_policy
     test_led_policy.c
 )
-target_include_directories(test_led_policy PRIVATE
-    ${FIRMWARE_ROOT}/src
+
+pico_uart_add_unity_test(test_temperature temperature
+    test_temperature.c
 )
-target_link_libraries(test_led_policy PRIVATE unity)
-add_test(NAME led_policy COMMAND test_led_policy)
 
 # Fault-injection test: HW UART DMA claim/rollback via injectable ops seam.
 # Links the real dma_claim.c (production claim algorithm, no SDK deps) with a
 # fake ops table that controls claim success/failure and logs every call.
-add_executable(test_dma_claim
+pico_uart_add_unity_test(test_dma_claim dma_claim
     test_dma_claim.c
     ${FIRMWARE_ROOT}/src/uart/hw/dma_claim.c
 )
-target_include_directories(test_dma_claim PRIVATE
-    ${FIRMWARE_ROOT}/src
-)
-target_link_libraries(test_dma_claim PRIVATE unity)
-add_test(NAME dma_claim COMMAND test_dma_claim)
 
 # Fault-injection test: PIO state-machine/DMA claim rollback via injectable
 # ops seam. Links the real resource_claim.c algorithm without SDK headers.
-add_executable(test_resource_claim
+pico_uart_add_unity_test(test_resource_claim resource_claim
     test_resource_claim.c
     ${FIRMWARE_ROOT}/src/uart/pio/resource_claim.c
 )
-target_include_directories(test_resource_claim PRIVATE
-    ${FIRMWARE_ROOT}/src
+
+# Public-facade contract test. The real uart_driver.c is linked with host Pico
+# stubs so invalid-port and pre-initialization guards remain testable without
+# pretending to validate physical DMA or multicore startup on the host.
+pico_uart_add_unity_test(test_uart_driver_facade uart_driver_facade
+    test_uart_driver_facade.c
+    ${FIRMWARE_ROOT}/src/uart/uart_driver.c
+    ${FIRMWARE_ROOT}/src/uart/bridge.c
+    ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+    ${FIRMWARE_ROOT}/src/uart/port_api.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
 )
-target_link_libraries(test_resource_claim PRIVATE unity)
-add_test(NAME resource_claim COMMAND test_resource_claim)
+target_include_directories(test_uart_driver_facade PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+)
+target_compile_options(test_uart_driver_facade PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(test_uart_driver_facade PRIVATE -Wl,--gc-sections)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set(_pico_uart_host_warnings -Wall -Wextra -Werror)
-    foreach(_pico_uart_host_target
-            test_ring_buffer
-            test_line_coding
-            test_dma_progress
-            test_txstall_wait
-            test_cdc_soft_pending
-            test_topology
-            test_backend_policy
-            test_hw_baud_rate
-            test_led_policy
-            test_dma_claim
-            test_resource_claim)
+    foreach(_pico_uart_host_target IN LISTS PICO_UART_HOST_TEST_TARGETS)
         target_compile_options(${_pico_uart_host_target} PRIVATE ${_pico_uart_host_warnings})
     endforeach()
 endif()

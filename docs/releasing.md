@@ -1,13 +1,49 @@
 # Releasing PicoUart
 
-Release tags matching `vMAJOR.MINOR.PATCH` (plain semver only) run
-[`.github/workflows/release.yml`](../.github/workflows/release.yml). That
-workflow builds both boards, runs host unit tests, packages UF2/ELF/BIN/HEX plus
-SHA256SUMS, and opens a **draft** GitHub Release. Promote the draft only after
-this checklist passes.
+Release tags matching `vMAJOR.MINOR.PATCH` run
+[`.github/workflows/release.yml`](../.github/workflows/release.yml). The workflow
+builds both board targets, runs host tests, packages UF2/ELF/BIN/HEX plus
+`SHA256SUMS-*`, and opens a **draft** GitHub Release.
 
-Suggested flow: `workflow_dispatch` dry-run → HIL on those artifacts → tag →
-review draft → publish.
+Do not publish the draft until exact-artifact hardware-in-the-loop (HIL) evidence
+passes the gates below.
+
+Suggested flow:
+
+1. Run a `workflow_dispatch` dry-run.
+2. Download those artifacts and run HIL on the exact files.
+3. Tag `vMAJOR.MINOR.PATCH`.
+4. Compare draft artifacts with the HIL hashes.
+5. Publish only after the promote checklist passes.
+
+```mermaid
+flowchart LR
+   Change["Reviewed change"] --> CI["CI: host tests + pico/pico2 builds"]
+   CI --> DryRun["workflow_dispatch\ndraft artifacts"]
+   DryRun --> Hash["Record artifact SHA-256"]
+   Hash --> HIL["HIL on exact packaged images"]
+   HIL --> Results["Record commands, hashes, HID health, results"]
+   Results --> Compare{"Artifact hashes match?"}
+   Compare -->|no| Stop["Keep lab-only\nfix or rerun"]
+   Compare -->|yes| Promote["Promote draft release"]
+```
+
+The release unit is the exact packaged artifact, not a source revision or a
+local rebuild. HIL evidence is valid only when its image hash matches the
+artifact attached to the draft release.
+
+## Release Preflight
+
+Before requesting HIL, confirm:
+
+1. The change is reviewed and the working tree contains no unintended files.
+2. The version is a valid `vMAJOR.MINOR.PATCH` release tag.
+3. Both `pico` and `pico2` firmware artifacts build successfully.
+4. The host suite passes, including the UART facade and backend contract tests.
+5. `git diff --check` passes.
+6. The release notes identify any USB/HID compatibility or behavior changes.
+
+Do not begin physical testing from an uncommitted or locally modified image.
 
 ## USB identity
 
@@ -23,59 +59,123 @@ commercial derivative must obtain its own VID/PID and update
 and [`host/python/src/pico_uart_hid.py`](../host/python/src/pico_uart_hid.py).
 See also [`SECURITY.md`](../SECURITY.md).
 
-## Recorded HIL pass (gate)
+## Release HIL Gates
 
-Cloud / CI builds prove compilation and host unit tests only. Release candidates
-need a recorded hardware-in-the-loop (HIL) pass:
+Use the [Test Documentation Index](tests/README.md) for the complete
+automated-to-HIL test sequence and result semantics.
 
-1. Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md)
-   and [`docs/test-connections.md`](test-connections.md).
-2. Flash the **exact** UF2/ELF attached to the GitHub Release (or the
-   `workflow_dispatch` dry-run artifacts). Do **not** rebuild for release HIL.
-   Record `SHA256SUMS-*` and flash with
-   `tools/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>`.
-   Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached
-   or when USB enumeration tools are unavailable.
-   Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash
-   device` after detecting the SWD target, update OpenOCD and retry with
-   `--adapter-speed-khz 1000` before treating the HIL attempt as a firmware
-   failure. Flash ID `0x00154068` is a Boya BY25Q16ES device; use an OpenOCD
-   build containing that flash-table entry and pass it with `--openocd-exe`.
-   Repeat the full matrix below on **both** packaged board images — RP2350 DMA
-   COUNT behavior differs from RP2040 and must not be skipped.
-3. Run the four staged bridge cases and keep the full console transcript:
-   UART0 Debug Probe, HW UART1↔PIO UART2, PIO UART3↔PIO UART4, and UART5
-   loopback. Install the complete fixed fixture before starting and do not
-   change wiring during the run, as described in `docs/tests/self-test-setup.md`.
-4. Run `serial_stress_benchmark.py` at the default rate sweep (or the rates
-   claimed in the release notes). Pass `--uart1` with `--uart1-peer <uart2>`
-   and `--uart4` with `--uart4-peer <uart3>` when the full staged fixture is
-   connected so the benchmark exercises HW1↔PIO2 and PIO3↔PIO4. Record the
-   command line, board, clock, duration, verified bytes, and every
-   reported stream throughput. A promoted result has no byte mismatch, timeout,
-   `rx_overrun`, `rx_error`, or `control_error` in the captured HID monitor.
-5. Run rapid line-coding changes on both a hardware UART and a PIO UART while
-   the port has queued TX data, while an RX peer is active, and after repeated
-   equivalent requests. Verify the captured old-format TX backlog drains before
-   the change, unsupported/timeout requests raise `CONTROL_ERROR`, and the
-   peer is quiescent before claiming loss-free RX behavior.
-6. Run disconnect/remount, watchdog recovery, DMA wrap/re-arm flood, and the
-   six-port full-duplex saturation matrix on each board image. HIL must record
-   any expected receive loss during a forced format transition.
-7. Optionally run the CDC-hold / RX flood step from the board-testing skill
-   (`--flood-seconds` / `--hold-cdc-seconds`) when advertising ring/DMA
-   backpressure behavior. To claim hardware RTS/CTS, explicitly enable
-   `hardware_flow_control` in `firmware/src/config/uart_board.c` first — the
-   default build leaves HW flow control off.
-   To claim PIO RTS/CTS, enable both PIO flow-control pin flags for a tested
-   port and run the PIO CTS hold/release and RTS backpressure procedure in the
-   board-testing skill.
-8. Attach or link the transcript (and any HID `monitor` snippets showing
-   `control_error` / `rx_overrun` expectations) to the GitHub Release notes or a
-   linked issue. Cloud CI cannot record HIL; a draft without this attachment is
-   lab-only even if USB identity review passed.
+Cloud CI proves builds and host tests only. A publishable release needs recorded
+HIL on both packaged board images:
 
-A release without a recorded HIL pass is lab-only.
+- Raspberry Pi Pico / RP2040 (`pico`)
+- Raspberry Pi Pico 2 / RP2350 (`pico2`)
+
+HIL must use the exact UF2/ELF from the draft release or workflow dry-run. Do
+not rebuild locally for release qualification.
+
+This gate is intentionally manual: the repository has no CI-attached Pico,
+Debug Probe, USB cable, or jumper fixture. Automated workflows must not mark a
+release as physically qualified without linked human-run HIL evidence.
+
+Record all of the following in
+[Performance Test Results](tests/performance-test-results.md) or a linked raw
+transcript:
+
+- board target and physical board used
+- artifact path/name and SHA-256
+- firmware version and commit
+- command lines
+- verified bytes and throughput per link
+- HID health before and after tests
+- expected `control_error`, `rx_overrun`, or receive-loss notes when applicable
+
+A release without this recorded evidence is lab-only.
+
+## Automated Validation Matrix
+
+Run these checks before starting HIL. They validate the host-testable and
+build-time parts of the UART design; they do not replace physical testing.
+
+| Check | Command | Covers |
+| --- | --- | --- |
+| Host suite | `tools/test/test-host.sh` | Ring, bridge, worker, control, policy, claims, and facade tests |
+| Direct host suite | `ctest --test-dir build/host-tests --output-on-failure` | CTest result detail after host configuration |
+| RP2040 firmware | `tools/firmware/build.sh --board pico` | Full firmware compile/link and UF2 outputs |
+| RP2350 firmware | `tools/firmware/build.sh --board pico2` | RP2350 compile/link and platform-specific paths |
+| Patch hygiene | `git diff --check` | Whitespace and patch formatting |
+
+The host suite should include the backend contract test and the real facade
+contract test. Firmware builds must complete for both board targets before HIL
+results are interpreted as firmware behavior rather than a build artifact
+problem.
+
+## Evidence Package
+
+For each board target, keep one evidence bundle containing:
+
+- exact artifact filename and SHA-256
+- board target and physical board identity
+- firmware version and source commit
+- tool versions or environment details when relevant
+- command lines used for flashing and testing
+- functional and performance result summaries
+- HID health before and after the run
+- raw transcript for failures, partial runs, or unusual expected conditions
+
+The result status must distinguish `PASS`, `FAIL`, and `PARTIAL`. A partial
+run is useful diagnostic evidence but cannot qualify a release gate.
+
+## Flashing Release Artifacts
+
+Flash with the packaged ELF/UF2 and skip rebuilding:
+
+```sh
+tools/firmware/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>
+```
+
+Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached or
+when USB enumeration tools are unavailable.
+
+Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash device`
+after detecting the SWD target, update OpenOCD and retry with
+`--adapter-speed-khz 1000` before treating the HIL attempt as firmware failure.
+Flash ID `0x00154068` is a Boya BY25Q16ES device; older OpenOCD builds may need
+an upstream binary selected with `--openocd-exe`.
+
+## Required HIL Matrix
+
+Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md)
+and [Self-Test Setup](tests/self-test-setup.md). Install the complete fixed
+fixture before starting and do not rewire during the run.
+
+Run these gates on both board targets:
+
+1. Four staged bridge cases:
+   - UART0 Debug Probe
+   - HW UART1 to PIO UART2
+   - PIO UART3 to PIO UART4
+   - UART5 loopback
+2. Concurrent performance benchmark using the full staged fixture. Pass
+   `--uart1 --uart1-peer <uart2> --uart4 --uart4-peer <uart3>` so the benchmark
+   exercises HW1 to PIO2 and PIO3 to PIO4.
+3. Rapid line-coding changes on one hardware UART and one PIO UART while queued
+   TX data drains and an RX peer is active.
+4. Disconnect/remount, watchdog recovery, DMA wrap/re-arm flood, and six-port
+   full-duplex saturation checks.
+
+A promoted result has no unexplained byte mismatch, timeout, USB disconnect,
+`rx_error`, `rx_overrun`, or `control_error`.
+
+## Optional Claims
+
+Run optional tests only when the release notes claim the behavior:
+
+- CDC-hold / RX flood backpressure (`--flood-seconds` /
+  `--hold-cdc-seconds`).
+- Hardware RTS/CTS after enabling `hardware_flow_control` in
+   `firmware/src/board/uart_board.c`.
+- PIO RTS/CTS after enabling the selected PIO flow-control pin flags and running
+  CTS hold/release plus RTS backpressure checks.
 
 ## Promote checklist (draft → published)
 
@@ -102,7 +202,7 @@ Tag form is `vMAJOR.MINOR.PATCH` (no `-rc` / pre-release suffixes for publish).
 Major and minor must be `0-99`; patch must be `0-255`. This range is a
 **release-tag policy** (enforced by the `Resolve version` step in
 `release.yml`), not a firmware build limit: local/manual builds via
-`tools/build.sh --firmware-version ...` accept major, minor, and patch each up
+`tools/firmware/build.sh --firmware-version ...` accept major, minor, and patch each up
 to `255`, and USB `bcdDevice` falls back to `0x0000` once major or minor
 exceeds `99` (see `firmware/CMakeLists.txt`).
 The tag stamps HID firmware version `MAJOR.MINOR.PATCH` and USB `bcdDevice` as

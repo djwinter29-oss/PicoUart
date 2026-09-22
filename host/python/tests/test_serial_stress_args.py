@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-STRESS = Path(__file__).resolve().parents[3] / "tools" / "serial_stress_benchmark.py"
+STRESS = Path(__file__).resolve().parents[3] / "tools" / "hardware" / "serial_stress_benchmark.py"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
 

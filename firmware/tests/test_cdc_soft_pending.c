@@ -4,7 +4,7 @@
  */
 
 #include "unity.h"
-#include "uart/control_pending.h"
+#include "uart/control/ownership.h"
 #include "usb/cdc_soft_pending.h"
 
 /** @brief Stand-in for UART_DRIVER_PORT_STATUS_CONTROL_ERROR in host tests. */
@@ -51,13 +51,19 @@ void test_worker_completion_keeps_newer_control_pending_owner(void)
     TEST_ASSERT_TRUE(uart_control_pending_should_clear(false, false));
 }
 
+void test_mailbox_completion_keeps_successor_mailbox_owner(void)
+{
+    /* Immediate completion must use the same ownership rule as worker completion. */
+    TEST_ASSERT_FALSE(uart_control_pending_should_clear(false, true));
+}
+
 void test_every_control_owner_blocks_tx_ingress(void)
 {
-    /* The pure admission rule is shared by uart_driver_fill_tx(). */
-    TEST_ASSERT_FALSE(uart_control_tx_should_block(false, false, false));
-    TEST_ASSERT_TRUE(uart_control_tx_should_block(true, false, false));
-    TEST_ASSERT_TRUE(uart_control_tx_should_block(false, true, false));
-    TEST_ASSERT_TRUE(uart_control_tx_should_block(false, false, true));
+    const uint8_t control_pending_bit = 0x8u;
+
+    /* The status bit remains set through the mailbox-to-worker handoff. */
+    TEST_ASSERT_FALSE(uart_control_tx_should_block(0u, control_pending_bit));
+    TEST_ASSERT_TRUE(uart_control_tx_should_block(control_pending_bit, control_pending_bit));
 }
 
 void test_tx_boundary_drains_only_at_the_snapped_sequence(void)
@@ -170,6 +176,7 @@ int main(void)
     RUN_TEST(test_nil_deadline_is_never_a_timeout);
     RUN_TEST(test_mailbox_acceptance_and_sequence_wrap);
     RUN_TEST(test_worker_completion_keeps_newer_control_pending_owner);
+    RUN_TEST(test_mailbox_completion_keeps_successor_mailbox_owner);
     RUN_TEST(test_every_control_owner_blocks_tx_ingress);
     RUN_TEST(test_tx_boundary_drains_only_at_the_snapped_sequence);
     RUN_TEST(test_worker_deadline_retained_only_for_identical_retry);

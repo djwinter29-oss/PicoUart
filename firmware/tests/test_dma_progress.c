@@ -4,7 +4,7 @@
  */
 
 #include "unity.h"
-#include "uart/dma_progress_math.h"
+#include "uart/dma/progress_math.h"
 
 void setUp(void)
 {

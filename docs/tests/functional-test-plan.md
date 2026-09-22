@@ -1,5 +1,8 @@
 # Functional Test Plan
 
+Start with the [Test Documentation Index](README.md) for test levels, result
+semantics, and the boundary between host validation and HIL.
+
 This plan verifies that each PicoUart USB CDC channel transfers data in both
 directions and that the expected UART backend and wiring are operating.
 
@@ -50,7 +53,7 @@ Run the stages in this order:
 For stages 1 through 3, run:
 
 ```sh
-python3 tools/serial_bridge_test.py \
+python3 tools/hardware/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-endpoint> \
   --peer-port /dev/serial/by-id/<peer-endpoint> \
   --label <stage-label>
@@ -59,7 +62,7 @@ python3 tools/serial_bridge_test.py \
 For stage 4, run:
 
 ```sh
-python3 tools/serial_bridge_test.py \
+python3 tools/hardware/serial_bridge_test.py \
   --pico-port /dev/serial/by-id/<pico-cdc5> \
   --loopback \
   --label stage4-pio-loopback
@@ -68,7 +71,7 @@ python3 tools/serial_bridge_test.py \
 To run all four stages in order and record one newest-first result entry:
 
 ```sh
-python3 tools/run_functional_test.py \
+python3 tools/hardware/run_functional_test.py \
   --pico-cdc0 /dev/serial/by-id/<pico-uart-cdc0> \
   --debug-probe /dev/serial/by-id/<debug-probe-uart> \
   --pico-cdc1 /dev/serial/by-id/<pico-uart-cdc1> \
@@ -80,7 +83,7 @@ python3 tools/run_functional_test.py \
 ```
 
 For the complete functional-plus-performance sequence, use
-`run_hardware_test.py` instead. It records one combined entry and controls
+`tools/hardware/run_hardware_test.py` instead. It records one combined entry and controls
 whether performance starts after the functional stages pass.
 
 The runner tests all four links without pausing for rewiring. Add

@@ -11,9 +11,9 @@ option(PICO_UART_ALLOW_HID_RESET "Enable the trusted-host HID watchdog reset com
 option(PICO_UART_ALLOW_UNSAFE_OVERCLOCK "Allow a system clock above the target's rated default" OFF)
 
 # Parses PICO_UART_VERSION into PICO_UART_VERSION_{MAJOR,MINOR,PATCH} and
-# PICO_UART_BCD_DEVICE; see firmware/cmake/version.cmake for the policy and
+# PICO_UART_BCD_DEVICE; see firmware/version.cmake for the policy and
 # firmware/tests/test_version_policy.py for standalone `cmake -P` coverage.
-include(${CMAKE_CURRENT_LIST_DIR}/cmake/version.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/version.cmake)
 
 if(NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
     if(NOT PICO_UART_SYSTEM_CLOCK_KHZ MATCHES "^[1-9][0-9]*$")
@@ -55,22 +55,30 @@ if(NOT PICO_UART_ALLOW_UNSAFE_OVERCLOCK AND
         "use the rated ${PICO_UART_RATED_SYSTEM_CLOCK_KHZ} kHz clock or explicitly set PICO_UART_ALLOW_UNSAFE_OVERCLOCK=ON")
 endif()
 
-add_executable(pico_uart
-    src/config/uart_board.c
+add_executable(pico_uart)
+
+target_sources(pico_uart PRIVATE
+    src/board/uart_board.c
+    src/board/uart_topology.c
     src/driver/led.c
     src/driver/system.c
     src/driver/temperature.c
     src/main.c
+    src/uart/backend/adapter.c
+    src/uart/bridge.c
+    src/uart/control/mailbox.c
+    src/uart/control/plane.c
     src/uart/hw/dma_claim.c
     src/uart/hw/dma_claim_ops.c
-    src/uart/hw/driver.c
+    src/uart/hw/hw_uart_driver.c
     src/uart/line_coding.c
-    src/uart/pio/driver.c
+    src/uart/port_api.c
+    src/uart/pio/pio_uart_driver.c
     src/uart/pio/resource_claim.c
     src/uart/pio/resource_claim_ops.c
     src/uart/ring_buffer/ring_buffer.c
-    src/uart/topology.c
     src/uart/uart_driver.c
+    src/uart/worker.c
     src/usb/usb_cdc.c
     src/usb/usb_hid.c
     src/usb/usb_descriptors.c
@@ -104,15 +112,12 @@ target_compile_definitions(pico_uart PRIVATE
     PICO_UART_VERSION_PATCH=${PICO_UART_VERSION_PATCH}u
     PICO_UART_BCD_DEVICE=${PICO_UART_BCD_DEVICE}u
     PICO_UART_ALLOW_HID_RESET=$<BOOL:${PICO_UART_ALLOW_HID_RESET}>
+    PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ}u
 )
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(pico_uart PRIVATE -Wall -Wextra -Wformat=2)
 endif()
-
-if (NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
-    target_compile_definitions(pico_uart PRIVATE PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ}u)
-endif ()
 
 if(PICO_BOARD MATCHES "^pico$")
     # RP2040 silicon can miss the first SET_ADDRESS after a bus reset, so the host
