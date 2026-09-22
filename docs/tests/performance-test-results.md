@@ -7,6 +7,41 @@ Result entries are development evidence unless they explicitly say
 `release qualification` and include the exact flashed artifact hash for each
 required board.
 
+## 2026-09-22T17:59:53+00:00 - pico - Hardware Test
+
+**Result:** `PASS`
+**Firmware:** 0.0.0, `2c1a98e299615f9d74869547ee766e2ffc9a163f`
+**Board:** `pico`
+**Test date/time:** `2026-09-22T17:59:53+00:00`
+**Wiring:** Self-test stages 1-4 and performance fixture
+**RTS/CTS:** disabled
+**Artifact:** /home/home/repo/PicoUart/build/firmware-pico-current/pico_uart.elf
+**Artifact SHA-256:** `0ea0b23ce4f621621c70ba3fb56464138aa02955abc55ba2ae8ce644a822f116`
+**UF2 SHA-256:** `fcc31471a22693bf16c5d86fad746d59a4fc348bc98845349a5c8a39b2982b36`
+**Flash:** local OpenOCD `0.12.0+dev-g46d9b60`, verified at 1000 kHz
+
+### Results
+
+- Functional test: PASS
+- Performance test: PASS
+- Stage 1 Debug Probe to HW UART0: PASS both directions, 117 bytes each
+- Stage 2 HW UART1 to PIO UART2: PASS both directions, 117 bytes each
+- Stage 3 PIO UART3 to PIO UART4: PASS both directions, 117 bytes each
+- Stage 4 PIO UART5 loopback: PASS, 118 bytes
+- Concurrent 115200 baud: PASS, all 7 streams verified
+- Concurrent throughput: 113664 bytes on UART0 directions; 114688 bytes on
+  each staged UART/PIO stream at approximately 11.3 kB/s
+
+### Health
+
+- RX overflows: 0 on CDC0 through CDC5
+- HID health: ready on all ports; PIO flags on CDC2 through CDC5; no
+  `control_error`, `rx_overrun`, or `rx_error`
+- HID version: `0.0.0`
+- Raw log: /home/home/repo/PicoUart/docs/tests/raw/hardware-test-2026-09-22T17_59_53_00_00.log
+
+---
+
 ## 2026-09-20T20:28:00+00:00 - pico - Full Matrix Performance + Functional
 
 **Result:** `PASS`

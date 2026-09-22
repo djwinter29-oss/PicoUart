@@ -5,14 +5,29 @@
 
 #include "unity.h"
 
+#include "board/uart_board.h"
 #include "pico/time.h"
 #include "uart/backend/adapter.h"
 #include "uart/control/plane.h"
 #include "uart/port_api.h"
 #include "uart/uart_driver.h"
+#include "uart/worker.h"
 
 absolute_time_t pico_test_time_us;
 static uint32_t test_stats_call_count;
+
+const uart_board_port_config_t uart_board_ports[UART_PORT_COUNT] = {0};
+
+const uart_backend_ops_t *uart_backend_ops_for_type(uart_driver_backend_t backend)
+{
+    (void)backend;
+    return NULL;
+}
+
+void uart_worker_run(const uart_worker_hooks_t *hooks)
+{
+    (void)hooks;
+}
 
 void uart_backend_enable_rx_dma_irq(void)
 {
