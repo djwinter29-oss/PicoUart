@@ -10,6 +10,7 @@
 #ifndef PICO_UART_BOARD_H
 #define PICO_UART_BOARD_H
 
+#include "board/uart_topology.h"
 #include "uart/hw/hw_uart_driver.h"
 #include "uart/pio/pio_uart_driver.h"
 #include "uart/uart_driver.h"
@@ -30,5 +31,11 @@ typedef struct {
 
 /** @brief Board assignments for all logical UART ports. */
 extern const uart_board_port_config_t uart_board_ports[UART_PORT_COUNT];
+
+/**
+ * @brief Validate the configured UART board assignment before peripheral startup.
+ * @return `true` when pins, UART instances, and PIO state machines are valid.
+ */
+bool uart_board_validate_topology(void);
 
 #endif

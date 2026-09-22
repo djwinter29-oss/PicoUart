@@ -5,6 +5,7 @@
 
 #include "pico/stdlib.h"
 
+#include "board/uart_board.h"
 #include "driver/led.h"
 #include "driver/system.h"
 #include "driver/temperature.h"
@@ -35,7 +36,7 @@ int main(void)
 
     /* Validate shared invariants before starting UART and USB services. */
     hard_assert(ring_buffer_self_check());
-    hard_assert(uart_driver_validate_topology());
+    hard_assert(uart_board_validate_topology());
     hard_assert(uart_driver_init());
     usb_cdc_init();
     usb_hid_init();

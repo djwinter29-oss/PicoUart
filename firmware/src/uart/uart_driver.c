@@ -6,25 +6,20 @@
 #include "uart/uart_driver.h"
 
 #include "board/uart_board.h"
+#include "uart/backend.h"
 #include "uart/backend_policy.h"
 #include "uart/control_pending.h"
-#include "uart/hw/baud_rate.h"
 #include "uart/hw/hw_uart_driver.h"
 #include "uart/line_coding.h"
-#include "hardware/clocks.h"
-#include "hardware/gpio.h"
 #include "hardware/sync.h"
 #include "pico/multicore.h"
 #include "pico/time.h"
 #include "uart/pio/internal.h"
 #include "uart/ring_buffer/ring_buffer.h"
-#include "uart/topology.h"
 #include "uart/worker_health.h"
 
 #include <string.h>
 
-/** @brief Default startup baud rate applied to all logical UART ports. */
-#define UART_DRIVER_DEFAULT_BAUD_RATE 115200u
 /** @brief Maximum time the worker may defer applying a line-coding change. */
 #define UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS 1000u
 /** @brief Maximum attempts to acquire a coherent worker-owned telemetry snapshot. */
@@ -49,6 +44,7 @@ typedef struct {
  */
 typedef struct {
     uart_driver_port_info_t info; /**< Public metadata for the logical port. */
+    const uart_backend_ops_t *ops; /**< Operations for the active backend storage. */
     union {
         hw_uart_driver_t hw; /**< Hardware UART backend state. */
         pio_uart_driver_t pio; /**< PIO UART backend state. */
@@ -93,7 +89,7 @@ static bool uart_driver_init_backends(void);
 static void uart_driver_rollback_initialized_backends(void);
 static void uart_driver_load_board_config(void);
 static void uart_driver_poll_backends(void);
-static uart_parity_t uart_driver_hw_parity(uart_driver_parity_t parity);
+static void uart_driver_poll_io(void);
 static bool uart_driver_line_coding_matches_current(const uart_driver_port_t *port,
                                                     const uart_driver_line_coding_t *line_coding);
 static void uart_driver_set_line_coding_local(
@@ -218,8 +214,7 @@ static bool uart_driver_mailbox_has_pending_port(uart_port_id_t port_id)
 
 static void uart_driver_worker_core_main(void)
 {
-    hw_uart_driver_enable_rx_dma_irq();
-    pio_uart_driver_enable_rx_dma_irq();
+    uart_backend_enable_rx_dma_irq();
 
     while (true) {
         uint32_t request_sequence = uart_driver_mailbox.request_sequence;
@@ -243,54 +238,21 @@ static void uart_driver_worker_core_main(void)
         }
 
         uart_driver_poll_backends();
-        uart_driver_poll_hardware();
-        uart_driver_poll_pio();
+        uart_driver_poll_io();
         uart_driver_worker_heartbeat += 1u;
         __dmb();
         tight_loop_contents();
     }
 }
 
-static uart_parity_t uart_driver_hw_parity(uart_driver_parity_t parity)
-{
-    if (parity == UART_DRIVER_PARITY_ODD) {
-        return UART_PARITY_ODD;
-    }
-
-    if (parity == UART_DRIVER_PARITY_EVEN) {
-        return UART_PARITY_EVEN;
-    }
-
-    return UART_PARITY_NONE;
-}
-
 static bool uart_driver_line_coding_matches_current(const uart_driver_port_t *port,
                                                     const uart_driver_line_coding_t *line_coding)
 {
-    if ((port == NULL) || (line_coding == NULL)) {
+    if ((port == NULL) || (port->ops == NULL) || (line_coding == NULL)) {
         return false;
     }
 
-    if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-        uint32_t actual_rate;
-
-        return hw_uart_baud_rate_supported(line_coding->baud_rate,
-                                           clock_get_hz(clk_peri),
-                                           &actual_rate) &&
-               (port->backend.hw.config.baud_rate == actual_rate) &&
-               (port->backend.hw.config.data_bits == line_coding->data_bits) &&
-               (port->backend.hw.config.stop_bits == line_coding->stop_bits) &&
-               (port->backend.hw.config.parity == uart_driver_hw_parity(line_coding->parity));
-    }
-
-    if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        return (port->backend.pio.config.baud_rate == line_coding->baud_rate) &&
-               (line_coding->data_bits == 8u) &&
-               (line_coding->stop_bits == 1u) &&
-               (line_coding->parity == UART_DRIVER_PARITY_NONE);
-    }
-
-    return false;
+    return port->ops->line_coding_matches(&port->backend, line_coding);
 }
 
 static uart_driver_port_t *uart_driver_port_mutable(uart_port_id_t port_id)
@@ -309,6 +271,7 @@ static void uart_driver_load_board_config(void)
         uart_driver_port_t *port = &uart_ports[index];
 
         port->info = board_port->info;
+        port->ops = uart_backend_ops_for_type(board_port->info.backend);
         if (board_port->info.backend == UART_DRIVER_BACKEND_HW) {
             port->backend.hw.config = board_port->backend.hw;
             port->backend.hw.initialized = false;
@@ -321,36 +284,20 @@ static void uart_driver_load_board_config(void)
 
 static ring_buffer_t *uart_driver_rx_ring_mutable(uart_driver_port_t *port)
 {
-    if (port == NULL) {
+    if ((port == NULL) || (port->ops == NULL)) {
         return NULL;
     }
 
-    if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-        return &port->backend.hw.rx_ring;
-    }
-
-    if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        return &port->backend.pio.rx_ring;
-    }
-
-    return NULL;
+    return port->ops->rx_ring(&port->backend);
 }
 
 static ring_buffer_t *uart_driver_tx_ring_mutable(uart_driver_port_t *port)
 {
-    if (port == NULL) {
+    if ((port == NULL) || (port->ops == NULL)) {
         return NULL;
     }
 
-    if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-        return &port->backend.hw.tx_ring;
-    }
-
-    if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        return &port->backend.pio.tx_ring;
-    }
-
-    return NULL;
+    return port->ops->tx_ring(&port->backend);
 }
 
 static bool uart_driver_tx_boundary_drained(uart_driver_port_t *port,
@@ -365,21 +312,11 @@ static bool uart_driver_tx_boundary_drained(uart_driver_port_t *port,
 static bool uart_driver_rx_snapshot_is_current(const uart_driver_port_t *port,
                                                uint32_t consumer_sequence)
 {
-    if (port == NULL) {
+    if ((port == NULL) || (port->ops == NULL)) {
         return false;
     }
 
-    if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-        return hw_uart_driver_rx_snapshot_is_current(&port->backend.hw,
-                                                     consumer_sequence);
-    }
-
-    if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        return pio_uart_driver_rx_snapshot_is_current(&port->backend.pio,
-                                                      consumer_sequence);
-    }
-
-    return false;
+    return port->ops->rx_snapshot_is_current(&port->backend, consumer_sequence);
 }
 
 size_t uart_driver_port_count(void)
@@ -395,11 +332,8 @@ static bool uart_driver_init_backends(void)
         uart_driver_port_t *port = &uart_ports[index];
         bool port_ok = false;
 
-        if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-            port_ok = port->backend.hw.initialized || hw_uart_driver_init(&port->backend.hw);
-        } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-            port_ok = port->backend.pio.initialized || pio_uart_driver_init(&port->backend.pio);
-        }
+        port_ok = (port->ops != NULL) &&
+                  (port->ops->is_initialized(&port->backend) || port->ops->init(&port->backend));
 
         if (!port_ok) {
             init_ok = false;
@@ -411,11 +345,7 @@ static bool uart_driver_init_backends(void)
         uart_driver_clear_port_status_flag((uart_port_id_t)index,
                                            UART_DRIVER_PORT_STATUS_INIT_FAILED |
                                                UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
-        if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-            port->info.baud_rate = port->backend.hw.config.baud_rate;
-        } else {
-            port->info.baud_rate = port->backend.pio.config.baud_rate;
-        }
+        port->info.baud_rate = port->ops->baud_rate(&port->backend);
         uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
     }
 
@@ -427,14 +357,8 @@ static void uart_driver_rollback_initialized_backends(void)
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
         uart_driver_port_t *port = &uart_ports[index];
 
-        if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-            if (port->backend.hw.initialized) {
-                hw_uart_driver_deinit(&port->backend.hw);
-            }
-        } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-            if (port->backend.pio.initialized) {
-                pio_uart_driver_deinit(&port->backend.pio);
-            }
+        if ((port->ops != NULL) && port->ops->is_initialized(&port->backend)) {
+            port->ops->deinit(&port->backend);
         }
 
         uart_driver_port_status_flags[index] = 0u;
@@ -454,6 +378,23 @@ static void uart_driver_poll_backends(void)
     }
 
     uart_driver_poll_start_index = (uart_driver_poll_start_index + 1u) % UART_PORT_COUNT;
+}
+
+static void uart_driver_poll_io(void)
+{
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        uart_driver_port_t *port = &uart_ports[index];
+
+        if ((port->ops != NULL) && port->ops->is_initialized(&port->backend)) {
+            bool tx_launch_allowed = !uart_driver_pending_controls[index].pending ||
+                                     !uart_driver_tx_boundary_drained(
+                                         port,
+                                         uart_driver_pending_controls[index].tx_boundary_sequence);
+            uart_driver_begin_port_stats_update((uart_port_id_t)index);
+            port->ops->poll(&port->backend, tx_launch_allowed);
+            uart_driver_end_port_stats_update((uart_port_id_t)index);
+        }
+    }
 }
 
 static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_driver_port_t *port)
@@ -477,19 +418,11 @@ static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_dri
         return;
     }
 
-    if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-        applied = hw_uart_driver_set_line_format(&port->backend.hw,
-                                                 pending_control->line_coding.baud_rate,
-                                                 pending_control->line_coding.data_bits,
-                                                 pending_control->line_coding.stop_bits,
-                                                 uart_driver_hw_parity(pending_control->line_coding.parity));
-    } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        applied = pio_uart_driver_set_baud_rate(&port->backend.pio,
-                                                pending_control->line_coding.baud_rate);
-    } else {
+    if (port->ops == NULL) {
         uart_driver_finish_worker_control(port_id, pending_control->control_generation, false);
         return;
     }
+    applied = port->ops->set_line_coding(&port->backend, &pending_control->line_coding);
 
     if (!applied) {
         if (!time_reached(pending_control->deadline)) {
@@ -504,9 +437,7 @@ static void uart_driver_service_pending_control(uart_port_id_t port_id, uart_dri
 
     {
         uint32_t save = spin_lock_blocking(uart_driver_status_lock);
-        port->info.baud_rate = (port->info.backend == UART_DRIVER_BACKEND_HW)
-                                   ? port->backend.hw.config.baud_rate
-                                   : port->backend.pio.config.baud_rate;
+        port->info.baud_rate = port->ops->baud_rate(&port->backend);
         spin_unlock(uart_driver_status_lock, save);
     }
     uart_driver_finish_worker_control(port_id, pending_control->control_generation, true);
@@ -530,7 +461,8 @@ bool uart_driver_init(void)
             uart_driver_pending_controls[index].deadline = nil_time;
             uart_driver_pending_controls[index].control_generation = 0u;
             uart_driver_pending_controls[index].tx_boundary_sequence = 0u;
-            uart_driver_pending_controls[index].line_coding.baud_rate = UART_DRIVER_DEFAULT_BAUD_RATE;
+            uart_driver_pending_controls[index].line_coding.baud_rate =
+                PICO_UART_BOARD_DEFAULT_BAUD_RATE;
             uart_driver_pending_controls[index].line_coding.data_bits = 8u;
             uart_driver_pending_controls[index].line_coding.stop_bits = 1u;
             uart_driver_pending_controls[index].line_coding.parity = UART_DRIVER_PARITY_NONE;
@@ -553,8 +485,12 @@ bool uart_driver_init(void)
             return false;
         }
 
-        for (size_t index = UART_PORT_0; index <= UART_PORT_1; ++index) {
-            hw_uart_driver_clear_rx_error_baseline(&uart_ports[index].backend.hw);
+        for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+            uart_driver_port_t *port = &uart_ports[index];
+
+            if (port->ops != NULL) {
+                port->ops->clear_rx_error_baseline(&port->backend);
+            }
         }
 
         multicore_launch_core1(uart_driver_worker_core_main);
@@ -572,51 +508,7 @@ bool uart_driver_port_is_ready(uart_port_id_t port_id)
         return false;
     }
 
-    if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-        return port->backend.hw.initialized;
-    }
-
-    if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        return port->backend.pio.initialized;
-    }
-
-    return false;
-}
-
-void uart_driver_poll_hardware(void)
-{
-    for (size_t index = UART_PORT_0; index <= UART_PORT_1; ++index) {
-        uart_driver_port_t *port = &uart_ports[index];
-
-        if (port->backend.hw.initialized) {
-            bool tx_launch_allowed = !uart_driver_pending_controls[index].pending ||
-                                     !uart_driver_tx_boundary_drained(
-                                         port,
-                                         uart_driver_pending_controls[index].tx_boundary_sequence);
-            uart_driver_begin_port_stats_update((uart_port_id_t)index);
-            hw_uart_driver_poll(&port->backend.hw,
-                                tx_launch_allowed);
-            uart_driver_end_port_stats_update((uart_port_id_t)index);
-        }
-    }
-}
-
-void uart_driver_poll_pio(void)
-{
-    for (size_t index = UART_PORT_2; index < UART_PORT_COUNT; ++index) {
-        uart_driver_port_t *port = &uart_ports[index];
-
-        if (port->backend.pio.initialized) {
-            bool tx_launch_allowed = !uart_driver_pending_controls[index].pending ||
-                                     !uart_driver_tx_boundary_drained(
-                                         port,
-                                         uart_driver_pending_controls[index].tx_boundary_sequence);
-            uart_driver_begin_port_stats_update((uart_port_id_t)index);
-            pio_uart_driver_poll(&port->backend.pio,
-                                 tx_launch_allowed);
-            uart_driver_end_port_stats_update((uart_port_id_t)index);
-        }
-    }
+    return (port->ops != NULL) && port->ops->is_initialized(&port->backend);
 }
 
 size_t uart_driver_drain_rx(uart_port_id_t port_id,
@@ -802,19 +694,11 @@ static void uart_driver_set_line_coding_local(
         return;
     }
 
-    if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-        pending_control->line_coding = *line_coding;
-    } else if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-        if (!uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys))) {
-            uart_driver_finish_mailbox_control(port_id, control_generation, false);
-            return;
-        }
-
-        pending_control->line_coding = *line_coding;
-    } else {
+    if ((port->ops == NULL) || !port->ops->line_coding_acceptable(line_coding)) {
         uart_driver_finish_mailbox_control(port_id, control_generation, false);
         return;
     }
+    pending_control->line_coding = *line_coding;
 
     if (uart_control_worker_should_set_deadline(was_pending, same_request)) {
         pending_control->deadline = make_timeout_time_ms(UART_DRIVER_CONTROL_APPLY_TIMEOUT_MS);
@@ -832,19 +716,8 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
         return false;
     }
 
-    if (port_info.backend == UART_DRIVER_BACKEND_PIO) {
-        return uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys));
-    }
-
-    if (port_info.backend == UART_DRIVER_BACKEND_HW) {
-        uint32_t actual_rate;
-
-        return hw_uart_baud_rate_supported(line_coding->baud_rate,
-                                           clock_get_hz(clk_peri),
-                                           &actual_rate);
-    }
-
-    return false;
+    return uart_ports[port_id].ops != NULL &&
+           uart_ports[port_id].ops->line_coding_acceptable(line_coding);
 }
 
 bool uart_driver_queue_line_coding(uart_port_id_t port_id,
@@ -1020,6 +893,7 @@ bool uart_driver_port_info(uart_port_id_t port_id, uart_driver_port_info_t *info
 bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *stats)
 {
     uart_driver_port_t *port = uart_driver_port_mutable(port_id);
+    uart_backend_stats_t backend_stats;
     ring_buffer_t *rx_ring;
     ring_buffer_t *tx_ring;
     uint32_t first_sequence;
@@ -1051,16 +925,13 @@ bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *st
         stats->rx_ring_pending_overflow_count = (uint32_t)ring_buffer_pending_overflow(rx_ring);
         stats->rx_error_count = 0u;
 
-        if (port->info.backend == UART_DRIVER_BACKEND_PIO) {
-            stats->controller_tx_bytes = (uint32_t)(port->backend.pio.tx_polled_bytes +
-                                                    port->backend.pio.tx_dma_bytes);
-            stats->controller_rx_bytes = port->backend.pio.controller_rx_bytes;
-            stats->rx_error_count = port->backend.pio.rx_error_count;
-        } else if (port->info.backend == UART_DRIVER_BACKEND_HW) {
-            stats->controller_tx_bytes = port->backend.hw.controller_tx_bytes;
-            stats->controller_rx_bytes = port->backend.hw.controller_rx_bytes;
-            stats->rx_error_count = port->backend.hw.rx_error_count;
+        if (port->ops == NULL) {
+            return false;
         }
+        backend_stats = port->ops->stats(&port->backend);
+        stats->controller_tx_bytes = backend_stats.controller_tx_bytes;
+        stats->controller_rx_bytes = backend_stats.controller_rx_bytes;
+        stats->rx_error_count = backend_stats.rx_error_count;
 
         __dmb();
         second_sequence = uart_driver_port_stats_sequence[port_id];
@@ -1070,59 +941,6 @@ bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *st
     }
 
     return false;
-}
-
-bool uart_driver_validate_topology(void)
-{
-    uart_topology_port_t topology[UART_PORT_COUNT];
-
-    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        const uart_board_port_config_t *board = &uart_board_ports[index];
-
-        if (board->info.backend == UART_DRIVER_BACKEND_HW) {
-            topology[index] = (uart_topology_port_t){
-                .id = board->info.id,
-                .backend = board->info.backend,
-                .baud_rate = board->info.baud_rate,
-                .tx_pin = board->info.tx_pin,
-                .rx_pin = board->info.rx_pin,
-                .backend_instance = (uintptr_t)board->backend.hw.instance,
-                .backend_baud_rate = board->backend.hw.baud_rate,
-                .backend_tx_pin = board->backend.hw.tx_pin,
-                .backend_rx_pin = board->backend.hw.rx_pin,
-                .target_gpio_count = NUM_BANK0_GPIOS,
-                .rts_pin = board->backend.hw.rts_pin,
-                .cts_pin = board->backend.hw.cts_pin,
-                .rts_enabled = board->backend.hw.hardware_flow_control,
-                .cts_enabled = board->backend.hw.hardware_flow_control,
-            };
-        } else if (board->info.backend == UART_DRIVER_BACKEND_PIO) {
-            topology[index] = (uart_topology_port_t){
-                .id = board->info.id,
-                .backend = board->info.backend,
-                .baud_rate = board->info.baud_rate,
-                .tx_pin = board->info.tx_pin,
-                .rx_pin = board->info.rx_pin,
-                .backend_instance = (uintptr_t)board->backend.pio.pio,
-                .backend_baud_rate = board->backend.pio.baud_rate,
-                .backend_tx_pin = board->backend.pio.tx_pin,
-                .backend_rx_pin = board->backend.pio.rx_pin,
-                .tx_state_machine = board->backend.pio.tx_state_machine,
-                .rx_state_machine = board->backend.pio.rx_state_machine,
-                .target_gpio_count = NUM_BANK0_GPIOS,
-                .rts_pin = board->backend.pio.rts_pin,
-                .cts_pin = board->backend.pio.cts_pin,
-                .rts_enabled = (board->backend.pio.pin_flags &
-                                PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) != 0u,
-                .cts_enabled = (board->backend.pio.pin_flags &
-                                PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL) != 0u,
-            };
-        } else {
-            return false;
-        }
-    }
-
-    return uart_topology_validate(topology, UART_PORT_COUNT);
 }
 
 void uart_driver_reset_soft_pending(uart_port_id_t port_id)

@@ -1,10 +1,10 @@
 /**
- * @file topology.h
- * @brief Host-testable UART board-topology validation.
+ * @file uart_topology.h
+ * @brief Host-testable validation for UART board resource assignments.
  */
 
-#ifndef UART_TOPOLOGY_H
-#define UART_TOPOLOGY_H
+#ifndef PICO_UART_BOARD_TOPOLOGY_H
+#define PICO_UART_BOARD_TOPOLOGY_H
 
 #include "uart/uart_driver.h"
 
@@ -12,8 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/** @brief Invalid GPIO marker in a normalized topology port. */
-#define UART_TOPOLOGY_PIN_UNASSIGNED UINT32_MAX
+/** @brief Invalid GPIO marker in a normalized board topology port. */
+#define UART_BOARD_TOPOLOGY_PIN_UNASSIGNED UINT32_MAX
 
 /**
  * @brief Hardware-independent resource assignment for one logical UART port.
@@ -35,14 +35,14 @@ typedef struct {
     uint32_t cts_pin; /**< Backend CTS GPIO; ignored unless @ref cts_enabled. */
     bool rts_enabled; /**< True when RTS is an active topology resource. */
     bool cts_enabled; /**< True when CTS is an active topology resource. */
-} uart_topology_port_t;
+} uart_board_topology_port_t;
 
 /**
- * @brief Validate a fixed 2-hardware-UART / 4-PIO-UART port assignment.
- * @param ports Normalized port map.
+ * @brief Validate a fixed 2-hardware-UART / 4-PIO-UART board assignment.
+ * @param ports Normalized board resource map.
  * @param port_count Number of entries in @p ports.
  * @return `true` when every pin and backend resource is uniquely and consistently assigned.
  */
-bool uart_topology_validate(const uart_topology_port_t *ports, size_t port_count);
+bool uart_board_topology_validate(const uart_board_topology_port_t *ports, size_t port_count);
 
 #endif

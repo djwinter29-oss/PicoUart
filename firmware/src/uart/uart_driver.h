@@ -104,16 +104,6 @@ bool uart_driver_init(void);
 bool uart_driver_port_is_ready(uart_port_id_t port_id);
 
 /**
- * @brief Advance DMA state for the two hardware UART backends.
- */
-void uart_driver_poll_hardware(void);
-
-/**
- * @brief Advance RX and TX state for the four PIO UART backends.
- */
-void uart_driver_poll_pio(void);
-
-/**
  * @brief Drain RX bytes from one logical UART port into a caller-owned writer.
  * @param port_id Logical port identifier.
  * @param capacity Maximum byte count to drain across contiguous RX spans.
@@ -255,11 +245,5 @@ bool uart_driver_port_info(uart_port_id_t port_id, uart_driver_port_info_t *info
  * @return `true` when @p stats was written, otherwise `false`.
  */
 bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *stats);
-
-/**
- * @brief Check that the logical UART table still matches the 2-HW and 4-PIO design.
- * @return `true` when the table is valid, otherwise `false`.
- */
-bool uart_driver_validate_topology(void);
 
 #endif

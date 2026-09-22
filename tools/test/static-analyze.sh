@@ -15,7 +15,7 @@ cppcheck --error-exitcode=1 --enable=warning --inline-suppr \
     firmware/src/uart/dma_progress_math.h \
     firmware/src/uart/hw/baud_rate.h \
     firmware/src/uart/line_coding.c \
-    firmware/src/uart/topology.c \
+    firmware/src/board/uart_topology.c \
     firmware/src/uart/hw/dma_claim.c \
     firmware/src/uart/hw/driver.c \
     firmware/src/uart/hw/dma_claim_ops.c \

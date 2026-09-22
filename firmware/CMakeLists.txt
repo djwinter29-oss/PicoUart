@@ -59,10 +59,12 @@ add_executable(pico_uart)
 
 target_sources(pico_uart PRIVATE
     src/board/uart_board.c
+    src/board/uart_topology.c
     src/driver/led.c
     src/driver/system.c
     src/driver/temperature.c
     src/main.c
+    src/uart/backend.c
     src/uart/hw/dma_claim.c
     src/uart/hw/dma_claim_ops.c
     src/uart/hw/hw_uart_driver.c
@@ -71,7 +73,6 @@ target_sources(pico_uart PRIVATE
     src/uart/pio/resource_claim.c
     src/uart/pio/resource_claim_ops.c
     src/uart/ring_buffer/ring_buffer.c
-    src/uart/topology.c
     src/uart/uart_driver.c
     src/usb/usb_cdc.c
     src/usb/usb_hid.c

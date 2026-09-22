@@ -57,7 +57,7 @@ pico_uart_add_unity_test(test_cdc_soft_pending cdc_soft_pending
 
 pico_uart_add_unity_test(test_topology topology
     test_topology.c
-    ${FIRMWARE_ROOT}/src/uart/topology.c
+    ${FIRMWARE_ROOT}/src/board/uart_topology.c
 )
 
 pico_uart_add_unity_test(test_backend_policy backend_policy
