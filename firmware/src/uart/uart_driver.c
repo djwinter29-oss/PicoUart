@@ -396,8 +396,9 @@ void uart_driver_report_soft_pending_error(uart_port_id_t port_id,
                                            uart_driver_state.control_generations[port_id])) {
         uart_driver_state.status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
     }
-    if (uart_control_pending_should_clear(uart_driver_state.pending_controls[port_id].pending,
-                                          uart_driver_mailbox_has_pending_port(port_id))) {
+    if (uart_control_pending_should_clear(false,
+                                          uart_driver_mailbox_has_pending_port(port_id),
+                                          uart_driver_state.pending_controls[port_id].pending)) {
         uart_driver_state.status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
     spin_unlock(uart_driver_state.status_lock, save);
@@ -478,8 +479,9 @@ void uart_driver_reset_soft_pending(uart_port_id_t port_id)
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
     uart_driver_state.soft_pending_controls[port_id] = false;
-    if (uart_control_pending_should_clear(uart_driver_state.pending_controls[port_id].pending,
-                                          uart_driver_mailbox_has_pending_port(port_id))) {
+    if (uart_control_pending_should_clear(false,
+                                          uart_driver_mailbox_has_pending_port(port_id),
+                                          uart_driver_state.pending_controls[port_id].pending)) {
         uart_driver_state.status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
     spin_unlock(uart_driver_state.status_lock, save);

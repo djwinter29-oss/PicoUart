@@ -7,6 +7,7 @@ import re
 from contract import (
     firmware_cdc_interface_strings,
     firmware_hid_constants,
+    firmware_hid_interface_number,
     firmware_hid_report_count,
     firmware_hid_reset_cmake_default_enabled,
     firmware_hid_reset_default_enabled,
@@ -36,6 +37,10 @@ def test_usb_ids_parse_from_firmware_defines(hid_module, repo_root):
     vid, pid = firmware_usb_ids(repo_root)
     assert vid == hid_module.VENDOR_ID
     assert pid == hid_module.PRODUCT_ID
+
+
+def test_hid_interface_number_matches_descriptor_enum(hid_module, repo_root):
+    assert firmware_hid_interface_number(repo_root) == hid_module.HID_INTERFACE_NUMBER
 
 
 def test_hid_layout_and_command_constants_match_firmware(hid_module, repo_root):

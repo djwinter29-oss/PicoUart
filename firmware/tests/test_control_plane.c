@@ -285,6 +285,53 @@ void test_control_plane_immediate_completion_clears_pending_when_unowned(void)
     TEST_ASSERT_EQUAL_UINT8(0u, test_status_flags[UART_PORT_0]);
 }
 
+void test_control_plane_mailbox_reject_keeps_worker_pending(void)
+{
+    uart_driver_line_coding_t rejected = test_line_coding();
+    uart_control_mailbox_request_t request;
+
+    rejected.data_bits = 7u;
+    request = (uart_control_mailbox_request_t){
+        .port_id = UART_PORT_0,
+        .control_generation = 2u,
+        .tx_boundary_sequence = 0u,
+        .line_coding = rejected,
+    };
+    test_tx_ring.consumer = 4u;
+    test_pending_controls[UART_PORT_0].pending = true;
+    test_pending_controls[UART_PORT_0].control_generation = 1u;
+    test_pending_controls[UART_PORT_0].tx_boundary_sequence = 9u;
+    test_pending_controls[UART_PORT_0].line_coding = test_line_coding();
+    test_pending_controls[UART_PORT_0].deadline = make_timeout_time_ms(1000u);
+    test_control_generations[UART_PORT_0] = 2u;
+    test_status_flags[UART_PORT_0] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailboxes[UART_PORT_0], &request));
+
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_TRUE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_EQUAL_UINT32(1u, test_pending_controls[UART_PORT_0].control_generation);
+    TEST_ASSERT_EQUAL_UINT32(9u, test_pending_controls[UART_PORT_0].tx_boundary_sequence);
+    TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING,
+                     UART_DRIVER_PORT_STATUS_CONTROL_PENDING,
+                     test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     test_status_flags[UART_PORT_0]);
+
+    test_tx_ring.consumer = 9u;
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_EQUAL_UINT32(1u, apply_count);
+    TEST_ASSERT_EQUAL_UINT32(230400u, applied_line_coding.baud_rate);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     test_status_flags[UART_PORT_0]);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -295,5 +342,6 @@ int main(void)
     RUN_TEST(test_control_plane_reports_error_after_apply_timeout);
     RUN_TEST(test_control_plane_applies_requests_on_independent_port_slots);
     RUN_TEST(test_control_plane_immediate_completion_clears_pending_when_unowned);
+    RUN_TEST(test_control_plane_mailbox_reject_keeps_worker_pending);
     return UNITY_END();
 }

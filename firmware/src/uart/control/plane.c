@@ -33,7 +33,8 @@ static void uart_control_plane_finish_worker_control(uart_control_plane_t *contr
     control_plane->pending_controls[port_id].pending = false;
     if (uart_control_pending_should_clear(control_plane->soft_pending_controls[port_id],
                                           uart_control_plane_mailbox_has_pending_port(control_plane,
-                                                                                      port_id))) {
+                                                                                      port_id),
+                                          false)) {
         control_plane->status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
     uart_control_apply_completion_error(&control_plane->status_flags[port_id],
@@ -53,7 +54,8 @@ static void uart_control_plane_finish_mailbox_control(uart_control_plane_t *cont
 
     if (uart_control_pending_should_clear(
             control_plane->soft_pending_controls[port_id],
-            uart_control_plane_mailbox_has_pending_port(control_plane, port_id))) {
+            uart_control_plane_mailbox_has_pending_port(control_plane, port_id),
+            control_plane->pending_controls[port_id].pending)) {
         control_plane->status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
     uart_control_apply_completion_error(&control_plane->status_flags[port_id],

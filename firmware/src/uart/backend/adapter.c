@@ -175,7 +175,7 @@ static bool uart_backend_pio_rx_snapshot_is_current(const uart_backend_instance_
 
 static void uart_backend_pio_clear_rx_error_baseline(uart_backend_instance_t *instance)
 {
-    (void)instance;
+    pio_uart_driver_clear_rx_error_baseline(&instance->pio);
 }
 
 static uint32_t uart_backend_pio_baud_rate(const uart_backend_instance_t *instance)
