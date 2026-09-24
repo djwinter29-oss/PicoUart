@@ -101,7 +101,8 @@ interface strings:
 
 1. Watch health bit 3 (`control_pending`) while the worker applies a change, and
    while CDC soft-pending waits for the worker mailbox (up to 1 s from the first
-   arm; later `SET_LINE_CODING` retries do not refresh that deadline). Invalid
+   arm; an identical `SET_LINE_CODING` retry keeps that original deadline, but a
+   distinct replacement request refreshes it and starts a new 1 s window). Invalid
    follow-up line-coding requests set `control_error` without canceling an
    in-flight pending apply; that older apply may finish, but cannot clear the
    newer reject.

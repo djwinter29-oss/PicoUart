@@ -11,7 +11,9 @@ cppcheck --error-exitcode=1 --enable=warning --inline-suppr \
     --suppress=missingIncludeSystem \
     --suppress=missingInclude \
     firmware/src/uart/backend/policy.h \
+    firmware/src/uart/control/mailbox.c \
     firmware/src/uart/control/ownership.h \
+    firmware/src/uart/control/plane.c \
     firmware/src/uart/dma/progress_math.h \
     firmware/src/uart/hw/baud_rate.h \
     firmware/src/uart/line_coding.c \
