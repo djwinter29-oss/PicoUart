@@ -49,6 +49,20 @@ It does not carry UART bytes; byte traffic remains on the RX/TX rings.
 7. Completion clears `CONTROL_PENDING` only if no newer owner still exists, and
    updates `CONTROL_ERROR` only if the completion generation is still current.
 
+Step 6's mailbox acknowledgement and worker-ownership registration
+(`pending_controls[...].pending = true`) happen inside the same `status_lock`
+critical section. This is required, not incidental: a concurrent core 0
+soft-pending reject or timeout reads mailbox and worker ownership under that
+same lock to decide whether `CONTROL_PENDING` may clear. If ownership
+registration ran after that section's unlock, a reject racing exactly that
+window could see the mailbox already acknowledged but no worker owner yet,
+and wrongly clear `CONTROL_PENDING` (reopening TX ingress) while the worker
+apply is still in flight. The worker also re-checks its apply deadline
+immediately before touching the backend, after the TX-boundary and
+backend-liveness checks. This close ordering keeps a backend apply that would
+otherwise succeed from clearing `CONTROL_ERROR` once its deadline has already
+expired.
+
 ```mermaid
 sequenceDiagram
   participant Host
@@ -179,6 +193,11 @@ Host unit tests cover the pure ownership rules in `ownership.h` and
 - independent per-port mailbox slots
 - stale completion generation checks
 - TX blocking while any control owner is active
+- atomicity of mailbox acknowledgement and worker-ownership registration
+  under a single status-lock critical section
+- provisional ownership cleanup for invalid, backend-unacceptable, and
+  backend-unavailable requests
+- apply deadline checked before the backend is touched
 
 End-to-end USB lifecycle and backend quiescing still require hardware-in-the-
 loop validation because the real path crosses TinyUSB callbacks, shared UART

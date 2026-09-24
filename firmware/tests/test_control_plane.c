@@ -5,6 +5,7 @@
 
 #include "unity.h"
 
+#include "uart/control/ownership.h"
 #include "uart/control/plane.h"
 
 absolute_time_t pico_test_time_us;
@@ -17,6 +18,7 @@ static bool line_coding_matches;
 static bool backend_alive;
 static bool fail_closed;
 static bool observed_mailbox_acked_without_worker_ownership;
+static bool observed_concurrent_reject_would_clear_control_pending;
 static bool spin_unlock_ownership_probe_armed;
 
 static uart_control_mailbox_t test_mailboxes[UART_PORT_COUNT];
@@ -37,6 +39,14 @@ static uart_control_pending_t test_pending_controls[UART_PORT_COUNT];
  * status read racing the real hardware locks between this unlock and a
  * later, separate registration could observe the request owned by neither
  * the mailbox nor the worker.
+ *
+ * The probe also evaluates @ref uart_control_pending_should_clear() with the
+ * exact arguments a concurrent core 0 soft-pending reject/timeout
+ * (uart_driver.c) would pass while holding the same status_lock at this
+ * instant. That is the real, host-visible contract at risk: if ownership
+ * registration were not atomic with the mailbox ack, a concurrent reject
+ * could conclude no owner remains and wrongly clear CONTROL_PENDING /unblock
+ * TX ingress while this worker-pending apply is still in flight.
  */
 static void spin_unlock_ownership_probe(void)
 {
@@ -48,6 +58,10 @@ static void spin_unlock_ownership_probe(void)
     }
 
     observed_mailbox_acked_without_worker_ownership = !test_pending_controls[UART_PORT_0].pending;
+    observed_concurrent_reject_would_clear_control_pending = uart_control_pending_should_clear(
+        false,
+        uart_control_mailbox_has_pending_port(&test_mailboxes[UART_PORT_0], UART_PORT_0),
+        test_pending_controls[UART_PORT_0].pending);
     spin_unlock_ownership_probe_armed = false;
 }
 
@@ -153,6 +167,7 @@ void setUp(void)
     backend_alive = true;
     fail_closed = false;
     observed_mailbox_acked_without_worker_ownership = false;
+    observed_concurrent_reject_would_clear_control_pending = false;
     spin_unlock_ownership_probe_armed = false;
     test_spin_unlock_hook = NULL;
     pico_test_time_us = 0;
@@ -221,6 +236,97 @@ void test_control_plane_drops_invalid_mailbox_port(void)
                      UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
+}
+
+void test_control_plane_invalid_line_coding_releases_provisional_ownership(void)
+{
+    /* A fresh mailbox take (no prior worker-pending owner) provisionally sets
+     * pending_controls[...].pending = true in the same locked step as the
+     * mailbox ack (see uart_control_plane_service()). A structurally invalid
+     * payload takes the permanent-reject branch in
+     * uart_control_plane_set_line_coding(), which must undo that provisional
+     * marker via uart_control_plane_release_provisional_pending() before the
+     * mailbox completion runs, or CONTROL_PENDING would clear while
+     * pending_controls[...].pending was still (wrongly) latched true. */
+    uart_driver_line_coding_t invalid = test_line_coding();
+    uart_control_mailbox_request_t request;
+
+    invalid.baud_rate = 0u;
+    request = (uart_control_mailbox_request_t){
+        .port_id = UART_PORT_0,
+        .control_generation = 1u,
+        .tx_boundary_sequence = 0u,
+        .line_coding = invalid,
+    };
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailboxes[UART_PORT_0], &request));
+
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_0));
+}
+
+void test_control_plane_unacceptable_line_coding_releases_provisional_ownership(void)
+{
+    /* Structurally valid but backend-unacceptable (data_bits != 8 here) takes
+     * the other permanent-reject branch guarded by the same provisional
+     * ownership release. */
+    uart_driver_line_coding_t unacceptable = test_line_coding();
+    uart_control_mailbox_request_t request;
+
+    unacceptable.data_bits = 7u;
+    request = (uart_control_mailbox_request_t){
+        .port_id = UART_PORT_0,
+        .control_generation = 1u,
+        .tx_boundary_sequence = 0u,
+        .line_coding = unacceptable,
+    };
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailboxes[UART_PORT_0], &request));
+
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_0));
+}
+
+void test_control_plane_unavailable_backend_releases_provisional_ownership(void)
+{
+    /* port->ops == NULL is the third permanent-reject branch in
+     * uart_control_plane_set_line_coding() and shares the same provisional
+     * ownership release. UART_PORT_1 has no backend ops in setUp(). */
+    uart_control_mailbox_request_t request = {
+        .port_id = UART_PORT_1,
+        .control_generation = 1u,
+        .tx_boundary_sequence = 0u,
+        .line_coding = test_line_coding(),
+    };
+
+    test_control_generations[UART_PORT_1] = 1u;
+    test_status_flags[UART_PORT_1] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailboxes[UART_PORT_1], &request));
+
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_1].pending);
+    TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_1]));
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     test_status_flags[UART_PORT_1]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_1]);
+    TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_1));
 }
 
 void test_control_plane_rejects_payload_aimed_at_another_port(void)
@@ -392,6 +498,11 @@ void test_control_plane_mailbox_ack_and_worker_ownership_are_atomic(void)
      * ack became visible; otherwise this test would pass vacuously. */
     TEST_ASSERT_FALSE(spin_unlock_ownership_probe_armed);
     TEST_ASSERT_FALSE(observed_mailbox_acked_without_worker_ownership);
+    /* This is the real, host-visible contract: a concurrent core 0 reject
+     * evaluating uart_control_pending_should_clear() at this instant must
+     * not conclude the port is unowned. A false result here would mean
+     * CONTROL_PENDING could be cleared and TX ingress unblocked mid-handoff. */
+    TEST_ASSERT_FALSE(observed_concurrent_reject_would_clear_control_pending);
     TEST_ASSERT_TRUE(test_pending_controls[UART_PORT_0].pending);
 }
 
@@ -424,6 +535,9 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_control_plane_waits_for_tx_boundary_before_applying);
     RUN_TEST(test_control_plane_drops_invalid_mailbox_port);
+    RUN_TEST(test_control_plane_invalid_line_coding_releases_provisional_ownership);
+    RUN_TEST(test_control_plane_unacceptable_line_coding_releases_provisional_ownership);
+    RUN_TEST(test_control_plane_unavailable_backend_releases_provisional_ownership);
     RUN_TEST(test_control_plane_rejects_payload_aimed_at_another_port);
     RUN_TEST(test_control_plane_stops_immediately_when_backend_is_retired);
     RUN_TEST(test_control_plane_reports_error_after_apply_timeout);
