@@ -87,6 +87,13 @@ watch HID health bit 2 (`control_error`) and bit 3 (`control_pending`).
 TX ingress from USB to that UART is blocked while any owner exists. This keeps
 new bytes from entering the old-format TX ring after the request boundary.
 
+A mailbox completion — invalid payload, unsupported format, or a slot whose
+`port_id` does not match — clears `CONTROL_PENDING` only when soft-pending,
+mailbox-pending, and worker-pending are all clear. Rejecting a newer request
+must not reopen TX ingress while an older worker-pending apply is still waiting
+on its TX boundary. The older apply still runs, and its completion cannot clear
+`CONTROL_ERROR` belonging to the newer reject.
+
 The worker-side boundary is the TX producer sequence captured when the mailbox
 request is published. Core 1 must drain old-format bytes up to that boundary
 before applying the new format.

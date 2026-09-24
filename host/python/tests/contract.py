@@ -149,6 +149,30 @@ def firmware_hid_reset_cmake_default_enabled(repo_root: Path) -> bool:
     return match.group(1) == "ON"
 
 
+def firmware_hid_interface_number(repo_root: Path) -> int:
+    """Return ITF_NUM_HID from the configuration-descriptor interface enum.
+
+    ITF_NUM_CDC0 is explicitly 0. Later enumerators increment by one, so the
+    HID interface number is its position in usb_interface_number_t.
+    """
+    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r"typedef enum \{(?P<body>.*?)\}\s*usb_interface_number_t\s*;",
+        text,
+        flags=re.DOTALL,
+    )
+    if not match:
+        raise ValueError("usb_interface_number_t not found")
+    if not re.search(r"\bITF_NUM_CDC0\s*=\s*0\b", match.group("body")):
+        raise ValueError("ITF_NUM_CDC0 must be explicitly 0")
+    names = re.findall(r"\b(ITF_NUM_[A-Z0-9_]+)\b", match.group("body"))
+    if "ITF_NUM_HID" not in names:
+        raise ValueError("ITF_NUM_HID not found")
+    return names.index("ITF_NUM_HID")
+
+
 def firmware_uart_board_ports(repo_root: Path) -> list[dict[str, object]]:
     """Parse TX/RX pins and HW flow-control defaults from uart_board.c."""
     text = (repo_root / "firmware" / "src" / "board" / "uart_board.c").read_text(

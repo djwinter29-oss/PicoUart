@@ -46,15 +46,17 @@ void test_mailbox_acceptance_and_sequence_wrap(void)
 
 void test_worker_completion_keeps_newer_control_pending_owner(void)
 {
-    TEST_ASSERT_FALSE(uart_control_pending_should_clear(true, false));
-    TEST_ASSERT_FALSE(uart_control_pending_should_clear(false, true));
-    TEST_ASSERT_TRUE(uart_control_pending_should_clear(false, false));
+    TEST_ASSERT_FALSE(uart_control_pending_should_clear(true, false, false));
+    TEST_ASSERT_FALSE(uart_control_pending_should_clear(false, true, false));
+    TEST_ASSERT_FALSE(uart_control_pending_should_clear(false, false, true));
+    TEST_ASSERT_TRUE(uart_control_pending_should_clear(false, false, false));
 }
 
 void test_mailbox_completion_keeps_successor_mailbox_owner(void)
 {
     /* Immediate completion must use the same ownership rule as worker completion. */
-    TEST_ASSERT_FALSE(uart_control_pending_should_clear(false, true));
+    TEST_ASSERT_FALSE(uart_control_pending_should_clear(false, true, false));
+    TEST_ASSERT_FALSE(uart_control_pending_should_clear(false, false, true));
 }
 
 void test_every_control_owner_blocks_tx_ingress(void)

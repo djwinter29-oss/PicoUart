@@ -77,6 +77,16 @@ void pio_uart_driver_poll(pio_uart_driver_t *driver, bool tx_launch_allowed);
 void pio_uart_driver_deinit(pio_uart_driver_t *driver);
 
 /**
+ * @brief Drop bring-up framing faults before the UART worker starts polling.
+ * @param driver Driver instance whose startup RX errors should be discarded.
+ *
+ * Clears a sticky PIO RX stop-bit interrupt without counting it, then zeroes
+ * the session framing counter. The first worker poll would otherwise report
+ * pin bring-up noise as HID health bit 7.
+ */
+void pio_uart_driver_clear_rx_error_baseline(pio_uart_driver_t *driver);
+
+/**
  * @brief Reconfigure the baud rate for one PIO UART backend.
  * @param driver Driver instance to update.
  * @param baud_rate New baud rate.

@@ -32,14 +32,21 @@ static inline uint32_t uart_control_mailbox_next_sequence(uint32_t request_seque
 }
 
 /**
- * @brief Decide whether a worker completion may clear CONTROL_PENDING.
+ * @brief Decide whether a control completion may clear CONTROL_PENDING.
  * @param soft_pending True while core 0 has a request waiting for the mailbox.
  * @param mailbox_pending True while the mailbox contains a request for this port.
- * @return `true` when no newer control request owns the pending status.
+ * @param worker_pending True while core 1 still owns a deferred apply.
+ * @return `true` when no control owner still holds the pending status.
+ *
+ * Mailbox rejects and worker completions share this rule. Clearing the status
+ * bit while worker-pending remains lets USB TX ingress pass the snapped
+ * boundary and leave the UART on the new format.
  */
-static inline bool uart_control_pending_should_clear(bool soft_pending, bool mailbox_pending)
+static inline bool uart_control_pending_should_clear(bool soft_pending,
+                                                     bool mailbox_pending,
+                                                     bool worker_pending)
 {
-    return !soft_pending && !mailbox_pending;
+    return !soft_pending && !mailbox_pending && !worker_pending;
 }
 
 /**

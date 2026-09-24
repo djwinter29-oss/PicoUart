@@ -631,6 +631,19 @@ static void pio_uart_driver_harvest_framing_errors(pio_uart_driver_t *driver)
     }
 }
 
+void pio_uart_driver_clear_rx_error_baseline(pio_uart_driver_t *driver)
+{
+    if ((driver == NULL) || !driver->initialized || (driver->config.pio == NULL)) {
+        return;
+    }
+
+    /* Same sticky flag as harvest, but bring-up noise is not a runtime fault. */
+    if (pio_interrupt_get(driver->config.pio, driver->config.rx_state_machine)) {
+        pio_interrupt_clear(driver->config.pio, driver->config.rx_state_machine);
+    }
+    driver->rx_error_count = 0u;
+}
+
 bool pio_uart_driver_init(pio_uart_driver_t *driver)
 {
     if ((driver == NULL) || (driver->config.pio == NULL)) {

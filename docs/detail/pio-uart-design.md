@@ -181,7 +181,10 @@ Relevant host-visible signals:
 - HID health bit 3: control request is pending.
 - HID health bit 5: backend is PIO.
 - HID health bit 6: RX data has been overwritten.
-- HID health bit 7: PIO stop-bit framing error.
+- HID health bit 7: PIO stop-bit framing error. Startup calls
+  `clear_rx_error_baseline` after every backend is up and before core 1 polls.
+  That hook clears a sticky RX stop-bit interrupt without counting it, so pin
+  bring-up noise does not stick as a false framing fault.
 - HID overflow-count feature report: cumulative UART-to-USB RX dropped bytes.
 
 ## Current Limits
