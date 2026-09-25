@@ -7,6 +7,53 @@ Result entries are development evidence unless they explicitly say
 `release qualification` and include the exact flashed artifact hash for each
 required board.
 
+## 2026-09-24T20:55:00+00:00 - pico - Full Matrix Performance + Functional
+
+**Result:** `PASS`
+**Firmware:** `0.0.0`, `5164be3`
+**Qualification:** development HIL; not release qualification
+**Board:** `pico`
+**Test date/time:** `2026-09-24T20:55:00+00:00`
+**Wiring:** Self-test stages 1-4 (full staged fixture)
+**RTS/CTS:** disabled
+**Artifact:** /home/home/repo/PicoUart/build/firmware-pico-main-5164be3/pico_uart.elf
+**Artifact SHA-256:** `2d4b1bc1fce40a041fd45174182a3a780e48ac0cbc6dd32d82e31c6da05c03c3`
+
+### Configuration
+
+- Payload: 1024 bytes (individual), default (functional stages)
+- Baud rates individual: 115200, 460800, 921600, 1000000
+- Concurrent: 115200, 10 s, all 4 links / 7 streams
+- UART0 fix at 115200 for concurrent runs
+
+### Results
+
+All four functional stages (`tools/hardware/serial_bridge_test.py`) passed at
+115200 baud first. All individual-link sequences were then run at each baud
+rate in sequence. The concurrent run used
+`tools/hardware/serial_stress_benchmark.py` with all four fixture links active
+(`--uart1 --uart1-peer --uart4 --uart4-peer`).
+
+| Link | 115200 | 460800 | 921600 | 1000000 | Concurrent 115200 |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| Debug Probe ↔ HW UART0 | PASS | PASS | PASS | PASS | PASS (2 streams) |
+| HW UART1 ↔ PIO UART2 | PASS | PASS | PASS | PASS | PASS (2 streams) |
+| PIO UART3 ↔ PIO UART4 | PASS | PASS | PASS | PASS | PASS (2 streams) |
+| PIO UART5 loopback | PASS | PASS | PASS | PASS | PASS (1 stream) |
+
+- Concurrent throughput: 113664 bytes on UART0 directions (11260.1 B/s each);
+  114688 bytes on each staged UART/PIO stream (approximately 11361.5 B/s)
+
+### Health
+
+- **Before:** all overruns 0; firmware `0.0.0`; HID monitor 50 samples clean
+  (`ready`/`pio` flags only, no `rx_error` or `control_error`)
+- **After:** all overruns 0; firmware `0.0.0`
+- USB: no disconnects, no board resets, no serial exceptions observed
+- Raw log: docs/tests/raw/hardware-test-2026-09-24T20_55_00_00_00.log
+
+---
+
 ## Not yet recorded
 
 This file does not yet satisfy the release gate in `docs/releasing.md`:

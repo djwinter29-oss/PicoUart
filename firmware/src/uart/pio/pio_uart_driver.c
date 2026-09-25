@@ -235,10 +235,28 @@ static float pio_uart_driver_clock_divider(uint32_t baud_rate)
     return (float)clock_get_hz(clk_sys) / (8.0f * (float)baud_rate);
 }
 
+/**
+ * @brief RX-only PIO clock divider.
+ *
+ * RX runs its own state machine and divider at
+ * UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT clocks/bit (22, vs. TX's 8) so its
+ * 3-sample majority-vote bit decode has PIO cycles to spare without eating
+ * into the inter-frame settle margin. See the cycle derivation in uart.pio.
+ */
+static float pio_uart_driver_rx_clock_divider(uint32_t baud_rate)
+{
+    return (float)clock_get_hz(clk_sys) /
+           ((float)UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT * (float)baud_rate);
+}
+
 static bool pio_uart_driver_baud_rate_supported(uint32_t baud_rate)
 {
-    /* Same integer feasibility gate used by USB fail-fast / Unity tests. */
-    return uart_line_coding_pio_baud_feasible(baud_rate, clock_get_hz(clk_sys));
+    /* Same integer feasibility gate used by USB fail-fast / Unity tests.
+     * Both TX's and RX's independent dividers must accept the baud. */
+    uint32_t sys_hz = clock_get_hz(clk_sys);
+
+    return uart_line_coding_pio_baud_feasible(baud_rate, sys_hz) &&
+           uart_line_coding_pio_rx_baud_feasible(baud_rate, sys_hz);
 }
 
 static uint pio_uart_driver_tx_offset(PIO pio)
@@ -376,7 +394,8 @@ static bool pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
     pio_sm_config config = pio_uart_rx_program_get_default_config(offset);
 
     sm_config_set_in_pins(&config, driver->config.rx_pin);
-    /* jmp pin is sampled by the stop-bit check after the 8 data bits. */
+    /* jmp pin drives every 3-sample majority-vote decision (8 data bits plus
+     * the stop-bit check); see uart.pio for the per-bit decision tree. */
     sm_config_set_jmp_pin(&config, driver->config.rx_pin);
     /*
      * Shift right so LSB-first UART samples assemble a natural byte in ISR[31:24].
@@ -384,7 +403,7 @@ static bool pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
      */
     sm_config_set_in_shift(&config, true, false, 32u);
     sm_config_set_fifo_join(&config, PIO_FIFO_JOIN_RX);
-    sm_config_set_clkdiv(&config, pio_uart_driver_clock_divider(driver->config.baud_rate));
+    sm_config_set_clkdiv(&config, pio_uart_driver_rx_clock_divider(driver->config.baud_rate));
 
     pio_gpio_init(driver->config.pio, driver->config.rx_pin);
     if ((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP) != 0u) {
@@ -906,11 +925,12 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
 
 static void pio_uart_driver_apply_baud_locked(pio_uart_driver_t *driver, uint32_t baud_rate)
 {
-    float divider = pio_uart_driver_clock_divider(baud_rate);
+    float tx_divider = pio_uart_driver_clock_divider(baud_rate);
+    float rx_divider = pio_uart_driver_rx_clock_divider(baud_rate);
 
     driver->config.baud_rate = baud_rate;
-    pio_sm_set_clkdiv(driver->config.pio, driver->config.tx_state_machine, divider);
-    pio_sm_set_clkdiv(driver->config.pio, driver->config.rx_state_machine, divider);
+    pio_sm_set_clkdiv(driver->config.pio, driver->config.tx_state_machine, tx_divider);
+    pio_sm_set_clkdiv(driver->config.pio, driver->config.rx_state_machine, rx_divider);
     pio_clkdiv_restart_sm_mask(driver->config.pio,
                                (1u << driver->config.tx_state_machine) |
                                    (1u << driver->config.rx_state_machine));

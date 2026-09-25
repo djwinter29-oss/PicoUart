@@ -89,6 +89,29 @@ void test_pio_baud_feasibility(void)
     TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(115200u, 0u));
 }
 
+void test_pio_rx_baud_feasibility_is_stricter_than_tx(void)
+{
+    /*
+     * RX uses UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT (22) instead of TX's 8,
+     * so the RX divider saturates the 65536 ceiling at a lower baud than TX.
+     * At 125 MHz: TX divider for 400000 baud = 125e6/(8*400000) = 39.06
+     * (feasible); RX divider for the same baud = 125e6/(22*400000) = 14.20
+     * (also feasible). Push baud low enough that only the RX ratio (22x)
+     * overflows the divider while the TX ratio (8x) still fits:
+     * baud=350 -> TX divider = 125e6/(8*350) = 44642.9 (< 65536, feasible);
+     *             RX divider = 125e6/(22*350) = 16233.8 (< 65536, feasible).
+     * baud=90 -> TX divider = 125e6/(8*90) = 173611 (>= 65536, infeasible);
+     *            RX divider = 125e6/(22*90) = 63131.3 (< 65536, feasible).
+     */
+    TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(350u, TEST_SYS_HZ));
+    TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(350u, TEST_SYS_HZ));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(90u, TEST_SYS_HZ));
+    TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(90u, TEST_SYS_HZ));
+
+    TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(115200u, TEST_SYS_HZ));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_rx_baud_feasible(115200u, 0u));
+}
+
 void test_usb_parse_table(void)
 {
     uart_driver_line_coding_t coding;
@@ -128,6 +151,7 @@ int main(void)
     RUN_TEST(test_hw_parity_and_stop_accepted_but_not_pio);
     RUN_TEST(test_baud_bounds);
     RUN_TEST(test_pio_baud_feasibility);
+    RUN_TEST(test_pio_rx_baud_feasibility_is_stricter_than_tx);
     RUN_TEST(test_usb_parse_table);
     return UNITY_END();
 }

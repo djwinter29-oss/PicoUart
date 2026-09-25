@@ -26,7 +26,9 @@ bool uart_line_coding_is_valid(const uart_driver_line_coding_t *line_coding)
            (line_coding->parity == UART_DRIVER_PARITY_EVEN);
 }
 
-bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz)
+static bool pio_baud_feasible_for_clocks_per_bit(uint32_t baud_rate,
+                                                 uint32_t sys_hz,
+                                                 uint32_t clocks_per_bit_ratio)
 {
     uint64_t clocks_per_bit;
 
@@ -34,7 +36,7 @@ bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz)
         return false;
     }
 
-    clocks_per_bit = (uint64_t)UART_LINE_CODING_PIO_CLOCKS_PER_BIT * (uint64_t)baud_rate;
+    clocks_per_bit = (uint64_t)clocks_per_bit_ratio * (uint64_t)baud_rate;
     /* divider = sys_hz / clocks_per_bit must satisfy 1 <= divider < 65536. */
     if ((uint64_t)sys_hz < (clocks_per_bit * (uint64_t)UART_LINE_CODING_PIO_DIVIDER_MIN)) {
         return false;
@@ -46,6 +48,18 @@ bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz)
     }
 
     return true;
+}
+
+bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz)
+{
+    return pio_baud_feasible_for_clocks_per_bit(baud_rate, sys_hz,
+                                                UART_LINE_CODING_PIO_CLOCKS_PER_BIT);
+}
+
+bool uart_line_coding_pio_rx_baud_feasible(uint32_t baud_rate, uint32_t sys_hz)
+{
+    return pio_baud_feasible_for_clocks_per_bit(baud_rate, sys_hz,
+                                                UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT);
 }
 
 bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding,
@@ -61,7 +75,11 @@ bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding
         return false;
     }
 
-    return uart_line_coding_pio_baud_feasible(line_coding->baud_rate, sys_hz);
+    /* TX and RX run independent state machines/dividers (RX uses a wider
+     * clocks-per-bit ratio for its majority-vote decode); both must accept
+     * the requested baud. */
+    return uart_line_coding_pio_baud_feasible(line_coding->baud_rate, sys_hz) &&
+           uart_line_coding_pio_rx_baud_feasible(line_coding->baud_rate, sys_hz);
 }
 
 bool uart_line_coding_from_usb(uint32_t bit_rate,
