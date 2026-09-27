@@ -37,6 +37,7 @@ Release and policy:
 
 - [Releasing](docs/releasing.md)
 - [Security / USB identity policy](SECURITY.md)
+- [Review score](docs/review-score.md)
 
 Design notes:
 
