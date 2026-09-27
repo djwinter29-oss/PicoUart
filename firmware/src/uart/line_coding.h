@@ -22,8 +22,18 @@
  * Backends may still reject rates their clock divider cannot represent.
  */
 #define UART_LINE_CODING_BAUD_MAX 3000000u
-/** @brief PIO UART program clocks per bit (must match uart.pio timing). */
+/** @brief PIO UART TX program clocks per bit (must match uart.pio TX timing). */
 #define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 8u
+/**
+ * @brief PIO UART RX program clocks per bit (must match uart.pio RX timing).
+ *
+ * The RX program runs its own state machine and its own clock divider, so it
+ * is free to use a different clocks-per-bit ratio than TX. It uses a wider
+ * ratio than TX (22 vs. 8) because its majority-vote bit decode needs extra
+ * PIO cycles per bit that the single-sample TX/inter-frame budget does not
+ * have room for; see the cycle derivation in uart.pio.
+ */
+#define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 22u
 /** @brief Inclusive minimum PIO clock divider accepted by the Pico SDK helper. */
 #define UART_LINE_CODING_PIO_DIVIDER_MIN 1u
 /** @brief Exclusive maximum PIO clock divider accepted by the Pico SDK helper. */
@@ -37,12 +47,23 @@
 bool uart_line_coding_is_valid(const uart_driver_line_coding_t *line_coding);
 
 /**
- * @brief Return whether @p baud_rate is representable by the PIO UART clock divider.
+ * @brief Return whether @p baud_rate is representable by the PIO UART TX clock divider.
  * @param baud_rate Requested baud rate.
  * @param sys_hz System clock frequency in Hz (for example `clock_get_hz(clk_sys)`).
  * @return `true` when `sys_hz / (8 * baud)` is in `[1, 65536)`.
  */
 bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
+
+/**
+ * @brief Return whether @p baud_rate is representable by the PIO UART RX clock divider.
+ * @param baud_rate Requested baud rate.
+ * @param sys_hz System clock frequency in Hz (for example `clock_get_hz(clk_sys)`).
+ * @return `true` when `sys_hz / (UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT * baud)`
+ * is in `[1, 65536)`. RX uses a wider clocks-per-bit ratio than TX (see
+ * @ref UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT), so this is strictly more
+ * restrictive than @ref uart_line_coding_pio_baud_feasible at very high baud.
+ */
+bool uart_line_coding_pio_rx_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
 
 /**
  * @brief Return whether @p line_coding is supported by the PIO UART backend.

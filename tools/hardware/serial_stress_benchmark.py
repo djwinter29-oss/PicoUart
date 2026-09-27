@@ -10,6 +10,7 @@ import sys
 import termios
 import threading
 import time
+import fcntl
 
 
 BAUD_RATES = {
@@ -23,8 +24,12 @@ BAUD_RATES = {
     921600: termios.B921600,
     1000000: termios.B1000000,
 }
+TCGETS2 = 0x802C542A
+TCSETS2 = 0x402C542B
+BOTHER = 0x1000
+CBAUD = termios.CBAUD
 DEFAULT_RATES = tuple(BAUD_RATES)
-LINE_CODING_SETTLE_SECONDS = 2.0
+LINE_CODING_SETTLE_SECONDS = 8.0
 
 
 def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
@@ -37,11 +42,29 @@ def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
         settings[1] = 0
         settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
         settings[3] = 0
-        settings[4] = BAUD_RATES[baud_rate]
-        settings[5] = BAUD_RATES[baud_rate]
+        if baud_rate in BAUD_RATES:
+            settings[4] = BAUD_RATES[baud_rate]
+            settings[5] = BAUD_RATES[baud_rate]
         settings[6][termios.VMIN] = 0
         settings[6][termios.VTIME] = 0
+        # tcsetattr() must run before the termios2 BOTHER ioctl below: it only
+        # knows the standard termios struct, so calling it afterwards would
+        # clobber the custom ispeed/ospeed with whatever CBAUD bits it wrote.
         termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
+        if baud_rate not in BAUD_RATES:
+            # Linux termios2 is required for experimental non-standard rates.
+            # ponytail: retain standard termios for portable rates.
+            raw = bytearray(44)
+            fcntl.ioctl(file_descriptor, TCGETS2, raw, True)
+            cflag = int.from_bytes(raw[8:12], "little")
+            # Clear the existing CBAUD encoding before selecting BOTHER: a
+            # plain OR is a no-op whenever the current standard rate already
+            # has the BOTHER bit set within its CBAUD value.
+            cflag = (cflag & ~CBAUD) | BOTHER
+            raw[8:12] = cflag.to_bytes(4, "little")
+            raw[36:40] = baud_rate.to_bytes(4, "little")
+            raw[40:44] = baud_rate.to_bytes(4, "little")
+            fcntl.ioctl(file_descriptor, TCSETS2, raw)
         termios.tcflush(file_descriptor, termios.TCIOFLUSH)
         return file_descriptor, original_settings
     except Exception:
@@ -129,8 +152,8 @@ def parse_rates(value: str) -> tuple[int, ...]:
         rates = tuple(int(item) for item in value.split(","))
     except ValueError as error:
         raise argparse.ArgumentTypeError("--rates must be comma-separated integers") from error
-    if not rates or any(rate not in BAUD_RATES for rate in rates):
-        raise argparse.ArgumentTypeError("--rates contains an unsupported baud rate")
+    if not rates or any(rate <= 0 for rate in rates):
+        raise argparse.ArgumentTypeError("--rates must contain positive baud rates")
     return rates
 
 
@@ -157,6 +180,10 @@ def parse_arguments() -> argparse.Namespace:
                         help="Bytes per verified stream block")
     parser.add_argument("--timeout", type=float, default=3.0,
                         help="Timeout for one block transfer in seconds")
+    parser.add_argument("--settle-seconds", type=float, default=8.0,
+                        help="wait after configuring all ports")
+    parser.add_argument("--setup-only", action="store_true",
+                        help="configure ports and settle, but do not transmit data")
     return parser.parse_args()
 
 
@@ -286,7 +313,11 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             ports.append((uart4, uart4_settings))
             streams.append(("uart4-loopback", uart4, uart4))
 
-        time.sleep(LINE_CODING_SETTLE_SECONDS)
+        time.sleep(getattr(arguments, "settle_seconds", LINE_CODING_SETTLE_SECONDS))
+        if getattr(arguments, "setup_only", False):
+            print(f"SETUP PASS at {stream_baud} baud")
+            passed = True
+            return passed
         start = threading.Barrier(len(streams))
         threads = [
             threading.Thread(target=run_stream,

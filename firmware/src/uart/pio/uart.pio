@@ -33,27 +33,88 @@ bitloop_cts:
 .wrap
 
 .program pio_uart_rx
-; 8N1 RX with stop-bit framing check.
-; On a framing error (stop bit low): raise irq 0 rel for this SM, discard the
-; partial ISR, wait for the line to return idle-high, then hunt for the next
-; start bit. Valid frames are pushed as usual.
+; 8N1 RX with a 3-sample majority vote on every bit (8 data bits + the stop
+; bit), reusing one compact decision tree through the existing bit-count loop.
+; This replaces the earlier single-sample-per-bit design: a single sample is
+; correct on average but has zero tolerance for a mis-timed/glitched sample on
+; any one bit, and HW-UART-TX -> PIO-RX high-baud hardware testing showed
+; stop-bit framing errors that a single centre sample cannot recover from.
+;
+; RX runs its own state machine and its own clock divider
+; (UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT = 22 PIO clocks/bit, set in C),
+; independent of TX's 8 clocks/bit. The extra per-bit cycle budget is what
+; makes the vote possible without stealing cycles from the inter-frame
+; settle margin (TX timing and TX/TX_CTS resource claims are unchanged).
+;
+; Cycle derivation (P = 22 clocks/bit, wait-detect start bit = cycle 0):
+;   - Loop entry for bit k lands at P*(k+1.5) - 1, i.e. 1 cycle before that
+;     bit's centre; the vote's 3 live pin samples occur on 3 consecutive PIO
+;     cycles straddling the centre (centre-1, centre, and centre+1 only for
+;     the tie-break case). `set x, 8 [29]` reaches the first such entry
+;     (cycle 32 = 1.5*22 - 1) from the wait/set-y preamble (3 cycles fixed).
+;   - The vote tree always resolves in exactly 4 cycles (majority-0 leaves)
+;     or 3 cycles (majority-1 leaves) from loop entry, so both `jmp x--
+;     bitloop` tail delays are padded to the same 22-cycle-per-bit total
+;     regardless of which 3 samples were taken:
+;       vote0 path: 4 (tree) + 1 (jmp !x) + 1 (in) + 1+15 (jmp x--) = 22
+;       vote1 path: 3 (tree) + 1 (jmp !x) + 1 (in) + 1+16 (jmp x--) = 22
+;       vote1 path: 3 (tree) + 1 (jmp !x) + 1 (in) + 1+16 (jmp x--) = 22
+;   - X counts 8..0 across 9 loop passes (not 8): passes with X!=0 are the 8
+;     data bits (voted bit shifted into ISR); the X==0 pass is the stop bit
+;     (voted 1 -> push, voted 0 -> sticky framing error). Y holds a constant
+;     1, the only source available to shift a voted "1" without touching X.
+;   - Frame length on the clean-push path is 213 cycles (10*22 - 7): a
+;     7-cycle idle-high margin remains before the earliest possible next
+;     start bit at cycle 220, matching the *relative* margin of the original
+;     8-clocks/bit design (3/80 cycles) rather than shrinking it.
+;   - This was verified functionally (all 256 data bytes x good/bad stop,
+;     zero-skew and +-5% skew) and against single-cycle sample glitches
+;     (tolerates any 1-of-3 bad sample, correctly flags 2-of-3 bad samples)
+;     with a standalone cycle-accurate Python interpreter of this exact
+;     assembled program; see the session report for the harness.
+;
+; ponytail: the 3 samples are always exactly 1 PIO cycle apart regardless of
+; P, so this protects against very-short (sub-original-bit-cycle) mis-sample
+; events, not longer-duration signal-integrity artifacts. If HW1 TX -> PIO2
+; RX failures persist after this change, capture the failing edge with a
+; logic analyzer before adding more PIO-side speculation.
 ;
 ; IN shift direction is configured in C as shift-right so LSB-first UART samples
 ; assemble a natural byte in ISR[31:24]. RX DMA then reads that high byte.
 
 .wrap_target
 start:
-    wait 0 pin 0
-    set x, 7 [10]
+    wait 0 pin 0            ; Stall until start bit is asserted (cycle 0)
+    set y, 1                 ; Constant "1" source for voted-1 bit shifts
+    set x, 8    [29]         ; Preload bit/stop counter; delay to 1 cycle
+                              ; before the first data bit's centre
 bitloop:
-    in pins, 1
-    jmp x-- bitloop [6]
-    ; Final not-taken jmp already delayed one bit time to the stop-bit centre.
-    jmp pin good_stop
-    irq set 0 rel
+    jmp pin, s1_hi            ; sample 1
+s1_lo:
+    jmp pin, s1_lo_s2_hi      ; sample 2 (s1=0 path)
+    jmp vote0 [1]             ; s1=0,s2=0: majority 0, no 3rd sample needed
+s1_lo_s2_hi:
+    jmp pin, vote1            ; sample 3 (tie 0,1): 1 -> majority 1
+    jmp vote0                 ; sample 3 (tie 0,1): 0 -> majority 0
+s1_hi:
+    jmp pin, s1_hi_s2_hi      ; sample 2 (s1=1 path)
+    jmp pin, vote1            ; sample 3 (tie 1,0): 1 -> majority 1
+    jmp vote0                 ; sample 3 (tie 1,0): 0 -> majority 0
+s1_hi_s2_hi:
+    jmp vote1                 ; s1=1,s2=1: majority 1, no 3rd sample needed
+vote0:
+    jmp !x, stop_bad          ; stop-bit pass: voted 0 is a framing error
+    in null, 1                ; data pass: shift voted 0 bit
+    jmp x-- bitloop [15]
+vote1:
+    jmp !x, stop_good         ; stop-bit pass: voted 1 is a clean frame
+    in y, 1                   ; data pass: shift voted 1 bit
+    jmp x-- bitloop [16]
+stop_bad:
+    irq set 0 rel             ; Sticky per-SM framing-error flag
     mov isr, null
     wait 1 pin 0
     jmp start
-good_stop:
+stop_good:
     push block
 .wrap

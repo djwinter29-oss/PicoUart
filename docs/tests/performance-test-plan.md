@@ -99,11 +99,55 @@ When the full staged-fixture options are supplied, the benchmark uses the
 documented cross-fixture: UART1 to UART2 and UART3 to UART4. This is the
 required form for a full-matrix performance result.
 
-The concurrent runner waits 2 seconds after each multi-port line-coding setup
+The concurrent runner waits 8 seconds after each multi-port line-coding setup
 before starting traffic so deferred PIO changes settle. Omitting UART1 or UART4
 records a successful run as `PARTIAL`, not a full-matrix `PASS`. Pass
 `--artifact /path/to/pico_uart.elf` or the flashed UF2 to bind the result to a
 SHA-256 digest and HID-reported firmware version.
+
+### Experimental arbitrary-baud and full six-port run
+
+`serial_stress_benchmark.py` accepts any positive integer baud rate on Linux.
+Standard rates use termios; other rates use Linux `termios2`/`BOTHER`. Use the
+full staged mapping below for six CDC ports and twelve simultaneous UART
+traffic directions:
+
+```sh
+PICO=/dev/serial/by-id/<pico-cdc-prefix>
+PROBE=/dev/serial/by-id/<debug-probe-uart>
+
+python3 tools/hardware/serial_stress_benchmark.py \\
+  --uart0-pico "${PICO}-if00" --uart0-peer "$PROBE" \\
+  --uart1 "${PICO}-if02" --uart1-peer "${PICO}-if04" \\
+  --uart2 "${PICO}-if04" --uart3 "${PICO}-if06" \\
+  --uart4 "${PICO}-if08" --uart4-peer "${PICO}-if06" \\
+  --uart5 "${PICO}-if0a" --uart0-baud 115200 \\
+  --rates 460800 --duration 30 --payload-bytes 1024 \\
+  --timeout 3 --settle-seconds 8
+```
+
+The command exercises CDC0 in both directions through the Debug Probe, CDC1
+and CDC2 as a cross-connected pair, CDC3 and CDC4 as a cross-connected pair,
+and CDC5 through the physical loopback. It must be run as a separate process
+for each candidate baud when comparing rates; do not change all CDC line
+codings repeatedly inside one long-running process. First verify each pair
+individually, then run the full six-port command. Treat a rate as stable only
+when every stream passes in repeated runs. `--setup-only` can check that all
+ports open and settle without transmitting, but it is not a performance pass.
+
+For a single pair, use the synchronized diagnostic helper. It supports
+`stage2` (CDC1↔CDC2) and `stage3` (CDC3↔CDC4), and can isolate one direction:
+
+```sh
+python3 tools/hardware/pair_duplex_benchmark.py stage2 \\
+  --rates 460800,500000,600000 --runs 3 --duration 30 \\
+  --settle 8 --direction both
+python3 tools/hardware/pair_duplex_benchmark.py stage3 \\
+  --rates 460800 --runs 3 --duration 30 --settle 8 --direction both
+```
+
+A `PASS` requires every payload to match. A setup or synchronization failure
+must be recorded separately from a data failure; neither counts as a pass.
 
 ### Partial Bench Mode
 
