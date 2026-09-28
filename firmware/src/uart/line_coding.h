@@ -22,21 +22,16 @@
  * Backends may still reject rates their clock divider cannot represent.
  */
 #define UART_LINE_CODING_BAUD_MAX 3000000u
-/**
- * @brief PIO UART TX program clocks per bit (must match uart.pio TX timing).
- *
- * Start, data, and stop all use the OUT pin path, 16 clocks/bit, matching RX
- * and a PL011's 16x bit grid. See uart.pio. There is no side-set, so the
- * delay field can encode [15].
- */
-#define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 16u
+/** @brief PIO UART TX program clocks per bit (must match uart.pio TX timing). */
+#define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 8u
 /**
  * @brief PIO UART RX program clocks per bit (must match uart.pio RX timing).
  *
- * The RX program runs its own state machine and its own clock divider. Sixteen
- * clocks place the three majority samples at centre-2, centre, and centre+2
- * (two PIO clocks apart, a quarter of the bit). See the cycle derivation in
- * uart.pio. TX uses the same 16 clocks/bit.
+ * The RX program runs its own state machine and its own clock divider, so it
+ * is free to use a different clocks-per-bit ratio than TX. Sixteen clocks
+ * place the three majority samples at centre-2, centre, and centre+2 (two
+ * PIO clocks apart, a quarter of the bit). See the cycle derivation in
+ * uart.pio. TX stays at 8 clocks/bit.
  */
 #define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 16u
 /** @brief Inclusive minimum PIO clock divider accepted by the Pico SDK helper. */
@@ -55,7 +50,7 @@ bool uart_line_coding_is_valid(const uart_driver_line_coding_t *line_coding);
  * @brief Return whether @p baud_rate is representable by the PIO UART TX clock divider.
  * @param baud_rate Requested baud rate.
  * @param sys_hz System clock frequency in Hz (for example `clock_get_hz(clk_sys)`).
- * @return `true` when `sys_hz / (UART_LINE_CODING_PIO_CLOCKS_PER_BIT * baud)` is in `[1, 65536)`.
+ * @return `true` when `sys_hz / (8 * baud)` is in `[1, 65536)`.
  */
 bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
 
@@ -64,9 +59,9 @@ bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
  * @param baud_rate Requested baud rate.
  * @param sys_hz System clock frequency in Hz (for example `clock_get_hz(clk_sys)`).
  * @return `true` when `sys_hz / (UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT * baud)`
- * is in `[1, 65536)`. TX and RX both use 16 clocks/bit, so this accepts the
- * same rates as @ref uart_line_coding_pio_baud_feasible. The checks stay
- * separate because the two state machines have independent dividers.
+ * is in `[1, 65536)`. RX uses a wider clocks-per-bit ratio than TX (see
+ * @ref UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT), so this is strictly more
+ * restrictive than @ref uart_line_coding_pio_baud_feasible at very high baud.
  */
 bool uart_line_coding_pio_rx_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
 

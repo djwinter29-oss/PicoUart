@@ -1,50 +1,35 @@
 .program pio_uart_tx
+.side_set 1 opt
 
-; 8N1 TX at 16 PIO clocks per bit (UART_LINE_CODING_PIO_CLOCKS_PER_BIT).
-;
-; Start, data, and stop all write the OUT pin (`mov pins` / `out pins`). There
-; is no side-set, so the delay field is 5 bits and [15] is 16 clocks. A PL011
-; also places edges on a 16x clock; an 8-clock PIO bit can only move an edge
-; on a 1/8-bit grid, and that is coarser than the hardware UART. Measured with
-; 8-clock TX: HW TX -> PIO RX holds 1.8 Mbaud, PIO TX -> HW RX holds 1.5.
-;
-; Back-to-back frames are exactly 10 bit-times. `mov pins, !null [13]` is 14
-; clocks of stop; the following `pull` and `set` hold that high for the 15th
-; and 16th clocks before `mov pins, null` drops the next start bit. Do not add
-; a trailing nop. Idle-high before the first byte comes from pio_sm_set_pins,
-; and a stalled `pull` leaves the stop level in place.
+; 8N1 TX at 8 PIO clocks per bit (matches UART_LINE_CODING_PIO_CLOCKS_PER_BIT).
+; Continuous frames are exactly 10 bit-times (start + 8 data + stop): the next
+; wrap to `pull side 1 [7]` asserts the stop bit. Do not add a trailing nop —
+; that lengthens the frame and under-runs a nominal 1 Mbaud byte rate.
 
 .wrap_target
-    pull                         ; 15th stop clock, or idle-high while stalled
-    set x, 7                     ; 16th stop clock. Pin still holds stop/idle.
-    mov pins, null [15]          ; Start bit, 16 clocks low
+    pull        side 1 [7] ; Stop bit / idle-high (8 clocks)
+    set x, 7    side 0 [7] ; Start bit (8 clocks)
 bitloop:
     out pins, 1
-    jmp x-- bitloop [14]         ; 8 data bits × 16 clocks
-    mov pins, !null [13]         ; 14 stop clocks; pull+set supply the last 2
+    jmp x-- bitloop [6]    ; 8 data bits × 8 clocks
 .wrap
 
 .program pio_uart_tx_cts
+.side_set 1 opt
 
 ; CTS is active-low. Wait only at the frame boundary so a CTS transition can
 ; defer the next byte without truncating the one already on the wire.
-; When CTS is already granted the stop bit is still 16 clocks:
-;   mov pins, !null [12] = 13
-;   wait                 = 1
-;   pull                 = 1
-;   set                  = 1
+; When CTS is already granted, the stop bit is still 8 clocks: `pull [6]` is
+; 7 clocks and the following `wait` takes the 8th while side-set stays high.
 ; A longer wait extends idle-high until CTS allows the next frame. Do not
-; change [12]; the granted-CTS stop bit would no longer be 16 clocks.
-; Pin levels use the same OUT path as pio_uart_tx (no side-set).
+; change `[6]` to `[7]` or the granted-CTS stop bit becomes 9 clocks.
 .wrap_target
-    pull                         ; 14th stop clock, or idle-high while stalled
-    wait 0 pin 0                 ; 15th stop clock once CTS is low; else hold high
-    set x, 7                     ; 16th stop clock. Pin still holds stop/idle.
-    mov pins, null [15]          ; Start bit, 16 clocks low
+    pull        side 1 [6] ; 7 clocks of stop bit; wait supplies the 8th.
+    wait 0 pin 0          ; Keep idle-high until CTS permits TX.
+    set x, 7    side 0 [7]
 bitloop_cts:
     out pins, 1
-    jmp x-- bitloop_cts [14]
-    mov pins, !null [12]         ; 13 stop clocks; wait+pull+set supply the last 3
+    jmp x-- bitloop_cts [6]
 .wrap
 
 .program pio_uart_rx
@@ -55,8 +40,7 @@ bitloop_cts:
 ; (UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT, set in C), so the vote spans 4/16
 ; of the bit instead of three back-to-back clocks. A slow edge that used to
 ; land inside the whole cluster now has to cover a quarter of the bit before
-; every sample agrees with it. TX uses the same 16 clocks/bit on its own
-; divider, so both state machines quantize the baud the same way.
+; every sample agrees with it. TX stays at 8 clocks/bit on its own divider.
 ;
 ; Cycle derivation (P = 16 clocks/bit, wait-detect start bit = cycle 0):
 ;   - Loop entry for bit k is at P*(k+1.5) - 2. `set x, 8 [19]` reaches the
