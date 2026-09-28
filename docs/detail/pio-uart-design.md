@@ -42,10 +42,20 @@ DMA transfer when needed.
 Important details:
 
 - The PIO RX program uses a 3-sample majority vote on every bit (8 data bits
-  plus the stop bit) at its own 22 PIO clocks/bit ratio, independent of TX's
-  8 clocks/bit divider; RX and TX run on separate state machines with
-  separate clock dividers, so this does not change TX bit timing. See the
-  cycle derivation and majority-vote rationale in `uart.pio`.
+  plus the stop bit) at its own 16 PIO clocks/bit ratio, independent of TX's
+  8 clocks/bit divider. The samples are two PIO clocks apart, at centre-2,
+  centre, and centre+2, so the vote covers a quarter of the bit. RX and TX
+  run on separate state machines with separate clock dividers, so this does
+  not change TX bit timing. See the cycle derivation in `uart.pio`.
+- PIO and hardware UART TX pins are driven at fast slew and 12 mA. The reset
+  pad (slow slew, 4 mA) makes an edge wider than that vote window around
+  1.5 Mbaud.
+- Keep TX at this 8-clock side-set program. A 16-clock OUT-only TX was slower
+  on the same jumper fixture without overclock (HW→PIO 1.5 Mbaud, PIO→HW 1.2,
+  PIO3→PIO4 1.3, PIO4→PIO3 1.5). Restoring this program, still without
+  overclock, measured at least HW→PIO 1.5, PIO→HW 1.2, PIO3→PIO4 1.8, and
+  PIO4→PIO3 2.0. Those Stage 3 rates are above either earlier run. The Stage 2
+  figures are confirmed floors, not a new ceiling.
 - The IN shift is configured so LSB-first UART samples form a natural byte in
   FIFO bits `[31:24]`; RX DMA reads one byte from `rxf+3`.
 - RX DMA transfer counts use the SDK encoder so RP2350 does not enter ENDLESS
@@ -198,8 +208,9 @@ Relevant host-visible signals:
 
 - PIO UART framing is 8N1 only.
 - PIO baud rates must be representable by both the TX and RX PIO clock
-  dividers and are rejected fail-fast otherwise; RX's 22x ratio is the
-  stricter of the two at very low baud rates.
+  dividers and are rejected fail-fast otherwise. TX's 8x ratio hits the
+  divider ceiling first at very low baud; RX's 16x ratio hits the divider
+  floor first at very high baud.
 - The RX program is 23 instructions (TX is 4, TX_CTS is 5). On the shipped
   board (no port ever enables CTS) a PIO block holds TX + RX = 27/32
   instructions. A hypothetical future block mixing a CTS port with a

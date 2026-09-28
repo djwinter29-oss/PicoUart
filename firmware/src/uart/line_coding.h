@@ -28,12 +28,12 @@
  * @brief PIO UART RX program clocks per bit (must match uart.pio RX timing).
  *
  * The RX program runs its own state machine and its own clock divider, so it
- * is free to use a different clocks-per-bit ratio than TX. It uses a wider
- * ratio than TX (22 vs. 8) because its majority-vote bit decode needs extra
- * PIO cycles per bit that the single-sample TX/inter-frame budget does not
- * have room for; see the cycle derivation in uart.pio.
+ * is free to use a different clocks-per-bit ratio than TX. Sixteen clocks
+ * place the three majority samples at centre-2, centre, and centre+2 (two
+ * PIO clocks apart, a quarter of the bit). See the cycle derivation in
+ * uart.pio. TX stays at 8 clocks/bit.
  */
-#define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 22u
+#define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 16u
 /** @brief Inclusive minimum PIO clock divider accepted by the Pico SDK helper. */
 #define UART_LINE_CODING_PIO_DIVIDER_MIN 1u
 /** @brief Exclusive maximum PIO clock divider accepted by the Pico SDK helper. */
