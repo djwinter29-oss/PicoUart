@@ -33,7 +33,8 @@ control configuration before claiming resources. It then:
 
 1. initializes the RX and TX rings
 2. claims one RX DMA channel and one TX DMA channel and holds both until deinit
-3. assigns UART GPIO functions
+3. assigns UART GPIO functions, and drives the TX pad at fast slew and 12 mA
+   so the edge stays inside the PIO RX vote window
 4. configures the PL011 baud rate, format, FIFO, and optional CTS
 5. configures RTS policy when hardware flow control is enabled
 6. starts the circular RX DMA transfer

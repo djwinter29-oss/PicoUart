@@ -249,9 +249,9 @@ static float pio_uart_driver_clock_divider(uint32_t baud_rate)
  * @brief RX-only PIO clock divider.
  *
  * RX runs its own state machine and divider at
- * UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT clocks/bit (22, vs. TX's 8) so its
- * 3-sample majority-vote bit decode has PIO cycles to spare without eating
- * into the inter-frame settle margin. See the cycle derivation in uart.pio.
+ * UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT clocks/bit (16, vs. TX's 8). The
+ * wider grid spaces the 3 majority samples across a quarter of each bit.
+ * See the cycle derivation in uart.pio.
  */
 static float pio_uart_driver_rx_clock_divider(uint32_t baud_rate)
 {
@@ -377,6 +377,10 @@ static bool pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
     }
 
     pio_gpio_init(driver->config.pio, driver->config.tx_pin);
+    /* Default pads are 4 mA and slow slew. A slow edge is wider than the RX
+     * vote window at 1.5 Mbaud, so the transmitting pin is driven hard. */
+    gpio_set_slew_rate(driver->config.tx_pin, GPIO_SLEW_RATE_FAST);
+    gpio_set_drive_strength(driver->config.tx_pin, GPIO_DRIVE_STRENGTH_12MA);
     pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.tx_state_machine, driver->config.tx_pin, 1u, true);
     if (driver->tx_cts_enabled) {
         pio_gpio_init(driver->config.pio, driver->config.cts_pin);

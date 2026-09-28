@@ -46,6 +46,7 @@ class _VoteMachine:
         self.y = 1
         self.isr_bits: list[int] = []
         self.cycles = 0
+        self.sample_cycles: list[int] = []
         self.framing_error = False
         self.pushed = False
 
@@ -56,10 +57,13 @@ class _VoteMachine:
             if seen_return:
                 break
             text, delay = self._instructions[self.pc]
+            started_at = self.cycles
             self.cycles += 1 + delay
             self.pc += 1
             parts = text.replace(",", " ").split()
             op = parts[0]
+            if op == "jmp" and parts[1] == "pin":
+                self.sample_cycles.append(started_at)
             if op == "jmp":
                 seen_return = self._jump(parts[1:])
             elif op == "in":
@@ -112,11 +116,11 @@ def _majority(samples: tuple[int, int, int]) -> int:
 
 def test_rx_clocks_per_bit_matches_the_line_coding_contract():
     header = LINE_CODING_PATH.read_text()
-    assert re.search(r"#define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 22u", header)
+    assert re.search(r"#define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 16u", header)
     assert re.search(r"#define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 8u", header)
 
 
-def test_vote_tree_follows_majority_in_22_cycles():
+def test_vote_tree_follows_majority_in_16_cycles():
     labels, instructions = _parse(_program_body(PIO_PATH.read_text()))
     assert "bitloop" in labels
     assert "vote0" in labels
@@ -126,9 +130,13 @@ def test_vote_tree_follows_majority_in_22_cycles():
         machine = _VoteMachine(labels, instructions, list(samples))
         machine.x = 8
         cycles = machine.run_until_bit_resolves()
-        assert cycles == 22
+        assert cycles == 16
         assert machine.isr_bits == [_majority(samples)]
         assert not machine.framing_error
+        if samples[0] == samples[1]:
+            assert machine.sample_cycles == [0, 2]
+        else:
+            assert machine.sample_cycles == [0, 2, 4]
 
 
 def test_stop_bit_vote_reports_framing_only_when_majority_is_zero():
@@ -138,6 +146,10 @@ def test_stop_bit_vote_reports_framing_only_when_majority_is_zero():
         machine = _VoteMachine(labels, instructions, list(samples))
         machine.x = 0
         machine.run_until_bit_resolves()
+        if samples[0] == samples[1]:
+            assert machine.sample_cycles == [0, 2]
+        else:
+            assert machine.sample_cycles == [0, 2, 4]
         if _majority(samples) == 0:
             assert machine.framing_error
             assert not machine.pushed

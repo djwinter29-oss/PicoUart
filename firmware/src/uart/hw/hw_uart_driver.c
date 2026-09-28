@@ -512,6 +512,10 @@ bool hw_uart_driver_init(hw_uart_driver_t *driver)
 
     gpio_set_function(driver->config.tx_pin, GPIO_FUNC_UART);
     gpio_set_function(driver->config.rx_pin, GPIO_FUNC_UART);
+    /* Match the PIO TX pad: fast slew and 12 mA, so an HW TX edge is not
+     * wider than the PIO RX vote window. */
+    gpio_set_slew_rate(driver->config.tx_pin, GPIO_SLEW_RATE_FAST);
+    gpio_set_drive_strength(driver->config.tx_pin, GPIO_DRIVE_STRENGTH_12MA);
     if (driver->config.hardware_flow_control) {
         gpio_set_function(driver->config.cts_pin, GPIO_FUNC_UART);
         /* CTS is active-low; pull-down keeps TX flowing when the peer omits CTS. */
