@@ -71,6 +71,17 @@ static inline uint32_t uart_dma_rx_progress_from_remaining(uint32_t remaining,
 #define UART_DMA_RX_PAUSE_STABLE_SAMPLES 3u
 
 /**
+ * @brief Decide whether a paused RX count may be published.
+ * @param stabilized True when @ref UART_DMA_RX_PAUSE_STABLE_SAMPLES matched.
+ * @return `true` only when the count stopped changing. An unstable sample must
+ *         not advance the RX ring; the caller resumes DMA and retries.
+ */
+static inline bool uart_dma_rx_pause_progress_publishable(bool stabilized)
+{
+    return stabilized;
+}
+
+/**
  * @brief Feed one TRANS_COUNT sample into the paused-progress stability tracker.
  * @param now Latest masked remaining count.
  * @param last In/out previous sample.

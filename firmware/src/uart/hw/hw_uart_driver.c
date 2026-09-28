@@ -239,13 +239,23 @@ static void hw_uart_driver_abort_dma_channel(uint channel)
  * Settle runs with global IRQs enabled so sibling ports can still re-arm. Publish
  * and abort happen later under a short critical section.
  */
-static void hw_uart_driver_pause_rx_dma_for_reconfig(hw_uart_driver_t *driver)
+/**
+ * @return `false` when TRANS_COUNT never settled. The channel is resumed and
+ *         the caller must retry without publishing.
+ */
+static bool hw_uart_driver_pause_rx_dma_for_reconfig(hw_uart_driver_t *driver)
 {
     uint channel = (uint)driver->rx_dma_channel;
 
     dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
-    uart_dma_rx_wait_paused_progress_stable(channel);
+    if (uart_dma_rx_wait_paused_progress_stable(channel)) {
+        return true;
+    }
+
+    hw_set_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+    dma_irqn_set_channel_enabled(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, true);
+    return false;
 }
 
 /**
@@ -530,6 +540,8 @@ void hw_uart_driver_deinit(hw_uart_driver_t *driver)
         return;
     }
 
+    /* Publish while the RX channel is still claimed. release_dma aborts it. */
+    hw_uart_driver_publish_rx(driver);
     hw_uart_driver_release_dma(driver);
     uart_deinit(driver->config.instance);
     gpio_set_function(driver->config.tx_pin, GPIO_FUNC_NULL);
@@ -577,7 +589,9 @@ bool hw_uart_driver_set_line_format(hw_uart_driver_t *driver,
      * masked). Then take a short critical section for publish/abort, RX FIFO
      * re-check, TX abort, and uart_deinit.
      */
-    hw_uart_driver_pause_rx_dma_for_reconfig(driver);
+    if (!hw_uart_driver_pause_rx_dma_for_reconfig(driver)) {
+        return false;
+    }
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
 

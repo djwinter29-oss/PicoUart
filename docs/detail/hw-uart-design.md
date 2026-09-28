@@ -140,16 +140,20 @@ flowchart TD
     Retry -->|timeout| Error
 ```
 
-Before reconfiguration, RX DMA is paused and its progress is published. The
-backend then applies the full line format and restarts RX DMA at the live ring
-producer position so unread RX data is preserved.
+Before reconfiguration, RX DMA is paused. Its progress is published only after
+the paused transfer count is stable. If the count is still moving when the
+settle timeout expires, the channel is resumed and the line-coding apply
+retries without publishing that sample. The backend then applies the full line
+format and restarts RX DMA at the live ring producer position so unread RX
+data is preserved.
 
 ## Deinitialization and Error Baseline
 
-Deinitialization disables the RX DMA IRQ channel, removes the IRQ owner entry,
-aborts active DMA, acknowledges pending IRQ state, unclaims both channels, and
-deinitializes the UART peripheral. GPIO functions are released by the backend
-cleanup path.
+Deinitialization publishes the current RX DMA progress into the ring while the
+channel is still claimed, then disables the RX DMA IRQ channel, removes the
+IRQ owner entry, aborts active DMA, acknowledges pending IRQ state, unclaims
+both channels, and deinitializes the UART peripheral. GPIO functions are
+released by the backend cleanup path.
 
 After successful startup, the top-level driver clears receive-status errors
 collected during bring-up. Runtime framing and receive-status errors then remain

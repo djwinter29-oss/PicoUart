@@ -77,17 +77,20 @@ static inline uint32_t uart_dma_rx_progress(uint channel)
  * BUSY. An in-flight beat may still retire and decrement TRANS_COUNT; wait with
  * a real-time floor plus consecutive identical samples before publish-before-abort.
  * Publish must still happen before abort: abort does not promise a usable
- * TRANS_COUNT on every target. On timeout, take one final grace sample so the
- * caller still publishes the best available count.
+ * TRANS_COUNT on every target. On timeout, take one final grace sample. If
+ * that sample still does not complete a stable streak, return false so the
+ * caller resumes the channel and retries instead of publishing a moving count.
  *
  * Call with global IRQs enabled when possible: per-channel IRQ masking already
  * stops this channel's re-arm; settling under CPSID stalls sibling port IRQs.
+ * @return `true` when the paused count is stable enough to publish.
  */
-static inline void uart_dma_rx_wait_paused_progress_stable(uint channel)
+static inline bool uart_dma_rx_wait_paused_progress_stable(uint channel)
 {
     uint32_t last;
     uint32_t stable = 0u;
     absolute_time_t deadline;
+    bool stabilized;
 
     busy_wait_us_32(UART_DMA_RX_PAUSE_SETTLE_FLOOR_US);
 
@@ -100,11 +103,16 @@ static inline void uart_dma_rx_wait_paused_progress_stable(uint channel)
                                                &last,
                                                &stable,
                                                UART_DMA_RX_PAUSE_STABLE_SAMPLES)) {
-            return;
+            return uart_dma_rx_pause_progress_publishable(true);
         }
     }
 
     busy_wait_us_32(UART_DMA_RX_PAUSE_SETTLE_GRACE_US);
+    stabilized = uart_dma_rx_paused_progress_sample(uart_dma_rx_transfer_count_remaining(channel),
+                                                    &last,
+                                                    &stable,
+                                                    UART_DMA_RX_PAUSE_STABLE_SAMPLES);
+    return uart_dma_rx_pause_progress_publishable(stabilized);
 }
 
 #endif

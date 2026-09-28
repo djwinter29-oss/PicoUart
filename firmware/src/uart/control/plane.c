@@ -45,13 +45,40 @@ static void uart_control_plane_finish_worker_control(uart_control_plane_t *contr
     spin_unlock(control_plane->status_lock, save);
 }
 
+/**
+ * @brief Finish a mailbox request, optionally dropping provisional worker ownership.
+ * @param drop_provisional_pending True when this request's provisional
+ *        `pending` marker must be cleared in this same critical section.
+ * @param worker_generation Generation of a deferred apply cancelled because the
+ *        new request already matches the backend. Ignored unless
+ *        @p complete_worker is true.
+ * @param complete_worker True when that deferred apply completes successfully
+ *        in this same critical section.
+ *
+ * Provisional ownership and mailbox completion share one `status_lock` hold.
+ * Clearing `pending` and then unlocking before `CONTROL_ERROR` is written lets
+ * a concurrent status read treat the port as unowned.
+ */
 static void uart_control_plane_finish_mailbox_control(uart_control_plane_t *control_plane,
                                                       uart_port_id_t port_id,
                                                       uint32_t control_generation,
-                                                      bool success)
+                                                      bool success,
+                                                      bool drop_provisional_pending,
+                                                      uint32_t worker_generation,
+                                                      bool complete_worker)
 {
     uint32_t save = spin_lock_blocking(control_plane->status_lock);
 
+    if (drop_provisional_pending || complete_worker) {
+        control_plane->pending_controls[port_id].pending = false;
+    }
+    if (complete_worker) {
+        uart_control_apply_completion_error(&control_plane->status_flags[port_id],
+                                            UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                                            worker_generation,
+                                            control_plane->control_generations[port_id],
+                                            true);
+    }
     if (uart_control_pending_should_clear(
             control_plane->soft_pending_controls[port_id],
             uart_control_plane_mailbox_has_pending_port(control_plane, port_id),
@@ -175,27 +202,6 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
                                               true);
 }
 
-/**
- * @brief Release a provisional worker-ownership marker that never became a
- *        real deferred apply.
- * @param control_plane Private runtime state.
- * @param port_id Logical UART port whose provisional marker is released.
- *
- * @ref uart_control_plane_service sets `pending_controls[port_id].pending`
- * true in the same locked step as the mailbox acknowledgement so no
- * concurrent status read can ever see the request as owned by neither the
- * mailbox nor the worker (see uart_control_pending_should_clear()). Once the
- * request turns out not to need a deferred apply, that marker must be undone
- * under the same lock before the mailbox completion runs.
- */
-static void uart_control_plane_release_provisional_pending(uart_control_plane_t *control_plane,
-                                                            uart_port_id_t port_id)
-{
-    uint32_t save = spin_lock_blocking(control_plane->status_lock);
-    control_plane->pending_controls[port_id].pending = false;
-    spin_unlock(control_plane->status_lock, save);
-}
-
 static void uart_control_plane_set_line_coding(uart_control_plane_t *control_plane,
                                                const uart_control_mailbox_request_t *request,
                                                bool prior_pending)
@@ -215,12 +221,12 @@ static void uart_control_plane_set_line_coding(uart_control_plane_t *control_pla
     port = &control_plane->ports[port_id];
     pending_control = &control_plane->pending_controls[port_id];
     if (!uart_line_coding_is_valid(&request->line_coding)) {
-        if (!prior_pending) {
-            uart_control_plane_release_provisional_pending(control_plane, port_id);
-        }
         uart_control_plane_finish_mailbox_control(control_plane,
                                                   port_id,
                                                   request->control_generation,
+                                                  false,
+                                                  !prior_pending,
+                                                  0u,
                                                   false);
         return;
     }
@@ -233,28 +239,23 @@ static void uart_control_plane_set_line_coding(uart_control_plane_t *control_pla
 
     if ((port->ops != NULL) &&
         port->ops->line_coding_matches(&port->backend, &request->line_coding)) {
-        if (was_pending) {
-            uart_control_plane_finish_worker_control(control_plane,
-                                                      port_id,
-                                                      pending_control->control_generation,
-                                                      true);
-        } else {
-            uart_control_plane_release_provisional_pending(control_plane, port_id);
-        }
         uart_control_plane_finish_mailbox_control(control_plane,
                                                    port_id,
                                                    request->control_generation,
-                                                   true);
+                                                   true,
+                                                   !was_pending,
+                                                   pending_control->control_generation,
+                                                   was_pending);
         return;
     }
 
     if ((port->ops == NULL) || !port->ops->line_coding_acceptable(&request->line_coding)) {
-        if (!prior_pending) {
-            uart_control_plane_release_provisional_pending(control_plane, port_id);
-        }
         uart_control_plane_finish_mailbox_control(control_plane,
                                                   port_id,
                                                   request->control_generation,
+                                                  false,
+                                                  !prior_pending,
+                                                  0u,
                                                   false);
         return;
     }
@@ -303,13 +304,12 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
         }
 
         if (request.port_id != (uint32_t)index) {
-            if (!prior_pending) {
-                uart_control_plane_release_provisional_pending(control_plane,
-                                                                (uart_port_id_t)index);
-            }
             uart_control_plane_finish_mailbox_control(control_plane,
                                                       (uart_port_id_t)index,
                                                       request.control_generation,
+                                                      false,
+                                                      !prior_pending,
+                                                      0u,
                                                       false);
             continue;
         }
