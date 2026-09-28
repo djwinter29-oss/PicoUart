@@ -22,7 +22,12 @@
  * Backends may still reject rates their clock divider cannot represent.
  */
 #define UART_LINE_CODING_BAUD_MAX 3000000u
-/** @brief PIO UART TX program clocks per bit (must match uart.pio TX timing). */
+/**
+ * @brief PIO UART TX program clocks per bit (must match uart.pio TX timing).
+ *
+ * Start, data, and stop all use the OUT pin path. See uart.pio. The ratio
+ * stays 8 because an optional side-set delay cannot encode a longer bit.
+ */
 #define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 8u
 /**
  * @brief PIO UART RX program clocks per bit (must match uart.pio RX timing).
@@ -31,7 +36,7 @@
  * is free to use a different clocks-per-bit ratio than TX. Sixteen clocks
  * place the three majority samples at centre-2, centre, and centre+2 (two
  * PIO clocks apart, a quarter of the bit). See the cycle derivation in
- * uart.pio. TX stays at 8 clocks/bit.
+ * uart.pio.
  */
 #define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 16u
 /** @brief Inclusive minimum PIO clock divider accepted by the Pico SDK helper. */
@@ -50,7 +55,7 @@ bool uart_line_coding_is_valid(const uart_driver_line_coding_t *line_coding);
  * @brief Return whether @p baud_rate is representable by the PIO UART TX clock divider.
  * @param baud_rate Requested baud rate.
  * @param sys_hz System clock frequency in Hz (for example `clock_get_hz(clk_sys)`).
- * @return `true` when `sys_hz / (8 * baud)` is in `[1, 65536)`.
+ * @return `true` when `sys_hz / (UART_LINE_CODING_PIO_CLOCKS_PER_BIT * baud)` is in `[1, 65536)`.
  */
 bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
 
@@ -59,8 +64,7 @@ bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
  * @param baud_rate Requested baud rate.
  * @param sys_hz System clock frequency in Hz (for example `clock_get_hz(clk_sys)`).
  * @return `true` when `sys_hz / (UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT * baud)`
- * is in `[1, 65536)`. RX uses a wider clocks-per-bit ratio than TX (see
- * @ref UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT), so this is strictly more
+ * is in `[1, 65536)`. RX uses 16 clocks/bit and TX uses 8, so this is more
  * restrictive than @ref uart_line_coding_pio_baud_feasible at very high baud.
  */
 bool uart_line_coding_pio_rx_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);

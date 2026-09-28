@@ -44,9 +44,11 @@ Important details:
 - The PIO RX program uses a 3-sample majority vote on every bit (8 data bits
   plus the stop bit) at its own 16 PIO clocks/bit ratio, independent of TX's
   8 clocks/bit divider. The samples are two PIO clocks apart, at centre-2,
-  centre, and centre+2, so the vote covers a quarter of the bit. RX and TX
-  run on separate state machines with separate clock dividers, so this does
-  not change TX bit timing. See the cycle derivation in `uart.pio`.
+  centre, and centre+2, so the vote covers a quarter of the bit. TX drives
+  start, data, and stop through the OUT pin (`mov pins` / `out pins`) so a
+  one-clock side-set/OUT step is not part of the bit. That step was 1/8 of a
+  bit and is what a PL011 single centre sample dropped above about 1.5 Mbaud.
+  See the cycle derivation in `uart.pio`.
 - PIO and hardware UART TX pins are driven at fast slew and 12 mA. The reset
   pad (slow slew, 4 mA) makes an edge wider than that vote window around
   1.5 Mbaud.
@@ -205,13 +207,11 @@ Relevant host-visible signals:
   dividers and are rejected fail-fast otherwise. TX's 8x ratio hits the
   divider ceiling first at very low baud; RX's 16x ratio hits the divider
   floor first at very high baud.
-- The RX program is 23 instructions (TX is 4, TX_CTS is 5). On the shipped
-  board (no port ever enables CTS) a PIO block holds TX + RX = 27/32
-  instructions. A hypothetical future block mixing a CTS port with a
-  plain-TX port and RX would need 4 + 5 + 23 = 32/32, the hard RP2040
-  instruction-memory ceiling with zero spare room; `pio_can_add_program()`
-  still fails fast rather than silently overflowing if that configuration is
-  ever attempted.
+- The RX program is 23 instructions (TX is 6, TX_CTS is 7). On the shipped
+  board (no port ever enables CTS) a PIO block holds TX + RX = 29/32
+  instructions. A CTS port plus RX is 30/32. A block that mixes a CTS port
+  with a plain-TX port does not fit (6 + 7 + 23 = 36). `pio_can_add_program()`
+  fails fast rather than silently overflowing if that mix is attempted.
 - TX DMA thresholds are static defaults, not adaptive to live load.
 - Each worker step services every port. Deferred control and backend polling
   start on the same port in that step. The shared start index advances once,

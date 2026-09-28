@@ -242,7 +242,8 @@ static uint pio_uart_driver_block_index(PIO pio)
 
 static float pio_uart_driver_clock_divider(uint32_t baud_rate)
 {
-    return (float)clock_get_hz(clk_sys) / (8.0f * (float)baud_rate);
+    return (float)clock_get_hz(clk_sys) /
+           ((float)UART_LINE_CODING_PIO_CLOCKS_PER_BIT * (float)baud_rate);
 }
 
 /**
@@ -251,6 +252,7 @@ static float pio_uart_driver_clock_divider(uint32_t baud_rate)
  * RX runs its own state machine and divider at
  * UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT clocks/bit (16, vs. TX's 8). The
  * wider grid spaces the 3 majority samples across a quarter of each bit.
+ * TX stays at 8 clocks/bit and drives every bit through the OUT pin.
  * See the cycle derivation in uart.pio.
  */
 static float pio_uart_driver_rx_clock_divider(uint32_t baud_rate)
@@ -367,8 +369,9 @@ static bool pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
     pio_sm_config config = driver->tx_cts_enabled ? pio_uart_tx_cts_program_get_default_config(offset)
                                                    : pio_uart_tx_program_get_default_config(offset);
 
+    /* Start, data, and stop all use OUT pins (mov pins / out pins). There is
+     * no side-set; mapping one would put stop/start back on a second path. */
     sm_config_set_out_pins(&config, driver->config.tx_pin, 1u);
-    sm_config_set_sideset_pins(&config, driver->config.tx_pin);
     sm_config_set_out_shift(&config, true, false, 32u);
     sm_config_set_fifo_join(&config, PIO_FIFO_JOIN_TX);
     sm_config_set_clkdiv(&config, pio_uart_driver_clock_divider(driver->config.baud_rate));
@@ -394,6 +397,8 @@ static bool pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
     if (pio_sm_init(driver->config.pio, driver->config.tx_state_machine, offset, &config) != PICO_OK) {
         return false;
     }
+    /* The TX program has no side-set, so this sticky high is the idle level
+     * while `pull` stalls before the first stop bit is driven. */
     pio_sm_set_pins_with_mask(driver->config.pio,
                                driver->config.tx_state_machine,
                                1u << driver->config.tx_pin,

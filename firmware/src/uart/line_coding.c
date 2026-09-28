@@ -76,8 +76,8 @@ bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding
     }
 
     /* TX and RX run independent state machines/dividers (RX is 16 clocks/bit
-     * so its three samples can span a quarter of the bit). Both must accept
-     * the requested baud. */
+     * so its three samples can span a quarter of the bit; TX is 8). Both must
+     * accept the requested baud. */
     return uart_line_coding_pio_baud_feasible(line_coding->baud_rate, sys_hz) &&
            uart_line_coding_pio_rx_baud_feasible(line_coding->baud_rate, sys_hz);
 }

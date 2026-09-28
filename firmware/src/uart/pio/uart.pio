@@ -1,35 +1,55 @@
 .program pio_uart_tx
-.side_set 1 opt
 
-; 8N1 TX at 8 PIO clocks per bit (matches UART_LINE_CODING_PIO_CLOCKS_PER_BIT).
-; Continuous frames are exactly 10 bit-times (start + 8 data + stop): the next
-; wrap to `pull side 1 [7]` asserts the stop bit. Do not add a trailing nop —
-; that lengthens the frame and under-runs a nominal 1 Mbaud byte rate.
+; 8N1 TX at 8 PIO clocks per bit (UART_LINE_CODING_PIO_CLOCKS_PER_BIT).
+;
+; Start, data, and stop all write the OUT pin (`mov pins` / `out pins`). The
+; previous program side-set start and stop and used OUT only for data. Those
+; are different PIO output paths, so the first data edge and the return to
+; stop can each be one clock off the instruction that requested them: 1/8 of
+; a bit. A PL011 samples once at the centre and loses that bit above about
+; 1.5 Mbaud (measured: HW TX -> PIO RX holds 1.8 Mbaud, PIO TX -> HW RX does
+; not). PIO RX still accepts the same edge because it majority-votes three
+; samples. Optional side-set cannot stretch the bit past 8 clocks (the delay
+; field is only 3 bits, so [7] is the maximum), so the fix is one pin path
+; rather than a finer grid.
+;
+; Back-to-back frames are exactly 10 bit-times. `mov pins, !null [5]` is 6
+; clocks of stop; the following `pull` and `set` hold that high for the 7th
+; and 8th clocks before `mov pins, null` drops the next start bit. Do not add
+; a trailing nop. There is no side-set: idle-high before the first byte comes
+; from pio_sm_set_pins, and a stalled `pull` leaves the stop level in place.
 
 .wrap_target
-    pull        side 1 [7] ; Stop bit / idle-high (8 clocks)
-    set x, 7    side 0 [7] ; Start bit (8 clocks)
+    pull                         ; 7th stop clock, or idle-high while stalled
+    set x, 7                     ; 8th stop clock. Pin still holds stop/idle.
+    mov pins, null [7]           ; Start bit, 8 clocks low
 bitloop:
     out pins, 1
-    jmp x-- bitloop [6]    ; 8 data bits × 8 clocks
+    jmp x-- bitloop [6]          ; 8 data bits × 8 clocks
+    mov pins, !null [5]          ; 6 stop clocks; pull+set supply the last 2
 .wrap
 
 .program pio_uart_tx_cts
-.side_set 1 opt
 
 ; CTS is active-low. Wait only at the frame boundary so a CTS transition can
 ; defer the next byte without truncating the one already on the wire.
-; When CTS is already granted, the stop bit is still 8 clocks: `pull [6]` is
-; 7 clocks and the following `wait` takes the 8th while side-set stays high.
+; When CTS is already granted the stop bit is still 8 clocks:
+;   mov pins, !null [4]  = 5
+;   wait                 = 1
+;   pull                 = 1
+;   set                  = 1
 ; A longer wait extends idle-high until CTS allows the next frame. Do not
-; change `[6]` to `[7]` or the granted-CTS stop bit becomes 9 clocks.
+; change [4]; the granted-CTS stop bit would no longer be 8 clocks.
+; Pin levels use the same OUT path as pio_uart_tx (no side-set).
 .wrap_target
-    pull        side 1 [6] ; 7 clocks of stop bit; wait supplies the 8th.
-    wait 0 pin 0          ; Keep idle-high until CTS permits TX.
-    set x, 7    side 0 [7]
+    pull                         ; 6th stop clock, or idle-high while stalled
+    wait 0 pin 0                 ; 7th stop clock once CTS is low; else hold high
+    set x, 7                     ; 8th stop clock. Pin still holds stop/idle.
+    mov pins, null [7]           ; Start bit, 8 clocks low
 bitloop_cts:
     out pins, 1
     jmp x-- bitloop_cts [6]
+    mov pins, !null [4]          ; 5 stop clocks; wait+pull+set supply the last 3
 .wrap
 
 .program pio_uart_rx
@@ -40,7 +60,9 @@ bitloop_cts:
 ; (UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT, set in C), so the vote spans 4/16
 ; of the bit instead of three back-to-back clocks. A slow edge that used to
 ; land inside the whole cluster now has to cover a quarter of the bit before
-; every sample agrees with it. TX stays at 8 clocks/bit on its own divider.
+; every sample agrees with it. TX stays at 8 clocks/bit on its own divider
+; and drives start, data, and stop through the OUT pin so a PL011 centre
+; sample is not asked to absorb a side-set/OUT step.
 ;
 ; Cycle derivation (P = 16 clocks/bit, wait-detect start bit = cycle 0):
 ;   - Loop entry for bit k is at P*(k+1.5) - 2. `set x, 8 [19]` reaches the
