@@ -50,10 +50,12 @@ Important details:
 - PIO and hardware UART TX pins are driven at fast slew and 12 mA. The reset
   pad (slow slew, 4 mA) makes an edge wider than that vote window around
   1.5 Mbaud.
-- Keep TX at this 8-clock side-set program. On the jumper fixture, without
-  overclock, that build reached HW→PIO 1.8 Mbaud and PIO→HW 1.5 Mbaud
-  (PIO3→PIO4 1.5, PIO4→PIO3 1.3). A later 16-clock OUT-only TX was slower on
-  the same fixture: HW→PIO 1.5, PIO→HW 1.2, PIO3→PIO4 1.3, PIO4→PIO3 1.5.
+- Keep TX at this 8-clock side-set program. A 16-clock OUT-only TX was slower
+  on the same jumper fixture without overclock (HW→PIO 1.5 Mbaud, PIO→HW 1.2,
+  PIO3→PIO4 1.3, PIO4→PIO3 1.5). Restoring this program, still without
+  overclock, measured at least HW→PIO 1.5, PIO→HW 1.2, PIO3→PIO4 1.8, and
+  PIO4→PIO3 2.0. Those Stage 3 rates are above either earlier run. The Stage 2
+  figures are confirmed floors, not a new ceiling.
 - The IN shift is configured so LSB-first UART samples form a natural byte in
   FIFO bits `[31:24]`; RX DMA reads one byte from `rxf+3`.
 - RX DMA transfer counts use the SDK encoder so RP2350 does not enter ENDLESS
