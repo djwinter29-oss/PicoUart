@@ -58,7 +58,6 @@ bitloop_cts:
 ;     regardless of which 3 samples were taken:
 ;       vote0 path: 4 (tree) + 1 (jmp !x) + 1 (in) + 1+15 (jmp x--) = 22
 ;       vote1 path: 3 (tree) + 1 (jmp !x) + 1 (in) + 1+16 (jmp x--) = 22
-;       vote1 path: 3 (tree) + 1 (jmp !x) + 1 (in) + 1+16 (jmp x--) = 22
 ;   - X counts 8..0 across 9 loop passes (not 8): passes with X!=0 are the 8
 ;     data bits (voted bit shifted into ISR); the X==0 pass is the stop bit
 ;     (voted 1 -> push, voted 0 -> sticky framing error). Y holds a constant
@@ -67,11 +66,9 @@ bitloop_cts:
 ;     7-cycle idle-high margin remains before the earliest possible next
 ;     start bit at cycle 220, matching the *relative* margin of the original
 ;     8-clocks/bit design (3/80 cycles) rather than shrinking it.
-;   - This was verified functionally (all 256 data bytes x good/bad stop,
-;     zero-skew and +-5% skew) and against single-cycle sample glitches
-;     (tolerates any 1-of-3 bad sample, correctly flags 2-of-3 bad samples)
-;     with a standalone cycle-accurate Python interpreter of this exact
-;     assembled program; see the session report for the harness.
+;   - Host test host/python/tests/test_pio_rx_majority.py executes this vote
+;     tree: every 1-of-3 sample pattern follows the majority, a 2-of-3 bad
+;     stop is a framing error, and both vote tails are 22 PIO cycles.
 ;
 ; ponytail: the 3 samples are always exactly 1 PIO cycle apart regardless of
 ; P, so this protects against very-short (sub-original-bit-cycle) mis-sample

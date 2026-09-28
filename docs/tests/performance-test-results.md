@@ -7,6 +7,50 @@ Result entries are development evidence unless they explicitly say
 `release qualification` and include the exact flashed artifact hash for each
 required board.
 
+## 2026-09-28 - cursor/update-review-score-b292 - Performance results
+
+**Result:** `PASS at 460800; FAIL at 500000 and 600000`
+**Firmware:** `0.0.0`, `8669f51`
+**Qualification:** development HIL; not release qualification
+**Board:** `pico` / RP2040
+**Wiring:** CDC0↔Debug Probe; CDC1↔CDC2; CDC3↔CDC4; CDC5 physical loopback
+**Artifact:** `build/firmware-cursor-b292/pico_uart.elf`
+**Artifact SHA-256:** `9b786fa669f996743d19eacddae0fca91291549eda66a2cf2a1d1a90c6d5e157`
+**UF2 SHA-256:** `7bd9bf8e531846c6703ada3a371080170bfb6bb1b22030b51799c6cc4563574b`
+**Flash:** SWD OpenOCD; BY25Q16ES detected; verify passed
+
+### Configuration
+
+- All six CDC ports opened; CDC0/Debug Probe fixed at 115200 baud
+- Seven benchmark streams (six UART directions plus CDC0 in both directions)
+- 1024-byte verified payloads; 30 s per rate, 8 s settle (concurrent)
+- 10 s per rate (single-direction)
+- HID version: `0.0.0`; HID overrun counters before test: `all 0`
+
+### Single-direction (per-link, isolated)
+
+| Link | Direction | 460800 | 600000 | 800000 | 1000000 | 1100000 | 1200000 |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Stage 2 HW↔PIO | HW→PIO | PASS | PASS | PASS | PASS | PASS | PASS |
+| Stage 2 HW↔PIO | PIO→HW | PASS | PASS | PASS | PASS | PASS | PASS |
+| Stage 3 PIO↔PIO | A→B | PASS | PASS | PASS | PASS | PASS | PASS |
+| Stage 3 PIO↔PIO | B→A | PASS | PASS | PASS | PASS | PASS | PASS |
+
+### Concurrent six-port (all streams simultaneously)
+
+| Main UART rate | Result | Evidence |
+| ---: | :---: | --- |
+| 460800 | ✅ PASS | All streams passed; CDC0: 339968 bytes/direction; CDC5: 1315840 bytes; CDC1/2: 1315840 bytes each; CDC3/4: 1315840 and 1316864 bytes |
+| 500000 | ❌ FAIL | CDC0 passed; CDC5, CDC1/2, and CDC3/4 had short/mismatched payloads |
+| 600000 | ❌ FAIL | CDC0 passed and CDC1→CDC2 passed; CDC5, CDC2→CDC1, and CDC3/4 failed |
+
+Six-port concurrent ceiling: **460800 baud**; five main UARTs aggregate ~230400 B/s
+both directions; ~253440 B/s including CDC0 at 115200 (UART line-rate, not USB).
+
+Raw log: `docs/tests/raw/hardware-test-cursor-update-review-score-b292-2026-09-28.log`
+
+---
+
 ## 2026-09-24T20:55:00+00:00 - pico - Full Matrix Performance + Functional
 
 **Result:** `PASS`

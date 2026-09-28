@@ -145,8 +145,10 @@ Before applying a PIO baud change, core 1:
 1. Pauses new USB-to-UART writes for that port through shared control-pending
    state.
 2. Publishes pending RX DMA progress into the RX ring.
-3. Pauses RX DMA, waits for a stable transfer count, then aborts and acknowledges
-   the DMA channel inside a short critical section.
+3. Pauses RX DMA and waits for a stable transfer count. A count that is still
+   moving after the settle timeout resumes the channel and retries the baud
+   change without publishing that sample. A stable count is published, then
+   the channel is aborted and acknowledged inside a short critical section.
 4. Waits for TX DMA completion, an empty TX ring, an empty TX FIFO, and TXSTALL
    re-assertion after write-clear.
 5. Requires an empty RX FIFO, and for shipped ports also requires idle-high RX.
@@ -164,6 +166,7 @@ stateDiagram-v2
   Running --> Pending: supported baud request
   Pending --> PauseRX: TX boundary reached
   PauseRX --> Quiesce: RX DMA progress stable
+  PauseRX --> Pending: transfer count still moving
   Quiesce --> Apply: TX/RX FIFO and TXSTALL safe
   Quiesce --> Pending: not yet safe
   Apply --> RestartRX: divider updated

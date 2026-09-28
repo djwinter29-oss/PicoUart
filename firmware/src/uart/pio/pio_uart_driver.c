@@ -129,13 +129,23 @@ static void pio_uart_driver_abort_dma_channel(uint channel)
  *
  * Settle runs with global IRQs enabled so sibling ports can still re-arm.
  */
-static void pio_uart_driver_pause_rx_dma_for_reconfig(pio_uart_driver_t *driver)
+/**
+ * @return `false` when TRANS_COUNT never settled. The channel is resumed and
+ *         the caller must retry without publishing.
+ */
+static bool pio_uart_driver_pause_rx_dma_for_reconfig(pio_uart_driver_t *driver)
 {
     uint channel = (uint)driver->rx_dma_channel;
 
     dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, false);
     hw_clear_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
-    uart_dma_rx_wait_paused_progress_stable(channel);
+    if (uart_dma_rx_wait_paused_progress_stable(channel)) {
+        return true;
+    }
+
+    hw_set_bits(&dma_hw->ch[channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+    dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel, true);
+    return false;
 }
 
 /**
@@ -885,7 +895,9 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
 
     /* Pause + settle with global IRQs enabled (this channel's re-arm is masked). */
     if (driver->rx_dma_channel >= 0) {
-        pio_uart_driver_pause_rx_dma_for_reconfig(driver);
+        if (!pio_uart_driver_pause_rx_dma_for_reconfig(driver)) {
+            return false;
+        }
     }
 
     /*

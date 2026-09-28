@@ -19,6 +19,7 @@ static bool backend_alive;
 static bool fail_closed;
 static bool observed_mailbox_acked_without_worker_ownership;
 static bool observed_concurrent_reject_would_clear_control_pending;
+static bool observed_completion_gap;
 static bool spin_unlock_ownership_probe_armed;
 
 static uart_control_mailbox_t test_mailboxes[UART_PORT_COUNT];
@@ -127,6 +128,41 @@ static volatile uint32_t test_stats_sequence[UART_PORT_COUNT];
 static size_t test_poll_start_index;
 static uart_control_plane_t test_control_plane;
 
+/**
+ * @brief Fail if a status unlock shows the port unowned before completion is visible.
+ *
+ * Immediate rejects and already-matching requests drop provisional ownership.
+ * That drop has to land in the same critical section as CONTROL_ERROR or the
+ * CONTROL_PENDING clear. A separate unlock in between lets core 0 treat the
+ * port as idle while the completion bits are still stale.
+ */
+static void spin_unlock_completion_gap_probe(void)
+{
+    bool unowned;
+    bool pending_flag;
+    bool error_flag;
+
+    if (!spin_unlock_ownership_probe_armed) {
+        return;
+    }
+    if (uart_control_mailbox_has_pending_port(&test_mailboxes[UART_PORT_0], UART_PORT_0)) {
+        return;
+    }
+
+    unowned = uart_control_pending_should_clear(false,
+                                                false,
+                                                test_pending_controls[UART_PORT_0].pending);
+    if (!unowned) {
+        return;
+    }
+
+    pending_flag = (test_status_flags[UART_PORT_0] & UART_DRIVER_PORT_STATUS_CONTROL_PENDING) != 0u;
+    error_flag = (test_status_flags[UART_PORT_0] & UART_DRIVER_PORT_STATUS_CONTROL_ERROR) != 0u;
+    if (pending_flag && !error_flag) {
+        observed_completion_gap = true;
+    }
+}
+
 static uart_driver_line_coding_t test_line_coding(void)
 {
     return (uart_driver_line_coding_t){
@@ -168,6 +204,7 @@ void setUp(void)
     fail_closed = false;
     observed_mailbox_acked_without_worker_ownership = false;
     observed_concurrent_reject_would_clear_control_pending = false;
+    observed_completion_gap = false;
     spin_unlock_ownership_probe_armed = false;
     test_spin_unlock_hook = NULL;
     pico_test_time_us = 0;
@@ -245,9 +282,9 @@ void test_control_plane_invalid_line_coding_releases_provisional_ownership(void)
      * mailbox ack (see uart_control_plane_service()). A structurally invalid
      * payload takes the permanent-reject branch in
      * uart_control_plane_set_line_coding(), which must undo that provisional
-     * marker via uart_control_plane_release_provisional_pending() before the
-     * mailbox completion runs, or CONTROL_PENDING would clear while
-     * pending_controls[...].pending was still (wrongly) latched true. */
+     * marker inside the same status_lock hold as the mailbox completion.
+     * Dropping it in an earlier unlock would let a concurrent status read
+     * clear CONTROL_PENDING before CONTROL_ERROR is visible. */
     uart_driver_line_coding_t invalid = test_line_coding();
     uart_control_mailbox_request_t request;
 
@@ -506,6 +543,46 @@ void test_control_plane_mailbox_ack_and_worker_ownership_are_atomic(void)
     TEST_ASSERT_TRUE(test_pending_controls[UART_PORT_0].pending);
 }
 
+void test_control_plane_immediate_completion_has_no_unowned_gap(void)
+{
+    uart_driver_line_coding_t invalid = test_line_coding();
+    uart_control_mailbox_request_t request;
+
+    invalid.baud_rate = 0u;
+    request = (uart_control_mailbox_request_t){
+        .port_id = UART_PORT_0,
+        .control_generation = 1u,
+        .tx_boundary_sequence = 0u,
+        .line_coding = invalid,
+    };
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailboxes[UART_PORT_0], &request));
+
+    spin_unlock_ownership_probe_armed = true;
+    test_spin_unlock_hook = spin_unlock_completion_gap_probe;
+    uart_control_plane_service(&test_control_plane);
+    test_spin_unlock_hook = NULL;
+
+    TEST_ASSERT_FALSE(observed_completion_gap);
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                     test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
+
+    setUp();
+    line_coding_matches = true;
+    publish_request(0u);
+    spin_unlock_ownership_probe_armed = true;
+    test_spin_unlock_hook = spin_unlock_completion_gap_probe;
+    uart_control_plane_service(&test_control_plane);
+    test_spin_unlock_hook = NULL;
+
+    TEST_ASSERT_FALSE(observed_completion_gap);
+    TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
+}
+
 void test_control_plane_expired_deadline_blocks_backend_apply(void)
 {
     /* Regression: an apply must not be attempted once its deadline has
@@ -545,6 +622,7 @@ int main(void)
     RUN_TEST(test_control_plane_immediate_completion_clears_pending_when_unowned);
     RUN_TEST(test_control_plane_mailbox_reject_keeps_worker_pending);
     RUN_TEST(test_control_plane_mailbox_ack_and_worker_ownership_are_atomic);
+    RUN_TEST(test_control_plane_immediate_completion_has_no_unowned_gap);
     RUN_TEST(test_control_plane_expired_deadline_blocks_backend_apply);
     return UNITY_END();
 }

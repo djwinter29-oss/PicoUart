@@ -93,6 +93,12 @@ void test_paused_progress_sample_requires_consecutive_matches(void)
     TEST_ASSERT_EQUAL_UINT32(3u, stable);
 }
 
+void test_unstable_pause_sample_is_not_publishable(void)
+{
+    TEST_ASSERT_TRUE(uart_dma_rx_pause_progress_publishable(true));
+    TEST_ASSERT_FALSE(uart_dma_rx_pause_progress_publishable(false));
+}
+
 void test_paused_progress_sample_resets_streak_on_change(void)
 {
     uint32_t last = 50u;
@@ -113,6 +119,7 @@ int main(void)
     RUN_TEST(test_progress_from_remaining);
     RUN_TEST(test_platform_count_constants);
     RUN_TEST(test_pause_settle_policy_constants);
+    RUN_TEST(test_unstable_pause_sample_is_not_publishable);
     RUN_TEST(test_paused_progress_sample_requires_consecutive_matches);
     RUN_TEST(test_paused_progress_sample_resets_streak_on_change);
     return UNITY_END();

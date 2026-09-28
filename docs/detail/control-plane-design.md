@@ -61,7 +61,9 @@ apply is still in flight. The worker also re-checks its apply deadline
 immediately before touching the backend, after the TX-boundary and
 backend-liveness checks. This close ordering keeps a backend apply that would
 otherwise succeed from clearing `CONTROL_ERROR` once its deadline has already
-expired.
+expired. When the request does not become a deferred apply, the provisional
+`pending` bit is cleared in that same completion critical section, together
+with `CONTROL_ERROR` or the `CONTROL_PENDING` clear.
 
 ```mermaid
 sequenceDiagram
@@ -196,7 +198,7 @@ Host unit tests cover the pure ownership rules in `ownership.h` and
 - atomicity of mailbox acknowledgement and worker-ownership registration
   under a single status-lock critical section
 - provisional ownership cleanup for invalid, backend-unacceptable, and
-  backend-unavailable requests
+  backend-unavailable requests, in the same lock as mailbox completion
 - apply deadline checked before the backend is touched
 
 End-to-end USB lifecycle and backend quiescing still require hardware-in-the-
