@@ -38,6 +38,32 @@ Test flow control separately after enabling and documenting it.
 
 ## Baseline Run
 
+### Stage 1: CDC0 ↔ Debug Probe
+
+Debug Probe UART is limited to standard baud rates. Test 115200 unless the
+probe firmware supports custom baud rates.
+
+### Stages 2, 3, 4: Link-internal UART pairs
+
+For each stage, test these three layers at each candidate baud rate:
+
+1. **Single direction** — `pair_duplex_benchmark.py --direction a-to-b` and
+   `--direction b-to-a` separately, 10 s each.
+2. **Full pair duplex** — `pair_duplex_benchmark.py --direction both`, 30 s.
+3. **Concurrent six-port** — `serial_stress_benchmark.py` with all seven
+   streams, 30 s per baud, independent process per baud, 8 s settle.
+
+Record every tested rate even when it fails. A rate is stable only when
+every direction and every stream passes.
+
+| Layer | Rate sweep | Duration |
+| --- | --- | --- |
+| Single direction | 460800, 600000, 800000, 1000000, 1100000, 1200000 | 10 s per rate |
+| Single pair duplex | 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000 | 30 s per rate |
+| Concurrent six-port | 460800, 500000, 600000 | 30 s per rate, independent process |
+
+### Baseline Run
+
 For each link, run an individual test at these rates:
 
 ```text
