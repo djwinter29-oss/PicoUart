@@ -81,8 +81,11 @@ requirement applies.
 
 - Default board is `pico`.
 - Default system-clock targets are 125000 kHz for RP2040 and 150000 kHz for
-  RP2350. Higher clock rates are board-specific overrides; validate voltage,
-  thermal margin, USB, and UART behavior before using them.
+  RP2350. Higher clock rates are board-specific overrides. Startup raises the
+  core voltage before the PLL when the target is above 133 MHz (RP2040) or
+  150 MHz (RP2350): 1.15 V through 200 MHz, 1.25 V through 250 MHz, 1.30 V
+  above that. Still validate thermal margin, USB, and UART behavior on the
+  board before keeping an overclock.
 - Startup initializes the selected board's default LED when it defines
   `PICO_DEFAULT_LED_PIN`; the LED starts off.
 - The internal ADC temperature sensor is enabled at startup and can be sampled

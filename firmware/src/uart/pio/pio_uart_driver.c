@@ -339,6 +339,9 @@ static void pio_uart_driver_release_gpio(pio_uart_driver_t *driver)
         gpio_deinit(driver->config.tx_pin);
     }
     if (driver->config.rx_pin != PIO_UART_DRIVER_PIN_UNASSIGNED) {
+        pio_set_input_sync_bypass_with_mask(driver->config.pio,
+                                            0u,
+                                            1u << driver->config.rx_pin);
         gpio_deinit(driver->config.rx_pin);
     }
     if (driver->tx_cts_enabled &&
@@ -420,6 +423,15 @@ static bool pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
     sm_config_set_clkdiv(&config, pio_uart_driver_rx_clock_divider(driver->config.baud_rate));
 
     pio_gpio_init(driver->config.pio, driver->config.rx_pin);
+    /*
+     * The PIO input synchronizer adds two clk_sys cycles before the pin is
+     * visible. At a few megabaud that delay is a noticeable slice of the bit
+     * and shifts the majority window late. Bypass it on the RX pin only; a
+     * metastable sample still loses a 2-of-3 vote.
+     */
+    pio_set_input_sync_bypass_with_mask(driver->config.pio,
+                                        1u << driver->config.rx_pin,
+                                        1u << driver->config.rx_pin);
     if ((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP) != 0u) {
         gpio_pull_up(driver->config.rx_pin);
     }
