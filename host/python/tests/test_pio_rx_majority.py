@@ -10,8 +10,8 @@ PIO_PATH = REPO_ROOT / "firmware" / "src" / "uart" / "pio" / "uart.pio"
 LINE_CODING_PATH = REPO_ROOT / "firmware" / "src" / "uart" / "line_coding.h"
 
 
-def _program_body(text: str) -> str:
-    start = text.index(".program pio_uart_rx")
+def _program_body(text: str, name: str = "pio_uart_rx") -> str:
+    start = text.index(f".program {name}")
     rest = text[start:]
     next_program = rest.find("\n.program ", 1)
     return rest if next_program < 0 else rest[:next_program]
@@ -112,6 +112,24 @@ class _VoteMachine:
 
 def _majority(samples: tuple[int, int, int]) -> int:
     return 1 if sum(samples) >= 2 else 0
+
+
+def test_plain_tx_adds_a_second_stop_without_stretching_data_bits():
+    text = PIO_PATH.read_text()
+    _, tx = _parse(_program_body(text, "pio_uart_tx"))
+    _, cts = _parse(_program_body(text, "pio_uart_tx_cts"))
+    _, rx = _parse(_program_body(text, "pio_uart_rx"))
+
+    assert [item[0].split()[0] for item in tx] == ["pull", "set", "out", "jmp", "nop"]
+    assert tx[3][1] == 6  # data-bit hold stays 8 clocks (1 + delay 6)
+    assert tx[4][0].split() == ["nop", "side", "1"]
+    assert tx[4][1] == 7
+    assert len(cts) == 5
+    assert len(rx) == 23
+    # Shipped board loads plain TX + RX. CTS + plain TX + RX is 33 and must
+    # keep failing pio_can_add_program rather than growing RX or CTS to fit.
+    assert len(tx) + len(rx) == 28
+    assert len(tx) + len(cts) + len(rx) == 33
 
 
 def test_rx_clocks_per_bit_matches_the_line_coding_contract():
