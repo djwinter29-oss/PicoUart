@@ -81,7 +81,7 @@ void test_pio_baud_feasibility(void)
     uart_driver_line_coding_t low = make_coding(50u, 8u, 1u, UART_DRIVER_PARITY_NONE);
     uart_driver_line_coding_t ok = make_coding(115200u, 8u, 1u, UART_DRIVER_PARITY_NONE);
 
-    /* At 125 MHz, divider for 50 baud is 125e6/(8*50) = 312500 >= 65536. */
+    /* At 125 MHz, divider for 50 baud is 125e6/(16*50) = 156250 >= 65536. */
     TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(50u, TEST_SYS_HZ));
     TEST_ASSERT_FALSE(uart_line_coding_pio_supported(&low, TEST_SYS_HZ));
     TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(115200u, TEST_SYS_HZ));
@@ -89,32 +89,31 @@ void test_pio_baud_feasibility(void)
     TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(115200u, 0u));
 }
 
-void test_pio_rx_divider_limits_differ_from_tx(void)
+void test_pio_tx_and_rx_dividers_share_clocks_per_bit(void)
 {
     /*
-     * RX uses 16 clocks/bit and TX uses 8, so divider = sys/(clocks*baud)
-     * hits the two ends at different rates. At 125 MHz:
-     *   low:  baud 200 -> TX divider = 125e6/(8*200) = 78125 (>= 65536,
-     *         infeasible); RX divider = 125e6/(16*200) = 39062 (feasible).
-     *         TX is the low-baud limit.
-     *   high: baud 8000000 -> TX divider = 125e6/(8*8000000) = 1.95
-     *         (feasible); RX divider = 125e6/(16*8000000) = 0.98 (< 1,
-     *         infeasible). RX is the high-baud limit.
-     *   policy max 3000000 stays inside both dividers
-     *         (TX 5.21, RX 2.60).
+     * TX and RX both use 16 clocks/bit, so divider = sys/(16*baud) hits the
+     * same limits. At 125 MHz:
+     *   baud 200 -> 125e6/(16*200) = 39062, feasible for both.
+     *   baud 90  -> 125e6/(16*90) = 86806 (>= 65536), infeasible for both.
+     *   baud 8000000 -> 125e6/(16*8000000) = 0.98 (< 1), infeasible for both.
+     *   policy max 3000000 stays inside both dividers (about 2.60).
      */
     TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(350u, TEST_SYS_HZ));
     TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(350u, TEST_SYS_HZ));
-    TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(200u, TEST_SYS_HZ));
+    TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(200u, TEST_SYS_HZ));
     TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(200u, TEST_SYS_HZ));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(90u, TEST_SYS_HZ));
     TEST_ASSERT_FALSE(uart_line_coding_pio_rx_baud_feasible(90u, TEST_SYS_HZ));
 
     TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(3000000u, TEST_SYS_HZ));
     TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(3000000u, TEST_SYS_HZ));
-    TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(8000000u, TEST_SYS_HZ));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(8000000u, TEST_SYS_HZ));
     TEST_ASSERT_FALSE(uart_line_coding_pio_rx_baud_feasible(8000000u, TEST_SYS_HZ));
 
+    TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(115200u, TEST_SYS_HZ));
     TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(115200u, TEST_SYS_HZ));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(115200u, 0u));
     TEST_ASSERT_FALSE(uart_line_coding_pio_rx_baud_feasible(115200u, 0u));
 }
 
@@ -157,7 +156,7 @@ int main(void)
     RUN_TEST(test_hw_parity_and_stop_accepted_but_not_pio);
     RUN_TEST(test_baud_bounds);
     RUN_TEST(test_pio_baud_feasibility);
-    RUN_TEST(test_pio_rx_divider_limits_differ_from_tx);
+    RUN_TEST(test_pio_tx_and_rx_dividers_share_clocks_per_bit);
     RUN_TEST(test_usb_parse_table);
     return UNITY_END();
 }

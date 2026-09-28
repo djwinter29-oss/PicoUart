@@ -25,18 +25,18 @@
 /**
  * @brief PIO UART TX program clocks per bit (must match uart.pio TX timing).
  *
- * Start, data, and stop all use the OUT pin path. See uart.pio. The ratio
- * stays 8 because an optional side-set delay cannot encode a longer bit.
+ * Start, data, and stop all use the OUT pin path, 16 clocks/bit, matching RX
+ * and a PL011's 16x bit grid. See uart.pio. There is no side-set, so the
+ * delay field can encode [15].
  */
-#define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 8u
+#define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 16u
 /**
  * @brief PIO UART RX program clocks per bit (must match uart.pio RX timing).
  *
- * The RX program runs its own state machine and its own clock divider, so it
- * is free to use a different clocks-per-bit ratio than TX. Sixteen clocks
- * place the three majority samples at centre-2, centre, and centre+2 (two
- * PIO clocks apart, a quarter of the bit). See the cycle derivation in
- * uart.pio.
+ * The RX program runs its own state machine and its own clock divider. Sixteen
+ * clocks place the three majority samples at centre-2, centre, and centre+2
+ * (two PIO clocks apart, a quarter of the bit). See the cycle derivation in
+ * uart.pio. TX uses the same 16 clocks/bit.
  */
 #define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 16u
 /** @brief Inclusive minimum PIO clock divider accepted by the Pico SDK helper. */
@@ -64,8 +64,9 @@ bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
  * @param baud_rate Requested baud rate.
  * @param sys_hz System clock frequency in Hz (for example `clock_get_hz(clk_sys)`).
  * @return `true` when `sys_hz / (UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT * baud)`
- * is in `[1, 65536)`. RX uses 16 clocks/bit and TX uses 8, so this is more
- * restrictive than @ref uart_line_coding_pio_baud_feasible at very high baud.
+ * is in `[1, 65536)`. TX and RX both use 16 clocks/bit, so this accepts the
+ * same rates as @ref uart_line_coding_pio_baud_feasible. The checks stay
+ * separate because the two state machines have independent dividers.
  */
 bool uart_line_coding_pio_rx_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
 

@@ -43,7 +43,7 @@ static inline uint32_t pio_uart_txstall_reassert_wait_us(uint32_t baud)
         baud = 1u;
     }
 
-    /* ceil(3e6 / (8 * baud)) == ceil(375000 / baud) at 8 clocks/bit. */
+    /* ceil(3e6 / (16 * baud)) == ceil(187500 / baud) at 16 clocks/bit. */
     wait_us = (PIO_UART_TXSTALL_REASSERT_DIVIDEND + baud - 1u) / baud;
     if (wait_us < PIO_UART_TXSTALL_REASSERT_WAIT_FLOOR_US) {
         wait_us = PIO_UART_TXSTALL_REASSERT_WAIT_FLOOR_US;

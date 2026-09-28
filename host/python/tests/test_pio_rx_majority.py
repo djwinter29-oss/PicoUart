@@ -117,7 +117,7 @@ def _majority(samples: tuple[int, int, int]) -> int:
 def test_rx_clocks_per_bit_matches_the_line_coding_contract():
     header = LINE_CODING_PATH.read_text()
     assert re.search(r"#define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 16u", header)
-    assert re.search(r"#define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 8u", header)
+    assert re.search(r"#define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 16u", header)
 
 
 def test_vote_tree_follows_majority_in_16_cycles():

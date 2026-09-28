@@ -1,4 +1,4 @@
-"""Check that both PIO TX programs emit exact 8-clock 8N1 frames on one pin path."""
+"""Check that both PIO TX programs emit exact 16-clock 8N1 frames on one pin path."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PIO_PATH = REPO_ROOT / "firmware" / "src" / "uart" / "pio" / "uart.pio"
 
-CLOCKS_PER_BIT = 8
+CLOCKS_PER_BIT = 16
 
 
 def _program_body(text: str, name: str) -> str:
@@ -106,7 +106,7 @@ def _assert_frame(program: str, byte: int) -> None:
     assert frame[CLOCKS_PER_BIT * 10] == 0
 
 
-def test_tx_frames_are_ten_bit_times_on_one_pin_path():
+def test_tx_frames_are_ten_bit_times_at_16_clocks():
     for program in ("pio_uart_tx", "pio_uart_tx_cts"):
         for byte in (0x00, 0xFF, 0x55, 0x01, 0x80, 0xA5):
             _assert_frame(program, byte)

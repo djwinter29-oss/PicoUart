@@ -250,10 +250,9 @@ static float pio_uart_driver_clock_divider(uint32_t baud_rate)
  * @brief RX-only PIO clock divider.
  *
  * RX runs its own state machine and divider at
- * UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT clocks/bit (16, vs. TX's 8). The
- * wider grid spaces the 3 majority samples across a quarter of each bit.
- * TX stays at 8 clocks/bit and drives every bit through the OUT pin.
- * See the cycle derivation in uart.pio.
+ * UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT clocks/bit. TX uses the same 16
+ * clocks/bit (UART_LINE_CODING_PIO_CLOCKS_PER_BIT) so the two dividers
+ * quantize a requested baud the same way. See uart.pio.
  */
 static float pio_uart_driver_rx_clock_divider(uint32_t baud_rate)
 {

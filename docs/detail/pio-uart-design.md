@@ -42,13 +42,13 @@ DMA transfer when needed.
 Important details:
 
 - The PIO RX program uses a 3-sample majority vote on every bit (8 data bits
-  plus the stop bit) at its own 16 PIO clocks/bit ratio, independent of TX's
-  8 clocks/bit divider. The samples are two PIO clocks apart, at centre-2,
-  centre, and centre+2, so the vote covers a quarter of the bit. TX drives
-  start, data, and stop through the OUT pin (`mov pins` / `out pins`) so a
-  one-clock side-set/OUT step is not part of the bit. That step was 1/8 of a
-  bit and is what a PL011 single centre sample dropped above about 1.5 Mbaud.
-  See the cycle derivation in `uart.pio`.
+  plus the stop bit) at 16 PIO clocks/bit. The samples are two PIO clocks
+  apart, at centre-2, centre, and centre+2, so the vote covers a quarter of
+  the bit. TX uses the same 16 clocks/bit and drives start, data, and stop
+  through the OUT pin (`mov pins` / `out pins`). An 8-clock TX bit can only
+  place an edge on a 1/8-bit grid, which is coarser than the PL011's 16x
+  clock; that is the gap between HW TX → PIO RX (1.8 Mbaud) and PIO TX → HW
+  RX (1.5 Mbaud) on the short stage-2 jumpers. See `uart.pio`.
 - PIO and hardware UART TX pins are driven at fast slew and 12 mA. The reset
   pad (slow slew, 4 mA) makes an edge wider than that vote window around
   1.5 Mbaud.
@@ -204,9 +204,8 @@ Relevant host-visible signals:
 
 - PIO UART framing is 8N1 only.
 - PIO baud rates must be representable by both the TX and RX PIO clock
-  dividers and are rejected fail-fast otherwise. TX's 8x ratio hits the
-  divider ceiling first at very low baud; RX's 16x ratio hits the divider
-  floor first at very high baud.
+  dividers and are rejected fail-fast otherwise. Both state machines use 16
+  clocks/bit, so they hit the divider ceiling and floor at the same rates.
 - The RX program is 23 instructions (TX is 6, TX_CTS is 7). On the shipped
   board (no port ever enables CTS) a PIO block holds TX + RX = 29/32
   instructions. A CTS port plus RX is 30/32. A block that mixes a CTS port
