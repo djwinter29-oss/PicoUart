@@ -31,12 +31,32 @@ jobs:
     uses: ./.github/workflows/host-validation.yml
 
   build:
-    name: Build (${{ matrix.board }})
+    name: Build (${{ matrix.label }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        board: [pico, pico2]
+        include:
+          # Rated clocks stay the default build path (no clock override).
+          - board: pico
+            clock_khz: "125000"
+            overclock: "false"
+            label: pico
+          - board: pico2
+            clock_khz: "150000"
+            overclock: "false"
+            label: pico2
+          # Development overclock images. CMake rejects these clocks unless
+          # --unsafe-overclock is passed. Package names use label so they
+          # do not collide with the rated pico / pico2 release files.
+          - board: pico
+            clock_khz: "250000"
+            overclock: "true"
+            label: pico-250mhz
+          - board: pico2
+            clock_khz: "300000"
+            overclock: "true"
+            label: pico2-300mhz
 
     steps:
       - name: Checkout
@@ -80,32 +100,39 @@ jobs:
       - name: Build firmware
         env:
           BOARD: ${{ matrix.board }}
+          LABEL: ${{ matrix.label }}
+          CLOCK_KHZ: ${{ matrix.clock_khz }}
+          OVERCLOCK: ${{ matrix.overclock }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          tools/firmware/build.sh \
-            --board "$BOARD" \
-            --firmware-version "$VERSION"
+          set -eu
+          set -- --board "$BOARD" --build-dir "build/firmware-${LABEL}" --firmware-version "$VERSION"
+          if [ "$OVERCLOCK" = "true" ]; then
+            set -- "$@" --system-clock-khz "$CLOCK_KHZ" --unsafe-overclock
+          fi
+          tools/firmware/build.sh "$@"
 
       - name: Package board artifacts
         env:
           VERSION: ${{ steps.version.outputs.version }}
           BOARD: ${{ matrix.board }}
+          LABEL: ${{ matrix.label }}
         run: |
           set -eu
-          SRC="build/firmware-${BOARD}"
+          SRC="build/firmware-${LABEL}"
           OUT="dist"
           mkdir -p "$OUT"
           for ext in uf2 elf bin hex; do
-            cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${BOARD}.$ext"
+            cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${LABEL}.$ext"
           done
           python3 tools/release/verify-build.py --build-dir "$SRC" --board "$BOARD" --version "$VERSION"
-          (cd "$OUT" && sha256sum pico_uart-v${VERSION}-${BOARD}.* > "SHA256SUMS-${BOARD}.txt")
+          (cd "$OUT" && sha256sum pico_uart-v${VERSION}-${LABEL}.* > "SHA256SUMS-${LABEL}.txt")
           ls -la "$OUT"
 
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-${{ matrix.board }}
+          name: release-${{ matrix.label }}
           path: dist/*
           if-no-files-found: error
 
@@ -137,9 +164,10 @@ jobs:
           fail_on_unmatched_files: true
           body: |
             Draft release — complete `docs/releasing.md` before publishing:
-            - Confirm packaged artifact SHAs match the recorded HIL images on **both** pico and pico2
+            - Confirm packaged artifact SHAs match the recorded HIL images on the rated **pico** (125 MHz) and **pico2** (150 MHz) builds
+            - Development overclock images are attached alongside them: **pico-250mhz** (250 MHz) and **pico2-300mhz** (300 MHz). The promote HIL gate covers the rated images
             - This project publishes lab/test artifacts using the unallocated `cafe:4010` USB identity
-            - Attach or link a recorded HIL pass covering both boards
+            - Attach or link a recorded HIL pass covering both rated boards
             - Promote from draft only after the promote checklist passes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

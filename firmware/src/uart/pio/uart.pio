@@ -1,27 +1,17 @@
 .program pio_uart_tx
 .side_set 1 opt
 
-; 8N1-compatible TX at 8 PIO clocks per bit
-; (UART_LINE_CODING_PIO_CLOCKS_PER_BIT). Data bits stay on the side-set program
-; that measured fastest. After the last data bit, `nop side 1 [7]` adds a
-; second stop/idle bit, and the following `pull side 1 [7]` adds another when
-; the next byte is already waiting. Back-to-back frames are 11 bit-times
-; (start + 8 data + 2 stop). An 8N1 receiver treats the extra stop as idle.
-;
-; That idle is the margin the 16-clock RX vote needs to finish the stop bit
-; and re-arm `wait` (a 1-stop peer leaves only 3 cycles), and it keeps a
-; PL011 stop sample high when that single centre sample lands late. The nop
-; runs only on the `jmp x--` fall-through, so data bits stay 8 clocks. A
-; stalled `pull` holds the line high. Do not lengthen the nop: another stop
-; bit would drop the byte rate again without moving the data-bit edges.
+; 8N1 TX at 8 PIO clocks per bit (matches UART_LINE_CODING_PIO_CLOCKS_PER_BIT).
+; Continuous frames are exactly 10 bit-times (start + 8 data + stop): the next
+; wrap to `pull side 1 [7]` asserts the stop bit. Do not add a trailing nop —
+; that lengthens the frame and under-runs a nominal 1 Mbaud byte rate.
 
 .wrap_target
-    pull        side 1 [7] ; Stop bit, or idle-high while stalled (8 clocks)
+    pull        side 1 [7] ; Stop bit / idle-high (8 clocks)
     set x, 7    side 0 [7] ; Start bit (8 clocks)
 bitloop:
     out pins, 1
     jmp x-- bitloop [6]    ; 8 data bits × 8 clocks
-    nop         side 1 [7] ; Second stop bit, only after the last data bit
 .wrap
 
 .program pio_uart_tx_cts
@@ -46,30 +36,32 @@ bitloop_cts:
 ; 8N1 RX with a 3-sample majority vote on every bit (8 data bits + the stop
 ; bit), reusing one compact decision tree through the existing bit-count loop.
 ;
-; Samples sit at centre-2, centre, and centre+2 of a 16-clock bit
-; (UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT, set in C), so the vote spans 4/16
-; of the bit instead of three back-to-back clocks. A slow edge that used to
-; land inside the whole cluster now has to cover a quarter of the bit before
-; every sample agrees with it. TX stays at 8 clocks/bit on its own divider.
+; Samples sit at centre-4, centre, and centre+4 of a 32-clock bit
+; (UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT, set in C), so the vote still spans
+; a quarter of the bit. A 16-clock bit only left 3 PIO cycles between arming
+; `wait 0 pin` and the next start. At 32 clocks that idle margin is 9 cycles,
+; without adding a second stop bit on TX. TX stays at 8 clocks/bit on its own
+; divider, so back-to-back frames stay 10 bit-times.
 ;
-; Cycle derivation (P = 16 clocks/bit, wait-detect start bit = cycle 0):
-;   - Loop entry for bit k is at P*(k+1.5) - 2. `set x, 8 [19]` reaches the
-;     first entry (cycle 22) from the wait/set-y preamble (3 cycles + delay).
-;   - Sample instructions are 2 cycles apart because each `jmp pin` that leads
-;     to the next sample carries `[1]`. The third sample runs only when the
-;     first two disagree. Both data-bit tails still total 16 cycles:
-;       vote0: 6 to reach vote0 + 1 (jmp !x) + 1 (in) + 1+7 (jmp x--) = 16
-;       vote1: 5 to reach vote1 + 1 (jmp !x) + 1 (in) + 1+8 (jmp x--) = 16
+; Cycle derivation (P = 32, G = 4, wait-detect start bit = cycle 0):
+;   - Loop entry for bit k is at P*(k+1.5) - G. `set x, 8 [31]` then `nop [9]`
+;     reaches the first entry (cycle 44): wait + set y + set x is 3 cycles
+;     plus a 31-cycle delay (next at 34) plus a 10-cycle nop.
+;   - Sample instructions are G cycles apart because each `jmp pin` that leads
+;     to the next sample carries `[3]`. The third sample runs only when the
+;     first two disagree. Both data-bit tails still total 32 cycles:
+;       vote0: 10 to reach vote0 + 1 (jmp !x) + 1 (in) + 1+19 (jmp x--) = 32
+;       vote1: 9 to reach vote1 + 1 (jmp !x) + 1 (in) + 1+20 (jmp x--) = 32
 ;   - X counts 8..0 across 9 passes: X!=0 shifts a data bit, X==0 is the stop
 ;     bit (voted 1 -> push, voted 0 -> sticky framing error). Y is the constant
 ;     1 shifted for a voted "1".
-;   - Clean-push path arms `wait 0 pin` at cycle 157 (stop entry 150 + 7).
-;     A 1-stop peer's next start is at cycle 160 (3-cycle margin). This
-;     board's plain TX inserts a second stop, so its next start is at cycle
-;     176.
+;   - Clean-push path arms `wait 0 pin` at cycle 311 (stop entry 300 + 11).
+;     The next start bit is at cycle 320, leaving a 9-cycle idle-high margin.
+;     That is 9/32 of a bit. At 125 MHz the 3 Mbaud cap is already an RX
+;     divider of 1.30; a longer bit falls through the divider floor.
 ;   - host/python/tests/test_pio_rx_majority.py checks every 1-of-3 pattern,
-;     the 2-of-3 stop-bit framing rule, 16-cycle data tails, and sample
-;     offsets 0,2 and 0,2,4.
+;     the 2-of-3 stop-bit framing rule, 32-cycle data tails, sample offsets
+;     0,4 and 0,4,8, and that 9-cycle margin.
 ;
 ; IN shift direction is configured in C as shift-right so LSB-first UART samples
 ; assemble a natural byte in ISR[31:24]. RX DMA then reads that high byte.
@@ -78,30 +70,31 @@ bitloop_cts:
 start:
     wait 0 pin 0            ; Stall until start bit is asserted (cycle 0)
     set y, 1                ; Constant "1" source for voted-1 bit shifts
-    set x, 8    [19]        ; Preload bit/stop counter; delay to 2 cycles
-                             ; before the first data bit's centre
+    set x, 8    [31]        ; Preload bit/stop counter
+    nop         [9]         ; With the delay above, reach 4 cycles before
+                             ; the first data bit's centre (cycle 44)
 bitloop:
-    jmp pin, s1_hi [1]       ; sample 1 (centre-2); [1] opens a 2-cycle gap
+    jmp pin, s1_hi [3]       ; sample 1 (centre-4); [3] opens a 4-cycle gap
 s1_lo:
-    jmp pin, s1_lo_s2_hi [1] ; sample 2 (centre) on the s1=0 path
+    jmp pin, s1_lo_s2_hi [3] ; sample 2 (centre) on the s1=0 path
     jmp vote0 [1]            ; s1=0,s2=0: majority 0; [1] matches the 3-sample arrival
 s1_lo_s2_hi:
-    jmp pin, vote1           ; sample 3 (centre+2, tie 0,1): 1 -> majority 1
+    jmp pin, vote1           ; sample 3 (centre+4, tie 0,1): 1 -> majority 1
     jmp vote0                ; sample 3 (tie 0,1): 0 -> majority 0
 s1_hi:
-    jmp pin, s1_hi_s2_hi [1] ; sample 2 (centre) on the s1=1 path
-    jmp pin, vote1           ; sample 3 (centre+2, tie 1,0): 1 -> majority 1
+    jmp pin, s1_hi_s2_hi [3] ; sample 2 (centre) on the s1=1 path
+    jmp pin, vote1           ; sample 3 (centre+4, tie 1,0): 1 -> majority 1
     jmp vote0                ; sample 3 (tie 1,0): 0 -> majority 0
 s1_hi_s2_hi:
     jmp vote1                ; s1=1,s2=1: majority 1, no 3rd sample needed
 vote0:
     jmp !x, stop_bad         ; stop-bit pass: voted 0 is a framing error
     in null, 1               ; data pass: shift voted 0 bit
-    jmp x-- bitloop [7]
+    jmp x-- bitloop [19]
 vote1:
     jmp !x, stop_good        ; stop-bit pass: voted 1 is a clean frame
     in y, 1                  ; data pass: shift voted 1 bit
-    jmp x-- bitloop [8]
+    jmp x-- bitloop [20]
 stop_bad:
     irq set 0 rel            ; Sticky per-SM framing-error flag
     mov isr, null
