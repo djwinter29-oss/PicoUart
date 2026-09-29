@@ -1,0 +1,192 @@
+=== 7b95ea7 250MHz six-port 1100000 run=1 ===
+Benchmarking PIO/loopbacks at 1100000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11317.8 B/s
+PASS uart0-peer-to-pico: 677888 bytes, 11283.7 B/s
+PASS uart5-loopback: 5518336 bytes, 91854.9 B/s
+PASS uart1-to-uart2: 5557248 bytes, 92502.6 B/s
+PASS uart2-to-uart1: 5560320 bytes, 92553.7 B/s
+PASS uart3-to-uart4: 5555200 bytes, 92468.5 B/s
+PASS uart4-to-uart3: 5564416 bytes, 92621.9 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:23:29.593+00:00', 'thread_start_monotonic': 478510.550096139, 'first_send_utc': '2026-09-29T21:23:29.597+00:00', 'first_send_monotonic': 478510.55416364, 'first_receive_utc': '2026-09-29T21:23:29.687+00:00', 'first_receive_monotonic': 478510.644737686}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:23:29.593+00:00', 'thread_start_monotonic': 478510.550714979, 'first_send_utc': '2026-09-29T21:23:29.597+00:00', 'first_send_monotonic': 478510.554756516, 'first_receive_utc': '2026-09-29T21:23:29.689+00:00', 'first_receive_monotonic': 478510.646223263}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:23:29.594+00:00', 'thread_start_monotonic': 478510.551174174, 'first_send_utc': '2026-09-29T21:23:29.596+00:00', 'first_send_monotonic': 478510.553590424, 'first_receive_utc': '2026-09-29T21:23:29.607+00:00', 'first_receive_monotonic': 478510.564047238}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:23:29.594+00:00', 'thread_start_monotonic': 478510.5516539, 'first_send_utc': '2026-09-29T21:23:29.597+00:00', 'first_send_monotonic': 478510.554438686, 'first_receive_utc': '2026-09-29T21:23:29.609+00:00', 'first_receive_monotonic': 478510.566490907}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:23:29.595+00:00', 'thread_start_monotonic': 478510.552166318, 'first_send_utc': '2026-09-29T21:23:29.596+00:00', 'first_send_monotonic': 478510.553820015, 'first_receive_utc': '2026-09-29T21:23:29.607+00:00', 'first_receive_monotonic': 478510.564248646}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:23:29.595+00:00', 'thread_start_monotonic': 478510.552629935, 'first_send_utc': '2026-09-29T21:23:29.598+00:00', 'first_send_monotonic': 478510.555057588, 'first_receive_utc': '2026-09-29T21:23:29.609+00:00', 'first_receive_monotonic': 478510.565978179}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:23:29.596+00:00', 'thread_start_monotonic': 478510.553073719, 'first_send_utc': '2026-09-29T21:23:29.596+00:00', 'first_send_monotonic': 478510.553285556, 'first_receive_utc': '2026-09-29T21:23:29.607+00:00', 'first_receive_monotonic': 478510.564909184}
+=== 7b95ea7 250MHz six-port 1100000 run=2 ===
+Benchmarking PIO/loopbacks at 1100000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11315.5 B/s
+PASS uart0-peer-to-pico: 676864 bytes, 11264.4 B/s
+PASS uart5-loopback: 5477376 bytes, 91154.9 B/s
+PASS uart1-to-uart2: 5524480 bytes, 91938.8 B/s
+PASS uart2-to-uart1: 5526528 bytes, 91972.9 B/s
+PASS uart3-to-uart4: 5515264 bytes, 91785.4 B/s
+PASS uart4-to-uart3: 5521408 bytes, 91887.6 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:24:37.777+00:00', 'thread_start_monotonic': 478578.734588085, 'first_send_utc': '2026-09-29T21:24:37.781+00:00', 'first_send_monotonic': 478578.738428732, 'first_receive_utc': '2026-09-29T21:24:37.871+00:00', 'first_receive_monotonic': 478578.828545276}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:24:37.778+00:00', 'thread_start_monotonic': 478578.735197726, 'first_send_utc': '2026-09-29T21:24:37.781+00:00', 'first_send_monotonic': 478578.738903764, 'first_receive_utc': '2026-09-29T21:24:37.873+00:00', 'first_receive_monotonic': 478578.830465777}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:24:37.778+00:00', 'thread_start_monotonic': 478578.73565447, 'first_send_utc': '2026-09-29T21:24:37.781+00:00', 'first_send_monotonic': 478578.738653048, 'first_receive_utc': '2026-09-29T21:24:37.791+00:00', 'first_receive_monotonic': 478578.748951588}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:24:37.779+00:00', 'thread_start_monotonic': 478578.736104399, 'first_send_utc': '2026-09-29T21:24:37.780+00:00', 'first_send_monotonic': 478578.73790134, 'first_receive_utc': '2026-09-29T21:24:37.791+00:00', 'first_receive_monotonic': 478578.748185972}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:24:37.779+00:00', 'thread_start_monotonic': 478578.736571367, 'first_send_utc': '2026-09-29T21:24:37.782+00:00', 'first_send_monotonic': 478578.739175995, 'first_receive_utc': '2026-09-29T21:24:37.793+00:00', 'first_receive_monotonic': 478578.750582774}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:24:37.780+00:00', 'thread_start_monotonic': 478578.736977027, 'first_send_utc': '2026-09-29T21:24:37.781+00:00', 'first_send_monotonic': 478578.738136319, 'first_receive_utc': '2026-09-29T21:24:37.791+00:00', 'first_receive_monotonic': 478578.748791991}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:24:37.780+00:00', 'thread_start_monotonic': 478578.737429964, 'first_send_utc': '2026-09-29T21:24:37.780+00:00', 'first_send_monotonic': 478578.737627345, 'first_receive_utc': '2026-09-29T21:24:37.791+00:00', 'first_receive_monotonic': 478578.748577135}
+=== 7b95ea7 250MHz six-port 1100000 run=3 ===
+Benchmarking PIO/loopbacks at 1100000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11315.4 B/s
+PASS uart0-peer-to-pico: 677888 bytes, 11281.3 B/s
+PASS uart5-loopback: 5516288 bytes, 91801.1 B/s
+PASS uart1-to-uart2: 5555200 bytes, 92448.6 B/s
+PASS uart2-to-uart1: 5557248 bytes, 92482.7 B/s
+PASS uart3-to-uart4: 5545984 bytes, 92295.3 B/s
+PASS uart4-to-uart3: 5555200 bytes, 92448.6 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:25:45.973+00:00', 'thread_start_monotonic': 478646.930983487, 'first_send_utc': '2026-09-29T21:25:45.978+00:00', 'first_send_monotonic': 478646.935626178, 'first_receive_utc': '2026-09-29T21:25:46.068+00:00', 'first_receive_monotonic': 478647.025736594}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:25:45.974+00:00', 'thread_start_monotonic': 478646.93167183, 'first_send_utc': '2026-09-29T21:25:45.977+00:00', 'first_send_monotonic': 478646.934817139, 'first_receive_utc': '2026-09-29T21:25:46.070+00:00', 'first_receive_monotonic': 478647.027284762}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:25:45.975+00:00', 'thread_start_monotonic': 478646.93215887, 'first_send_utc': '2026-09-29T21:25:45.977+00:00', 'first_send_monotonic': 478646.934481763, 'first_receive_utc': '2026-09-29T21:25:45.987+00:00', 'first_receive_monotonic': 478646.944966111}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:25:45.975+00:00', 'thread_start_monotonic': 478646.932628602, 'first_send_utc': '2026-09-29T21:25:45.979+00:00', 'first_send_monotonic': 478646.936112844, 'first_receive_utc': '2026-09-29T21:25:45.990+00:00', 'first_receive_monotonic': 478646.947730994}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:25:45.976+00:00', 'thread_start_monotonic': 478646.933119399, 'first_send_utc': '2026-09-29T21:25:45.978+00:00', 'first_send_monotonic': 478646.935149609, 'first_receive_utc': '2026-09-29T21:25:45.988+00:00', 'first_receive_monotonic': 478646.945233509}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:25:45.976+00:00', 'thread_start_monotonic': 478646.933599738, 'first_send_utc': '2026-09-29T21:25:45.978+00:00', 'first_send_monotonic': 478646.935949091, 'first_receive_utc': '2026-09-29T21:25:45.991+00:00', 'first_receive_monotonic': 478646.948080182}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:25:45.977+00:00', 'thread_start_monotonic': 478646.934035641, 'first_send_utc': '2026-09-29T21:25:45.977+00:00', 'first_send_monotonic': 478646.93424727, 'first_receive_utc': '2026-09-29T21:25:45.988+00:00', 'first_receive_monotonic': 478646.945405244}
+=== 7b95ea7 250MHz six-port 1200000 run=1 ===
+Benchmarking PIO/loopbacks at 1200000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11316.0 B/s
+PASS uart0-peer-to-pico: 676864 bytes, 11264.8 B/s
+PASS uart5-loopback: 5562368 bytes, 92572.7 B/s
+PASS uart1-to-uart2: 5653504 bytes, 94089.4 B/s
+PASS uart2-to-uart1: 5638144 bytes, 93833.8 B/s
+PASS uart3-to-uart4: 5623808 bytes, 93595.2 B/s
+PASS uart4-to-uart3: 5648384 bytes, 94004.2 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:26:54.158+00:00', 'thread_start_monotonic': 478715.115539041, 'first_send_utc': '2026-09-29T21:26:54.162+00:00', 'first_send_monotonic': 478715.119633168, 'first_receive_utc': '2026-09-29T21:26:54.252+00:00', 'first_receive_monotonic': 478715.209292299}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:26:54.159+00:00', 'thread_start_monotonic': 478715.116158588, 'first_send_utc': '2026-09-29T21:26:54.162+00:00', 'first_send_monotonic': 478715.119127594, 'first_receive_utc': '2026-09-29T21:26:54.254+00:00', 'first_receive_monotonic': 478715.211272414}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:26:54.159+00:00', 'thread_start_monotonic': 478715.116579017, 'first_send_utc': '2026-09-29T21:26:54.163+00:00', 'first_send_monotonic': 478715.120111849, 'first_receive_utc': '2026-09-29T21:26:54.172+00:00', 'first_receive_monotonic': 478715.129923399}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:26:54.160+00:00', 'thread_start_monotonic': 478715.117051409, 'first_send_utc': '2026-09-29T21:26:54.162+00:00', 'first_send_monotonic': 478715.119436947, 'first_receive_utc': '2026-09-29T21:26:54.173+00:00', 'first_receive_monotonic': 478715.130091741}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:26:54.160+00:00', 'thread_start_monotonic': 478715.117482622, 'first_send_utc': '2026-09-29T21:26:54.161+00:00', 'first_send_monotonic': 478715.118844831, 'first_receive_utc': '2026-09-29T21:26:54.172+00:00', 'first_receive_monotonic': 478715.129342399}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:26:54.160+00:00', 'thread_start_monotonic': 478715.117911118, 'first_send_utc': '2026-09-29T21:26:54.162+00:00', 'first_send_monotonic': 478715.119853577, 'first_receive_utc': '2026-09-29T21:26:54.172+00:00', 'first_receive_monotonic': 478715.129575516}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:26:54.161+00:00', 'thread_start_monotonic': 478715.118368125, 'first_send_utc': '2026-09-29T21:26:54.161+00:00', 'first_send_monotonic': 478715.118566572, 'first_receive_utc': '2026-09-29T21:26:54.173+00:00', 'first_receive_monotonic': 478715.130263356}
+=== 7b95ea7 250MHz six-port 1200000 run=2 ===
+Benchmarking PIO/loopbacks at 1200000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11319.1 B/s
+PASS uart0-peer-to-pico: 676864 bytes, 11268.0 B/s
+PASS uart5-loopback: 5582848 bytes, 92939.6 B/s
+PASS uart1-to-uart2: 5667840 bytes, 94354.5 B/s
+PASS uart2-to-uart1: 5656576 bytes, 94167.0 B/s
+PASS uart3-to-uart4: 5633024 bytes, 93774.9 B/s
+PASS uart4-to-uart3: 5661696 bytes, 94252.2 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:28:02.370+00:00', 'thread_start_monotonic': 478783.327232363, 'first_send_utc': '2026-09-29T21:28:02.374+00:00', 'first_send_monotonic': 478783.33194449, 'first_receive_utc': '2026-09-29T21:28:02.465+00:00', 'first_receive_monotonic': 478783.422563515}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:28:02.370+00:00', 'thread_start_monotonic': 478783.327863245, 'first_send_utc': '2026-09-29T21:28:02.373+00:00', 'first_send_monotonic': 478783.330910447, 'first_receive_utc': '2026-09-29T21:28:02.465+00:00', 'first_receive_monotonic': 478783.422096658}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:28:02.371+00:00', 'thread_start_monotonic': 478783.328362036, 'first_send_utc': '2026-09-29T21:28:02.374+00:00', 'first_send_monotonic': 478783.331274197, 'first_receive_utc': '2026-09-29T21:28:02.384+00:00', 'first_receive_monotonic': 478783.341299883}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:28:02.371+00:00', 'thread_start_monotonic': 478783.328836434, 'first_send_utc': '2026-09-29T21:28:02.375+00:00', 'first_send_monotonic': 478783.332294633, 'first_receive_utc': '2026-09-29T21:28:02.386+00:00', 'first_receive_monotonic': 478783.343970071}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:28:02.372+00:00', 'thread_start_monotonic': 478783.329327789, 'first_send_utc': '2026-09-29T21:28:02.375+00:00', 'first_send_monotonic': 478783.332567276, 'first_receive_utc': '2026-09-29T21:28:02.387+00:00', 'first_receive_monotonic': 478783.344686232}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:28:02.372+00:00', 'thread_start_monotonic': 478783.329815827, 'first_send_utc': '2026-09-29T21:28:02.374+00:00', 'first_send_monotonic': 478783.33159978, 'first_receive_utc': '2026-09-29T21:28:02.385+00:00', 'first_receive_monotonic': 478783.342257463}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:28:02.373+00:00', 'thread_start_monotonic': 478783.330312842, 'first_send_utc': '2026-09-29T21:28:02.373+00:00', 'first_send_monotonic': 478783.330521348, 'first_receive_utc': '2026-09-29T21:28:02.384+00:00', 'first_receive_monotonic': 478783.341970744}
+=== 7b95ea7 250MHz six-port 1200000 run=3 ===
+Benchmarking PIO/loopbacks at 1200000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11316.5 B/s
+PASS uart0-peer-to-pico: 677888 bytes, 11282.4 B/s
+PASS uart5-loopback: 5598208 bytes, 93173.6 B/s
+PASS uart1-to-uart2: 5685248 bytes, 94622.3 B/s
+PASS uart2-to-uart1: 5657600 bytes, 94162.1 B/s
+PASS uart3-to-uart4: 5660672 bytes, 94213.3 B/s
+PASS uart4-to-uart3: 5673984 bytes, 94434.8 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:29:10.552+00:00', 'thread_start_monotonic': 478851.509653153, 'first_send_utc': '2026-09-29T21:29:10.556+00:00', 'first_send_monotonic': 478851.513204684, 'first_receive_utc': '2026-09-29T21:29:10.646+00:00', 'first_receive_monotonic': 478851.603677704}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:29:10.553+00:00', 'thread_start_monotonic': 478851.51025548, 'first_send_utc': '2026-09-29T21:29:10.557+00:00', 'first_send_monotonic': 478851.514114021, 'first_receive_utc': '2026-09-29T21:29:10.648+00:00', 'first_receive_monotonic': 478851.605837008}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:29:10.553+00:00', 'thread_start_monotonic': 478851.510685803, 'first_send_utc': '2026-09-29T21:29:10.556+00:00', 'first_send_monotonic': 478851.51306236, 'first_receive_utc': '2026-09-29T21:29:10.566+00:00', 'first_receive_monotonic': 478851.523521887}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:29:10.554+00:00', 'thread_start_monotonic': 478851.511141961, 'first_send_utc': '2026-09-29T21:29:10.556+00:00', 'first_send_monotonic': 478851.513719795, 'first_receive_utc': '2026-09-29T21:29:10.566+00:00', 'first_receive_monotonic': 478851.523907035}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:29:10.554+00:00', 'thread_start_monotonic': 478851.511572684, 'first_send_utc': '2026-09-29T21:29:10.557+00:00', 'first_send_monotonic': 478851.514408515, 'first_receive_utc': '2026-09-29T21:29:10.568+00:00', 'first_receive_monotonic': 478851.525855381}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:29:10.555+00:00', 'thread_start_monotonic': 478851.512059144, 'first_send_utc': '2026-09-29T21:29:10.556+00:00', 'first_send_monotonic': 478851.513425996, 'first_receive_utc': '2026-09-29T21:29:10.567+00:00', 'first_receive_monotonic': 478851.524167673}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:29:10.555+00:00', 'thread_start_monotonic': 478851.512542612, 'first_send_utc': '2026-09-29T21:29:10.555+00:00', 'first_send_monotonic': 478851.51273461, 'first_receive_utc': '2026-09-29T21:29:10.566+00:00', 'first_receive_monotonic': 478851.523310073}
+=== 7b95ea7 250MHz six-port 1300000 run=1 ===
+Benchmarking PIO/loopbacks at 1300000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11320.0 B/s
+PASS uart0-peer-to-pico: 676864 bytes, 11268.9 B/s
+PASS uart5-loopback: 5679104 bytes, 94549.7 B/s
+PASS uart1-to-uart2: 5784576 bytes, 96305.6 B/s
+PASS uart2-to-uart1: 5741568 bytes, 95589.6 B/s
+PASS uart3-to-uart4: 5744640 bytes, 95640.7 B/s
+PASS uart4-to-uart3: 5780480 bytes, 96237.4 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:30:18.738+00:00', 'thread_start_monotonic': 478919.695723678, 'first_send_utc': '2026-09-29T21:30:18.743+00:00', 'first_send_monotonic': 478919.700558408, 'first_receive_utc': '2026-09-29T21:30:18.834+00:00', 'first_receive_monotonic': 478919.791351332}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:30:18.739+00:00', 'thread_start_monotonic': 478919.696385242, 'first_send_utc': '2026-09-29T21:30:18.742+00:00', 'first_send_monotonic': 478919.699507134, 'first_receive_utc': '2026-09-29T21:30:18.835+00:00', 'first_receive_monotonic': 478919.792285488}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:30:18.739+00:00', 'thread_start_monotonic': 478919.696887053, 'first_send_utc': '2026-09-29T21:30:18.742+00:00', 'first_send_monotonic': 478919.699835372, 'first_receive_utc': '2026-09-29T21:30:18.753+00:00', 'first_receive_monotonic': 478919.710731213}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:30:18.740+00:00', 'thread_start_monotonic': 478919.69740503, 'first_send_utc': '2026-09-29T21:30:18.743+00:00', 'first_send_monotonic': 478919.70012619, 'first_receive_utc': '2026-09-29T21:30:18.753+00:00', 'first_receive_monotonic': 478919.710290151}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:30:18.740+00:00', 'thread_start_monotonic': 478919.697857868, 'first_send_utc': '2026-09-29T21:30:18.744+00:00', 'first_send_monotonic': 478919.701254603, 'first_receive_utc': '2026-09-29T21:30:18.753+00:00', 'first_receive_monotonic': 478919.710532838}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:30:18.741+00:00', 'thread_start_monotonic': 478919.698363549, 'first_send_utc': '2026-09-29T21:30:18.743+00:00', 'first_send_monotonic': 478919.700889206, 'first_receive_utc': '2026-09-29T21:30:18.753+00:00', 'first_receive_monotonic': 478919.710042393}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:30:18.741+00:00', 'thread_start_monotonic': 478919.698812393, 'first_send_utc': '2026-09-29T21:30:18.742+00:00', 'first_send_monotonic': 478919.699111377, 'first_receive_utc': '2026-09-29T21:30:18.752+00:00', 'first_receive_monotonic': 478919.709752461}
+=== 7b95ea7 250MHz six-port 1300000 run=2 ===
+Benchmarking PIO/loopbacks at 1300000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 678912 bytes, 11297.5 B/s
+PASS uart0-peer-to-pico: 674816 bytes, 11229.3 B/s
+PASS uart5-loopback: 5593088 bytes, 93072.2 B/s
+PASS uart1-to-uart2: 5739520 bytes, 95508.9 B/s
+PASS uart2-to-uart1: 5772288 bytes, 96054.2 B/s
+PASS uart3-to-uart4: 5654528 bytes, 94094.6 B/s
+PASS uart4-to-uart3: 5712896 bytes, 95065.9 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:31:26.908+00:00', 'thread_start_monotonic': 478987.865372089, 'first_send_utc': '2026-09-29T21:31:26.912+00:00', 'first_send_monotonic': 478987.869092408, 'first_receive_utc': '2026-09-29T21:31:27.001+00:00', 'first_receive_monotonic': 478987.958893953}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:31:26.909+00:00', 'thread_start_monotonic': 478987.865992668, 'first_send_utc': '2026-09-29T21:31:26.912+00:00', 'first_send_monotonic': 478987.869263116, 'first_receive_utc': '2026-09-29T21:31:27.004+00:00', 'first_receive_monotonic': 478987.961646209}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:31:26.909+00:00', 'thread_start_monotonic': 478987.866498993, 'first_send_utc': '2026-09-29T21:31:26.912+00:00', 'first_send_monotonic': 478987.869426384, 'first_receive_utc': '2026-09-29T21:31:26.923+00:00', 'first_receive_monotonic': 478987.879993702}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:31:26.910+00:00', 'thread_start_monotonic': 478987.866992441, 'first_send_utc': '2026-09-29T21:31:26.913+00:00', 'first_send_monotonic': 478987.870720591, 'first_receive_utc': '2026-09-29T21:31:26.923+00:00', 'first_receive_monotonic': 478987.880258023}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:31:26.910+00:00', 'thread_start_monotonic': 478987.867498341, 'first_send_utc': '2026-09-29T21:31:26.912+00:00', 'first_send_monotonic': 478987.869768363, 'first_receive_utc': '2026-09-29T21:31:26.922+00:00', 'first_receive_monotonic': 478987.879530431}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:31:26.911+00:00', 'thread_start_monotonic': 478987.867988217, 'first_send_utc': '2026-09-29T21:31:26.912+00:00', 'first_send_monotonic': 478987.869892174, 'first_receive_utc': '2026-09-29T21:31:26.922+00:00', 'first_receive_monotonic': 478987.879265582}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:31:26.911+00:00', 'thread_start_monotonic': 478987.868498391, 'first_send_utc': '2026-09-29T21:31:26.911+00:00', 'first_send_monotonic': 478987.868719847, 'first_receive_utc': '2026-09-29T21:31:26.922+00:00', 'first_receive_monotonic': 478987.879742667}
+=== 7b95ea7 250MHz six-port 1300000 run=3 ===
+Benchmarking PIO/loopbacks at 1300000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11316.8 B/s
+PASS uart0-peer-to-pico: 677888 bytes, 11282.7 B/s
+PASS uart5-loopback: 5665792 bytes, 94301.2 B/s
+PASS uart1-to-uart2: 5780480 bytes, 96210.1 B/s
+PASS uart2-to-uart1: 5739520 bytes, 95528.4 B/s
+PASS uart3-to-uart4: 5743616 bytes, 95596.5 B/s
+PASS uart4-to-uart3: 5783552 bytes, 96261.2 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:32:35.072+00:00', 'thread_start_monotonic': 479056.029679262, 'first_send_utc': '2026-09-29T21:32:35.076+00:00', 'first_send_monotonic': 479056.033257931, 'first_receive_utc': '2026-09-29T21:32:35.166+00:00', 'first_receive_monotonic': 479056.123660481}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:32:35.073+00:00', 'thread_start_monotonic': 479056.030348318, 'first_send_utc': '2026-09-29T21:32:35.076+00:00', 'first_send_monotonic': 479056.033114974, 'first_receive_utc': '2026-09-29T21:32:35.167+00:00', 'first_receive_monotonic': 479056.124332488}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:32:35.073+00:00', 'thread_start_monotonic': 479056.030851142, 'first_send_utc': '2026-09-29T21:32:35.076+00:00', 'first_send_monotonic': 479056.03340744, 'first_receive_utc': '2026-09-29T21:32:35.087+00:00', 'first_receive_monotonic': 479056.04443097}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:32:35.074+00:00', 'thread_start_monotonic': 479056.031303303, 'first_send_utc': '2026-09-29T21:32:35.076+00:00', 'first_send_monotonic': 479056.033936962, 'first_receive_utc': '2026-09-29T21:32:35.086+00:00', 'first_receive_monotonic': 479056.04382988}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:32:35.074+00:00', 'thread_start_monotonic': 479056.031740955, 'first_send_utc': '2026-09-29T21:32:35.077+00:00', 'first_send_monotonic': 479056.034328599, 'first_receive_utc': '2026-09-29T21:32:35.087+00:00', 'first_receive_monotonic': 479056.043995877}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:32:35.075+00:00', 'thread_start_monotonic': 479056.032164699, 'first_send_utc': '2026-09-29T21:32:35.076+00:00', 'first_send_monotonic': 479056.03371108, 'first_receive_utc': '2026-09-29T21:32:35.086+00:00', 'first_receive_monotonic': 479056.043357351}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:32:35.075+00:00', 'thread_start_monotonic': 479056.032584264, 'first_send_utc': '2026-09-29T21:32:35.075+00:00', 'first_send_monotonic': 479056.032776784, 'first_receive_utc': '2026-09-29T21:32:35.086+00:00', 'first_receive_monotonic': 479056.043603972}
+=== 7b95ea7 250MHz six-port 1400000 run=1 ===
+Benchmarking PIO/loopbacks at 1400000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11314.9 B/s
+PASS uart0-peer-to-pico: 675840 bytes, 11246.7 B/s
+PASS uart5-loopback: 5715968 bytes, 95120.0 B/s
+PASS uart1-to-uart2: 5874688 bytes, 97761.3 B/s
+PASS uart2-to-uart1: 5868544 bytes, 97659.0 B/s
+PASS uart3-to-uart4: 5796864 bytes, 96466.2 B/s
+PASS uart4-to-uart3: 5837824 bytes, 97147.8 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:33:43.251+00:00', 'thread_start_monotonic': 479124.20883712, 'first_send_utc': '2026-09-29T21:33:43.255+00:00', 'first_send_monotonic': 479124.212591146, 'first_receive_utc': '2026-09-29T21:33:43.346+00:00', 'first_receive_monotonic': 479124.303515463}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:33:43.252+00:00', 'thread_start_monotonic': 479124.209502892, 'first_send_utc': '2026-09-29T21:33:43.256+00:00', 'first_send_monotonic': 479124.213510924, 'first_receive_utc': '2026-09-29T21:33:43.347+00:00', 'first_receive_monotonic': 479124.303982839}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:33:43.253+00:00', 'thread_start_monotonic': 479124.209989909, 'first_send_utc': '2026-09-29T21:33:43.257+00:00', 'first_send_monotonic': 479124.214049299, 'first_receive_utc': '2026-09-29T21:33:43.266+00:00', 'first_receive_monotonic': 479124.223641077}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:33:43.253+00:00', 'thread_start_monotonic': 479124.210546795, 'first_send_utc': '2026-09-29T21:33:43.256+00:00', 'first_send_monotonic': 479124.213157375, 'first_receive_utc': '2026-09-29T21:33:43.265+00:00', 'first_receive_monotonic': 479124.22242007}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:33:43.254+00:00', 'thread_start_monotonic': 479124.211076374, 'first_send_utc': '2026-09-29T21:33:43.255+00:00', 'first_send_monotonic': 479124.212895515, 'first_receive_utc': '2026-09-29T21:33:43.265+00:00', 'first_receive_monotonic': 479124.22290067}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:33:43.254+00:00', 'thread_start_monotonic': 479124.21154322, 'first_send_utc': '2026-09-29T21:33:43.256+00:00', 'first_send_monotonic': 479124.213746257, 'first_receive_utc': '2026-09-29T21:33:43.266+00:00', 'first_receive_monotonic': 479124.223339915}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:33:43.254+00:00', 'thread_start_monotonic': 479124.21195715, 'first_send_utc': '2026-09-29T21:33:43.255+00:00', 'first_send_monotonic': 479124.21219945, 'first_receive_utc': '2026-09-29T21:33:43.266+00:00', 'first_receive_monotonic': 479124.223085529}
+=== 7b95ea7 250MHz six-port 1400000 run=2 ===
+FAIL uart5-loopback: 1346560 bytes, received 238 of 1024 bytes
+FAIL uart1-to-uart2: 1613824 bytes, received 538 of 1024 bytes
+FAIL uart2-to-uart1: 1401856 bytes, received 90 of 1024 bytes
+FAIL uart3-to-uart4: 1101824 bytes, received 92 of 1024 bytes
+FAIL uart4-to-uart3: 1610752 bytes, received 293 of 1024 bytes
+Benchmarking PIO/loopbacks at 1400000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11319.8 B/s
+PASS uart0-peer-to-pico: 677888 bytes, 11285.7 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:34:51.437+00:00', 'thread_start_monotonic': 479192.394244662, 'first_send_utc': '2026-09-29T21:34:51.442+00:00', 'first_send_monotonic': 479192.39903747, 'first_receive_utc': '2026-09-29T21:34:51.532+00:00', 'first_receive_monotonic': 479192.489515095}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:34:51.437+00:00', 'thread_start_monotonic': 479192.394866178, 'first_send_utc': '2026-09-29T21:34:51.441+00:00', 'first_send_monotonic': 479192.398710819, 'first_receive_utc': '2026-09-29T21:34:51.532+00:00', 'first_receive_monotonic': 479192.489952803}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:34:51.438+00:00', 'thread_start_monotonic': 479192.395364571, 'first_send_utc': '2026-09-29T21:34:51.441+00:00', 'first_send_monotonic': 479192.398455491, 'first_receive_utc': '2026-09-29T21:34:51.450+00:00', 'first_receive_monotonic': 479192.407821357}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:34:51.438+00:00', 'thread_start_monotonic': 479192.395840902, 'first_send_utc': '2026-09-29T21:34:51.440+00:00', 'first_send_monotonic': 479192.397813821, 'first_receive_utc': '2026-09-29T21:34:51.451+00:00', 'first_receive_monotonic': 479192.408281557}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:34:51.439+00:00', 'thread_start_monotonic': 479192.396355998, 'first_send_utc': '2026-09-29T21:34:51.441+00:00', 'first_send_monotonic': 479192.398110384, 'first_receive_utc': '2026-09-29T21:34:51.452+00:00', 'first_receive_monotonic': 479192.409943684}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:34:51.439+00:00', 'thread_start_monotonic': 479192.396843642, 'first_send_utc': '2026-09-29T21:34:51.442+00:00', 'first_send_monotonic': 479192.399193874, 'first_receive_utc': '2026-09-29T21:34:51.451+00:00', 'first_receive_monotonic': 479192.408892952}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:34:51.440+00:00', 'thread_start_monotonic': 479192.397308608, 'first_send_utc': '2026-09-29T21:34:51.440+00:00', 'first_send_monotonic': 479192.397521016, 'first_receive_utc': '2026-09-29T21:34:51.451+00:00', 'first_receive_monotonic': 479192.408714875}
+=== 7b95ea7 250MHz six-port 1400000 run=3 ===
+FAIL uart5-loopback: 0 bytes, received data did not match transmitted data
+FAIL uart2-to-uart1: 0 bytes, received data did not match transmitted data
+FAIL uart3-to-uart4: 0 bytes, received data did not match transmitted data
+Benchmarking PIO/loopbacks at 1400000 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 679936 bytes, 11317.8 B/s
+PASS uart0-peer-to-pico: 676864 bytes, 11266.6 B/s
+PASS uart1-to-uart2: 7520256 bytes, 125177.1 B/s
+PASS uart4-to-uart3: 7519232 bytes, 125160.0 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-09-29T21:35:59.604+00:00', 'thread_start_monotonic': 479260.561528395, 'first_send_utc': '2026-09-29T21:35:59.609+00:00', 'first_send_monotonic': 479260.566638771, 'first_receive_utc': '2026-09-29T21:35:59.700+00:00', 'first_receive_monotonic': 479260.657412368}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-09-29T21:35:59.605+00:00', 'thread_start_monotonic': 479260.562210438, 'first_send_utc': '2026-09-29T21:35:59.608+00:00', 'first_send_monotonic': 479260.565851723, 'first_receive_utc': '2026-09-29T21:35:59.699+00:00', 'first_receive_monotonic': 479260.656799545}
+TIME uart5-loopback: {'thread_start_utc': '2026-09-29T21:35:59.605+00:00', 'thread_start_monotonic': 479260.562693329, 'first_send_utc': '2026-09-29T21:35:59.608+00:00', 'first_send_monotonic': 479260.565508713}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-09-29T21:35:59.606+00:00', 'thread_start_monotonic': 479260.563173727, 'first_send_utc': '2026-09-29T21:35:59.608+00:00', 'first_send_monotonic': 479260.56519348, 'first_receive_utc': '2026-09-29T21:35:59.618+00:00', 'first_receive_monotonic': 479260.575241653}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-09-29T21:35:59.606+00:00', 'thread_start_monotonic': 479260.563607446, 'first_send_utc': '2026-09-29T21:35:59.609+00:00', 'first_send_monotonic': 479260.56647648}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-09-29T21:35:59.607+00:00', 'thread_start_monotonic': 479260.564130024, 'first_send_utc': '2026-09-29T21:35:59.609+00:00', 'first_send_monotonic': 479260.56613489}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-09-29T21:35:59.607+00:00', 'thread_start_monotonic': 479260.564642963, 'first_send_utc': '2026-09-29T21:35:59.607+00:00', 'first_send_monotonic': 479260.564856848, 'first_receive_utc': '2026-09-29T21:35:59.618+00:00', 'first_receive_monotonic': 479260.575480582}

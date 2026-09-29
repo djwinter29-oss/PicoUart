@@ -7,6 +7,91 @@ Result entries are development evidence unless they explicitly say
 `release qualification` and include the exact flashed artifact hash for each
 required board.
 
+## 2026-09-29 - cursor/pio-tx-8n1-10bit-3ed0 - Performance ceiling
+
+**Result:** `1.2M stable; 1.3M and 1.4M unstable; 1.5M unstable; 2.0M FAIL`
+**Firmware:** `0.0.0`, `7b95ea7`
+**Qualification:** development HIL; not release qualification
+**Board:** `pico` / RP2040 **overclocked 250 MHz** (unsafe, not rated)
+**Wiring:** CDC0↔Debug Probe; CDC1↔CDC2; CDC3↔CDC4; CDC5 physical loopback
+**Artifact:** `build/firmware-pio-tx-8n1-10bit-250mhz-r2/pico_uart.elf`
+**Artifact SHA-256:** `792bb917f13ddb04389383f180e1d445776fb6c07636b2d044c5ab1f75c2a496`
+**Flash:** SWD OpenOCD; BY25Q16ES detected; verify passed
+
+### Configuration
+
+- All six CDC ports opened; CDC0/Debug Probe fixed at 115200 baud
+- Seven benchmark streams (six UART directions plus CDC0 in both directions)
+- 1024-byte verified payloads; 60 s per rate, 3 runs per rate
+- 8 s settle between rate changes; CBAUD/BOTHER for arbitrary baud
+- HID version: `0.0.0`; CDC0–CDC5 overrun counters before flash/test: `0`
+- Overclock: `--system-clock-khz 250000 --unsafe-overclock`
+
+### Functional test runner
+
+- ❌ Full `run_hardware_test.py`: failed before performance phase because HID
+  monitor reported `control_error` on CDC1–CDC4; performance was therefore
+  skipped by the runner.
+- ✅ The board remained enumerated as `cafe:4010`, SWD verify passed, and final
+  HID overrun counters were all `0`.
+- The concurrent performance runs below were then executed independently with
+  the documented `serial_stress_benchmark.py` command.
+
+### Single-pair full duplex (10 s × 3 runs, per pair)
+
+| Stage | 1.1M | 1.5M | 2.0M | 2.5M | 3.0M | 3.5M |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Stage 2 (HW UART1↔PIO UART2) | 3/3 | 3/3 | 3/3 | 3/3 | 2/3 | SETUP_FAIL |
+| Stage 3 (PIO UART3↔PIO UART4) | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 |
+
+### Concurrent six-port full duplex (60 s × 3 runs, all 7 streams)
+
+| Rate | Run 1 | Run 2 | Run 3 | Conclusion |
+| ---: | :---: | :---: | :---: | :---: |
+| 1.1M | ✅ | ✅ | ✅ | 3/3 stable |
+| **1.2M** | ✅ | ✅ | ✅ | **3/3 stable** |
+| 1.3M | ✅ | ✅ | ✅ | 3/3 in this scan; boundary candidate |
+| 1.4M | ✅ | ❌ (5 streams) | ❌ (3 streams) | unstable |
+| 1.5M | ❌ (UART1↔2 init) | ✅ | ✅ | unstable, 2/3 |
+| 2.0M | ❌ | ❌ | ❌ | 0/3 |
+
+### Throughput summary
+
+| Rate | Total verified bytes across 7 streams, 3×60 s | Aggregate average |
+| ---: | ---: | ---: |
+| 1.1M | about 79.2 MB | about 440 kB/s |
+| 1.2M | about 81.0 MB | about 450 kB/s |
+| 1.3M | about 82.3 MB | about 457 kB/s |
+
+The per-stream output reported approximately 11.3 kB/s for each CDC0
+Debug-Probe direction and 92–96 kB/s for each high-speed stream. Every payload
+was compared byte-for-byte; the byte totals are verified payload bytes, not
+line-rate estimates.
+
+### Timestamps
+
+All seven streams recorded `thread_start_utc`, `first_send_utc`, and
+`first_receive_utc`. In the passing runs, high-speed streams received their
+first payload about 10–12 ms after first send; CDC0 through the Debug Probe took
+about 90–95 ms.
+
+### Conclusion
+
+For this flashed RP2040 and this 250 MHz overclocked firmware, the highest
+**confirmed stable** six-port concurrent rate is **1.2Mbaud (3/3, 60 seconds,
+7/7 streams)**. `1.3Mbaud` passed all three repetitions in this scan and is a
+strong boundary candidate, but it should be repeated on a fresh flash/process
+before promoting it to the conservative stable ceiling. `1.4Mbaud` and `1.5Mbaud`
+are not stable; `2.0Mbaud` fails consistently.
+
+The single-pair results remain substantially higher than the six-port result,
+so the multi-link ceiling reflects concurrent USB/CPU/PIO scheduling pressure
+and initialization sensitivity rather than the isolated UART bit-rate ceiling.
+
+Raw scan log: `docs/tests/raw/hardware-test-7b95ea7-250mhz-final-scan.log`
+
+---
+
 ## 2026-09-28 - cursor/update-review-score-b292 - Performance results
 
 **Result:** `PASS at 460800; FAIL at 500000 and 600000`
