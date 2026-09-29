@@ -69,9 +69,11 @@ then follow the [Functional Test Plan](docs/tests/functional-test-plan.md) and
 [Performance Test Plan](docs/tests/performance-test-plan.md). Record results
 in [Performance Test Results](docs/tests/performance-test-results.md).
 
-CI builds both firmware targets on Linux and runs host tests on Linux and
-Windows. Release tags open a draft GitHub Release; publish only after the gates
-in [Releasing](docs/releasing.md).
+CI builds the rated firmware targets (`pico` at 125 MHz, `pico2` at 150 MHz)
+and two development overclock images (`pico` at 250 MHz, `pico2` at 300 MHz)
+on Linux, and runs host tests on Linux and Windows. Release tags open a draft
+GitHub Release containing all four images; publish only after the gates in
+[Releasing](docs/releasing.md).
 
 ## Repository Layout
 
@@ -85,7 +87,8 @@ in [Releasing](docs/releasing.md).
 - RP2040-based boards such as Raspberry Pi Pico (`--board pico`)
 - RP2350-based boards such as Raspberry Pi Pico 2 (`--board pico2`)
 
-CI builds both targets. The transport model stays consistent across both families.
+CI builds the rated targets and the 250 MHz / 300 MHz overclock images. The
+transport model stays consistent across both families.
 
 ## Current Status
 

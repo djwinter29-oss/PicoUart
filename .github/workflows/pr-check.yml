@@ -18,12 +18,32 @@ env:
 
 jobs:
   firmware:
-    name: Firmware (${{ matrix.board }})
+    name: Firmware (${{ matrix.label }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        board: [pico, pico2]
+        include:
+          # Rated clocks stay the default build path (no clock override).
+          - board: pico
+            clock_khz: "125000"
+            overclock: "false"
+            label: pico
+          - board: pico2
+            clock_khz: "150000"
+            overclock: "false"
+            label: pico2
+          # Development overclock images. CMake rejects these clocks unless
+          # --unsafe-overclock is passed. Artifact names use label so they
+          # do not collide with the rated pico / pico2 uploads.
+          - board: pico
+            clock_khz: "250000"
+            overclock: "true"
+            label: pico-250mhz
+          - board: pico2
+            clock_khz: "300000"
+            overclock: "true"
+            label: pico2-300mhz
 
     steps:
       - name: Checkout
@@ -55,17 +75,27 @@ jobs:
       - name: Build firmware
         env:
           BOARD: ${{ matrix.board }}
-        run: tools/firmware/build.sh --board "$BOARD"
+          LABEL: ${{ matrix.label }}
+          CLOCK_KHZ: ${{ matrix.clock_khz }}
+          OVERCLOCK: ${{ matrix.overclock }}
+        run: |
+          set -eu
+          set -- --board "$BOARD" --build-dir "build/firmware-${LABEL}"
+          if [ "$OVERCLOCK" = "true" ]; then
+            set -- "$@" --system-clock-khz "$CLOCK_KHZ" --unsafe-overclock
+          fi
+          tools/firmware/build.sh "$@"
 
       - name: Verify build contract
         env:
           BOARD: ${{ matrix.board }}
+          LABEL: ${{ matrix.label }}
         run: |
           set -eu
-          python3 tools/release/verify-build.py --build-dir "build/firmware-${BOARD}" --board "$BOARD"
+          python3 tools/release/verify-build.py --build-dir "build/firmware-${LABEL}" --board "$BOARD"
 
       - name: Smoke-check stamped version / bcdDevice
-        if: matrix.board == 'pico'
+        if: matrix.label == 'pico'
         run: |
           set -eu
           tools/firmware/build.sh --board pico --firmware-version 1.2.3 --build-dir build/firmware-pico-stamp
@@ -77,12 +107,12 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pico_uart-${{ matrix.board }}
+          name: pico_uart-${{ matrix.label }}
           path: |
-            build/firmware-${{ matrix.board }}/pico_uart.uf2
-            build/firmware-${{ matrix.board }}/pico_uart.elf
-            build/firmware-${{ matrix.board }}/pico_uart.bin
-            build/firmware-${{ matrix.board }}/pico_uart.hex
+            build/firmware-${{ matrix.label }}/pico_uart.uf2
+            build/firmware-${{ matrix.label }}/pico_uart.elf
+            build/firmware-${{ matrix.label }}/pico_uart.bin
+            build/firmware-${{ matrix.label }}/pico_uart.hex
           if-no-files-found: error
 
   host-validation:
