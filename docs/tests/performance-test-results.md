@@ -110,9 +110,9 @@ This file does not yet satisfy the release gate in `docs/releasing.md`:
   six-port 1 Mbaud full-duplex saturation result. The 2026-09-24 concurrent
   run is 115200 baud only.
 - Firmware `8669f51` from that 2026-09-28 entry is not on this branch. It
-  predates the 32-clock PIO RX majority vote, the RX input-synchronizer
-  bypass, and the fast-slew 12 mA TX pads. Those changes have no hardware
-  result here.
+  predates the 32-clock PIO RX majority vote and the fast-slew 12 mA TX
+  pads. Those two changes have no hardware result here. The current RX pin
+  keeps the PIO input synchronizer.
 - No entry is marked `release qualification`.
 
 Do not promote a draft from these records until both packaged board images have

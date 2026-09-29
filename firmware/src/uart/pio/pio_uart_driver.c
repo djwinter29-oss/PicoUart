@@ -339,6 +339,8 @@ static void pio_uart_driver_release_gpio(pio_uart_driver_t *driver)
         gpio_deinit(driver->config.tx_pin);
     }
     if (driver->config.rx_pin != PIO_UART_DRIVER_PIN_UNASSIGNED) {
+        /* Init leaves the synchronizer on. Clear bypass anyway so a partial
+         * setup or an older image cannot leave this pin unsynchronized. */
         pio_set_input_sync_bypass_with_mask(driver->config.pio,
                                             0u,
                                             1u << driver->config.rx_pin);
@@ -424,14 +426,12 @@ static bool pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
 
     pio_gpio_init(driver->config.pio, driver->config.rx_pin);
     /*
-     * The PIO input synchronizer adds two clk_sys cycles before the pin is
-     * visible. At a few megabaud that delay is a noticeable slice of the bit
-     * and shifts the majority window late. Bypass it on the RX pin only; a
-     * metastable sample still loses a 2-of-3 vote.
+     * Keep the PIO input synchronizer. Two clk_sys cycles are 16 ns at
+     * 125 MHz, about 1.5 clocks on this 32-clock RX grid at 3 Mbaud, which
+     * is inside the centre±4 sample offset. Bypassing it would only move
+     * the window earlier by that amount and hand a metastable sample to
+     * the 2-of-3 vote.
      */
-    pio_set_input_sync_bypass_with_mask(driver->config.pio,
-                                        1u << driver->config.rx_pin,
-                                        1u << driver->config.rx_pin);
     if ((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP) != 0u) {
         gpio_pull_up(driver->config.rx_pin);
     }

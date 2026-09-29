@@ -109,6 +109,55 @@ class _VoteMachine:
         self.pc = self._labels[args[0]]
         return False
 
+    def run_from_start_until_rearm(self) -> tuple[int, int]:
+        """Run one clean 8N1 frame from the start-bit wait.
+
+        Returns `(first_bitloop_cycle, rearm_cycle)`. The re-arm cycle is when
+        `wait 0 pin` begins after the stop bit. `.wrap` after `push` returns
+        to `start`.
+        """
+        self.pc = self._labels["start"]
+        self.cycles = 0
+        self.sample_cycles = []
+        self.isr_bits = []
+        self.framing_error = False
+        self.pushed = False
+        saw_bitloop = False
+        first_bitloop = -1
+        for _ in range(80):
+            if self.pc == len(self._instructions):
+                self.pc = self._labels["start"]
+            text, delay = self._instructions[self.pc]
+            started_at = self.cycles
+            op = text.replace(",", " ").split()[0]
+            if self.pc == self._labels["bitloop"] and first_bitloop < 0:
+                first_bitloop = started_at
+                saw_bitloop = True
+            if op == "wait" and saw_bitloop:
+                return first_bitloop, started_at
+            self.cycles += 1 + delay
+            self.pc += 1
+            parts = text.replace(",", " ").split()
+            if op == "jmp" and parts[1] == "pin":
+                self.sample_cycles.append(started_at)
+            if op == "jmp":
+                self._jump(parts[1:])
+            elif op == "in":
+                bit = 0 if parts[1] == "null" else self.y & 1
+                self.isr_bits.append(bit)
+            elif op == "set":
+                target = parts[1]
+                value = int(parts[2])
+                if target == "x":
+                    self.x = value
+                elif target == "y":
+                    self.y = value
+            elif op in {"wait", "mov", "nop", "push", "irq"}:
+                pass
+            else:
+                raise AssertionError(f"unhandled PIO op {text}")
+        raise AssertionError("RX program did not re-arm wait")
+
 
 def _majority(samples: tuple[int, int, int]) -> int:
     return 1 if sum(samples) >= 2 else 0
@@ -190,3 +239,18 @@ def test_stop_bit_vote_reports_framing_only_when_majority_is_zero():
             # bit plus that same gap later. `cycles` is when `wait 0 pin` runs.
             next_start = (clocks // 2) + gap
             assert next_start - cycles == 9
+
+
+def test_preamble_places_the_first_sample_on_centre_minus_gap():
+    labels, instructions = _parse(_program_body(PIO_PATH.read_text()))
+    clocks = _rx_clocks_per_bit()
+    gap = clocks // 8
+    machine = _VoteMachine(labels, instructions, [1] * 32)
+    first_bitloop, rearm = machine.run_from_start_until_rearm()
+    # wait + set y + set x [31] + nop [9] lands on cycle P*1.5 - G.
+    assert first_bitloop == (clocks * 3 // 2) - gap
+    assert machine.sample_cycles[0] == first_bitloop
+    assert machine.sample_cycles[1] == first_bitloop + gap
+    # Eight data bits, then the stop-bit tail. Next start is 10 bit-times.
+    assert rearm == (10 * clocks) - 9
+    assert (10 * clocks) - rearm == 9

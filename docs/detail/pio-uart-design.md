@@ -48,10 +48,10 @@ Important details:
   clean stop path arms `wait 0 pin` 9 PIO cycles before the next start bit.
   RX and TX run on separate state machines with separate clock dividers, so
   this does not change TX bit timing. See the cycle derivation in `uart.pio`.
-- The RX pin bypasses the PIO input synchronizer. Those two flip-flops delay
-  the pin by two `clk_sys` cycles (16 ns at 125 MHz), which at a few megabaud
-  shifts the vote window late. A single metastable sample still loses a
-  2-of-3 vote.
+- The RX pin keeps the PIO input synchronizer. Two `clk_sys` cycles are
+  16 ns at 125 MHz, about 1.5 RX clocks at 3 Mbaud on this 32-clock grid,
+  inside the centre±4 sample offset. The synchronizer, not the 2-of-3 vote,
+  absorbs a metastable sample.
 - PIO and hardware UART TX pins are driven at fast slew and 12 mA. The reset
   pad (slow slew, 4 mA) makes an edge wider than that vote window around
   1.5 Mbaud.
@@ -65,7 +65,9 @@ Important details:
   above either earlier run. The Stage 2 figures are confirmed floors, not a
   new ceiling. Those floors were measured on an earlier RX program. The
   current 32-clock vote arms its next-start wait 9 PIO cycles before a
-  1-stop peer's next start.
+  1-stop peer's next start. Nine cycles is 9/32 of a bit, about 281 ns at
+  1 Mbaud and 94 ns at 3 Mbaud. At 125 MHz that 3 Mbaud cap is already RX
+  divider 1.30, so a longer bit would be rejected.
 - The IN shift is configured so LSB-first UART samples form a natural byte in
   FIFO bits `[31:24]`; RX DMA reads one byte from `rxf+3`.
 - RX DMA transfer counts use the SDK encoder so RP2350 does not enter ENDLESS
