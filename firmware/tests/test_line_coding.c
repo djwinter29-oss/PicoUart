@@ -92,22 +92,25 @@ void test_pio_baud_feasibility(void)
 void test_pio_rx_divider_limits_differ_from_tx(void)
 {
     /*
-     * RX uses 16 clocks/bit and TX uses 8, so divider = sys/(clocks*baud)
+     * RX uses 32 clocks/bit and TX uses 8, so divider = sys/(clocks*baud)
      * hits the two ends at different rates. At 125 MHz:
      *   low:  baud 200 -> TX divider = 125e6/(8*200) = 78125 (>= 65536,
-     *         infeasible); RX divider = 125e6/(16*200) = 39062 (feasible).
+     *         infeasible); RX divider = 125e6/(32*200) = 19531 (feasible).
      *         TX is the low-baud limit.
      *   high: baud 8000000 -> TX divider = 125e6/(8*8000000) = 1.95
-     *         (feasible); RX divider = 125e6/(16*8000000) = 0.98 (< 1,
+     *         (feasible); RX divider = 125e6/(32*8000000) = 0.49 (< 1,
      *         infeasible). RX is the high-baud limit.
      *   policy max 3000000 stays inside both dividers
-     *         (TX 5.21, RX 2.60).
+     *         (TX 5.21, RX 1.30).
+     *   baud 50 -> RX divider = 125e6/(32*50) = 78125 (>= 65536).
+     *   baud 90 -> RX divider = 125e6/(32*90) = 43403 (feasible).
      */
     TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(350u, TEST_SYS_HZ));
     TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(350u, TEST_SYS_HZ));
     TEST_ASSERT_FALSE(uart_line_coding_pio_baud_feasible(200u, TEST_SYS_HZ));
     TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(200u, TEST_SYS_HZ));
-    TEST_ASSERT_FALSE(uart_line_coding_pio_rx_baud_feasible(90u, TEST_SYS_HZ));
+    TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(90u, TEST_SYS_HZ));
+    TEST_ASSERT_FALSE(uart_line_coding_pio_rx_baud_feasible(50u, TEST_SYS_HZ));
 
     TEST_ASSERT_TRUE(uart_line_coding_pio_baud_feasible(3000000u, TEST_SYS_HZ));
     TEST_ASSERT_TRUE(uart_line_coding_pio_rx_baud_feasible(3000000u, TEST_SYS_HZ));

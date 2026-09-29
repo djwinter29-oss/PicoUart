@@ -104,9 +104,15 @@ This file does not yet satisfy the release gate in `docs/releasing.md`:
 
 - No Raspberry Pi Pico 2 / RP2350 result is recorded. RP2350 DMA `TRANS_COUNT`
   behavior is unverified on hardware.
-- Individual staged RP2040 links have passed through 1 Mbaud. Concurrent
-  fixture runs on record are at 115200 baud. That is not a simultaneous
-  six-port 1 Mbaud full-duplex saturation result.
+- The 2026-09-28 RP2040 entry above passed isolated links through 1.2 Mbaud
+  and six-port concurrent traffic at 460800 baud. The same entry failed
+  concurrent traffic at 500000 and 600000 baud. That is not a simultaneous
+  six-port 1 Mbaud full-duplex saturation result. The 2026-09-24 concurrent
+  run is 115200 baud only.
+- Firmware `8669f51` from that 2026-09-28 entry is not on this branch. It
+  predates the 32-clock PIO RX majority vote, the RX input-synchronizer
+  bypass, and the fast-slew 12 mA TX pads. Those changes have no hardware
+  result here.
 - No entry is marked `release qualification`.
 
 Do not promote a draft from these records until both packaged board images have

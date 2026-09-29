@@ -80,7 +80,7 @@ class _VoteMachine:
                     self.x = value
                 elif target == "y":
                     self.y = value
-            elif op in {"wait", "mov"}:
+            elif op in {"wait", "mov", "nop"}:
                 pass
             else:
                 raise AssertionError(f"unhandled PIO op {text}")
@@ -126,20 +126,30 @@ def test_plain_tx_is_10_bit_8n1():
     assert tx[1][0].split()[:3] == ["set", "x,", "7"]
     assert tx[3][1] == 6  # data-bit hold stays 8 clocks (1 + delay 6)
     assert len(cts) == 5
-    assert len(rx) == 23
-    # Shipped board loads plain TX + RX (27/32). CTS + plain TX + RX is 32/32.
-    assert len(tx) + len(rx) == 27
-    assert len(tx) + len(cts) + len(rx) == 32
+    assert len(rx) == 24
+    # Shipped board loads plain TX + RX (28/32). The extra RX nop is the
+    # preamble delay past the 31-cycle field. CTS + plain TX + RX is 33/32.
+    assert len(tx) + len(rx) == 28
+    assert len(tx) + len(cts) + len(rx) == 33
 
 
 def test_rx_clocks_per_bit_matches_the_line_coding_contract():
     header = LINE_CODING_PATH.read_text()
-    assert re.search(r"#define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 16u", header)
+    assert re.search(r"#define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 32u", header)
     assert re.search(r"#define UART_LINE_CODING_PIO_CLOCKS_PER_BIT 8u", header)
 
 
-def test_vote_tree_follows_majority_in_16_cycles():
+def _rx_clocks_per_bit() -> int:
+    header = LINE_CODING_PATH.read_text()
+    match = re.search(r"#define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT (\d+)u", header)
+    assert match is not None
+    return int(match.group(1))
+
+
+def test_vote_tree_follows_majority_across_one_bit():
     labels, instructions = _parse(_program_body(PIO_PATH.read_text()))
+    clocks = _rx_clocks_per_bit()
+    gap = clocks // 8
     assert "bitloop" in labels
     assert "vote0" in labels
     assert "vote1" in labels
@@ -148,29 +158,35 @@ def test_vote_tree_follows_majority_in_16_cycles():
         machine = _VoteMachine(labels, instructions, list(samples))
         machine.x = 8
         cycles = machine.run_until_bit_resolves()
-        assert cycles == 16
+        assert cycles == clocks
         assert machine.isr_bits == [_majority(samples)]
         assert not machine.framing_error
         if samples[0] == samples[1]:
-            assert machine.sample_cycles == [0, 2]
+            assert machine.sample_cycles == [0, gap]
         else:
-            assert machine.sample_cycles == [0, 2, 4]
+            assert machine.sample_cycles == [0, gap, gap * 2]
 
 
 def test_stop_bit_vote_reports_framing_only_when_majority_is_zero():
     labels, instructions = _parse(_program_body(PIO_PATH.read_text()))
+    clocks = _rx_clocks_per_bit()
+    gap = clocks // 8
 
     for samples in ((a, b, c) for a in (0, 1) for b in (0, 1) for c in (0, 1)):
         machine = _VoteMachine(labels, instructions, list(samples))
         machine.x = 0
-        machine.run_until_bit_resolves()
+        cycles = machine.run_until_bit_resolves()
         if samples[0] == samples[1]:
-            assert machine.sample_cycles == [0, 2]
+            assert machine.sample_cycles == [0, gap]
         else:
-            assert machine.sample_cycles == [0, 2, 4]
+            assert machine.sample_cycles == [0, gap, gap * 2]
         if _majority(samples) == 0:
             assert machine.framing_error
             assert not machine.pushed
         else:
             assert machine.pushed
             assert not machine.framing_error
+            # bitloop is `gap` clocks before centre. The next start is half a
+            # bit plus that same gap later. `cycles` is when `wait 0 pin` runs.
+            next_start = (clocks // 2) + gap
+            assert next_start - cycles == 9
