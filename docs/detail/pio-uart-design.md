@@ -54,20 +54,16 @@ Important details:
 - PIO and hardware UART TX pins are driven at fast slew and 12 mA. The reset
   pad (slow slew, 4 mA) makes an edge wider than that vote window around
   1.5 Mbaud.
-- Keep the 8-clock side-set data bits. A 16-clock OUT-only TX was slower on
-  the same jumper fixture without overclock (HW→PIO 1.5 Mbaud, PIO→HW 1.2,
-  PIO3→PIO4 1.3, PIO4→PIO3 1.5). Restoring the side-set data path, still
-  without overclock, measured at least HW→PIO 1.5, PIO→HW 1.2, PIO3→PIO4 1.8,
-  and PIO4→PIO3 2.0. Those Stage 3 rates are above either earlier run. The
-  Stage 2 figures are confirmed floors, not a new ceiling.
-- Plain TX (the program on the shipped board) inserts a second stop bit after
-  the last data bit. Back-to-back frames are 11 bit-times, so the byte rate
-  at a given baud is `baud/11` rather than `baud/10`. An 8N1 peer treats the
-  extra stop as idle. The 16-clock RX vote arms its next-start wait only 3
-  cycles before a 1-stop peer's next start; the extra stop moves this
-  transmitter's next start out by a full bit. It also keeps a PL011 stop
-  sample high when that single centre sample lands late. The CTS-gated TX
-  program is unchanged (one stop bit) so a PIO block can still hold it.
+- Keep TX at this 8-clock side-set program. Back-to-back frames are 10
+  bit-times (start + 8 data + 1 stop), so the byte rate at a given baud is
+  `baud/10`. The stop bit is the `pull side 1 [7]` at the next frame boundary.
+  A 16-clock OUT-only TX was slower on the same jumper fixture without
+  overclock (HW→PIO 1.5 Mbaud, PIO→HW 1.2, PIO3→PIO4 1.3, PIO4→PIO3 1.5).
+  Restoring this program, still without overclock, measured at least HW→PIO
+  1.5, PIO→HW 1.2, PIO3→PIO4 1.8, and PIO4→PIO3 2.0. Those Stage 3 rates are
+  above either earlier run. The Stage 2 figures are confirmed floors, not a
+  new ceiling. The 16-clock RX vote arms its next-start wait 3 cycles before
+  a 1-stop peer's next start.
 - The IN shift is configured so LSB-first UART samples form a natural byte in
   FIFO bits `[31:24]`; RX DMA reads one byte from `rxf+3`.
 - RX DMA transfer counts use the SDK encoder so RP2350 does not enter ENDLESS
@@ -223,12 +219,13 @@ Relevant host-visible signals:
   dividers and are rejected fail-fast otherwise. TX's 8x ratio hits the
   divider ceiling first at very low baud; RX's 16x ratio hits the divider
   floor first at very high baud.
-- The RX program is 23 instructions (plain TX is 5, TX_CTS is 5). On the
-  shipped board (no port ever enables CTS) a PIO block holds TX + RX = 28/32
+- The RX program is 23 instructions (TX is 4, TX_CTS is 5). On the shipped
+  board (no port ever enables CTS) a PIO block holds TX + RX = 27/32
   instructions. A hypothetical future block mixing a CTS port with a
-  plain-TX port and RX would need 5 + 5 + 23 = 33/32, which does not fit.
-  `pio_can_add_program()` fails fast rather than silently overflowing if
-  that configuration is ever attempted. CTS mode itself plus RX is 28/32.
+  plain-TX port and RX would need 4 + 5 + 23 = 32/32, the hard RP2040
+  instruction-memory ceiling with zero spare room; `pio_can_add_program()`
+  still fails fast rather than silently overflowing if that configuration is
+  ever attempted.
 - TX DMA thresholds are static defaults, not adaptive to live load.
 - Each worker step services every port. Deferred control and backend polling
   start on the same port in that step. The shared start index advances once,

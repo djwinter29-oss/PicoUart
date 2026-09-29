@@ -1,27 +1,17 @@
 .program pio_uart_tx
 .side_set 1 opt
 
-; 8N1-compatible TX at 8 PIO clocks per bit
-; (UART_LINE_CODING_PIO_CLOCKS_PER_BIT). Data bits stay on the side-set program
-; that measured fastest. After the last data bit, `nop side 1 [7]` adds a
-; second stop/idle bit, and the following `pull side 1 [7]` adds another when
-; the next byte is already waiting. Back-to-back frames are 11 bit-times
-; (start + 8 data + 2 stop). An 8N1 receiver treats the extra stop as idle.
-;
-; That idle is the margin the 16-clock RX vote needs to finish the stop bit
-; and re-arm `wait` (a 1-stop peer leaves only 3 cycles), and it keeps a
-; PL011 stop sample high when that single centre sample lands late. The nop
-; runs only on the `jmp x--` fall-through, so data bits stay 8 clocks. A
-; stalled `pull` holds the line high. Do not lengthen the nop: another stop
-; bit would drop the byte rate again without moving the data-bit edges.
+; 8N1 TX at 8 PIO clocks per bit (matches UART_LINE_CODING_PIO_CLOCKS_PER_BIT).
+; Continuous frames are exactly 10 bit-times (start + 8 data + stop): the next
+; wrap to `pull side 1 [7]` asserts the stop bit. Do not add a trailing nop —
+; that lengthens the frame and under-runs a nominal 1 Mbaud byte rate.
 
 .wrap_target
-    pull        side 1 [7] ; Stop bit, or idle-high while stalled (8 clocks)
+    pull        side 1 [7] ; Stop bit / idle-high (8 clocks)
     set x, 7    side 0 [7] ; Start bit (8 clocks)
 bitloop:
     out pins, 1
     jmp x-- bitloop [6]    ; 8 data bits × 8 clocks
-    nop         side 1 [7] ; Second stop bit, only after the last data bit
 .wrap
 
 .program pio_uart_tx_cts
@@ -64,9 +54,7 @@ bitloop_cts:
 ;     bit (voted 1 -> push, voted 0 -> sticky framing error). Y is the constant
 ;     1 shifted for a voted "1".
 ;   - Clean-push path arms `wait 0 pin` at cycle 157 (stop entry 150 + 7).
-;     A 1-stop peer's next start is at cycle 160 (3-cycle margin). This
-;     board's plain TX inserts a second stop, so its next start is at cycle
-;     176.
+;     The next start bit is at cycle 160, leaving a 3-cycle idle-high margin.
 ;   - host/python/tests/test_pio_rx_majority.py checks every 1-of-3 pattern,
 ;     the 2-of-3 stop-bit framing rule, 16-cycle data tails, and sample
 ;     offsets 0,2 and 0,2,4.

@@ -114,22 +114,22 @@ def _majority(samples: tuple[int, int, int]) -> int:
     return 1 if sum(samples) >= 2 else 0
 
 
-def test_plain_tx_adds_a_second_stop_without_stretching_data_bits():
+def test_plain_tx_is_10_bit_8n1():
     text = PIO_PATH.read_text()
     _, tx = _parse(_program_body(text, "pio_uart_tx"))
     _, cts = _parse(_program_body(text, "pio_uart_tx_cts"))
     _, rx = _parse(_program_body(text, "pio_uart_rx"))
 
-    assert [item[0].split()[0] for item in tx] == ["pull", "set", "out", "jmp", "nop"]
+    assert [item[0].split()[0] for item in tx] == ["pull", "set", "out", "jmp"]
+    assert tx[0][0].split()[:3] == ["pull", "side", "1"]
+    assert tx[0][1] == 7  # stop bit is 8 clocks (1 + delay 7)
+    assert tx[1][0].split()[:3] == ["set", "x,", "7"]
     assert tx[3][1] == 6  # data-bit hold stays 8 clocks (1 + delay 6)
-    assert tx[4][0].split() == ["nop", "side", "1"]
-    assert tx[4][1] == 7
     assert len(cts) == 5
     assert len(rx) == 23
-    # Shipped board loads plain TX + RX. CTS + plain TX + RX is 33 and must
-    # keep failing pio_can_add_program rather than growing RX or CTS to fit.
-    assert len(tx) + len(rx) == 28
-    assert len(tx) + len(cts) + len(rx) == 33
+    # Shipped board loads plain TX + RX (27/32). CTS + plain TX + RX is 32/32.
+    assert len(tx) + len(rx) == 27
+    assert len(tx) + len(cts) + len(rx) == 32
 
 
 def test_rx_clocks_per_bit_matches_the_line_coding_contract():
