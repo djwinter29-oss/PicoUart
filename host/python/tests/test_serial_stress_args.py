@@ -89,6 +89,25 @@ def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.Monkey
     assert closes == [20, 19]
 
 
+def test_run_stream_collects_first_transfer_timing(monkeypatch: pytest.MonkeyPatch) -> None:
+    stress = _load_stress()
+    ticks = iter([0, 0, 0, 0.1, 0.2, 0.3, 0.4, 1])
+    monkeypatch.setattr(stress.time, "monotonic", lambda: next(ticks))
+    transfers = []
+    monkeypatch.setattr(stress, "write_all", lambda fd, payload, deadline: transfers.append(payload))
+    monkeypatch.setattr(stress, "read_exact", lambda fd, payload, deadline: None)
+    result, timing = {}, {}
+    barrier = type("Barrier", (), {"wait": lambda self: None})()
+    stress.run_stream("test", 1, 2, 0.5, 64, 1, barrier, result, timing)
+    assert result["test"] == (64, None)
+    assert len(transfers) == 1
+    stamps = timing["test"]
+    for event in ("thread_start", "first_send", "first_receive"):
+        assert stamps[f"{event}_utc"].endswith("+00:00")
+        assert isinstance(stamps[f"{event}_monotonic"], (int, float))
+    assert stamps["thread_start_monotonic"] <= stamps["first_send_monotonic"] <= stamps["first_receive_monotonic"]
+
+
 def test_benchmark_rate_collects_and_prints_stream_timing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
