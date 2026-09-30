@@ -17,6 +17,7 @@ from contract import (
     firmware_usb_product_string,
     is_lab_placeholder_identity,
 )
+import pico_uart_hid as hid
 
 
 def test_release_lock_matches_direct_requirement_pins(repo_root):
@@ -33,59 +34,59 @@ def test_release_lock_matches_direct_requirement_pins(repo_root):
     assert direct_pins.items() <= locked_pins.items()
 
 
-def test_usb_ids_parse_from_firmware_defines(hid_module, repo_root):
+def test_usb_ids_parse_from_firmware_defines(repo_root):
     vid, pid = firmware_usb_ids(repo_root)
-    assert vid == hid_module.VENDOR_ID
-    assert pid == hid_module.PRODUCT_ID
+    assert vid == hid.VENDOR_ID
+    assert pid == hid.PRODUCT_ID
 
 
-def test_hid_interface_number_matches_descriptor_enum(hid_module, repo_root):
-    assert firmware_hid_interface_number(repo_root) == hid_module.HID_INTERFACE_NUMBER
+def test_hid_interface_number_matches_descriptor_enum(repo_root):
+    assert firmware_hid_interface_number(repo_root) == hid.HID_INTERFACE_NUMBER
 
 
-def test_hid_layout_and_command_constants_match_firmware(hid_module, repo_root):
+def test_hid_layout_and_command_constants_match_firmware(repo_root):
     fw = firmware_hid_constants(repo_root)
-    assert fw["USB_HID_REPORT_VERSION"] == hid_module.STATUS_LAYOUT_VERSION
-    assert fw["USB_HID_REPORT_VERSION"] == hid_module.BOARD_STATUS_LAYOUT_VERSION
-    assert fw["USB_HID_REPORT_ID_STATUS"] == hid_module.REPORT_ID_STATUS
-    assert fw["USB_HID_REPORT_ID_BOARD_STATUS"] == hid_module.REPORT_ID_BOARD_STATUS
-    assert fw["USB_HID_REPORT_ID_COMMAND"] == hid_module.REPORT_ID_COMMAND
-    assert fw["USB_HID_REPORT_ID_OVERFLOW_COUNTS"] == hid_module.REPORT_ID_OVERFLOW_COUNTS
-    assert fw["USB_HID_COMMAND_TOGGLE_LED"] == hid_module.COMMAND_TOGGLE_LED
-    assert fw["USB_HID_COMMAND_RESET_BOARD"] == hid_module.COMMAND_RESET_BOARD
-    assert fw["USB_HID_COMMAND_ARM_RESET"] == hid_module.COMMAND_ARM_RESET
-    assert fw["USB_HID_RESET_ARM_WINDOW_MS"] == int(hid_module.RESET_ARM_WINDOW_S * 1000)
-    assert fw["USB_HID_BOARD_STATUS_FLAG_HID_RESET"] == hid_module.BOARD_STATUS_FLAG_HID_RESET
-    assert hid_module.BOARD_STATUS_RESERVED0_KNOWN_FLAGS == hid_module.BOARD_STATUS_FLAG_HID_RESET
-    assert fw["USB_HID_SIGNATURE0"] == hid_module.STATUS_SIGNATURE
-    assert hid_module.STATUS_SIZE == 63
-    assert hid_module.STATUS_SIZE == hid_module.STATUS_HEADER_SIZE + (
-        hid_module.UART_CHANNEL_COUNT * hid_module.STATUS_CHANNEL_SIZE
+    assert fw["USB_HID_REPORT_VERSION"] == hid.STATUS_LAYOUT_VERSION
+    assert fw["USB_HID_REPORT_VERSION"] == hid.BOARD_STATUS_LAYOUT_VERSION
+    assert fw["USB_HID_REPORT_ID_STATUS"] == hid.REPORT_ID_STATUS
+    assert fw["USB_HID_REPORT_ID_BOARD_STATUS"] == hid.REPORT_ID_BOARD_STATUS
+    assert fw["USB_HID_REPORT_ID_COMMAND"] == hid.REPORT_ID_COMMAND
+    assert fw["USB_HID_REPORT_ID_OVERFLOW_COUNTS"] == hid.REPORT_ID_OVERFLOW_COUNTS
+    assert fw["USB_HID_COMMAND_TOGGLE_LED"] == hid.COMMAND_TOGGLE_LED
+    assert fw["USB_HID_COMMAND_RESET_BOARD"] == hid.COMMAND_RESET_BOARD
+    assert fw["USB_HID_COMMAND_ARM_RESET"] == hid.COMMAND_ARM_RESET
+    assert fw["USB_HID_RESET_ARM_WINDOW_MS"] == int(hid.RESET_ARM_WINDOW_S * 1000)
+    assert fw["USB_HID_BOARD_STATUS_FLAG_HID_RESET"] == hid.BOARD_STATUS_FLAG_HID_RESET
+    assert hid.BOARD_STATUS_RESERVED0_KNOWN_FLAGS == hid.BOARD_STATUS_FLAG_HID_RESET
+    assert fw["USB_HID_SIGNATURE0"] == hid.STATUS_SIGNATURE
+    assert hid.STATUS_SIZE == 63
+    assert hid.STATUS_SIZE == hid.STATUS_HEADER_SIZE + (
+        hid.UART_CHANNEL_COUNT * hid.STATUS_CHANNEL_SIZE
     )
-    assert hid_module.BOARD_STATUS_SIZE == 8
-    assert hid_module.OVERFLOW_COUNTS_SIZE == 25
-    assert hid_module.STATUS_SIZE + 1 <= 64
+    assert hid.BOARD_STATUS_SIZE == 8
+    assert hid.OVERFLOW_COUNTS_SIZE == 25
+    assert hid.STATUS_SIZE + 1 <= 64
 
 
-def test_hid_descriptor_status_report_count_matches_host_payload(hid_module, repo_root):
-    assert firmware_hid_status_report_count(repo_root) == hid_module.STATUS_SIZE
+def test_hid_descriptor_status_report_count_matches_host_payload(repo_root):
+    assert firmware_hid_status_report_count(repo_root) == hid.STATUS_SIZE
 
 
-def test_hid_descriptor_board_status_report_count_matches_host_payload(hid_module, repo_root):
+def test_hid_descriptor_board_status_report_count_matches_host_payload(repo_root):
     assert (
-        firmware_hid_report_count(repo_root, hid_module.REPORT_ID_BOARD_STATUS)
-        == hid_module.BOARD_STATUS_SIZE
+        firmware_hid_report_count(repo_root, hid.REPORT_ID_BOARD_STATUS)
+        == hid.BOARD_STATUS_SIZE
     )
 
 
-def test_hid_descriptor_command_report_count_matches_host_payload(hid_module, repo_root):
-    assert firmware_hid_report_count(repo_root, hid_module.REPORT_ID_COMMAND) == 1
+def test_hid_descriptor_command_report_count_matches_host_payload(repo_root):
+    assert firmware_hid_report_count(repo_root, hid.REPORT_ID_COMMAND) == 1
 
 
-def test_hid_descriptor_overflow_report_count_matches_host_payload(hid_module, repo_root):
+def test_hid_descriptor_overflow_report_count_matches_host_payload(repo_root):
     assert (
-        firmware_hid_report_count(repo_root, hid_module.REPORT_ID_OVERFLOW_COUNTS)
-        == hid_module.OVERFLOW_COUNTS_SIZE
+        firmware_hid_report_count(repo_root, hid.REPORT_ID_OVERFLOW_COUNTS)
+        == hid.OVERFLOW_COUNTS_SIZE
     )
 
 
@@ -107,9 +108,9 @@ def test_usb_identity_checker_accepts_tree_identity(repo_root):
     assert result.returncode == 0
 
 
-def test_usb_product_string_advertises_pio_8n1(hid_module, repo_root):
+def test_usb_product_string_advertises_pio_8n1(repo_root):
     product = firmware_usb_product_string(repo_root)
-    assert product == hid_module.PRODUCT_STRING
+    assert product == hid.PRODUCT_STRING
     assert len(product) <= 32
 
 

@@ -11,6 +11,7 @@ import termios
 import threading
 import time
 import fcntl
+from datetime import datetime, timezone
 
 
 BAUD_RATES = {
@@ -126,8 +127,14 @@ def run_stream(label: str,
                payload_bytes: int,
                timeout: float,
                start: threading.Barrier,
-               result: dict) -> None:
+               result: dict,
+               timing: dict) -> None:
     bytes_verified = 0
+
+    def stamp() -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+    timing[label] = {"thread_start_utc": stamp(), "thread_start_monotonic": time.monotonic()}
     sequence = 0
 
     try:
@@ -135,8 +142,14 @@ def run_stream(label: str,
         deadline = time.monotonic() + duration
         while time.monotonic() < deadline:
             payload = payload_for(label, sequence, payload_bytes)
+            if sequence == 0:
+                timing[label]["first_send_utc"] = stamp()
+                timing[label]["first_send_monotonic"] = time.monotonic()
             write_all(source_fd, payload, time.monotonic() + timeout)
             read_exact(destination_fd, payload, time.monotonic() + timeout)
+            if sequence == 0:
+                timing[label]["first_receive_utc"] = stamp()
+                timing[label]["first_receive_monotonic"] = time.monotonic()
             bytes_verified += len(payload)
             sequence += 1
         if bytes_verified == 0:
@@ -319,10 +332,11 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             passed = True
             return passed
         start = threading.Barrier(len(streams))
+        timing: dict[str, dict] = {}
         threads = [
             threading.Thread(target=run_stream,
                              args=(label, source_fd, destination_fd, arguments.duration,
-                                   arguments.payload_bytes, arguments.timeout, start, results))
+                                   arguments.payload_bytes, arguments.timeout, start, results, timing))
             for label, source_fd, destination_fd in streams
         ]
 
@@ -342,7 +356,6 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         for thread in threads:
             thread.join()
         elapsed = time.monotonic() - started
-
         passed = True
         for label, _, _ in streams:
             bytes_verified, error = results.get(label, (0, "stream did not report a result"))
@@ -352,6 +365,8 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             else:
                 print(f"FAIL {label}: {bytes_verified} bytes, {error}", file=sys.stderr)
                 passed = False
+        for label, timestamps in timing.items():
+            print(f"TIME {label}: {timestamps}")
     except OSError as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
         passed = False

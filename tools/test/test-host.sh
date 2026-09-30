@@ -87,7 +87,36 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
     fi
 
     echo "=== Host Python tests (pytest) ==="
-    "$PYTHON_EXE" -m pip install -q --require-hashes -r "$REPO_ROOT/host/python/requirements-lock.txt"
+    LOCK_FILE="$REPO_ROOT/host/python/requirements-lock.txt"
+    if ! "$PYTHON_EXE" -m pip install -q --require-hashes -r "$LOCK_FILE"; then
+        # hidapi is a native extension with no prebuilt wheel for every Python
+        # build (for example a very new CPython); its sdist build then fails.
+        # Retry with hidapi excluded so hidapi-independent host tests still
+        # run; HID-dependent tests skip themselves (see host/python/tests/conftest.py).
+        echo "Warning: full requirements-lock.txt install failed; retrying without hidapi" >&2
+        echo "so non-HID host tests can still run. HID-dependent tests will be skipped." >&2
+        NO_HIDAPI_LOCK_FILE=$(mktemp)
+        trap 'rm -f "$NO_HIDAPI_LOCK_FILE"' EXIT HUP INT TERM
+        awk '
+            /^[[:alnum:]_.-]+==/ {
+                skip = ($1 ~ /^hidapi==/)
+                if (!skip) print
+                next
+            }
+            skip { next }
+            { print }
+        ' "$LOCK_FILE" > "$NO_HIDAPI_LOCK_FILE"
+        ORIGINAL_PACKAGE_COUNT=$(awk '/^[[:alnum:]_.-]+==/ { count++ } END { print count+0 }' "$LOCK_FILE")
+        FILTERED_PACKAGE_COUNT=$(awk '/^[[:alnum:]_.-]+==/ { count++ } END { print count+0 }' "$NO_HIDAPI_LOCK_FILE")
+        if [ "$FILTERED_PACKAGE_COUNT" -ne "$((ORIGINAL_PACKAGE_COUNT - 1))" ] \
+            || grep -q '^hidapi==' "$NO_HIDAPI_LOCK_FILE"; then
+            echo "Could not safely exclude hidapi from the locked requirements; refusing partial install." >&2
+            exit 1
+        fi
+        "$PYTHON_EXE" -m pip install -q --require-hashes -r "$NO_HIDAPI_LOCK_FILE"
+        rm -f "$NO_HIDAPI_LOCK_FILE"
+        trap - EXIT HUP INT TERM
+    fi
     (
         CDPATH= cd -- "$REPO_ROOT"
         "$PYTHON_EXE" -m pytest -c host/python/pyproject.toml
