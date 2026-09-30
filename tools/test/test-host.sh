@@ -91,31 +91,28 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
     if ! "$PYTHON_EXE" -m pip install -q --require-hashes -r "$LOCK_FILE"; then
         # hidapi is a native extension with no prebuilt wheel for every Python
         # build (for example a very new CPython); its sdist build then fails.
-        # Retry with hidapi excluded so hidapi-independent host tests still
-        # run; HID-dependent tests skip themselves (see host/python/tests/conftest.py).
+        # ponytail: retry once after any install failure; pip has no stable
+        # machine-readable cause here. Never ignore failure of the hashed
+        # fallback install. Add structured cause detection if pip supports it.
+        # HID-dependent tests skip only when hidapi is actually unavailable.
         echo "Warning: full requirements-lock.txt install failed; retrying without hidapi" >&2
-        echo "so non-HID host tests can still run. HID-dependent tests will be skipped." >&2
+        echo "so non-HID host tests can still run. HID tests skip if hidapi is unavailable." >&2
         NO_HIDAPI_LOCK_FILE=$(mktemp)
+        # Single cleanup trap for the rest of the script's life: it fires once
+        # at actual process exit (rm -f is safe to repeat), so nothing here
+        # ever needs to clear or reinstall a trap.
         trap 'rm -f "$NO_HIDAPI_LOCK_FILE"' EXIT HUP INT TERM
-        awk '
-            /^[[:alnum:]_.-]+==/ {
-                skip = ($1 ~ /^hidapi==/)
-                if (!skip) print
-                next
-            }
-            skip { next }
-            { print }
-        ' "$LOCK_FILE" > "$NO_HIDAPI_LOCK_FILE"
+        awk -v exclude=hidapi -f "$SCRIPT_DIR/filter-lock-exclude.awk" \
+            "$LOCK_FILE" > "$NO_HIDAPI_LOCK_FILE"
         ORIGINAL_PACKAGE_COUNT=$(awk '/^[[:alnum:]_.-]+==/ { count++ } END { print count+0 }' "$LOCK_FILE")
         FILTERED_PACKAGE_COUNT=$(awk '/^[[:alnum:]_.-]+==/ { count++ } END { print count+0 }' "$NO_HIDAPI_LOCK_FILE")
-        if [ "$FILTERED_PACKAGE_COUNT" -ne "$((ORIGINAL_PACKAGE_COUNT - 1))" ] \
-            || grep -q '^hidapi==' "$NO_HIDAPI_LOCK_FILE"; then
+        if [ "$FILTERED_PACKAGE_COUNT" -ge "$ORIGINAL_PACKAGE_COUNT" ] \
+            || grep -q '^hidapi==' "$NO_HIDAPI_LOCK_FILE" \
+            || grep -q '# via hidapi' "$NO_HIDAPI_LOCK_FILE"; then
             echo "Could not safely exclude hidapi from the locked requirements; refusing partial install." >&2
             exit 1
         fi
         "$PYTHON_EXE" -m pip install -q --require-hashes -r "$NO_HIDAPI_LOCK_FILE"
-        rm -f "$NO_HIDAPI_LOCK_FILE"
-        trap - EXIT HUP INT TERM
     fi
     (
         CDPATH= cd -- "$REPO_ROOT"

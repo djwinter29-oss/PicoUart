@@ -96,6 +96,11 @@ python3 tools/hardware/serial_stress_benchmark.py \
   --duration 10
 ```
 
+Besides the `PASS`/`FAIL` lines run_performance_test.py parses, the benchmark
+also prints one diagnostic `TIME <label>: {...}` line per stream with
+thread-start/first-byte UTC and monotonic timestamps. These are for manually
+diagnosing concurrent-startup skew and are not parsed by the runner.
+
 To run only the benchmark and prepend a structured result entry automatically:
 
 ```sh

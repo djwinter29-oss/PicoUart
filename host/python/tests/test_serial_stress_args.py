@@ -89,6 +89,76 @@ def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.Monkey
     assert closes == [20, 19]
 
 
+def test_benchmark_rate_collects_and_prints_stream_timing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Each stream's timing dict (collected by run_stream) must survive into
+    benchmark_rate's final report as a ``TIME <label>: {...}`` line, with the
+    thread-start/first-send/first-receive keys run_stream is expected to set.
+    """
+    stress = _load_stress()
+    arguments = type(
+        "Arguments",
+        (),
+        {
+            "uart0_pico": "/dev/uart0-pico",
+            "uart0_peer": "/dev/uart0-peer",
+            "uart1": None,
+            "uart2": "/dev/uart2",
+            "uart3": "/dev/uart3",
+            "uart4": None,
+            "uart5": "/dev/uart5",
+            "uart0_baud": 115200,
+            "duration": 0.1,
+            "payload_bytes": 64,
+            "timeout": 1.0,
+            "settle_seconds": 0.0,
+        },
+    )()
+    next_descriptor = iter(range(20, 25))
+
+    class ImmediateThread:
+        def __init__(self, target, args):
+            self.target = target
+            self.args = args
+
+        def start(self):
+            self.target(*self.args)
+
+        def join(self):
+            return None
+
+    expected_keys = {
+        "thread_start_utc", "thread_start_monotonic",
+        "first_send_utc", "first_send_monotonic",
+        "first_receive_utc", "first_receive_monotonic",
+    }
+
+    def fake_run_stream(label, _source, _destination, _duration, _payload,
+                         _timeout, _start, result, timing):
+        timing[label] = {key: object() for key in expected_keys}
+        result[label] = (64, None)
+
+    monkeypatch.setattr(stress, "configure_port", lambda *_args: (next(next_descriptor), []))
+    monkeypatch.setattr(stress, "run_stream", fake_run_stream)
+    monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(stress, "close_ports", lambda *_args: None)
+
+    assert stress.benchmark_rate(arguments, 115200) is True
+
+    stdout = capsys.readouterr().out
+    time_lines = [line for line in stdout.splitlines() if line.startswith("TIME ")]
+    stream_labels = ["uart0-pico-to-peer", "uart0-peer-to-pico",
+                      "uart5-loopback", "uart2-to-uart3", "uart3-to-uart2"]
+
+    assert len(time_lines) == len(stream_labels)
+    for label in stream_labels:
+        matching = [line for line in time_lines if line.startswith(f"TIME {label}:")]
+        assert len(matching) == 1, f"missing or duplicate TIME line for {label}"
+        for key in expected_keys:
+            assert key in matching[0]
+
+
 def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     stress = _load_stress()
     arguments = type(
@@ -273,3 +343,13 @@ def test_benchmark_allows_time_for_concurrent_line_coding() -> None:
     stress = _load_stress()
 
     assert stress.LINE_CODING_SETTLE_SECONDS >= 2.0
+
+
+def test_performance_test_plan_documents_time_diagnostic_output(repo_root: Path) -> None:
+    """The per-stream ``TIME <label>: {...}`` diagnostic line (undocumented
+    output alongside the parsed PASS/FAIL lines) must be explained in the
+    performance test plan so operators aren't left guessing at its format.
+    """
+    plan = (repo_root / "docs/tests/performance-test-plan.md").read_text()
+    assert "TIME" in plan
+    assert "run_performance_test.py parses" in plan or "not parsed by the runner" in plan
