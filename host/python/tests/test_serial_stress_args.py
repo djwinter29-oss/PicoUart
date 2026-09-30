@@ -121,7 +121,7 @@ def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> N
         def join(self):
             return None
 
-    def complete_stream(label, _source, _destination, _duration, _payload, _timeout, _start, result):
+    def complete_stream(label, _source, _destination, _duration, _payload, _timeout, _start, result, _timing):
         result[label] = (64, None)
 
     monkeypatch.setattr(stress, "configure_port", lambda *_args: (next(next_descriptor), []))
