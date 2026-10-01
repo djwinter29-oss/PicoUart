@@ -88,7 +88,8 @@ def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
         offset += count
 
 
-def read_exact(file_descriptor: int, expected: bytes, deadline: float) -> None:
+def read_exact(file_descriptor: int, expected: bytes, deadline: float,
+               timing: dict | None = None) -> None:
     received = bytearray()
     while len(received) < len(expected):
         remaining = deadline - time.monotonic()
@@ -102,6 +103,9 @@ def read_exact(file_descriptor: int, expected: bytes, deadline: float) -> None:
         except BlockingIOError:
             continue
         if chunk:
+            if timing is not None and "first_receive_monotonic" not in timing:
+                timing["first_receive_utc"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+                timing["first_receive_monotonic"] = time.monotonic()
             received.extend(chunk)
 
     if received != expected:
@@ -146,10 +150,7 @@ def run_stream(label: str,
                 timing[label]["first_send_utc"] = stamp()
                 timing[label]["first_send_monotonic"] = time.monotonic()
             write_all(source_fd, payload, time.monotonic() + timeout)
-            read_exact(destination_fd, payload, time.monotonic() + timeout)
-            if sequence == 0:
-                timing[label]["first_receive_utc"] = stamp()
-                timing[label]["first_receive_monotonic"] = time.monotonic()
+            read_exact(destination_fd, payload, time.monotonic() + timeout, timing[label])
             bytes_verified += len(payload)
             sequence += 1
         if bytes_verified == 0:

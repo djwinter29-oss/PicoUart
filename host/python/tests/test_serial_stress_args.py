@@ -95,7 +95,11 @@ def test_run_stream_collects_first_transfer_timing(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(stress.time, "monotonic", lambda: next(ticks))
     transfers = []
     monkeypatch.setattr(stress, "write_all", lambda fd, payload, deadline: transfers.append(payload))
-    monkeypatch.setattr(stress, "read_exact", lambda fd, payload, deadline: None)
+    def read_exact(fd, payload, deadline, timing=None):
+        timing["first_receive_utc"] = stress.datetime.now(stress.timezone.utc).isoformat(timespec="milliseconds")
+        timing["first_receive_monotonic"] = stress.time.monotonic()
+
+    monkeypatch.setattr(stress, "read_exact", read_exact)
     result, timing = {}, {}
     barrier = type("Barrier", (), {"wait": lambda self: None})()
     stress.run_stream("test", 1, 2, 0.5, 64, 1, barrier, result, timing)
@@ -106,6 +110,93 @@ def test_run_stream_collects_first_transfer_timing(monkeypatch: pytest.MonkeyPat
         assert stamps[f"{event}_utc"].endswith("+00:00")
         assert isinstance(stamps[f"{event}_monotonic"], (int, float))
     assert stamps["thread_start_monotonic"] <= stamps["first_send_monotonic"] <= stamps["first_receive_monotonic"]
+
+
+@pytest.mark.parametrize("outcome", ["success", "timeout", "mismatch", "no_data"])
+def test_run_stream_records_first_nonempty_read(
+    monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    stress = _load_stress()
+    clock = [0.0]
+    epoch = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    class ControlledDatetime:
+        @staticmethod
+        def now(tz):
+            assert tz == timezone.utc
+            return epoch + timedelta(seconds=clock[0])
+
+    first = stress.payload_for("test", 0, 64)
+    second = stress.payload_for("test", 1, 64)
+    chunks = [(1.0, b"")]
+    if outcome != "no_data":
+        chunks.append((2.0, first[:8]))
+    if outcome in ("success", "mismatch"):
+        tail = first[8:] if outcome == "success" else b"!" * 56
+        chunks.append((3.0, tail))
+    if outcome == "success":
+        chunks.extend([(4.0, second[:8]), (6.0, second[8:])])
+    reads = []
+    waits = []
+    writes = []
+
+    def select_read(readable, writable, exceptional, remaining):
+        assert (readable, writable, exceptional) == ([2], [], [])
+        waits.append((clock[0], remaining))
+        if chunks:
+            clock[0] = chunks[0][0]
+            return [2], [], []
+        clock[0] += remaining
+        return [], [], []
+
+    def read(fd, size):
+        assert fd == 2
+        _, chunk = chunks.pop(0)
+        assert len(chunk) <= size
+        reads.append(size)
+        return chunk
+
+    def write(fd, data):
+        assert fd == 1
+        writes.append(data)
+        return len(data)
+
+    monkeypatch.setattr(stress.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(stress, "datetime", ControlledDatetime)
+    monkeypatch.setattr(stress.select, "select", select_read)
+    monkeypatch.setattr(stress.os, "read", read)
+    monkeypatch.setattr(stress.os, "write", write)
+    result, timing = {}, {}
+    barrier = type("Barrier", (), {"wait": lambda self: None})()
+
+    stress.run_stream("test", 1, 2, 5, 64, 10, barrier, result, timing)
+
+    expected_results = {
+        "success": (128, None),
+        "timeout": (0, "received 8 of 64 bytes"),
+        "mismatch": (0, "received data did not match transmitted data"),
+        "no_data": (0, "received 0 of 64 bytes"),
+    }
+    assert result["test"] == expected_results[outcome]
+    assert writes == ([first, second] if outcome == "success" else [first])
+    assert reads == {
+        "success": [64, 64, 56, 64, 56],
+        "timeout": [64, 64],
+        "mismatch": [64, 64, 56],
+        "no_data": [64],
+    }[outcome]
+    # Each payload retains its original read deadline across empty/partial reads.
+    assert all(now + remaining == (13 if now >= 3 else 10)
+               for now, remaining in waits)
+    stamps = timing["test"]
+    if outcome == "no_data":
+        assert "first_receive_monotonic" not in stamps
+        assert "first_receive_utc" not in stamps
+    else:
+        assert stamps["first_receive_monotonic"] == 2.0
+        assert stamps["first_receive_utc"] == "2026-01-01T00:00:02.000+00:00"
 
 
 def test_benchmark_rate_collects_and_prints_stream_timing(
