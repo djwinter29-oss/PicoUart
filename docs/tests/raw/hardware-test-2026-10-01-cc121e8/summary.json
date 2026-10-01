@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-01",
+  "artifact_source_commit": "887c155d46591f2a10808fe4f7ec0cb646eb7663",
+  "host_commit": "cc121e8",
+  "board": "RP2040 Pico, stock 125MHz, BY25Q16ES",
+  "usb_serial": "5303284748A07A1C",
+  "probe_serial": "50543165611F6C9C",
+  "firmware_version": "0.0.0",
+  "elf_sha256": "6f470dd6b07125ac2f02b08f06fedd0b4ee8d4c84dea8096fabd481320858bbc",
+  "uf2_sha256": "35743181ac7cbeeb11f461204176ebd781c5021785ca20ef643ef67fc7454fbe",
+  "functional_exit": 0,
+  "host_pytest": "163 passed",
+  "isolated_pair_runs": 18,
+  "isolated_pair_total": 18,
+  "concurrent_runs": 9,
+  "concurrent_total": 9,
+  "concurrent_rates": {
+    "115200": 3,
+    "230400": 3,
+    "460800": 3
+  },
+  "raw_logs_glob": "stage*-*.log, concurrent-*.log",
+  "original_matrix_raw": "/home/home/.hermes/cache/scratch/picouart-hil-20261001/matrix.json",
+  "concurrent_matrix_raw": "/home/home/.hermes/cache/scratch/picouart-hil-20261001/concurrent.json",
+  "note": "Nine standalone loopback flood attempts exited 2 with serial write timeouts. Cause unestablished. Later verified-payload runs passed, but post-test CDC5 overruns prevent an all-health-clean PASS.",
+  "result": "PARTIAL",
+  "post_test_overruns": {
+    "cdc0": 0,
+    "cdc1": 0,
+    "cdc2": 0,
+    "cdc3": 0,
+    "cdc4": 0,
+    "cdc5": 10984
+  },
+  "initial_loopback_flood_failures": 9,
+  "short_loopback_note": "Additional short-loopback observations are not included in the committed raw logs; rely on the functional and concurrent evidence for verified loopback passes."
+}
