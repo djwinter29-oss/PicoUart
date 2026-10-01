@@ -1,0 +1,542 @@
+[
+  {
+    "label": "stage2-a-to-b-115200",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage2",
+      "--rates",
+      "115200",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "a-to-b"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage2 rate=115200 run=1 PASS {'a-to-b': (113664, None)}\nstage2 rate=115200 run=2 PASS {'a-to-b': (113664, None)}\nstage2 rate=115200 run=3 PASS {'a-to-b': (113664, None)}\n"
+  },
+  {
+    "label": "stage2-b-to-a-115200",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage2",
+      "--rates",
+      "115200",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "b-to-a"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage2 rate=115200 run=1 PASS {'b-to-a': (113664, None)}\nstage2 rate=115200 run=2 PASS {'b-to-a': (113664, None)}\nstage2 rate=115200 run=3 PASS {'b-to-a': (113664, None)}\n"
+  },
+  {
+    "label": "stage2-both-115200",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage2",
+      "--rates",
+      "115200",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "both"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage2 rate=115200 run=1 PASS {'b-to-a': (114688, None), 'a-to-b': (114688, None)}\nstage2 rate=115200 run=2 PASS {'b-to-a': (114688, None), 'a-to-b': (114688, None)}\nstage2 rate=115200 run=3 PASS {'b-to-a': (114688, None), 'a-to-b': (114688, None)}\n"
+  },
+  {
+    "label": "stage3-a-to-b-115200",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage3",
+      "--rates",
+      "115200",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "a-to-b"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage3 rate=115200 run=1 PASS {'a-to-b': (113664, None)}\nstage3 rate=115200 run=2 PASS {'a-to-b': (113664, None)}\nstage3 rate=115200 run=3 PASS {'a-to-b': (113664, None)}\n"
+  },
+  {
+    "label": "stage3-b-to-a-115200",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage3",
+      "--rates",
+      "115200",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "b-to-a"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage3 rate=115200 run=1 PASS {'b-to-a': (113664, None)}\nstage3 rate=115200 run=2 PASS {'b-to-a': (113664, None)}\nstage3 rate=115200 run=3 PASS {'b-to-a': (113664, None)}\n"
+  },
+  {
+    "label": "stage3-both-115200",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage3",
+      "--rates",
+      "115200",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "both"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage3 rate=115200 run=1 PASS {'b-to-a': (114688, None), 'a-to-b': (114688, None)}\nstage3 rate=115200 run=2 PASS {'b-to-a': (114688, None), 'a-to-b': (114688, None)}\nstage3 rate=115200 run=3 PASS {'b-to-a': (114688, None), 'a-to-b': (114688, None)}\n"
+  },
+  {
+    "label": "loopback-115200-1",
+    "args": [
+      "tools/hardware/serial_bridge_test.py",
+      "--pico-port",
+      "/dev/ttyACM6",
+      "--loopback",
+      "--baud",
+      "115200",
+      "--settle-seconds",
+      "8",
+      "--flood-seconds",
+      "10",
+      "--payload-bytes",
+      "1024"
+    ],
+    "exit": 2,
+    "passed": false,
+    "output": "Flooding bridge loopback at 115200 baud for 10.0s\nSerial setup failed: serial write timed out\n"
+  },
+  {
+    "label": "loopback-115200-2",
+    "args": [
+      "tools/hardware/serial_bridge_test.py",
+      "--pico-port",
+      "/dev/ttyACM6",
+      "--loopback",
+      "--baud",
+      "115200",
+      "--settle-seconds",
+      "8",
+      "--flood-seconds",
+      "10",
+      "--payload-bytes",
+      "1024"
+    ],
+    "exit": 2,
+    "passed": false,
+    "output": "Flooding bridge loopback at 115200 baud for 10.0s\nSerial setup failed: serial write timed out\n"
+  },
+  {
+    "label": "loopback-115200-3",
+    "args": [
+      "tools/hardware/serial_bridge_test.py",
+      "--pico-port",
+      "/dev/ttyACM6",
+      "--loopback",
+      "--baud",
+      "115200",
+      "--settle-seconds",
+      "8",
+      "--flood-seconds",
+      "10",
+      "--payload-bytes",
+      "1024"
+    ],
+    "exit": 2,
+    "passed": false,
+    "output": "Flooding bridge loopback at 115200 baud for 10.0s\nSerial setup failed: serial write timed out\n"
+  },
+  {
+    "label": "stage2-a-to-b-230400",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage2",
+      "--rates",
+      "230400",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "a-to-b"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage2 rate=230400 run=1 PASS {'a-to-b': (225280, None)}\nstage2 rate=230400 run=2 PASS {'a-to-b': (225280, None)}\nstage2 rate=230400 run=3 PASS {'a-to-b': (225280, None)}\n"
+  },
+  {
+    "label": "stage2-b-to-a-230400",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage2",
+      "--rates",
+      "230400",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "b-to-a"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage2 rate=230400 run=1 PASS {'b-to-a': (225280, None)}\nstage2 rate=230400 run=2 PASS {'b-to-a': (225280, None)}\nstage2 rate=230400 run=3 PASS {'b-to-a': (225280, None)}\n"
+  },
+  {
+    "label": "stage2-both-230400",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage2",
+      "--rates",
+      "230400",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "both"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage2 rate=230400 run=1 PASS {'b-to-a': (227328, None), 'a-to-b': (227328, None)}\nstage2 rate=230400 run=2 PASS {'b-to-a': (227328, None), 'a-to-b': (227328, None)}\nstage2 rate=230400 run=3 PASS {'a-to-b': (227328, None), 'b-to-a': (227328, None)}\n"
+  },
+  {
+    "label": "stage3-a-to-b-230400",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage3",
+      "--rates",
+      "230400",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "a-to-b"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage3 rate=230400 run=1 PASS {'a-to-b': (225280, None)}\nstage3 rate=230400 run=2 PASS {'a-to-b': (225280, None)}\nstage3 rate=230400 run=3 PASS {'a-to-b': (225280, None)}\n"
+  },
+  {
+    "label": "stage3-b-to-a-230400",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage3",
+      "--rates",
+      "230400",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "b-to-a"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage3 rate=230400 run=1 PASS {'b-to-a': (224256, None)}\nstage3 rate=230400 run=2 PASS {'b-to-a': (225280, None)}\nstage3 rate=230400 run=3 PASS {'b-to-a': (224256, None)}\n"
+  },
+  {
+    "label": "stage3-both-230400",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage3",
+      "--rates",
+      "230400",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "both"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage3 rate=230400 run=1 PASS {'a-to-b': (227328, None), 'b-to-a': (227328, None)}\nstage3 rate=230400 run=2 PASS {'a-to-b': (227328, None), 'b-to-a': (227328, None)}\nstage3 rate=230400 run=3 PASS {'a-to-b': (227328, None), 'b-to-a': (227328, None)}\n"
+  },
+  {
+    "label": "loopback-230400-1",
+    "args": [
+      "tools/hardware/serial_bridge_test.py",
+      "--pico-port",
+      "/dev/ttyACM6",
+      "--loopback",
+      "--baud",
+      "230400",
+      "--settle-seconds",
+      "8",
+      "--flood-seconds",
+      "10",
+      "--payload-bytes",
+      "1024"
+    ],
+    "exit": 2,
+    "passed": false,
+    "output": "Flooding bridge loopback at 230400 baud for 10.0s\nSerial setup failed: serial write timed out\n"
+  },
+  {
+    "label": "loopback-230400-2",
+    "args": [
+      "tools/hardware/serial_bridge_test.py",
+      "--pico-port",
+      "/dev/ttyACM6",
+      "--loopback",
+      "--baud",
+      "230400",
+      "--settle-seconds",
+      "8",
+      "--flood-seconds",
+      "10",
+      "--payload-bytes",
+      "1024"
+    ],
+    "exit": 2,
+    "passed": false,
+    "output": "Flooding bridge loopback at 230400 baud for 10.0s\nSerial setup failed: serial write timed out\n"
+  },
+  {
+    "label": "loopback-230400-3",
+    "args": [
+      "tools/hardware/serial_bridge_test.py",
+      "--pico-port",
+      "/dev/ttyACM6",
+      "--loopback",
+      "--baud",
+      "230400",
+      "--settle-seconds",
+      "8",
+      "--flood-seconds",
+      "10",
+      "--payload-bytes",
+      "1024"
+    ],
+    "exit": 2,
+    "passed": false,
+    "output": "Flooding bridge loopback at 230400 baud for 10.0s\nSerial setup failed: serial write timed out\n"
+  },
+  {
+    "label": "stage2-a-to-b-460800",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage2",
+      "--rates",
+      "460800",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "a-to-b"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage2 rate=460800 run=1 PASS {'a-to-b': (441344, None)}\nstage2 rate=460800 run=2 PASS {'a-to-b': (440320, None)}\nstage2 rate=460800 run=3 PASS {'a-to-b': (440320, None)}\n"
+  },
+  {
+    "label": "stage2-b-to-a-460800",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage2",
+      "--rates",
+      "460800",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "b-to-a"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage2 rate=460800 run=1 PASS {'b-to-a': (440320, None)}\nstage2 rate=460800 run=2 PASS {'b-to-a': (439296, None)}\nstage2 rate=460800 run=3 PASS {'b-to-a': (440320, None)}\n"
+  },
+  {
+    "label": "stage2-both-460800",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage2",
+      "--rates",
+      "460800",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "both"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage2 rate=460800 run=1 PASS {'a-to-b': (444416, None), 'b-to-a': (445440, None)}\nstage2 rate=460800 run=2 PASS {'a-to-b': (444416, None), 'b-to-a': (445440, None)}\nstage2 rate=460800 run=3 PASS {'b-to-a': (444416, None), 'a-to-b': (444416, None)}\n"
+  },
+  {
+    "label": "stage3-a-to-b-460800",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage3",
+      "--rates",
+      "460800",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "a-to-b"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage3 rate=460800 run=1 PASS {'a-to-b': (440320, None)}\nstage3 rate=460800 run=2 PASS {'a-to-b': (440320, None)}\nstage3 rate=460800 run=3 PASS {'a-to-b': (439296, None)}\n"
+  },
+  {
+    "label": "stage3-b-to-a-460800",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage3",
+      "--rates",
+      "460800",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "b-to-a"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage3 rate=460800 run=1 PASS {'b-to-a': (438272, None)}\nstage3 rate=460800 run=2 PASS {'b-to-a': (438272, None)}\nstage3 rate=460800 run=3 PASS {'b-to-a': (439296, None)}\n"
+  },
+  {
+    "label": "stage3-both-460800",
+    "args": [
+      "tools/hardware/pair_duplex_benchmark.py",
+      "stage3",
+      "--rates",
+      "460800",
+      "--runs",
+      "3",
+      "--duration",
+      "10",
+      "--settle",
+      "8",
+      "--direction",
+      "both"
+    ],
+    "exit": 0,
+    "passed": true,
+    "output": "stage3 rate=460800 run=1 PASS {'b-to-a': (444416, None), 'a-to-b': (445440, None)}\nstage3 rate=460800 run=2 PASS {'b-to-a': (444416, None), 'a-to-b': (446464, None)}\nstage3 rate=460800 run=3 PASS {'a-to-b': (444416, None), 'b-to-a': (444416, None)}\n"
+  },
+  {
+    "label": "loopback-460800-1",
+    "args": [
+      "tools/hardware/serial_bridge_test.py",
+      "--pico-port",
+      "/dev/ttyACM6",
+      "--loopback",
+      "--baud",
+      "460800",
+      "--settle-seconds",
+      "8",
+      "--flood-seconds",
+      "10",
+      "--payload-bytes",
+      "1024"
+    ],
+    "exit": 2,
+    "passed": false,
+    "output": "Flooding bridge loopback at 460800 baud for 10.0s\nSerial setup failed: serial write timed out\n"
+  },
+  {
+    "label": "loopback-460800-2",
+    "args": [
+      "tools/hardware/serial_bridge_test.py",
+      "--pico-port",
+      "/dev/ttyACM6",
+      "--loopback",
+      "--baud",
+      "460800",
+      "--settle-seconds",
+      "8",
+      "--flood-seconds",
+      "10",
+      "--payload-bytes",
+      "1024"
+    ],
+    "exit": 2,
+    "passed": false,
+    "output": "Flooding bridge loopback at 460800 baud for 10.0s\nSerial setup failed: serial write timed out\n"
+  },
+  {
+    "label": "loopback-460800-3",
+    "args": [
+      "tools/hardware/serial_bridge_test.py",
+      "--pico-port",
+      "/dev/ttyACM6",
+      "--loopback",
+      "--baud",
+      "460800",
+      "--settle-seconds",
+      "8",
+      "--flood-seconds",
+      "10",
+      "--payload-bytes",
+      "1024"
+    ],
+    "exit": 2,
+    "passed": false,
+    "output": "Flooding bridge loopback at 460800 baud for 10.0s\nSerial setup failed: serial write timed out\n"
+  }
+]

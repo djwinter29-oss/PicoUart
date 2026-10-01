@@ -1,0 +1,3 @@
+stage2 rate=460800 run=1 PASS {'a-to-b': (444416, None), 'b-to-a': (445440, None)}
+stage2 rate=460800 run=2 PASS {'a-to-b': (444416, None), 'b-to-a': (445440, None)}
+stage2 rate=460800 run=3 PASS {'b-to-a': (444416, None), 'a-to-b': (444416, None)}

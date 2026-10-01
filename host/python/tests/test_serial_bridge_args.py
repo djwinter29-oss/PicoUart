@@ -226,15 +226,106 @@ def test_flood_seconds_parses(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_flood_propagates_write_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real OSError from os.write (not BlockingIOError backpressure) must propagate."""
     bridge = _load_bridge()
+
+    monkeypatch.setattr(bridge.select, "select", lambda r, w, x, _t: ([], w, []))
 
     def fail_write(*_args):
         raise OSError("device disconnected")
 
-    monkeypatch.setattr(bridge, "write_all", fail_write)
+    monkeypatch.setattr(bridge.os, "write", fail_write)
 
     with pytest.raises(OSError, match="device disconnected"):
         bridge.run_flood(3, None, 1.0, 64, 0.0)
+
+
+def test_run_flood_drains_during_write_backpressure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Destination must be drained even while the source write is backpressured.
+
+    Regression for the write_all-based implementation, which blocked on the
+    whole-deadline write and could never service destination_fd while a write
+    was stalled, backing up the loopback receive side.
+    """
+    bridge = _load_bridge()
+    clock = {"t": 0.0}
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(bridge.time, "sleep", lambda _s: None)
+
+    calls = {"n": 0}
+
+    def fake_select(read_fds, _write_fds, _err, _timeout):
+        # Calls 1-2 are the flood loop's own select plus drain_available's
+        # nested select; both report the destination readable (one chunk
+        # available) while the write side stays empty (backpressured).
+        # Every later call (further flood iterations and the settle drain)
+        # reports nothing readable/writable so the test terminates quickly.
+        calls["n"] += 1
+        clock["t"] += 0.01
+        if calls["n"] <= 2:
+            return (read_fds, [], [])
+        return ([], [], [])
+
+    monkeypatch.setattr(bridge.select, "select", fake_select)
+    read_chunks = iter([b"drained-bytes"])
+    monkeypatch.setattr(bridge.os, "read", lambda *_a: next(read_chunks, b""))
+    monkeypatch.setattr(bridge.os, "write", lambda *_a: (_ for _ in ()).throw(AssertionError(
+        "write must not be attempted while backpressured"
+    )))
+
+    written, drained = bridge.run_flood(3, 4, 1.0, 64, 0.0)
+
+    assert drained == len(b"drained-bytes")
+    assert written == 0
+
+
+def test_run_flood_counts_partial_write_and_ends_at_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deadline expiry mid-write is normal termination; only accepted bytes count."""
+    bridge = _load_bridge()
+    clock = {"t": 0.0}
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(bridge.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(bridge.select, "select", lambda r, w, x, _t: ([], w, []))
+
+    def partial_write(_fd, data):
+        clock["t"] += 0.4  # deadline check happens before each write, not after
+        return len(data[:5])
+
+    monkeypatch.setattr(bridge.os, "write", partial_write)
+
+    written, drained = bridge.run_flood(3, None, 1.0, 64, 0.0)
+
+    # Three writes run (checks at t=0, 0.4, 0.8 all pass before the 1.0s
+    # deadline; the fourth check at t=1.2 stops the loop), each accepting
+    # only 5 of the 64 pattern bytes offered -> 15, never a 64-multiple.
+    assert written == 15
+    assert drained == 0
+
+
+def test_run_flood_test_rejects_zero_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero bytes written must FAIL, never a false PASS, regardless of drained count."""
+    bridge = _load_bridge()
+    arguments = type(
+        "Arguments",
+        (),
+        {
+            "pico_port": "/dev/fake",
+            "peer_port": "/dev/fake2",
+            "loopback": False,
+            "settle_seconds": 0.0,
+            "label": "test",
+            "payload_bytes": 64,
+            "flood_seconds": 1.0,
+            "hold_cdc_seconds": 0.0,
+        },
+    )()
+    monkeypatch.setattr(bridge, "configure_port", lambda *_a: (17, []))
+    monkeypatch.setattr(bridge, "run_flood", lambda *_a, **_k: (0, 0))
+    monkeypatch.setattr(bridge, "close_ports", lambda *_a: None)
+
+    assert bridge.run_flood_test(arguments, 115200) == 1
 
 
 def test_settle_seconds_rejects_negative(monkeypatch: pytest.MonkeyPatch) -> None:

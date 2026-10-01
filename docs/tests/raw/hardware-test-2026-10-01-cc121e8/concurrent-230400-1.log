@@ -1,0 +1,15 @@
+Benchmarking PIO/loopbacks at 230400 baud; UART0 at 115200 baud; including UART1, UART4
+PASS uart0-pico-to-peer: 113664 bytes, 11312.7 B/s
+PASS uart0-peer-to-pico: 113664 bytes, 11312.7 B/s
+PASS uart5-loopback: 226304 bytes, 22523.5 B/s
+PASS uart1-to-uart2: 226304 bytes, 22523.5 B/s
+PASS uart2-to-uart1: 226304 bytes, 22523.5 B/s
+PASS uart3-to-uart4: 226304 bytes, 22523.5 B/s
+PASS uart4-to-uart3: 226304 bytes, 22523.5 B/s
+TIME uart0-pico-to-peer: {'thread_start_utc': '2026-10-01T05:45:02.762+00:00', 'thread_start_monotonic': 595003.719086717, 'first_send_utc': '2026-10-01T05:45:02.763+00:00', 'first_send_monotonic': 595003.7203977, 'first_receive_utc': '2026-10-01T05:45:02.765+00:00', 'first_receive_monotonic': 595003.722820317}
+TIME uart0-peer-to-pico: {'thread_start_utc': '2026-10-01T05:45:02.762+00:00', 'thread_start_monotonic': 595003.719243513, 'first_send_utc': '2026-10-01T05:45:02.763+00:00', 'first_send_monotonic': 595003.720185017, 'first_receive_utc': '2026-10-01T05:45:02.765+00:00', 'first_receive_monotonic': 595003.722883179}
+TIME uart5-loopback: {'thread_start_utc': '2026-10-01T05:45:02.762+00:00', 'thread_start_monotonic': 595003.719362807, 'first_send_utc': '2026-10-01T05:45:02.763+00:00', 'first_send_monotonic': 595003.720360998, 'first_receive_utc': '2026-10-01T05:45:02.765+00:00', 'first_receive_monotonic': 595003.722851288}
+TIME uart1-to-uart2: {'thread_start_utc': '2026-10-01T05:45:02.762+00:00', 'thread_start_monotonic': 595003.719539901, 'first_send_utc': '2026-10-01T05:45:02.763+00:00', 'first_send_monotonic': 595003.720223828, 'first_receive_utc': '2026-10-01T05:45:02.765+00:00', 'first_receive_monotonic': 595003.722311244}
+TIME uart2-to-uart1: {'thread_start_utc': '2026-10-01T05:45:02.762+00:00', 'thread_start_monotonic': 595003.719686256, 'first_send_utc': '2026-10-01T05:45:02.763+00:00', 'first_send_monotonic': 595003.720275292, 'first_receive_utc': '2026-10-01T05:45:02.765+00:00', 'first_receive_monotonic': 595003.722231226}
+TIME uart3-to-uart4: {'thread_start_utc': '2026-10-01T05:45:02.762+00:00', 'thread_start_monotonic': 595003.719821814, 'first_send_utc': '2026-10-01T05:45:02.763+00:00', 'first_send_monotonic': 595003.720521059, 'first_receive_utc': '2026-10-01T05:45:02.766+00:00', 'first_receive_monotonic': 595003.722967128}
+TIME uart4-to-uart3: {'thread_start_utc': '2026-10-01T05:45:02.763+00:00', 'thread_start_monotonic': 595003.719993332, 'first_send_utc': '2026-10-01T05:45:02.763+00:00', 'first_send_monotonic': 595003.720082664, 'first_receive_utc': '2026-10-01T05:45:02.765+00:00', 'first_receive_monotonic': 595003.722514134}

@@ -1,0 +1,14 @@
+{
+  "firmware_source_commit": "887c155d46591f2a10808fe4f7ec0cb646eb7663",
+  "tested_host_commit": "cc121e8826cd226e4225bee3207e86c36958d328",
+  "firmware_version": "0.0.0",
+  "board": "pico / RP2040 / BY25Q16ES",
+  "system_clock_khz": 125000,
+  "usb_serial": "5303284748A07A1C",
+  "python": "/usr/bin/python3",
+  "timing": "10 seconds per repetition, 1024-byte blocks, 8-second settle; 3 repetitions per point",
+  "artifacts": {
+    "build/firmware-hardware-validation/pico_uart.elf": "6f470dd6b07125ac2f02b08f06fedd0b4ee8d4c84dea8096fabd481320858bbc",
+    "build/firmware-hardware-validation/pico_uart.uf2": "35743181ac7cbeeb11f461204176ebd781c5021785ca20ef643ef67fc7454fbe"
+  }
+}

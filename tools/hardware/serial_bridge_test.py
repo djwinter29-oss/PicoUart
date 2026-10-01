@@ -145,8 +145,19 @@ def run_flood(source_fd: int,
               duration: float,
               chunk_size: int,
               hold_destination_seconds: float) -> tuple[int, int]:
-    """Sustained TX flood; optionally delay opening/draining the destination CDC."""
+    """Sustained TX flood; optionally delay opening/draining the destination CDC.
+
+    Writes and destination drains are multiplexed through one nonblocking
+    select() so a write that is backpressured (destination ring full) never
+    blocks draining: the prior implementation called write_all(), which
+    could not service destination_fd while waiting out the whole flood
+    deadline on a single stalled write, backing up the loopback receive side
+    and causing overruns. Deadline expiry mid-write is normal flood
+    termination (not a TimeoutError); only the bytes actually accepted by
+    os.write() are counted.
+    """
     pattern = secrets.token_bytes(chunk_size)
+    pending = pattern
     written = 0
     drained = 0
     start = time.monotonic()
@@ -154,20 +165,41 @@ def run_flood(source_fd: int,
     destination_open_at = start + max(0.0, hold_destination_seconds)
 
     while time.monotonic() < deadline:
-        write_all(source_fd, pattern, deadline)
-        written += len(pattern)
+        now = time.monotonic()
+        active_destination = (
+            destination_fd
+            if destination_fd is not None and now >= destination_open_at
+            else None
+        )
+        read_fds = [active_destination] if active_destination is not None else []
+        timeout = min(0.05, max(0.0, deadline - now))
+        readable, writable, _ = select.select(read_fds, [source_fd], [], timeout)
 
-        if destination_fd is not None and time.monotonic() >= destination_open_at:
-            drained += drain_available(destination_fd)
+        if readable:
+            drained += drain_available(active_destination)
 
-        # Yield briefly so a held-closed CDC path can back up into firmware rings.
-        time.sleep(0)
+        if writable:
+            try:
+                count = os.write(source_fd, pending)
+            except BlockingIOError:
+                count = 0
+            if count:
+                written += count
+                pending = pending[count:]
+                if not pending:
+                    pending = pattern
 
     if destination_fd is not None:
+        # ponytail: bounded 1s settle drain (not an event-driven "quiet period"
+        # detector); acceptable because flood duration is seconds-scale and a
+        # firmware ring should empty well within 1s once writes stop. Upgrade
+        # to tracking consecutive empty reads if 1s proves too short/long.
         settle_deadline = time.monotonic() + 1.0
         while time.monotonic() < settle_deadline:
-            drained += drain_available(destination_fd)
-            time.sleep(0.01)
+            chunk = drain_available(destination_fd)
+            drained += chunk
+            if chunk == 0:
+                time.sleep(0.01)
 
     return written, drained
 

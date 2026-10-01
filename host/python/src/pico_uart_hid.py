@@ -16,10 +16,24 @@ try:
 except ImportError:  # pragma: no cover - only used by the Linux hidraw fallback
     fcntl = None
 
+# hidapi is only needed to talk to a real device (open_device/open_enumerated_device).
+# Defer the hard failure to first use so constant/contract checks and unrelated host
+# tests can still import this module and run without the hidapi runtime installed.
 try:
     import hid
 except ImportError as error:
-    raise SystemExit("Missing dependency: install host/python/requirements.txt") from error
+    hid = None
+    _HID_IMPORT_ERROR = error
+else:
+    _HID_IMPORT_ERROR = None
+
+
+def _require_hid() -> None:
+    """Raise a clear error if hidapi is unavailable, only when a device is opened."""
+    if hid is None:
+        raise RuntimeError(
+            "Missing dependency: install host/python/requirements.txt"
+        ) from _HID_IMPORT_ERROR
 
 VENDOR_ID = 0xCAFE  # Keep in sync with firmware/src/config/usb_identity.h
 PRODUCT_ID = 0x4010  # Development placeholder; see SECURITY.md
@@ -131,6 +145,7 @@ def _open_hidraw_device(path: str) -> Any:
 
 def open_enumerated_device(device_info: dict[str, Any]) -> Any:
     """Open one enumerated HID device, resolving Linux interface paths when needed."""
+    _require_hid()
     device = hid.device()
     path = device_info.get("path", b"")
 
@@ -165,6 +180,7 @@ def _device_path_matches(device_info: dict[str, Any], requested_path: str) -> bo
 
 def open_device(serial_number: str | None = None, device_path: str | None = None) -> Any:
     """Open PicoUart's vendor-defined HID collection."""
+    _require_hid()
     if serial_number is not None and device_path is not None:
         raise RuntimeError("--serial and --device-path cannot be used together")
 
