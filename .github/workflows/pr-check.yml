@@ -41,9 +41,9 @@ jobs:
             overclock: "true"
             label: pico-250mhz
           - board: pico2
-            clock_khz: "300000"
+            clock_khz: "500000"
             overclock: "true"
-            label: pico2-300mhz
+            label: pico2-500mhz
 
     steps:
       - name: Checkout

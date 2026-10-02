@@ -40,10 +40,9 @@ rated 125000 kHz (`pico`) or 150000 kHz (`pico2`) target by default. Pass
 qualification; CMake otherwise rejects a non-rated clock.
 
 PR and release workflows build overrides in addition to the rated defaults:
-`pico` at 250 MHz (`pico-250mhz`) in both workflows, and `pico2` at 300 MHz
-(`pico2-300mhz`) in PR checks or 500 MHz (`pico2-500mhz`) in releases. The build
-ceiling is 400000 kHz for RP2040 and 500000 kHz for RP2350, not a stability
-guarantee. The promote HIL gate covers the rated images. See
+`pico` at 250 MHz (`pico-250mhz`) and `pico2` at 500 MHz (`pico2-500mhz`) in
+both workflows. The build ceiling is 400000 kHz for RP2040 and 500000 kHz for
+RP2350, not a stability guarantee. The promote HIL gate covers the rated images. See
 [Releasing](../docs/releasing.md).
 
 Changing board, SDK path, generator, firmware version, system clock, HID-reset

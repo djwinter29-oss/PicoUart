@@ -8,8 +8,8 @@ and never matches a real tag like v1.2.3. These tests pin the fixed glob
 and the release-tag version policy enforced by tools/release/resolve-release-version.sh.
 
 They also pin the PR and release firmware matrices: rated pico/pico2 plus
-the development overclock images (pico at 250 MHz; pico2 at 300 MHz in PR
-checks and 500 MHz in releases).
+the development overclock images (pico at 250 MHz; pico2 at 500 MHz in both
+PR checks and releases).
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ PR_FIRMWARE_MATRIX = (
     ("pico", "125000", "false", "pico"),
     ("pico2", "150000", "false", "pico2"),
     ("pico", "250000", "true", "pico-250mhz"),
-    ("pico2", "300000", "true", "pico2-300mhz"),
+    ("pico2", "500000", "true", "pico2-500mhz"),
 )
 RELEASE_FIRMWARE_MATRIX = PR_FIRMWARE_MATRIX[:3] + (
     ("pico2", "500000", "true", "pico2-500mhz"),
