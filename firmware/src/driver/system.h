@@ -28,8 +28,8 @@
 /**
  * @brief Configure the system clock before initializing timing-sensitive hardware.
  *
- * Calls `set_sys_clock_khz` only; the core voltage is never written and stays
- * at its power-up default (~1.10 V) regardless of the requested clock. Above
+ * Calls `set_sys_clock_khz` only; the core voltage is never written, preserving
+ * the regulator setting on entry rather than restoring a specific voltage. Above
  * the chip's rated clock (133 MHz on RP2040, 150 MHz on RP2350) this is an
  * unqualified overclock at stock voltage: the RP2040 250 MHz and RP2350
  * 300 MHz development images require exact-board HIL across the intended

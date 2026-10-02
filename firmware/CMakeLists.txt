@@ -112,6 +112,9 @@ pico_set_program_name(pico_uart "PicoUart")
 pico_set_program_description(pico_uart "USB CDC + HID multi-UART bridge")
 pico_set_program_version(pico_uart "${PICO_UART_VERSION}")
 target_compile_definitions(pico_uart PRIVATE
+    # Also applies to the SDK runtime_init_clocks.c INTERFACE source compiled
+    # into this target: preserve the regulator setting before main() as well.
+    SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0
     PICO_UART_VERSION_MAJOR=${PICO_UART_VERSION_MAJOR}u
     PICO_UART_VERSION_MINOR=${PICO_UART_VERSION_MINOR}u
     PICO_UART_VERSION_PATCH=${PICO_UART_VERSION_PATCH}u

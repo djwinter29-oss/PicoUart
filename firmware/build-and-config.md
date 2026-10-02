@@ -42,9 +42,29 @@ qualification; CMake otherwise rejects a non-rated clock.
 PR and release workflows build overrides in addition to the rated defaults:
 `pico` at 250 MHz (`pico-250mhz`) and `pico2` at 300 MHz (`pico2-300mhz`) in
 both workflows. Neither overclock target writes the core voltage; both boards
-stay at their power-up default. The build ceiling is 400000 kHz for RP2040 and
+retain the regulator setting present on entry. The build ceiling is 400000 kHz for RP2040 and
 500000 kHz for RP2350, not a stability guarantee. The promote HIL gate covers
 the rated images. See [Releasing](../docs/releasing.md).
+
+The firmware target explicitly sets `SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0` for
+both application and SDK startup sources. The SDK initializes clocks before
+`main()` at its board default (125/150 MHz); `system_init_clock()` then requests
+the application target without changing the regulator setting. This preserves
+the incoming regulator setting, not a measured or forcibly restored voltage.
+
+After building, inspect the real SDK startup object, resolved preprocessor
+policy, and linked ELF (not just the mock application test):
+
+```sh
+PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/pico:$PWD/build/pico2" \
+  python3 -m pytest -c host/python/pyproject.toml \
+  host/python/tests/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q
+```
+
+Use your actual completed build directories. This check fails if SDK automatic
+voltage adjustment is enabled or the startup object/ELF contains a regulator
+write or voltage-limit-bypass symbol. It does not execute Boot ROM or validate
+physical voltage, thermal margins, or hardware stability.
 
 Changing board, SDK path, generator, firmware version, system clock, HID-reset
 option, or unsafe-overclock option causes the build wrapper to reset stale
@@ -89,8 +109,8 @@ requirement applies.
 - Default board is `pico`.
 - Default system-clock targets are 125000 kHz for RP2040 and 150000 kHz for
   RP2350. Higher clock rates are board-specific overrides. Startup never
-  writes the core voltage; it stays at its power-up default (~1.10 V)
-  regardless of the requested clock. Neither development overclock image
+  writes the core voltage; it preserves the regulator setting on entry
+  rather than measuring or restoring a specific voltage. Neither development overclock image
   (RP2040 250 MHz, RP2350 300 MHz) is qualified for stability, thermal
   margin, or lifetime without exact-board HIL over the intended workload and
   temperature range.

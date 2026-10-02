@@ -7,9 +7,12 @@ the build or the recorded-clock check below).
 
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
+import shlex
 import shutil
 import subprocess
-import sys
 
 import pytest
 
@@ -143,3 +146,35 @@ def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defin
     recorded_khz, call_count = run.stdout.split()
     assert int(recorded_khz) == clock_khz
     assert int(call_count) == 1
+
+
+@pytest.mark.parametrize("build_dir", os.environ.get("PICO_UART_VOLTAGE_BUILD_DIRS", "").split(os.pathsep))
+def test_real_sdk_startup_voltage_policy(build_dir):
+    """Opt-in artifact check; unlike the mocks above, inspect actual SDK output."""
+    if not build_dir:
+        pytest.skip("set PICO_UART_VOLTAGE_BUILD_DIRS to completed firmware build directories")
+    build = Path(build_dir).resolve()
+    commands = json.loads((build / "compile_commands.json").read_text())
+    entries = [entry for entry in commands
+               if Path(entry["file"]).name == "runtime_init_clocks.c"]
+    assert len(entries) == 1, "expected the SDK startup source in the firmware target"
+    entry = entries[0]
+    argv = entry.get("arguments") or shlex.split(entry["command"])
+    assert "-DSYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0" in argv
+    output_index = argv.index("-o")
+    obj = Path(entry["directory"]) / argv[output_index + 1]
+    # Use the actual cross compiler, generated headers, and defines to resolve
+    # SDK defaults; just checking an application mock misses pre-main startup.
+    preprocess = [arg for i, arg in enumerate(argv)
+                  if i not in (output_index, output_index + 1) and arg != "-c"]
+    result = subprocess.run([*preprocess, "-E", "-dM"], cwd=entry["directory"],
+                            capture_output=True, text=True, check=True)
+    assert "#define SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST 0" in result.stdout.splitlines()
+    nm = shutil.which("arm-none-eabi-nm")
+    assert nm, "ARM nm required for the real firmware artifact check"
+    forbidden = {"vreg_set_voltage", "vreg_disable_voltage_limit"}
+    for artifact in (obj, build / "pico_uart.elf"):
+        symbols = subprocess.run([nm, str(artifact)], capture_output=True,
+                                 text=True, check=True).stdout
+        names = {line.split()[-1] for line in symbols.splitlines() if line.split()}
+        assert not names & forbidden, f"voltage mutation in {artifact}: {names & forbidden}"

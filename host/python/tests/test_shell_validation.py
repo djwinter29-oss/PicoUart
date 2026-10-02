@@ -3,9 +3,11 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -48,14 +50,18 @@ sys.exit(int(os.environ["ANALYSIS_STATUS"]))
     assert subprocess.run(command, cwd=tmp_path, env=env).returncode == 7
 
 
+@pytest.mark.parametrize("shell", ["sh", "dash", "bash"])
 @pytest.mark.parametrize("phase", ["full", "fallback", "pytest"])
 @pytest.mark.parametrize(("signum", "status"), [
     (signal.SIGHUP, 129), (signal.SIGINT, 130), (signal.SIGTERM, 143),
 ])
-def test_host_runner_signal_exits_and_cleans_fallback(repo_root, tmp_path, phase, signum, status):
+def test_host_runner_signal_exits_and_cleans_fallback(repo_root, tmp_path, shell, phase, signum, status):
+    if shutil.which(shell) is None:
+        pytest.skip(f"{shell} is not installed")
     shim = tmp_path / "python-shim"
     log = tmp_path / "calls.jsonl"
-    shim.write_text(f"#!{sys.executable}\n" + '''import json, os, signal, sys
+    child_pid_file = tmp_path / "child.pid"
+    shim.write_text(f"#!{sys.executable}\n" + '''import json, os, sys, time
 from pathlib import Path
 args = sys.argv[1:]
 if args == ["-m", "pip", "--version"]:
@@ -70,28 +76,58 @@ record["phase"] = phase
 with open(os.environ["CALL_LOG"], "a") as stream:
     stream.write(json.dumps(record) + "\\n")
 if phase == os.environ["SIGNAL_PHASE"]:
-    os.kill(os.getppid(), int(os.environ["SIGNAL_NUMBER"]))
-    sys.exit(0)
+    Path(os.environ["CHILD_PID_FILE"]).write_text(str(os.getpid()))
+    while True:
+        time.sleep(1)
 sys.exit(1 if phase == "full" else 0)
 ''')
     shim.chmod(0o700)
-    completed = subprocess.run(
-        ["sh", str(repo_root / "tools/test/test-host.sh"), "--skip-c"],
-        cwd=repo_root,
+    process = subprocess.Popen(
+        [shell, str(repo_root / "tools/test/test-host.sh"), "--skip-c"],
+        cwd=tmp_path,
         env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
-             "SIGNAL_PHASE": phase, "SIGNAL_NUMBER": str(int(signum)), "TMPDIR": str(tmp_path),
+             "SIGNAL_PHASE": phase, "CHILD_PID_FILE": str(child_pid_file), "TMPDIR": str(tmp_path),
              "PATH": f"{shim.parent}:{os.environ.get('PATH', '')}"},
-        capture_output=True, text=True, timeout=10,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
-    assert completed.returncode == status, completed.stdout + completed.stderr
-    calls = [json.loads(line) for line in log.read_text().splitlines()]
-    assert [call["phase"] for call in calls] == {
-        "full": ["full"], "fallback": ["full", "fallback"],
-        "pytest": ["full", "fallback", "pytest"],
-    }[phase]
-    for call in calls:
-        if call["phase"] == "fallback":
-            assert not Path(call["path"]).exists()
+    try:
+        deadline = time.monotonic() + 5
+        while not child_pid_file.exists() and time.monotonic() < deadline:
+            if process.poll() is not None:
+                break
+            time.sleep(0.01)
+        assert child_pid_file.exists(), "the test shim did not start the blocked child"
+        child_pid = int(child_pid_file.read_text())
+        os.kill(child_pid, 0)
+        # Signal only the wrapper: the blocked shim must be stopped by forwarding.
+        os.kill(process.pid, signum)
+        stdout, stderr = process.communicate(timeout=5)
+        assert process.returncode == status, stdout + stderr
+        with pytest.raises(ProcessLookupError):
+            os.kill(child_pid, 0)
+        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        assert [call["phase"] for call in calls] == {
+            "full": ["full"], "fallback": ["full", "fallback"],
+            "pytest": ["full", "fallback", "pytest"],
+        }[phase]
+        if phase == "full":
+            assert "retrying" not in stderr
+        for call in calls:
+            if call["phase"] == "fallback":
+                assert not Path(call["path"]).exists()
+    finally:
+        # Kill the child first so a failed wrapper can reap it before being killed.
+        if child_pid_file.exists():
+            try:
+                os.kill(int(child_pid_file.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.poll() is None:
+            try:
+                process.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate(timeout=5)
 
 
 @pytest.mark.parametrize("status", [129, 130, 143])

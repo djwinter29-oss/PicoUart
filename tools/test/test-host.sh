@@ -2,8 +2,8 @@
 # Run host-side automated tests (native C Unity + Python pytest). No Pico board required.
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)
 HOST_TEST_BUILD_DIR="${HOST_TEST_BUILD_DIR:-$REPO_ROOT/build/host-tests}"
 GENERATOR="${GENERATOR:-}"
 PYTHON_EXE="${PYTHON_EXE:-}"
@@ -17,10 +17,40 @@ cleanup() {
         rm -f "$NO_HIDAPI_LOCK_FILE"
     fi
 }
+CURRENT_CHILD_PID=""
+
+forward_signal() {
+    # ponytail: manage the direct command, which pip/pytest normally terminates
+    # on these signals. Ignored signals or descendants require bounded process-
+    # group shutdown if those workloads become supported; no such guarantee now.
+    signal_name="$1"
+    exit_status="$2"
+    if [ -n "$CURRENT_CHILD_PID" ]; then
+        kill -s "$signal_name" "$CURRENT_CHILD_PID" 2>/dev/null || :
+        wait "$CURRENT_CHILD_PID" 2>/dev/null || :
+        CURRENT_CHILD_PID=""
+    fi
+    exit "$exit_status"
+}
+
+run_interruptible() {
+    # Non-interactive shells ignore SIGINT for background commands. GNU env
+    # restores it before exec, preserving the direct child's PID for forwarding.
+    env --default-signal=INT "$@" &
+    CURRENT_CHILD_PID=$!
+    if wait "$CURRENT_CHILD_PID"; then
+        command_status=0
+    else
+        command_status=$?
+    fi
+    CURRENT_CHILD_PID=""
+    return "$command_status"
+}
+
 trap cleanup EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap 'forward_signal HUP 129' HUP
+trap 'forward_signal INT 130' INT
+trap 'forward_signal TERM 143' TERM
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -74,14 +104,14 @@ if [ "$SKIP_C" -eq 0 ]; then
             HOST_TEST_BUILD_DIR="$REPO_ROOT/build/host-tests-asan"
         fi
         echo "ASan/UBSan enabled in $HOST_TEST_BUILD_DIR"
-        cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR" \
+        run_interruptible cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR" \
             -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
     else
-        cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR"
+        run_interruptible cmake -S "$REPO_ROOT/firmware/tests" -B "$HOST_TEST_BUILD_DIR" -G "$GENERATOR"
     fi
-    cmake --build "$HOST_TEST_BUILD_DIR" --parallel
-    ctest --test-dir "$HOST_TEST_BUILD_DIR" --output-on-failure
+    run_interruptible cmake --build "$HOST_TEST_BUILD_DIR" --parallel
+    run_interruptible ctest --test-dir "$HOST_TEST_BUILD_DIR" --output-on-failure
 fi
 
 if [ "$SKIP_PYTHON" -eq 0 ]; then
@@ -99,7 +129,7 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
 
     echo "=== Host Python tests (pytest) ==="
     LOCK_FILE="$REPO_ROOT/host/python/requirements-lock.txt"
-    if "$PYTHON_EXE" -m pip install -q --require-hashes -r "$LOCK_FILE"; then
+    if run_interruptible "$PYTHON_EXE" -m pip install -q --require-hashes -r "$LOCK_FILE"; then
         :
     else
         INSTALL_STATUS=$?
@@ -125,10 +155,8 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
             echo "Could not safely exclude hidapi from the locked requirements; refusing partial install." >&2
             exit 1
         fi
-        "$PYTHON_EXE" -m pip install -q --require-hashes -r "$NO_HIDAPI_LOCK_FILE"
+        run_interruptible "$PYTHON_EXE" -m pip install -q --require-hashes -r "$NO_HIDAPI_LOCK_FILE"
     fi
-    (
-        CDPATH= cd -- "$REPO_ROOT"
-        "$PYTHON_EXE" -m pytest -c host/python/pyproject.toml
-    )
+    CDPATH='' cd -- "$REPO_ROOT"
+    run_interruptible "$PYTHON_EXE" -m pytest -c host/python/pyproject.toml
 fi
