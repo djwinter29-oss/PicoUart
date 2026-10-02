@@ -54,9 +54,9 @@ jobs:
             overclock: "true"
             label: pico-250mhz
           - board: pico2
-            clock_khz: "500000"
+            clock_khz: "300000"
             overclock: "true"
-            label: pico2-500mhz
+            label: pico2-300mhz
 
     steps:
       - name: Checkout
@@ -165,7 +165,7 @@ jobs:
           body: |
             Draft release — complete `docs/releasing.md` before publishing:
             - Confirm packaged artifact SHAs match the recorded HIL images on the rated **pico** (125 MHz) and **pico2** (150 MHz) builds
-            - Development overclock images are attached alongside them: **pico-250mhz** (250 MHz) and **pico2-500mhz** (500 MHz). The promote HIL gate covers the rated images
+            - Development overclock images are attached alongside them: **pico-250mhz** (250 MHz) and **pico2-300mhz** (300 MHz). The promote HIL gate covers the rated images
             - This project publishes lab/test artifacts using the unallocated `cafe:4010` USB identity
             - Attach or link a recorded HIL pass covering both rated boards
             - Promote from draft only after the promote checklist passes

@@ -31,7 +31,7 @@ repository-local `.pico-sdk` checkout. `load.sh` uses the same SDK selection as
 
 ```sh
 tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
-tools/firmware/build.sh --board pico2 --system-clock-khz 500000 --unsafe-overclock
+tools/firmware/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
 ```
 
 Those examples are intentionally unsafe overrides. Production builds use the
@@ -40,10 +40,11 @@ rated 125000 kHz (`pico`) or 150000 kHz (`pico2`) target by default. Pass
 qualification; CMake otherwise rejects a non-rated clock.
 
 PR and release workflows build overrides in addition to the rated defaults:
-`pico` at 250 MHz (`pico-250mhz`) and `pico2` at 500 MHz (`pico2-500mhz`) in
-both workflows. The build ceiling is 400000 kHz for RP2040 and 500000 kHz for
-RP2350, not a stability guarantee. The promote HIL gate covers the rated images. See
-[Releasing](../docs/releasing.md).
+`pico` at 250 MHz (`pico-250mhz`) and `pico2` at 300 MHz (`pico2-300mhz`) in
+both workflows. Neither overclock target writes the core voltage; both boards
+stay at their power-up default. The build ceiling is 400000 kHz for RP2040 and
+500000 kHz for RP2350, not a stability guarantee. The promote HIL gate covers
+the rated images. See [Releasing](../docs/releasing.md).
 
 Changing board, SDK path, generator, firmware version, system clock, HID-reset
 option, or unsafe-overclock option causes the build wrapper to reset stale
@@ -87,15 +88,12 @@ requirement applies.
 
 - Default board is `pico`.
 - Default system-clock targets are 125000 kHz for RP2040 and 150000 kHz for
-  RP2350. Higher clock rates are board-specific overrides. Startup raises the
-  core voltage before the PLL when the target is above 133 MHz (RP2040) or
-  150 MHz (RP2350): 1.15 V through 200 MHz, 1.25 V through 250 MHz, 1.30 V
-  above that (the SDK maximum). These voltage steps are not a stability or
-  lifetime guarantee. In particular, the development RP2350 500 MHz image is
-  unqualified at this voltage until exact-board HIL validates boot, sustained
-  workload, USB/UART behavior, and temperature margin across the intended
-  operating range. Do not disable the SDK voltage limit to pursue higher clocks
-  without separate hardware analysis and explicit qualification.
+  RP2350. Higher clock rates are board-specific overrides. Startup never
+  writes the core voltage; it stays at its power-up default (~1.10 V)
+  regardless of the requested clock. Neither development overclock image
+  (RP2040 250 MHz, RP2350 300 MHz) is qualified for stability, thermal
+  margin, or lifetime without exact-board HIL over the intended workload and
+  temperature range.
 - Startup initializes the selected board's default LED when it defines
   `PICO_DEFAULT_LED_PIN`; the LED starts off.
 - The internal ADC temperature sensor is enabled at startup and can be sampled

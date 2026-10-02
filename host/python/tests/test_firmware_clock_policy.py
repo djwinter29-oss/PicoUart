@@ -1,4 +1,4 @@
-"""Clock ceilings must allow the release Pico 2 override, not widen RP2040."""
+"""Clock ceilings must allow the Pico 2 300 MHz override, not widen RP2040."""
 
 import json
 import os

@@ -72,9 +72,9 @@ in [Performance Test Results](docs/tests/performance-test-results.md).
 CI builds the rated firmware targets (`pico` at 125 MHz, `pico2` at 150 MHz)
 and development overclock images on Linux, and runs host tests on Linux and
 Windows. Both PR checks and release builds use `pico` at 250 MHz and `pico2`
-at 500 MHz. Release tags open a draft GitHub
-Release containing the two rated and two release overclock images; publish
-only after the gates in [Releasing](docs/releasing.md).
+at 300 MHz; neither overclock writes the core voltage. Release tags open a
+draft GitHub Release containing the two rated and two release overclock
+images; publish only after the gates in [Releasing](docs/releasing.md).
 
 ## Repository Layout
 
@@ -89,8 +89,8 @@ only after the gates in [Releasing](docs/releasing.md).
 - RP2350-based boards such as Raspberry Pi Pico 2 (`--board pico2`)
 
 CI builds the rated targets and development overclock images (250 MHz on Pico;
-500 MHz on Pico 2 in both PR checks and releases). The transport model stays
-consistent across both families.
+300 MHz on Pico 2) in both PR checks and releases; neither target writes the
+core voltage. The transport model stays consistent across both families.
 
 ## Current Status
 
