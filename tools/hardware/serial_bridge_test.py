@@ -178,16 +178,20 @@ def run_flood(source_fd: int,
         if readable:
             drained += drain_available(active_destination)
 
+        if time.monotonic() >= deadline:
+            break
+
         if writable:
             try:
                 count = os.write(source_fd, pending)
             except BlockingIOError:
-                count = 0
-            if count:
-                written += count
-                pending = pending[count:]
-                if not pending:
-                    pending = pattern
+                continue
+            if count == 0:
+                raise OSError("serial write returned zero bytes")
+            written += count
+            pending = pending[count:]
+            if not pending:
+                pending = pattern
 
     if destination_fd is not None:
         # ponytail: bounded 1s settle drain (not an event-driven "quiet period"

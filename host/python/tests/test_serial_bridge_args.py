@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -302,6 +303,141 @@ def test_run_flood_counts_partial_write_and_ends_at_deadline(
     # only 5 of the 64 pattern bytes offered -> 15, never a 64-multiple.
     assert written == 15
     assert drained == 0
+
+
+def test_run_flood_rejects_zero_write_after_partial_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = _load_bridge()
+    clock = {"t": 0.0}
+    pattern = b"abcdefgh"
+    writes = []
+
+    def fake_select(_read_fds, write_fds, _err, _timeout):
+        # Advance even when zero writes make no progress, so buggy code exits.
+        clock["t"] += 0.25
+        return ([], write_fds, [])
+
+    def fake_write(file_descriptor, data):
+        writes.append((file_descriptor, data))
+        return 3 if len(writes) == 1 else 0
+
+    monkeypatch.setattr(bridge, "time", SimpleNamespace(monotonic=lambda: clock["t"]))
+    monkeypatch.setattr(bridge, "select", SimpleNamespace(select=fake_select))
+    monkeypatch.setattr(bridge, "os", SimpleNamespace(write=fake_write))
+    monkeypatch.setattr(bridge, "secrets", SimpleNamespace(token_bytes=lambda _size: pattern))
+
+    with pytest.raises(OSError, match="^serial write returned zero bytes$"):
+        bridge.run_flood(3, None, 1.0, len(pattern), 0.0)
+
+    assert writes == [(3, pattern), (3, pattern[3:])]
+
+
+def test_run_flood_retries_blocking_write_without_losing_pending_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = _load_bridge()
+    clock = {"t": 0.0}
+    pattern = b"abcdefgh"
+    writes = []
+
+    def fake_select(_read_fds, write_fds, _err, _timeout):
+        clock["t"] += 0.25
+        return ([], write_fds if clock["t"] < 1.0 else [], [])
+
+    def fake_write(file_descriptor, data):
+        writes.append((file_descriptor, data))
+        if len(writes) == 1:
+            raise BlockingIOError()
+        if len(writes) == 2:
+            return 3
+        return len(data)
+
+    monkeypatch.setattr(bridge, "time", SimpleNamespace(monotonic=lambda: clock["t"]))
+    monkeypatch.setattr(bridge, "select", SimpleNamespace(select=fake_select))
+    monkeypatch.setattr(bridge, "os", SimpleNamespace(write=fake_write))
+    monkeypatch.setattr(bridge, "secrets", SimpleNamespace(token_bytes=lambda _size: pattern))
+
+    written, drained = bridge.run_flood(3, None, 1.0, len(pattern), 0.0)
+
+    assert writes == [(3, pattern), (3, pattern), (3, pattern[3:])]
+    assert written == len(pattern)
+    assert drained == 0
+
+
+@pytest.mark.parametrize("expired_at", [1.0, 1.1])
+def test_run_flood_does_not_write_when_select_reaches_deadline(
+    monkeypatch: pytest.MonkeyPatch, expired_at: float,
+) -> None:
+    bridge = _load_bridge()
+    clock = {"t": 0.0}
+    pattern = b"abcdefgh"
+    writes = []
+
+    def fake_select(_read_fds, write_fds, _err, _timeout):
+        clock["t"] = expired_at
+        return ([], write_fds, [])
+
+    def fake_write(file_descriptor, data):
+        writes.append((file_descriptor, data))
+        return len(data)
+
+    monkeypatch.setattr(bridge, "time", SimpleNamespace(monotonic=lambda: clock["t"]))
+    monkeypatch.setattr(bridge, "select", SimpleNamespace(select=fake_select))
+    monkeypatch.setattr(bridge, "os", SimpleNamespace(write=fake_write))
+    monkeypatch.setattr(bridge, "secrets", SimpleNamespace(token_bytes=lambda _size: pattern))
+
+    written, drained = bridge.run_flood(3, None, 1.0, len(pattern), 0.0)
+
+    assert writes == []
+    assert written == 0
+    assert drained == 0
+
+
+@pytest.mark.parametrize("expired_at", [1.0, 1.1])
+def test_run_flood_does_not_write_when_drain_reaches_deadline(
+    monkeypatch: pytest.MonkeyPatch, expired_at: float,
+) -> None:
+    bridge = _load_bridge()
+    clock = {"t": 0.0}
+    pattern = b"abcdefgh"
+    writes = []
+    drain_calls = []
+
+    def fake_select(read_fds, write_fds, _err, _timeout):
+        clock["t"] += 0.25
+        return (read_fds, write_fds, [])
+
+    def fake_drain(file_descriptor):
+        drain_calls.append(file_descriptor)
+        if len(drain_calls) == 1:
+            # select returned before expiry, but draining consumes the rest.
+            clock["t"] = expired_at
+            return 5
+        return 0
+
+    def fake_sleep(seconds):
+        # Keep the final settle drain bounded without sleeping in real time.
+        clock["t"] += seconds
+
+    def fake_write(file_descriptor, data):
+        writes.append((file_descriptor, data))
+        return len(data)
+
+    monkeypatch.setattr(
+        bridge, "time", SimpleNamespace(monotonic=lambda: clock["t"], sleep=fake_sleep),
+    )
+    monkeypatch.setattr(bridge, "select", SimpleNamespace(select=fake_select))
+    monkeypatch.setattr(bridge, "os", SimpleNamespace(write=fake_write))
+    monkeypatch.setattr(bridge, "secrets", SimpleNamespace(token_bytes=lambda _size: pattern))
+    monkeypatch.setattr(bridge, "drain_available", fake_drain)
+
+    written, drained = bridge.run_flood(3, 4, 1.0, len(pattern), 0.0)
+
+    assert writes == []
+    assert written == 0
+    assert drained == 5
+    assert drain_calls and all(file_descriptor == 4 for file_descriptor in drain_calls)
 
 
 def test_run_flood_test_rejects_zero_write(monkeypatch: pytest.MonkeyPatch) -> None:
