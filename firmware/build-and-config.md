@@ -90,8 +90,12 @@ requirement applies.
   RP2350. Higher clock rates are board-specific overrides. Startup raises the
   core voltage before the PLL when the target is above 133 MHz (RP2040) or
   150 MHz (RP2350): 1.15 V through 200 MHz, 1.25 V through 250 MHz, 1.30 V
-  above that. Still validate thermal margin, USB, and UART behavior on the
-  board before keeping an overclock.
+  above that (the SDK maximum). These voltage steps are not a stability or
+  lifetime guarantee. In particular, the development RP2350 500 MHz image is
+  unqualified at this voltage until exact-board HIL validates boot, sustained
+  workload, USB/UART behavior, and temperature margin across the intended
+  operating range. Do not disable the SDK voltage limit to pursue higher clocks
+  without separate hardware analysis and explicit qualification.
 - Startup initializes the selected board's default LED when it defines
   `PICO_DEFAULT_LED_PIN`; the LED starts off.
 - The internal ADC temperature sensor is enabled at startup and can be sampled

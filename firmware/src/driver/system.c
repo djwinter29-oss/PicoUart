@@ -16,6 +16,12 @@
  * Rated clocks stay at the power-up 1.10 V. RP2040 is rated through 133 MHz
  * and RP2350 through 150 MHz. Above that, `set_sys_clock_khz` alone leaves
  * the core at 1.10 V, which is not enough for a stable 200 MHz UART clock.
+ * The supported overclock voltage ceiling is 1.30 V (the SDK default maximum).
+ * Any clock target above the rated frequency, including the development RP2350
+ * 500 MHz image, is unqualified until validated on the exact board across the
+ * intended temperature and workload range. Do not disable the SDK voltage
+ * limit as a workaround; higher-voltage operation requires separate hardware
+ * analysis and explicit qualification.
  * @param clock_khz Requested `clk_sys` in kHz.
  */
 static void system_raise_voltage_for_clock(uint32_t clock_khz)

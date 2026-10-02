@@ -640,3 +640,5 @@ def test_performance_plan_matches_modes_and_timing(repo_root):
     assert "Optional `--uart1` and `--uart4` add independent" in plan
     assert "first-send-attempt" in plan
     assert "last in-flight block" in plan
+    assert "completes at or after its deadline" in plan
+    assert "host scheduling jitter" in plan

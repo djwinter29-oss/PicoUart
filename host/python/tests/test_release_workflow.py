@@ -34,9 +34,9 @@ PR_FIRMWARE_MATRIX = (
     ("pico", "250000", "true", "pico-250mhz"),
     ("pico2", "500000", "true", "pico2-500mhz"),
 )
-RELEASE_FIRMWARE_MATRIX = PR_FIRMWARE_MATRIX[:3] + (
-    ("pico2", "500000", "true", "pico2-500mhz"),
-)
+# ponytail: PR and release targets are intentionally identical today; keep
+# separate names to make any future workflow-specific divergence explicit.
+RELEASE_FIRMWARE_MATRIX = PR_FIRMWARE_MATRIX
 
 
 def _firmware_matrix(text: str) -> list[tuple[str, str, str, str]]:

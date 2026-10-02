@@ -30,7 +30,11 @@
  *
  * Above the chip's rated clock (133 MHz on RP2040, 150 MHz on RP2350) this
  * raises the core voltage first: 1.15 V through 200 MHz, 1.25 V through
- * 250 MHz, and 1.30 V above that. Rated clocks stay at the power-up 1.10 V.
+ * 250 MHz, and 1.30 V above that (SDK maximum). These voltage steps do not
+ * qualify an overclock: in particular, the development RP2350 500 MHz image
+ * is unqualified until tested on the exact board across its intended operating
+ * conditions. Higher voltage requires separate hardware analysis; do not
+ * disable the SDK voltage limit without explicit qualification.
  */
 void system_init_clock(void);
 

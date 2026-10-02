@@ -110,6 +110,10 @@ timestamps. These are host observations, not UART wire-level first-byte times;
 they are for diagnosing concurrent-startup skew and are not parsed by the runner.
 `--duration` stops starting new blocks; the last in-flight block still has its
 own `--timeout` for each write/read phase and may finish after that duration.
+A write or read phase that completes at or after its deadline is reported as a
+timeout, even if the final bytes become available at that boundary. This strict
+boundary avoids counting late transfers as passes; host scheduling jitter can
+therefore cause a timeout close to the deadline.
 
 To run only the benchmark and prepend a structured result entry automatically:
 

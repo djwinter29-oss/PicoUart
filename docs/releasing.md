@@ -77,7 +77,10 @@ HIL on both packaged board images:
 Release CI also packages development overclock images: `pico-250mhz` (RP2040 at
 250 MHz) and `pico2-500mhz` (RP2350 at 500 MHz). The promote HIL gate covers the
 rated images. A recorded overclock result qualifies only the matching overclock
-artifact.
+artifact. The 500 MHz development image uses the SDK's 1.30 V maximum voltage;
+it is not qualified for stability, temperature margin, or lifetime until exact-
+board HIL covers the intended operating range. Do not disable the SDK voltage
+limit without separate hardware analysis and explicit qualification.
 
 HIL must use the exact UF2/ELF from the draft release or workflow dry-run. Do
 not rebuild locally for release qualification.
