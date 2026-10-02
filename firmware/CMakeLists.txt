@@ -112,8 +112,13 @@ pico_set_program_name(pico_uart "PicoUart")
 pico_set_program_description(pico_uart "USB CDC + HID multi-UART bridge")
 pico_set_program_version(pico_uart "${PICO_UART_VERSION}")
 target_compile_definitions(pico_uart PRIVATE
-    # Also applies to the SDK runtime_init_clocks.c INTERFACE source compiled
-    # into this target: preserve the regulator setting before main() as well.
+    # hardware/clocks.h only defaults SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST to 1 when
+    # compiled with PICO_RP2040 && SYS_CLK_HZ==200MHz (XOSC 12MHz, refdiv 1);
+    # this project never defines SYS_CLK_HZ, so that default is already 0 for
+    # every board/clock this CMakeLists builds, including the SDK's pre-main()
+    # runtime_init_clocks.c startup source compiled into this target. Setting
+    # it here is a defensive pin, not a behavior change, against that narrow
+    # compile-time case being introduced later.
     SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0
     PICO_UART_VERSION_MAJOR=${PICO_UART_VERSION_MAJOR}u
     PICO_UART_VERSION_MINOR=${PICO_UART_VERSION_MINOR}u

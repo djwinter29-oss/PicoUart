@@ -47,13 +47,21 @@ retain the regulator setting present on entry. The build ceiling is 400000 kHz f
 the rated images. See [Releasing](../docs/releasing.md).
 
 The firmware target explicitly sets `SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0` for
-both application and SDK startup sources. The SDK initializes clocks before
-`main()` at its board default (125/150 MHz); `system_init_clock()` then requests
-the application target without changing the regulator setting. This preserves
-the incoming regulator setting, not a measured or forcibly restored voltage.
+both application and SDK startup sources, including the SDK's own pre-`main()`
+clock init (`runtime_init_clocks.c`, board default 125/150 MHz). The SDK
+(`hardware/clocks.h`) only ever defaults this to `1` when compiled with
+`PICO_RP2040 && SYS_CLK_HZ==200MHz`; this project never sets `SYS_CLK_HZ`, so
+that default is already `0` for every board/clock built here, and this define
+is a defensive pin rather than a behavior change. `system_init_clock()` then
+requests the application target via `set_sys_clock_khz`, which does not touch
+the regulator either way. Neither path writes or restores a specific voltage;
+whatever voltage was present on entry is left alone.
 
-After building, inspect the real SDK startup object, resolved preprocessor
-policy, and linked ELF (not just the mock application test):
+Each firmware matrix leg in PR check CI runs this check automatically, right
+after `verify-build.py`, against its own build directory. After building
+locally, run the same check yourself to inspect the real SDK startup object,
+resolved preprocessor policy, and linked ELF (not just the mock application
+test):
 
 ```sh
 PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/pico:$PWD/build/pico2" \

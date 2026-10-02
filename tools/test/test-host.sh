@@ -33,10 +33,26 @@ forward_signal() {
     exit "$exit_status"
 }
 
+# ponytail: `env --default-signal=INT` is GNU coreutils-only (missing on
+# Windows Git Bash/MSYS env and on BSD/macOS env); probe once so the launcher
+# stays a single portable script. Without it, a backgrounded child's inherited
+# SIGINT-ignore (POSIX non-interactive async-command behavior) means forwarded
+# signals may not stop it, same as before signal forwarding existed. Install
+# GNU coreutils to regain prompt interruption if that gap matters.
+if env --default-signal=INT true >/dev/null 2>&1; then
+    HAVE_ENV_DEFAULT_SIGNAL=1
+else
+    HAVE_ENV_DEFAULT_SIGNAL=0
+fi
+
 run_interruptible() {
-    # Non-interactive shells ignore SIGINT for background commands. GNU env
-    # restores it before exec, preserving the direct child's PID for forwarding.
-    env --default-signal=INT "$@" &
+    if [ "$HAVE_ENV_DEFAULT_SIGNAL" -eq 1 ]; then
+        # Non-interactive shells ignore SIGINT for background commands. GNU env
+        # restores it before exec, preserving the direct child's PID for forwarding.
+        env --default-signal=INT "$@" &
+    else
+        "$@" &
+    fi
     CURRENT_CHILD_PID=$!
     if wait "$CURRENT_CHILD_PID"; then
         command_status=0
