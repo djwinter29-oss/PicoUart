@@ -19,10 +19,15 @@ if(NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
     if(NOT PICO_UART_SYSTEM_CLOCK_KHZ MATCHES "^[1-9][0-9]*$")
         message(FATAL_ERROR "PICO_UART_SYSTEM_CLOCK_KHZ must be a positive integer in kHz")
     endif()
+    if(PICO_BOARD MATCHES "^(pico2|rp2350)")
+        set(_pico_uart_max_clock_khz 500000)
+    else()
+        set(_pico_uart_max_clock_khz 400000)
+    endif()
     string(LENGTH "${PICO_UART_SYSTEM_CLOCK_KHZ}" _pico_uart_clock_length)
-    if(_pico_uart_clock_length GREATER 6 OR PICO_UART_SYSTEM_CLOCK_KHZ GREATER 400000)
+    if(_pico_uart_clock_length GREATER 6 OR PICO_UART_SYSTEM_CLOCK_KHZ GREATER _pico_uart_max_clock_khz)
         message(FATAL_ERROR
-            "PICO_UART_SYSTEM_CLOCK_KHZ must be no greater than 400000 kHz "
+            "PICO_UART_SYSTEM_CLOCK_KHZ must be no greater than ${_pico_uart_max_clock_khz} kHz "
             "(got ${PICO_UART_SYSTEM_CLOCK_KHZ})")
     endif()
 endif()

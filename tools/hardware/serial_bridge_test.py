@@ -125,19 +125,23 @@ def test_direction(source_fd: int,
     return False
 
 
-def drain_available(file_descriptor: int) -> int:
+def drain_available(file_descriptor: int, deadline: float, max_reads: int = 16) -> int:
+    """Bound each drain batch so continuous RX cannot starve TX or termination."""
     drained = 0
-    while True:
+    for _ in range(max_reads):
+        if time.monotonic() >= deadline:
+            break
         readable, _, _ = select.select([file_descriptor], [], [], 0)
-        if not readable:
-            return drained
+        if not readable or time.monotonic() >= deadline:
+            break
         try:
             chunk = os.read(file_descriptor, 4096)
         except BlockingIOError:
-            return drained
+            break
         if not chunk:
-            return drained
+            break
         drained += len(chunk)
+    return drained
 
 
 def run_flood(source_fd: int,
@@ -164,8 +168,10 @@ def run_flood(source_fd: int,
     deadline = start + duration
     destination_open_at = start + max(0.0, hold_destination_seconds)
 
-    while time.monotonic() < deadline:
+    while True:
         now = time.monotonic()
+        if now >= deadline:
+            break
         active_destination = (
             destination_fd
             if destination_fd is not None and now >= destination_open_at
@@ -175,19 +181,22 @@ def run_flood(source_fd: int,
         timeout = min(0.05, max(0.0, deadline - now))
         readable, writable, _ = select.select(read_fds, [source_fd], [], timeout)
 
+        if time.monotonic() >= deadline:
+            break
         if readable:
-            drained += drain_available(active_destination)
+            drained += drain_available(active_destination, deadline)
 
-        if writable:
+        if writable and time.monotonic() < deadline:
             try:
                 count = os.write(source_fd, pending)
             except BlockingIOError:
-                count = 0
-            if count:
-                written += count
-                pending = pending[count:]
-                if not pending:
-                    pending = pattern
+                continue
+            if count == 0:
+                raise OSError("serial write returned zero bytes")
+            written += count
+            pending = pending[count:]
+            if not pending:
+                pending = pattern
 
     if destination_fd is not None:
         # ponytail: bounded 1s settle drain (not an event-driven "quiet period"
@@ -196,10 +205,11 @@ def run_flood(source_fd: int,
         # to tracking consecutive empty reads if 1s proves too short/long.
         settle_deadline = time.monotonic() + 1.0
         while time.monotonic() < settle_deadline:
-            chunk = drain_available(destination_fd)
+            chunk = drain_available(destination_fd, settle_deadline)
             drained += chunk
-            if chunk == 0:
-                time.sleep(0.01)
+            remaining = settle_deadline - time.monotonic()
+            if chunk == 0 and remaining > 0:
+                time.sleep(min(0.01, remaining))
 
     return written, drained
 

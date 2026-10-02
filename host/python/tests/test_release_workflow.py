@@ -8,7 +8,8 @@ and never matches a real tag like v1.2.3. These tests pin the fixed glob
 and the release-tag version policy enforced by tools/release/resolve-release-version.sh.
 
 They also pin the PR and release firmware matrices: rated pico/pico2 plus
-the development overclock images (pico at 250 MHz, pico2 at 300 MHz).
+the development overclock images (pico at 250 MHz; pico2 at 300 MHz in PR
+checks and 500 MHz in releases).
 """
 
 from __future__ import annotations
@@ -27,11 +28,14 @@ RESOLVE_SCRIPT = REPO_ROOT / "tools" / "release" / "resolve-release-version.sh"
 
 # board, clock_khz, overclock, label. Rated rows stay on the default clock
 # path; overclock rows must pass --unsafe-overclock.
-FIRMWARE_MATRIX = (
+PR_FIRMWARE_MATRIX = (
     ("pico", "125000", "false", "pico"),
     ("pico2", "150000", "false", "pico2"),
     ("pico", "250000", "true", "pico-250mhz"),
     ("pico2", "300000", "true", "pico2-300mhz"),
+)
+RELEASE_FIRMWARE_MATRIX = PR_FIRMWARE_MATRIX[:3] + (
+    ("pico2", "500000", "true", "pico2-500mhz"),
 )
 
 
@@ -118,11 +122,14 @@ def test_resolve_release_version_uses_workflow_dispatch_input() -> None:
     assert result.stdout.strip() == "1.2.3"
 
 
-@pytest.mark.parametrize("workflow", [PR_WORKFLOW, RELEASE_WORKFLOW])
-def test_firmware_matrix_builds_rated_and_overclock_images(workflow: Path) -> None:
+@pytest.mark.parametrize(("workflow", "expected"), [
+    (PR_WORKFLOW, PR_FIRMWARE_MATRIX),
+    (RELEASE_WORKFLOW, RELEASE_FIRMWARE_MATRIX),
+])
+def test_firmware_matrix_builds_rated_and_overclock_images(workflow: Path, expected) -> None:
     text = workflow.read_text(encoding="utf-8")
 
-    assert _firmware_matrix(text) == list(FIRMWARE_MATRIX)
+    assert _firmware_matrix(text) == list(expected)
     assert 'if [ "$OVERCLOCK" = "true" ]; then' in text
     assert '--system-clock-khz "$CLOCK_KHZ" --unsafe-overclock' in text
     assert '--board "$BOARD"' in text
@@ -146,4 +153,19 @@ def test_release_overclock_packages_use_distinct_names() -> None:
     assert 'SHA256SUMS-${LABEL}.txt' in text
     assert "pattern: release-*" in text
     assert "pico-250mhz" in text
-    assert "pico2-300mhz" in text
+    assert "pico2-500mhz" in text
+    assert "pico2-300mhz" not in text
+
+
+def test_release_notes_and_docs_match_release_clocks() -> None:
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    body = text.split("          body: |", 1)[1].split("        env:", 1)[0]
+    docs = (REPO_ROOT / "docs/releasing.md").read_text(encoding="utf-8")
+    for _board, clock_khz, _overclock, label in RELEASE_FIRMWARE_MATRIX:
+        mhz = int(clock_khz) // 1000
+        assert f"**{label}** ({mhz} MHz)" in body
+        assert label in docs
+    assert "RP2350 500 MHz" in docs
+    assert "--system-clock-khz 500000 --unsafe-overclock" in docs
+    assert "pico2-300mhz" not in docs
+    assert "promote HIL gate covers the rated images" in body

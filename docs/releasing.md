@@ -3,7 +3,7 @@
 Release tags matching `vMAJOR.MINOR.PATCH` run
 [`.github/workflows/release.yml`](../.github/workflows/release.yml). The workflow
 builds the rated `pico` (125 MHz) and `pico2` (150 MHz) images plus development
-overclock images `pico-250mhz` (250 MHz) and `pico2-300mhz` (300 MHz), runs host
+overclock images `pico-250mhz` (250 MHz) and `pico2-500mhz` (500 MHz), runs host
 tests, packages UF2/ELF/BIN/HEX plus `SHA256SUMS-*`, and opens a **draft**
 GitHub Release. The promote HIL gate covers the rated images.
 
@@ -41,7 +41,7 @@ Before requesting HIL, confirm:
 1. The change is reviewed and the working tree contains no unintended files.
 2. The version is a valid `vMAJOR.MINOR.PATCH` release tag.
 3. Rated `pico` and `pico2` firmware artifacts build successfully, and the
-   development overclock images (`pico` at 250 MHz, `pico2` at 300 MHz) build
+   development overclock images (`pico` at 250 MHz, `pico2` at 500 MHz) build
    with them.
 4. The host suite passes, including the UART facade and backend contract tests.
 5. `git diff --check` passes.
@@ -75,7 +75,7 @@ HIL on both packaged board images:
 - Raspberry Pi Pico 2 / RP2350 (`pico2`, rated 150 MHz)
 
 Release CI also packages development overclock images: `pico-250mhz` (RP2040 at
-250 MHz) and `pico2-300mhz` (RP2350 at 300 MHz). The promote HIL gate covers the
+250 MHz) and `pico2-500mhz` (RP2350 at 500 MHz). The promote HIL gate covers the
 rated images. A recorded overclock result qualifies only the matching overclock
 artifact.
 
@@ -112,7 +112,7 @@ build-time parts of the UART design; they do not replace physical testing.
 | RP2040 firmware | `tools/firmware/build.sh --board pico` | Rated 125 MHz compile/link and UF2 outputs |
 | RP2350 firmware | `tools/firmware/build.sh --board pico2` | Rated 150 MHz compile/link and platform-specific paths |
 | RP2040 250 MHz | `tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock` | Development overclock image (`pico-250mhz`) |
-| RP2350 300 MHz | `tools/firmware/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock` | Development overclock image (`pico2-300mhz`) |
+| RP2350 500 MHz | `tools/firmware/build.sh --board pico2 --system-clock-khz 500000 --unsafe-overclock` | Development overclock image (`pico2-500mhz`) |
 | Patch hygiene | `git diff --check` | Whitespace and patch formatting |
 
 The host suite should include the backend contract test and the real facade

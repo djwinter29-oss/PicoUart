@@ -69,8 +69,12 @@ if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
         echo "System clock must be a positive integer kHz value." >&2
         exit 1
     fi
-    if [ "${#SYSTEM_CLOCK_KHZ}" -gt 6 ] || [ "$SYSTEM_CLOCK_KHZ" -gt 400000 ]; then
-        echo "System clock must be no greater than 400000 kHz." >&2
+    case "$BOARD" in
+        pico2*|rp2350*) MAX_SYSTEM_CLOCK_KHZ=500000 ;;
+        *) MAX_SYSTEM_CLOCK_KHZ=400000 ;;
+    esac
+    if [ "${#SYSTEM_CLOCK_KHZ}" -gt 6 ] || [ "$SYSTEM_CLOCK_KHZ" -gt "$MAX_SYSTEM_CLOCK_KHZ" ]; then
+        echo "System clock must be no greater than $MAX_SYSTEM_CLOCK_KHZ kHz for $BOARD." >&2
         exit 1
     fi
 fi

@@ -10,6 +10,17 @@ PYTHON_EXE="${PYTHON_EXE:-}"
 SKIP_C=0
 SKIP_PYTHON=0
 SANITIZE=0
+NO_HIDAPI_LOCK_FILE=""
+
+cleanup() {
+    if [ -n "$NO_HIDAPI_LOCK_FILE" ]; then
+        rm -f "$NO_HIDAPI_LOCK_FILE"
+    fi
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -88,7 +99,13 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
 
     echo "=== Host Python tests (pytest) ==="
     LOCK_FILE="$REPO_ROOT/host/python/requirements-lock.txt"
-    if ! "$PYTHON_EXE" -m pip install -q --require-hashes -r "$LOCK_FILE"; then
+    if "$PYTHON_EXE" -m pip install -q --require-hashes -r "$LOCK_FILE"; then
+        :
+    else
+        INSTALL_STATUS=$?
+        if [ "$INSTALL_STATUS" -gt 128 ]; then
+            exit "$INSTALL_STATUS"
+        fi
         # hidapi is a native extension with no prebuilt wheel for every Python
         # build (for example a very new CPython); its sdist build then fails.
         # ponytail: retry once after any install failure; pip has no stable
@@ -98,10 +115,6 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
         echo "Warning: full requirements-lock.txt install failed; retrying without hidapi" >&2
         echo "so non-HID host tests can still run. HID tests skip if hidapi is unavailable." >&2
         NO_HIDAPI_LOCK_FILE=$(mktemp)
-        # Single cleanup trap for the rest of the script's life: it fires once
-        # at actual process exit (rm -f is safe to repeat), so nothing here
-        # ever needs to clear or reinstall a trap.
-        trap 'rm -f "$NO_HIDAPI_LOCK_FILE"' EXIT HUP INT TERM
         awk -v exclude=hidapi -f "$SCRIPT_DIR/filter-lock-exclude.awk" \
             "$LOCK_FILE" > "$NO_HIDAPI_LOCK_FILE"
         ORIGINAL_PACKAGE_COUNT=$(awk '/^[[:alnum:]_.-]+==/ { count++ } END { print count+0 }' "$LOCK_FILE")

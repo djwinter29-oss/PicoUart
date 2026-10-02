@@ -81,11 +81,16 @@ def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
         try:
             count = os.write(file_descriptor, data[offset:])
         except BlockingIOError:
-            select.select([], [file_descriptor], [], min(0.1, deadline - time.monotonic()))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("write timed out")
+            select.select([], [file_descriptor], [], min(0.1, remaining))
             continue
         if count == 0:
             raise OSError("serial write returned zero bytes")
         offset += count
+        if time.monotonic() >= deadline:
+            raise TimeoutError("write timed out")
 
 
 def read_exact(file_descriptor: int, expected: bytes, deadline: float,
@@ -96,6 +101,8 @@ def read_exact(file_descriptor: int, expected: bytes, deadline: float,
         if remaining <= 0:
             raise TimeoutError(f"received {len(received)} of {len(expected)} bytes")
         readable, _, _ = select.select([file_descriptor], [], [], remaining)
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"received {len(received)} of {len(expected)} bytes")
         if not readable:
             continue
         try:
@@ -103,10 +110,13 @@ def read_exact(file_descriptor: int, expected: bytes, deadline: float,
         except BlockingIOError:
             continue
         if chunk:
+            received_at = time.monotonic()
             if timing is not None and "first_receive_monotonic" not in timing:
                 timing["first_receive_utc"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-                timing["first_receive_monotonic"] = time.monotonic()
+                timing["first_receive_monotonic"] = received_at
             received.extend(chunk)
+            if received_at >= deadline:
+                raise TimeoutError(f"received {len(received)} of {len(expected)} bytes after deadline")
 
     if received != expected:
         raise ValueError("received data did not match transmitted data")
@@ -177,12 +187,12 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--uart0-pico", required=True, help="PicoUart CDC0 device")
     parser.add_argument("--uart0-peer", required=True, help="Debug Probe UART device")
-    parser.add_argument("--uart1", help="Optional PicoUart CDC1 loopback device")
-    parser.add_argument("--uart1-peer", help="PicoUart CDC2 peer for UART1 cross-connection")
+    parser.add_argument("--uart1", help="Optional PicoUart CDC1 device; loopback without peer options")
+    parser.add_argument("--uart1-peer", help="CDC2 peer; cross-fixture mode requires all UART1/UART4 options")
     parser.add_argument("--uart2", required=True, help="PicoUart CDC2 device")
     parser.add_argument("--uart3", required=True, help="PicoUart CDC3 device")
-    parser.add_argument("--uart4", help="Optional PicoUart CDC4 loopback device")
-    parser.add_argument("--uart4-peer", help="PicoUart CDC3 peer for UART4 cross-connection")
+    parser.add_argument("--uart4", help="Optional PicoUart CDC4 device; loopback without peer options")
+    parser.add_argument("--uart4-peer", help="CDC3 peer; cross-fixture mode requires all UART1/UART4 options")
     parser.add_argument("--uart5", required=True, help="PicoUart CDC5 device")
     parser.add_argument("--uart0-baud", type=int, default=115200, choices=BAUD_RATES,
                         help="UART0 and Debug Probe rate; defaults to 115200")
@@ -193,7 +203,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--payload-bytes", type=int, default=1024,
                         help="Bytes per verified stream block")
     parser.add_argument("--timeout", type=float, default=3.0,
-                        help="Timeout for one block transfer in seconds")
+                        help="Timeout for each block write/read phase; an in-flight block may finish after duration")
     parser.add_argument("--settle-seconds", type=float, default=8.0,
                         help="wait after configuring all ports")
     parser.add_argument("--setup-only", action="store_true",
@@ -228,7 +238,8 @@ def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
     """Require cross-fixture peer arguments to name the opened CDC peers."""
     cross_values = [getattr(arguments, name, None)
                     for name in ("uart1", "uart1_peer", "uart4", "uart4_peer")]
-    if any(cross_values) and not all(cross_values):
+    use_cross_fixture = bool(cross_values[1] or cross_values[3])
+    if use_cross_fixture and not all(cross_values):
         print("cross-fixture mode requires --uart1 --uart1-peer --uart4 --uart4-peer",
               file=sys.stderr)
         return False
@@ -258,7 +269,7 @@ def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
             return False
         seen[resolved] = name
 
-    if not any(cross_values):
+    if not use_cross_fixture:
         return True
 
     if not _same_serial_path(arguments.uart1_peer, arguments.uart2):
@@ -389,6 +400,9 @@ def main() -> int:
         return 2
     if not math.isfinite(arguments.timeout) or arguments.timeout <= 0:
         print("--timeout must be greater than zero", file=sys.stderr)
+        return 2
+    if not math.isfinite(arguments.settle_seconds) or arguments.settle_seconds < 0:
+        print("--settle-seconds must be finite and >= 0", file=sys.stderr)
         return 2
 
     passed = True

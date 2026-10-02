@@ -31,7 +31,7 @@ repository-local `.pico-sdk` checkout. `load.sh` uses the same SDK selection as
 
 ```sh
 tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
-tools/firmware/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
+tools/firmware/build.sh --board pico2 --system-clock-khz 500000 --unsafe-overclock
 ```
 
 Those examples are intentionally unsafe overrides. Production builds use the
@@ -39,9 +39,11 @@ rated 125000 kHz (`pico`) or 150000 kHz (`pico2`) target by default. Pass
 `--unsafe-overclock` with an override only for a board-specific, recorded HIL
 qualification; CMake otherwise rejects a non-rated clock.
 
-PR and release workflows build both overrides in addition to the rated
-defaults: `pico` at 250 MHz (`pico-250mhz`) and `pico2` at 300 MHz
-(`pico2-300mhz`). The promote HIL gate covers the rated images. See
+PR and release workflows build overrides in addition to the rated defaults:
+`pico` at 250 MHz (`pico-250mhz`) in both workflows, and `pico2` at 300 MHz
+(`pico2-300mhz`) in PR checks or 500 MHz (`pico2-500mhz`) in releases. The build
+ceiling is 400000 kHz for RP2040 and 500000 kHz for RP2350, not a stability
+guarantee. The promote HIL gate covers the rated images. See
 [Releasing](../docs/releasing.md).
 
 Changing board, SDK path, generator, firmware version, system clock, HID-reset

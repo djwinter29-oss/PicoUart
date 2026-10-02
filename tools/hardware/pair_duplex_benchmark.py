@@ -2,6 +2,7 @@
 """Run a clean, synchronized full-duplex test on one CDC pair."""
 
 import argparse
+import math
 import serial
 import sys
 import threading
@@ -17,9 +18,13 @@ PAIRS = {
 def configure(path: str, baud: int):
     port = serial.Serial(path, baud, bytesize=8, parity="N", stopbits=1,
                          timeout=1, write_timeout=3)
-    port.reset_input_buffer()
-    port.reset_output_buffer()
-    return port
+    try:
+        port.reset_input_buffer()
+        port.reset_output_buffer()
+        return port
+    except Exception:
+        port.close()
+        raise
 
 
 def synchronize(a, b, settle: float, direction: str) -> None:
@@ -46,10 +51,12 @@ def synchronize(a, b, settle: float, direction: str) -> None:
 def run(rate: int, suffixes: tuple[str, str], duration: float, settle: float,
         payload_size: int, direction: str) -> tuple[bool, dict[str, tuple[int, str | None]]]:
     a = configure(PICO + suffixes[0], rate)
-    b = configure(PICO + suffixes[1], rate)
+    b = None
     results: dict[str, tuple[int, str | None]] = {}
-    barrier = threading.Barrier(2 if direction == "both" else 1)
+    labels = ("a-to-b", "b-to-a") if direction == "both" else (direction,)
+    barrier = threading.Barrier(len(labels))
     try:
+        b = configure(PICO + suffixes[1], rate)
         synchronize(a, b, settle, direction)
 
         def flow(label, source, destination):
@@ -71,6 +78,8 @@ def run(rate: int, suffixes: tuple[str, str], duration: float, settle: float,
                     if bytes(received) != payload:
                         raise RuntimeError(f"received {len(received)}/{len(payload)}")
                     count += 1
+                if count == 0:
+                    raise RuntimeError("stream completed without verifying a payload")
                 results[label] = (count * payload_size, None)
             except Exception as exc:
                 results[label] = (0, repr(exc))
@@ -85,34 +94,60 @@ def run(rate: int, suffixes: tuple[str, str], duration: float, settle: float,
         for thread in threads:
             thread.join()
     finally:
-        a.close()
-        b.close()
-    return all(error is None for _, error in results.values()), results
+        try:
+            a.close()
+        finally:
+            if b is not None:
+                b.close()
+    passed = all(label in results and results[label][0] > 0 and results[label][1] is None
+                 for label in labels)
+    return passed, results
+
+
+def parse_rates(value: str) -> tuple[int, ...]:
+    try:
+        rates = tuple(int(item) for item in value.split(","))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("--rates must be comma-separated integers") from error
+    if not rates or any(rate <= 0 for rate in rates):
+        raise argparse.ArgumentTypeError("--rates must contain positive baud rates")
+    return rates
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("pair", choices=PAIRS)
-    parser.add_argument("--rates", required=True, help="comma-separated baud rates")
+    parser.add_argument("--rates", required=True, type=parse_rates, help="comma-separated baud rates")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--duration", type=float, default=30.0)
     parser.add_argument("--settle", type=float, default=8.0)
     parser.add_argument("--payload", type=int, default=1024)
     parser.add_argument("--direction", choices=("both", "a-to-b", "b-to-a"), default="both")
     args = parser.parse_args()
+    if args.runs < 1:
+        parser.error("--runs must be greater than zero")
+    if not math.isfinite(args.duration) or args.duration <= 0:
+        parser.error("--duration must be finite and greater than zero")
+    if not math.isfinite(args.settle) or args.settle < 0:
+        parser.error("--settle must be finite and >= 0")
+    if args.payload < 1:
+        parser.error("--payload must be greater than zero")
     suffixes = PAIRS[args.pair]
-    for rate_text in args.rates.split(","):
-        rate = int(rate_text)
+    exit_code = 0
+    for rate in args.rates:
         for run_number in range(1, args.runs + 1):
             try:
                 passed, results = run(rate, suffixes, args.duration, args.settle, args.payload,
                                      args.direction)
                 print(f"{args.pair} rate={rate} run={run_number} "
                       f"{'PASS' if passed else 'FAIL'} {results}", flush=True)
+                if not passed:
+                    exit_code = max(exit_code, 1)
             except Exception as exc:
                 print(f"{args.pair} rate={rate} run={run_number} SETUP_FAIL {exc!r}",
                       flush=True)
-    return 0
+                exit_code = 2
+    return exit_code
 
 
 if __name__ == "__main__":
