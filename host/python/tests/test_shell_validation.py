@@ -79,7 +79,8 @@ sys.exit(1 if phase == "full" else 0)
         ["sh", str(repo_root / "tools/test/test-host.sh"), "--skip-c"],
         cwd=repo_root,
         env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
-             "SIGNAL_PHASE": phase, "SIGNAL_NUMBER": str(signum), "TMPDIR": str(tmp_path)},
+             "SIGNAL_PHASE": phase, "SIGNAL_NUMBER": str(int(signum)), "TMPDIR": str(tmp_path),
+             "PATH": f"{shim.parent}:{os.environ.get('PATH', '')}"},
         capture_output=True, text=True, timeout=10,
     )
     assert completed.returncode == status, completed.stdout + completed.stderr
@@ -111,7 +112,8 @@ sys.exit(int(os.environ["INSTALL_STATUS"]))
         ["sh", str(repo_root / "tools/test/test-host.sh"), "--skip-c"],
         cwd=repo_root,
         env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
-             "INSTALL_STATUS": str(status), "TMPDIR": str(tmp_path)},
+             "INSTALL_STATUS": str(status), "TMPDIR": str(tmp_path),
+             "PATH": f"{shim.parent}:{os.environ.get('PATH', '')}"},
         capture_output=True, text=True, timeout=10,
     )
     assert completed.returncode == status
