@@ -6,14 +6,20 @@ import re
 
 def test_isolated_pair_summary_covers_raw_evidence(repo_root):
     raw = repo_root / "docs/tests/raw/hardware-test-2026-10-01-cc121e8"
-    document = (repo_root / "docs/tests/hardware-validation-2026-10-01.md").read_text()
+    # UTF-8 is required: the summary uses en-dashes in baud ranges. Windows
+    # locale encoding would mangle those and shrink claimed ranges.
+    document = (repo_root / "docs/tests/hardware-validation-2026-10-01.md").read_text(
+        encoding="utf-8"
+    )
     for rate in (115200, 230400, 460800):
         single = []
         duplex = {}
         for stage in ("stage2", "stage3"):
             duplex[stage] = []
             for direction in ("a-to-b", "b-to-a", "both"):
-                lines = (raw / f"{stage}-{direction}-{rate}.log").read_text().splitlines()
+                lines = (raw / f"{stage}-{direction}-{rate}.log").read_text(
+                    encoding="utf-8"
+                ).splitlines()
                 assert len(lines) == 3
                 for line in lines:
                     assert " PASS " in line

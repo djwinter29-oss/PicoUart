@@ -13,6 +13,7 @@ from pathlib import Path
 import shlex
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -95,8 +96,13 @@ def _read_nm_symbols(nm, artifact):
     check=True a broken/failing nm would make every vreg-symbol assertion
     below pass vacuously on empty output, silently accepting the failure
     instead of reporting it (see test_nm_failure_is_not_silently_accepted).
+
+    `nm` may be a path string or an argv prefix (e.g. ``[sys.executable,
+    script]``) so the failure-injection test stays portable on Windows, where
+    a POSIX shebang script is not a valid Win32 application.
     """
-    return subprocess.run([nm, str(artifact)], capture_output=True, text=True, check=True).stdout
+    cmd = [*nm, str(artifact)] if isinstance(nm, (list, tuple)) else [nm, str(artifact)]
+    return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
 
 
 @pytest.mark.skipif(
@@ -123,12 +129,14 @@ def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defin
     (tmp_path / "main.c").write_text(_MAIN_C)
 
     system_c = repo_root / "firmware" / "src" / "driver" / "system.c"
-    source_text = system_c.read_text()
+    source_text = system_c.read_text(encoding="utf-8")
     # Defense in depth alongside the missing-header compile failure: the real
     # source must not reference vreg at all.
     assert "vreg" not in source_text.lower()
 
-    exe = tmp_path / "system_clock_test"
+    # Windows linkers emit `<name>.exe` even when `-o` omits the suffix; nm
+    # and CreateProcess need the real on-disk path.
+    exe = tmp_path / ("system_clock_test.exe" if os.name == "nt" else "system_clock_test")
     cmd = [
         shutil.which("cc") or shutil.which("gcc"),
         "-std=c11", "-Wall", "-Wextra", "-Werror",
@@ -143,6 +151,7 @@ def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defin
     ]
     compiled = subprocess.run(cmd, capture_output=True, text=True)
     assert compiled.returncode == 0, compiled.stderr
+    assert exe.is_file(), f"compiler did not produce {exe}"
 
     # The link must not pull in any symbol with "vreg" in its name. nm itself
     # is optional here (mock native test); if present it must succeed.
@@ -165,7 +174,7 @@ def test_real_sdk_startup_voltage_policy(build_dir):
             pytest.skip("set PICO_UART_VOLTAGE_BUILD_DIRS to completed firmware build directories")
         pytest.fail("empty build directory in PICO_UART_VOLTAGE_BUILD_DIRS")
     build = Path(build_dir).resolve()
-    commands = json.loads((build / "compile_commands.json").read_text())
+    commands = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
     entries = [entry for entry in commands
                if Path(entry["file"]).name == "runtime_init_clocks.c"]
     assert len(entries) == 1, "expected the SDK startup source in the firmware target"
@@ -199,8 +208,12 @@ def test_nm_failure_is_not_silently_accepted(tmp_path):
     stdout, nonzero exit) would make the vreg-symbol assertions in both
     tests above pass vacuously instead of reporting the real failure.
     """
-    failing_nm = tmp_path / "nm"
-    failing_nm.write_text("#!/bin/sh\nexit 1\n")
-    failing_nm.chmod(0o700)
+    # Drive the failing tool through the current interpreter: a POSIX shebang
+    # script is not a valid Win32 application (WinError 193).
+    failing_nm = tmp_path / "failing_nm.py"
+    failing_nm.write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
     with pytest.raises(subprocess.CalledProcessError):
-        _read_nm_symbols(str(failing_nm), tmp_path / "irrelevant-artifact")
+        _read_nm_symbols(
+            [sys.executable, str(failing_nm)],
+            tmp_path / "irrelevant-artifact",
+        )
