@@ -13,6 +13,18 @@ import pytest
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX executable shims and signals")
 
+# ponytail: signal.SIGHUP has no Windows equivalent, so the (signum, status) list
+# must be built conditionally rather than referenced directly in the parametrize
+# decorator. A literal `signal.SIGHUP` there raises AttributeError at module import
+# time on Windows, crashing pytest collection before the skipif marker can apply.
+# Ceiling: POSIX-only; if Windows ever needs signal coverage, add a parallel table
+# keyed off sys.platform using Windows-specific signals (e.g. CTRL_C_EVENT).
+SIGNAL_EXIT_CASES = (
+    [(signal.SIGHUP, 129), (signal.SIGINT, 130), (signal.SIGTERM, 143)]
+    if sys.platform != "win32"
+    else []
+)
+
 
 def test_static_analysis_covers_every_firmware_source_from_any_cwd(repo_root, tmp_path):
     shim = tmp_path / "cppcheck"
@@ -52,9 +64,7 @@ sys.exit(int(os.environ["ANALYSIS_STATUS"]))
 
 @pytest.mark.parametrize("shell", ["sh", "dash", "bash"])
 @pytest.mark.parametrize("phase", ["full", "fallback", "pytest"])
-@pytest.mark.parametrize(("signum", "status"), [
-    (signal.SIGHUP, 129), (signal.SIGINT, 130), (signal.SIGTERM, 143),
-])
+@pytest.mark.parametrize(("signum", "status"), SIGNAL_EXIT_CASES)
 def test_host_runner_signal_exits_and_cleans_fallback(repo_root, tmp_path, shell, phase, signum, status):
     if shutil.which(shell) is None:
         pytest.skip(f"{shell} is not installed")
