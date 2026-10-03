@@ -6,9 +6,9 @@ if ! command -v cppcheck >/dev/null 2>&1; then
     exit 1
 fi
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
-CDPATH= cd -- "$REPO_ROOT"
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)
+CDPATH='' cd -- "$REPO_ROOT"
 
 # Scan every firmware translation unit, plus standalone policy headers.
 cppcheck --error-exitcode=1 --enable=warning --inline-suppr \

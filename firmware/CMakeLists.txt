@@ -10,6 +10,35 @@ set(PICO_UART_SYSTEM_CLOCK_KHZ "" CACHE STRING "Optional system clock target ove
 option(PICO_UART_ALLOW_HID_RESET "Enable the trusted-host HID watchdog reset command" OFF)
 option(PICO_UART_ALLOW_UNSAFE_OVERCLOCK "Allow a system clock above the target's rated default" OFF)
 
+# pico_sdk_import.cmake is designed to be include()d prior to project(); doing so
+# here (rather than after the clock-ceiling checks below) also lets the SDK's own
+# board-header processing populate PICO_PLATFORM before we need it.
+if(DEFINED PICO_SDK_PATH)
+    include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+elseif(DEFINED ENV{PICO_SDK_PATH})
+    include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+else()
+    message(FATAL_ERROR "Set PICO_SDK_PATH to your pico-sdk checkout before configuring firmware.")
+endif()
+
+# Target-family discrimination (RP2040 vs RP2350) drives the clock ceiling/rated
+# defaults below. PICO_PLATFORM is the SDK's own board metadata (populated from
+# the board header's `pico_board_cmake_set(PICO_PLATFORM, ...)` declaration, e.g.
+# "rp2350"/"rp2350-arm-s"/"rp2350-riscv" or "rp2040") during pico_sdk_import's
+# preload, which already ran above, before project(). This covers any RP2350 or
+# RP2040 board regardless of its name; a board name is never consulted, so a
+# custom board cannot silently fall through to the wrong clock policy. Fail
+# closed if the SDK did not resolve PICO_PLATFORM to a recognized family.
+if(PICO_PLATFORM MATCHES "^rp2350")
+    set(PICO_UART_TARGET_FAMILY rp2350)
+elseif(PICO_PLATFORM MATCHES "^rp2040")
+    set(PICO_UART_TARGET_FAMILY rp2040)
+else()
+    message(FATAL_ERROR
+        "Unable to determine target family for PICO_BOARD='${PICO_BOARD}': "
+        "PICO_PLATFORM='${PICO_PLATFORM}' is not a recognized rp2040/rp2350 platform.")
+endif()
+
 # Parses PICO_UART_VERSION into PICO_UART_VERSION_{MAJOR,MINOR,PATCH} and
 # PICO_UART_BCD_DEVICE; see firmware/version.cmake for the policy and
 # firmware/tests/test_version_policy.py for standalone `cmake -P` coverage.
@@ -19,7 +48,7 @@ if(NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
     if(NOT PICO_UART_SYSTEM_CLOCK_KHZ MATCHES "^[1-9][0-9]*$")
         message(FATAL_ERROR "PICO_UART_SYSTEM_CLOCK_KHZ must be a positive integer in kHz")
     endif()
-    if(PICO_BOARD MATCHES "^(pico2|rp2350)")
+    if(PICO_UART_TARGET_FAMILY STREQUAL "rp2350")
         set(_pico_uart_max_clock_khz 500000)
     else()
         set(_pico_uart_max_clock_khz 400000)
@@ -32,19 +61,11 @@ if(NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
     endif()
 endif()
 
-if(DEFINED PICO_SDK_PATH)
-    include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
-elseif(DEFINED ENV{PICO_SDK_PATH})
-    include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
-else()
-    message(FATAL_ERROR "Set PICO_SDK_PATH to your pico-sdk checkout before configuring firmware.")
-endif()
-
 project(pico_uart C CXX ASM)
 
 pico_sdk_init()
 
-if(PICO_BOARD MATCHES "^(pico2|rp2350)")
+if(PICO_UART_TARGET_FAMILY STREQUAL "rp2350")
     set(PICO_UART_RATED_SYSTEM_CLOCK_KHZ 150000)
 else()
     set(PICO_UART_RATED_SYSTEM_CLOCK_KHZ 125000)
