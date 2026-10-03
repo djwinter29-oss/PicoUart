@@ -25,6 +25,11 @@ forward_signal() {
     # group shutdown if those workloads become supported; no such guarantee now.
     signal_name="$1"
     exit_status="$2"
+    # Without GNU env the async child inherits SIGINT-ignore. Use SIGTERM for
+    # that direct child instead; the wrapper still reports interruption as 130.
+    if [ "$signal_name" = INT ] && [ "$HAVE_ENV_DEFAULT_SIGNAL" -eq 0 ]; then
+        signal_name=TERM
+    fi
     if [ -n "$CURRENT_CHILD_PID" ]; then
         kill -s "$signal_name" "$CURRENT_CHILD_PID" 2>/dev/null || :
         wait "$CURRENT_CHILD_PID" 2>/dev/null || :
@@ -35,10 +40,10 @@ forward_signal() {
 
 # ponytail: `env --default-signal=INT` is GNU coreutils-only (missing on
 # Windows Git Bash/MSYS env and on BSD/macOS env); probe once so the launcher
-# stays a single portable script. Without it, a backgrounded child's inherited
-# SIGINT-ignore (POSIX non-interactive async-command behavior) means forwarded
-# signals may not stop it, same as before signal forwarding existed. Install
-# GNU coreutils to regain prompt interruption if that gap matters.
+# stays a single portable script. Without it, forward_signal translates SIGINT
+# to SIGTERM to stop the direct child despite its inherited SIGINT-ignore
+# (POSIX non-interactive async-command behavior). This does not add a bounded
+# shutdown guarantee for signal-ignoring children or their descendants.
 if env --default-signal=INT true >/dev/null 2>&1; then
     HAVE_ENV_DEFAULT_SIGNAL=1
 else

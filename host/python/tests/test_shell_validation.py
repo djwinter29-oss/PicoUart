@@ -66,18 +66,41 @@ sys.exit(int(os.environ["ANALYSIS_STATUS"]))
 @pytest.mark.parametrize("phase", ["full", "fallback", "pytest"])
 @pytest.mark.parametrize(("signum", "status"), SIGNAL_EXIT_CASES)
 def test_host_runner_signal_exits_and_cleans_fallback(repo_root, tmp_path, shell, phase, signum, status):
+    _assert_host_runner_signal_exit(repo_root, tmp_path, shell, phase, signum, status)
+
+
+@pytest.mark.parametrize("shell", ["sh", "dash", "bash"])
+@pytest.mark.parametrize("phase", ["full", "fallback", "pytest"])
+def test_host_runner_sigint_without_gnu_env_exits_and_cleans_fallback(repo_root, tmp_path, shell, phase):
+    _assert_host_runner_signal_exit(
+        repo_root, tmp_path, shell, phase, signal.SIGINT, 130, force_env_fallback=True,
+    )
+
+
+def _assert_host_runner_signal_exit(repo_root, tmp_path, shell, phase, signum, status,
+                                    force_env_fallback=False):
     if shutil.which(shell) is None:
         pytest.skip(f"{shell} is not installed")
     shim = tmp_path / "python-shim"
     log = tmp_path / "calls.jsonl"
     child_pid_file = tmp_path / "child.pid"
-    shim.write_text(f"#!{sys.executable}\n" + '''import json, os, sys, time
+    env_probe_file = tmp_path / "env-probe.json"
+    if force_env_fallback:
+        env_shim = tmp_path / "env"
+        env_shim.write_text(f"#!{sys.executable}\n" + '''import json, os, sys
+from pathlib import Path
+Path(os.environ["ENV_PROBE_FILE"]).write_text(json.dumps(sys.argv[1:]))
+# Emulate BSD/MSYS env rejecting the GNU-only option, even on a GNU host.
+sys.exit(1)
+''')
+        env_shim.chmod(0o700)
+    shim.write_text(f"#!{sys.executable}\n" + '''import json, os, signal, sys, time
 from pathlib import Path
 args = sys.argv[1:]
 if args == ["-m", "pip", "--version"]:
     sys.exit(0)
 phase = "pytest"
-record = {"args": args}
+record = {"args": args, "sigint_ignored": signal.getsignal(signal.SIGINT) == signal.SIG_IGN}
 if "install" in args:
     lock = Path(args[args.index("-r") + 1])
     phase = "full" if lock.name == "requirements-lock.txt" else "fallback"
@@ -97,6 +120,7 @@ sys.exit(1 if phase == "full" else 0)
         cwd=tmp_path,
         env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
              "SIGNAL_PHASE": phase, "CHILD_PID_FILE": str(child_pid_file), "TMPDIR": str(tmp_path),
+             "ENV_PROBE_FILE": str(env_probe_file),
              "PATH": f"{shim.parent}:{os.environ.get('PATH', '')}"},
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
@@ -109,7 +133,13 @@ sys.exit(1 if phase == "full" else 0)
         assert child_pid_file.exists(), "the test shim did not start the blocked child"
         child_pid = int(child_pid_file.read_text())
         os.kill(child_pid, 0)
-        # Signal only the wrapper: the blocked shim must be stopped by forwarding.
+        if force_env_fallback:
+            assert json.loads(env_probe_file.read_text()) == ["--default-signal=INT", "true"]
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            assert calls[-1]["sigint_ignored"], "the regression must exercise inherited SIGINT-ignore"
+        # Signal only the wrapper: forwarding must stop/reap its direct child
+        # within the timeout. This does not test descendant/process-group cleanup
+        # or commands that also ignore SIGTERM; neither has a bounded guarantee.
         os.kill(process.pid, signum)
         stdout, stderr = process.communicate(timeout=5)
         assert process.returncode == status, stdout + stderr

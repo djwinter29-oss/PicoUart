@@ -16,11 +16,6 @@ import subprocess
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("gcc") is None and shutil.which("cc") is None,
-    reason="native C compiler required to exercise real system.c",
-)
-
 # ponytail: mocks only the subset of pico-sdk/hardware headers that system.c
 # uses; if system.c starts using more of the real SDK API, extend these.
 _MOCK_STDLIB_H = """
@@ -94,6 +89,10 @@ def _write(path, text):
     path.write_text(text)
 
 
+@pytest.mark.skipif(
+    shutil.which("gcc") is None and shutil.which("cc") is None,
+    reason="native C compiler required to exercise real system.c",
+)
 @pytest.mark.parametrize(
     ("board_defines", "clock_khz"),
     [
@@ -152,7 +151,9 @@ def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defin
 def test_real_sdk_startup_voltage_policy(build_dir):
     """Opt-in artifact check; unlike the mocks above, inspect actual SDK output."""
     if not build_dir:
-        pytest.skip("set PICO_UART_VOLTAGE_BUILD_DIRS to completed firmware build directories")
+        if not os.environ.get("PICO_UART_VOLTAGE_BUILD_DIRS"):
+            pytest.skip("set PICO_UART_VOLTAGE_BUILD_DIRS to completed firmware build directories")
+        pytest.fail("empty build directory in PICO_UART_VOLTAGE_BUILD_DIRS")
     build = Path(build_dir).resolve()
     commands = json.loads((build / "compile_commands.json").read_text())
     entries = [entry for entry in commands
@@ -163,6 +164,9 @@ def test_real_sdk_startup_voltage_policy(build_dir):
     assert "-DSYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0" in argv
     output_index = argv.index("-o")
     obj = Path(entry["directory"]) / argv[output_index + 1]
+    artifacts = (obj, build / "pico_uart.elf")
+    for artifact in artifacts:
+        assert artifact.is_file(), f"missing firmware artifact: {artifact}"
     # Use the actual cross compiler, generated headers, and defines to resolve
     # SDK defaults; just checking an application mock misses pre-main startup.
     preprocess = [arg for i, arg in enumerate(argv)
@@ -173,7 +177,7 @@ def test_real_sdk_startup_voltage_policy(build_dir):
     nm = shutil.which("arm-none-eabi-nm")
     assert nm, "ARM nm required for the real firmware artifact check"
     forbidden = {"vreg_set_voltage", "vreg_disable_voltage_limit"}
-    for artifact in (obj, build / "pico_uart.elf"):
+    for artifact in artifacts:
         symbols = subprocess.run([nm, str(artifact)], capture_output=True,
                                  text=True, check=True).stdout
         names = {line.split()[-1] for line in symbols.splitlines() if line.split()}
