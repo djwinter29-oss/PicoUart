@@ -43,15 +43,22 @@ Test flow control separately after enabling and documenting it.
 Debug Probe UART is limited to standard baud rates. Test 115200 unless the
 probe firmware supports custom baud rates.
 
-### Stages 2, 3, 4: Link-internal UART pairs
+### Stages 2 and 3: Link-internal UART pairs
 
-For each stage, test these three layers at each candidate baud rate:
+For each pair, test these three layers at each candidate baud rate:
 
 1. **Single direction** — `pair_duplex_benchmark.py --direction a-to-b` and
    `--direction b-to-a` separately, 10 s each.
 2. **Full pair duplex** — `pair_duplex_benchmark.py --direction both`, 30 s.
 3. **Concurrent six-port** — `serial_stress_benchmark.py` with all seven
    streams, 30 s per baud, independent process per baud, 8 s settle.
+
+Stage 4 is a single-port UART5 TX-to-RX loopback, not a pair supported by
+`pair_duplex_benchmark.py`. Use
+`serial_bridge_test.py --pico-port <cdc5> --loopback --baud <rate>`
+for its isolated verified-payload check and the
+`uart5-loopback` stream for sustained concurrent coverage. Flood mode checks
+activity only, not payload integrity.
 
 Record every tested rate even when it fails. A rate is stable only when
 every direction and every stream passes.
@@ -98,8 +105,15 @@ python3 tools/hardware/serial_stress_benchmark.py \
 
 Besides the `PASS`/`FAIL` lines run_performance_test.py parses, the benchmark
 also prints one diagnostic `TIME <label>: {...}` line per stream with
-thread-start/first-byte UTC and monotonic timestamps. These are for manually
-diagnosing concurrent-startup skew and are not parsed by the runner.
+thread-start, first-send-attempt, and first-nonempty-read UTC and monotonic
+timestamps. These are host observations, not UART wire-level first-byte times;
+they are for diagnosing concurrent-startup skew and are not parsed by the runner.
+`--duration` stops starting new blocks; the last in-flight block still has its
+own `--timeout` for each write/read phase and may finish after that duration.
+A write or read phase that completes at or after its deadline is reported as a
+timeout, even if the final bytes become available at that boundary. This strict
+boundary avoids counting late transfers as passes; host scheduling jitter can
+therefore cause a timeout close to the deadline.
 
 To run only the benchmark and prepend a structured result entry automatically:
 
@@ -140,8 +154,8 @@ SHA-256 digest and HID-reported firmware version.
 
 `serial_stress_benchmark.py` accepts any positive integer baud rate on Linux.
 Standard rates use termios; other rates use Linux `termios2`/`BOTHER`. Use the
-full staged mapping below for six CDC ports and twelve simultaneous UART
-traffic directions:
+full staged mapping below for six CDC ports and seven concurrent verified
+streams (two for each of the three bidirectional pairs and one UART5 loopback):
 
 ```sh
 PICO=/dev/serial/by-id/<pico-cdc-prefix>
@@ -182,10 +196,17 @@ must be recorded separately from a data failure; neither counts as a pass.
 
 ### Partial Bench Mode
 
-`serial_stress_benchmark.py` still supports a smaller bench that omits UART1
-and UART4. In that mode it uses the older UART2-to-UART3 cross-link plus the
-UART5 loopback. Use this only for bring-up or diagnosis; record it as
-`PARTIAL`, not as full HIL coverage.
+Without `--uart1-peer` or `--uart4-peer`, `serial_stress_benchmark.py` uses
+the older UART2-to-UART3 cross-link, the Debug Probe↔UART0 pair, and UART5
+loopback (five streams). Optional `--uart1` and `--uart4` add independent
+loopbacks in that mode. This requires different wiring from the staged fixture;
+use it only for bring-up or diagnosis and record it as `PARTIAL`, not full HIL
+coverage. Supplying either peer option selects the staged cross-fixture mode
+and requires all four `--uart1 --uart1-peer --uart4 --uart4-peer` options.
+
+These mode rules apply to the direct stress CLI. `run_performance_test.py`
+fills in staged peer paths when UART1/UART4 are supplied; use both ports there
+for a full-fixture run.
 
 ## Soak Run
 

@@ -77,7 +77,10 @@ HIL on both packaged board images:
 Release CI also packages development overclock images: `pico-250mhz` (RP2040 at
 250 MHz) and `pico2-300mhz` (RP2350 at 300 MHz). The promote HIL gate covers the
 rated images. A recorded overclock result qualifies only the matching overclock
-artifact.
+artifact. Neither overclock image writes the core voltage: both preserve the
+regulator setting on entry, without measuring or restoring a specific voltage. Clock stability, temperature margin, and
+lifetime remain unqualified until exact-board HIL covers the intended
+operating range.
 
 HIL must use the exact UF2/ELF from the draft release or workflow dry-run. Do
 not rebuild locally for release qualification.

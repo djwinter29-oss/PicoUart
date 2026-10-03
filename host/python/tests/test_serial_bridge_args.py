@@ -436,3 +436,128 @@ def test_flood_hold_cdc_sleeps_settle_seconds(monkeypatch: pytest.MonkeyPatch) -
     assert bridge.run_flood_test(args, 115200) == 0
     assert sleeps.count(0.2) == 2
     assert 0.05 not in sleeps
+
+
+@pytest.mark.parametrize("wake_at", [1.0, 1.1])
+def test_flood_does_not_write_after_select_deadline(monkeypatch, wake_at):
+    bridge = _load_bridge()
+    clock = [0.0]
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock[0])
+
+    def ready(_r, w, _x, _timeout):
+        clock[0] = wake_at
+        return [], w, []
+
+    monkeypatch.setattr(bridge.select, "select", ready)
+    monkeypatch.setattr(bridge.os, "write", lambda *_: pytest.fail("late write"))
+    assert bridge.run_flood(3, None, 1, 64, 0) == (0, 0)
+
+
+def test_flood_rejects_zero_progress_write(monkeypatch):
+    bridge = _load_bridge()
+    monkeypatch.setattr(bridge.select, "select", lambda _r, w, _x, _t: ([], w, []))
+    monkeypatch.setattr(bridge.os, "write", lambda *_: 0)
+    with pytest.raises(OSError, match="zero bytes"):
+        bridge.run_flood(3, None, 1, 64, 0)
+
+
+def test_flood_retries_blocking_write_and_counts_only_progress(monkeypatch):
+    bridge = _load_bridge()
+    clock = [0.0]
+    calls = []
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(bridge.select, "select", lambda _r, w, _x, _t: ([], w, []))
+
+    def write(_fd, data):
+        calls.append(data)
+        clock[0] += 0.6
+        if len(calls) == 1:
+            raise BlockingIOError()
+        return 5
+
+    monkeypatch.setattr(bridge.os, "write", write)
+    assert bridge.run_flood(3, None, 1, 64, 0) == (5, 0)
+    assert calls[0] == calls[1]
+
+
+@pytest.mark.parametrize("wake_at", [1.0, 1.1])
+def test_drain_checks_deadline_after_select(monkeypatch, wake_at):
+    bridge = _load_bridge()
+    clock = [0.0]
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock[0])
+
+    def ready(r, _w, _x, timeout):
+        assert timeout == 0
+        clock[0] = wake_at
+        return r, [], []
+
+    monkeypatch.setattr(bridge.select, "select", ready)
+    monkeypatch.setattr(bridge.os, "read", lambda *_: pytest.fail("late read"))
+    assert bridge.drain_available(4, 1) == 0
+
+
+@pytest.mark.parametrize("stop", ["deadline", "budget", "empty", "blocking"])
+def test_drain_is_bounded_with_continuously_readable_input(monkeypatch, stop):
+    bridge = _load_bridge()
+    clock = [0.0]
+    reads = []
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(bridge.select, "select", lambda r, _w, _x, _t: (r, [], []))
+
+    def read(_fd, size):
+        reads.append(size)
+        if stop == "deadline":
+            clock[0] += 0.5
+        if stop == "empty":
+            return b""
+        if stop == "blocking":
+            raise BlockingIOError()
+        return b"x" * size
+
+    monkeypatch.setattr(bridge.os, "read", read)
+    drained = bridge.drain_available(4, 1, max_reads=3)
+    count = {"deadline": 2, "budget": 3, "empty": 1, "blocking": 1}[stop]
+    assert len(reads) == count
+    assert drained == (count * 4096 if stop in ("deadline", "budget") else 0)
+
+
+def test_continuous_rx_allows_tx_and_bounded_settle(monkeypatch):
+    bridge = _load_bridge()
+    clock = [0.0]
+    writes = []
+    read_times = []
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(bridge.select, "select", lambda r, w, _x, _t: (r, w, []))
+
+    def read(_fd, size):
+        read_times.append(clock[0])
+        clock[0] += 0.001
+        return b"x" * size
+
+    def write(_fd, data):
+        writes.append((clock[0], data))
+        return len(data)
+
+    monkeypatch.setattr(bridge.os, "read", read)
+    monkeypatch.setattr(bridge.os, "write", write)
+    written, drained = bridge.run_flood(3, 4, 0.05, 64, 0)
+    assert written == 3 * 64
+    assert all(now < 0.05 for now, _ in writes)
+    assert drained == len(read_times) * 4096
+    assert clock[0] < 1.052
+    assert all(now < 1.051 for now in read_times)
+
+
+def test_drain_expiry_prevents_ready_write(monkeypatch):
+    bridge = _load_bridge()
+    clock = [0.0]
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(bridge.select, "select", lambda r, w, _x, _t: (r, w, []))
+
+    def drain(_fd, deadline):
+        clock[0] = deadline
+        return 4
+
+    monkeypatch.setattr(bridge, "drain_available", drain)
+    monkeypatch.setattr(bridge.os, "write", lambda *_: pytest.fail("write after drain deadline"))
+    assert bridge.run_flood(3, 4, 1, 64, 0) == (0, 8)

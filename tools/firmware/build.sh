@@ -57,10 +57,15 @@ if [ -n "$BOARD" ]; then
     fi
 fi
 
+# Only the canonical Raspberry Pi board names have a known target family here;
+# a custom board's family lives in its SDK board header (PICO_PLATFORM), which
+# this wrapper does not parse. Leave the clock unset/unchecked for any other
+# board name and let firmware/CMakeLists.txt apply the real SDK-derived rated
+# default and ceiling instead of guessing from the name.
 if [ -z "$SYSTEM_CLOCK_KHZ" ]; then
     case "$BOARD" in
-        pico2|pico2_w|rp2350*) SYSTEM_CLOCK_KHZ=150000 ;;
-        *) SYSTEM_CLOCK_KHZ=125000 ;;
+        pico|pico_w) SYSTEM_CLOCK_KHZ=125000 ;;
+        pico2|pico2_w) SYSTEM_CLOCK_KHZ=150000 ;;
     esac
 fi
 
@@ -69,14 +74,23 @@ if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
         echo "System clock must be a positive integer kHz value." >&2
         exit 1
     fi
-    if [ "${#SYSTEM_CLOCK_KHZ}" -gt 6 ] || [ "$SYSTEM_CLOCK_KHZ" -gt 400000 ]; then
-        echo "System clock must be no greater than 400000 kHz." >&2
+    if [ "${#SYSTEM_CLOCK_KHZ}" -gt 6 ]; then
+        echo "System clock must be no greater than 999999 kHz." >&2
+        exit 1
+    fi
+    MAX_SYSTEM_CLOCK_KHZ=""
+    case "$BOARD" in
+        pico|pico_w) MAX_SYSTEM_CLOCK_KHZ=400000 ;;
+        pico2|pico2_w) MAX_SYSTEM_CLOCK_KHZ=500000 ;;
+    esac
+    if [ -n "$MAX_SYSTEM_CLOCK_KHZ" ] && [ "$SYSTEM_CLOCK_KHZ" -gt "$MAX_SYSTEM_CLOCK_KHZ" ]; then
+        echo "System clock must be no greater than $MAX_SYSTEM_CLOCK_KHZ kHz for $BOARD." >&2
         exit 1
     fi
 fi
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)
 SOURCE_DIR="$REPO_ROOT/firmware"
 case "$BUILD_DIR" in
     /*) BUILD_DIR_PATH="$BUILD_DIR" ;;

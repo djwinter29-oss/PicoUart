@@ -59,6 +59,11 @@ jobs:
         with:
           release: "13.3.Rel1"
 
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
       - name: Cache Pico SDK
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -93,6 +98,20 @@ jobs:
         run: |
           set -eu
           python3 tools/release/verify-build.py --build-dir "build/firmware-${LABEL}" --board "$BOARD"
+
+      - name: Verify no SDK regulator auto-adjust in the real build
+        env:
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -eu
+          # Inspects this matrix leg's actual compile_commands.json, resolved
+          # preprocessor defines, and linked ELF/object symbols (not a mock).
+          # It does not execute Boot ROM or validate physical voltage,
+          # thermal margins, or hardware stability; that remains an HIL gate.
+          python3 -m pip install --quiet --require-hashes -r host/python/requirements-voltage-lock.txt
+          PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/firmware-${LABEL}" \
+            python3 -m pytest -c host/python/pyproject.toml \
+            host/python/tests/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q
 
       - name: Smoke-check stamped version / bcdDevice
         if: matrix.label == 'pico'

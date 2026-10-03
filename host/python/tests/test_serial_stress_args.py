@@ -312,7 +312,11 @@ def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> N
     assert stress.benchmark_rate(arguments, 115200) is False
 
 
-@pytest.mark.parametrize(("option", "value"), [("--duration", "nan"), ("--timeout", "inf")])
+@pytest.mark.parametrize(("option", "value"), [
+    ("--duration", "nan"), ("--timeout", "inf"),
+    ("--settle-seconds", "nan"), ("--settle-seconds", "inf"),
+    ("--settle-seconds", "-1"),
+])
 def test_non_finite_timing_is_rejected(
     monkeypatch: pytest.MonkeyPatch, option: str, value: str
 ) -> None:
@@ -437,12 +441,12 @@ def test_cross_fixture_rejects_mismatched_peer_paths() -> None:
     assert stress.cross_fixture_paths_valid(arguments) is False
 
 
-def test_cross_fixture_rejects_partial_arguments() -> None:
+def test_cross_fixture_rejects_partial_peer_arguments() -> None:
     stress = _load_stress()
     arguments = type(
         "Arguments",
         (),
-        {"uart1": "/dev/ttyACM1", "uart1_peer": None,
+        {"uart1": "/dev/ttyACM1", "uart1_peer": "/dev/ttyACM2",
          "uart4": None, "uart4_peer": None},
     )()
 
@@ -463,3 +467,178 @@ def test_performance_test_plan_documents_time_diagnostic_output(repo_root: Path)
     plan = (repo_root / "docs/tests/performance-test-plan.md").read_text()
     assert "TIME" in plan
     assert "run_performance_test.py parses" in plan or "not parsed by the runner" in plan
+
+
+@pytest.mark.parametrize("wake_at", [1.0, 1.1])
+def test_read_exact_rejects_first_byte_ready_at_deadline(monkeypatch, wake_at):
+    stress = _load_stress()
+    clock = [0.0]
+    monkeypatch.setattr(stress.time, "monotonic", lambda: clock[0])
+
+    def select_read(r, _w, _x, _timeout):
+        clock[0] = wake_at
+        return r, [], []
+
+    monkeypatch.setattr(stress.select, "select", select_read)
+    monkeypatch.setattr(stress.os, "read", lambda *_: pytest.fail("read after deadline"))
+    timing = {}
+    with pytest.raises(TimeoutError, match="received 0 of 4 bytes"):
+        stress.read_exact(2, b"data", 1, timing)
+    assert timing == {}
+
+
+@pytest.mark.parametrize("finish_at", [1.0, 1.1])
+@pytest.mark.parametrize("partial", [True, False])
+def test_read_exact_rejects_late_completion_but_keeps_first_read_timing(
+    monkeypatch, finish_at, partial
+):
+    stress = _load_stress()
+    clock = [0.0]
+    chunks = [(0.2, b"d"), (finish_at, b"ata")] if partial else [(finish_at, b"data")]
+    monkeypatch.setattr(stress.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(stress.select, "select", lambda r, _w, _x, _t: (r, [], []))
+
+    def read(_fd, _size):
+        clock[0], chunk = chunks.pop(0)
+        return chunk
+
+    monkeypatch.setattr(stress.os, "read", read)
+    timing = {}
+    with pytest.raises(TimeoutError, match="received 4 of 4 bytes after deadline"):
+        stress.read_exact(2, b"data", 1, timing)
+    assert timing["first_receive_monotonic"] == (0.2 if partial else finish_at)
+    assert timing["first_receive_utc"].endswith("+00:00")
+
+
+def test_read_exact_accepts_completion_before_deadline(monkeypatch):
+    stress = _load_stress()
+    clock = [0.0]
+    monkeypatch.setattr(stress.time, "monotonic", lambda: clock[0])
+
+    def select_read(r, _w, _x, _t):
+        clock[0] = 0.99
+        return r, [], []
+
+    monkeypatch.setattr(stress.select, "select", select_read)
+    monkeypatch.setattr(stress.os, "read", lambda *_: b"data")
+    timing = {}
+    stress.read_exact(2, b"data", 1, timing)
+    assert timing["first_receive_monotonic"] == 0.99
+
+
+def test_write_all_does_not_pass_negative_select_timeout(monkeypatch):
+    stress = _load_stress()
+    clock = [0.0]
+    monkeypatch.setattr(stress.time, "monotonic", lambda: clock[0])
+
+    def write(*_):
+        clock[0] = 1.1
+        raise BlockingIOError()
+
+    monkeypatch.setattr(stress.os, "write", write)
+    monkeypatch.setattr(stress.select, "select", lambda *_: pytest.fail("expired select"))
+    with pytest.raises(TimeoutError, match="write timed out"):
+        stress.write_all(1, b"data", 1)
+
+
+@pytest.mark.parametrize("wake_at", [1.0, 1.1])
+def test_write_all_does_not_retry_after_select_deadline(monkeypatch, wake_at):
+    stress = _load_stress()
+    clock = [0.0]
+    writes = []
+    monkeypatch.setattr(stress.time, "monotonic", lambda: clock[0])
+
+    def write(*_):
+        writes.append(clock[0])
+        raise BlockingIOError()
+
+    def select_write(_r, w, _x, _t):
+        clock[0] = wake_at
+        return [], w, []
+
+    monkeypatch.setattr(stress.os, "write", write)
+    monkeypatch.setattr(stress.select, "select", select_write)
+    with pytest.raises(TimeoutError, match="write timed out"):
+        stress.write_all(1, b"data", 1)
+    assert writes == [0.0]
+
+
+def test_write_all_rejects_completion_at_deadline(monkeypatch):
+    stress = _load_stress()
+    clock = [0.0]
+    monkeypatch.setattr(stress.time, "monotonic", lambda: clock[0])
+
+    def write(_fd, data):
+        clock[0] = 1
+        return len(data)
+
+    monkeypatch.setattr(stress.os, "write", write)
+    with pytest.raises(TimeoutError, match="write timed out"):
+        stress.write_all(1, b"data", 1)
+
+
+@pytest.mark.parametrize(("uart1", "uart4", "cross"), [
+    (False, False, False), (True, False, False),
+    (False, True, False), (True, True, False), (True, True, True),
+])
+def test_benchmark_modes_configure_actual_documented_streams(monkeypatch, uart1, uart4, cross):
+    from types import SimpleNamespace
+
+    stress = _load_stress()
+    arguments = SimpleNamespace(
+        uart0_pico="cdc0", uart0_peer="probe", uart2="cdc2", uart3="cdc3", uart5="cdc5",
+        uart1="cdc1" if uart1 else None, uart4="cdc4" if uart4 else None,
+        uart1_peer="cdc2" if cross else None, uart4_peer="cdc3" if cross else None,
+        uart0_baud=115200, duration=1, payload_bytes=64, timeout=1, settle_seconds=0,
+    )
+    opened = []
+    streams = []
+
+    def configure(path, _baud):
+        opened.append(path)
+        return len(opened), []
+
+    class ImmediateThread:
+        def __init__(self, target, args):
+            self.target, self.args = target, args
+
+        def start(self):
+            self.target(*self.args)
+
+        def join(self):
+            pass
+
+    def run_stream(label, source, destination, _duration, _payload, _timeout, _start, results, _timing):
+        streams.append((label, source, destination))
+        results[label] = (64, None)
+
+    monkeypatch.setattr(stress, "configure_port", configure)
+    monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(stress, "run_stream", run_stream)
+    monkeypatch.setattr(stress, "close_ports", lambda *_: None)
+    assert stress.benchmark_rate(arguments, 115200)
+    expected = [("uart0-pico-to-peer", 1, 2), ("uart0-peer-to-pico", 2, 1),
+                ("uart5-loopback", 5, 5)]
+    if cross:
+        expected.extend([("uart1-to-uart2", 6, 3), ("uart2-to-uart1", 3, 6),
+                         ("uart3-to-uart4", 4, 7), ("uart4-to-uart3", 7, 4)])
+    else:
+        expected.extend([("uart2-to-uart3", 3, 4), ("uart3-to-uart2", 4, 3)])
+        if uart1:
+            expected.append(("uart1-loopback", 6, 6))
+        if uart4:
+            fd = 7 if uart1 else 6
+            expected.append(("uart4-loopback", fd, fd))
+    assert streams == expected
+    assert len(opened) == len(set(opened)) == 5 + uart1 + uart4
+
+
+def test_performance_plan_matches_modes_and_timing(repo_root):
+    plan = (repo_root / "docs/tests/performance-test-plan.md").read_text()
+    assert "seven concurrent verified" in plan
+    assert "twelve simultaneous" not in plan
+    assert "Optional `--uart1` and `--uart4` add independent" in plan
+    assert "first-send-attempt" in plan
+    assert "last in-flight block" in plan
+    assert "completes at or after its deadline" in plan
+    assert "host scheduling jitter" in plan

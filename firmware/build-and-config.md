@@ -39,10 +39,40 @@ rated 125000 kHz (`pico`) or 150000 kHz (`pico2`) target by default. Pass
 `--unsafe-overclock` with an override only for a board-specific, recorded HIL
 qualification; CMake otherwise rejects a non-rated clock.
 
-PR and release workflows build both overrides in addition to the rated
-defaults: `pico` at 250 MHz (`pico-250mhz`) and `pico2` at 300 MHz
-(`pico2-300mhz`). The promote HIL gate covers the rated images. See
-[Releasing](../docs/releasing.md).
+PR and release workflows build overrides in addition to the rated defaults:
+`pico` at 250 MHz (`pico-250mhz`) and `pico2` at 300 MHz (`pico2-300mhz`) in
+both workflows. Neither overclock target writes the core voltage; both boards
+retain the regulator setting present on entry. The build ceiling is 400000 kHz for RP2040 and
+500000 kHz for RP2350, not a stability guarantee. The promote HIL gate covers
+the rated images. See [Releasing](../docs/releasing.md).
+
+The firmware target explicitly sets `SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0` for
+both application and SDK startup sources, including the SDK's own pre-`main()`
+clock init (`runtime_init_clocks.c`, board default 125/150 MHz). The SDK
+(`hardware/clocks.h`) only ever defaults this to `1` when compiled with
+`PICO_RP2040 && SYS_CLK_HZ==200MHz`; this project never sets `SYS_CLK_HZ`, so
+that default is already `0` for every board/clock built here, and this define
+is a defensive pin rather than a behavior change. `system_init_clock()` then
+requests the application target via `set_sys_clock_khz`, which does not touch
+the regulator either way. Neither path writes or restores a specific voltage;
+whatever voltage was present on entry is left alone.
+
+Each firmware matrix leg in PR check CI runs this check automatically, right
+after `verify-build.py`, against its own build directory. After building
+locally, run the same check yourself to inspect the real SDK startup object,
+resolved preprocessor policy, and linked ELF (not just the mock application
+test):
+
+```sh
+PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/pico:$PWD/build/pico2" \
+  python3 -m pytest -c host/python/pyproject.toml \
+  host/python/tests/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q
+```
+
+Use your actual completed build directories. This check fails if SDK automatic
+voltage adjustment is enabled or the startup object/ELF contains a regulator
+write or voltage-limit-bypass symbol. It does not execute Boot ROM or validate
+physical voltage, thermal margins, or hardware stability.
 
 Changing board, SDK path, generator, firmware version, system clock, HID-reset
 option, or unsafe-overclock option causes the build wrapper to reset stale
@@ -86,11 +116,12 @@ requirement applies.
 
 - Default board is `pico`.
 - Default system-clock targets are 125000 kHz for RP2040 and 150000 kHz for
-  RP2350. Higher clock rates are board-specific overrides. Startup raises the
-  core voltage before the PLL when the target is above 133 MHz (RP2040) or
-  150 MHz (RP2350): 1.15 V through 200 MHz, 1.25 V through 250 MHz, 1.30 V
-  above that. Still validate thermal margin, USB, and UART behavior on the
-  board before keeping an overclock.
+  RP2350. Higher clock rates are board-specific overrides. Startup never
+  writes the core voltage; it preserves the regulator setting on entry
+  rather than measuring or restoring a specific voltage. Neither development overclock image
+  (RP2040 250 MHz, RP2350 300 MHz) is qualified for stability, thermal
+  margin, or lifetime without exact-board HIL over the intended workload and
+  temperature range.
 - Startup initializes the selected board's default LED when it defines
   `PICO_DEFAULT_LED_PIN`; the LED starts off.
 - The internal ADC temperature sensor is enabled at startup and can be sampled

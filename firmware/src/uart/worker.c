@@ -32,6 +32,8 @@ void uart_worker_run(const uart_worker_hooks_t *hooks)
         }
     }
 
+    // Invalid hooks stay in the non-returning tight_loop_contents() loop above.
+    // cppcheck-suppress nullPointerRedundantCheck
     hooks->initialize();
     while (true) {
         uart_worker_step(hooks);

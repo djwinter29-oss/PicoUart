@@ -27,7 +27,11 @@ Stages 2 (HW↔PIO) and 3 (PIO↔PIO), one direction at a time and full duplex; 
 | ---: | ---: | ---: |
 | 115200 | 113,664 (both stages) | 114,688 (both stages) |
 | 230400 | 224,256–225,280 | 227,328 (both stages) |
-| 460800 | 438,272–441,344 | 444,416 (both stages) |
+| 460800 | 438,272–441,344 | stage 2: 444,416–445,440; stage 3: 444,416–446,464 |
+
+Ranges cover all three runs and both tested directions for each stage; see
+`stage2-both-460800.log` and `stage3-both-460800.log` in the raw evidence directory
+for the full-duplex values.
 
 ### Concurrent streams
 
