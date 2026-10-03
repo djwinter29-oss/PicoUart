@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import signal
 import subprocess
@@ -168,6 +169,87 @@ sys.exit(1 if phase == "full" else 0)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.communicate(timeout=5)
+
+
+@pytest.mark.parametrize("phase", ["pre_launch", "pre_publication"])
+def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase):
+    """Regression test for the run_interruptible/forward_signal launch race in
+    test-host.sh. A HUP can arrive in either of two handoff windows:
+
+    * "pre_launch": immediately after LAUNCH_IN_PROGRESS=1, before the
+      command has even been backgrounded with '&' (no child, no '$!' yet).
+    * "pre_publication": immediately after the '&', before CURRENT_CHILD_PID
+      is published (a child exists, but only '$!' names it, and only
+      transiently).
+
+    In both windows forward_signal must defer the signal (PENDING_SIGNAL_NAME)
+    rather than read '$!' directly, since in the pre_launch window '$!' may be
+    stale/empty. run_interruptible must still launch the command, publish
+    CURRENT_CHILD_PID, and then forward the deferred signal to the real child,
+    which must be reaped rather than leaked as an orphan.
+
+    Deterministic injection happens here, via a temporary instrumented copy
+    of test-host.sh built by string replacement only; the production script
+    carries no test-controlled bypass that would let an environment variable
+    make it run arbitrary caller-supplied command args. The copy is instead
+    made to invoke the real run_interruptible/forward_signal code early,
+    before its normal argument-parsing loop, by replacing that loop's marker
+    line with a direct call.
+    """
+    original = (repo_root / "tools/test/test-host.sh").read_text()
+    child_pid_file = tmp_path / "child.pid"
+
+    # Always record the real child PID right after it is backgrounded (this is
+    # the only point where it is recorded, regardless of phase), so that
+    # either injection site can be verified to have actually launched and
+    # later reaped the same child.
+    publish_marker = '        "$@" &\n    fi\n    CURRENT_CHILD_PID=$!\n'
+    assert original.count(publish_marker) == 1, "publication marker not found; test-host.sh changed shape"
+    publish_injected = (
+        '        "$@" &\n    fi\n'
+        f'    echo "$!" > {shlex.quote(str(child_pid_file))}\n'
+    )
+    if phase == "pre_publication":
+        # Signal this same shell (HUP) synchronously inside the exact race
+        # window, after '$!' names the child but before CURRENT_CHILD_PID is
+        # published, exercising forward_signal's LAUNCH_IN_PROGRESS deferral.
+        publish_injected += '    kill -s HUP "$$"\n'
+    publish_injected += '    CURRENT_CHILD_PID=$!\n'
+    instrumented = original.replace(publish_marker, publish_injected)
+
+    if phase == "pre_launch":
+        # Signal this same shell (HUP) before the command is even
+        # backgrounded: no child exists yet and '$!' would be stale/empty, so
+        # this exercises the deferral path with nothing to (mis)read.
+        launch_marker = '    LAUNCH_IN_PROGRESS=1\n'
+        assert instrumented.count(launch_marker) == 1, "launch marker not found; test-host.sh changed shape"
+        instrumented = instrumented.replace(launch_marker, launch_marker + '    kill -s HUP "$$"\n')
+
+    # Invoke the real run_interruptible directly, ahead of the normal
+    # argument-parsing loop, instead of relying on any selftest bypass in the
+    # production script.
+    loop_marker = 'while [ "$#" -gt 0 ]; do'
+    assert instrumented.count(loop_marker) == 1, "argument-parsing loop marker not found; test-host.sh changed shape"
+    loop_injected = f'run_interruptible sleep 30\nexit "$?"\n{loop_marker}'
+    instrumented = instrumented.replace(loop_marker, loop_injected)
+
+    instrumented_path = tmp_path / "test-host-instrumented.sh"
+    instrumented_path.write_text(instrumented)
+    instrumented_path.chmod(0o700)
+
+    completed = subprocess.run(
+        ["sh", str(instrumented_path)],
+        env={**os.environ},
+        capture_output=True, text=True, timeout=10,
+    )
+    assert completed.returncode == 129, completed.stdout + completed.stderr
+    # The command must still be launched in both windows (deferred signals do
+    # not skip the launch), and its PID is recorded exactly once, at the real
+    # publication site, never from a stale/empty '$!' read during injection.
+    assert child_pid_file.exists(), "the command was never launched"
+    child_pid = int(child_pid_file.read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
 
 
 @pytest.mark.parametrize("status", [129, 130, 143])

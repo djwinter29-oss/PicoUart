@@ -89,6 +89,16 @@ def _write(path, text):
     path.write_text(text)
 
 
+def _read_nm_symbols(nm, artifact):
+    """Run `nm` on `artifact`, raising CalledProcessError if `nm` itself
+    fails. A failure here must never be read as "no symbols found"; without
+    check=True a broken/failing nm would make every vreg-symbol assertion
+    below pass vacuously on empty output, silently accepting the failure
+    instead of reporting it (see test_nm_failure_is_not_silently_accepted).
+    """
+    return subprocess.run([nm, str(artifact)], capture_output=True, text=True, check=True).stdout
+
+
 @pytest.mark.skipif(
     shutil.which("gcc") is None and shutil.which("cc") is None,
     reason="native C compiler required to exercise real system.c",
@@ -134,11 +144,11 @@ def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defin
     compiled = subprocess.run(cmd, capture_output=True, text=True)
     assert compiled.returncode == 0, compiled.stderr
 
-    # The link must not pull in any symbol with "vreg" in its name.
+    # The link must not pull in any symbol with "vreg" in its name. nm itself
+    # is optional here (mock native test); if present it must succeed.
     nm = shutil.which("nm")
     if nm:
-        symbols = subprocess.run([nm, str(exe)], capture_output=True, text=True).stdout
-        assert "vreg" not in symbols.lower()
+        assert "vreg" not in _read_nm_symbols(nm, exe).lower()
 
     run = subprocess.run([str(exe)], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
@@ -178,7 +188,19 @@ def test_real_sdk_startup_voltage_policy(build_dir):
     assert nm, "ARM nm required for the real firmware artifact check"
     forbidden = {"vreg_set_voltage", "vreg_disable_voltage_limit"}
     for artifact in artifacts:
-        symbols = subprocess.run([nm, str(artifact)], capture_output=True,
-                                 text=True, check=True).stdout
+        symbols = _read_nm_symbols(nm, artifact)
         names = {line.split()[-1] for line in symbols.splitlines() if line.split()}
         assert not names & forbidden, f"voltage mutation in {artifact}: {names & forbidden}"
+
+
+def test_nm_failure_is_not_silently_accepted(tmp_path):
+    """A failing nm must raise, not be mistaken for "no vreg symbols found".
+    Without check=True in _read_nm_symbols, a broken nm binary (empty
+    stdout, nonzero exit) would make the vreg-symbol assertions in both
+    tests above pass vacuously instead of reporting the real failure.
+    """
+    failing_nm = tmp_path / "nm"
+    failing_nm.write_text("#!/bin/sh\nexit 1\n")
+    failing_nm.chmod(0o700)
+    with pytest.raises(subprocess.CalledProcessError):
+        _read_nm_symbols(str(failing_nm), tmp_path / "irrelevant-artifact")

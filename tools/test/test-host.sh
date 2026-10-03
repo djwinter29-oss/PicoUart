@@ -18,6 +18,18 @@ cleanup() {
     fi
 }
 CURRENT_CHILD_PID=""
+# ponytail: set only while run_interruptible is between starting the launch of
+# a command and publishing its PID into CURRENT_CHILD_PID (see
+# run_interruptible). During this window '$!' may be stale (naming a prior
+# child) or simply unset (the '&' has not executed yet), so it is never safe
+# to read here. No further handoff states are needed unless a second
+# concurrent launch is introduced.
+LAUNCH_IN_PROGRESS=0
+# Deferred signal recorded by forward_signal when it fires during the launch
+# handoff above; run_interruptible forwards it once CURRENT_CHILD_PID is
+# published. Empty means no signal is pending.
+PENDING_SIGNAL_NAME=""
+PENDING_SIGNAL_STATUS=""
 
 forward_signal() {
     # ponytail: manage the direct command, which pip/pytest normally terminates
@@ -29,6 +41,14 @@ forward_signal() {
     # that direct child instead; the wrapper still reports interruption as 130.
     if [ "$signal_name" = INT ] && [ "$HAVE_ENV_DEFAULT_SIGNAL" -eq 0 ]; then
         signal_name=TERM
+    fi
+    if [ "$LAUNCH_IN_PROGRESS" -eq 1 ]; then
+        # No safe PID exists yet (see LAUNCH_IN_PROGRESS comment above): defer
+        # delivery instead of guessing. run_interruptible checks this after
+        # publishing CURRENT_CHILD_PID and forwards it to the real child.
+        PENDING_SIGNAL_NAME="$signal_name"
+        PENDING_SIGNAL_STATUS="$exit_status"
+        return
     fi
     if [ -n "$CURRENT_CHILD_PID" ]; then
         kill -s "$signal_name" "$CURRENT_CHILD_PID" 2>/dev/null || :
@@ -51,6 +71,12 @@ else
 fi
 
 run_interruptible() {
+    # Clear any stale pending state before opening the LAUNCH_IN_PROGRESS
+    # window below, so a signal that lands anywhere inside that window (or
+    # later, before publication) is the only thing that can set it.
+    PENDING_SIGNAL_NAME=""
+    PENDING_SIGNAL_STATUS=""
+    LAUNCH_IN_PROGRESS=1
     if [ "$HAVE_ENV_DEFAULT_SIGNAL" -eq 1 ]; then
         # Non-interactive shells ignore SIGINT for background commands. GNU env
         # restores it before exec, preserving the direct child's PID for forwarding.
@@ -59,6 +85,14 @@ run_interruptible() {
         "$@" &
     fi
     CURRENT_CHILD_PID=$!
+    LAUNCH_IN_PROGRESS=0
+    if [ -n "$PENDING_SIGNAL_NAME" ]; then
+        # A signal arrived during the handoff above (before the child even
+        # existed, or before its PID was published) and was deferred by
+        # forward_signal instead of guessing at '$!'. Forward it now that
+        # CURRENT_CHILD_PID names the real child; this exits the script.
+        forward_signal "$PENDING_SIGNAL_NAME" "$PENDING_SIGNAL_STATUS"
+    fi
     if wait "$CURRENT_CHILD_PID"; then
         command_status=0
     else
