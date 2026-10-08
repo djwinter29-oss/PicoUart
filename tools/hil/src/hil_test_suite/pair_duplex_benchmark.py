@@ -8,6 +8,8 @@ import sys
 import threading
 import time
 
+from .serial_config import verify_line_speed
+
 PICO = "/dev/serial/by-id/usb-PicoUart_PicoUart_CDC+HID_PIO_8N1_5303284748A07A1C"
 PAIRS = {
     "stage1": ("-if00", "-if04"),
@@ -20,6 +22,7 @@ def configure(path: str, baud: int):
     try:
         port.reset_input_buffer()
         port.reset_output_buffer()
+        verify_line_speed(port.fileno(), baud)
         return port
     except Exception:
         port.close()

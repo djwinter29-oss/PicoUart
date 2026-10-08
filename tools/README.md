@@ -8,7 +8,7 @@ the project documentation index; this file only maps the tool categories.
 | Directory     | Purpose                                                                                          |
 | ------------- | ------------------------------------------------------------------------------------------------ |
 | `firmware/`   | Pico SDK setup, firmware builds, and Debug Probe loading                                         |
-| `hardware/`   | Physical HIL runners and serial bridge/stress tools                                              |
+| `hil/`        | Reusable Python project for physical HIL runners and serial bridge/stress tools                  |
 | `host/`       | Host Python environment setup                                                                    |
 | `release/`    | Release version, USB identity, and artifact verification                                         |
 | `validation/` | Test runners, lock filtering, coverage helpers, syntax checks, static analysis, and smoke checks |
@@ -29,8 +29,10 @@ tools/host/setup-venv.sh
 tools/validation/run-host-tests.sh
 tools/validation/validate.sh --skip-build
 
-# Hardware test help
-python3 tools/hardware/run_hardware_test.py --help
+# Hardware test project
+uv sync --project tools/hil --extra test
+uv run --project tools/hil --extra test pytest tools/hil/tests
+uv run --project tools/hil --extra test pico-uart-hil --help
 
 # Release artifact verification
 python3 tools/release/verify-build.py --help

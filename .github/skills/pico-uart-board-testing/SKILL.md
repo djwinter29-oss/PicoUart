@@ -29,15 +29,15 @@ Read the relevant document before testing:
 The repository provides runners that implement the documented workflow:
 
 ```sh
-  python3 tools/hardware/run_functional_test.py --help
-  python3 tools/hardware/run_performance_test.py --help
-  python3 tools/hardware/run_hardware_test.py --help
+  uv run --project tools/hil --extra test pico-uart-hil-functional --help
+  uv run --project tools/hil --extra test pico-uart-hil-performance --help
+  uv run --project tools/hil --extra test pico-uart-hil --help
 ```
 
-Use `tools/hardware/run_hardware_test.py` for the normal end-to-end run. It runs functional testing before performance
-testing and records a concise result entry. Use the individual runners when diagnosing one phase. Add `--no-record` for
-a dry run. Install both crossed pairs and both loopbacks before starting and do not change wiring during the run. Use
-`tools/hardware/run_functional_test.py --stage 1|2|3|4` only to diagnose one link on the same fixed fixture.
+Use `pico-uart-hil` for the normal end-to-end run. It runs functional testing before performance testing and records a
+dated result. Use the individual commands when diagnosing one phase. Add `--no-record` for a dry run. Install both
+crossed pairs and both loopbacks before starting and do not change wiring during the run. Use
+`pico-uart-hil-functional --stage 1|2|3|4` only to diagnose one link on the same fixed fixture.
 
 ## Diagnostics
 

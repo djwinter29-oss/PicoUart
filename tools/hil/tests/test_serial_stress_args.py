@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import sys
 from pathlib import Path
 
 import pytest
 
-STRESS = Path(__file__).resolve().parents[2] / "tools" / "hardware" / "serial_stress_benchmark.py"
+HARDWARE_SRC = Path(__file__).resolve().parents[1] / "src"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
 
 
 def _load_stress():
-    spec = importlib.util.spec_from_file_location("serial_stress_benchmark_under_test", STRESS)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    if str(HARDWARE_SRC) not in sys.path:
+        sys.path.insert(0, str(HARDWARE_SRC))
+    module = importlib.import_module("hil_test_suite.serial_stress_benchmark")
+    return importlib.reload(module)
 
 
 def _cdc_cli_arguments() -> list[str]:
@@ -28,6 +27,7 @@ def _cdc_cli_arguments() -> list[str]:
 def test_configure_port_closes_once_on_failure(monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
     stress = _load_stress()
     closes = []
+    current = [0, 0, 0, 0, stress.termios.B9600, stress.termios.B9600, [0] * 32]
     get_calls = 0
 
     def tcgetattr(_fd):
@@ -35,16 +35,17 @@ def test_configure_port_closes_once_on_failure(monkeypatch: pytest.MonkeyPatch, 
         get_calls += 1
         if failure == "tcgetattr" and get_calls == 1:
             raise OSError("get failed")
-        return [0, 0, 0, 0, 0, 0, [0] * 32]
+        return current.copy()
+
+    def tcsetattr(_fd, _when, settings):
+        if failure == "tcsetattr":
+            raise OSError("set failed")
+        current[:] = settings
 
     monkeypatch.setattr(stress.os, "open", lambda *_args: 19)
     monkeypatch.setattr(stress.os, "close", closes.append)
     monkeypatch.setattr(stress.termios, "tcgetattr", tcgetattr)
-    monkeypatch.setattr(
-        stress.termios,
-        "tcsetattr",
-        lambda *_args: (_ for _ in ()).throw(OSError("set failed")) if failure == "tcsetattr" else None,
-    )
+    monkeypatch.setattr(stress.termios, "tcsetattr", tcsetattr)
     monkeypatch.setattr(
         stress.termios,
         "tcflush",
@@ -59,11 +60,15 @@ def test_configure_port_closes_once_on_failure(monkeypatch: pytest.MonkeyPatch, 
 def test_configure_port_success_remains_open(monkeypatch: pytest.MonkeyPatch) -> None:
     stress = _load_stress()
     closes = []
-    settings = [0, 0, 0, 0, 0, 0, [0] * 32]
+    settings = [0, 0, 0, 0, stress.termios.B9600, stress.termios.B9600, [0] * 32]
     monkeypatch.setattr(stress.os, "open", lambda *_args: 19)
     monkeypatch.setattr(stress.os, "close", closes.append)
     monkeypatch.setattr(stress.termios, "tcgetattr", lambda _fd: settings.copy())
-    monkeypatch.setattr(stress.termios, "tcsetattr", lambda *_args: None)
+
+    def apply_settings(_fd, _when, updated):
+        settings[:] = updated
+
+    monkeypatch.setattr(stress.termios, "tcsetattr", apply_settings)
     monkeypatch.setattr(stress.termios, "tcflush", lambda *_args: None)
 
     file_descriptor, _ = stress.configure_port("/dev/fake", 115200)
@@ -245,7 +250,7 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
         timing[label] = {key: object() for key in expected_keys}
         result[label] = (64, None)
 
-    monkeypatch.setattr(stress, "configure_port", lambda *_args: (next(next_descriptor), []))
+    monkeypatch.setattr(stress, "configure_port", lambda *_args, **_kwargs: (next(next_descriptor), []))
     monkeypatch.setattr(stress, "run_stream", fake_run_stream)
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(stress, "close_ports", lambda *_args: None)
@@ -299,7 +304,7 @@ def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> N
     def complete_stream(label, _source, _destination, _duration, _payload, _timeout, _start, result, _timing):
         result[label] = (64, None)
 
-    monkeypatch.setattr(stress, "configure_port", lambda *_args: (next(next_descriptor), []))
+    monkeypatch.setattr(stress, "configure_port", lambda *_args, **_kwargs: (next(next_descriptor), []))
     monkeypatch.setattr(stress, "run_stream", complete_stream)
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(stress, "close_ports", lambda *_args: OSError("restore failed"))
@@ -383,7 +388,7 @@ def test_performance_test_plan_documents_time_diagnostic_output(repo_root: Path)
     """
     plan = " ".join((repo_root / "docs/tests/hil-fixture-test-plan.md").read_text().split())
     assert "TIME" in plan
-    assert "not parsed by `run_performance_test.py`" in plan
+    assert "not parsed by `pico-uart-hil-performance`" in plan
 
 
 @pytest.mark.parametrize("wake_at", [1.0, 1.1])
@@ -506,7 +511,7 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     opened = []
     streams = []
 
-    def configure(path, _baud):
+    def configure(path, _baud, **_kwargs):
         opened.append(path)
         return len(opened), []
 

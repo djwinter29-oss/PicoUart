@@ -8,5 +8,7 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)
 "$PYTHON_EXE" -c "import hid; print('hidapi OK')"
 PYTHONPATH="$REPO_ROOT/host/python/src${PYTHONPATH:+:$PYTHONPATH}" \
 	"$PYTHON_EXE" -m pico_uart --help >/dev/null
-"$PYTHON_EXE" "$REPO_ROOT/tools/hardware/serial_bridge_test.py" --help >/dev/null
-"$PYTHON_EXE" "$REPO_ROOT/tools/hardware/serial_stress_benchmark.py" --help >/dev/null
+PYTHONPATH="$REPO_ROOT/tools/hil/src${PYTHONPATH:+:$PYTHONPATH}" \
+	"$PYTHON_EXE" -m hil_test_suite.serial_bridge_test --help >/dev/null
+PYTHONPATH="$REPO_ROOT/tools/hil/src${PYTHONPATH:+:$PYTHONPATH}" \
+	"$PYTHON_EXE" -m hil_test_suite.serial_stress_benchmark --help >/dev/null

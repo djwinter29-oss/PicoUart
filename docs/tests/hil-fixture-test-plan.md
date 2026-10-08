@@ -30,7 +30,7 @@ Run the functional stages in order with all four links installed. The runner tes
 self-loopback on its own CDC endpoint:
 
 ```sh
-python3 tools/hardware/run_functional_test.py \
+uv run --project tools/hil --extra test pico-uart-hil-functional \
   --pico-cdc0 /dev/serial/by-id/<pico-cdc0> \
   --pico-cdc1 /dev/serial/by-id/<pico-cdc1> \
   --pico-cdc2 /dev/serial/by-id/<pico-cdc2> \
@@ -62,11 +62,11 @@ candidate rate so line-coding changes settle before traffic begins.
 | Single pair duplex  | 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000 | 30 s per rate                      |
 | Concurrent six-port | 460800, 500000, 600000                                             | 30 s per rate, independent process |
 
-For synchronized pair diagnostics, use `pair_duplex_benchmark.py stage1` for CDC0↔CDC2 and `stage2` for CDC3↔CDC4.
-Test both loopback endpoints with `serial_bridge_test.py --loopback`. The full concurrent command is:
+For synchronized pair diagnostics, use `pico-uart-hil-pair stage1` for CDC0↔CDC2 and `stage2` for CDC3↔CDC4. Test both
+loopback endpoints with `pico-uart-hil-bridge --loopback`. The full concurrent command is:
 
 ```sh
-python3 tools/hardware/run_performance_test.py \
+uv run --project tools/hil --extra test pico-uart-hil-performance \
   --cdc0 /dev/serial/by-id/<pico-cdc0> \
   --cdc1 /dev/serial/by-id/<pico-cdc1> \
   --cdc2 /dev/serial/by-id/<pico-cdc2> \
@@ -77,13 +77,13 @@ python3 tools/hardware/run_performance_test.py \
   --board pico --firmware-version 1.2.3 --firmware-commit <commit>
 ```
 
-For one command that runs both phases, use `tools/hardware/run_hardware_test.py` with the same six `--pico-cdcN`
-arguments. Its performance phase starts only after functional pass. Pass `--skip-functional` or `--skip-performance`
-only when intentionally running one phase.
+For one command that runs both phases, use `uv run --project tools/hil --extra test pico-uart-hil` with the same
+six `--pico-cdcN` arguments. Its performance phase starts only after functional pass. Pass `--skip-functional` or
+`--skip-performance` only when intentionally running one phase.
 
 The benchmark prints one `TIME <label>: {...}` line per stream with host thread-start, first-send-attempt, and
 first-nonempty-read UTC and monotonic timestamps. These are not wire-level first-byte times and are not parsed by
-`run_performance_test.py`. `--duration` stops starting new blocks; the last in-flight block can finish afterward. A
+`pico-uart-hil-performance`. `--duration` stops starting new blocks; the last in-flight block can finish afterward. A
 write or read phase that completes at or after its deadline is a timeout, even if the final bytes arrive at that
 boundary. Host scheduling jitter near the deadline can also cause a timeout.
 
@@ -101,9 +101,8 @@ baud limit. A data mismatch, unexplained loss, unexpected reset, persistent disc
 
 ## Results and Release Evidence
 
-`tools/hardware/run_hardware_test.py` creates a fixed-format, dated record in [records](records/README.md). Standalone
-functional or performance runs append to the ignored local log at `build/hil-results.md`; preserve separate transcripts
-when diagnosing failures. A local log alone does not qualify a release. Release HIL evidence must identify each rated
-board, the exact artifact and SHA-256, firmware version and commit, test commands, per-link results, and HID health.
-Attach or link the generated record and transcript with the release evidence as described in
-[Releasing](../releasing.md).
+`pico-uart-hil` creates a fixed-format, dated record in [records](records/README.md). Standalone functional or
+performance runs append to the ignored local log at `build/hil-results.md`; preserve separate transcripts when
+diagnosing failures. A local log alone does not qualify a release. Release HIL evidence must identify each rated board,
+the exact artifact and SHA-256, firmware version and commit, test commands, per-link results, and HID health. Attach or
+link the generated record and transcript with the release evidence as described in [Releasing](../releasing.md).

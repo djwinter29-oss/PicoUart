@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -10,20 +10,10 @@ from types import SimpleNamespace
 
 import pytest
 
-TOOLS = Path(__file__).resolve().parents[2] / "tools" / "hardware"
-if str(TOOLS) not in sys.path:
-    sys.path.insert(0, str(TOOLS))
-
 
 def _load(name: str):
-    path = TOOLS / f"{name}.py"
-    if not path.exists():
-        path = TOOLS / "hardware" / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    module = importlib.import_module(f"hil_test_suite.{name}")
+    return importlib.reload(module)
 
 
 def functional_arguments() -> SimpleNamespace:
@@ -91,10 +81,10 @@ def test_hardware_runner_streams_child_output_and_status() -> None:
     assert "child-output" in transcript
 
 
-def test_hid_health_module_resolves_repository_root() -> None:
+def test_hid_health_module_resolves_repository_root(repo_root: Path) -> None:
     health = _load("hardware_test_health")
 
-    assert health.REPO_ROOT == Path(__file__).resolve().parents[2]
+    assert health.REPO_ROOT == repo_root
     assert health.HOST_PYTHON_SRC == health.REPO_ROOT / "host/python/src"
     assert health.HID_MODULE == "pico_uart"
 

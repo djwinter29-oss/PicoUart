@@ -6,6 +6,12 @@ updates:
       interval: weekly
 
     versioning-strategy: lockfile-only
+  - package-ecosystem: pip
+    directory: /tools/hil
+    schedule:
+      interval: weekly
+
+    versioning-strategy: increase
   - package-ecosystem: github-actions
     directory: /
     schedule:

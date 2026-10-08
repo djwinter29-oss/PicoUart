@@ -126,7 +126,7 @@ A Debug Probe UART connection may be tested manually as an external peer, but it
 pass criteria. Connect one PicoUart port to the probe and run:
 
 ```sh
-python3 tools/hardware/serial_bridge_test.py \
+uv run --project tools/hil --extra test pico-uart-hil-bridge \
    --pico-port /dev/serial/by-id/<pico-cdc-endpoint> \
    --peer-port /dev/serial/by-id/<debug-probe-uart> \
    --label manual-debug-probe --baud 115200

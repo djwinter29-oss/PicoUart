@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import sys
 from pathlib import Path
 
 import pytest
 
-BRIDGE = Path(__file__).resolve().parents[2] / "tools" / "hardware" / "serial_bridge_test.py"
+HARDWARE_SRC = Path(__file__).resolve().parents[1] / "src"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
 
 
 def _load_bridge():
-    spec = importlib.util.spec_from_file_location("serial_bridge_test_under_test", BRIDGE)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    if str(HARDWARE_SRC) not in sys.path:
+        sys.path.insert(0, str(HARDWARE_SRC))
+    module = importlib.import_module("hil_test_suite.serial_bridge_test")
+    return importlib.reload(module)
 
 
 def test_write_all_rejects_zero_progress(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,6 +44,7 @@ def test_write_all_honors_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_configure_port_closes_once_on_failure(monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
     bridge = _load_bridge()
     closes = []
+    current = [0, 0, 0, 0, bridge.termios.B9600, bridge.termios.B9600, [0] * 32]
     get_calls = 0
 
     def tcgetattr(_fd):
@@ -52,16 +52,17 @@ def test_configure_port_closes_once_on_failure(monkeypatch: pytest.MonkeyPatch, 
         get_calls += 1
         if failure == "tcgetattr" and get_calls == 1:
             raise OSError("get failed")
-        return [0, 0, 0, 0, 0, 0, [0] * 32]
+        return current.copy()
+
+    def tcsetattr(_fd, _when, settings):
+        if failure == "tcsetattr":
+            raise OSError("set failed")
+        current[:] = settings
 
     monkeypatch.setattr(bridge.os, "open", lambda *_args: 17)
     monkeypatch.setattr(bridge.os, "close", closes.append)
     monkeypatch.setattr(bridge.termios, "tcgetattr", tcgetattr)
-    monkeypatch.setattr(
-        bridge.termios,
-        "tcsetattr",
-        lambda *_args: (_ for _ in ()).throw(OSError("set failed")) if failure == "tcsetattr" else None,
-    )
+    monkeypatch.setattr(bridge.termios, "tcsetattr", tcsetattr)
     monkeypatch.setattr(
         bridge.termios,
         "tcflush",
@@ -76,11 +77,15 @@ def test_configure_port_closes_once_on_failure(monkeypatch: pytest.MonkeyPatch, 
 def test_configure_port_success_remains_open(monkeypatch: pytest.MonkeyPatch) -> None:
     bridge = _load_bridge()
     closes = []
-    settings = [0, 0, 0, 0, 0, 0, [0] * 32]
+    settings = [0, 0, 0, 0, bridge.termios.B9600, bridge.termios.B9600, [0] * 32]
     monkeypatch.setattr(bridge.os, "open", lambda *_args: 17)
     monkeypatch.setattr(bridge.os, "close", closes.append)
     monkeypatch.setattr(bridge.termios, "tcgetattr", lambda _fd: settings.copy())
-    monkeypatch.setattr(bridge.termios, "tcsetattr", lambda *_args: None)
+
+    def apply_settings(_fd, _when, updated):
+        settings[:] = updated
+
+    monkeypatch.setattr(bridge.termios, "tcsetattr", apply_settings)
     monkeypatch.setattr(bridge.termios, "tcflush", lambda *_args: None)
 
     file_descriptor, _ = bridge.configure_port("/dev/fake", 115200)

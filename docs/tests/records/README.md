@@ -1,7 +1,7 @@
 # HIL Records
 
-The combined `tools/hardware/run_hardware_test.py` runner creates one Markdown record per invocation in this directory.
-Use `--no-record` to suppress generation or `--record-dir` to choose another output directory.
+The `pico-uart-hil` command creates one Markdown record per invocation in this directory. Use `--no-record` to suppress
+generation or `--record-dir` to choose another output directory.
 
 ## Naming
 
@@ -13,7 +13,7 @@ YYYY-MM-DD-HHMMSSZ-pico2-hil.md
 ```
 
 If a name already exists, the runner adds a numeric suffix rather than overwriting it. Single-phase runs and direct
-`run_functional_test.py` / `run_performance_test.py` invocations append to the ignored local log at
+`pico-uart-hil-functional` / `pico-uart-hil-performance` invocations append to the ignored local log at
 `build/hil-results.md` instead.
 
 ## Record Format

@@ -12,11 +12,10 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import artifact_metadata, prepend_result
-from hardware_test_health import collect_hid_health, health_evidence, health_is_clean, health_summary
+from .hardware_test_result import artifact_metadata, prepend_result
+from .hardware_test_health import collect_hid_health, health_evidence, health_is_clean, health_summary
+from .paths import REPO_ROOT
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[1]
 DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
 PASS_PATTERN = re.compile(
     r"^PASS (?P<label>[^:]+): (?P<bytes>[0-9]+) bytes, (?P<throughput>[0-9.]+) B/s$",
@@ -30,7 +29,8 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
     """Build the documented serial_stress_benchmark invocation."""
     command = [
         sys.executable,
-        str(SCRIPT_DIR / "serial_stress_benchmark.py"),
+        "-m",
+        "hil_test_suite.serial_stress_benchmark",
         "--cdc0",
         arguments.cdc0,
         "--cdc1",

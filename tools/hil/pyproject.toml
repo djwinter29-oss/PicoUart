@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pico-uart-hil"
+version = "0.1.0"
+description = "Reusable functional and performance HIL tools for PicoUart"
+requires-python = ">=3.10"
+dependencies = ["pico-uart", "pyserial==3.5"]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5"]
+
+[project.scripts]
+pico-uart-hil = "hil_test_suite.run_hardware_test:main"
+pico-uart-hil-functional = "hil_test_suite.run_functional_test:main"
+pico-uart-hil-performance = "hil_test_suite.run_performance_test:main"
+pico-uart-hil-bridge = "hil_test_suite.serial_bridge_test:main"
+pico-uart-hil-stress = "hil_test_suite.serial_stress_benchmark:main"
+pico-uart-hil-pair = "hil_test_suite.pair_duplex_benchmark:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["hil_test_suite*"]
+namespaces = false
+
+[tool.uv.sources]
+pico-uart = { path = "../../host/python", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+addopts = "-q"

@@ -10,41 +10,7 @@ import sys
 import termios
 import time
 
-
-BAUD_RATES = {
-    9600: termios.B9600,
-    19200: termios.B19200,
-    38400: termios.B38400,
-    57600: termios.B57600,
-    115200: termios.B115200,
-    230400: termios.B230400,
-    460800: termios.B460800,
-    921600: termios.B921600,
-    1000000: termios.B1000000,
-}
-STANDARD_BAUD_RATES = tuple(BAUD_RATES)
-
-
-def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
-    file_descriptor = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-    try:
-        original_settings = termios.tcgetattr(file_descriptor)
-        settings = termios.tcgetattr(file_descriptor)
-
-        settings[0] = 0
-        settings[1] = 0
-        settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-        settings[3] = 0
-        settings[4] = BAUD_RATES[baud_rate]
-        settings[5] = BAUD_RATES[baud_rate]
-        settings[6][termios.VMIN] = 0
-        settings[6][termios.VTIME] = 0
-        termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
-        termios.tcflush(file_descriptor, termios.TCIOFLUSH)
-        return file_descriptor, original_settings
-    except Exception:
-        os.close(file_descriptor)
-        raise
+from .serial_config import BAUD_RATES, STANDARD_BAUD_RATES, configure_port
 
 
 def close_ports(ports: list[tuple[int, list]]) -> OSError | None:

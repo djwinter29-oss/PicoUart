@@ -12,20 +12,19 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import artifact_metadata, prepend_result
-from hardware_test_health import collect_hid_health, health_evidence, health_is_clean, health_summary
+from .hardware_test_result import artifact_metadata, prepend_result
+from .hardware_test_health import collect_hid_health, health_evidence, health_is_clean, health_summary
+from .paths import REPO_ROOT
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[1]
 DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
 
 
 def build_stage_commands(arguments: SimpleNamespace) -> list[tuple[str, list[str]]]:
     """Build the four documented serial_bridge_test invocations."""
-    bridge = str(SCRIPT_DIR / "serial_bridge_test.py")
     common = [
         sys.executable,
-        bridge,
+        "-m",
+        "hil_test_suite.serial_bridge_test",
         "--payload-bytes",
         str(arguments.payload_bytes),
         "--timeout",

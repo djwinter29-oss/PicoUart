@@ -13,17 +13,17 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import artifact_metadata
+from .hardware_test_result import artifact_metadata
+from .paths import REPO_ROOT
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[1]
 DEFAULT_RECORDS_DIR = REPO_ROOT / "docs/tests/records"
 
 
 def build_functional_command(arguments: argparse.Namespace) -> list[str]:
     command = [
         sys.executable,
-        str(SCRIPT_DIR / "run_functional_test.py"),
+        "-m",
+        "hil_test_suite.run_functional_test",
         "--pico-cdc0",
         arguments.pico_cdc0,
         "--pico-cdc1",
@@ -60,7 +60,8 @@ def build_functional_command(arguments: argparse.Namespace) -> list[str]:
 def build_performance_command(arguments: argparse.Namespace) -> list[str]:
     command = [
         sys.executable,
-        str(SCRIPT_DIR / "run_performance_test.py"),
+        "-m",
+        "hil_test_suite.run_performance_test",
         "--cdc0",
         arguments.pico_cdc0,
         "--cdc1",

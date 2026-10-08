@@ -27,11 +27,14 @@ Firmware constraints to account for during development:
 ## Test Layout
 
 The root [pyproject.toml](../../pyproject.toml) configures repository-wide pytest discovery. The package-specific
-[host Python pyproject](../../host/python/pyproject.toml) keeps its test scope for package-only work.
+[host Python pyproject](../../host/python/pyproject.toml) keeps its test scope for package-only work. The reusable
+hardware-in-the-loop tools have a separate [Python project](../../tools/hil/pyproject.toml) and test suite.
 
 - `host/python/tests/`: host package tests, fixtures, and HID report helpers
+- `tools/hil/src/hil_test_suite/`: reusable HIL runners, serial configuration, and health/evidence helpers
+- `tools/hil/tests/`: unit tests for HIL utilities and CLI behavior
 - `tests/firmware/`: firmware policy and PIO tests
-- `tests/tooling/`: repository scripts and host-tool tests
+- `tests/tooling/`: repository validation scripts and cross-project contract tests
 - `tests/contracts/`: firmware/host, CI, and release contract tests
 - `firmware/tests/`: native C tests using Unity, CMake, and CTest
 
@@ -41,6 +44,13 @@ Run the complete host-side C and Python suite from the repository root:
 
 ```sh
 tools/validation/run-host-tests.sh
+```
+
+Run the reusable HIL tool tests in their isolated environment with:
+
+```sh
+uv sync --project tools/hil --extra test
+uv run --project tools/hil --extra test pytest tools/hil/tests
 ```
 
 Run the combined firmware build and host validation flow with `tools/validation/validate.sh`. Its `--skip-build` and

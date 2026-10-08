@@ -10,67 +10,11 @@ import sys
 import termios
 import threading
 import time
-import fcntl
 from datetime import datetime, timezone
+from .serial_config import BAUD_RATES, configure_port
 
-
-BAUD_RATES = {
-    9600: termios.B9600,
-    19200: termios.B19200,
-    38400: termios.B38400,
-    57600: termios.B57600,
-    115200: termios.B115200,
-    230400: termios.B230400,
-    460800: termios.B460800,
-    921600: termios.B921600,
-    1000000: termios.B1000000,
-}
-TCGETS2 = 0x802C542A
-TCSETS2 = 0x402C542B
-BOTHER = 0x1000
-CBAUD = termios.CBAUD
 DEFAULT_RATES = tuple(BAUD_RATES)
 LINE_CODING_SETTLE_SECONDS = 8.0
-
-
-def configure_port(path: str, baud_rate: int) -> tuple[int, list]:
-    file_descriptor = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-    try:
-        original_settings = termios.tcgetattr(file_descriptor)
-        settings = termios.tcgetattr(file_descriptor)
-
-        settings[0] = 0
-        settings[1] = 0
-        settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-        settings[3] = 0
-        if baud_rate in BAUD_RATES:
-            settings[4] = BAUD_RATES[baud_rate]
-            settings[5] = BAUD_RATES[baud_rate]
-        settings[6][termios.VMIN] = 0
-        settings[6][termios.VTIME] = 0
-        # tcsetattr() must run before the termios2 BOTHER ioctl below: it only
-        # knows the standard termios struct, so calling it afterwards would
-        # clobber the custom ispeed/ospeed with whatever CBAUD bits it wrote.
-        termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
-        if baud_rate not in BAUD_RATES:
-            # Linux termios2 is required for experimental non-standard rates.
-            # ponytail: retain standard termios for portable rates.
-            raw = bytearray(44)
-            fcntl.ioctl(file_descriptor, TCGETS2, raw, True)
-            cflag = int.from_bytes(raw[8:12], "little")
-            # Clear the existing CBAUD encoding before selecting BOTHER: a
-            # plain OR is a no-op whenever the current standard rate already
-            # has the BOTHER bit set within its CBAUD value.
-            cflag = (cflag & ~CBAUD) | BOTHER
-            raw[8:12] = cflag.to_bytes(4, "little")
-            raw[36:40] = baud_rate.to_bytes(4, "little")
-            raw[40:44] = baud_rate.to_bytes(4, "little")
-            fcntl.ioctl(file_descriptor, TCSETS2, raw)
-        termios.tcflush(file_descriptor, termios.TCIOFLUSH)
-        return file_descriptor, original_settings
-    except Exception:
-        os.close(file_descriptor)
-        raise
 
 
 def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
@@ -247,7 +191,9 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     try:
         descriptors = {}
         for channel in range(6):
-            descriptor, settings = configure_port(getattr(arguments, f"cdc{channel}"), stream_baud)
+            descriptor, settings = configure_port(
+                getattr(arguments, f"cdc{channel}"), stream_baud, allow_arbitrary=True
+            )
             ports.append((descriptor, settings))
             descriptors[channel] = descriptor
 

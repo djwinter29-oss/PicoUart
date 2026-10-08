@@ -1,6 +1,6 @@
 """Pair diagnostics must never report an empty or failed run as CLI success."""
 
-import importlib.util
+import importlib
 import sys
 from types import SimpleNamespace
 
@@ -10,12 +10,11 @@ import pytest
 def load_pair(repo_root, monkeypatch):
     # pyserial is a hardware-tool dependency, not part of the host HID test lock.
     monkeypatch.setitem(sys.modules, "serial", SimpleNamespace())
-    path = repo_root / "tools/hardware/pair_duplex_benchmark.py"
-    spec = importlib.util.spec_from_file_location("pair_duplex_under_test", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    source = str(repo_root / "tools/hil/src")
+    if source not in sys.path:
+        sys.path.insert(0, source)
+    module = importlib.import_module("hil_test_suite.pair_duplex_benchmark")
+    return importlib.reload(module)
 
 
 def test_pair_map_matches_the_fixed_hil_fixture(repo_root, monkeypatch):
@@ -151,3 +150,19 @@ def test_reset_failure_closes_new_port(repo_root, monkeypatch):
     with pytest.raises(OSError, match="reset failed"):
         pair.configure("fake", 115200)
     assert closes == [1]
+
+
+def test_configure_verifies_host_reported_line_speed(repo_root, monkeypatch):
+    pair = load_pair(repo_root, monkeypatch)
+    port = SimpleNamespace(
+        fileno=lambda: 17,
+        reset_input_buffer=lambda: None,
+        reset_output_buffer=lambda: None,
+        close=lambda: None,
+    )
+    calls = []
+    monkeypatch.setattr(pair.serial, "Serial", lambda *_args, **_kwargs: port, raising=False)
+    monkeypatch.setattr(pair, "verify_line_speed", lambda descriptor, baud: calls.append((descriptor, baud)))
+
+    assert pair.configure("/dev/fake", 460800) is port
+    assert calls == [(17, 460800)]

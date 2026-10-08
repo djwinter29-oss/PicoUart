@@ -8,9 +8,8 @@ import re
 import subprocess
 import sys
 import time
-from pathlib import Path
+from .paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 HOST_PYTHON_SRC = REPO_ROOT / "host/python/src"
 HID_MODULE = "pico_uart"
 HEALTH_PATTERN = re.compile(r"cdc([0-5]) health=0x([0-9a-fA-F]+)\[[^]]*\]")
