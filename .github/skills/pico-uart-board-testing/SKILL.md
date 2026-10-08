@@ -45,6 +45,9 @@ already running the intended image. For development tests, use `tools/firmware/l
 and flash. For release qualification, flash the exact packaged artifact with `--skip-build --elf <artifact>` as
 documented in [Releasing](../../../docs/releasing.md#flashing-release-artifacts). After flashing, verify the board
 re-enumerates and reports the expected firmware version, then record the artifact path and SHA-256 in the HIL run.
+If OpenOCD cannot identify the QSPI flash, do not guess an override; use the verified-capacity procedure in
+[Releasing](../../../docs/releasing.md#override-qspi-auto-detection-advanced) only after confirming the chip marking
+and datasheet.
 
 ## Diagnostics
 

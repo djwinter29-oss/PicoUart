@@ -149,6 +149,28 @@ Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash device`
 OpenOCD and retry with `--adapter-speed-khz 1000` before treating the HIL attempt as firmware failure. Flash ID
 `0x00154068` is a Boya BY25Q16ES device; older OpenOCD builds may need an upstream binary selected with `--openocd-exe`.
 
+### Override QSPI Auto-Detection (Advanced)
+
+Only use this recovery when SWD communication is stable and the exact QSPI flash capacity has been confirmed from the
+chip marking and its datasheet. Do not guess the capacity: OpenOCD uses it to define erase bounds, so a wrong value can
+make flash operations unsafe. Prefer a current OpenOCD build and normal JEDEC/SFDP detection whenever possible.
+
+The OpenOCD RP2040/RP2350 target scripts accept a nonzero `FLASHSIZE` in bytes to skip QSPI JEDEC/SFDP auto-detection.
+Create a temporary target config that sets the verified capacity before sourcing the board target:
+
+```sh
+FLASH_SIZE_BYTES=<confirmed-capacity-in-bytes>
+OPENOCD_TARGET_CFG="$(mktemp)"
+trap 'rm -f "$OPENOCD_TARGET_CFG"' EXIT
+printf 'set FLASHSIZE %s\nsource [find target/rp2040.cfg]\n' "$FLASH_SIZE_BYTES" > "$OPENOCD_TARGET_CFG"
+tools/firmware/load.sh --board pico --skip-build --elf <path-to-pico.elf> \
+   --openocd-target "$OPENOCD_TARGET_CFG" --probe-serial <probe-serial> --adapter-speed-khz 1000
+```
+
+For Pico 2, use `--board pico2`, a Pico 2 ELF, and replace the target in the temporary config with
+`target/rp2350.cfg`. Continue only if OpenOCD reports **Verified OK**. This override skips flash identification; it does
+not recover failed SWD access, repair reset/wiring, or prove the selected capacity is correct.
+
 ## Required HIL Matrix
 
 Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md) and
