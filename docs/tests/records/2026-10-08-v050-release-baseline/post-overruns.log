@@ -1,0 +1,8 @@
+COMMAND: /home/home/repo/PicoUart/tools/hil/.venv/bin/python -m pico_uart overruns
+START: 2026-10-08T20:11:39.934549+00:00
+END: 2026-10-08T20:11:39.989755+00:00
+RC: 0
+--- STDOUT ---
+cdc0=0 cdc1=0 cdc2=0 cdc3=0 cdc4=0 cdc5=0
+
+--- STDERR ---

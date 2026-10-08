@@ -1,0 +1,8 @@
+COMMAND: /home/home/repo/PicoUart/tools/hil/.venv/bin/python -m pico_uart version
+START: 2026-10-08T20:10:30.563003Z
+END: 2026-10-08T20:10:30.614867Z
+RC: 0
+--- STDOUT ---
+0.5.0
+
+--- STDERR ---

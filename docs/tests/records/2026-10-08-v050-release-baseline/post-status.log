@@ -1,0 +1,8 @@
+COMMAND: /home/home/repo/PicoUart/tools/hil/.venv/bin/python -m pico_uart status
+START: 2026-10-08T20:11:39.989916+00:00
+END: 2026-10-08T20:11:40.045108+00:00
+RC: 0
+--- STDOUT ---
+seq=183 cdc0 health=0x01[ready] uart_tx/rx=0/0 cdc_tx/rx=0/0 ring_peak=1024 cdc1 health=0x01[ready] uart_tx/rx=0/0 cdc_tx/rx=0/0 ring_peak=1024 cdc2 health=0x21[ready,pio] uart_tx/rx=0/0 cdc_tx/rx=0/0 ring_peak=1024 cdc3 health=0x21[ready,pio] uart_tx/rx=0/0 cdc_tx/rx=0/0 ring_peak=1024 cdc4 health=0x21[ready,pio] uart_tx/rx=0/0 cdc_tx/rx=0/0 ring_peak=1024 cdc5 health=0x21[ready,pio] uart_tx/rx=0/0 cdc_tx/rx=0/0 ring_peak=1024
+
+--- STDERR ---
