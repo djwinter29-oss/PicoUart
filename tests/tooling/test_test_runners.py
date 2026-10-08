@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -164,7 +165,9 @@ def test_full_hardware_runner_defaults_to_usb_sustainable_rate(monkeypatch) -> N
     ]
     monkeypatch.setattr(sys, "argv", arguments)
 
-    assert runner.parse_arguments().rates == "115200"
+    parsed = runner.parse_arguments()
+    assert parsed.rates == "115200"
+    assert parsed.record_dir == runner.DEFAULT_RECORDS_DIR
 
 
 def test_performance_runner_preserves_rate_results() -> None:
@@ -194,6 +197,47 @@ def test_hardware_runner_marks_failed_functional_phase_as_fail() -> None:
     entry = runner.format_result_entry(arguments, "2026-09-20T00:00:00+00:00", (1, "functional failed"), None)
 
     assert "**Result:** `FAIL`" in entry
+
+
+def test_hil_record_has_fixed_sections_and_board_metadata(tmp_path: Path) -> None:
+    runner = _load("run_hardware_test")
+    arguments = SimpleNamespace(
+        board="pico2",
+        tester="operator",
+        firmware_version="1.2.3",
+        firmware_commit="abc1234",
+        full_fixture=True,
+        artifact_path="pico_uart.elf",
+        artifact_sha256="deadbeef",
+    )
+    run_at = datetime(2026, 10, 8, 14, 30, tzinfo=timezone.utc)
+    content = runner.format_result_entry(
+        arguments, run_at.isoformat(), (0, "functional output"), (0, "performance output")
+    )
+
+    record = runner.write_hil_record(tmp_path, run_at, arguments.board, content)
+
+    assert record.name == "2026-10-08-143000Z-pico2-hil.md"
+    text = record.read_text(encoding="utf-8")
+    assert "**Result:** `PASS`" in text
+    assert "**Artifact SHA-256:** `deadbeef`" in text
+    assert "## Functional Test" in text
+    assert "## Performance Test" in text
+    assert "functional output" in text
+    assert "performance output" in text
+
+
+def test_hil_record_writer_never_overwrites_same_run_name(tmp_path: Path) -> None:
+    runner = _load("run_hardware_test")
+    run_at = datetime(2026, 10, 8, 14, 30, tzinfo=timezone.utc)
+
+    first = runner.write_hil_record(tmp_path, run_at, "Pico 2", "first record")
+    second = runner.write_hil_record(tmp_path, run_at, "Pico 2", "second record")
+
+    assert first.name == "2026-10-08-143000Z-pico-2-hil.md"
+    assert second.name == "2026-10-08-143000Z-pico-2-hil-02.md"
+    assert first.read_text(encoding="utf-8") == "first record\n"
+    assert second.read_text(encoding="utf-8") == "second record\n"
 
 
 def test_result_helper_prepends_before_template(tmp_path: Path) -> None:

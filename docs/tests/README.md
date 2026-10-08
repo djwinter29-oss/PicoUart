@@ -45,7 +45,8 @@ physical UART signaling, or RTS/CTS behavior.
 
 1. Follow [HIL Fixture Setup](hil-fixture-setup.md) and install both crossed pairs and both loopbacks before testing.
 2. Follow the [HIL Fixture Test Plan](hil-fixture-test-plan.md), which runs functional checks before performance.
-3. Runner output is recorded locally in `build/hil-results.md`; retain separate transcripts when needed.
+3. The combined runner creates a dated record in [records](records/README.md); standalone phase runners log locally to
+   `build/hil-results.md`.
 4. For releases, use the exact packaged artifacts and follow [Releasing](../releasing.md).
 
 ## Result Semantics

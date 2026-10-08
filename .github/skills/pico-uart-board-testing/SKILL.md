@@ -43,5 +43,5 @@ a dry run. Install both crossed pairs and both loopbacks before starting and do 
 
 - No hardware in the VM is expected; build and host-tool validation are the best available checks here.
 - For physical failures, return to the canonical setup/test/release docs above.
-- Runner results are written to the ignored `build/hil-results.md`; retain release HIL evidence with the exact
-  artifacts.
+- The combined runner creates a dated record in `docs/tests/records/`; standalone phase runs write to the ignored
+  `build/hil-results.md`. Retain release HIL evidence with the exact artifacts.

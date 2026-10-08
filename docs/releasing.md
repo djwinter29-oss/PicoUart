@@ -86,8 +86,9 @@ qualification.
 This gate is intentionally manual: the repository has no CI-attached Pico, Debug Probe, USB cable, or jumper fixture.
 Automated workflows must not mark a release as physically qualified without linked human-run HIL evidence.
 
-Record all of the following in the local `build/hil-results.md` log or a retained transcript attached to the release
-evidence package:
+Record all of the following in the generated [HIL run record](tests/records/README.md) or a retained transcript attached
+to the release evidence package. The combined HIL runner writes one record per invocation; standalone phase runners
+write their output to the ignored local `build/hil-results.md` log.
 
 - board target and physical board used
 - artifact path/name and SHA-256

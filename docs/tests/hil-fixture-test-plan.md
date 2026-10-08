@@ -101,7 +101,9 @@ baud limit. A data mismatch, unexplained loss, unexpected reset, persistent disc
 
 ## Results and Release Evidence
 
-Runners write local results to the Git-ignored `build/hil-results.md`; preserve separate transcripts when diagnosing
-failures. A local result log alone does not qualify a release. Release HIL evidence must identify each rated board, the
-exact artifact and SHA-256, firmware version and commit, test commands, per-link results, and HID health. Attach or link
-the transcript with the release evidence as described in [Releasing](../releasing.md).
+`tools/hardware/run_hardware_test.py` creates a fixed-format, dated record in [records](records/README.md). Standalone
+functional or performance runs append to the ignored local log at `build/hil-results.md`; preserve separate transcripts
+when diagnosing failures. A local log alone does not qualify a release. Release HIL evidence must identify each rated
+board, the exact artifact and SHA-256, firmware version and commit, test commands, per-link results, and HID health.
+Attach or link the generated record and transcript with the release evidence as described in
+[Releasing](../releasing.md).

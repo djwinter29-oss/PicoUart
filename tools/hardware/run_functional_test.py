@@ -103,7 +103,7 @@ def format_result_entry(
         f"**Firmware:** {arguments.firmware_version}, `{arguments.firmware_commit}`",
         f"**Board:** `{arguments.board}`",
         f"**Test date/time:** `{timestamp}`",
-            "**Wiring:** HIL fixture stages 1-4",
+        "**Wiring:** HIL fixture stages 1-4",
         "**RTS/CTS:** disabled",
         "",
         "### Configuration",

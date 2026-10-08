@@ -24,9 +24,10 @@ These are installed once and captured in the snapshot:
 The update script refreshes Python host dependencies (`requirements.txt` and `requirements-dev.txt` when present).
 
 Physical hardware testing is not available in CI. Users must provide the Pico/Pico 2 board, USB data cable, and
-jumper-wire fixture and run the documented functional/performance plans locally. The Debug Probe UART is optional for
-manual external-peer checks and is not part of the canonical HIL fixture. Runner results go to the ignored
-`build/hil-results.md`; retain release HIL evidence with the exact artifacts.
+jumper-wire fixture and run the documented HIL plan locally. The Debug Probe UART is optional for manual external-peer
+checks and is not part of the canonical HIL fixture. The combined runner creates a dated record in
+`docs/tests/records/`; standalone phase runs go to the ignored `build/hil-results.md`. Retain release evidence with the
+exact artifacts.
 
 Firmware development, flashing, and HIL use the Linux wrappers documented in [tools/README.md](tools/README.md). Native
 Windows firmware-development wrappers are not supported; Windows users should use WSL2 Ubuntu. The Python host tools

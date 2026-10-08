@@ -6,17 +6,18 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
+import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import artifact_metadata, prepend_result
+from hardware_test_result import artifact_metadata
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
-DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
+DEFAULT_RECORDS_DIR = REPO_ROOT / "docs/tests/records"
 
 
 def build_functional_command(arguments: argparse.Namespace) -> list[str]:
@@ -130,31 +131,64 @@ def format_result_entry(
     else:
         overall = "FAIL"
 
-    lines = [
-        f"## {timestamp} - {arguments.board} - Hardware Test",
-        "",
-        f"**Result:** `{overall}`",
-        f"**Firmware:** {arguments.firmware_version}, `{arguments.firmware_commit}`",
-        f"**Board:** `{arguments.board}`",
-        f"**Test date/time:** `{timestamp}`",
-        "**Wiring:** HIL fixture stages 1-4",
-        "**RTS/CTS:** disabled",
-        f"**Artifact:** {getattr(arguments, 'artifact_path', 'not supplied')}",
-        f"**Artifact SHA-256:** `{getattr(arguments, 'artifact_sha256', 'not supplied')}`",
-        "",
-        "### Results",
-        "",
-        f"- Functional test: {'PASS' if functional_code == 0 else 'FAIL' if functional_code is not None else 'NOT RUN'}",
-        f"- Performance test: {'PASS' if performance_code == 0 else 'FAIL' if performance_code is not None else 'NOT RUN'}",
-        "",
-        "### Health",
-        "",
-        "- RX overflows: check with `pico-uart overruns`",
-        "- HID errors: check with `pico-uart monitor`",
-        "",
-        "---",
-    ]
-    return "\n".join(lines)
+    def transcript_block(result: tuple[int, str] | None) -> str:
+        if result is None:
+            return "Not run."
+        output = result[1].rstrip() or "No output."
+        longest_fence = max((len(match) for match in re.findall(r"`+", output)), default=0)
+        fence = "`" * max(3, longest_fence + 1)
+        return f"{fence}text\n{output}\n{fence}"
+
+    return "\n".join(
+        [
+            "# PicoUart HIL Record",
+            "",
+            f"- **Result:** `{overall}`",
+            f"- **Run time (UTC):** `{timestamp}`",
+            f"- **Board:** `{arguments.board}`",
+            f"- **Tester:** {arguments.tester}",
+            f"- **Firmware:** `{arguments.firmware_version}`",
+            f"- **Source commit:** `{arguments.firmware_commit}`",
+            f"- **Artifact:** {getattr(arguments, 'artifact_path', 'not supplied')}",
+            f"- **Artifact SHA-256:** `{getattr(arguments, 'artifact_sha256', 'not supplied')}`",
+            "- **Fixture:** HW UART0↔PIO UART2, PIO UART3↔PIO UART4, HW UART1 loopback, PIO UART5 loopback",
+            "- **RTS/CTS:** disabled",
+            "",
+            "## Functional Test",
+            "",
+            f"**Result:** `{'PASS' if functional_code == 0 else 'FAIL' if functional_code is not None else 'NOT RUN'}`",
+            "",
+            transcript_block(functional),
+            "",
+            "## Performance Test",
+            "",
+            f"**Result:** `{'PASS' if performance_code == 0 else 'FAIL' if performance_code is not None else 'NOT RUN'}`",
+            "",
+            transcript_block(performance),
+            "",
+            "## Review Notes",
+            "",
+            "Confirm per-link verified bytes, HID health, and any anomalies before treating this record as release evidence.",
+            "",
+        ]
+    )
+
+
+def write_hil_record(record_dir: Path, run_at: dt.datetime, board: str, content: str) -> Path:
+    """Write one uniquely named UTC HIL record without overwriting earlier runs."""
+    record_dir.mkdir(parents=True, exist_ok=True)
+    board_token = re.sub(r"[^a-z0-9]+", "-", board.lower()).strip("-") or "unknown"
+    stem = f"{run_at.strftime('%Y-%m-%d-%H%M%SZ')}-{board_token}-hil"
+    suffix = 1
+    while True:
+        numbered_stem = stem if suffix == 1 else f"{stem}-{suffix:02d}"
+        path = record_dir / f"{numbered_stem}.md"
+        try:
+            with path.open("x", encoding="utf-8") as record_file:
+                record_file.write(content.rstrip() + "\n")
+            return path
+        except FileExistsError:
+            suffix += 1
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -179,7 +213,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--firmware-version", default="unknown")
     parser.add_argument("--firmware-commit", default="unknown")
     parser.add_argument("--artifact", type=Path, help="flashed ELF/UF2 artifact to hash into the evidence")
-    parser.add_argument("--results-file", type=Path, default=DEFAULT_RESULTS_FILE)
+    parser.add_argument("--record-dir", type=Path, default=DEFAULT_RECORDS_DIR)
     parser.add_argument("--skip-functional", action="store_true")
     parser.add_argument("--skip-performance", action="store_true")
     parser.add_argument("--continue-after-functional-failure", action="store_true")
@@ -209,11 +243,12 @@ def main() -> int:
     elif not arguments.skip_performance:
         print("SKIP performance test: functional test failed", file=sys.stderr)
 
-    timestamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+    run_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    timestamp = run_at.isoformat()
     entry = format_result_entry(arguments, timestamp, functional, performance)
     if not arguments.no_record:
-        prepend_result(arguments.results_file.resolve(), entry)
-        print(f"Recorded result in {arguments.results_file}")
+        record_path = write_hil_record(arguments.record_dir.resolve(), run_at, arguments.board, entry)
+        print(f"Recorded HIL run in {record_path}")
 
     codes = [code for result in (functional, performance) if result is not None for code in [result[0]]]
     return 0 if codes and all(code == 0 for code in codes) else 1
