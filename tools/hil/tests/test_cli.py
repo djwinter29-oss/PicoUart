@@ -6,12 +6,15 @@ import sys
 
 import pytest
 
+requires_linux_serial = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios/fcntl")
+
 
 def _load_cli():
     module = importlib.import_module("hil_test_suite.cli")
     return importlib.reload(module)
 
 
+@requires_linux_serial
 def test_help_lists_available_commands(capsys) -> None:
     cli = _load_cli()
 
@@ -25,6 +28,7 @@ def test_help_lists_available_commands(capsys) -> None:
     assert "bridge" in output
 
 
+@requires_linux_serial
 def test_no_arguments_shows_help(capsys) -> None:
     cli = _load_cli()
 
@@ -32,6 +36,7 @@ def test_no_arguments_shows_help(capsys) -> None:
     assert "usage: pico-uart-hil" in capsys.readouterr().out
 
 
+@requires_linux_serial
 def test_subcommand_help_uses_command_arguments(capsys) -> None:
     cli = _load_cli()
 
@@ -93,6 +98,7 @@ def test_options_without_command_dispatch_to_full(monkeypatch) -> None:
     assert observed == [("full", True)]
 
 
+@requires_linux_serial
 def test_unknown_subcommand_fails(capsys) -> None:
     cli = _load_cli()
 
