@@ -51,8 +51,8 @@ tools/validation/run-host-tests.sh
 Run the reusable HIL tool tests in their isolated environment with:
 
 ```sh
-uv sync --frozen --project tools/hil --extra test
-uv run --frozen --project tools/hil --extra test pytest tools/hil/tests
+tools/hil/setup.sh
+tools/hil/.venv/bin/python -m pytest tools/hil/tests
 ```
 
 Run the combined firmware build and host validation flow with `tools/validation/validate.sh`. Its `--skip-build` and
