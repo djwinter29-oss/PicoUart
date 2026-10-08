@@ -29,9 +29,7 @@ Stages 2 (HW↔PIO) and 3 (PIO↔PIO), one direction at a time and full duplex; 
 | 230400 | 224,256–225,280 | 227,328 (both stages) |
 | 460800 | 438,272–441,344 | stage 2: 444,416–445,440; stage 3: 444,416–446,464 |
 
-Ranges cover all three runs and both tested directions for each stage; see
-`stage2-both-460800.log` and `stage3-both-460800.log` in the raw evidence directory
-for the full-duplex values.
+Ranges cover all three runs and both tested directions for each stage.
 
 ### Concurrent streams
 
@@ -41,7 +39,16 @@ UART5 verified loopback evidence is included in the functional runner and all ni
 
 ### Evidence and limitations
 
-Raw logs and artifact metadata: `docs/tests/raw/hardware-test-2026-10-01-cc121e8/`. The functional runner was invoked without metadata options, so its printed command labels show board/version/commit `unknown`; the exact flashed artifact and source revision are recorded above. Initial standalone `serial_bridge_test.py --loopback --flood-seconds 10` attempts exited 2 with serial write timeouts at all three rates (3 attempts each). These options were accepted by the tool; their root cause was not established. Later short loopback and concurrent verified-payload runs passed, but that does not erase these failures. This is one RP2040 at 125 MHz on one fixture, covering the listed rates only; it does not validate Pico 2/RP2350 or constitute release qualification. No rate above 460800 is claimed.
+The functional runner was invoked without metadata options, so its printed command
+labels show board/version/commit `unknown`; the exact flashed artifact and source
+revision are recorded above. Initial standalone `serial_bridge_test.py --loopback
+--flood-seconds 10` attempts exited 2 with serial write timeouts at all three
+rates (3 attempts each). These options were accepted by the tool; their root
+cause was not established. Later short loopback and concurrent verified-payload
+runs passed, but that does not erase these failures. This is one RP2040 at
+125 MHz on one fixture, covering the listed rates only; it does not validate
+Pico 2/RP2350 or constitute release qualification. No rate above 460800 is
+claimed.
 
 
 ### Post-test health caveat

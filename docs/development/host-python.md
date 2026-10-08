@@ -40,12 +40,11 @@ host setup helper entry points.
 - `src/pico_uart/cli.py`: command-line interface
 - `src/pico_uart/web/`: Flask dashboard and static assets
 - `tests/`: package tests, shared fixtures, and report helpers
-- `tests/firmware/`: firmware policy and PIO behavior tests
-- `tests/tooling/`: repository host-tool tests
-- `tests/contracts/`: cross-component and CI contract tests
 
 The CLI, dashboard, and tests should use the public `pico_uart` package rather
 than adding another top-level compatibility module.
+Repository-level test layout and validation commands are in the
+[firmware and repository testing guide](firmware-testing.md).
 
 ## Tests
 

@@ -51,6 +51,10 @@ RTS/CTS behavior.
 4. Record every run in [Performance Test Results](performance-test-results.md).
 5. For releases, use the exact packaged artifacts and follow [Releasing](../releasing.md).
 
+## Recorded Hardware Reports
+
+- [2026-10-01 RP2040 validation](hardware-validation-2026-10-01.md): staged functional and throughput results, including the post-test CDC5 overrun caveat.
+
 ## Result Semantics
 
 - `PASS`: every required case for the declared test level passed.
@@ -71,4 +75,4 @@ Every hardware result should identify:
 - per-link result and verified byte integrity
 - HID health and overflow deltas
 - USB resets, disconnects, framing errors, or control errors
-- raw transcript path when output is too large for the result entry
+- relevant measurements, caveats, and exact artifact hashes in the result entry

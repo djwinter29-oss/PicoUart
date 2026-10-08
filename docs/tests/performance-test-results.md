@@ -88,8 +88,6 @@ The single-pair results remain substantially higher than the six-port result,
 so the multi-link ceiling reflects concurrent USB/CPU/PIO scheduling pressure
 and initialization sensitivity rather than the isolated UART bit-rate ceiling.
 
-Raw scan log: `docs/tests/raw/hardware-test-7b95ea7-250mhz-final-scan.log`
-
 ---
 
 ## 2026-09-28 - cursor/update-review-score-b292 - Performance results
@@ -131,8 +129,6 @@ Raw scan log: `docs/tests/raw/hardware-test-7b95ea7-250mhz-final-scan.log`
 
 Six-port concurrent ceiling: **460800 baud**; five main UARTs aggregate ~230400 B/s
 both directions; ~253440 B/s including CDC0 at 115200 (UART line-rate, not USB).
-
-Raw log: `docs/tests/raw/hardware-test-cursor-update-review-score-b292-2026-09-28.log`
 
 ---
 
@@ -179,8 +175,6 @@ rate in sequence. The concurrent run used
   (`ready`/`pio` flags only, no `rx_error` or `control_error`)
 - **After:** all overruns 0; firmware `0.0.0`
 - USB: no disconnects, no board resets, no serial exceptions observed
-- Raw log: docs/tests/raw/hardware-test-2026-09-24T20_55_00_00_00.log
-
 ---
 
 ## Not yet recorded
@@ -234,8 +228,6 @@ a qualification entry.
 - HID health: ready on all ports; PIO flags on CDC2 through CDC5; no
   `control_error`, `rx_overrun`, or `rx_error`
 - HID version: `0.0.0`
-- Raw log: /home/home/repo/PicoUart/docs/tests/raw/hardware-test-2026-09-22T17_59_53_00_00.log
-
 ---
 
 ## 2026-09-20T20:28:00+00:00 - pico - Full Matrix Performance + Functional
@@ -315,4 +307,3 @@ with all four fixture links active (`--uart1 --uart1-peer --uart4 --uart4-peer`)
 - RX overflows:
 - HID errors:
 - USB resets/disconnects:
-- Raw log:

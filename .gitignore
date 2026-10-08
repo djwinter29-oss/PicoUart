@@ -63,7 +63,6 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
-docs/tests/raw/
 .venv/
 venv/
 

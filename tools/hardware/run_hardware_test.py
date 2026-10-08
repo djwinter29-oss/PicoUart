@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import artifact_metadata, prepend_result, write_raw_log
+from hardware_test_result import artifact_metadata, prepend_result
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
@@ -95,8 +95,7 @@ def run_child(label: str, command: list[str]) -> tuple[int, str]:
 def format_result_entry(arguments: argparse.Namespace,
                         timestamp: str,
                         functional: tuple[int, str] | None,
-                        performance: tuple[int, str] | None,
-                        raw_log: Path | None = None) -> str:
+                        performance: tuple[int, str] | None) -> str:
     functional_code = functional[0] if functional else None
     performance_code = performance[0] if performance else None
     if any(code not in (None, 0) for code in (functional_code, performance_code)):
@@ -130,7 +129,6 @@ def format_result_entry(arguments: argparse.Namespace,
         "",
         "- RX overflows: check with `pico-uart overruns`",
         "- HID errors: check with `pico-uart monitor`",
-        f"- Raw log: {raw_log or 'not recorded'}",
         "",
         "---",
     ]
@@ -193,15 +191,7 @@ def main() -> int:
         print("SKIP performance test: functional test failed", file=sys.stderr)
 
     timestamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
-    raw_log = None
-    if not arguments.no_record:
-        raw_log = write_raw_log(
-            arguments.results_file.resolve(), timestamp,
-            f"Command: {shlex.join(sys.argv)}\n"
-            f"Artifact: {arguments.artifact_path}\nSHA-256: {arguments.artifact_sha256}\n\n"
-            + "\n\n".join(result[1] for result in (functional, performance)
-                             if result is not None))
-    entry = format_result_entry(arguments, timestamp, functional, performance, raw_log)
+    entry = format_result_entry(arguments, timestamp, functional, performance)
     if not arguments.no_record:
         prepend_result(arguments.results_file.resolve(), entry)
         print(f"Recorded result in {arguments.results_file}")

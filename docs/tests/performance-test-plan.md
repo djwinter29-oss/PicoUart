@@ -36,7 +36,7 @@ pinout is documented in [UART Pinout and Wiring](../uart-pinout.md). RTS/CTS is
 excluded from the baseline performance test because it is disabled by default.
 Test flow control separately after enabling and documenting it.
 
-## Baseline Run
+## Baseline Procedure
 
 ### Stage 1: CDC0 ↔ Debug Probe
 
@@ -69,22 +69,14 @@ every direction and every stream passes.
 | Single pair duplex | 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000 | 30 s per rate |
 | Concurrent six-port | 460800, 500000, 600000 | 30 s per rate, independent process |
 
-### Baseline Run
+For initial bring-up, first verify each fixture link at 115200 baud, then run
+the full fixture concurrently at 115200. After that passes, use the rate matrix
+above for isolated and concurrent testing; do not treat the bring-up rate as a
+measured performance ceiling.
 
-For each link, run an individual test at these rates:
-
-```text
-115200, 460800, 921600, 1000000 baud
-```
-
-Use a 10-second duration and the default payload size for the first pass. The
-test must verify every returned byte, not only that traffic was transmitted.
-
-After the individual runs pass, run all four links concurrently at 115200 baud
-for 10 seconds. Full-speed USB bandwidth is the limiting resource for the
-seven bidirectional streams; do not interpret a multi-link 460800+ failure as
-a single-UART baud failure. Higher rates remain required as individual-link
-tests and may be selected explicitly with `--rates` for experimental runs.
+Each check must verify every returned byte, not only that traffic was
+transmitted. Full-speed USB bandwidth limits the seven bidirectional streams;
+do not interpret a multi-link high-rate failure as a single-UART baud failure.
 
 Example concurrent run using the existing benchmark tool:
 
@@ -253,5 +245,6 @@ high.
 ## Result Recording
 
 Prepend each completed run to [Performance Test Results](performance-test-results.md).
-Keep the newest result at the top. Include command output or a concise link to
-raw logs when the output is too large for the results file.
+Keep the newest result at the top and include measurements, artifact hashes,
+health snapshots, and unresolved anomalies in the result summary. Raw
+transcripts are not retained.

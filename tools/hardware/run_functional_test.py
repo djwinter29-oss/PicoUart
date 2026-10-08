@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import artifact_metadata, prepend_result, write_raw_log
+from hardware_test_result import artifact_metadata, prepend_result
 from hardware_test_health import (collect_hid_health, health_evidence, health_is_clean,
                                   health_summary)
 
@@ -53,8 +53,7 @@ def format_result_entry(arguments: SimpleNamespace,
                         timestamp: str,
                         stages: list[tuple[str, int, str]],
                         health_before: dict | None = None,
-                        health_after: dict | None = None,
-                        raw_log: Path | None = None) -> str:
+                        health_after: dict | None = None) -> str:
     clean = stages and all(code == 0 for _, code, _ in stages) and health_is_clean(
         health_after, health_before)
     overall = "PASS" if clean and len(stages) == 4 else "PARTIAL" if clean else "FAIL"
@@ -91,8 +90,7 @@ def format_result_entry(arguments: SimpleNamespace,
         if label in stage_results:
             lines.append(f"| {label} | {'PASS' if stage_results[label] else 'FAIL'} |")
     lines.extend(["", "### Health", "", f"- Before: {health_summary(health_before)}",
-                  f"- After: {health_summary(health_after)}",
-                  f"- Raw log: {raw_log or 'not recorded'}", "", "---"])
+                  f"- After: {health_summary(health_after)}", "", "---"])
     return "\n".join(lines)
 
 
@@ -168,16 +166,7 @@ def main() -> int:
     timestamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
     health_after = collect_hid_health()
     print(health_evidence(health_after), end="")
-    raw_log = None
-    if not arguments.no_record:
-        raw_log = write_raw_log(
-            arguments.results_file.resolve(), timestamp,
-            f"Command: {shlex.join(sys.argv)}\n"
-            f"Artifact: {arguments.artifact_path}\nSHA-256: {arguments.artifact_sha256}\n"
-            + health_evidence(health_before) + "\n"
-            + "\n".join(f"[{label}] exit={code}\n{output}" for label, code, output in stages)
-            + "\n" + health_evidence(health_after))
-    entry = format_result_entry(arguments, timestamp, stages, health_before, health_after, raw_log)
+    entry = format_result_entry(arguments, timestamp, stages, health_before, health_after)
     if not arguments.no_record:
         prepend_result(arguments.results_file.resolve(), entry)
         print(f"Recorded result in {arguments.results_file}")

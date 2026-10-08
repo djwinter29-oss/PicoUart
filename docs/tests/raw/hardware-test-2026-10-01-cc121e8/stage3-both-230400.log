@@ -1,3 +1,0 @@
-stage3 rate=230400 run=1 PASS {'a-to-b': (227328, None), 'b-to-a': (227328, None)}
-stage3 rate=230400 run=2 PASS {'a-to-b': (227328, None), 'b-to-a': (227328, None)}
-stage3 rate=230400 run=3 PASS {'a-to-b': (227328, None), 'b-to-a': (227328, None)}
