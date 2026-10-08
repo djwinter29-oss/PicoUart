@@ -65,7 +65,7 @@ On Windows, use `host/python/.venv/Scripts/python.exe` in place of the POSIX
 interpreter path. The pytest suite does not require a board; hardware validation
 and acceptance criteria are documented in the [test index](../tests/README.md).
 
-The repository-wide host test runner is `tools/test/test-host.sh`.
+The repository-wide host test runner is `tools/validation/run-host-tests.sh`.
 
 Measure package coverage from `host/python` with:
 

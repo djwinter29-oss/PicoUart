@@ -21,19 +21,19 @@ are linked from the root [README](../../README.md).
 From the repository root:
 
 ```sh
-tools/test/test-host.sh --skip-python
+tools/validation/run-host-tests.sh --skip-python
 ```
 
 For a combined firmware build and host-test run:
 
 ```sh
-tools/test/check.sh --skip-build
+tools/validation/validate.sh --skip-build
 ```
 
 For sanitizer coverage:
 
 ```sh
-tools/test/test-host.sh --sanitize --skip-python
+tools/validation/run-host-tests.sh --sanitize --skip-python
 ```
 
 To configure and run the C tests directly:

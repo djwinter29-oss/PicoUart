@@ -48,7 +48,7 @@ sys.exit(int(os.environ["ANALYSIS_STATUS"]))
     shim.chmod(0o700)
     env = {**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
            "ANALYSIS_LOG": str(log), "ANALYSIS_STATUS": "0"}
-    command = ["sh", str(repo_root / "tools/test/static-analyze.sh")]
+    command = ["sh", str(repo_root / "tools/validation/static-analyze.sh")]
     completed = subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True)
     assert completed.returncode == 0, completed.stderr
     recorded = json.loads(log.read_text())
@@ -100,6 +100,8 @@ from pathlib import Path
 args = sys.argv[1:]
 if args == ["-m", "pip", "--version"]:
     sys.exit(0)
+if args and args[0].endswith("filter_lock_exclude.py"):
+    os.execv(sys.executable, [sys.executable, *args])
 phase = "pytest"
 record = {"args": args, "sigint_ignored": signal.getsignal(signal.SIGINT) == signal.SIG_IGN}
 if "install" in args:
@@ -117,7 +119,7 @@ sys.exit(1 if phase == "full" else 0)
 ''')
     shim.chmod(0o700)
     process = subprocess.Popen(
-        [shell, str(repo_root / "tools/test/test-host.sh"), "--skip-c"],
+        [shell, str(repo_root / "tools/validation/run-host-tests.sh"), "--skip-c"],
         cwd=tmp_path,
         env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
              "SIGNAL_PHASE": phase, "CHILD_PID_FILE": str(child_pid_file), "TMPDIR": str(tmp_path),
@@ -174,7 +176,7 @@ sys.exit(1 if phase == "full" else 0)
 @pytest.mark.parametrize("phase", ["pre_launch", "pre_publication"])
 def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase):
     """Regression test for the run_interruptible/forward_signal launch race in
-    test-host.sh. A HUP can arrive in either of two handoff windows:
+    run-host-tests.sh. A HUP can arrive in either of two handoff windows:
 
     * "pre_launch": immediately after LAUNCH_IN_PROGRESS=1, before the
       command has even been backgrounded with '&' (no child, no '$!' yet).
@@ -189,14 +191,14 @@ def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase):
     which must be reaped rather than leaked as an orphan.
 
     Deterministic injection happens here, via a temporary instrumented copy
-    of test-host.sh built by string replacement only; the production script
+    of run-host-tests.sh built by string replacement only; the production script
     carries no test-controlled bypass that would let an environment variable
     make it run arbitrary caller-supplied command args. The copy is instead
     made to invoke the real run_interruptible/forward_signal code early,
     before its normal argument-parsing loop, by replacing that loop's marker
     line with a direct call.
     """
-    original = (repo_root / "tools/test/test-host.sh").read_text()
+    original = (repo_root / "tools/validation/run-host-tests.sh").read_text()
     child_pid_file = tmp_path / "child.pid"
 
     # Always record the real child PID right after it is backgrounded (this is
@@ -204,7 +206,7 @@ def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase):
     # either injection site can be verified to have actually launched and
     # later reaped the same child.
     publish_marker = '        "$@" &\n    fi\n    CURRENT_CHILD_PID=$!\n'
-    assert original.count(publish_marker) == 1, "publication marker not found; test-host.sh changed shape"
+    assert original.count(publish_marker) == 1, "publication marker not found; run-host-tests.sh changed shape"
     publish_injected = (
         '        "$@" &\n    fi\n'
         f'    echo "$!" > {shlex.quote(str(child_pid_file))}\n'
@@ -222,14 +224,14 @@ def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase):
         # backgrounded: no child exists yet and '$!' would be stale/empty, so
         # this exercises the deferral path with nothing to (mis)read.
         launch_marker = '    LAUNCH_IN_PROGRESS=1\n'
-        assert instrumented.count(launch_marker) == 1, "launch marker not found; test-host.sh changed shape"
+        assert instrumented.count(launch_marker) == 1, "launch marker not found; run-host-tests.sh changed shape"
         instrumented = instrumented.replace(launch_marker, launch_marker + '    kill -s HUP "$$"\n')
 
     # Invoke the real run_interruptible directly, ahead of the normal
     # argument-parsing loop, instead of relying on any selftest bypass in the
     # production script.
     loop_marker = 'while [ "$#" -gt 0 ]; do'
-    assert instrumented.count(loop_marker) == 1, "argument-parsing loop marker not found; test-host.sh changed shape"
+    assert instrumented.count(loop_marker) == 1, "argument-parsing loop marker not found; run-host-tests.sh changed shape"
     loop_injected = f'run_interruptible sleep 30\nexit "$?"\n{loop_marker}'
     instrumented = instrumented.replace(loop_marker, loop_injected)
 
@@ -267,7 +269,7 @@ sys.exit(int(os.environ["INSTALL_STATUS"]))
 ''')
     shim.chmod(0o700)
     completed = subprocess.run(
-        ["sh", str(repo_root / "tools/test/test-host.sh"), "--skip-c"],
+        ["sh", str(repo_root / "tools/validation/run-host-tests.sh"), "--skip-c"],
         cwd=repo_root,
         env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
              "INSTALL_STATUS": str(status), "TMPDIR": str(tmp_path),

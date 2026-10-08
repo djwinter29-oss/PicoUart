@@ -12,7 +12,7 @@ file only maps the tool categories.
 | `hardware/` | Physical HIL runners and serial bridge/stress tools |
 | `host/` | Host Python environment setup |
 | `release/` | Release version, USB identity, and artifact verification |
-| `test/` | Test runners, coverage helpers, syntax checks, static analysis, and smoke checks |
+| `validation/` | Test runners, lock filtering, coverage helpers, syntax checks, static analysis, and smoke checks |
 
 ## Common Commands
 
@@ -27,8 +27,8 @@ tools/firmware/build.sh --board pico2
 tools/host/setup-venv.sh
 # Windows PowerShell
 .\tools\host\setup-venv.ps1
-tools/test/test-host.sh
-tools/test/check.sh --skip-build
+tools/validation/run-host-tests.sh
+tools/validation/validate.sh --skip-build
 
 # Hardware test help
 python3 tools/hardware/run_hardware_test.py --help

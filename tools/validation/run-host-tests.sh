@@ -200,12 +200,12 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
         echo "Warning: full requirements-lock.txt install failed; retrying without hidapi" >&2
         echo "so non-HID host tests can still run. HID tests skip if hidapi is unavailable." >&2
         NO_HIDAPI_LOCK_FILE=$(mktemp)
-        awk -v exclude=hidapi -f "$SCRIPT_DIR/filter-lock-exclude.awk" \
-            "$LOCK_FILE" > "$NO_HIDAPI_LOCK_FILE"
-        ORIGINAL_PACKAGE_COUNT=$(awk '/^[[:alnum:]_.-]+==/ { count++ } END { print count+0 }' "$LOCK_FILE")
-        FILTERED_PACKAGE_COUNT=$(awk '/^[[:alnum:]_.-]+==/ { count++ } END { print count+0 }' "$NO_HIDAPI_LOCK_FILE")
-        if [ "$FILTERED_PACKAGE_COUNT" -ge "$ORIGINAL_PACKAGE_COUNT" ] \
-            || grep -q '^hidapi==' "$NO_HIDAPI_LOCK_FILE" \
+        if ! "$PYTHON_EXE" "$SCRIPT_DIR/filter_lock_exclude.py" \
+            --exclude hidapi "$LOCK_FILE" > "$NO_HIDAPI_LOCK_FILE"; then
+            echo "Could not safely filter hidapi from the locked requirements." >&2
+            exit 1
+        fi
+        if grep -q '^hidapi==' "$NO_HIDAPI_LOCK_FILE" \
             || grep -q '# via hidapi' "$NO_HIDAPI_LOCK_FILE"; then
             echo "Could not safely exclude hidapi from the locked requirements; refusing partial install." >&2
             exit 1

@@ -60,7 +60,7 @@ use WSL2 Ubuntu for firmware work from Windows.
 . tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0
 tools/firmware/build.sh --board pico
 tools/firmware/build.sh --board pico2
-tools/test/test-host.sh
+tools/validation/run-host-tests.sh
 ```
 
 CI does not provide a Pico/Pico 2 board, Debug Probe, or jumper-wire fixture,
@@ -82,8 +82,9 @@ images; publish only after the gates in [Releasing](docs/releasing.md).
 
 - [docs](docs)
 - [firmware](firmware) - Pico SDK firmware project; see [build and configuration](firmware/build-and-config.md)
-- [host/python](host/python) - Python HID client API, CLI, and local Flask diagnostics dashboard (`src/`, tests in `tests/`)
-- [tools](tools/README.md) - repo tooling grouped by firmware, hardware/HIL, release, and test helpers
+- [host/python](host/python) - Python HID client API, CLI, and local Flask diagnostics dashboard; package tests are in `host/python/tests/`
+- [tests](tests) - repository-level pytest tests grouped by firmware, tooling, and contracts; configured by the root [pyproject.toml](pyproject.toml)
+- [tools](tools/README.md) - operational helpers grouped by firmware, hardware/HIL, release, and test runners
 
 ## Target Devices
 

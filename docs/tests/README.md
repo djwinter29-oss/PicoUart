@@ -32,7 +32,7 @@ flowchart TD
 From the repository root:
 
 ```sh
-tools/test/test-host.sh
+tools/validation/run-host-tests.sh
 ctest --test-dir build/host-tests --output-on-failure
 tools/firmware/build.sh --board pico
 tools/firmware/build.sh --board pico2

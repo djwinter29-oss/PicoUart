@@ -110,7 +110,7 @@ build-time parts of the UART design; they do not replace physical testing.
 
 | Check | Command | Covers |
 | --- | --- | --- |
-| Host suite | `tools/test/test-host.sh` | Ring, bridge, worker, control, policy, claims, and facade tests |
+| Host suite | `tools/validation/run-host-tests.sh` | Ring, bridge, worker, control, policy, claims, and facade tests |
 | Direct host suite | `ctest --test-dir build/host-tests --output-on-failure` | CTest result detail after host configuration |
 | RP2040 firmware | `tools/firmware/build.sh --board pico` | Rated 125 MHz compile/link and UF2 outputs |
 | RP2350 firmware | `tools/firmware/build.sh --board pico2` | Rated 150 MHz compile/link and platform-specific paths |

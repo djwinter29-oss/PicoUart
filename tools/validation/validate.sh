@@ -53,5 +53,5 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
 fi
 
 if [ "$SKIP_HOST" -eq 0 ]; then
-    GENERATOR="$GENERATOR" "$REPO_ROOT/tools/test/test-host.sh"
+    GENERATOR="$GENERATOR" "$REPO_ROOT/tools/validation/run-host-tests.sh"
 fi

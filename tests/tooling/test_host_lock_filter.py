@@ -1,10 +1,4 @@
-"""The optional hidapi fallback must preserve other hashed requirements.
-
-Exercises the standalone tools/test/filter-lock-exclude.awk resource directly
-(rather than regex-extracting an inline awk program from test-host.sh), so
-the filtering logic is independently testable and not tied to the exact
-shell-script text.
-"""
+"""The optional hidapi fallback must preserve other hashed requirements."""
 
 import json
 import os
@@ -13,22 +7,22 @@ import sys
 
 import pytest
 
-AWK_SCRIPT = "tools/test/filter-lock-exclude.awk"
+FILTER_SCRIPT = "tools/validation/filter_lock_exclude.py"
 
 
 def _run_filter(repo_root, lock_text: str, exclude: str) -> str:
-    script_path = repo_root / AWK_SCRIPT
+    script_path = repo_root / FILTER_SCRIPT
     result = subprocess.run(
-        ["awk", "-v", f"exclude={exclude}", "-f", str(script_path)],
+        [sys.executable, str(script_path), "--exclude", exclude, "-"],
         input=lock_text, text=True, capture_output=True, check=True,
     )
     return result.stdout
 
 
-def test_awk_resource_exists_and_is_used_by_test_host_sh(repo_root):
-    assert (repo_root / AWK_SCRIPT).is_file()
-    script = (repo_root / "tools/test/test-host.sh").read_text()
-    assert "filter-lock-exclude.awk" in script
+def test_python_filter_is_used_by_host_test_runner(repo_root):
+    assert (repo_root / FILTER_SCRIPT).is_file()
+    script = (repo_root / "tools/validation/run-host-tests.sh").read_text()
+    assert "filter_lock_exclude.py" in script
 
 
 def test_hidapi_filter_drops_hidapi_and_its_only_dependent_setuptools(repo_root):
@@ -112,6 +106,8 @@ from pathlib import Path
 args = sys.argv[1:]
 if args == ["-m", "pip", "--version"]:
     sys.exit(0)
+if args and args[0].endswith("filter_lock_exclude.py"):
+    os.execv(sys.executable, [sys.executable, *args])
 record = {"args": args}
 if "-r" in args:
     lock = Path(args[args.index("-r") + 1])
@@ -127,7 +123,7 @@ sys.exit(0)
 ''')
     shim.chmod(0o700)
     result = subprocess.run(
-        ["sh", str(repo_root / "tools/test/test-host.sh"), "--skip-c"],
+        ["sh", str(repo_root / "tools/validation/run-host-tests.sh"), "--skip-c"],
         env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
              "FALLBACK_FAILS": str(int(fallback_fails)), "TMPDIR": str(tmp_path)},
         capture_output=True, text=True,
