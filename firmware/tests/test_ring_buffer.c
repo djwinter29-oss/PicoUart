@@ -6,7 +6,9 @@
 #include "unity.h"
 
 #include "uart/ring_buffer/ring_buffer.h"
+#include "uart/saturating.h"
 
+#include <stdint.h>
 #include <string.h>
 
 void setUp(void)
@@ -87,6 +89,25 @@ void test_overwrite_recovery_on_read_span(void)
     TEST_ASSERT_EQUAL_UINT(0u, ring_buffer_pending_overflow(&ring));
     TEST_ASSERT_EQUAL_UINT(4u, ring_buffer_read(&ring, output, sizeof(output)));
     TEST_ASSERT_EQUAL_UINT8_ARRAY((const uint8_t *)"cdef", output, 4u);
+}
+
+void test_overflow_count_saturates_at_uint32_max(void)
+{
+    ring_buffer_t ring;
+    uint8_t storage[4];
+
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX,
+                             uart_saturating_add_u32(UINT32_MAX - 1u, 2u));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX - 1u,
+                             uart_saturating_add_u32(UINT32_MAX - 2u, 1u));
+
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    TEST_ASSERT_EQUAL_UINT(4u, ring_buffer_write(&ring, (const uint8_t *)"abcd", 4u));
+    ring.overflow_count = UINT32_MAX - 1u;
+    ring_buffer_produce_external(&ring, 2u);
+
+    TEST_ASSERT_EQUAL_UINT(2u, ring_buffer_recover_overflow(&ring));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, ring_buffer_overflow_count(&ring));
 }
 
 void test_read_span_recovers_before_returning_data(void)

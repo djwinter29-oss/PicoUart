@@ -10,6 +10,7 @@
 #include "driver/system.h"
 #include "driver/temperature.h"
 #include "uart/uart_driver.h"
+#include "uart/saturating.h"
 #include "usb/usb_cdc.h"
 
 #include "pico/stdlib.h"
@@ -202,8 +203,9 @@ static void usb_hid_build_overflow_counts_report(
     report->version = USB_HID_REPORT_VERSION;
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        report->rx_overflow_count[index] = uart_stats[index].rx_ring_overflow_count +
-                                           uart_stats[index].rx_ring_pending_overflow_count;
+        report->rx_overflow_count[index] = uart_saturating_add_u32(
+            uart_stats[index].rx_ring_overflow_count,
+            uart_stats[index].rx_ring_pending_overflow_count);
     }
 }
 

@@ -153,6 +153,8 @@ reads that flag first and refuses to send arm/reset when it is clear.
 Request feature report ID `5` to read cumulative dropped UART RX bytes for all
 six ports. This includes bytes already retired by overflow recovery and bytes
 known to have been overwritten but not yet retired by the CDC drain path.
+Each `uint32_t` counter saturates at `UINT32_MAX`; a saturated value means the
+actual cumulative drop count is at least that large.
 
 | Offset | Size | Field | Meaning |
 | --- | ---: | --- | --- |
