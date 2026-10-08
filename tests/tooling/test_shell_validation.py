@@ -25,6 +25,29 @@ SIGNAL_EXIT_CASES = (
 )
 
 
+def test_host_smoke_uses_selected_python_without_hil_venv(repo_root, tmp_path):
+    script_path = tmp_path / "tools/validation/smoke-host-tools.sh"
+    script_path.parent.mkdir(parents=True)
+    shutil.copyfile(repo_root / "tools/validation/smoke-host-tools.sh", script_path)
+    (tmp_path / "sitecustomize.py").write_text("import sys\nsys.modules['serial'] = None\n", encoding="utf-8")
+    for source_path in ("host/python/src", "tools/hil/src"):
+        destination = tmp_path / source_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.symlink_to(repo_root / source_path, target_is_directory=True)
+
+    completed = subprocess.run(
+        ["sh", str(script_path)],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHON_EXE": sys.executable, "PYTHONPATH": str(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
+
+    assert not (tmp_path / "tools/hil/.venv").exists()
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "hidapi OK" in completed.stdout
+
+
 def test_static_analysis_covers_every_firmware_source_from_any_cwd(repo_root, tmp_path):
     shim = tmp_path / "cppcheck"
     log = tmp_path / "cppcheck.json"
