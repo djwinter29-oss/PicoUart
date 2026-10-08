@@ -36,6 +36,18 @@ def test_builds_stress_command_for_all_fixture_endpoints() -> None:
         assert command[command.index(f"--cdc{channel}") + 1] == f"cdc{channel}"
 
 
+def test_builds_incremental_stress_command() -> None:
+    performance = _load_performance()
+    endpoints = [item for channel in range(6) for item in (f"--cdc{channel}", f"cdc{channel}")]
+    arguments = performance.parse_arguments(endpoints + ["--incremental", "--incremental-max-rate", "900000"])
+
+    command = performance.build_command(arguments)
+
+    assert "--incremental" in command
+    assert "--rates" not in command
+    assert command[command.index("--incremental-max-rate") + 1] == "900000"
+
+
 def test_preserves_results_for_repeated_rates() -> None:
     performance = _load_performance()
     output = (
@@ -73,6 +85,42 @@ def test_performance_report_includes_runner_git_metadata_and_summary_table() -> 
     assert "**Runner worktree:** `dirty`" in report
     assert "| 115200 | cdc0-to-cdc2 | PASS | 100 | 20.0 |" in report
     assert "Command:" not in report
+
+
+def test_incremental_report_shows_only_attempted_rates_and_highest_supported() -> None:
+    performance = _load_performance()
+    arguments = SimpleNamespace(
+        board="pico2",
+        firmware_version="1.2.3",
+        firmware_commit="firmware-commit",
+        runner_git_commit="runner-commit",
+        runner_worktree="clean",
+        rates="115200",
+        incremental=True,
+        duration=30,
+        payload_bytes=1024,
+        artifact_path="firmware.elf",
+        artifact_sha256="deadbeef",
+    )
+    streams = ["cdc0-to-cdc2", "cdc2-to-cdc0", "cdc3-to-cdc4", "cdc4-to-cdc3", "cdc1-loopback", "cdc5-loopback"]
+    output_lines = []
+    for rate, status in ((460800, "PASS"), (560800, "PASS"), (660800, "FAIL")):
+        output_lines.append(f"Incremental rate: {rate} baud")
+        output_lines.append(f"Benchmarking all six HIL fixture streams at {rate} baud")
+        output_lines.extend(
+            f"{status} {label}: 1024 bytes, 100.0 B/s" if status == "PASS" else f"FAIL {label}: timeout"
+            for label in streams
+        )
+    output = "\n".join(output_lines)
+
+    report = performance.format_result_entry(arguments, "2026-10-08T00:00:00+00:00", 0, output)
+
+    assert "460800 | cdc0-to-cdc2 | PASS" in report
+    assert "560800 | cdc0-to-cdc2 | PASS" in report
+    assert "660800 | cdc0-to-cdc2 | FAIL" in report
+    assert "Highest supported concurrent rate:** `560800`" in report
+    assert "First failed tested rate:** `660800`" in report
+    assert "760800" not in report
 
 
 @pytest.mark.parametrize(

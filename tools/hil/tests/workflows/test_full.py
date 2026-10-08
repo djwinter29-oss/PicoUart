@@ -62,6 +62,21 @@ def test_builds_internal_workflow_commands() -> None:
     assert performance[:3] == [sys.executable, "-m", "hil_test_suite.workflows.performance"]
 
 
+def test_builds_incremental_performance_command() -> None:
+    full = _load_full()
+    arguments = _arguments()
+    arguments.incremental_performance = True
+    arguments.incremental_start_rate = 460800
+    arguments.incremental_rate_step = 100000
+    arguments.incremental_max_rate = 800000
+
+    command = full.build_performance_command(arguments)
+
+    assert "--incremental" in command
+    assert "--rates" not in command
+    assert command[command.index("--incremental-max-rate") + 1] == "800000"
+
+
 def test_parse_defaults_to_usb_sustainable_rate() -> None:
     full = _load_full()
     endpoints = [item for channel in range(6) for item in (f"--pico-cdc{channel}", f"cdc{channel}")]
@@ -169,6 +184,45 @@ def test_writes_fixed_record_sections_and_board_metadata(tmp_path: Path) -> None
     assert "health clean final" in text
     assert "child command hidden" not in text
     assert "Command:" not in text
+
+
+def test_incremental_record_shows_ceiling_and_only_attempted_rates() -> None:
+    full = _load_full()
+    arguments = _arguments()
+    arguments.incremental_performance = True
+    arguments.full_fixture = True
+    functional_output = "\n".join(
+        [
+            f"RUN {label}: child command hidden\nPASS pico-to-peer: 117 bytes\nPASS peer-to-pico: 117 bytes"
+            for label in ("HW UART0 to PIO UART2", "PIO UART3 to PIO UART4")
+        ]
+        + [
+            "RUN HW UART1 loopback: child command hidden\nPASS pico-loopback: 118 bytes",
+            "RUN PIO UART5 loopback: child command hidden\nPASS pico-loopback: 118 bytes",
+        ]
+    )
+    stream_labels = full.PERFORMANCE_LINKS
+    performance_lines = []
+    for rate, outcome in ((460800, "PASS"), (560800, "PASS"), (660800, "FAIL")):
+        performance_lines.append(f"Incremental rate: {rate} baud")
+        performance_lines.append(f"Benchmarking all six HIL fixture streams at {rate} baud")
+        performance_lines.extend(
+            f"{outcome} {label}: 1024 bytes, 100.0 B/s" if outcome == "PASS" else f"FAIL {label}: timeout"
+            for label in stream_labels
+        )
+
+    report = full.format_result_entry(
+        arguments,
+        "2026-10-08T00:00:00+00:00",
+        (0, functional_output),
+        (0, "\n".join(performance_lines)),
+    )
+
+    assert "**Overall result:** `PASS`" in report
+    assert "Highest supported concurrent rate:** `560800 baud`" in report
+    assert "First failed tested rate:** `660800 baud`" in report
+    assert "760800" not in report
+    assert "child command hidden" not in report
 
 
 def test_record_writer_never_overwrites_same_run_name(tmp_path: Path) -> None:

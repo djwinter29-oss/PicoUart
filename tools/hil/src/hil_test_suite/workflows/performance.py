@@ -23,7 +23,7 @@ PASS_PATTERN = re.compile(
     re.MULTILINE,
 )
 FAIL_PATTERN = re.compile(r"^FAIL (?P<label>[^:]+): (?P<error>.+)$", re.MULTILINE)
-RATE_PATTERN = re.compile(r"^Benchmarking .*? at (?P<rate>[0-9]+) baud", re.MULTILINE)
+RATE_PATTERN = re.compile(r"^(?:Benchmarking .*? at |Incremental rate: )(?P<rate>[0-9]+) baud", re.MULTILINE)
 
 
 def build_command(arguments: SimpleNamespace) -> list[str]:
@@ -44,8 +44,6 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
         arguments.cdc4,
         "--cdc5",
         arguments.cdc5,
-        "--rates",
-        arguments.rates,
         "--duration",
         str(arguments.duration),
         "--payload-bytes",
@@ -53,6 +51,20 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
         "--timeout",
         str(arguments.timeout),
     ]
+    if getattr(arguments, "incremental", False):
+        command.extend(
+            [
+                "--incremental",
+                "--incremental-start-rate",
+                str(arguments.incremental_start_rate),
+                "--incremental-rate-step",
+                str(arguments.incremental_rate_step),
+                "--incremental-max-rate",
+                str(arguments.incremental_max_rate),
+            ]
+        )
+    else:
+        command.extend(["--rates", arguments.rates])
     return command
 
 
@@ -138,10 +150,30 @@ def format_result_entry(
         "| Rate | Link | Result | Verified bytes | Throughput / error |",
         "| ---: | --- | --- | ---: | --- |",
     ]
-    for rate in (int(item) for item in arguments.rates.split(",")):
+    if getattr(arguments, "incremental", False):
+        rates = list(dict.fromkeys(int(rate) for rate in RATE_PATTERN.findall(output)))
+    else:
+        rates = [int(item) for item in arguments.rates.split(",")]
+    for rate in rates:
         for label in expected_labels:
             status, verified, throughput = parsed.get((rate, label), ("NOT REPORTED", "-", "-"))
             lines.append(f"| {rate} | {label} | {status} | {verified} | {throughput} |")
+    if getattr(arguments, "incremental", False):
+        passing_rates = [
+            rate
+            for rate in rates
+            if all(parsed.get((rate, label), ("NOT REPORTED",))[0] == "PASS" for label in expected_labels)
+        ]
+        failing_rates = [
+            rate for rate in rates if any(parsed.get((rate, label), ("NOT REPORTED",))[0] != "PASS" for label in expected_labels)
+        ]
+        lines.extend(
+            [
+                "",
+                f"**Highest supported concurrent rate:** `{max(passing_rates) if passing_rates else 'none'}`",
+                f"**First failed tested rate:** `{failing_rates[0] if failing_rates else 'not reached'}`",
+            ]
+        )
     lines.extend(
         [
             "",
@@ -163,6 +195,10 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser.add_argument(
         "--rates", default="115200", help="Concurrent full-fixture rate; use individual tests for higher baud rates"
     )
+    parser.add_argument("--incremental", action="store_true", help="Increase baud until the first failing rate")
+    parser.add_argument("--incremental-start-rate", type=int, default=460800)
+    parser.add_argument("--incremental-rate-step", type=int, default=100000)
+    parser.add_argument("--incremental-max-rate", type=int, default=3000000)
     parser.add_argument("--duration", type=float, default=10.0)
     parser.add_argument("--payload-bytes", type=int, default=1024)
     parser.add_argument("--timeout", type=float, default=3.0)

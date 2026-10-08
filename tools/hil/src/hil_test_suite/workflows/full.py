@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from ..support.results import artifact_metadata
 from ..support.paths import REPO_ROOT
 from ..support.repository import git_metadata
-from .performance import parse_benchmark_output_by_rate
+from .performance import RATE_PATTERN, parse_benchmark_output_by_rate
 
 DEFAULT_RECORDS_DIR = REPO_ROOT / "docs/tests/records"
 FUNCTIONAL_CASES = (
@@ -155,8 +155,6 @@ def build_performance_command(arguments: argparse.Namespace) -> list[str]:
         arguments.pico_cdc4,
         "--cdc5",
         arguments.pico_cdc5,
-        "--rates",
-        arguments.rates,
         "--duration",
         str(arguments.duration),
         "--payload-bytes",
@@ -173,6 +171,20 @@ def build_performance_command(arguments: argparse.Namespace) -> list[str]:
         arguments.firmware_commit,
         "--no-record",
     ]
+    if getattr(arguments, "incremental_performance", False):
+        command.extend(
+            [
+                "--incremental",
+                "--incremental-start-rate",
+                str(arguments.incremental_start_rate),
+                "--incremental-rate-step",
+                str(arguments.incremental_rate_step),
+                "--incremental-max-rate",
+                str(arguments.incremental_max_rate),
+            ]
+        )
+    else:
+        command.extend(["--rates", arguments.rates])
     if getattr(arguments, "artifact", None):
         command.extend(["--artifact", str(arguments.artifact)])
     return command
@@ -253,12 +265,35 @@ def format_result_entry(
             "| ---: | --- | --- | ---: | --- |",
         ]
     )
+    performance_rates = getattr(arguments, "rates", "")
+    if getattr(arguments, "incremental_performance", False):
+        attempted_rates = RATE_PATTERN.findall(performance[1]) if performance is not None else []
+        performance_rates = ",".join(dict.fromkeys(attempted_rates))
+    performance_rows = performance_summary_rows(performance_rates, performance)
     lines.extend(
         f"| {rate} | {label} | {status} | {verified} | {metric} |"
-        for rate, label, status, verified, metric in performance_summary_rows(
-            getattr(arguments, "rates", ""), performance
-        )
+        for rate, label, status, verified, metric in performance_rows
     )
+    if getattr(arguments, "incremental_performance", False):
+        passing_rates = [
+            int(rate)
+            for rate in dict.fromkeys(row[0] for row in performance_rows)
+            if all(row[2] == "PASS" for row in performance_rows if row[0] == rate)
+        ]
+        failing_rates = [
+            int(rate)
+            for rate in dict.fromkeys(row[0] for row in performance_rows)
+            if any(row[2] == "FAIL" for row in performance_rows if row[0] == rate)
+        ]
+        highest = f"{max(passing_rates)} baud" if passing_rates else "none"
+        first_failed = f"{failing_rates[0]} baud" if failing_rates else "not reached"
+        lines.extend(
+            [
+                "",
+                f"**Highest supported concurrent rate:** `{highest}`",
+                f"**First failed tested rate:** `{first_failed}`",
+            ]
+        )
     lines.extend(
         [
             "",
@@ -301,6 +336,10 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser.add_argument(
         "--rates", default="115200", help="Concurrent full-fixture rate; use individual tests for higher baud rates"
     )
+    parser.add_argument("--incremental-performance", action="store_true", help="Increase the concurrent rate until failure")
+    parser.add_argument("--incremental-start-rate", type=int, default=460800)
+    parser.add_argument("--incremental-rate-step", type=int, default=100000)
+    parser.add_argument("--incremental-max-rate", type=int, default=3000000)
     parser.add_argument("--duration", type=float, default=10.0)
     parser.add_argument("--performance-payload-bytes", type=int, default=1024)
     parser.add_argument("--timeout", type=float, default=3.0)
