@@ -18,7 +18,9 @@ BAUD_RATES = {
     921600: termios.B921600,
     1000000: termios.B1000000,
 }
+STANDARD_BAUD_BY_SETTING = {setting: rate for rate, setting in BAUD_RATES.items()}
 STANDARD_BAUD_RATES = tuple(BAUD_RATES)
+MAX_BAUD_DEVIATION = 0.5
 TCGETS2 = 0x802C542A
 TCSETS2 = 0x402C542B
 BOTHER = 0x1000
@@ -33,8 +35,7 @@ def verify_line_speed(file_descriptor: int, baud_rate: int) -> None:
     """
     if baud_rate in BAUD_RATES:
         settings = termios.tcgetattr(file_descriptor)
-        expected = (BAUD_RATES[baud_rate], BAUD_RATES[baud_rate])
-        actual = (settings[4], settings[5])
+        actual = (STANDARD_BAUD_BY_SETTING.get(settings[4]), STANDARD_BAUD_BY_SETTING.get(settings[5]))
     else:
         raw = bytearray(44)
         fcntl.ioctl(file_descriptor, TCGETS2, raw, True)
@@ -42,10 +43,15 @@ def verify_line_speed(file_descriptor: int, baud_rate: int) -> None:
             int.from_bytes(raw[36:40], "little"),
             int.from_bytes(raw[40:44], "little"),
         )
-        expected = (baud_rate, baud_rate)
-
-    if actual != expected:
-        raise OSError(f"serial TTY reports {actual[0]}/{actual[1]} baud; requested {baud_rate}")
+    if any(
+        actual_rate is None or abs(actual_rate - baud_rate) / baud_rate >= MAX_BAUD_DEVIATION
+        for actual_rate in actual
+    ):
+        actual_text = "/".join(str(rate) if rate is not None else "unknown" for rate in actual)
+        raise OSError(
+            f"serial TTY reports {actual_text} baud; requested {baud_rate} "
+            f"(deviation must be less than {MAX_BAUD_DEVIATION:.0%})"
+        )
 
 
 def configure_port(

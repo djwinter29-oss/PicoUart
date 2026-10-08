@@ -125,15 +125,29 @@ def parse_rates(value: str) -> tuple[int, ...]:
     return rates
 
 
+def incremental_rates(start_rate: int, rate_step: int, max_rate: int) -> tuple[int, ...]:
+    if start_rate <= 0 or rate_step <= 0 or max_rate < start_rate:
+        raise ValueError("incremental start and step must be positive, and max rate must be >= start rate")
+    return tuple(range(start_rate, max_rate + 1, rate_step))
+
+
 def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Benchmark the fixed six-port PicoUart HIL fixture concurrently.", add_help=add_help
     )
     for channel in range(6):
         parser.add_argument(f"--cdc{channel}", required=True, help=f"PicoUart CDC{channel} device")
-    parser.add_argument(
-        "--rates", type=parse_rates, default=DEFAULT_RATES, help="PIO/HW loopback rates to test, comma-separated"
+    rate_group = parser.add_mutually_exclusive_group()
+    rate_group.add_argument("--rates", type=parse_rates, help="rates to test, comma-separated")
+    rate_group.add_argument(
+        "--incremental",
+        action="store_true",
+        help="increase the rate until the first failed six-stream run",
     )
+    parser.set_defaults(rates=DEFAULT_RATES)
+    parser.add_argument("--incremental-start-rate", type=int, default=460800)
+    parser.add_argument("--incremental-rate-step", type=int, default=100000)
+    parser.add_argument("--incremental-max-rate", type=int, default=3000000)
     parser.add_argument("--duration", type=float, default=10.0, help="Transmit duration per rate in seconds")
     parser.add_argument("--payload-bytes", type=int, default=1024, help="Bytes per verified stream block")
     parser.add_argument(
@@ -282,9 +296,40 @@ def main(arguments: argparse.Namespace | None = None) -> int:
         print("--settle-seconds must be finite and >= 0", file=sys.stderr)
         return 2
 
+    try:
+        rates = (
+            incremental_rates(
+                arguments.incremental_start_rate,
+                arguments.incremental_rate_step,
+                arguments.incremental_max_rate,
+            )
+            if arguments.incremental
+            else arguments.rates
+        )
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+
     passed = True
-    for rate in arguments.rates:
-        passed = benchmark_rate(arguments, rate) and passed
+    highest_passing_rate = None
+    first_failing_rate = None
+    for rate in rates:
+        if arguments.incremental:
+            print(f"Incremental rate: {rate} baud")
+        rate_passed = benchmark_rate(arguments, rate)
+        passed = rate_passed and passed
+        if arguments.incremental:
+            print(f"Incremental result: {rate} baud {'PASS' if rate_passed else 'FAIL'}")
+            if rate_passed:
+                highest_passing_rate = rate
+            else:
+                first_failing_rate = rate
+                break
+    if arguments.incremental:
+        highest = f"{highest_passing_rate} baud" if highest_passing_rate is not None else "none"
+        failed = f"{first_failing_rate} baud" if first_failing_rate is not None else "not reached"
+        print(f"Incremental summary: highest passing rate={highest}; first failing rate={failed}")
+        return 0 if highest_passing_rate is not None else 1
     return 0 if passed else 1
 
 

@@ -8,6 +8,16 @@ import tempfile
 from pathlib import Path
 
 
+def firmware_version_for_report(version: str | None) -> str | None:
+    """Hide development placeholder versions while retaining release versions."""
+    if version is None:
+        return None
+    normalized = version.strip()
+    if normalized in {"0.0.0", "0.0.0-dev"}:
+        return None
+    return normalized
+
+
 def prepend_result(results_file: Path, entry: str) -> None:
     """Insert one newest-first result entry, serializing concurrent writers."""
     results_file.parent.mkdir(parents=True, exist_ok=True)

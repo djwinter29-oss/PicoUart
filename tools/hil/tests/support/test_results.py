@@ -14,6 +14,16 @@ def _load_results():
     return importlib.reload(module)
 
 
+@pytest.mark.parametrize(
+    ("version", "reported"),
+    [("0.0.0", None), ("0.0.0-dev", None), ("1.2.3", "1.2.3"), (" 1.2.3 ", "1.2.3")],
+)
+def test_firmware_version_for_report(version, reported) -> None:
+    results = _load_results()
+
+    assert results.firmware_version_for_report(version) == reported
+
+
 def test_prepends_new_result_before_template(tmp_path) -> None:
     results = _load_results()
     results_file = tmp_path / "results.md"

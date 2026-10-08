@@ -383,6 +383,52 @@ def test_six_cdc_arguments_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
 
+def test_incremental_rates_are_generated_inclusive_of_maximum() -> None:
+    stress = _load_stress()
+
+    assert stress.incremental_rates(460800, 100000, 660800) == (460800, 560800, 660800)
+
+
+def test_incremental_scan_stops_at_first_failure_and_reports_highest_pass(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stress = _load_stress()
+    arguments = stress.parse_arguments(
+        [*_cdc_cli_arguments(), "--incremental", "--incremental-start-rate", "400000", "--incremental-rate-step", "100000", "--incremental-max-rate", "800000"]
+    )
+    tested_rates = []
+
+    def benchmark_rate(_arguments, rate):
+        tested_rates.append(rate)
+        return rate < 600000
+
+    monkeypatch.setattr(stress, "benchmark_rate", benchmark_rate)
+
+    assert stress.main(arguments) == 0
+    assert tested_rates == [400000, 500000, 600000]
+    output = capsys.readouterr().out
+    assert "highest passing rate=500000 baud" in output
+    assert "first failing rate=600000 baud" in output
+    assert "800000" not in output
+
+
+def test_incremental_scan_fails_when_first_rate_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    stress = _load_stress()
+    arguments = stress.parse_arguments(
+        [
+            *_cdc_cli_arguments(),
+            "--incremental",
+            "--incremental-start-rate",
+            "400000",
+            "--incremental-max-rate",
+            "500000",
+        ]
+    )
+    monkeypatch.setattr(stress, "benchmark_rate", lambda *_args: False)
+
+    assert stress.main(arguments) == 1
+
+
 def test_fixture_paths_reject_duplicate_endpoint() -> None:
     stress = _load_stress()
     arguments = type(

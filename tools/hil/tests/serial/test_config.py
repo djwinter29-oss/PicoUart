@@ -111,3 +111,20 @@ def test_configure_port_sets_and_verifies_arbitrary_baud(monkeypatch):
 
     assert current["input"] == current["output"] == 123456
     assert current["cflag"] & serial_port.BOTHER
+
+
+def test_verify_line_speed_rejects_readback_at_fifty_percent_deviation(monkeypatch):
+    serial_port = _load_serial_config()
+    settings = [0, 0, 0, 0, serial_port.termios.B460800, serial_port.termios.B460800, [0] * 32]
+    monkeypatch.setattr(serial_port.termios, "tcgetattr", lambda _fd: settings)
+
+    with pytest.raises(OSError, match="deviation must be less than 50%"):
+        serial_port.verify_line_speed(17, 921600)
+
+
+def test_verify_line_speed_accepts_readback_within_fifty_percent(monkeypatch):
+    serial_port = _load_serial_config()
+    settings = [0, 0, 0, 0, serial_port.termios.B921600, serial_port.termios.B921600, [0] * 32]
+    monkeypatch.setattr(serial_port.termios, "tcgetattr", lambda _fd: settings)
+
+    serial_port.verify_line_speed(17, 1000000)
