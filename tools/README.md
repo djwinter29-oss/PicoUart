@@ -1,17 +1,17 @@
 # Repository Tools
 
-The `tools/` directory contains local build, test, hardware, and release helpers.
-Use the root [README](../README.md) as the project documentation index; this
-file only maps the tool categories.
+The `tools/` directory contains local build, test, hardware, and release helpers. Use the root [README](../README.md) as
+the project documentation index; this file only maps the tool categories.
 
 ## Categories
 
-| Directory | Purpose |
-| --- | --- |
-| `firmware/` | Pico SDK setup, firmware builds, and Debug Probe loading |
-| `hardware/` | Physical HIL runners and serial bridge/stress tools |
-| `release/` | Release version, USB identity, and artifact verification |
-| `test/` | Host tests, coverage, syntax checks, static analysis, and smoke checks |
+| Directory     | Purpose                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| `firmware/`   | Pico SDK setup, firmware builds, and Debug Probe loading                                         |
+| `hil/`        | Reusable Python project for physical HIL runners and serial bridge/stress tools                  |
+| `host/`       | Host Python environment setup                                                                    |
+| `release/`    | Release version, USB identity, and artifact verification                                         |
+| `validation/` | Test runners, lock filtering, coverage helpers, syntax checks, static analysis, and smoke checks |
 
 ## Common Commands
 
@@ -22,11 +22,17 @@ tools/firmware/build.sh --board pico
 tools/firmware/build.sh --board pico2
 
 # Host tests
-tools/test/test-host.sh
-tools/test/check.sh --skip-build
+# Linux/macOS
+tools/host/setup-venv.sh
+# Windows PowerShell
+.\tools\host\setup-venv.ps1
+tools/validation/run-host-tests.sh
+tools/validation/validate.sh --skip-build
 
-# Hardware test help
-python3 tools/hardware/run_hardware_test.py --help
+# Hardware test project
+tools/hil/setup.sh
+tools/hil/.venv/bin/python -m pytest tools/hil/tests
+tools/hil/runner/full.sh --help
 
 # Release artifact verification
 python3 tools/release/verify-build.py --help
@@ -36,6 +42,5 @@ python3 tools/release/verify-build.py --help
 
 - [Project README](../README.md)
 - [Firmware build and configuration](../firmware/build-and-config.md)
-- [Functional Test Plan](../docs/tests/functional-test-plan.md)
-- [Performance Test Plan](../docs/tests/performance-test-plan.md)
+- [HIL Fixture Test Plan](../docs/tests/hil-fixture-test-plan.md)
 - [Releasing](../docs/releasing.md)

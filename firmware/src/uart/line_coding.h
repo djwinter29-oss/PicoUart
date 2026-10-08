@@ -2,8 +2,7 @@
  * @file line_coding.h
  * @brief Shared UART line-coding validation and USB CDC parsing helpers.
  *
- * Hosted unit tests build this module without the Pico SDK. Keep it free of
- * hardware headers.
+ * Hosted unit tests build this module without the Pico SDK. Keep it free of hardware headers.
  */
 
 #ifndef UART_LINE_CODING_H
@@ -31,8 +30,7 @@
  * is free to use a different clocks-per-bit ratio than TX. Thirty-two clocks
  * place the three majority samples at centre-4, centre, and centre+4 (four
  * PIO clocks apart, a quarter of the bit) and leave 9 PIO cycles before the
- * next start bit. See the cycle derivation in uart.pio. TX stays at 8
- * clocks/bit, so the wire frame stays 10 bit-times.
+ * next start bit. See the cycle derivation in uart.pio. TX stays at 8 clocks/bit, so the wire frame stays 10 bit-times.
  */
 #define UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT 32u
 /** @brief Inclusive minimum PIO clock divider accepted by the Pico SDK helper. */
@@ -73,8 +71,7 @@ bool uart_line_coding_pio_rx_baud_feasible(uint32_t baud_rate, uint32_t sys_hz);
  * @return `true` only for feasible 8N1 requests that also pass
  * @ref uart_line_coding_is_valid.
  */
-bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding,
-                                    uint32_t sys_hz);
+bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding, uint32_t sys_hz);
 
 /**
  * @brief Translate a USB CDC ACM line-coding request into firmware form.
@@ -90,10 +87,7 @@ bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding
  * apply the request; PIO ports remain 8N1-only and surface rejects through
  * @ref UART_DRIVER_PORT_STATUS_CONTROL_ERROR.
  */
-bool uart_line_coding_from_usb(uint32_t bit_rate,
-                               uint8_t stop_bits,
-                               uint8_t parity,
-                               uint8_t data_bits,
+bool uart_line_coding_from_usb(uint32_t bit_rate, uint8_t stop_bits, uint8_t parity, uint8_t data_bits,
                                uart_driver_line_coding_t *line_coding);
 
 #endif

@@ -13,8 +13,7 @@
 /** @brief Maximum attempts to acquire a coherent worker-owned telemetry snapshot. */
 #define UART_PORT_API_STATS_SNAPSHOT_ATTEMPTS 3u
 
-static uart_runtime_port_t *uart_port_api_mutable(const uart_port_api_t *api,
-                                                  uart_port_id_t port_id)
+static uart_runtime_port_t *uart_port_api_mutable(const uart_port_api_t *api, uart_port_id_t port_id)
 {
     if ((api == NULL) || (api->ports == NULL) || (port_id >= UART_PORT_COUNT)) {
         return NULL;
@@ -53,28 +52,18 @@ bool uart_port_api_is_ready(const uart_port_api_t *api, uart_port_id_t port_id)
     return (port != NULL) && (port->ops != NULL) && port->ops->is_initialized(&port->backend);
 }
 
-size_t uart_port_api_drain_rx(const uart_port_api_t *api,
-                              uart_port_id_t port_id,
-                              size_t capacity,
-                              uint32_t (*writer)(void *context,
-                                                 const uint8_t *data,
-                                                 uint32_t length),
-                              void *context)
+size_t uart_port_api_drain_rx(const uart_port_api_t *api, uart_port_id_t port_id, size_t capacity,
+                              uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length), void *context)
 {
     uart_runtime_port_t *port = uart_port_api_mutable(api, port_id);
     ring_buffer_t *rx_ring = uart_port_api_rx_ring(port);
 
-    if ((rx_ring == NULL) || !uart_port_api_is_ready(api, port_id) ||
-        (writer == NULL) || (api->stats_sequence == NULL)) {
+    if ((rx_ring == NULL) || !uart_port_api_is_ready(api, port_id) || (writer == NULL) ||
+        (api->stats_sequence == NULL)) {
         return 0u;
     }
 
-    return uart_bridge_drain_rx(rx_ring,
-                                capacity,
-                                writer,
-                                context,
-                                uart_port_api_snapshot_is_current,
-                                port,
+    return uart_bridge_drain_rx(rx_ring, capacity, writer, context, uart_port_api_snapshot_is_current, port,
                                 &api->stats_sequence[port_id]);
 }
 
@@ -90,27 +79,21 @@ size_t uart_port_api_recover_rx(const uart_port_api_t *api, uart_port_id_t port_
     return uart_bridge_recover_rx(rx_ring);
 }
 
-size_t uart_port_api_fill_tx(const uart_port_api_t *api,
-                             uart_port_id_t port_id,
-                             size_t capacity,
-                             uint32_t (*reader)(void *context,
-                                                uint8_t *data,
-                                                uint32_t length),
-                             void *context)
+size_t uart_port_api_fill_tx(const uart_port_api_t *api, uart_port_id_t port_id, size_t capacity,
+                             uint32_t (*reader)(void *context, uint8_t *data, uint32_t length), void *context)
 {
     uart_runtime_port_t *port = uart_port_api_mutable(api, port_id);
     ring_buffer_t *tx_ring = uart_port_api_tx_ring(port);
     uint32_t save;
     bool blocked;
 
-    if ((tx_ring == NULL) || !uart_port_api_is_ready(api, port_id) || (reader == NULL) ||
-        (api->status_flags == NULL) || (api->status_lock == NULL)) {
+    if ((tx_ring == NULL) || !uart_port_api_is_ready(api, port_id) || (reader == NULL) || (api->status_flags == NULL) ||
+        (api->status_lock == NULL)) {
         return 0u;
     }
 
     save = spin_lock_blocking(api->status_lock);
-    blocked = uart_control_tx_should_block(api->status_flags[port_id],
-                                           UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
+    blocked = uart_control_tx_should_block(api->status_flags[port_id], UART_DRIVER_PORT_STATUS_CONTROL_PENDING);
     spin_unlock(api->status_lock, save);
     if (blocked) {
         return 0u;
@@ -119,9 +102,7 @@ size_t uart_port_api_fill_tx(const uart_port_api_t *api,
     return uart_bridge_fill_tx(tx_ring, capacity, reader, context);
 }
 
-bool uart_port_api_info(const uart_port_api_t *api,
-                        uart_port_id_t port_id,
-                        uart_driver_port_info_t *info)
+bool uart_port_api_info(const uart_port_api_t *api, uart_port_id_t port_id, uart_driver_port_info_t *info)
 {
     uint32_t save;
     uart_runtime_port_t *port = uart_port_api_mutable(api, port_id);
@@ -136,9 +117,7 @@ bool uart_port_api_info(const uart_port_api_t *api,
     return true;
 }
 
-bool uart_port_api_stats(const uart_port_api_t *api,
-                         uart_port_id_t port_id,
-                         uart_driver_port_stats_t *stats)
+bool uart_port_api_stats(const uart_port_api_t *api, uart_port_id_t port_id, uart_driver_port_stats_t *stats)
 {
     uart_runtime_port_t *port = uart_port_api_mutable(api, port_id);
     ring_buffer_t *rx_ring;
@@ -147,8 +126,7 @@ bool uart_port_api_stats(const uart_port_api_t *api,
     uint32_t first_sequence;
     uint32_t second_sequence;
 
-    if ((stats == NULL) || (api == NULL) || (api->stats_sequence == NULL) ||
-        !uart_port_api_is_ready(api, port_id)) {
+    if ((stats == NULL) || (api == NULL) || (api->stats_sequence == NULL) || !uart_port_api_is_ready(api, port_id)) {
         return false;
     }
 

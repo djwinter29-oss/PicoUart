@@ -18,80 +18,58 @@
 /** @brief USB product ID used by the PicoUart firmware image. */
 #define USB_PID PICO_UART_USB_PID
 /** @brief USB 2.0 revision advertised in the device descriptor. */
-#define USB_BCD  0x0200
+#define USB_BCD 0x0200
 #ifndef PICO_UART_BCD_DEVICE
 /** @brief Fallback USB bcdDevice when CMake does not inject a build version. */
 #define PICO_UART_BCD_DEVICE 0x0000
 #endif
 
-_Static_assert(USB_CDC_COUNT == UART_PORT_COUNT,
-               "USB CDC count must match the logical UART port table");
+_Static_assert(USB_CDC_COUNT == UART_PORT_COUNT, "USB CDC count must match the logical UART port table");
 
 /** @brief Manufacturer string exposed in the USB string table. */
 #define USB_STR_MANUFACTURER "PicoUart"
 /** @brief Product string exposed in the USB string table (UTF-16, max 32 chars). */
 #define USB_STR_PRODUCT "PicoUart CDC+HID PIO 8N1"
-_Static_assert((sizeof(USB_STR_PRODUCT) - 1u) <= 32u,
-               "USB product string must fit one TinyUSB string descriptor");
+_Static_assert((sizeof(USB_STR_PRODUCT) - 1u) <= 32u, "USB product string must fit one TinyUSB string descriptor");
 
 /** @brief USB interface numbering used inside the configuration descriptor. */
 typedef enum {
-    ITF_NUM_CDC0 = 0, /**< CDC0 control interface number. */
+    ITF_NUM_CDC0 = 0,  /**< CDC0 control interface number. */
     ITF_NUM_CDC0_DATA, /**< CDC0 data interface number. */
-    ITF_NUM_CDC1, /**< CDC1 control interface number. */
+    ITF_NUM_CDC1,      /**< CDC1 control interface number. */
     ITF_NUM_CDC1_DATA, /**< CDC1 data interface number. */
-    ITF_NUM_CDC2, /**< CDC2 control interface number. */
+    ITF_NUM_CDC2,      /**< CDC2 control interface number. */
     ITF_NUM_CDC2_DATA, /**< CDC2 data interface number. */
-    ITF_NUM_CDC3, /**< CDC3 control interface number. */
+    ITF_NUM_CDC3,      /**< CDC3 control interface number. */
     ITF_NUM_CDC3_DATA, /**< CDC3 data interface number. */
-    ITF_NUM_CDC4, /**< CDC4 control interface number. */
+    ITF_NUM_CDC4,      /**< CDC4 control interface number. */
     ITF_NUM_CDC4_DATA, /**< CDC4 data interface number. */
-    ITF_NUM_CDC5, /**< CDC5 control interface number. */
+    ITF_NUM_CDC5,      /**< CDC5 control interface number. */
     ITF_NUM_CDC5_DATA, /**< CDC5 data interface number. */
-    ITF_NUM_HID, /**< HID monitor interface number. */
-    ITF_NUM_TOTAL /**< Total number of interfaces in the configuration. */
+    ITF_NUM_HID,       /**< HID monitor interface number. */
+    ITF_NUM_TOTAL      /**< Total number of interfaces in the configuration. */
 } usb_interface_number_t;
 
 /** @brief USB string descriptor indices used by the device and configuration descriptors. */
 typedef enum {
-    STRID_LANGID = 0, /**< Language ID string descriptor index. */
+    STRID_LANGID = 0,   /**< Language ID string descriptor index. */
     STRID_MANUFACTURER, /**< Manufacturer string descriptor index. */
-    STRID_PRODUCT, /**< Product string descriptor index. */
-    STRID_SERIAL, /**< Serial number string descriptor index. */
-    STRID_CDC0, /**< CDC0 interface string descriptor index. */
-    STRID_CDC1, /**< CDC1 interface string descriptor index. */
-    STRID_CDC2, /**< CDC2 interface string descriptor index. */
-    STRID_CDC3, /**< CDC3 interface string descriptor index. */
-    STRID_CDC4, /**< CDC4 interface string descriptor index. */
-    STRID_CDC5, /**< CDC5 interface string descriptor index. */
-    STRID_HID, /**< HID monitor interface string descriptor index. */
+    STRID_PRODUCT,      /**< Product string descriptor index. */
+    STRID_SERIAL,       /**< Serial number string descriptor index. */
+    STRID_CDC0,         /**< CDC0 interface string descriptor index. */
+    STRID_CDC1,         /**< CDC1 interface string descriptor index. */
+    STRID_CDC2,         /**< CDC2 interface string descriptor index. */
+    STRID_CDC3,         /**< CDC3 interface string descriptor index. */
+    STRID_CDC4,         /**< CDC4 interface string descriptor index. */
+    STRID_CDC5,         /**< CDC5 interface string descriptor index. */
+    STRID_HID,          /**< HID monitor interface string descriptor index. */
 } usb_string_id_t;
 
 /** @brief Vendor HID report descriptor used for status monitoring and board controls. */
 static uint8_t const hid_report_descriptor[] = {
-    0x06, 0x00, 0xFF,
-    0x09, 0x01,
-    0xA1, 0x01,
-    0x85, 0x01,
-    0x15, 0x00,
-    0x26, 0xFF, 0x00,
-    0x75, 0x08,
-    0x95, 0x3F,
-    0x09, 0x01,
-    0x81, 0x02,
-    0x85, 0x03,
-    0x95, 0x08,
-    0x09, 0x03,
-    0xB1, 0x02,
-    0x85, 0x04,
-    0x95, 0x01,
-    0x09, 0x04,
-    0xB1, 0x02,
-    0x85, 0x05,
-    0x95, 0x19,
-    0x09, 0x05,
-    0xB1, 0x02,
-    0xC0,
+    0x06, 0x00, 0xFF, 0x09, 0x01, 0xA1, 0x01, 0x85, 0x01, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08,
+    0x95, 0x3F, 0x09, 0x01, 0x81, 0x02, 0x85, 0x03, 0x95, 0x08, 0x09, 0x03, 0xB1, 0x02, 0x85, 0x04,
+    0x95, 0x01, 0x09, 0x04, 0xB1, 0x02, 0x85, 0x05, 0x95, 0x19, 0x09, 0x05, 0xB1, 0x02, 0xC0,
 };
 
 /** @brief USB device descriptor returned to the host during enumeration. */
@@ -116,7 +94,8 @@ static tusb_desc_device_t const desc_device = {
  * @brief TinyUSB callback returning the device descriptor.
  * @return Pointer to the static device descriptor.
  */
-uint8_t const *tud_descriptor_device_cb(void) {
+uint8_t const *tud_descriptor_device_cb(void)
+{
     return (uint8_t const *)&desc_device;
 }
 
@@ -128,36 +107,44 @@ uint8_t const *tud_descriptor_device_cb(void) {
 #define EPNUM_CDC4_NOTIF 0x89
 #define EPNUM_CDC5_NOTIF 0x8B
 /** @brief Endpoint numbers for CDC data OUT traffic. */
-#define EPNUM_CDC0_OUT   0x02
-#define EPNUM_CDC1_OUT   0x04
-#define EPNUM_CDC2_OUT   0x06
-#define EPNUM_CDC3_OUT   0x08
-#define EPNUM_CDC4_OUT   0x0A
-#define EPNUM_CDC5_OUT   0x0C
+#define EPNUM_CDC0_OUT 0x02
+#define EPNUM_CDC1_OUT 0x04
+#define EPNUM_CDC2_OUT 0x06
+#define EPNUM_CDC3_OUT 0x08
+#define EPNUM_CDC4_OUT 0x0A
+#define EPNUM_CDC5_OUT 0x0C
 /** @brief Endpoint numbers for CDC data IN traffic. */
-#define EPNUM_CDC0_IN    0x82
-#define EPNUM_CDC1_IN    0x84
-#define EPNUM_CDC2_IN    0x86
-#define EPNUM_CDC3_IN    0x88
-#define EPNUM_CDC4_IN    0x8A
-#define EPNUM_CDC5_IN    0x8C
-#define EPNUM_HID_IN     0x8E
+#define EPNUM_CDC0_IN 0x82
+#define EPNUM_CDC1_IN 0x84
+#define EPNUM_CDC2_IN 0x86
+#define EPNUM_CDC3_IN 0x88
+#define EPNUM_CDC4_IN 0x8A
+#define EPNUM_CDC5_IN 0x8C
+#define EPNUM_HID_IN 0x8E
 /** @brief Total bytes in the USB configuration descriptor. */
 #define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + (USB_CDC_COUNT * TUD_CDC_DESC_LEN) + (USB_HID_COUNT * TUD_HID_DESC_LEN))
 
 /** @brief Configuration descriptor containing 6 USB CDC functions. */
 static uint8_t const desc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 100),
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC0, STRID_CDC0, EPNUM_CDC0_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE, EPNUM_CDC0_OUT, EPNUM_CDC0_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC1, STRID_CDC1, EPNUM_CDC1_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE, EPNUM_CDC1_OUT, EPNUM_CDC1_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC2, STRID_CDC2, EPNUM_CDC2_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE, EPNUM_CDC2_OUT, EPNUM_CDC2_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC3, STRID_CDC3, EPNUM_CDC3_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE, EPNUM_CDC3_OUT, EPNUM_CDC3_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC4, STRID_CDC4, EPNUM_CDC4_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE, EPNUM_CDC4_OUT, EPNUM_CDC4_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC5, STRID_CDC5, EPNUM_CDC5_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE, EPNUM_CDC5_OUT, EPNUM_CDC5_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
-    TUD_HID_DESCRIPTOR(ITF_NUM_HID, STRID_HID, HID_ITF_PROTOCOL_NONE, sizeof(hid_report_descriptor), EPNUM_HID_IN, CFG_TUD_HID_EP_BUFSIZE, 5),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC0, STRID_CDC0, EPNUM_CDC0_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE,
+                       EPNUM_CDC0_OUT, EPNUM_CDC0_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC1, STRID_CDC1, EPNUM_CDC1_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE,
+                       EPNUM_CDC1_OUT, EPNUM_CDC1_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC2, STRID_CDC2, EPNUM_CDC2_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE,
+                       EPNUM_CDC2_OUT, EPNUM_CDC2_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC3, STRID_CDC3, EPNUM_CDC3_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE,
+                       EPNUM_CDC3_OUT, EPNUM_CDC3_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC4, STRID_CDC4, EPNUM_CDC4_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE,
+                       EPNUM_CDC4_OUT, EPNUM_CDC4_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC5, STRID_CDC5, EPNUM_CDC5_NOTIF, PICO_UART_USB_CDC_NOTIFICATION_ENDPOINT_BUFFER_SIZE,
+                       EPNUM_CDC5_OUT, EPNUM_CDC5_IN, PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE),
+    TUD_HID_DESCRIPTOR(ITF_NUM_HID, STRID_HID, HID_ITF_PROTOCOL_NONE, sizeof(hid_report_descriptor), EPNUM_HID_IN,
+                       CFG_TUD_HID_EP_BUFSIZE, 5),
 };
 
-uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance) {
+uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
+{
     (void)instance;
     return hid_report_descriptor;
 }
@@ -167,7 +154,8 @@ uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance) {
  * @param index Configuration index requested by the host.
  * @return Pointer to the static configuration descriptor.
  */
-uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
+uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
+{
     (void)index;
     return desc_configuration;
 }
@@ -196,7 +184,8 @@ static uint16_t desc_str[32 + 1];
  * @param langid Language ID requested by the host.
  * @return Pointer to the UTF-16 descriptor buffer, or `NULL` for an invalid index.
  */
-uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
+uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
+{
     (void)langid;
     size_t chr_count;
 
@@ -205,17 +194,15 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
         memcpy(&desc_str[1], string_desc_arr[0], 2);
         chr_count = 1;
         break;
-    case STRID_SERIAL:
-        {
-            char serial[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
+    case STRID_SERIAL: {
+        char serial[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
 
-            pico_get_unique_board_id_string(serial, sizeof(serial));
-            chr_count = strlen(serial);
-            for (size_t i = 0; i < chr_count; i++) {
-                desc_str[1 + i] = (uint16_t)serial[i];
-            }
+        pico_get_unique_board_id_string(serial, sizeof(serial));
+        chr_count = strlen(serial);
+        for (size_t i = 0; i < chr_count; i++) {
+            desc_str[1 + i] = (uint16_t)serial[i];
         }
-        break;
+    } break;
     default:
         if (index >= sizeof(string_desc_arr) / sizeof(string_desc_arr[0])) {
             return NULL;

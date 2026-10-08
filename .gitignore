@@ -58,10 +58,14 @@ dkms.conf
 build/
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
-docs/tests/raw/
+.coverage
+.coverage.*
+htmlcov/
 .venv/
 venv/
+/tools/hil/uv.lock
 
 # Project-local Pico SDK downloaded by tools/setup-sdk-env.sh
 .pico-sdk/

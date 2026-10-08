@@ -26,12 +26,9 @@ bool uart_board_topology_validate(const uart_board_topology_port_t *ports, size_
 
         if ((port->id != (uart_port_id_t)index) ||
             !uart_board_topology_pin_valid(port->tx_pin, port->target_gpio_count) ||
-            !uart_board_topology_pin_valid(port->rx_pin, port->target_gpio_count) ||
-            (port->tx_pin == port->rx_pin) ||
-            (port->backend_instance == 0u) ||
-            (port->backend_tx_pin != port->tx_pin) ||
-            (port->backend_rx_pin != port->rx_pin) ||
-            (port->backend_baud_rate != port->baud_rate)) {
+            !uart_board_topology_pin_valid(port->rx_pin, port->target_gpio_count) || (port->tx_pin == port->rx_pin) ||
+            (port->backend_instance == 0u) || (port->backend_tx_pin != port->tx_pin) ||
+            (port->backend_rx_pin != port->rx_pin) || (port->backend_baud_rate != port->baud_rate)) {
             return false;
         }
 
@@ -58,10 +55,8 @@ bool uart_board_topology_validate(const uart_board_topology_port_t *ports, size_
 
         for (size_t prior = 0u; prior < index; ++prior) {
             const uart_board_topology_port_t *previous = &ports[prior];
-            uint32_t previous_pins[4] = {
-                previous->tx_pin, previous->rx_pin, previous->rts_pin, previous->cts_pin};
-            size_t previous_pin_count = 2u + (previous->rts_enabled ? 1u : 0u) +
-                                        (previous->cts_enabled ? 1u : 0u);
+            uint32_t previous_pins[4] = {previous->tx_pin, previous->rx_pin, previous->rts_pin, previous->cts_pin};
+            size_t previous_pin_count = 2u + (previous->rts_enabled ? 1u : 0u) + (previous->cts_enabled ? 1u : 0u);
 
             if (previous->rts_enabled && previous->cts_enabled) {
                 previous_pins[2] = previous->rts_pin;
@@ -80,8 +75,7 @@ bool uart_board_topology_validate(const uart_board_topology_port_t *ports, size_
                 }
             }
 
-            if ((port->backend == previous->backend) &&
-                (port->backend_instance == previous->backend_instance)) {
+            if ((port->backend == previous->backend) && (port->backend_instance == previous->backend_instance)) {
                 if (port->backend == UART_DRIVER_BACKEND_HW) {
                     return false;
                 }
@@ -98,10 +92,8 @@ bool uart_board_topology_validate(const uart_board_topology_port_t *ports, size_
 
         if (port->backend == UART_DRIVER_BACKEND_HW) {
             hw_count += 1u;
-        } else if ((port->backend == UART_DRIVER_BACKEND_PIO) &&
-                   (port->tx_state_machine < 4u) &&
-                   (port->rx_state_machine < 4u) &&
-                   (port->tx_state_machine != port->rx_state_machine)) {
+        } else if ((port->backend == UART_DRIVER_BACKEND_PIO) && (port->tx_state_machine < 4u) &&
+                   (port->rx_state_machine < 4u) && (port->tx_state_machine != port->rx_state_machine)) {
             pio_count += 1u;
         } else {
             return false;

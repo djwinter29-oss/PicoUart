@@ -7,8 +7,7 @@
 
 bool uart_line_coding_is_valid(const uart_driver_line_coding_t *line_coding)
 {
-    if ((line_coding == NULL) ||
-        (line_coding->baud_rate < UART_LINE_CODING_BAUD_MIN) ||
+    if ((line_coding == NULL) || (line_coding->baud_rate < UART_LINE_CODING_BAUD_MIN) ||
         (line_coding->baud_rate > UART_LINE_CODING_BAUD_MAX)) {
         return false;
     }
@@ -21,14 +20,11 @@ bool uart_line_coding_is_valid(const uart_driver_line_coding_t *line_coding)
         return false;
     }
 
-    return (line_coding->parity == UART_DRIVER_PARITY_NONE) ||
-           (line_coding->parity == UART_DRIVER_PARITY_ODD) ||
+    return (line_coding->parity == UART_DRIVER_PARITY_NONE) || (line_coding->parity == UART_DRIVER_PARITY_ODD) ||
            (line_coding->parity == UART_DRIVER_PARITY_EVEN);
 }
 
-static bool pio_baud_feasible_for_clocks_per_bit(uint32_t baud_rate,
-                                                 uint32_t sys_hz,
-                                                 uint32_t clocks_per_bit_ratio)
+static bool pio_baud_feasible_for_clocks_per_bit(uint32_t baud_rate, uint32_t sys_hz, uint32_t clocks_per_bit_ratio)
 {
     uint64_t clocks_per_bit;
 
@@ -42,8 +38,7 @@ static bool pio_baud_feasible_for_clocks_per_bit(uint32_t baud_rate,
         return false;
     }
 
-    if ((uint64_t)sys_hz >=
-        ((uint64_t)UART_LINE_CODING_PIO_DIVIDER_MAX_EXCLUSIVE * clocks_per_bit)) {
+    if ((uint64_t)sys_hz >= ((uint64_t)UART_LINE_CODING_PIO_DIVIDER_MAX_EXCLUSIVE * clocks_per_bit)) {
         return false;
     }
 
@@ -52,25 +47,21 @@ static bool pio_baud_feasible_for_clocks_per_bit(uint32_t baud_rate,
 
 bool uart_line_coding_pio_baud_feasible(uint32_t baud_rate, uint32_t sys_hz)
 {
-    return pio_baud_feasible_for_clocks_per_bit(baud_rate, sys_hz,
-                                                UART_LINE_CODING_PIO_CLOCKS_PER_BIT);
+    return pio_baud_feasible_for_clocks_per_bit(baud_rate, sys_hz, UART_LINE_CODING_PIO_CLOCKS_PER_BIT);
 }
 
 bool uart_line_coding_pio_rx_baud_feasible(uint32_t baud_rate, uint32_t sys_hz)
 {
-    return pio_baud_feasible_for_clocks_per_bit(baud_rate, sys_hz,
-                                                UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT);
+    return pio_baud_feasible_for_clocks_per_bit(baud_rate, sys_hz, UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT);
 }
 
-bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding,
-                                    uint32_t sys_hz)
+bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding, uint32_t sys_hz)
 {
     if (!uart_line_coding_is_valid(line_coding)) {
         return false;
     }
 
-    if ((line_coding->data_bits != 8u) ||
-        (line_coding->stop_bits != 1u) ||
+    if ((line_coding->data_bits != 8u) || (line_coding->stop_bits != 1u) ||
         (line_coding->parity != UART_DRIVER_PARITY_NONE)) {
         return false;
     }
@@ -82,10 +73,7 @@ bool uart_line_coding_pio_supported(const uart_driver_line_coding_t *line_coding
            uart_line_coding_pio_rx_baud_feasible(line_coding->baud_rate, sys_hz);
 }
 
-bool uart_line_coding_from_usb(uint32_t bit_rate,
-                               uint8_t stop_bits,
-                               uint8_t parity,
-                               uint8_t data_bits,
+bool uart_line_coding_from_usb(uint32_t bit_rate, uint8_t stop_bits, uint8_t parity, uint8_t data_bits,
                                uart_driver_line_coding_t *line_coding)
 {
     uart_driver_line_coding_t parsed;

@@ -3,8 +3,7 @@
  * @brief Board-specific logical UART port mapping.
  *
  * The table declared here is defined by @ref uart_board.c and is the single
- * source of truth for logical-port backend, peripheral, pin, and startup-rate
- * assignments.
+ * source of truth for logical-port backend, peripheral, pin, and startup-rate assignments.
  */
 
 #ifndef PICO_UART_BOARD_H
@@ -24,9 +23,9 @@
 typedef struct {
     uart_driver_port_info_t info; /**< Public port identity and GPIO mapping. */
     union {
-        hw_uart_driver_config_t hw; /**< Hardware UART peripheral assignment. */
+        hw_uart_driver_config_t hw;   /**< Hardware UART peripheral assignment. */
         pio_uart_driver_config_t pio; /**< PIO UART peripheral assignment. */
-    } backend; /**< Backend-specific board configuration. */
+    } backend;                        /**< Backend-specific board configuration. */
 } uart_board_port_config_t;
 
 /** @brief Board assignments for all logical UART ports. */

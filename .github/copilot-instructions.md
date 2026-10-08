@@ -6,11 +6,15 @@
 - Use Pico SDK and TinyUSB conventions when adding firmware code.
 - Keep board pin mapping separate from USB and UART transport logic.
 - Prefer clear, explicit code over heavy abstraction.
-- Do not duplicate runbook details here. Use [README.md](../README.md) as the
-  docs index. Use [docs/releasing.md](../docs/releasing.md) for physical
-  flashing, OpenOCD recovery, and release HIL gates.
+- Do not duplicate runbook details here. Use [README.md](../README.md) as the docs index. Use
+  [docs/releasing.md](../docs/releasing.md) for physical flashing, OpenOCD recovery, and release HIL gates.
+- For an unknown QSPI ID, use the documented `FLASHSIZE` auto-detection override only after confirming flash
+  capacity from the chip marking/datasheet; never guess capacity or use the override to hide failed SWD access.
 
 ## Engineering Style
+
+Use a preferred line width of 120 columns for source, configuration, and Markdown prose. Do not pad short lines; keep
+Markdown tables, code blocks, commands, and URLs intact.
 
 You are a lazy senior developer. Lazy means efficient, not careless. The best code is the code never written.
 
@@ -24,9 +28,12 @@ Before writing any code, stop at the first rung that holds:
 6. Can this be one line? Make it one line.
 7. Only then: write the minimum code that works.
 
-Run this ladder after understanding the problem, not instead of it. Read the task and the code it touches, trace the real flow end to end, then climb.
+Run this ladder after understanding the problem, not instead of it. Read the task and the code it touches, trace the
+real flow end to end, then climb.
 
-Bug fix means root cause, not symptom. A report names a symptom. Search every caller of the function you touch and prefer fixing the shared function once when that is the real fault. One guard in the right place is better than one patch per caller.
+Bug fix means root cause, not symptom. A report names a symptom. Search every caller of the function you touch and
+prefer fixing the shared function once when that is the real fault. One guard in the right place is better than one
+patch per caller.
 
 ### Rules
 
@@ -62,17 +69,22 @@ Examples of ceilings include a global lock, an O(n^2) scan, or a naive heuristic
 - Real hardware calibration constraints and non-ideal behavior
 - Anything explicitly requested by the user
 
-Lazy code without its check is unfinished. For non-trivial logic, leave one runnable check behind: the smallest assert-based demo, self-check, or small test that fails if the logic breaks. Trivial one-liners do not need a test.
-
+Lazy code without its check is unfinished. For non-trivial logic, leave one runnable check behind: the smallest
+assert-based demo, self-check, or small test that fails if the logic breaks. Trivial one-liners do not need a test.
 
 ### Doxygen Rules
 
 - Public headers must use Doxygen comments for exported enums, structs, typedefs, macros, and functions
-- Source files should use Doxygen comments for file headers, internal enums, internal structs, and non-trivial internal helpers that define ownership, state, or protocol layout
-- For structs in both headers and source files, document the struct itself and each member with a brief `/**< ... */` field description when the member carries state, counters, protocol meaning, or ownership meaning
-- For enums in both headers and source files, document the enum itself and add brief value descriptions for each enumerator when the values represent state machines, command kinds, flags, or protocol-visible meanings
+- Source files should use Doxygen comments for file headers, internal enums, internal structs, and non-trivial internal
+  helpers that define ownership, state, or protocol layout
+- For structs in both headers and source files, document the struct itself and each member with a brief `/**< ... */`
+  field description when the member carries state, counters, protocol meaning, or ownership meaning
+- For enums in both headers and source files, document the enum itself and add brief value descriptions for each
+  enumerator when the values represent state machines, command kinds, flags, or protocol-visible meanings
 - Prefer `@brief`, `@param`, `@return`, and `@copydoc` over ad hoc block comments when documenting functions
-- Keep Doxygen comments factual and compact; describe intent, ownership, lifetime, and interpretation, not obvious syntax
-- When adding a new module, do not leave only the header documented; apply the same Doxygen standard to the matching `.c` file where it defines important state or control flow
+- Keep Doxygen comments factual and compact; describe intent, ownership, lifetime, and interpretation, not obvious
+  syntax
+- When adding a new module, do not leave only the header documented; apply the same Doxygen standard to the matching
+  `.c` file where it defines important state or control flow
 
 Keep changes minimal, preserve existing C style, and update the matching docs when behavior changes.

@@ -4,6 +4,7 @@
  */
 
 #include "uart/ring_buffer/ring_buffer.h"
+#include "uart/saturating.h"
 
 #include "hardware/sync.h"
 
@@ -93,8 +94,7 @@ bool ring_buffer_self_check(void)
         return false;
     }
 
-    if ((ring_buffer_recover_overflow(&ring) != 1u) ||
-        (ring_buffer_overflow_count(&ring) != 1u) ||
+    if ((ring_buffer_recover_overflow(&ring) != 1u) || (ring_buffer_overflow_count(&ring) != 1u) ||
         (ring_buffer_pending_overflow(&ring) != 0u) ||
         (ring_buffer_read(&ring, output, sizeof(output)) != sizeof(output))) {
         return false;
@@ -106,18 +106,14 @@ bool ring_buffer_self_check(void)
         }
     }
 
-    if (!ring_buffer_init(&ring, storage, sizeof(storage)) ||
-        (ring_buffer_write(&ring, input, 6u) != 6u) ||
-        (ring_buffer_read(&ring, output, 4u) != 4u) ||
-        (ring_buffer_write_span(&ring).length != 2u) ||
+    if (!ring_buffer_init(&ring, storage, sizeof(storage)) || (ring_buffer_write(&ring, input, 6u) != 6u) ||
+        (ring_buffer_read(&ring, output, 4u) != 4u) || (ring_buffer_write_span(&ring).length != 2u) ||
         ring_buffer_commit_produced(&ring, 3u)) {
         return false;
     }
 
-    if (!ring_buffer_init(&ring, storage, sizeof(storage)) ||
-        (ring_buffer_write(&ring, input, 4u) != 4u) ||
-        (ring_buffer_read_span(&ring).length != 4u) ||
-        ring_buffer_commit_consumed(&ring, 5u) ||
+    if (!ring_buffer_init(&ring, storage, sizeof(storage)) || (ring_buffer_write(&ring, input, 4u) != 4u) ||
+        (ring_buffer_read_span(&ring).length != 4u) || ring_buffer_commit_consumed(&ring, 5u) ||
         !ring_buffer_commit_consumed(&ring, 4u)) {
         return false;
     }
@@ -208,8 +204,7 @@ ring_buffer_span_t ring_buffer_write_span(ring_buffer_t *ring)
 
 bool ring_buffer_read_span_is_current(const ring_buffer_t *ring)
 {
-    if ((ring == NULL) ||
-        (ring->consumer != ring->consumer_reserved_sequence) ||
+    if ((ring == NULL) || (ring->consumer != ring->consumer_reserved_sequence) ||
         (ring->consumer_reserved_count == 0u)) {
         return false;
     }
@@ -220,8 +215,7 @@ bool ring_buffer_read_span_is_current(const ring_buffer_t *ring)
 
 bool ring_buffer_commit_produced(ring_buffer_t *ring, size_t count)
 {
-    if ((ring == NULL) ||
-        (ring->producer != ring->producer_reserved_sequence) ||
+    if ((ring == NULL) || (ring->producer != ring->producer_reserved_sequence) ||
         (count > ring->producer_reserved_count)) {
         return false;
     }
@@ -237,8 +231,7 @@ bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count)
 {
     uint32_t producer_now;
 
-    if ((ring == NULL) ||
-        (ring->consumer != ring->consumer_reserved_sequence) ||
+    if ((ring == NULL) || (ring->consumer != ring->consumer_reserved_sequence) ||
         (count > ring->consumer_reserved_count)) {
         return false;
     }
@@ -259,7 +252,7 @@ bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count)
     if ((producer_now - ring->consumer_reserved_sequence) > ring->size) {
         uint32_t safe_consumer = producer_now - ring->size;
 
-        ring->overflow_count += safe_consumer - ring->consumer;
+        ring->overflow_count = uart_saturating_add_u32(ring->overflow_count, safe_consumer - ring->consumer);
         ring->consumer = safe_consumer;
         ring->consumer_reserved_count = 0u;
         return false;
@@ -276,8 +269,7 @@ bool ring_buffer_commit_snapshot_consumed(ring_buffer_t *ring, size_t count)
     uint32_t accepted_consumer;
     uint32_t safe_consumer;
 
-    if ((ring == NULL) ||
-        (ring->consumer != ring->consumer_reserved_sequence) ||
+    if ((ring == NULL) || (ring->consumer != ring->consumer_reserved_sequence) ||
         (count > ring->consumer_reserved_count)) {
         return false;
     }
@@ -291,7 +283,7 @@ bool ring_buffer_commit_snapshot_consumed(ring_buffer_t *ring, size_t count)
         uint32_t advance_to_safe = safe_consumer - ring->consumer_reserved_sequence;
 
         if (advance_to_safe > count) {
-            ring->overflow_count += advance_to_safe - (uint32_t)count;
+            ring->overflow_count = uart_saturating_add_u32(ring->overflow_count, advance_to_safe - (uint32_t)count);
             ring->consumer = safe_consumer;
         } else {
             ring->consumer = accepted_consumer;
@@ -435,7 +427,7 @@ size_t ring_buffer_recover_overflow(ring_buffer_t *ring)
     if (overwritten != 0u) {
         __dmb();
         ring->consumer += overwritten;
-        ring->overflow_count += overwritten;
+        ring->overflow_count = uart_saturating_add_u32(ring->overflow_count, overwritten);
         ring->consumer_reserved_count = 0u;
     }
 

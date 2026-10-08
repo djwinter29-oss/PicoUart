@@ -12,19 +12,15 @@
 /** @brief Maximum RX snapshot copied before handing bytes to a USB writer. */
 #define UART_BRIDGE_RX_SNAPSHOT_SIZE 1024u
 
-size_t uart_bridge_drain_rx(ring_buffer_t *rx_ring,
-                            size_t capacity,
+size_t uart_bridge_drain_rx(ring_buffer_t *rx_ring, size_t capacity,
                             uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length),
-                            void *writer_context,
-                            uart_bridge_rx_snapshot_is_current_t snapshot_is_current,
-                            void *snapshot_context,
-                            volatile uint32_t *stats_sequence)
+                            void *writer_context, uart_bridge_rx_snapshot_is_current_t snapshot_is_current,
+                            void *snapshot_context, volatile uint32_t *stats_sequence)
 {
     size_t total_written = 0u;
     static uint8_t snapshot[UART_BRIDGE_RX_SNAPSHOT_SIZE];
 
-    if ((rx_ring == NULL) || (writer == NULL) || (snapshot_is_current == NULL) ||
-        (stats_sequence == NULL)) {
+    if ((rx_ring == NULL) || (writer == NULL) || (snapshot_is_current == NULL) || (stats_sequence == NULL)) {
         return 0u;
     }
 
@@ -56,8 +52,7 @@ size_t uart_bridge_drain_rx(ring_buffer_t *rx_ring,
 
         memcpy(snapshot, span.data, offered);
         __dmb();
-        if (!ring_buffer_read_span_is_current(rx_ring) ||
-            !snapshot_is_current(snapshot_context, consumer_sequence) ||
+        if (!ring_buffer_read_span_is_current(rx_ring) || !snapshot_is_current(snapshot_context, consumer_sequence) ||
             (*stats_sequence != initial_stats_sequence)) {
             (void)ring_buffer_recover_overflow(rx_ring);
             return total_written;
@@ -85,10 +80,8 @@ size_t uart_bridge_recover_rx(ring_buffer_t *rx_ring)
     return ring_buffer_recover_overflow(rx_ring);
 }
 
-size_t uart_bridge_fill_tx(ring_buffer_t *tx_ring,
-                           size_t capacity,
-                           uint32_t (*reader)(void *context, uint8_t *data, uint32_t length),
-                           void *context)
+size_t uart_bridge_fill_tx(ring_buffer_t *tx_ring, size_t capacity,
+                           uint32_t (*reader)(void *context, uint8_t *data, uint32_t length), void *context)
 {
     size_t total_read = 0u;
 

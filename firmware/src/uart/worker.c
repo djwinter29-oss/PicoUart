@@ -13,8 +13,7 @@
 
 void uart_worker_step(const uart_worker_hooks_t *hooks)
 {
-    if ((hooks == NULL) || (hooks->service_control == NULL) ||
-        (hooks->poll_io == NULL) || (hooks->heartbeat == NULL)) {
+    if ((hooks == NULL) || (hooks->service_control == NULL) || (hooks->poll_io == NULL) || (hooks->heartbeat == NULL)) {
         return;
     }
 

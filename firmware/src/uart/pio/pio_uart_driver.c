@@ -40,12 +40,12 @@ _Static_assert((offsetof(pio_uart_driver_t, rx_storage) % PICO_UART_PIO_UART_RX_
  * @brief Program load state for one PIO block.
  */
 typedef struct {
-    bool tx_loaded; /**< True after the TX program is loaded into this PIO block. */
+    bool tx_loaded;     /**< True after the TX program is loaded into this PIO block. */
     bool tx_cts_loaded; /**< True after the CTS-gated TX program is loaded into this PIO block. */
-    bool rx_loaded; /**< True after the RX program is loaded into this PIO block. */
-    uint tx_offset; /**< Instruction-memory offset for the TX program. */
+    bool rx_loaded;     /**< True after the RX program is loaded into this PIO block. */
+    uint tx_offset;     /**< Instruction-memory offset for the TX program. */
     uint tx_cts_offset; /**< Instruction-memory offset for the CTS-gated TX program. */
-    uint rx_offset; /**< Instruction-memory offset for the RX program. */
+    uint rx_offset;     /**< Instruction-memory offset for the RX program. */
 } pio_uart_program_state_t;
 
 static pio_uart_program_state_t pio_uart_program_state[2];
@@ -79,9 +79,7 @@ static void pio_uart_driver_configure_rts(pio_uart_driver_t *driver)
     }
 
     occupancy = ring_buffer_occupancy(&driver->rx_ring);
-    driver->rx_rts_asserted = uart_rx_rts_should_assert(driver->rx_rts_asserted,
-                                                        occupancy,
-                                                        driver->rx_ring.size);
+    driver->rx_rts_asserted = uart_rx_rts_should_assert(driver->rx_rts_asserted, occupancy, driver->rx_ring.size);
 
     /* Set the SIO latch before enabling output to avoid a permissive pulse. */
     gpio_put(driver->config.rts_pin, driver->rx_rts_asserted ? 0u : 1u);
@@ -130,8 +128,7 @@ static void pio_uart_driver_abort_dma_channel(uint channel)
  * Settle runs with global IRQs enabled so sibling ports can still re-arm.
  */
 /**
- * @return `false` when TRANS_COUNT never settled. The channel is resumed and
- *         the caller must retry without publishing.
+ * @return `false` when TRANS_COUNT never settled. The channel is resumed and the caller must retry without publishing.
  */
 static bool pio_uart_driver_pause_rx_dma_for_reconfig(pio_uart_driver_t *driver)
 {
@@ -164,9 +161,7 @@ static void pio_uart_driver_finish_rx_dma_stop_locked(pio_uart_driver_t *driver)
 
 static void pio_uart_driver_rearm_rx_dma(pio_uart_driver_t *driver)
 {
-    dma_channel_set_trans_count((uint)driver->rx_dma_channel,
-                                uart_dma_rx_transfer_count_encoded(),
-                                true);
+    dma_channel_set_trans_count((uint)driver->rx_dma_channel, uart_dma_rx_transfer_count_encoded(), true);
 }
 
 static void __isr pio_uart_driver_rx_dma_irq_handler(void)
@@ -180,9 +175,7 @@ static void __isr pio_uart_driver_rx_dma_irq_handler(void)
         }
 
         dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, channel);
-        if (uart_rx_dma_irq_should_rearm(true,
-                                         irq_pending,
-                                         dma_channel_is_busy(channel),
+        if (uart_rx_dma_irq_should_rearm(true, irq_pending, dma_channel_is_busy(channel),
                                          uart_dma_rx_transfer_count_remaining(channel))) {
             pio_uart_driver_rearm_rx_dma(driver);
         }
@@ -192,8 +185,7 @@ static void __isr pio_uart_driver_rx_dma_irq_handler(void)
 void pio_uart_driver_enable_rx_dma_irq(void)
 {
     if (!pio_uart_driver_rx_dma_irq_installed) {
-        irq_add_shared_handler(DMA_IRQ_1,
-                               pio_uart_driver_rx_dma_irq_handler,
+        irq_add_shared_handler(DMA_IRQ_1, pio_uart_driver_rx_dma_irq_handler,
                                PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
         irq_set_enabled(DMA_IRQ_1, true);
         pio_uart_driver_rx_dma_irq_installed = true;
@@ -213,13 +205,10 @@ static void pio_uart_driver_release_dma(pio_uart_driver_t *driver)
     }
 
     if (driver->rx_dma_channel >= 0) {
-        dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                     (uint)driver->rx_dma_channel,
-                                     false);
+        dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel, false);
         pio_uart_driver_rx_irq_owners[driver->rx_dma_channel] = NULL;
         pio_uart_driver_abort_dma_channel((uint)driver->rx_dma_channel);
-        dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                     (uint)driver->rx_dma_channel);
+        dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel);
         dma_channel_unclaim((uint)driver->rx_dma_channel);
         driver->rx_dma_channel = -1;
     }
@@ -248,15 +237,13 @@ static float pio_uart_driver_clock_divider(uint32_t baud_rate)
 /**
  * @brief RX-only PIO clock divider.
  *
- * RX runs its own state machine and divider at
- * UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT clocks/bit (32, vs. TX's 8). The
+ * RX runs its own state machine and divider at UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT clocks/bit (32, vs. TX's 8). The
  * wider grid spaces the 3 majority samples across a quarter of each bit and
  * leaves 9 PIO cycles before the next start. See uart.pio.
  */
 static float pio_uart_driver_rx_clock_divider(uint32_t baud_rate)
 {
-    return (float)clock_get_hz(clk_sys) /
-           ((float)UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT * (float)baud_rate);
+    return (float)clock_get_hz(clk_sys) / ((float)UART_LINE_CODING_PIO_RX_CLOCKS_PER_BIT * (float)baud_rate);
 }
 
 static bool pio_uart_driver_baud_rate_supported(uint32_t baud_rate)
@@ -341,13 +328,10 @@ static void pio_uart_driver_release_gpio(pio_uart_driver_t *driver)
     if (driver->config.rx_pin != PIO_UART_DRIVER_PIN_UNASSIGNED) {
         /* Init leaves the synchronizer on. Clear bypass anyway so a partial
          * setup or an older image cannot leave this pin unsynchronized. */
-        pio_set_input_sync_bypass_with_mask(driver->config.pio,
-                                            0u,
-                                            1u << driver->config.rx_pin);
+        pio_set_input_sync_bypass_with_mask(driver->config.pio, 0u, 1u << driver->config.rx_pin);
         gpio_deinit(driver->config.rx_pin);
     }
-    if (driver->tx_cts_enabled &&
-        (driver->config.cts_pin != PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+    if (driver->tx_cts_enabled && (driver->config.cts_pin != PIO_UART_DRIVER_PIN_UNASSIGNED)) {
         gpio_deinit(driver->config.cts_pin);
     }
     if (((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) != 0u) &&
@@ -370,7 +354,7 @@ static bool pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
     uint offset = driver->tx_cts_enabled ? pio_uart_driver_tx_cts_offset(driver->config.pio)
                                          : pio_uart_driver_tx_offset(driver->config.pio);
     pio_sm_config config = driver->tx_cts_enabled ? pio_uart_tx_cts_program_get_default_config(offset)
-                                                   : pio_uart_tx_program_get_default_config(offset);
+                                                  : pio_uart_tx_program_get_default_config(offset);
 
     sm_config_set_out_pins(&config, driver->config.tx_pin, 1u);
     sm_config_set_sideset_pins(&config, driver->config.tx_pin);
@@ -386,23 +370,19 @@ static bool pio_uart_driver_init_tx_sm(pio_uart_driver_t *driver)
      * vote window at 1.5 Mbaud, so the transmitting pin is driven hard. */
     gpio_set_slew_rate(driver->config.tx_pin, GPIO_SLEW_RATE_FAST);
     gpio_set_drive_strength(driver->config.tx_pin, GPIO_DRIVE_STRENGTH_12MA);
-    pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.tx_state_machine, driver->config.tx_pin, 1u, true);
+    pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.tx_state_machine, driver->config.tx_pin, 1u,
+                                   true);
     if (driver->tx_cts_enabled) {
         pio_gpio_init(driver->config.pio, driver->config.cts_pin);
         gpio_pull_down(driver->config.cts_pin);
-        pio_sm_set_consecutive_pindirs(driver->config.pio,
-                                       driver->config.tx_state_machine,
-                                       driver->config.cts_pin,
-                                       1u,
+        pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.tx_state_machine, driver->config.cts_pin, 1u,
                                        false);
     }
     if (pio_sm_init(driver->config.pio, driver->config.tx_state_machine, offset, &config) != PICO_OK) {
         return false;
     }
-    pio_sm_set_pins_with_mask(driver->config.pio,
-                               driver->config.tx_state_machine,
-                               1u << driver->config.tx_pin,
-                               1u << driver->config.tx_pin);
+    pio_sm_set_pins_with_mask(driver->config.pio, driver->config.tx_state_machine, 1u << driver->config.tx_pin,
+                              1u << driver->config.tx_pin);
     pio_sm_set_enabled(driver->config.pio, driver->config.tx_state_machine, true);
     return true;
 }
@@ -435,7 +415,8 @@ static bool pio_uart_driver_init_rx_sm(pio_uart_driver_t *driver)
     if ((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP) != 0u) {
         gpio_pull_up(driver->config.rx_pin);
     }
-    pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.rx_state_machine, driver->config.rx_pin, 1u, false);
+    pio_sm_set_consecutive_pindirs(driver->config.pio, driver->config.rx_state_machine, driver->config.rx_pin, 1u,
+                                   false);
     pio_interrupt_clear(driver->config.pio, driver->config.rx_state_machine);
     if (pio_sm_init(driver->config.pio, driver->config.rx_state_machine, offset, &config) != PICO_OK) {
         return false;
@@ -453,10 +434,7 @@ static void pio_uart_driver_start_rx_dma(pio_uart_driver_t *driver)
     channel_config_set_transfer_data_size(&rx_dma_config, DMA_SIZE_8);
     channel_config_set_read_increment(&rx_dma_config, false);
     channel_config_set_write_increment(&rx_dma_config, true);
-    channel_config_set_dreq(&rx_dma_config,
-                            pio_get_dreq(driver->config.pio,
-                                         driver->config.rx_state_machine,
-                                         false));
+    channel_config_set_dreq(&rx_dma_config, pio_get_dreq(driver->config.pio, driver->config.rx_state_machine, false));
     channel_config_set_ring(&rx_dma_config, true, PICO_UART_PIO_UART_RX_DMA_RING_BITS);
     channel_config_set_irq_quiet(&rx_dma_config, false);
     driver->rx_dma_last_progress = 0u;
@@ -466,20 +444,14 @@ static void pio_uart_driver_start_rx_dma(pio_uart_driver_t *driver)
      * IN). An 8-bit DMA from rxf+3 pops one FIFO entry and captures that byte.
      */
     dma_channel_configure(
-        (uint)driver->rx_dma_channel,
-        &rx_dma_config,
-        write_addr,
-        (const volatile void *)((uintptr_t)&driver->config.pio->rxf[driver->config.rx_state_machine] +
-                                3u),
-        uart_dma_rx_transfer_count_encoded(),
-        true);
+        (uint)driver->rx_dma_channel, &rx_dma_config, write_addr,
+        (const volatile void *)((uintptr_t)&driver->config.pio->rxf[driver->config.rx_state_machine] + 3u),
+        uart_dma_rx_transfer_count_encoded(), true);
 
     pio_uart_driver_rx_irq_owners[driver->rx_dma_channel] = driver;
     dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel);
     if (pio_uart_driver_rx_dma_irq_installed) {
-        dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                     (uint)driver->rx_dma_channel,
-                                     true);
+        dma_irqn_set_channel_enabled(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel, true);
     }
 }
 
@@ -488,8 +460,7 @@ static uint32_t pio_uart_driver_rx_progress(const pio_uart_driver_t *driver)
     return uart_dma_rx_progress((uint)driver->rx_dma_channel);
 }
 
-bool pio_uart_driver_rx_snapshot_is_current(const pio_uart_driver_t *driver,
-                                            uint32_t consumer_sequence)
+bool pio_uart_driver_rx_snapshot_is_current(const pio_uart_driver_t *driver, uint32_t consumer_sequence)
 {
     uint32_t progress;
     uint32_t produced;
@@ -500,9 +471,7 @@ bool pio_uart_driver_rx_snapshot_is_current(const pio_uart_driver_t *driver,
     }
 
     progress = pio_uart_driver_rx_progress(driver);
-    produced = uart_dma_rx_bytes_produced(progress,
-                                         driver->rx_dma_last_progress,
-                                         uart_dma_rx_transfer_count_max());
+    produced = uart_dma_rx_bytes_produced(progress, driver->rx_dma_last_progress, uart_dma_rx_transfer_count_max());
     live_producer = driver->rx_ring.producer + produced;
     __dmb();
     return (live_producer - consumer_sequence) <= driver->rx_ring.size;
@@ -518,9 +487,7 @@ static void pio_uart_driver_publish_rx(pio_uart_driver_t *driver)
     }
 
     progress = pio_uart_driver_rx_progress(driver);
-    produced = uart_dma_rx_bytes_produced(progress,
-                                         driver->rx_dma_last_progress,
-                                         uart_dma_rx_transfer_count_max());
+    produced = uart_dma_rx_bytes_produced(progress, driver->rx_dma_last_progress, uart_dma_rx_transfer_count_max());
     driver->controller_rx_bytes += produced;
     driver->rx_dma_last_progress = progress;
     ring_buffer_produce_external(&driver->rx_ring, produced);
@@ -531,8 +498,7 @@ static void pio_uart_driver_drain_tx_fifo(pio_uart_driver_t *driver)
     while (true) {
         ring_buffer_span_t span = ring_buffer_read_span(&driver->tx_ring);
         size_t fifo_headroom = PIO_UART_DRIVER_TX_FIFO_DEPTH -
-                               (size_t)pio_sm_get_tx_fifo_level(driver->config.pio,
-                                                                 driver->config.tx_state_machine);
+                               (size_t)pio_sm_get_tx_fifo_level(driver->config.pio, driver->config.tx_state_machine);
         size_t budget_bytes;
         size_t chunk;
 
@@ -541,19 +507,14 @@ static void pio_uart_driver_drain_tx_fifo(pio_uart_driver_t *driver)
         }
 
         chunk = (span.length < fifo_headroom) ? span.length : fifo_headroom;
-        budget_bytes = uart_tx_transfer_bytes(chunk,
-                                              chunk,
-                                              driver->config.baud_rate,
-                                              10u,
-                                              PIO_UART_DRIVER_TX_DMA_BUDGET_MS);
+        budget_bytes =
+            uart_tx_transfer_bytes(chunk, chunk, driver->config.baud_rate, 10u, PIO_UART_DRIVER_TX_DMA_BUDGET_MS);
         if (chunk > budget_bytes) {
             chunk = budget_bytes;
         }
 
         for (size_t index = 0u; index < chunk; ++index) {
-            pio_sm_put(driver->config.pio,
-                       driver->config.tx_state_machine,
-                       span.data[index]);
+            pio_sm_put(driver->config.pio, driver->config.tx_state_machine, span.data[index]);
         }
 
         (void)ring_buffer_commit_consumed(&driver->tx_ring, chunk);
@@ -582,10 +543,7 @@ static bool pio_uart_driver_start_tx_dma(pio_uart_driver_t *driver, size_t max_t
     }
 
     /* PIO is fixed 8N1: ten wire bits per byte. */
-    transfer_length = uart_tx_transfer_bytes(span.length,
-                                             max_transfer_bytes,
-                                             driver->config.baud_rate,
-                                             10u,
+    transfer_length = uart_tx_transfer_bytes(span.length, max_transfer_bytes, driver->config.baud_rate, 10u,
                                              PIO_UART_DRIVER_TX_DMA_BUDGET_MS);
     if (transfer_length == 0u) {
         return false;
@@ -595,16 +553,10 @@ static bool pio_uart_driver_start_tx_dma(pio_uart_driver_t *driver, size_t max_t
     channel_config_set_transfer_data_size(&tx_dma_config, DMA_SIZE_8);
     channel_config_set_read_increment(&tx_dma_config, true);
     channel_config_set_write_increment(&tx_dma_config, false);
-    channel_config_set_dreq(&tx_dma_config,
-                            pio_get_dreq(driver->config.pio,
-                                         driver->config.tx_state_machine,
-                                         true));
-    dma_channel_configure((uint)driver->tx_dma_channel,
-                          &tx_dma_config,
-                          &driver->config.pio->txf[driver->config.tx_state_machine],
-                          span.data,
-                          (uint32_t)transfer_length,
-                          true);
+    channel_config_set_dreq(&tx_dma_config, pio_get_dreq(driver->config.pio, driver->config.tx_state_machine, true));
+    dma_channel_configure((uint)driver->tx_dma_channel, &tx_dma_config,
+                          &driver->config.pio->txf[driver->config.tx_state_machine], span.data,
+                          (uint32_t)transfer_length, true);
 
     driver->tx_dma_bytes_in_flight = transfer_length;
     driver->tx_dma_active = true;
@@ -642,8 +594,7 @@ static void pio_uart_driver_service_tx(pio_uart_driver_t *driver)
     }
 
     /* Do not stack another budget behind bytes still queued in the PIO FIFO. */
-    if (!driver->tx_dma_active &&
-        !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine)) {
+    if (!driver->tx_dma_active && !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine)) {
         return;
     }
 
@@ -728,8 +679,7 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
     driver->rx_sm_claimed = false;
     driver->tx_dma_active = false;
     driver->rx_rts_asserted = false;
-    driver->tx_cts_enabled =
-        (driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL) != 0u;
+    driver->tx_cts_enabled = (driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL) != 0u;
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_polled_bytes = 0u;
     driver->tx_dma_bytes = 0u;
@@ -762,13 +712,9 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
      * pio_uart_driver_release_dma) is equivalent because neither DMA channel
      * was ever armed at this point.
      */
-    if (!pio_uart_driver_claim_resources(&pio_uart_resource_claim_ops_default,
-                                         driver->config.pio,
-                                         driver->config.tx_state_machine,
-                                         driver->config.rx_state_machine,
-                                         &driver->tx_sm_claimed,
-                                         &driver->rx_sm_claimed,
-                                         &driver->rx_dma_channel,
+    if (!pio_uart_driver_claim_resources(&pio_uart_resource_claim_ops_default, driver->config.pio,
+                                         driver->config.tx_state_machine, driver->config.rx_state_machine,
+                                         &driver->tx_sm_claimed, &driver->rx_sm_claimed, &driver->rx_dma_channel,
                                          &driver->tx_dma_channel)) {
         return false;
     }
@@ -801,19 +747,14 @@ void pio_uart_driver_poll(pio_uart_driver_t *driver, bool tx_launch_allowed)
     pio_uart_driver_harvest_framing_errors(driver);
     /* Safety net if the DMA IRQ was masked or delayed past transfer completion. */
     if ((driver->rx_dma_channel >= 0) &&
-        uart_rx_dma_poll_should_rearm(true,
-                                      dma_channel_is_busy((uint)driver->rx_dma_channel),
-                                      uart_dma_rx_transfer_count_remaining(
-                                          (uint)driver->rx_dma_channel))) {
+        uart_rx_dma_poll_should_rearm(true, dma_channel_is_busy((uint)driver->rx_dma_channel),
+                                      uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel))) {
         uint32_t interrupt_status = save_and_disable_interrupts();
 
-        if (uart_rx_dma_poll_should_rearm(true,
-                                          dma_channel_is_busy((uint)driver->rx_dma_channel),
-                                           uart_dma_rx_transfer_count_remaining(
-                                               (uint)driver->rx_dma_channel))) {
+        if (uart_rx_dma_poll_should_rearm(true, dma_channel_is_busy((uint)driver->rx_dma_channel),
+                                          uart_dma_rx_transfer_count_remaining((uint)driver->rx_dma_channel))) {
             /* Consume a sticky completion before restart so a delayed ISR cannot rearm twice. */
-            dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX,
-                                         (uint)driver->rx_dma_channel);
+            dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel);
             pio_uart_driver_rearm_rx_dma(driver);
         }
         restore_interrupts(interrupt_status);
@@ -848,8 +789,7 @@ void pio_uart_driver_deinit(pio_uart_driver_t *driver)
 static bool pio_uart_driver_rx_quiescent(const pio_uart_driver_t *driver)
 {
     uint instruction = pio_sm_get_pc(driver->config.pio, driver->config.rx_state_machine);
-    bool require_idle_high =
-        (driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH) != 0u;
+    bool require_idle_high = (driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH) != 0u;
 
     /* The RX program waits for its next start bit at instruction zero. When the
      * policy flag is enabled, also require a high pin to reject a start bit
@@ -900,8 +840,7 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
      * uart_pio_baud_change_idle(); evaluating that helper here would clear
      * sticky TXSTALL while DMA still owns the port.
      */
-    if (driver->tx_dma_active ||
-        !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
+    if (driver->tx_dma_active || !pio_sm_is_tx_fifo_empty(driver->config.pio, driver->config.tx_state_machine) ||
         !pio_uart_driver_tx_shifter_idle(driver) ||
         !pio_sm_is_rx_fifo_empty(driver->config.pio, driver->config.rx_state_machine) ||
         !pio_uart_driver_rx_quiescent(driver)) {
@@ -917,8 +856,8 @@ static bool pio_uart_driver_prepare_baud_change_locked(pio_uart_driver_t *driver
     }
 
     /*
-    * Short critical section: finish DMA stop, pause SMs, and re-check FIFOs /
-    * RX quiescence before committing to the baud apply.
+     * Short critical section: finish DMA stop, pause SMs, and re-check FIFOs /
+     * RX quiescence before committing to the baud apply.
      */
     {
         uint32_t interrupt_status = save_and_disable_interrupts();
@@ -960,8 +899,7 @@ static void pio_uart_driver_apply_baud_locked(pio_uart_driver_t *driver, uint32_
     pio_sm_set_clkdiv(driver->config.pio, driver->config.tx_state_machine, tx_divider);
     pio_sm_set_clkdiv(driver->config.pio, driver->config.rx_state_machine, rx_divider);
     pio_clkdiv_restart_sm_mask(driver->config.pio,
-                               (1u << driver->config.tx_state_machine) |
-                                   (1u << driver->config.rx_state_machine));
+                               (1u << driver->config.tx_state_machine) | (1u << driver->config.rx_state_machine));
     pio_sm_clear_fifos(driver->config.pio, driver->config.tx_state_machine);
     pio_sm_clear_fifos(driver->config.pio, driver->config.rx_state_machine);
     pio_sm_restart(driver->config.pio, driver->config.tx_state_machine);

@@ -1,120 +1,133 @@
 # PicoUart
 
-PicoUart is a USB-to-UART converter project for the Raspberry Pi RP2040 and RP2350.
-The current firmware exposes 6 independent USB CDC interfaces to the host, with each CDC
-interface mapped to one UART channel on the target side.
+PicoUart is a six-channel USB-to-UART bridge for Raspberry Pi RP2040 and RP2350 boards. Each USB CDC interface maps to
+one UART channel on the target.
 
-## What It Provides
+## Why PicoUart
 
-- 6 USB CDC ACM interfaces presented to the host PC
-- 1 USB HID status-monitor interface presented to the host PC
-- 6 UART channels on the device side
-- 2 UARTs implemented with RP2040/RP2350 hardware UART peripherals
-- 4 UARTs implemented with PIO-based software UARTs
-- RTS/CTS pins assigned for future or explicit flow-control testing, disabled
-  by default
+Embedded bring-up often means watching several UARTs at once: a boot log, a co-processor, and a debug console, for
+example. PicoUart explores using one Pico-class MCU to expose six independent serial links over USB, with a separate HID
+interface for health diagnostics. The goal is a compact, inspectable tool for multi-port development without a stack of
+separate USB-UART adapters.
 
-This makes the board act like a 6-port USB serial converter while still using a low-cost
-microcontroller platform.
+## At a Glance
 
-## Documentation
+| Interface   | Role                                                               | Implementation                    |
+| ----------- | ------------------------------------------------------------------ | --------------------------------- |
+| CDC0–CDC5   | Six independent host serial ports                                  | One-to-one mapping to UART0–UART5 |
+| HID         | Health, overflow, version, temperature, and limited board controls | Separate from UART data           |
+| UART0–UART1 | General UART traffic                                               | RP2040/RP2350 hardware UARTs      |
+| UART2–UART5 | General UART traffic                                               | PIO UARTs; 8N1 only               |
 
-Start here:
+### Channel Mapping
 
-- [Architecture](docs/architecture.md)
-- [UART Pinout and Wiring](docs/uart-pinout.md)
-- [CDC/HID Overview](docs/usb/cdc-hid-overview.md)
+Each CDC port carries serial data for its corresponding UART. HID is a separate diagnostics and control interface; it
+does not carry UART data.
 
-Hardware testing:
+```mermaid
+flowchart LR
+  subgraph USB["PicoUart USB interfaces"]
+    direction TB
+    CDC0["CDC 0"]
+    CDC1["CDC 1"]
+    CDC2["CDC 2"]
+    CDC3["CDC 3"]
+    CDC4["CDC 4"]
+    CDC5["CDC 5"]
+    HID["HID<br/>Status and diagnostics"]
+  end
 
-- [Test Documentation Index](docs/tests/README.md)
-- [Self-Test Setup](docs/tests/self-test-setup.md)
-- [Functional Test Plan](docs/tests/functional-test-plan.md)
-- [Performance Test Plan](docs/tests/performance-test-plan.md)
-- [Performance Test Results](docs/tests/performance-test-results.md)
+  subgraph UARTs["Target UART channels"]
+    direction TB
+    UART0["UART 0<br/>Hardware"]
+    UART1["UART 1<br/>Hardware"]
+    UART2["UART 2<br/>PIO"]
+    UART3["UART 3<br/>PIO"]
+    UART4["UART 4<br/>PIO"]
+    UART5["UART 5<br/>PIO"]
+  end
 
-Release and policy:
+  CDC0 <-->|"1:1"| UART0
+  CDC1 <-->|"1:1"| UART1
+  CDC2 <-->|"1:1"| UART2
+  CDC3 <-->|"1:1"| UART3
+  CDC4 <-->|"1:1"| UART4
+  CDC5 <-->|"1:1"| UART5
+```
 
-- [Releasing](docs/releasing.md)
-- [Security / USB identity policy](SECURITY.md)
+### Host Dashboard
 
-Design notes:
+The optional local dashboard presents board health, traffic, and controls in one view.
 
-- [HID Report Reference](docs/usb/hid-report-reference.md)
-- [Control Plane Design](docs/detail/control-plane-design.md)
-- [Ring Buffer Design](docs/detail/ring-buffer-design.md)
-- [PIO UART Design](docs/detail/pio-uart-design.md)
+![PicoUart host dashboard showing six healthy UART channels and board telemetry.](docs/assets/pico-uart-dashboard.png)
 
-When firmware behavior changes, update the matching design or test document in
-the same change. This keeps the detailed docs from drifting away from code.
+_Illustrative screenshot with sample telemetry; no physical board was connected._
 
 ## Quick Start
 
-Firmware development, flashing, release builds, and physical HIL are supported on
-Ubuntu/Linux. Windows remains supported for host-side Python HID and CDC tools;
-use WSL2 Ubuntu for firmware work from Windows.
+Prebuilt firmware is available from [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases) after a
+release is published. Choose the rated `pico` or `pico2` UF2 for your board. Tagged releases remain drafts until
+required HIL qualification passes. If no release is published yet, follow the
+[Firmware Build and Configuration guide](firmware/build-and-config.md).
+
+For a board with firmware installed, connect it over USB, install the host client, and read a status sample:
 
 ```sh
-. tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0
-tools/firmware/build.sh --board pico
-tools/firmware/build.sh --board pico2
-tools/test/test-host.sh
+python -m pip install pico-uart
+pico-uart status
 ```
 
-CI does not provide a Pico/Pico 2 board, Debug Probe, or jumper-wire fixture,
-so physical UART, USB, HID, and performance tests cannot run automatically in
-the pipeline. Users must assemble the hardware fixture and run the documented
-tests locally. Start with [Self-Test Setup](docs/tests/self-test-setup.md),
-then follow the [Functional Test Plan](docs/tests/functional-test-plan.md) and
-[Performance Test Plan](docs/tests/performance-test-plan.md). Record results
-in [Performance Test Results](docs/tests/performance-test-results.md).
+Check the [UART pinout and wiring](docs/uart-pinout.md) before connecting target hardware. The
+[PicoUart Python guide](host/python/README.md) covers requirements, HID access, monitoring, and the local dashboard. See
+the [CDC/HID overview](docs/usb/cdc-hid-overview.md) for interface behavior.
 
-CI builds the rated firmware targets (`pico` at 125 MHz, `pico2` at 150 MHz)
-and development overclock images on Linux, and runs host tests on Linux and
-Windows. Both PR checks and release builds use `pico` at 250 MHz and `pico2`
-at 300 MHz; neither overclock writes the core voltage. Release tags open a
-draft GitHub Release containing the two rated and two release overclock
-images; publish only after the gates in [Releasing](docs/releasing.md).
+## Supported Hardware
 
-## Repository Layout
+<table width="100%">
+  <colgroup>
+    <col width="50%" />
+    <col width="50%" />
+  </colgroup>
+  <thead>
+    <tr>
+      <th align="center">RP2040 · Raspberry Pi Pico</th>
+      <th align="center">RP2350 · Raspberry Pi Pico 2</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><img src="docs/assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico reference board" width="100%" /></td>
+      <td align="center"><img src="docs/assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2 reference board" width="100%" /></td>
+    </tr>
+    <tr>
+      <td align="center"><code>--board pico</code></td>
+      <td align="center"><code>--board pico2</code></td>
+    </tr>
+  </tbody>
+</table>
 
-- [docs](docs)
-- [firmware](firmware) - Pico SDK firmware project; see [build and configuration](firmware/build-and-config.md)
-- [host/python](host/python) - Python HID monitor and board-control utility (`src/`, tests in `tests/`)
-- [tools](tools/README.md) - repo tooling grouped by firmware, hardware/HIL, release, and test helpers
+_Reference boards, not PicoUart-specific assemblies. Both photos are proportionally resized and padded to a shared 640 x
+400 canvas. Pico photo by Misael Reséndiz ([source](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_Pico.jpg)),
+licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); Pico 2 photo by SparkFun Electronics
+([source](https://commons.wikimedia.org/wiki/File:DEV-26124-PICO-2-angle.jpg)), licensed under
+[CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)._
 
-## Target Devices
+## Important Limitations
 
-- RP2040-based boards such as Raspberry Pi Pico (`--board pico`)
-- RP2350-based boards such as Raspberry Pi Pico 2 (`--board pico2`)
+- PIO UART channels support 8N1 only; unsupported line coding is rejected.
+- RTS/CTS flow control is disabled by default. Host CDC RTS is ignored, and DTR is monitored but does not gate UART
+  traffic.
+- Sustained multi-port throughput is limited by USB full-speed bandwidth and host drain rate.
+- `cafe:4010` is a development/lab USB identity, not for commercial derivatives; see [SECURITY.md](SECURITY.md).
 
-CI builds the rated targets and development overclock images (250 MHz on Pico;
-300 MHz on Pico 2) in both PR checks and releases; neither target writes the
-core voltage. The transport model stays consistent across both families.
+## Documentation
 
-## Current Status
-
-The firmware currently provides:
-
-- USB enumeration with 6 CDC ACM functions
-- 1 vendor HID interface for status and limited board control
-- Routing RX/TX data between each CDC interface and its matching UART
-- CDC line-coding updates, with unsupported requests reported through HID health
-- DMA-backed hardware UART paths
-- DMA-backed PIO RX and hybrid FIFO/DMA PIO TX
-
-Known gaps in the current implementation:
-
-- Host CDC RTS is ignored; DTR is recorded for HID monitoring only.
-- PIO UART ports remain 8N1-only and reject unsupported parity, stop-bit, or
-  data-bit changes.
-- Runtime RTS/CTS flow control is opt-in and must be explicitly configured and
-  tested before claiming lossless behavior.
-- Sustained multi-port 1 Mbaud is limited by USB full-speed aggregate bandwidth.
-
-## Possible Future Enhancements
-
-- Per-port status LEDs
-- Configurable default baud rates
-- PIO RTS/CTS qualification and tuning
-- Replace development USB IDs (`cafe:4010`) with an allocated identity (see [SECURITY.md](SECURITY.md))
+- [Host Python installation and usage](host/python/README.md)
+- [UART pinout and wiring](docs/uart-pinout.md)
+- [CDC/HID behavior](docs/usb/cdc-hid-overview.md)
+- [HID report reference](docs/usb/hid-report-reference.md)
+- [Hardware test index](docs/tests/README.md)
+- [Release policy and qualification](docs/releasing.md)
+- [Firmware development and repository testing](docs/development/firmware-testing.md)
+- [Host Python package development](docs/development/host-python.md)
+- [Firmware architecture](docs/architecture.md)

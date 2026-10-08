@@ -36,29 +36,29 @@ __attribute__((weak)) void (*test_spin_unlock_hook)(void) = NULL;
 
 static inline uint32_t spin_lock_blocking(spin_lock_t *lock)
 {
-	(void)lock;
-	return 0u;
+    (void)lock;
+    return 0u;
 }
 
 static inline void spin_unlock(spin_lock_t *lock, uint32_t save)
 {
-	(void)lock;
-	(void)save;
-	if (test_spin_unlock_hook != NULL) {
-		test_spin_unlock_hook();
-	}
+    (void)lock;
+    (void)save;
+    if (test_spin_unlock_hook != NULL) {
+        test_spin_unlock_hook();
+    }
 }
 
 static inline unsigned int spin_lock_claim_unused(bool required)
 {
-	(void)required;
-	return 0u;
+    (void)required;
+    return 0u;
 }
 
 static inline spin_lock_t *spin_lock_instance(unsigned int lock)
 {
-	(void)lock;
-	return (spin_lock_t *)1;
+    (void)lock;
+    return (spin_lock_t *)1;
 }
 
 #endif

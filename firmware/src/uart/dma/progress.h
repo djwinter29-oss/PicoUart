@@ -4,8 +4,7 @@
  *
  * RP2040 TRANS_COUNT is a full 32-bit countdown. RP2350 reuses the top nibble as
  * MODE: writing 0xffffffff selects ENDLESS mode (count never decrements, no IRQ).
- * Always encode a normal countdown via the SDK helper and mask COUNT when sampling
- * progress.
+ * Always encode a normal countdown via the SDK helper and mask COUNT when sampling progress.
  */
 
 #ifndef UART_DMA_PROGRESS_H
@@ -99,18 +98,14 @@ static inline bool uart_dma_rx_wait_paused_progress_stable(uint channel)
 
     while (!time_reached(deadline)) {
         tight_loop_contents();
-        if (uart_dma_rx_paused_progress_sample(uart_dma_rx_transfer_count_remaining(channel),
-                                               &last,
-                                               &stable,
+        if (uart_dma_rx_paused_progress_sample(uart_dma_rx_transfer_count_remaining(channel), &last, &stable,
                                                UART_DMA_RX_PAUSE_STABLE_SAMPLES)) {
             return uart_dma_rx_pause_progress_publishable(true);
         }
     }
 
     busy_wait_us_32(UART_DMA_RX_PAUSE_SETTLE_GRACE_US);
-    stabilized = uart_dma_rx_paused_progress_sample(uart_dma_rx_transfer_count_remaining(channel),
-                                                    &last,
-                                                    &stable,
+    stabilized = uart_dma_rx_paused_progress_sample(uart_dma_rx_transfer_count_remaining(channel), &last, &stable,
                                                     UART_DMA_RX_PAUSE_STABLE_SAMPLES);
     return uart_dma_rx_pause_progress_publishable(stabilized);
 }

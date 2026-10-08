@@ -28,15 +28,15 @@
  * @brief Static configuration for one PIO UART instance.
  */
 typedef struct {
-    PIO pio; /**< PIO block assigned to the logical UART. */
-    uint32_t tx_state_machine; /**< PIO TX state machine index. */
-    uint32_t rx_state_machine; /**< PIO RX state machine index. */
-    uint32_t baud_rate; /**< Target UART baud rate. */
-    uint32_t tx_pin; /**< GPIO used for TX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
-    uint32_t rx_pin; /**< GPIO used for RX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
-    uint32_t rts_pin; /**< GPIO used for active-low RTS, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
-    uint32_t cts_pin; /**< GPIO used for active-low CTS, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
-    uint32_t pin_flags; /**< Explicit board-level GPIO policy flags. */
+    PIO pio;                         /**< PIO block assigned to the logical UART. */
+    uint32_t tx_state_machine;       /**< PIO TX state machine index. */
+    uint32_t rx_state_machine;       /**< PIO RX state machine index. */
+    uint32_t baud_rate;              /**< Target UART baud rate. */
+    uint32_t tx_pin;                 /**< GPIO used for TX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t rx_pin;                 /**< GPIO used for RX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t rts_pin;                /**< GPIO used for active-low RTS, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t cts_pin;                /**< GPIO used for active-low CTS, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t pin_flags;              /**< Explicit board-level GPIO policy flags. */
     uint32_t tx_dma_start_threshold; /**< TX backlog threshold that triggers a DMA transfer, or 0 for the default. */
 } pio_uart_driver_config_t;
 
@@ -55,8 +55,7 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver);
 /**
  * @brief Activate PIO-UART RX DMA interrupts on the UART worker core.
  *
- * Call after all PIO UART backends are initialized and from the core that owns
- * steady-state UART service.
+ * Call after all PIO UART backends are initialized and from the core that owns steady-state UART service.
  */
 void pio_uart_driver_enable_rx_dma_irq(void);
 
@@ -81,8 +80,7 @@ void pio_uart_driver_deinit(pio_uart_driver_t *driver);
  * @param driver Driver instance whose startup RX errors should be discarded.
  *
  * Clears a sticky PIO RX stop-bit interrupt without counting it, then zeroes
- * the session framing counter. The first worker poll would otherwise report
- * pin bring-up noise as HID health bit 7.
+ * the session framing counter. The first worker poll would otherwise report pin bring-up noise as HID health bit 7.
  */
 void pio_uart_driver_clear_rx_error_baseline(pio_uart_driver_t *driver);
 

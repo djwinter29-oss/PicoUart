@@ -26,8 +26,7 @@
 /**
  * @brief RP2 internal sensor voltage decrease per degree Celsius.
  *
- * This is the nominal RP2 conversion slope and does not include board-specific
- * or silicon-specific calibration.
+ * This is the nominal RP2 conversion slope and does not include board-specific or silicon-specific calibration.
  */
 #define TEMPERATURE_SENSOR_VOLTAGE_PER_CELSIUS 0.001721f
 
@@ -44,9 +43,7 @@ float temperature_read_celsius(void)
 {
     adc_select_input(TEMPERATURE_ADC_CHANNEL);
     uint16_t raw = adc_read();
-    float voltage = (float)raw * TEMPERATURE_ADC_REFERENCE_VOLTAGE /
-                    (float)(1u << TEMPERATURE_ADC_RESOLUTION_BITS);
+    float voltage = (float)raw * TEMPERATURE_ADC_REFERENCE_VOLTAGE / (float)(1u << TEMPERATURE_ADC_RESOLUTION_BITS);
 
-    return 27.0f - ((voltage - TEMPERATURE_SENSOR_VOLTAGE_AT_27C) /
-                     TEMPERATURE_SENSOR_VOLTAGE_PER_CELSIUS);
+    return 27.0f - ((voltage - TEMPERATURE_SENSOR_VOLTAGE_AT_27C) / TEMPERATURE_SENSOR_VOLTAGE_PER_CELSIUS);
 }

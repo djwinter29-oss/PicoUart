@@ -13,7 +13,7 @@
  */
 typedef enum {
     UART_DRIVER_BACKEND_HW = 0, /**< Hardware UART peripheral backend. */
-    UART_DRIVER_BACKEND_PIO, /**< PIO UART backend. */
+    UART_DRIVER_BACKEND_PIO,    /**< PIO UART backend. */
 } uart_driver_backend_t;
 
 /**
@@ -21,12 +21,12 @@ typedef enum {
  */
 typedef enum {
     UART_PORT_0 = 0, /**< Logical port 0. */
-    UART_PORT_1, /**< Logical port 1. */
-    UART_PORT_2, /**< Logical port 2. */
-    UART_PORT_3, /**< Logical port 3. */
-    UART_PORT_4, /**< Logical port 4. */
-    UART_PORT_5, /**< Logical port 5. */
-    UART_PORT_COUNT /**< Total number of logical UART ports. */
+    UART_PORT_1,     /**< Logical port 1. */
+    UART_PORT_2,     /**< Logical port 2. */
+    UART_PORT_3,     /**< Logical port 3. */
+    UART_PORT_4,     /**< Logical port 4. */
+    UART_PORT_5,     /**< Logical port 5. */
+    UART_PORT_COUNT  /**< Total number of logical UART ports. */
 } uart_port_id_t;
 
 /**
@@ -34,17 +34,17 @@ typedef enum {
  */
 typedef enum {
     UART_DRIVER_PARITY_NONE = 0, /**< No parity bit. */
-    UART_DRIVER_PARITY_ODD, /**< Odd parity. */
-    UART_DRIVER_PARITY_EVEN, /**< Even parity. */
+    UART_DRIVER_PARITY_ODD,      /**< Odd parity. */
+    UART_DRIVER_PARITY_EVEN,     /**< Even parity. */
 } uart_driver_parity_t;
 
 /**
  * @brief Worker-applied UART line-coding request.
  */
 typedef struct {
-    uint32_t baud_rate; /**< Requested baud rate. */
-    uint8_t data_bits; /**< Requested UART data-bit count. */
-    uint8_t stop_bits; /**< Requested UART stop-bit count. */
+    uint32_t baud_rate;          /**< Requested baud rate. */
+    uint8_t data_bits;           /**< Requested UART data-bit count. */
+    uint8_t stop_bits;           /**< Requested UART stop-bit count. */
     uart_driver_parity_t parity; /**< Requested parity mode. */
 } uart_driver_line_coding_t;
 

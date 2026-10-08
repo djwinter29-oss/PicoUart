@@ -18,7 +18,7 @@
  * @brief Open-ended activity deadline tracked in absolute microseconds.
  */
 typedef struct {
-    bool has_deadline; /**< True while an activity deadline is pending. */
+    bool has_deadline;    /**< True while an activity deadline is pending. */
     uint64_t deadline_us; /**< Absolute microsecond deadline; ignored when @ref has_deadline is false. */
 } led_activity_window_t;
 
@@ -38,9 +38,7 @@ static inline void led_activity_window_reset(led_activity_window_t *window)
  * Calling this again before expiry extends the deadline from `now_us`, so
  * back-to-back activity keeps the LED lit continuously instead of blinking.
  */
-static inline void led_activity_window_note(led_activity_window_t *window,
-                                            uint64_t now_us,
-                                            uint64_t window_us)
+static inline void led_activity_window_note(led_activity_window_t *window, uint64_t now_us, uint64_t window_us)
 {
     window->has_deadline = true;
     window->deadline_us = now_us + window_us;

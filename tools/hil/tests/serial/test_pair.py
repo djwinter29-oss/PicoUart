@@ -1,0 +1,185 @@
+"""Pair diagnostics must never report an empty or failed run as CLI success."""
+
+import importlib
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios/fcntl")
+
+
+def load_pair(repo_root, monkeypatch):
+    # pyserial is a hardware-tool dependency, not part of the host HID test lock.
+    monkeypatch.setitem(sys.modules, "serial", SimpleNamespace())
+    source = str(repo_root / "tools/hil/src")
+    if source not in sys.path:
+        sys.path.insert(0, source)
+    module = importlib.import_module("hil_test_suite.serial.pair")
+    return importlib.reload(module)
+
+
+def test_pair_map_matches_the_fixed_hil_fixture(repo_root, monkeypatch):
+    pair = load_pair(repo_root, monkeypatch)
+
+    assert pair.PAIRS == {
+        "stage1": ("-if00", "-if04"),
+        "stage2": ("-if06", "-if08"),
+    }
+
+
+def test_pair_cli_uses_selected_device_base(repo_root, monkeypatch):
+    pair = load_pair(repo_root, monkeypatch)
+    arguments = pair.parse_arguments(["stage1", "--rates", "115200", "--pico-device", "/dev/by-id/pico"])
+    calls = []
+
+    def run(*args):
+        calls.append(args)
+        return True, {"a-to-b": (64, None)}
+
+    monkeypatch.setattr(pair, "run", run)
+
+    assert pair.main(arguments) == 0
+    assert calls[0][-1] == "/dev/by-id/pico"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [
+        ("pass", 0),
+        ("fail", 1),
+        ("setup", 2),
+    ],
+)
+def test_cli_preserves_failure_across_later_success(repo_root, monkeypatch, capsys, outcome, expected):
+    pair = load_pair(repo_root, monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["pair", "stage2", "--rates", "115200", "--runs", "2"])
+    calls = []
+
+    def run(*args):
+        calls.append(args)
+        if len(calls) == 1 and outcome == "setup":
+            raise OSError("port unavailable")
+        passed = outcome != "fail" or len(calls) > 1
+        return passed, {"a-to-b": (64, None if passed else "mismatch")}
+
+    monkeypatch.setattr(pair, "run", run)
+    assert pair.main() == expected
+    assert len(calls) == 2
+    output = capsys.readouterr().out
+    assert "run=2 PASS" in output
+    assert {"pass": "PASS", "fail": "FAIL", "setup": "SETUP_FAIL"}[outcome] in output
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--rates", ""),
+        ("--rates", "abc"),
+        ("--rates", "115200,"),
+        ("--rates", "0"),
+        ("--rates", "-1"),
+        ("--runs", "0"),
+        ("--runs", "-1"),
+        ("--duration", "0"),
+        ("--duration", "-1"),
+        ("--duration", "nan"),
+        ("--duration", "inf"),
+        ("--settle", "-1"),
+        ("--settle", "nan"),
+        ("--settle", "inf"),
+        ("--payload", "0"),
+        ("--payload", "-1"),
+    ],
+)
+def test_invalid_cli_settings_fail_before_hardware(repo_root, monkeypatch, option, value):
+    pair = load_pair(repo_root, monkeypatch)
+    args = ["pair", "stage2"]
+    if option != "--rates":
+        args.extend(["--rates", "115200"])
+    monkeypatch.setattr(sys, "argv", args + [option, value])
+    monkeypatch.setattr(pair, "configure", lambda *_: pytest.fail("invalid settings opened a port"))
+    with pytest.raises(SystemExit) as error:
+        pair.main()
+    assert error.value.code == 2
+
+
+@pytest.mark.parametrize("direction", ["both", "a-to-b", "b-to-a"])
+@pytest.mark.parametrize("run_threads", [True, False])
+def test_empty_stream_results_do_not_pass(repo_root, monkeypatch, direction, run_threads):
+    pair = load_pair(repo_root, monkeypatch)
+    closes = []
+    monkeypatch.setattr(pair, "configure", lambda *_: SimpleNamespace(close=lambda: closes.append(1)))
+    monkeypatch.setattr(pair, "synchronize", lambda *_: None)
+    clock = [0]
+
+    def monotonic():
+        clock[0] += 1
+        return clock[0]
+
+    class ImmediateThread:
+        def __init__(self, target, args):
+            self.target, self.args = target, args
+
+        def start(self):
+            if run_threads:
+                self.target(*self.args)
+
+        def join(self):
+            pass
+
+    monkeypatch.setattr(pair.time, "monotonic", monotonic)
+    monkeypatch.setattr(pair.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(pair.threading, "Barrier", lambda *_: SimpleNamespace(wait=lambda: None))
+    passed, results = pair.run(115200, ("a", "b"), 0.1, 0, 64, direction)
+    assert not passed
+    assert closes == [1, 1]
+    if run_threads:
+        assert all("without verifying" in error for _, error in results.values())
+    else:
+        assert results == {}
+
+
+def test_second_port_setup_failure_closes_first(repo_root, monkeypatch):
+    pair = load_pair(repo_root, monkeypatch)
+    closes = []
+
+    def configure(path, _rate):
+        if path.endswith("b"):
+            raise OSError("second port failed")
+        return SimpleNamespace(close=lambda: closes.append(path))
+
+    monkeypatch.setattr(pair, "configure", configure)
+    with pytest.raises(OSError, match="second port failed"):
+        pair.run(115200, ("a", "b"), 1, 0, 64, "both")
+    assert closes == [pair.PICO + "a"]
+
+
+def test_reset_failure_closes_new_port(repo_root, monkeypatch):
+    pair = load_pair(repo_root, monkeypatch)
+    closes = []
+
+    def reset():
+        raise OSError("reset failed")
+
+    port = SimpleNamespace(reset_input_buffer=reset, close=lambda: closes.append(1))
+    monkeypatch.setattr(pair.serial, "Serial", lambda *_args, **_kwargs: port, raising=False)
+    with pytest.raises(OSError, match="reset failed"):
+        pair.configure("fake", 115200)
+    assert closes == [1]
+
+
+def test_configure_verifies_host_reported_line_speed(repo_root, monkeypatch):
+    pair = load_pair(repo_root, monkeypatch)
+    port = SimpleNamespace(
+        fileno=lambda: 17,
+        reset_input_buffer=lambda: None,
+        reset_output_buffer=lambda: None,
+        close=lambda: None,
+    )
+    calls = []
+    monkeypatch.setattr(pair.serial, "Serial", lambda *_args, **_kwargs: port, raising=False)
+    monkeypatch.setattr(pair, "verify_line_speed", lambda descriptor, baud: calls.append((descriptor, baud)))
+
+    assert pair.configure("/dev/fake", 460800) is port
+    assert calls == [(17, 460800)]

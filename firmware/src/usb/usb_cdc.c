@@ -30,16 +30,15 @@
  */
 #define USB_CDC_SOFT_PENDING_TIMEOUT_MS 1000u
 
-_Static_assert(USB_CDC_PORT_COUNT == UART_PORT_COUNT,
-               "USB CDC port count must match the logical UART port table");
+_Static_assert(USB_CDC_PORT_COUNT == UART_PORT_COUNT, "USB CDC port count must match the logical UART port table");
 
 /**
  * @brief Line-coding request deferred until the UART worker mailbox is available.
  */
 typedef struct {
-    bool pending; /**< True while the host request has not entered the worker mailbox. */
-    uint32_t control_generation; /**< Host request generation retained until mailbox submission. */
-    absolute_time_t deadline; /**< Soft-pending expiry; ignored when @ref pending is false. */
+    bool pending;                          /**< True while the host request has not entered the worker mailbox. */
+    uint32_t control_generation;           /**< Host request generation retained until mailbox submission. */
+    absolute_time_t deadline;              /**< Soft-pending expiry; ignored when @ref pending is false. */
     uart_driver_line_coding_t line_coding; /**< Latest requested UART settings. */
 } usb_cdc_pending_line_coding_t;
 
@@ -58,8 +57,7 @@ static led_activity_window_t usb_cdc_activity_window;
 /**
  * @brief How long the LED stays on after any CDC transfer (50 ms).
  *
- * Consecutive transfers extend the activity window so sustained traffic
- * appears continuously active.
+ * Consecutive transfers extend the activity window so sustained traffic appears continuously active.
  */
 #define USB_CDC_ACTIVITY_LED_ON_US 50000u
 
@@ -70,8 +68,7 @@ static void usb_cdc_update_high_watermark(uint16_t *high_watermark, uint32_t occ
     }
 }
 
-static bool usb_cdc_apply_line_coding(uint8_t itf,
-                                      const uart_driver_line_coding_t *line_coding,
+static bool usb_cdc_apply_line_coding(uint8_t itf, const uart_driver_line_coding_t *line_coding,
                                       uint32_t control_generation)
 {
     if ((itf >= USB_CDC_PORT_COUNT) || (line_coding == NULL)) {
@@ -89,8 +86,7 @@ static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_
 {
     usb_cdc_pending_line_coding_t *pending = &usb_cdc_line_coding_pending[itf];
     bool was_pending = pending->pending;
-    bool same_request = was_pending &&
-                        (pending->line_coding.baud_rate == line_coding->baud_rate) &&
+    bool same_request = was_pending && (pending->line_coding.baud_rate == line_coding->baud_rate) &&
                         (pending->line_coding.data_bits == line_coding->data_bits) &&
                         (pending->line_coding.stop_bits == line_coding->stop_bits) &&
                         (pending->line_coding.parity == line_coding->parity);
@@ -170,15 +166,11 @@ static void usb_cdc_bridge_usb_to_uart(uint8_t itf)
             available = PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET;
         }
 
-        size_t drained = uart_driver_fill_tx((uart_port_id_t)itf,
-                                             available,
-                                             usb_cdc_usb_reader,
-                                             &itf);
+        size_t drained = uart_driver_fill_tx((uart_port_id_t)itf, available, usb_cdc_usb_reader, &itf);
 
         if (drained != 0u) {
             usb_cdc_stats[itf].rx_bytes += (uint32_t)drained;
-            led_activity_window_note(&usb_cdc_activity_window,
-                                     to_us_since_boot(get_absolute_time()),
+            led_activity_window_note(&usb_cdc_activity_window, to_us_since_boot(get_absolute_time()),
                                      USB_CDC_ACTIVITY_LED_ON_US);
         }
     }
@@ -207,8 +199,7 @@ static void usb_cdc_flush_if_due(uint8_t itf)
  */
 static void usb_cdc_activity_led(void)
 {
-    bool active = led_activity_window_poll(&usb_cdc_activity_window,
-                                           to_us_since_boot(get_absolute_time()));
+    bool active = led_activity_window_poll(&usb_cdc_activity_window, to_us_since_boot(get_absolute_time()));
     led_set_usb_activity(active);
 }
 
@@ -232,29 +223,25 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
         writable = PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET;
     }
 
-    written = uart_driver_drain_rx((uart_port_id_t)itf,
-                                   writable,
-                                   usb_cdc_usb_writer,
-                                   &itf);
+    written = uart_driver_drain_rx((uart_port_id_t)itf, writable, usb_cdc_usb_writer, &itf);
     if (written != 0u) {
         usb_cdc_stats[itf].tx_bytes += (uint32_t)written;
-        led_activity_window_note(&usb_cdc_activity_window,
-                                 to_us_since_boot(get_absolute_time()),
+        led_activity_window_note(&usb_cdc_activity_window, to_us_since_boot(get_absolute_time()),
                                  USB_CDC_ACTIVITY_LED_ON_US);
         if (!usb_cdc_tx_flush_pending[itf]) {
             usb_cdc_tx_flush_deadline[itf] = make_timeout_time_us(USB_CDC_FLUSH_LATENCY_US);
         }
         usb_cdc_tx_flush_pending[itf] = true;
 
-        if ((written >= PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET) ||
-            (tud_cdc_n_write_available(itf) == 0u)) {
+        if ((written >= PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET) || (tud_cdc_n_write_available(itf) == 0u)) {
             tud_cdc_n_write_flush(itf);
             usb_cdc_tx_flush_pending[itf] = false;
         }
     }
 }
 
-void usb_cdc_init(void) {
+void usb_cdc_init(void)
+{
     usb_cdc_poll_start_itf = 0u;
     for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
         usb_cdc_tx_flush_pending[itf] = false;
@@ -303,7 +290,8 @@ void tud_umount_cb(void)
     usb_hid_reset_host_state();
 }
 
-void usb_cdc_poll(void) {
+void usb_cdc_poll(void)
+{
     uint8_t start_itf = usb_cdc_poll_start_itf;
 
     tud_task();
@@ -331,7 +319,8 @@ void usb_cdc_poll(void) {
  * @param dtr Host DTR state (recorded for HID monitoring only; does not gate bridging).
  * @param rts Host RTS state (currently ignored; HW UART RTS/CTS is board-side).
  */
-void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts) {
+void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
+{
     (void)rts;
 
     if (itf < USB_CDC_PORT_COUNT) {
@@ -355,11 +344,8 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
      * see the format limit in Device Manager / lsusb.
      */
     if ((p_line_coding == NULL) ||
-        !uart_line_coding_from_usb(p_line_coding->bit_rate,
-                                   p_line_coding->stop_bits,
-                                   p_line_coding->parity,
-                                   p_line_coding->data_bits,
-                                   &line_coding)) {
+        !uart_line_coding_from_usb(p_line_coding->bit_rate, p_line_coding->stop_bits, p_line_coding->parity,
+                                   p_line_coding->data_bits, &line_coding)) {
         usb_cdc_reject_line_coding(itf);
         return;
     }

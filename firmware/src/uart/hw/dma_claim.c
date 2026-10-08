@@ -7,9 +7,7 @@
 
 #include <stddef.h>
 
-bool hw_uart_driver_claim_dma_channels(const hw_uart_dma_claim_ops_t *ops,
-                                      int *rx_dma_channel,
-                                      int *tx_dma_channel)
+bool hw_uart_driver_claim_dma_channels(const hw_uart_dma_claim_ops_t *ops, int *rx_dma_channel, int *tx_dma_channel)
 {
     if ((ops == NULL) || (rx_dma_channel == NULL) || (tx_dma_channel == NULL)) {
         return false;

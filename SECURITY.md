@@ -1,55 +1,20 @@
-# Security Policy
+# Security
 
-## USB identity
+## Report a Vulnerability
 
-PicoUart currently enumerates as USB **`cafe:4010`**. These IDs are a
-**development / lab placeholder** defined in
-[`firmware/src/config/usb_identity.h`](firmware/src/config/usb_identity.h).
-They are not an allocated USB-IF or [pid.codes](https://pid.codes) identity.
+Please report suspected vulnerabilities privately through the repository's **Security** tab using **Report a
+vulnerability**. Do not publish exploit details in an issue or pull request.
 
-PicoUart releases are lab/project artifacts, so release CI permits this identity.
-See [`docs/releasing.md`](docs/releasing.md). Commercial derivatives must use an
-allocated identity.
+If private reporting is unavailable, open a minimal issue asking maintainers for a private reporting channel; do not
+include technical details until one is provided.
 
-Do **not** ship production devices with the placeholder IDs:
+## Device Security Notes
 
-- Other projects may collide on the same VID/PID.
-- OS driver/association behavior is undefined across machines.
-- Changing the identity later is a breaking USB change for existing installs.
-
-### Commercial derivatives
-
-Before shipping a commercial derivative:
-
-1. Obtain an allocated VID/PID (pid.codes or a commercial USB-IF vendor ID).
-2. Update `PICO_UART_USB_VID` / `PICO_UART_USB_PID` in `usb_identity.h`.
-3. Keep [`host/python/src/pico_uart_hid.py`](host/python/src/pico_uart_hid.py) in sync.
-4. Note the identity change in release notes (CI derives the USB needle from `usb_identity.h`).
-
-## HID board controls
-
-The vendor HID interface accepts commands that toggle the board LED. Remote
-reset is disabled by default. Trusted lab builds may enable it with
-`-DPICO_UART_ALLOW_HID_RESET=1`; reset then requires a two-step sequence (arm,
-then reset within 2 seconds). Enabled builds advertise that capability in HID
-board-status `reserved0` bit 0; the reference host tool refuses `reset` when
-the bit is clear. Any local user who can open the HID node can still reboot a
-build that enables it.
-
-Mitigations:
-
-- Keep the default `PICO_UART_ALLOW_HID_RESET=0` for shared or production hosts.
-- Limit access to the HID `hidraw` node when reset is enabled. CDC `ttyACM`
-  nodes are typically in the `dialout` group; that group does not cover HID.
-
-## Reporting issues
-
-Enable private vulnerability reporting in the repository's GitHub **Settings →
-Security → Code security and analysis** before publishing a release. Once
-enabled, report vulnerabilities through the repository's **Security → Advisories
-→ Report a vulnerability** flow; maintainers must acknowledge the report before
-requesting any public GitHub issue or CVE disclosure.
-
-Do not include exploit details in a public issue while a private advisory is
-open. If private reporting is unavailable, maintainers must enable it rather
-than asking the reporter to disclose a vulnerability publicly.
+- The USB identity `cafe:4010` is an unallocated development/lab identity. Do not use it for commercial products;
+  collisions and driver-association conflicts are possible. See the [release guide](docs/releasing.md) before
+  distributing derivative devices.
+- Remote HID reset is disabled by default. In builds that enable it, any local process with permission to open the HID
+  device can reset the board. Restrict operating-system access to the HID device node to trusted users. Serial-port
+  group membership (such as `dialout` on Linux) does not itself grant or restrict HID access.
+- The HID interface is a local USB control/diagnostic interface, not a network service. The host tool checks whether
+  firmware advertises reset capability but cannot authenticate other local processes with access to the same HID device.

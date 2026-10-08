@@ -7,17 +7,12 @@
 
 #include <stddef.h>
 
-bool pio_uart_driver_claim_resources(const pio_uart_resource_claim_ops_t *ops,
-                                     void *pio,
-                                     unsigned int tx_sm,
-                                     unsigned int rx_sm,
-                                     bool *tx_sm_claimed,
-                                     bool *rx_sm_claimed,
-                                     int *rx_dma_channel,
+bool pio_uart_driver_claim_resources(const pio_uart_resource_claim_ops_t *ops, void *pio, unsigned int tx_sm,
+                                     unsigned int rx_sm, bool *tx_sm_claimed, bool *rx_sm_claimed, int *rx_dma_channel,
                                      int *tx_dma_channel)
 {
-    if ((ops == NULL) || (tx_sm_claimed == NULL) || (rx_sm_claimed == NULL) ||
-        (rx_dma_channel == NULL) || (tx_dma_channel == NULL)) {
+    if ((ops == NULL) || (tx_sm_claimed == NULL) || (rx_sm_claimed == NULL) || (rx_dma_channel == NULL) ||
+        (tx_dma_channel == NULL)) {
         return false;
     }
 

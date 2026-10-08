@@ -1,14 +1,11 @@
 # Releasing PicoUart
 
-Release tags matching `vMAJOR.MINOR.PATCH` run
-[`.github/workflows/release.yml`](../.github/workflows/release.yml). The workflow
-builds the rated `pico` (125 MHz) and `pico2` (150 MHz) images plus development
-overclock images `pico-250mhz` (250 MHz) and `pico2-300mhz` (300 MHz), runs host
-tests, packages UF2/ELF/BIN/HEX plus `SHA256SUMS-*`, and opens a **draft**
-GitHub Release. The promote HIL gate covers the rated images.
+Release tags matching `vMAJOR.MINOR.PATCH` run [`.github/workflows/release.yml`](../.github/workflows/release.yml). The
+workflow builds the rated `pico` (125 MHz) and `pico2` (150 MHz) images plus development overclock images `pico-250mhz`
+(250 MHz) and `pico2-300mhz` (300 MHz), runs host tests, packages UF2/ELF/BIN/HEX plus `SHA256SUMS-*`, and opens a
+**draft** GitHub Release. The promote HIL gate covers the rated images.
 
-Do not publish the draft until exact-artifact hardware-in-the-loop (HIL) evidence
-passes the gates below.
+Do not publish the draft until exact-artifact hardware-in-the-loop (HIL) evidence passes the gates below.
 
 Suggested flow:
 
@@ -30,9 +27,8 @@ flowchart LR
    Compare -->|yes| Promote["Promote draft release"]
 ```
 
-The release unit is the exact packaged artifact, not a source revision or a
-local rebuild. HIL evidence is valid only when its image hash matches the
-artifact attached to the draft release.
+The release unit is the exact packaged artifact, not a source revision or a local rebuild. HIL evidence is valid only
+when its image hash matches the artifact attached to the draft release.
 
 ## Release Preflight
 
@@ -40,58 +36,59 @@ Before requesting HIL, confirm:
 
 1. The change is reviewed and the working tree contains no unintended files.
 2. The version is a valid `vMAJOR.MINOR.PATCH` release tag.
-3. Rated `pico` and `pico2` firmware artifacts build successfully, and the
-   development overclock images (`pico` at 250 MHz, `pico2` at 300 MHz) build
-   with them.
+3. Rated `pico` and `pico2` firmware artifacts build successfully, and the development overclock images (`pico` at 250
+   MHz, `pico2` at 300 MHz) build with them.
 4. The host suite passes, including the UART facade and backend contract tests.
 5. `git diff --check` passes.
 6. The release notes identify any USB/HID compatibility or behavior changes.
 
 Do not begin physical testing from an uncommitted or locally modified image.
 
+## Security Reporting Setup
+
+Before publishing a release, maintainers must enable private vulnerability reporting in the repository's GitHub
+**Settings → Security → Code security and analysis**. This makes the private **Security → Advisories → Report a
+vulnerability** flow available to users. Acknowledge reports privately and coordinate disclosure before requesting any
+public issue or CVE disclosure. User reporting instructions and device-security notes are in
+[`SECURITY.md`](../SECURITY.md).
+
 ## USB identity
 
-PicoUart publishes lab and test artifacts using `cafe:4010`, an unallocated
-development USB identity. This project is not a commercial product, so the
-release workflow deliberately permits this identity and does not gate tag
-releases on a VID/PID allocation.
+PicoUart publishes lab and test artifacts using `cafe:4010`, an unallocated development USB identity. This project is
+not a commercial product, so the release workflow deliberately permits this identity and does not gate tag releases on a
+VID/PID allocation.
 
-Do not reuse these IDs for a commercial device: another project may collide on
-the same identity and operating-system driver association is undefined. A
-commercial derivative must obtain its own VID/PID and update
-[`firmware/src/config/usb_identity.h`](../firmware/src/config/usb_identity.h)
-and [`host/python/src/pico_uart_hid.py`](../host/python/src/pico_uart_hid.py).
-See also [`SECURITY.md`](../SECURITY.md).
+Do not reuse these IDs for a commercial device: another project may collide on the same identity and operating-system
+driver association is undefined. A commercial derivative must obtain its own VID/PID and update
+[`firmware/src/config/usb_identity.h`](../firmware/src/config/usb_identity.h) and
+[`host/python/src/pico_uart/transport.py`](../host/python/src/pico_uart/transport.py). Treat the identity change as a
+breaking USB change, update release notes, and run the firmware/host USB identity contract tests before publishing.
 
 ## Release HIL Gates
 
-Use the [Test Documentation Index](tests/README.md) for the complete
-automated-to-HIL test sequence and result semantics.
+Use the [Test Documentation Index](tests/README.md) for the complete automated-to-HIL test sequence and result
+semantics.
 
-Cloud CI proves builds and host tests only. A publishable release needs recorded
-HIL on both packaged board images:
+Cloud CI proves builds and host tests only. A publishable release needs recorded HIL on both packaged board images:
 
 - Raspberry Pi Pico / RP2040 (`pico`, rated 125 MHz)
 - Raspberry Pi Pico 2 / RP2350 (`pico2`, rated 150 MHz)
 
-Release CI also packages development overclock images: `pico-250mhz` (RP2040 at
-250 MHz) and `pico2-300mhz` (RP2350 at 300 MHz). The promote HIL gate covers the
-rated images. A recorded overclock result qualifies only the matching overclock
-artifact. Neither overclock image writes the core voltage: both preserve the
-regulator setting on entry, without measuring or restoring a specific voltage. Clock stability, temperature margin, and
-lifetime remain unqualified until exact-board HIL covers the intended
-operating range.
+Release CI also packages development overclock images: `pico-250mhz` (RP2040 at 250 MHz) and `pico2-300mhz` (RP2350 at
+300 MHz). The promote HIL gate covers the rated images. A recorded overclock result qualifies only the matching
+overclock artifact. Neither overclock image writes the core voltage: both preserve the regulator setting on entry,
+without measuring or restoring a specific voltage. Clock stability, temperature margin, and lifetime remain unqualified
+until exact-board HIL covers the intended operating range.
 
-HIL must use the exact UF2/ELF from the draft release or workflow dry-run. Do
-not rebuild locally for release qualification.
+HIL must use the exact UF2/ELF from the draft release or workflow dry-run. Do not rebuild locally for release
+qualification.
 
-This gate is intentionally manual: the repository has no CI-attached Pico,
-Debug Probe, USB cable, or jumper fixture. Automated workflows must not mark a
-release as physically qualified without linked human-run HIL evidence.
+This gate is intentionally manual: the repository has no CI-attached Pico, Debug Probe, USB cable, or jumper fixture.
+Automated workflows must not mark a release as physically qualified without linked human-run HIL evidence.
 
-Record all of the following in
-[Performance Test Results](tests/performance-test-results.md) or a linked raw
-transcript:
+Record all of the following in the generated [HIL run record](tests/records/README.md) or a retained transcript attached
+to the release evidence package. The combined HIL runner writes one record per invocation; standalone phase runners
+write their output to the ignored local `build/hil-results.md` log.
 
 - board target and physical board used
 - artifact path/name and SHA-256
@@ -105,23 +102,21 @@ A release without this recorded evidence is lab-only.
 
 ## Automated Validation Matrix
 
-Run these checks before starting HIL. They validate the host-testable and
-build-time parts of the UART design; they do not replace physical testing.
+Run these checks before starting HIL. They validate the host-testable and build-time parts of the UART design; they do
+not replace physical testing.
 
-| Check | Command | Covers |
-| --- | --- | --- |
-| Host suite | `tools/test/test-host.sh` | Ring, bridge, worker, control, policy, claims, and facade tests |
-| Direct host suite | `ctest --test-dir build/host-tests --output-on-failure` | CTest result detail after host configuration |
-| RP2040 firmware | `tools/firmware/build.sh --board pico` | Rated 125 MHz compile/link and UF2 outputs |
-| RP2350 firmware | `tools/firmware/build.sh --board pico2` | Rated 150 MHz compile/link and platform-specific paths |
-| RP2040 250 MHz | `tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock` | Development overclock image (`pico-250mhz`) |
-| RP2350 300 MHz | `tools/firmware/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock` | Development overclock image (`pico2-300mhz`) |
-| Patch hygiene | `git diff --check` | Whitespace and patch formatting |
+| Check             | Command                                                                              | Covers                                                          |
+| ----------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Host suite        | `tools/validation/run-host-tests.sh`                                                 | Ring, bridge, worker, control, policy, claims, and facade tests |
+| Direct host suite | `ctest --test-dir build/host-tests --output-on-failure`                              | CTest result detail after host configuration                    |
+| RP2040 firmware   | `tools/firmware/build.sh --board pico`                                               | Rated 125 MHz compile/link and UF2 outputs                      |
+| RP2350 firmware   | `tools/firmware/build.sh --board pico2`                                              | Rated 150 MHz compile/link and platform-specific paths          |
+| RP2040 250 MHz    | `tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock`  | Development overclock image (`pico-250mhz`)                     |
+| RP2350 300 MHz    | `tools/firmware/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock` | Development overclock image (`pico2-300mhz`)                    |
+| Patch hygiene     | `git diff --check`                                                                   | Whitespace and patch formatting                                 |
 
-The host suite should include the backend contract test and the real facade
-contract test. Firmware builds must complete for both board targets before HIL
-results are interpreted as firmware behavior rather than a build artifact
-problem.
+The host suite should include the backend contract test and the real facade contract test. Firmware builds must complete
+for both board targets before HIL results are interpreted as firmware behavior rather than a build artifact problem.
 
 ## Evidence Package
 
@@ -136,8 +131,8 @@ For each board target, keep one evidence bundle containing:
 - HID health before and after the run
 - raw transcript for failures, partial runs, or unusual expected conditions
 
-The result status must distinguish `PASS`, `FAIL`, and `PARTIAL`. A partial
-run is useful diagnostic evidence but cannot qualify a release gate.
+The result status must distinguish `PASS`, `FAIL`, and `PARTIAL`. A partial run is useful diagnostic evidence but cannot
+qualify a release gate.
 
 ## Flashing Release Artifacts
 
@@ -147,87 +142,92 @@ Flash with the packaged ELF/UF2 and skip rebuilding:
 tools/firmware/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>
 ```
 
-Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached or
-when USB enumeration tools are unavailable.
+Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached or when USB enumeration tools are
+unavailable.
 
-Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash device`
-after detecting the SWD target, update OpenOCD and retry with
-`--adapter-speed-khz 1000` before treating the HIL attempt as firmware failure.
-Flash ID `0x00154068` is a Boya BY25Q16ES device; older OpenOCD builds may need
-an upstream binary selected with `--openocd-exe`.
+Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash device` after detecting the SWD target, update
+OpenOCD and retry with `--adapter-speed-khz 1000` before treating the HIL attempt as firmware failure. Flash ID
+`0x00154068` is a Boya BY25Q16ES device; older OpenOCD builds may need an upstream binary selected with `--openocd-exe`.
+
+### Override QSPI Auto-Detection (Advanced)
+
+Only use this recovery when SWD communication is stable and the exact QSPI flash capacity has been confirmed from the
+chip marking and its datasheet. Do not guess the capacity: OpenOCD uses it to define erase bounds, so a wrong value can
+make flash operations unsafe. Prefer a current OpenOCD build and normal JEDEC/SFDP detection whenever possible.
+
+The OpenOCD RP2040/RP2350 target scripts accept a nonzero `FLASHSIZE` in bytes to skip QSPI JEDEC/SFDP auto-detection.
+Create a temporary target config that sets the verified capacity before sourcing the board target:
+
+```sh
+FLASH_SIZE_BYTES=<confirmed-capacity-in-bytes>
+OPENOCD_TARGET_CFG="$(mktemp)"
+trap 'rm -f "$OPENOCD_TARGET_CFG"' EXIT
+printf 'set FLASHSIZE %s\nsource [find target/rp2040.cfg]\n' "$FLASH_SIZE_BYTES" > "$OPENOCD_TARGET_CFG"
+tools/firmware/load.sh --board pico --skip-build --elf <path-to-pico.elf> \
+   --openocd-target "$OPENOCD_TARGET_CFG" --probe-serial <probe-serial> --adapter-speed-khz 1000
+```
+
+For Pico 2, use `--board pico2`, a Pico 2 ELF, and replace the target in the temporary config with
+`target/rp2350.cfg`. Continue only if OpenOCD reports **Verified OK**. This override skips flash identification; it does
+not recover failed SWD access, repair reset/wiring, or prove the selected capacity is correct.
 
 ## Required HIL Matrix
 
-Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md)
-and [Self-Test Setup](tests/self-test-setup.md). Install the complete fixed
-fixture before starting and do not rewire during the run.
+Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md) and
+[HIL Fixture Setup](tests/hil-fixture-setup.md). Install the complete fixed fixture before starting and do not rewire
+during the run.
 
 Run these gates on both board targets:
 
-1. Four staged bridge cases:
-   - UART0 Debug Probe
-   - HW UART1 to PIO UART2
+1. Four fixture cases:
+   - HW UART0 to PIO UART2
    - PIO UART3 to PIO UART4
-   - UART5 loopback
-2. Concurrent performance benchmark using the full staged fixture. Pass
-   `--uart1 --uart1-peer <uart2> --uart4 --uart4-peer <uart3>` so the benchmark
-   exercises HW1 to PIO2 and PIO3 to PIO4.
-3. Rapid line-coding changes on one hardware UART and one PIO UART while queued
-   TX data drains and an RX peer is active.
-4. Disconnect/remount, watchdog recovery, DMA wrap/re-arm flood, and six-port
-   full-duplex saturation checks.
+   - HW UART1 loopback
+   - PIO UART5 loopback
+2. Concurrent performance benchmark using all six CDC endpoints and the same fixed fixture.
+3. Rapid line-coding changes on one hardware UART and one PIO UART while queued TX data drains and an RX peer is active.
+4. Disconnect/remount, watchdog recovery, DMA wrap/re-arm flood, and six-port full-duplex saturation checks.
 
-A promoted result has no unexplained byte mismatch, timeout, USB disconnect,
-`rx_error`, `rx_overrun`, or `control_error`.
+A promoted result has no unexplained byte mismatch, timeout, USB disconnect, `rx_error`, `rx_overrun`, or
+`control_error`.
 
 ## Optional Claims
 
 Run optional tests only when the release notes claim the behavior:
 
-- CDC-hold / RX flood backpressure (`--flood-seconds` /
-  `--hold-cdc-seconds`).
-- Hardware RTS/CTS after enabling `hardware_flow_control` in
-   `firmware/src/board/uart_board.c`.
-- PIO RTS/CTS after enabling the selected PIO flow-control pin flags and running
-  CTS hold/release plus RTS backpressure checks.
+- CDC-hold / RX flood backpressure (`--flood-seconds` / `--hold-cdc-seconds`).
+- Hardware RTS/CTS after enabling `hardware_flow_control` in `firmware/src/board/uart_board.c`.
+- PIO RTS/CTS after enabling the selected PIO flow-control pin flags and running CTS hold/release plus RTS backpressure
+  checks.
 
 ## Promote checklist (draft → published)
 
 Before clicking **Publish** on the GitHub draft:
 
-1. **Artifact ↔ HIL SHA match**: the UF2/ELF/BIN attached to the draft (or their
-   `SHA256SUMS-*`) are bit-identical to the images used for the recorded HIL
-   pass on **each** rated board (`pico` at 125 MHz and `pico2` at 150 MHz). Copy the hashes into the
-   [performance result log](tests/performance-test-results.md), then compare
-   them against the downloaded release `SHA256SUMS-*` files before promoting.
-   Do not promote if HIL ran on a different local rebuild or only one of the two
+1. **Artifact ↔ HIL SHA match**: the UF2/ELF/BIN attached to the draft (or their `SHA256SUMS-*`) are bit-identical to
+   the images used for the recorded HIL pass on **each** rated board (`pico` at 125 MHz and `pico2` at 150 MHz). Put the
+   hashes and retained transcript in the release evidence package, then compare them against the downloaded release
+   `SHA256SUMS-*` files before promoting. Do not promote if HIL ran on a different local rebuild or only one of the two
    targets.
-2. **USB identity note**: release notes retain the `0xCAFE:0x4010` lab-project
-   identity warning unless the artifact deliberately uses an allocated identity.
+2. **USB identity note**: release notes retain the `0xCAFE:0x4010` lab-project identity warning unless the artifact
+   deliberately uses an allocated identity.
 3. **HIL transcript** is linked or attached (see above), covering both boards.
 4. Release notes call out any breaking HID layout changes.
-5. **Python dependency lock**: release CI installed
-   `host/python/requirements-lock.txt` with `pip --require-hashes`; any lock
-   regeneration is present in the reviewed release change.
+5. **Python dependency lock**: release CI installed `host/python/requirements-lock.txt` with `pip --require-hashes`; any
+   lock regeneration is present in the reviewed release change.
 
 ## Versioning
 
-Tag form is `vMAJOR.MINOR.PATCH` (no `-rc` / pre-release suffixes for publish).
-Major and minor must be `0-99`; patch must be `0-255`. This range is a
-**release-tag policy** (enforced by the `Resolve version` step in
-`release.yml`), not a firmware build limit: local/manual builds via
-`tools/firmware/build.sh --firmware-version ...` accept major, minor, and patch each up
-to `255`, and USB `bcdDevice` falls back to `0x0000` once major or minor
-exceeds `99` (see `firmware/CMakeLists.txt`).
-The tag stamps HID firmware version `MAJOR.MINOR.PATCH` and USB `bcdDevice` as
-major.minor BCD only (for example `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
-Details are in the root README.
+Tag form is `vMAJOR.MINOR.PATCH` (no `-rc` / pre-release suffixes for publish). Major and minor must be `0-99`; patch
+must be `0-255`. This range is a **release-tag policy** (enforced by the `Resolve version` step in `release.yml`), not a
+firmware build limit: local/manual builds via `tools/firmware/build.sh --firmware-version ...` accept major, minor, and
+patch each up to `255`, and USB `bcdDevice` falls back to `0x0000` once major or minor exceeds `99` (see
+`firmware/CMakeLists.txt`). The tag stamps HID firmware version `MAJOR.MINOR.PATCH` and USB `bcdDevice` as major.minor
+BCD only (for example `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`). Details are in the root README.
 
-Release and PR workflows build against Pico SDK 2.3.0 at commit
-`98a542c1a62fb549ffb5d66a3e5892b06276b670` and print the verified revision in
-the job log.
+Release and PR workflows build against Pico SDK 2.3.0 at commit `98a542c1a62fb549ffb5d66a3e5892b06276b670` and print the
+verified revision in the job log.
 
-Python release qualification uses the reviewed, fully transitive
-`host/python/requirements-lock.txt` with artifact hashes. Regenerate it only in
-a packaging-enabled, reviewed change; the pinned direct requirements remain the
+Python release qualification uses the reviewed, fully transitive `host/python/requirements-lock.txt` with artifact
+hashes. Regenerate it only in a packaging-enabled, reviewed change; the pinned direct requirements remain the
 human-edited inputs rather than the release installation source.

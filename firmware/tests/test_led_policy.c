@@ -5,8 +5,7 @@
  * These headers are free of Pico SDK includes (see @ref led_policy.h and
  * @ref led_activity.h), so this suite doubles as the "no LED platform"
  * compile-compatibility check: it builds and runs correctly with no
- * `PICO_DEFAULT_LED_PIN` in scope, matching how @ref led.c behaves on boards
- * that do not define a default LED pin.
+ * `PICO_DEFAULT_LED_PIN` in scope, matching how @ref led.c behaves on boards that do not define a default LED pin.
  */
 
 #include "unity.h"

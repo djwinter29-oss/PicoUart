@@ -25,24 +25,23 @@
  * @brief Public view of one logical UART port.
  */
 typedef struct {
-    uart_port_id_t id; /**< Logical port identifier. */
+    uart_port_id_t id;             /**< Logical port identifier. */
     uart_driver_backend_t backend; /**< Backend class assigned to the port. */
     uint32_t baud_rate; /**< Current baud rate (startup default; updated after a successful line-coding apply). */
-    uint32_t tx_pin; /**< Configured TX GPIO, or unassigned marker. */
-    uint32_t rx_pin; /**< Configured RX GPIO, or unassigned marker. */
+    uint32_t tx_pin;    /**< Configured TX GPIO, or unassigned marker. */
+    uint32_t rx_pin;    /**< Configured RX GPIO, or unassigned marker. */
 } uart_driver_port_info_t;
-
 
 /**
  * @brief Transport counters for one logical UART port.
  */
 typedef struct {
-    uint32_t controller_tx_bytes; /**< Bytes transmitted by the UART controller. */
-    uint32_t controller_rx_bytes; /**< Bytes received by the UART controller. */
-    uint16_t tx_ring_high_watermark; /**< Largest observed USB-to-UART ring occupancy. */
-    uint16_t rx_ring_high_watermark; /**< Largest observed UART-to-USB ring occupancy. */
-    uint32_t tx_ring_overflow_count; /**< Bytes rejected by the USB-to-UART ring. */
-    uint32_t rx_ring_overflow_count; /**< Bytes dropped by the UART-to-USB ring. */
+    uint32_t controller_tx_bytes;            /**< Bytes transmitted by the UART controller. */
+    uint32_t controller_rx_bytes;            /**< Bytes received by the UART controller. */
+    uint16_t tx_ring_high_watermark;         /**< Largest observed USB-to-UART ring occupancy. */
+    uint16_t rx_ring_high_watermark;         /**< Largest observed UART-to-USB ring occupancy. */
+    uint32_t tx_ring_overflow_count;         /**< Bytes rejected by the USB-to-UART ring. */
+    uint32_t rx_ring_overflow_count;         /**< Bytes dropped by the UART-to-USB ring. */
     uint32_t rx_ring_pending_overflow_count; /**< Unread UART-to-USB bytes already overwritten. */
     uint32_t rx_error_count; /**< Hardware UART receive-status events observed since the post-boot baseline. */
 } uart_driver_port_stats_t;
@@ -74,10 +73,8 @@ bool uart_driver_port_is_ready(uart_port_id_t port_id);
  * @param context Opaque caller context passed to @p writer.
  * @return Number of bytes committed from the RX ring.
  */
-size_t uart_driver_drain_rx(uart_port_id_t port_id,
-                            size_t capacity,
-                            uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length),
-                            void *context);
+size_t uart_driver_drain_rx(uart_port_id_t port_id, size_t capacity,
+                            uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length), void *context);
 
 /**
  * @brief Advance RX overrun recovery for one logical UART port without draining.
@@ -97,10 +94,8 @@ size_t uart_driver_recover_rx(uart_port_id_t port_id);
  * @param context Opaque caller context passed to @p reader.
  * @return Number of bytes committed into the TX ring.
  */
-size_t uart_driver_fill_tx(uart_port_id_t port_id,
-                           size_t capacity,
-                           uint32_t (*reader)(void *context, uint8_t *data, uint32_t length),
-                           void *context);
+size_t uart_driver_fill_tx(uart_port_id_t port_id, size_t capacity,
+                           uint32_t (*reader)(void *context, uint8_t *data, uint32_t length), void *context);
 
 /**
  * @brief Queue one host line-coding request without waiting for the UART worker.
@@ -109,8 +104,7 @@ size_t uart_driver_fill_tx(uart_port_id_t port_id,
  * @return `true` when the worker mailbox accepted the request and ingress is
  * paused until the worker applies or rejects it, otherwise `false`.
  */
-bool uart_driver_queue_line_coding(uart_port_id_t port_id,
-                                   const uart_driver_line_coding_t *line_coding,
+bool uart_driver_queue_line_coding(uart_port_id_t port_id, const uart_driver_line_coding_t *line_coding,
                                    uint32_t control_generation);
 
 /**
@@ -127,8 +121,7 @@ bool uart_driver_port_tx_is_blocked(uart_port_id_t port_id);
  * @return `false` for invalid ports/args or permanent backend rejects (for
  * example PIO non-8N1 or infeasible baud). Does not consider mailbox busyness.
  */
-bool uart_driver_line_coding_acceptable(uart_port_id_t port_id,
-                                        const uart_driver_line_coding_t *line_coding);
+bool uart_driver_line_coding_acceptable(uart_port_id_t port_id, const uart_driver_line_coding_t *line_coding);
 
 /**
  * @brief Mark one logical UART port as having failed its latest control request.
@@ -152,8 +145,7 @@ void uart_driver_report_control_error(uart_port_id_t port_id);
  * @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING only when the worker has not
  * accepted the request for deferred application.
  */
-void uart_driver_report_soft_pending_error(uart_port_id_t port_id,
-                                            uint32_t control_generation);
+void uart_driver_report_soft_pending_error(uart_port_id_t port_id, uint32_t control_generation);
 
 /**
  * @brief Drop USB-core soft-pending ownership after host disconnect.

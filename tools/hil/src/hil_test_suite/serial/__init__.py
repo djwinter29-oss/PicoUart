@@ -1,0 +1,1 @@
+"""UART traffic checks and serial-port configuration."""

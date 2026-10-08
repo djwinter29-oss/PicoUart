@@ -1,0 +1,1 @@
+"""Shared paths, hardware health, and result-record helpers."""

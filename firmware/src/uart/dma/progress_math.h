@@ -28,9 +28,8 @@
  * @param transfer_count_max Countdown max used when the channel was armed.
  * @return Bytes advanced since @p last_progress, including a wrap through max.
  */
-static inline uint32_t uart_dma_rx_bytes_produced(uint32_t progress,
-                                                 uint32_t last_progress,
-                                                 uint32_t transfer_count_max)
+static inline uint32_t uart_dma_rx_bytes_produced(uint32_t progress, uint32_t last_progress,
+                                                  uint32_t transfer_count_max)
 {
     if (progress < last_progress) {
         return (transfer_count_max - last_progress) + progress;
@@ -44,8 +43,7 @@ static inline uint32_t uart_dma_rx_bytes_produced(uint32_t progress,
  * @param raw_transfer_count Value read from DMA `transfer_count`.
  * @param count_mask Field mask (`0xffffffff` on RP2040, `0x0fffffff` on RP2350).
  */
-static inline uint32_t uart_dma_rx_mask_remaining(uint32_t raw_transfer_count,
-                                                 uint32_t count_mask)
+static inline uint32_t uart_dma_rx_mask_remaining(uint32_t raw_transfer_count, uint32_t count_mask)
 {
     return raw_transfer_count & count_mask;
 }
@@ -55,8 +53,7 @@ static inline uint32_t uart_dma_rx_mask_remaining(uint32_t raw_transfer_count,
  * @param remaining Masked remaining transfer count.
  * @param transfer_count_max Countdown max used when the channel was armed.
  */
-static inline uint32_t uart_dma_rx_progress_from_remaining(uint32_t remaining,
-                                                          uint32_t transfer_count_max)
+static inline uint32_t uart_dma_rx_progress_from_remaining(uint32_t remaining, uint32_t transfer_count_max)
 {
     return transfer_count_max - remaining;
 }
@@ -89,10 +86,8 @@ static inline bool uart_dma_rx_pause_progress_publishable(bool stabilized)
  * @param needed Samples required for stability (@ref UART_DMA_RX_PAUSE_STABLE_SAMPLES).
  * @return `true` when @p needed consecutive identical samples have been seen.
  */
-static inline bool uart_dma_rx_paused_progress_sample(uint32_t now,
-                                                     uint32_t *last,
-                                                     uint32_t *stable_count,
-                                                     uint32_t needed)
+static inline bool uart_dma_rx_paused_progress_sample(uint32_t now, uint32_t *last, uint32_t *stable_count,
+                                                      uint32_t needed)
 {
     if ((last == NULL) || (stable_count == NULL) || (needed == 0u)) {
         return false;
@@ -109,4 +104,3 @@ static inline bool uart_dma_rx_paused_progress_sample(uint32_t now,
 }
 
 #endif
-

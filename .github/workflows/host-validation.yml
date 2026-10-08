@@ -24,22 +24,22 @@ jobs:
         run: python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
 
       - name: Syntax-check Python tools
-        run: tools/test/syntax-check-python.sh
+        run: tools/validation/syntax-check-python.sh
 
       - name: Syntax-check shell tools
-        run: tools/test/syntax-check-shell.sh
+        run: tools/validation/syntax-check-shell.sh
 
       - name: Run host unit tests
-        run: tools/test/test-host.sh --sanitize
+        run: tools/validation/run-host-tests.sh --sanitize
 
       - name: Static-analyze host-testable firmware
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cppcheck
-          tools/test/static-analyze.sh
+          tools/validation/static-analyze.sh
 
       - name: Smoke-test host tools
-        run: tools/test/smoke-host-tools.sh
+        run: tools/validation/smoke-host-tools.sh
 
   host-python-minimum:
     name: Host Python (3.10 minimum)
@@ -58,7 +58,7 @@ jobs:
         run: python -m pip install --require-hashes -r host/python/requirements-lock.txt
 
       - name: Run host Python tests
-        run: python -m pytest -c host/python/pyproject.toml
+        run: python -m pytest -c pyproject.toml
 
   host-tools-windows:
     name: Host tools (Windows)
@@ -80,4 +80,4 @@ jobs:
         shell: bash
         run: |
           choco install ninja --no-progress -y 2>&1 | tail -3
-          tools/test/test-host.sh
+          tools/validation/run-host-tests.sh

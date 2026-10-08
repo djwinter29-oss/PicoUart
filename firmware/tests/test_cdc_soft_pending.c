@@ -89,33 +89,22 @@ void test_rejected_follow_up_invalidates_prior_soft_pending_completion(void)
     uint32_t generation = soft_pending_generation;
     uint8_t status = 0u;
 
-    uart_control_apply_reject_error(&generation,
-                                    &status,
-                                    TEST_CONTROL_ERROR_BIT);
+    uart_control_apply_reject_error(&generation, &status, TEST_CONTROL_ERROR_BIT);
 
     TEST_ASSERT_EQUAL_UINT32(8u, generation);
     TEST_ASSERT_EQUAL_UINT32(TEST_CONTROL_ERROR_BIT, status);
     TEST_ASSERT_FALSE(uart_control_completion_is_current(soft_pending_generation, generation));
 
-    uart_control_apply_completion_error(&status,
-                                        TEST_CONTROL_ERROR_BIT,
-                                        soft_pending_generation,
-                                        generation,
-                                        true);
+    uart_control_apply_completion_error(&status, TEST_CONTROL_ERROR_BIT, soft_pending_generation, generation, true);
     TEST_ASSERT_EQUAL_UINT8(TEST_CONTROL_ERROR_BIT, status);
 
-    uart_control_apply_completion_error(&status,
-                                        TEST_CONTROL_ERROR_BIT,
-                                        generation,
-                                        generation,
-                                        true);
+    uart_control_apply_completion_error(&status, TEST_CONTROL_ERROR_BIT, generation, generation, true);
     TEST_ASSERT_EQUAL_UINT8(0u, status);
 }
 
 /**
  * @brief Regression/integration-style test for the CDC soft-pending
- * cancellation path in usb_cdc_apply_pending_line_coding() /
- * usb_cdc_reset_host_state() (usb/usb_cdc.c).
+ * cancellation path in usb_cdc_apply_pending_line_coding() / usb_cdc_reset_host_state() (usb/usb_cdc.c).
  *
  * That state (the per-port `usb_cdc_pending_line_coding_t` array) is file-static
  * and its update functions call live TinyUSB (`tud_cdc_n_*`), `uart_driver_*`,
@@ -124,15 +113,13 @@ void test_rejected_follow_up_invalidates_prior_soft_pending_completion(void)
  * test_dma_claim.c/test_resource_claim.c, which fault-inject a narrow ops
  * table around an otherwise self-contained algorithm). That integration is
  * covered on-target by the board-testing skill / docs/releasing.md HIL gate
- * instead (rapid line-coding changes with a queued TX backlog, per
- * docs/releasing.md step 5).
+ * instead (rapid line-coding changes with a queued TX backlog, per docs/releasing.md step 5).
  *
  * This test instead walks the exact sequence usb_cdc.c performs around a host
  * reset (tud_mount_cb/tud_umount_cb -> usb_cdc_reset_host_state), using the
  * same pure helpers production code calls, to pin the cancellation contract:
  * arming a request starts a fresh deadline, a reset cancels it by nil-ing the
- * deadline, and polling after a cancellation must never manufacture a
- * CONTROL_ERROR timeout for the cancelled request.
+ * deadline, and polling after a cancellation must never manufacture a CONTROL_ERROR timeout for the cancelled request.
  */
 void test_reset_cancellation_suppresses_pending_timeout(void)
 {
@@ -162,9 +149,7 @@ void test_control_generation_wraps_without_matching_stale_completion(void)
     uint32_t generation = UINT32_MAX;
     uint8_t status = 0u;
 
-    uart_control_apply_reject_error(&generation,
-                                    &status,
-                                    TEST_CONTROL_ERROR_BIT);
+    uart_control_apply_reject_error(&generation, &status, TEST_CONTROL_ERROR_BIT);
 
     TEST_ASSERT_EQUAL_UINT32(0u, generation);
     TEST_ASSERT_FALSE(uart_control_completion_is_current(UINT32_MAX, generation));

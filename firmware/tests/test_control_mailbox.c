@@ -22,12 +22,13 @@ void test_publish_and_take_preserve_request_payload(void)
         .port_id = 3u,
         .control_generation = 7u,
         .tx_boundary_sequence = 11u,
-        .line_coding = {
-            .baud_rate = 230400u,
-            .data_bits = 8u,
-            .stop_bits = 1u,
-            .parity = UART_DRIVER_PARITY_NONE,
-        },
+        .line_coding =
+            {
+                .baud_rate = 230400u,
+                .data_bits = 8u,
+                .stop_bits = 1u,
+                .parity = UART_DRIVER_PARITY_NONE,
+            },
     };
     uart_control_mailbox_request_t received;
 

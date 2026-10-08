@@ -30,9 +30,9 @@
  */
 typedef struct {
     bool (*sm_is_claimed)(void *pio, unsigned int sm); /**< Mirrors `pio_sm_is_claimed`. */
-    void (*sm_claim)(void *pio, unsigned int sm); /**< Mirrors `pio_sm_claim`. */
-    void (*sm_unclaim)(void *pio, unsigned int sm); /**< Mirrors `pio_sm_unclaim`. */
-    int (*claim_dma_channel)(bool required); /**< Mirrors `dma_claim_unused_channel`. */
+    void (*sm_claim)(void *pio, unsigned int sm);      /**< Mirrors `pio_sm_claim`. */
+    void (*sm_unclaim)(void *pio, unsigned int sm);    /**< Mirrors `pio_sm_unclaim`. */
+    int (*claim_dma_channel)(bool required);           /**< Mirrors `dma_claim_unused_channel`. */
     void (*unclaim_dma_channel)(unsigned int channel); /**< Mirrors `dma_channel_unclaim`. */
 } pio_uart_resource_claim_ops_t;
 
@@ -40,8 +40,7 @@ typedef struct {
 extern const pio_uart_resource_claim_ops_t pio_uart_resource_claim_ops_default;
 
 /**
- * @brief Claim the TX/RX state machines and RX/TX DMA channels, rolling back
- *        on partial failure.
+ * @brief Claim the TX/RX state machines and RX/TX DMA channels, rolling back on partial failure.
  *
  * @param ops Claim/unclaim operations to use (production or test-injected).
  * @param pio PIO block owning @p tx_sm and @p rx_sm (opaque; forwarded to @p ops).
@@ -55,13 +54,8 @@ extern const pio_uart_resource_claim_ops_t pio_uart_resource_claim_ops_default;
  *         failure everything claimed during this call has been unclaimed and
  *         reset to its unclaimed value (false / -1).
  */
-bool pio_uart_driver_claim_resources(const pio_uart_resource_claim_ops_t *ops,
-                                     void *pio,
-                                     unsigned int tx_sm,
-                                     unsigned int rx_sm,
-                                     bool *tx_sm_claimed,
-                                     bool *rx_sm_claimed,
-                                     int *rx_dma_channel,
+bool pio_uart_driver_claim_resources(const pio_uart_resource_claim_ops_t *ops, void *pio, unsigned int tx_sm,
+                                     unsigned int rx_sm, bool *tx_sm_claimed, bool *rx_sm_claimed, int *rx_dma_channel,
                                      int *tx_dma_channel);
 
 #endif

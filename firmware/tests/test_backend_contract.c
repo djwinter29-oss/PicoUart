@@ -48,8 +48,7 @@ static bool test_line_coding_acceptable(const uart_driver_line_coding_t *line_co
     return line_coding != NULL;
 }
 
-static bool test_set_line_coding(uart_backend_instance_t *instance,
-                                 const uart_driver_line_coding_t *line_coding)
+static bool test_set_line_coding(uart_backend_instance_t *instance, const uart_driver_line_coding_t *line_coding)
 {
     (void)instance;
     return line_coding != NULL;

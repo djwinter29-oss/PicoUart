@@ -19,7 +19,7 @@
  * @brief Independently tracked LED sources merged into one GPIO output.
  */
 typedef struct {
-    bool manual_led_state; /**< Host-toggled state (HID `toggle-led`); persists until toggled again. */
+    bool manual_led_state;    /**< Host-toggled state (HID `toggle-led`); persists until toggled again. */
     bool usb_activity_active; /**< True while the USB-activity window is open. */
 } led_policy_state_t;
 

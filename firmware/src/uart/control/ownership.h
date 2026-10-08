@@ -15,8 +15,7 @@
  * @param response_sequence Sequence most recently completed by the worker.
  * @return `true` when the mailbox slot is empty.
  */
-static inline bool uart_control_mailbox_is_empty(uint32_t request_sequence,
-                                                  uint32_t response_sequence)
+static inline bool uart_control_mailbox_is_empty(uint32_t request_sequence, uint32_t response_sequence)
 {
     return request_sequence == response_sequence;
 }
@@ -39,12 +38,9 @@ static inline uint32_t uart_control_mailbox_next_sequence(uint32_t request_seque
  * @return `true` when no control owner still holds the pending status.
  *
  * Mailbox rejects and worker completions share this rule. Clearing the status
- * bit while worker-pending remains lets USB TX ingress pass the snapped
- * boundary and leave the UART on the new format.
+ * bit while worker-pending remains lets USB TX ingress pass the snapped boundary and leave the UART on the new format.
  */
-static inline bool uart_control_pending_should_clear(bool soft_pending,
-                                                     bool mailbox_pending,
-                                                     bool worker_pending)
+static inline bool uart_control_pending_should_clear(bool soft_pending, bool mailbox_pending, bool worker_pending)
 {
     return !soft_pending && !mailbox_pending && !worker_pending;
 }
@@ -59,8 +55,7 @@ static inline bool uart_control_pending_should_clear(bool soft_pending,
  * phases. Using that continuous flag avoids admitting TX in the handoff between
  * mailbox acknowledgement and worker-pending ownership.
  */
-static inline bool uart_control_tx_should_block(uint8_t status_flags,
-                                                uint8_t control_pending_bit)
+static inline bool uart_control_tx_should_block(uint8_t status_flags, uint8_t control_pending_bit)
 {
     return (status_flags & control_pending_bit) != 0u;
 }
@@ -71,8 +66,7 @@ static inline bool uart_control_tx_should_block(uint8_t status_flags,
  * @param boundary_sequence Last TX producer sequence admitted before the change.
  * @return `true` when the old-format TX boundary has drained.
  */
-static inline bool uart_control_tx_boundary_drained(uint32_t consumer_sequence,
-                                                    uint32_t boundary_sequence)
+static inline bool uart_control_tx_boundary_drained(uint32_t consumer_sequence, uint32_t boundary_sequence)
 {
     return consumer_sequence == boundary_sequence;
 }
@@ -94,8 +88,7 @@ static inline bool uart_control_worker_should_set_deadline(bool was_pending, boo
  * @param latest_generation Most recent host control-request generation.
  * @return `true` only when the completing request is still the newest request.
  */
-static inline bool uart_control_completion_is_current(uint32_t completion_generation,
-                                                      uint32_t latest_generation)
+static inline bool uart_control_completion_is_current(uint32_t completion_generation, uint32_t latest_generation)
 {
     return completion_generation == latest_generation;
 }
@@ -110,14 +103,11 @@ static inline bool uart_control_completion_is_current(uint32_t completion_genera
  *
  * A stale completion cannot change the error state reported for a newer request.
  */
-static inline void uart_control_apply_completion_error(volatile uint8_t *status_flags,
-                                                       uint8_t control_error_bit,
-                                                       uint32_t completion_generation,
-                                                       uint32_t latest_generation,
+static inline void uart_control_apply_completion_error(volatile uint8_t *status_flags, uint8_t control_error_bit,
+                                                       uint32_t completion_generation, uint32_t latest_generation,
                                                        bool success)
 {
-    if ((status_flags == NULL) ||
-        !uart_control_completion_is_current(completion_generation, latest_generation)) {
+    if ((status_flags == NULL) || !uart_control_completion_is_current(completion_generation, latest_generation)) {
         return;
     }
 
@@ -135,8 +125,7 @@ static inline void uart_control_apply_completion_error(volatile uint8_t *status_
  * @param control_error_bit Status bit to set.
  *
  */
-static inline void uart_control_apply_reject_error(uint32_t *generation,
-                                                   volatile uint8_t *status_flags,
+static inline void uart_control_apply_reject_error(uint32_t *generation, volatile uint8_t *status_flags,
                                                    uint8_t control_error_bit)
 {
     if ((generation == NULL) || (status_flags == NULL)) {

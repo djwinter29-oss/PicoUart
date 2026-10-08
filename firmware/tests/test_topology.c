@@ -19,8 +19,7 @@ static void test_topology_make_valid(uart_board_topology_port_t ports[UART_PORT_
             .baud_rate = 115200u,
             .tx_pin = (uint32_t)(index * 4u),
             .rx_pin = (uint32_t)(index * 4u + 1u),
-            .backend_instance = is_hardware ? (uintptr_t)(index + 1u) :
-                                               (uintptr_t)(index < 4u ? 3u : 4u),
+            .backend_instance = is_hardware ? (uintptr_t)(index + 1u) : (uintptr_t)(index < 4u ? 3u : 4u),
             .backend_baud_rate = 115200u,
             .backend_tx_pin = (uint32_t)(index * 4u),
             .backend_rx_pin = (uint32_t)(index * 4u + 1u),

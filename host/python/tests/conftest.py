@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import pico_uart_hid as hid
+import pico_uart as hid
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
