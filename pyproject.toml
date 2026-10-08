@@ -2,7 +2,7 @@
 testpaths = ["host/python/tests", "tools/hil/tests", "tests"]
 pythonpath = ["host/python/src", "host/python/tests", "tools/hil/src", "tools/hil/tests", "tools/release"]
 python_files = ["test_*.py"]
-addopts = "-q"
+addopts = "-q --import-mode=importlib"
 
 [tool.ruff]
 line-length = 120
