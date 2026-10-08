@@ -60,6 +60,9 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
 docs/tests/raw/
 .venv/
 venv/

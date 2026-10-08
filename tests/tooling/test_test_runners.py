@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-TOOLS = Path(__file__).resolve().parents[4] / "tools" / "hardware"
+TOOLS = Path(__file__).resolve().parents[2] / "tools" / "hardware"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
@@ -98,7 +98,7 @@ def test_hardware_runner_streams_child_output_and_status() -> None:
 def test_hid_health_module_resolves_repository_root() -> None:
     health = _load("hardware_test_health")
 
-    assert health.REPO_ROOT == Path(__file__).resolve().parents[4]
+    assert health.REPO_ROOT == Path(__file__).resolve().parents[2]
     assert health.HOST_PYTHON_SRC == health.REPO_ROOT / "host/python/src"
     assert health.HID_MODULE == "pico_uart"
 

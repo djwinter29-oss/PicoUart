@@ -41,7 +41,7 @@ endif()
 
 # Parses PICO_UART_VERSION into PICO_UART_VERSION_{MAJOR,MINOR,PATCH} and
 # PICO_UART_BCD_DEVICE; see firmware/version.cmake for the policy and
-# tools/test/python/firmware/test_version_policy.py for standalone `cmake -P` coverage.
+# tests/firmware/test_version_policy.py for standalone `cmake -P` coverage.
 include(${CMAKE_CURRENT_LIST_DIR}/version.cmake)
 
 if(NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")

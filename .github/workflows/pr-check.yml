@@ -111,7 +111,7 @@ jobs:
           python3 -m pip install --quiet --require-hashes -r host/python/requirements-voltage-lock.txt
           PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/firmware-${LABEL}" \
             python3 -m pytest -c pyproject.toml \
-            tools/test/python/firmware/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q
+            tests/firmware/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q
 
       - name: Smoke-check stamped version / bcdDevice
         if: matrix.label == 'pico'

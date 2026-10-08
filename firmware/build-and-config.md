@@ -66,7 +66,7 @@ test):
 ```sh
 PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/pico:$PWD/build/pico2" \
   python3 -m pytest -c pyproject.toml \
-  tools/test/python/firmware/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q
+  tests/firmware/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q
 ```
 
 Use your actual completed build directories. This check fails if SDK automatic

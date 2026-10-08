@@ -86,7 +86,7 @@ def test_docs_do_not_point_at_unrelated_wiring_setup_doc(repo_root):
     explain the hidapi fallback inline instead of linking to it.
     """
     unrelated_doc_reference = "self-test-setup" + ".md"
-    this_file = repo_root / "host/python/tests/pico_uart/test_hid_optional_dependency.py"
+    this_file = repo_root / "host/python/tests/test_hid_optional_dependency.py"
     conftest_file = repo_root / "host/python/tests/conftest.py"
     assert unrelated_doc_reference not in this_file.read_text()
     assert unrelated_doc_reference not in conftest_file.read_text()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pico_uart import transport
 
@@ -79,6 +81,62 @@ def test_discovery_uses_hidraw_adapter_when_hidapi_open_fails(
 
     assert hid_module.open_device() is fallback_device
     assert opened_paths == [b"1-3:1.12", b"/dev/hidraw7"]
+
+
+def test_discovery_uses_hidapi_with_resolved_hidraw_path(
+    monkeypatch, hid_module
+):
+    devices = [_exact_device(hid_module, b"1-3:1.12")]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda _path: "/dev/hidraw7")
+
+    class Device:
+        def open_path(self, path):
+            opened_paths.append(path)
+            if path == b"1-3:1.12":
+                raise OSError("libusb open failed")
+
+    monkeypatch.setattr(hid_module.hid, "device", Device)
+
+    result = hid_module.open_device()
+
+    assert isinstance(result, Device)
+    assert opened_paths == [b"1-3:1.12", b"/dev/hidraw7"]
+
+
+def test_discovery_reports_open_failure_when_hidraw_fallback_fails(
+    monkeypatch, hid_module
+):
+    devices = [_exact_device(hid_module, b"1-3:1.12")]
+    _install_hid_mock(monkeypatch, hid_module, devices)
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda _path: "/dev/hidraw7")
+    monkeypatch.setattr(
+        hid_module,
+        "_open_hidraw_device",
+        lambda _path: (_ for _ in ()).throw(OSError("permission denied")),
+    )
+
+    class FailingDevice:
+        def open_path(self, _path):
+            raise OSError("libusb open failed")
+
+    monkeypatch.setattr(hid_module.hid, "device", FailingDevice)
+
+    with pytest.raises(RuntimeError, match="hidraw permissions"):
+        hid_module.open_device()
+
+
+@pytest.mark.skipif(transport.os.name != "posix", reason="Linux hidraw sysfs paths are POSIX-only")
+def test_resolve_hidraw_path_matches_sysfs_interface(monkeypatch):
+    link = Path("/sys/class/hidraw/hidraw7/device")
+    monkeypatch.setattr(transport.Path, "glob", lambda *_args: [link])
+    monkeypatch.setattr(
+        transport.os.path,
+        "realpath",
+        lambda _path: "/sys/devices/platform/1-3:1.12",
+    )
+
+    assert transport._resolve_hidraw_path("1-3:1.12") == "/dev/hidraw7"
 
 
 def test_discovery_reports_original_path_when_hidraw_resolution_fails(

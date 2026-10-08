@@ -39,11 +39,10 @@ host setup helper entry points.
 - `src/pico_uart/protocol.py`: HID report constants and decoders
 - `src/pico_uart/cli.py`: command-line interface
 - `src/pico_uart/web/`: Flask dashboard and static assets
-- `tests/pico_uart/`: package HID client, transport, and dashboard tests
-- `tools/test/python/firmware/`: firmware policy and PIO behavior tests
-- `tools/test/python/tooling/`: repository host-tool tests
-- `tools/test/python/contracts/`: cross-component and CI contract tests
-- `tests/`: package fixtures and report helpers
+- `tests/`: package tests, shared fixtures, and report helpers
+- `tests/firmware/`: firmware policy and PIO behavior tests
+- `tests/tooling/`: repository host-tool tests
+- `tests/contracts/`: cross-component and CI contract tests
 
 The CLI, dashboard, and tests should use the public `pico_uart` package rather
 than adding another top-level compatibility module.
@@ -68,6 +67,12 @@ and acceptance criteria are documented in the [test index](../tests/README.md).
 
 The repository-wide host test runner is `tools/test/test-host.sh`.
 
+Measure package coverage from `host/python` with:
+
+```bash
+.venv/bin/python -m pytest --cov=pico_uart --cov-report=term-missing
+```
+
 ## Dependencies and Locking
 
 `requirements.txt` lists runtime dependencies. `requirements-dev.txt` adds the
@@ -80,7 +85,7 @@ uv pip compile host/python/requirements-dev.txt --universal --python-version 3.1
   --generate-hashes --no-emit-index-url --output-file host/python/requirements-lock.txt
 ```
 
-The existing [dependency contract test](../../tools/test/python/contracts/test_firmware_contract.py)
+The existing [dependency contract test](../../tests/contracts/test_firmware_contract.py)
 checks that the direct pins appear in the generated lock.
 
 ## Build the Distribution

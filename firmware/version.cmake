@@ -1,7 +1,7 @@
 # Parse and validate PICO_UART_VERSION into PICO_UART_VERSION_{MAJOR,MINOR,PATCH}
 # and compute PICO_UART_BCD_DEVICE. Extracted from CMakeLists.txt so the
 # version policy can be exercised standalone with `cmake -P` (no Pico SDK or
-# toolchain needed) — see tools/test/python/firmware/test_version_policy.py.
+# toolchain needed) — see tests/firmware/test_version_policy.py.
 
 # Tag form is v1.2.3; CMake receives 1.2.3. Local builds may use -dev or -rcN.
 if(NOT PICO_UART_VERSION MATCHES "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(dev|rc[1-9][0-9]*))?$")
