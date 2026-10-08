@@ -9,17 +9,15 @@ import re
 import shlex
 import subprocess
 import sys
-import os
 from pathlib import Path
 from types import SimpleNamespace
 
-from hardware_test_result import prepend_result
+from hardware_test_result import artifact_metadata, prepend_result
 from hardware_test_health import collect_hid_health, health_evidence, health_is_clean, health_summary
-from hardware_test_result import artifact_metadata
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
-DEFAULT_RESULTS_FILE = REPO_ROOT / "docs/tests/performance-test-results.md"
+DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
 PASS_PATTERN = re.compile(
     r"^PASS (?P<label>[^:]+): (?P<bytes>[0-9]+) bytes, (?P<throughput>[0-9.]+) B/s$",
     re.MULTILINE,
@@ -33,18 +31,18 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
     command = [
         sys.executable,
         str(SCRIPT_DIR / "serial_stress_benchmark.py"),
-        "--uart0-pico",
-        arguments.uart0_pico,
-        "--uart0-peer",
-        arguments.uart0_peer,
-        "--uart2",
-        arguments.uart2,
-        "--uart3",
-        arguments.uart3,
-        "--uart5",
-        arguments.uart5,
-        "--uart0-baud",
-        str(arguments.uart0_baud),
+        "--cdc0",
+        arguments.cdc0,
+        "--cdc1",
+        arguments.cdc1,
+        "--cdc2",
+        arguments.cdc2,
+        "--cdc3",
+        arguments.cdc3,
+        "--cdc4",
+        arguments.cdc4,
+        "--cdc5",
+        arguments.cdc5,
         "--rates",
         arguments.rates,
         "--duration",
@@ -54,18 +52,7 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
         "--timeout",
         str(arguments.timeout),
     ]
-    if arguments.uart1:
-        command.extend(["--uart1", arguments.uart1])
-        command.extend(["--uart1-peer", arguments.uart1_peer or arguments.uart2])
-    if arguments.uart4:
-        command.extend(["--uart4", arguments.uart4])
-        command.extend(["--uart4-peer", arguments.uart4_peer or arguments.uart3])
     return command
-
-
-def peer_path_matches(peer: str | None, expected: str) -> bool:
-    """Return whether an explicitly supplied peer names the expected endpoint."""
-    return peer is None or os.path.realpath(peer) == os.path.realpath(expected)
 
 
 def parse_benchmark_output(output: str) -> dict[str, tuple[str, str, str]]:
@@ -114,14 +101,15 @@ def format_result_entry(
 ) -> str:
     parsed = parse_benchmark_output_by_rate(output)
     clean = result == 0 and health_is_clean(health_after, health_before)
-    overall = "PASS" if clean and arguments.uart1 and arguments.uart4 else "PARTIAL" if clean else "FAIL"
-    expected_labels = ["uart0-pico-to-peer", "uart0-peer-to-pico", "uart5-loopback"]
-    if arguments.uart1:
-        expected_labels.extend(["uart1-to-uart2", "uart2-to-uart1"])
-    else:
-        expected_labels.extend(["uart2-to-uart3", "uart3-to-uart2"])
-    if arguments.uart4:
-        expected_labels.extend(["uart3-to-uart4", "uart4-to-uart3"])
+    overall = "PASS" if clean else "FAIL"
+    expected_labels = [
+        "cdc0-to-cdc2",
+        "cdc2-to-cdc0",
+        "cdc3-to-cdc4",
+        "cdc4-to-cdc3",
+        "cdc1-loopback",
+        "cdc5-loopback",
+    ]
 
     lines = [
         f"## {timestamp} - {arguments.board} - Performance Test",
@@ -130,13 +118,12 @@ def format_result_entry(
         f"**Firmware:** {arguments.firmware_version}, `{arguments.firmware_commit}`",
         f"**Board:** `{arguments.board}`",
         f"**Test date/time:** `{timestamp}`",
-        "**Wiring:** Performance benchmark fixture",
+        "**Wiring:** Fixed six-channel HIL fixture",
         "**RTS/CTS:** disabled",
         "",
         "### Configuration",
         "",
         f"- Baud rates: {arguments.rates}",
-        f"- UART0 baud: {arguments.uart0_baud}",
         f"- Duration per rate: {arguments.duration} seconds",
         f"- Payload: {arguments.payload_bytes} bytes",
         f"- Artifact: {getattr(arguments, 'artifact_path', 'not supplied')}",
@@ -168,16 +155,8 @@ def format_result_entry(
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--uart0-pico", required=True)
-    parser.add_argument("--uart0-peer", required=True)
-    parser.add_argument("--uart2", required=True)
-    parser.add_argument("--uart3", required=True)
-    parser.add_argument("--uart5", required=True)
-    parser.add_argument("--uart1")
-    parser.add_argument("--uart1-peer")
-    parser.add_argument("--uart4")
-    parser.add_argument("--uart4-peer")
-    parser.add_argument("--uart0-baud", type=int, default=115200)
+    for channel in range(6):
+        parser.add_argument(f"--cdc{channel}", required=True)
     parser.add_argument(
         "--rates", default="115200", help="Concurrent full-fixture rate; use individual tests for higher baud rates"
     )
@@ -199,21 +178,8 @@ def main() -> int:
     artifact = artifact_metadata(arguments.artifact)
     arguments.artifact_path = artifact["path"]
     arguments.artifact_sha256 = artifact["sha256"]
-    if arguments.duration <= 0 or arguments.timeout <= 0 or arguments.payload_bytes < 32 or arguments.uart0_baud <= 0:
-        print("duration, timeout, UART0 baud, and payload must be valid", file=sys.stderr)
-        return 2
-    for option, peer, expected in (
-        ("--uart1-peer", arguments.uart1_peer, arguments.uart2),
-        ("--uart4-peer", arguments.uart4_peer, arguments.uart3),
-    ):
-        if not peer_path_matches(peer, expected):
-            print(f"{option} must resolve to the corresponding peer endpoint", file=sys.stderr)
-            return 2
-    if arguments.uart1_peer and not arguments.uart1:
-        print("--uart1-peer requires --uart1", file=sys.stderr)
-        return 2
-    if arguments.uart4_peer and not arguments.uart4:
-        print("--uart4-peer requires --uart4", file=sys.stderr)
+    if arguments.duration <= 0 or arguments.timeout <= 0 or arguments.payload_bytes < 32:
+        print("duration, timeout, and payload must be valid", file=sys.stderr)
         return 2
 
     command = build_command(arguments)

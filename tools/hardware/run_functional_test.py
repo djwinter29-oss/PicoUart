@@ -17,7 +17,7 @@ from hardware_test_health import collect_hid_health, health_evidence, health_is_
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
-DEFAULT_RESULTS_FILE = REPO_ROOT / "docs/tests/performance-test-results.md"
+DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
 
 
 def build_stage_commands(arguments: SimpleNamespace) -> list[tuple[str, list[str]]]:
@@ -35,27 +35,15 @@ def build_stage_commands(arguments: SimpleNamespace) -> list[tuple[str, list[str
     ]
     stages = [
         (
-            "Debug Probe to HW UART0",
+            "HW UART0 to PIO UART2",
             common
             + [
                 "--pico-port",
                 arguments.pico_cdc0,
                 "--peer-port",
-                arguments.debug_probe,
-                "--label",
-                "stage1-debug-probe-hw-uart",
-            ],
-        ),
-        (
-            "HW UART1 to PIO UART2",
-            common
-            + [
-                "--pico-port",
-                arguments.pico_cdc1,
-                "--peer-port",
                 arguments.pico_cdc2,
                 "--label",
-                "stage2-hw-to-pio",
+                "stage1-hw0-pio2",
             ],
         ),
         (
@@ -67,7 +55,18 @@ def build_stage_commands(arguments: SimpleNamespace) -> list[tuple[str, list[str
                 "--peer-port",
                 arguments.pico_cdc4,
                 "--label",
-                "stage3-pio-to-pio",
+                "stage2-pio3-pio4",
+            ],
+        ),
+        (
+            "HW UART1 loopback",
+            common
+            + [
+                "--pico-port",
+                arguments.pico_cdc1,
+                "--loopback",
+                "--label",
+                "stage3-hw1-loopback",
             ],
         ),
         (
@@ -104,7 +103,7 @@ def format_result_entry(
         f"**Firmware:** {arguments.firmware_version}, `{arguments.firmware_commit}`",
         f"**Board:** `{arguments.board}`",
         f"**Test date/time:** `{timestamp}`",
-        "**Wiring:** Self-test stages 1-4",
+            "**Wiring:** HIL fixture stages 1-4",
         "**RTS/CTS:** disabled",
         "",
         "### Configuration",
@@ -121,9 +120,9 @@ def format_result_entry(
         "| --- | --- |",
     ]
     for label in (
-        "Debug Probe to HW UART0",
-        "HW UART1 to PIO UART2",
+        "HW UART0 to PIO UART2",
         "PIO UART3 to PIO UART4",
+        "HW UART1 loopback",
         "PIO UART5 loopback",
     ):
         if label in stage_results:
@@ -145,7 +144,6 @@ def format_result_entry(
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pico-cdc0", required=True)
-    parser.add_argument("--debug-probe", required=True)
     parser.add_argument("--pico-cdc1", required=True)
     parser.add_argument("--pico-cdc2", required=True)
     parser.add_argument("--pico-cdc3", required=True)
@@ -175,7 +173,6 @@ def fixture_paths_valid(arguments: argparse.Namespace) -> bool:
     """Reject endpoint aliases that would invalidate the claimed topology."""
     paths = [
         ("--pico-cdc0", arguments.pico_cdc0),
-        ("--debug-probe", arguments.debug_probe),
         ("--pico-cdc1", arguments.pico_cdc1),
         ("--pico-cdc2", arguments.pico_cdc2),
         ("--pico-cdc3", arguments.pico_cdc3),

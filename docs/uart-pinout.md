@@ -2,7 +2,7 @@
 
 This document describes the PicoUart target-side UART pinout for Pico-class RP2040/RP2350 boards. It is for board wiring
 and connector planning; the fixed hardware-in-the-loop test fixture is documented separately in
-[Self-Test Setup](tests/self-test-setup.md).
+[HIL Fixture Setup](tests/hil-fixture-setup.md).
 
 The firmware source of truth for this pinout is `firmware/src/board/uart_board.c`.
 
@@ -50,9 +50,8 @@ the default firmware configuration.
 
 ## Test Fixture
 
-HIL fixture wiring belongs in [Self-Test Setup](tests/self-test-setup.md). Use
-[Functional Test Plan](tests/functional-test-plan.md) for staged bridge checks and
-[Performance Test Plan](tests/performance-test-plan.md) for concurrent benchmarks.
+HIL fixture wiring belongs in [HIL Fixture Setup](tests/hil-fixture-setup.md). Use the
+[HIL Fixture Test Plan](tests/hil-fixture-test-plan.md) for functional checks and performance benchmarks.
 
 ## Board Layout Guidance
 

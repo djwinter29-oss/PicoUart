@@ -18,6 +18,15 @@ def load_pair(repo_root, monkeypatch):
     return module
 
 
+def test_pair_map_matches_the_fixed_hil_fixture(repo_root, monkeypatch):
+    pair = load_pair(repo_root, monkeypatch)
+
+    assert pair.PAIRS == {
+        "stage1": ("-if00", "-if04"),
+        "stage2": ("-if06", "-if08"),
+    }
+
+
 @pytest.mark.parametrize(
     ("outcome", "expected"),
     [

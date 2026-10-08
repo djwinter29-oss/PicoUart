@@ -16,7 +16,7 @@ from hardware_test_result import artifact_metadata, prepend_result
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
-DEFAULT_RESULTS_FILE = REPO_ROOT / "docs/tests/performance-test-results.md"
+DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
 
 
 def build_functional_command(arguments: argparse.Namespace) -> list[str]:
@@ -25,8 +25,6 @@ def build_functional_command(arguments: argparse.Namespace) -> list[str]:
         str(SCRIPT_DIR / "run_functional_test.py"),
         "--pico-cdc0",
         arguments.pico_cdc0,
-        "--debug-probe",
-        arguments.debug_probe,
         "--pico-cdc1",
         arguments.pico_cdc1,
         "--pico-cdc2",
@@ -62,18 +60,18 @@ def build_performance_command(arguments: argparse.Namespace) -> list[str]:
     command = [
         sys.executable,
         str(SCRIPT_DIR / "run_performance_test.py"),
-        "--uart0-pico",
+        "--cdc0",
         arguments.pico_cdc0,
-        "--uart0-peer",
-        arguments.debug_probe,
-        "--uart2",
+        "--cdc1",
+        arguments.pico_cdc1,
+        "--cdc2",
         arguments.pico_cdc2,
-        "--uart3",
+        "--cdc3",
         arguments.pico_cdc3,
-        "--uart5",
+        "--cdc4",
+        arguments.pico_cdc4,
+        "--cdc5",
         arguments.pico_cdc5,
-        "--uart0-baud",
-        str(arguments.uart0_baud),
         "--rates",
         arguments.rates,
         "--duration",
@@ -94,10 +92,6 @@ def build_performance_command(arguments: argparse.Namespace) -> list[str]:
     ]
     if getattr(arguments, "artifact", None):
         command.extend(["--artifact", str(arguments.artifact)])
-    if arguments.pico_cdc1:
-        command.extend(["--uart1", arguments.pico_cdc1])
-    if arguments.pico_cdc4:
-        command.extend(["--uart4", arguments.pico_cdc4])
     return command
 
 
@@ -143,7 +137,7 @@ def format_result_entry(
         f"**Firmware:** {arguments.firmware_version}, `{arguments.firmware_commit}`",
         f"**Board:** `{arguments.board}`",
         f"**Test date/time:** `{timestamp}`",
-        "**Wiring:** Self-test stages 1-4 and performance fixture",
+        "**Wiring:** HIL fixture stages 1-4",
         "**RTS/CTS:** disabled",
         f"**Artifact:** {getattr(arguments, 'artifact_path', 'not supplied')}",
         f"**Artifact SHA-256:** `{getattr(arguments, 'artifact_sha256', 'not supplied')}`",
@@ -166,11 +160,10 @@ def format_result_entry(
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pico-cdc0", required=True)
-    parser.add_argument("--debug-probe", required=True)
-    parser.add_argument("--pico-cdc1", help="Optional CDC1 endpoint for performance")
+    parser.add_argument("--pico-cdc1", required=True)
     parser.add_argument("--pico-cdc2", required=True)
     parser.add_argument("--pico-cdc3", required=True)
-    parser.add_argument("--pico-cdc4", help="Optional CDC4 endpoint for performance")
+    parser.add_argument("--pico-cdc4", required=True)
     parser.add_argument("--pico-cdc5", required=True)
     parser.add_argument("--functional-baud", type=int, default=115200)
     parser.add_argument("--functional-payload-bytes", type=int, default=64)
@@ -202,10 +195,7 @@ def main() -> int:
     if arguments.skip_functional and arguments.skip_performance:
         print("at least one test phase must run", file=sys.stderr)
         return 2
-    if not arguments.skip_functional and (not arguments.pico_cdc1 or not arguments.pico_cdc4):
-        print("--pico-cdc1 and --pico-cdc4 are required for the functional test", file=sys.stderr)
-        return 2
-    arguments.full_fixture = bool(arguments.pico_cdc1 and arguments.pico_cdc4)
+    arguments.full_fixture = True
 
     functional = None
     performance = None

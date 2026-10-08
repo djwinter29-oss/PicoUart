@@ -43,16 +43,10 @@ physical UART signaling, or RTS/CTS behavior.
 
 ## Hardware Test Sequence
 
-1. Follow [Self-Test Setup](self-test-setup.md) and install all four links before testing.
-2. Run the [Functional Test Plan](functional-test-plan.md).
-3. Run the [Performance Test Plan](performance-test-plan.md) only after functional checks pass.
-4. Record every run in [Performance Test Results](performance-test-results.md).
-5. For releases, use the exact packaged artifacts and follow [Releasing](../releasing.md).
-
-## Recorded Hardware Reports
-
-- [2026-10-01 RP2040 validation](hardware-validation-2026-10-01.md): staged functional and throughput results, including
-  the post-test CDC5 overrun caveat.
+1. Follow [HIL Fixture Setup](hil-fixture-setup.md) and install both crossed pairs and both loopbacks before testing.
+2. Follow the [HIL Fixture Test Plan](hil-fixture-test-plan.md), which runs functional checks before performance.
+3. Runner output is recorded locally in `build/hil-results.md`; retain separate transcripts when needed.
+4. For releases, use the exact packaged artifacts and follow [Releasing](../releasing.md).
 
 ## Result Semantics
 

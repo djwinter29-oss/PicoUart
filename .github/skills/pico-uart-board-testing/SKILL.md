@@ -20,14 +20,10 @@ Read the relevant document before testing:
 
 - [`README.md`](../../../README.md): documentation index and standard local build/test entry points.
 - [`tools/README.md`](../../../tools/README.md): tool categories and local runner entry points.
-- [`docs/tests/self-test-setup.md`](../../../docs/tests/self-test-setup.md): equipment, fixed fixture wiring, and
+- [`docs/tests/hil-fixture-setup.md`](../../../docs/tests/hil-fixture-setup.md): equipment, fixed fixture wiring, and
   flow-control policy.
-- [`docs/tests/functional-test-plan.md`](../../../docs/tests/functional-test-plan.md): functional sequence and pass
-  criteria.
-- [`docs/tests/performance-test-plan.md`](../../../docs/tests/performance-test-plan.md): rate matrix, benchmark, soak
-  testing, and acceptance criteria.
-- [`docs/tests/performance-test-results.md`](../../../docs/tests/performance-test-results.md): concise newest-first
-  result log and template.
+- [`docs/tests/hil-fixture-test-plan.md`](../../../docs/tests/hil-fixture-test-plan.md): functional sequence, rate
+  matrix, benchmark, soak testing, and acceptance criteria.
 - [`docs/releasing.md`](../../../docs/releasing.md): release HIL and artifact-hash gates.
 
 The repository provides runners that implement the documented workflow:
@@ -40,11 +36,12 @@ The repository provides runners that implement the documented workflow:
 
 Use `tools/hardware/run_hardware_test.py` for the normal end-to-end run. It runs functional testing before performance
 testing and records a concise result entry. Use the individual runners when diagnosing one phase. Add `--no-record` for
-a dry run. Install all four independent links before starting and do not change wiring during the run. Use
+a dry run. Install both crossed pairs and both loopbacks before starting and do not change wiring during the run. Use
 `tools/hardware/run_functional_test.py --stage 1|2|3|4` only to diagnose one link on the same fixed fixture.
 
 ## Diagnostics
 
 - No hardware in the VM is expected; build and host-tool validation are the best available checks here.
 - For physical failures, return to the canonical setup/test/release docs above.
-- Record physical outcomes in `docs/tests/performance-test-results.md`.
+- Runner results are written to the ignored `build/hil-results.md`; retain release HIL evidence with the exact
+  artifacts.

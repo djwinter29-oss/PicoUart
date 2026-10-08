@@ -107,9 +107,10 @@ the [CDC/HID overview](docs/usb/cdc-hid-overview.md) for interface behavior.
 </table>
 
 _Reference boards, not PicoUart-specific assemblies. Both photos are proportionally resized and padded to a shared 640 x
-400 canvas. Photos by Misael Reséndiz ([Pico source](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_Pico.jpg)) and
-Suyash Dwivedi ([Pico 2 source](https://commons.wikimedia.org/wiki/File:Raspberry_PI_Pico_2-01.jpg)), licensed under
-[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)._
+400 canvas. Pico photo by Misael Reséndiz ([source](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_Pico.jpg)),
+licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); Pico 2 photo by SparkFun Electronics
+([source](https://commons.wikimedia.org/wiki/File:DEV-26124-PICO-2-angle.jpg)), licensed under
+[CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)._
 
 ## Important Limitations
 

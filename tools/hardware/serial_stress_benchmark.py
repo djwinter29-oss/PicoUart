@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stress PicoUart UART0, optional UART1/UART4, UART2/UART3, and UART5 concurrently."""
+"""Stress all six ports using two crossed pairs and two loopback channels."""
 
 import argparse
 import math
@@ -182,23 +182,9 @@ def parse_rates(value: str) -> tuple[int, ...]:
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark all configured PicoUart test links concurrently.")
-    parser.add_argument("--uart0-pico", required=True, help="PicoUart CDC0 device")
-    parser.add_argument("--uart0-peer", required=True, help="Debug Probe UART device")
-    parser.add_argument("--uart1", help="Optional PicoUart CDC1 device; loopback without peer options")
-    parser.add_argument("--uart1-peer", help="CDC2 peer; cross-fixture mode requires all UART1/UART4 options")
-    parser.add_argument("--uart2", required=True, help="PicoUart CDC2 device")
-    parser.add_argument("--uart3", required=True, help="PicoUart CDC3 device")
-    parser.add_argument("--uart4", help="Optional PicoUart CDC4 device; loopback without peer options")
-    parser.add_argument("--uart4-peer", help="CDC3 peer; cross-fixture mode requires all UART1/UART4 options")
-    parser.add_argument("--uart5", required=True, help="PicoUart CDC5 device")
-    parser.add_argument(
-        "--uart0-baud",
-        type=int,
-        default=115200,
-        choices=BAUD_RATES,
-        help="UART0 and Debug Probe rate; defaults to 115200",
-    )
+    parser = argparse.ArgumentParser(description="Benchmark the fixed six-port PicoUart HIL fixture concurrently.")
+    for channel in range(6):
+        parser.add_argument(f"--cdc{channel}", required=True, help=f"PicoUart CDC{channel} device")
     parser.add_argument(
         "--rates", type=parse_rates, default=DEFAULT_RATES, help="PIO/HW loopback rates to test, comma-separated"
     )
@@ -236,34 +222,9 @@ def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
     return first_error
 
 
-def _same_serial_path(left: str, right: str) -> bool:
-    return os.path.realpath(left) == os.path.realpath(right)
-
-
-def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
-    """Require cross-fixture peer arguments to name the opened CDC peers."""
-    cross_values = [getattr(arguments, name, None) for name in ("uart1", "uart1_peer", "uart4", "uart4_peer")]
-    use_cross_fixture = bool(cross_values[1] or cross_values[3])
-    if use_cross_fixture and not all(cross_values):
-        print("cross-fixture mode requires --uart1 --uart1-peer --uart4 --uart4-peer", file=sys.stderr)
-        return False
-
-    if not all(hasattr(arguments, name) for name in ("uart0_pico", "uart0_peer", "uart2", "uart3", "uart5")):
-        if not any(cross_values):
-            return True
-        return False
-
-    endpoints = [
-        ("--uart0-pico", arguments.uart0_pico),
-        ("--uart0-peer", arguments.uart0_peer),
-        ("--uart2", arguments.uart2),
-        ("--uart3", arguments.uart3),
-        ("--uart5", arguments.uart5),
-    ]
-    if arguments.uart1:
-        endpoints.append(("--uart1", arguments.uart1))
-    if arguments.uart4:
-        endpoints.append(("--uart4", arguments.uart4))
+def fixture_paths_valid(arguments: argparse.Namespace) -> bool:
+    """Reject endpoint aliases that would invalidate the fixed six-port fixture."""
+    endpoints = [(f"--cdc{channel}", getattr(arguments, f"cdc{channel}")) for channel in range(6)]
     seen: dict[str, str] = {}
     for name, path in endpoints:
         resolved = os.path.realpath(path)
@@ -271,16 +232,6 @@ def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
             print(f"{name} resolves to the same endpoint as {seen[resolved]}", file=sys.stderr)
             return False
         seen[resolved] = name
-
-    if not use_cross_fixture:
-        return True
-
-    if not _same_serial_path(arguments.uart1_peer, arguments.uart2):
-        print("--uart1-peer must resolve to the same device as --uart2", file=sys.stderr)
-        return False
-    if not _same_serial_path(arguments.uart4_peer, arguments.uart3):
-        print("--uart4-peer must resolve to the same device as --uart3", file=sys.stderr)
-        return False
 
     return True
 
@@ -290,52 +241,24 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     results: dict[str, tuple[int, str | None]] = {}
     passed = False
 
-    if not cross_fixture_paths_valid(arguments):
+    if not fixture_paths_valid(arguments):
         return False
 
     try:
-        uart0_pico, uart0_pico_settings = configure_port(arguments.uart0_pico, arguments.uart0_baud)
-        ports.append((uart0_pico, uart0_pico_settings))
-        uart0_peer, uart0_peer_settings = configure_port(arguments.uart0_peer, arguments.uart0_baud)
-        ports.append((uart0_peer, uart0_peer_settings))
-        uart2, uart2_settings = configure_port(arguments.uart2, stream_baud)
-        ports.append((uart2, uart2_settings))
-        uart3, uart3_settings = configure_port(arguments.uart3, stream_baud)
-        ports.append((uart3, uart3_settings))
-        uart5, uart5_settings = configure_port(arguments.uart5, stream_baud)
-        ports.append((uart5, uart5_settings))
+        descriptors = {}
+        for channel in range(6):
+            descriptor, settings = configure_port(getattr(arguments, f"cdc{channel}"), stream_baud)
+            ports.append((descriptor, settings))
+            descriptors[channel] = descriptor
 
         streams: list[tuple[str, int, int]] = [
-            ("uart0-pico-to-peer", uart0_pico, uart0_peer),
-            ("uart0-peer-to-pico", uart0_peer, uart0_pico),
-            ("uart5-loopback", uart5, uart5),
+            ("cdc0-to-cdc2", descriptors[0], descriptors[2]),
+            ("cdc2-to-cdc0", descriptors[2], descriptors[0]),
+            ("cdc3-to-cdc4", descriptors[3], descriptors[4]),
+            ("cdc4-to-cdc3", descriptors[4], descriptors[3]),
+            ("cdc1-loopback", descriptors[1], descriptors[1]),
+            ("cdc5-loopback", descriptors[5], descriptors[5]),
         ]
-
-        use_cross_fixture = bool(getattr(arguments, "uart1_peer", None) and getattr(arguments, "uart4_peer", None))
-        if not use_cross_fixture:
-            streams.extend([("uart2-to-uart3", uart2, uart3), ("uart3-to-uart2", uart3, uart2)])
-
-        if arguments.uart1 and getattr(arguments, "uart1_peer", None):
-            uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
-            ports.append((uart1, uart1_settings))
-            # The peer path is the already opened CDC2 descriptor. Reusing it
-            # avoids a second termios configuration and input flush on the same node.
-            uart1_peer = uart2
-            streams.extend([("uart1-to-uart2", uart1, uart1_peer), ("uart2-to-uart1", uart1_peer, uart1)])
-        elif arguments.uart1:
-            uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
-            ports.append((uart1, uart1_settings))
-            streams.append(("uart1-loopback", uart1, uart1))
-        if arguments.uart4 and getattr(arguments, "uart4_peer", None):
-            uart4, uart4_settings = configure_port(arguments.uart4, stream_baud)
-            ports.append((uart4, uart4_settings))
-            # The peer path is the already opened CDC3 descriptor.
-            uart4_peer = uart3
-            streams.extend([("uart3-to-uart4", uart4_peer, uart4), ("uart4-to-uart3", uart4, uart4_peer)])
-        elif arguments.uart4:
-            uart4, uart4_settings = configure_port(arguments.uart4, stream_baud)
-            ports.append((uart4, uart4_settings))
-            streams.append(("uart4-loopback", uart4, uart4))
 
         time.sleep(getattr(arguments, "settle_seconds", LINE_CODING_SETTLE_SECONDS))
         if getattr(arguments, "setup_only", False):
@@ -362,13 +285,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             for label, source_fd, destination_fd in streams
         ]
 
-        extras = []
-        if arguments.uart1:
-            extras.append("UART1")
-        if arguments.uart4:
-            extras.append("UART4")
-        extra_note = f"; including {', '.join(extras)}" if extras else ""
-        print(f"Benchmarking PIO/loopbacks at {stream_baud} baud; UART0 at {arguments.uart0_baud} baud{extra_note}")
+        print(f"Benchmarking all six HIL fixture streams at {stream_baud} baud")
         started = time.monotonic()
         for thread in threads:
             thread.start()

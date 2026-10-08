@@ -10,8 +10,8 @@ import time
 
 PICO = "/dev/serial/by-id/usb-PicoUart_PicoUart_CDC+HID_PIO_8N1_5303284748A07A1C"
 PAIRS = {
-    "stage2": ("-if02", "-if04"),
-    "stage3": ("-if06", "-if08"),
+    "stage1": ("-if00", "-if04"),
+    "stage2": ("-if06", "-if08"),
 }
 
 

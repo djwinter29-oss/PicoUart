@@ -20,6 +20,10 @@ def _load_stress():
     return mod
 
 
+def _cdc_cli_arguments() -> list[str]:
+    return [item for channel in range(6) for item in (f"--cdc{channel}", f"/dev/ttyACM{channel}")]
+
+
 @pytest.mark.parametrize("failure", ["tcgetattr", "tcsetattr", "tcflush"])
 def test_configure_port_closes_once_on_failure(monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
     stress = _load_stress()
@@ -208,21 +212,14 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
         "Arguments",
         (),
         {
-            "uart0_pico": "/dev/uart0-pico",
-            "uart0_peer": "/dev/uart0-peer",
-            "uart1": None,
-            "uart2": "/dev/uart2",
-            "uart3": "/dev/uart3",
-            "uart4": None,
-            "uart5": "/dev/uart5",
-            "uart0_baud": 115200,
+            **{f"cdc{channel}": f"/dev/cdc{channel}" for channel in range(6)},
             "duration": 0.1,
             "payload_bytes": 64,
             "timeout": 1.0,
             "settle_seconds": 0.0,
         },
     )()
-    next_descriptor = iter(range(20, 25))
+    next_descriptor = iter(range(20, 26))
 
     class ImmediateThread:
         def __init__(self, target, args):
@@ -257,7 +254,14 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
 
     stdout = capsys.readouterr().out
     time_lines = [line for line in stdout.splitlines() if line.startswith("TIME ")]
-    stream_labels = ["uart0-pico-to-peer", "uart0-peer-to-pico", "uart5-loopback", "uart2-to-uart3", "uart3-to-uart2"]
+    stream_labels = [
+        "cdc0-to-cdc2",
+        "cdc2-to-cdc0",
+        "cdc3-to-cdc4",
+        "cdc4-to-cdc3",
+        "cdc1-loopback",
+        "cdc5-loopback",
+    ]
 
     assert len(time_lines) == len(stream_labels)
     for label in stream_labels:
@@ -273,20 +277,13 @@ def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> N
         "Arguments",
         (),
         {
-            "uart0_pico": "/dev/uart0-pico",
-            "uart0_peer": "/dev/uart0-peer",
-            "uart1": None,
-            "uart2": "/dev/uart2",
-            "uart3": "/dev/uart3",
-            "uart4": None,
-            "uart5": "/dev/uart5",
-            "uart0_baud": 115200,
+            **{f"cdc{channel}": f"/dev/cdc{channel}" for channel in range(6)},
             "duration": 0.1,
             "payload_bytes": 64,
             "timeout": 1.0,
         },
     )()
-    next_descriptor = iter(range(20, 25))
+    next_descriptor = iter(range(20, 26))
 
     class ImmediateThread:
         def __init__(self, target, args):
@@ -324,21 +321,7 @@ def test_non_finite_timing_is_rejected(monkeypatch: pytest.MonkeyPatch, option: 
     monkeypatch.setattr(
         sys,
         "argv",
-        [
-            "serial_stress_benchmark.py",
-            "--uart0-pico",
-            "/dev/null",
-            "--uart0-peer",
-            "/dev/null",
-            "--uart2",
-            "/dev/null",
-            "--uart3",
-            "/dev/null",
-            "--uart5",
-            "/dev/null",
-            option,
-            value,
-        ],
+        ["serial_stress_benchmark.py", *_cdc_cli_arguments(), option, value],
     )
     stress = _load_stress()
     assert stress.main() == 2
@@ -348,21 +331,7 @@ def test_payload_bytes_rejects_out_of_range(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(
         sys,
         "argv",
-        [
-            "serial_stress_benchmark.py",
-            "--uart0-pico",
-            "/dev/null",
-            "--uart0-peer",
-            "/dev/null",
-            "--uart2",
-            "/dev/null",
-            "--uart3",
-            "/dev/null",
-            "--uart5",
-            "/dev/null",
-            "--payload-bytes",
-            "16",
-        ],
+        ["serial_stress_benchmark.py", *_cdc_cli_arguments(), "--payload-bytes", "16"],
     )
     stress = _load_stress()
     assert stress.main() == 2
@@ -371,105 +340,34 @@ def test_payload_bytes_rejects_out_of_range(monkeypatch: pytest.MonkeyPatch) -> 
 def test_minimum_payload_contains_distinct_sequence_marker() -> None:
     stress = _load_stress()
 
-    first = stress.payload_for("uart2-to-uart3", 0, 32)
-    second = stress.payload_for("uart2-to-uart3", 1, 32)
+    first = stress.payload_for("cdc0-to-cdc2", 0, 32)
+    second = stress.payload_for("cdc0-to-cdc2", 1, 32)
 
     assert len(first) == 32
     assert len(second) == 32
     assert first != second
 
 
-def test_optional_uart1_uart4_parse(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "serial_stress_benchmark.py",
-            "--uart0-pico",
-            "/dev/null",
-            "--uart0-peer",
-            "/dev/null",
-            "--uart1",
-            "/dev/ttyACM1",
-            "--uart2",
-            "/dev/null",
-            "--uart3",
-            "/dev/null",
-            "--uart4",
-            "/dev/ttyACM4",
-            "--uart5",
-            "/dev/null",
-            "--rates",
-            "115200",
-            "--duration",
-            "0.1",
-        ],
-    )
+def test_six_cdc_arguments_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["serial_stress_benchmark.py", *_cdc_cli_arguments()])
     stress = _load_stress()
-    args = stress.parse_arguments()
-    assert args.uart1 == "/dev/ttyACM1"
-    assert args.uart4 == "/dev/ttyACM4"
-    monkeypatch.setattr(stress, "benchmark_rate", lambda *_a, **_k: True)
-    assert stress.main() == 0
+
+    arguments = stress.parse_arguments()
+
+    assert [getattr(arguments, f"cdc{channel}") for channel in range(6)] == [
+        f"/dev/ttyACM{channel}" for channel in range(6)
+    ]
 
 
-def test_cross_fixture_arguments_parse(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "serial_stress_benchmark.py",
-            "--uart0-pico",
-            "/dev/ttyACM0",
-            "--uart0-peer",
-            "/dev/ttyACM7",
-            "--uart1",
-            "/dev/ttyACM1",
-            "--uart1-peer",
-            "/dev/ttyACM2",
-            "--uart2",
-            "/dev/ttyACM2",
-            "--uart3",
-            "/dev/ttyACM3",
-            "--uart4",
-            "/dev/ttyACM4",
-            "--uart4-peer",
-            "/dev/ttyACM3",
-            "--uart5",
-            "/dev/ttyACM5",
-        ],
-    )
-    stress = _load_stress()
-    args = stress.parse_arguments()
-    assert args.uart1_peer == "/dev/ttyACM2"
-    assert args.uart4_peer == "/dev/ttyACM3"
-
-
-def test_cross_fixture_rejects_mismatched_peer_paths() -> None:
+def test_fixture_paths_reject_duplicate_endpoint() -> None:
     stress = _load_stress()
     arguments = type(
         "Arguments",
         (),
-        {
-            "uart1_peer": "/dev/ttyACM9",
-            "uart2": "/dev/ttyACM2",
-            "uart4_peer": "/dev/ttyACM3",
-            "uart3": "/dev/ttyACM3",
-        },
+        {**{f"cdc{channel}": f"/dev/ttyACM{channel}" for channel in range(6)}, "cdc5": "/dev/ttyACM0"},
     )()
 
-    assert stress.cross_fixture_paths_valid(arguments) is False
-
-
-def test_cross_fixture_rejects_partial_peer_arguments() -> None:
-    stress = _load_stress()
-    arguments = type(
-        "Arguments",
-        (),
-        {"uart1": "/dev/ttyACM1", "uart1_peer": "/dev/ttyACM2", "uart4": None, "uart4_peer": None},
-    )()
-
-    assert stress.cross_fixture_paths_valid(arguments) is False
+    assert stress.fixture_paths_valid(arguments) is False
 
 
 def test_benchmark_allows_time_for_concurrent_line_coding() -> None:
@@ -483,9 +381,9 @@ def test_performance_test_plan_documents_time_diagnostic_output(repo_root: Path)
     output alongside the parsed PASS/FAIL lines) must be explained in the
     performance test plan so operators aren't left guessing at its format.
     """
-    plan = (repo_root / "docs/tests/performance-test-plan.md").read_text()
+    plan = " ".join((repo_root / "docs/tests/hil-fixture-test-plan.md").read_text().split())
     assert "TIME" in plan
-    assert "run_performance_test.py parses" in plan or "not parsed by the runner" in plan
+    assert "not parsed by `run_performance_test.py`" in plan
 
 
 @pytest.mark.parametrize("wake_at", [1.0, 1.1])
@@ -594,31 +492,12 @@ def test_write_all_rejects_completion_at_deadline(monkeypatch):
         stress.write_all(1, b"data", 1)
 
 
-@pytest.mark.parametrize(
-    ("uart1", "uart4", "cross"),
-    [
-        (False, False, False),
-        (True, False, False),
-        (False, True, False),
-        (True, True, False),
-        (True, True, True),
-    ],
-)
-def test_benchmark_modes_configure_actual_documented_streams(monkeypatch, uart1, uart4, cross):
+def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     from types import SimpleNamespace
 
     stress = _load_stress()
     arguments = SimpleNamespace(
-        uart0_pico="cdc0",
-        uart0_peer="probe",
-        uart2="cdc2",
-        uart3="cdc3",
-        uart5="cdc5",
-        uart1="cdc1" if uart1 else None,
-        uart4="cdc4" if uart4 else None,
-        uart1_peer="cdc2" if cross else None,
-        uart4_peer="cdc3" if cross else None,
-        uart0_baud=115200,
+        **{f"cdc{channel}": f"cdc{channel}" for channel in range(6)},
         duration=1,
         payload_bytes=64,
         timeout=1,
@@ -650,28 +529,24 @@ def test_benchmark_modes_configure_actual_documented_streams(monkeypatch, uart1,
     monkeypatch.setattr(stress, "run_stream", run_stream)
     monkeypatch.setattr(stress, "close_ports", lambda *_: None)
     assert stress.benchmark_rate(arguments, 115200)
-    expected = [("uart0-pico-to-peer", 1, 2), ("uart0-peer-to-pico", 2, 1), ("uart5-loopback", 5, 5)]
-    if cross:
-        expected.extend(
-            [("uart1-to-uart2", 6, 3), ("uart2-to-uart1", 3, 6), ("uart3-to-uart4", 4, 7), ("uart4-to-uart3", 7, 4)]
-        )
-    else:
-        expected.extend([("uart2-to-uart3", 3, 4), ("uart3-to-uart2", 4, 3)])
-        if uart1:
-            expected.append(("uart1-loopback", 6, 6))
-        if uart4:
-            fd = 7 if uart1 else 6
-            expected.append(("uart4-loopback", fd, fd))
+    expected = [
+        ("cdc0-to-cdc2", 1, 3),
+        ("cdc2-to-cdc0", 3, 1),
+        ("cdc3-to-cdc4", 4, 5),
+        ("cdc4-to-cdc3", 5, 4),
+        ("cdc1-loopback", 2, 2),
+        ("cdc5-loopback", 6, 6),
+    ]
     assert streams == expected
-    assert len(opened) == len(set(opened)) == 5 + uart1 + uart4
+    assert opened == [f"cdc{channel}" for channel in range(6)]
 
 
-def test_performance_plan_matches_modes_and_timing(repo_root):
-    plan = (repo_root / "docs/tests/performance-test-plan.md").read_text()
-    assert "seven concurrent verified" in plan
-    assert "twelve simultaneous" not in plan
-    assert "Optional `--uart1` and `--uart4` add independent" in plan
+def test_hil_fixture_plan_matches_modes_and_timing(repo_root):
+    plan = " ".join((repo_root / "docs/tests/hil-fixture-test-plan.md").read_text().split())
+    assert "six streams concurrently" in plan
+    assert "--cdc0" in plan and "--cdc5" in plan
+    assert "Debug Probe" in plan
     assert "first-send-attempt" in plan
-    assert "last in-flight block" in " ".join(plan.split())
+    assert "last in-flight block" in plan
     assert "completes at or after its deadline" in plan
-    assert "host scheduling jitter" in plan
+    assert "host scheduling jitter" in plan.lower()

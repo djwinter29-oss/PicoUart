@@ -86,7 +86,8 @@ qualification.
 This gate is intentionally manual: the repository has no CI-attached Pico, Debug Probe, USB cable, or jumper fixture.
 Automated workflows must not mark a release as physically qualified without linked human-run HIL evidence.
 
-Record all of the following in [Performance Test Results](tests/performance-test-results.md) or a linked raw transcript:
+Record all of the following in the local `build/hil-results.md` log or a retained transcript attached to the release
+evidence package:
 
 - board target and physical board used
 - artifact path/name and SHA-256
@@ -150,18 +151,17 @@ OpenOCD and retry with `--adapter-speed-khz 1000` before treating the HIL attemp
 ## Required HIL Matrix
 
 Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md) and
-[Self-Test Setup](tests/self-test-setup.md). Install the complete fixed fixture before starting and do not rewire during
-the run.
+[HIL Fixture Setup](tests/hil-fixture-setup.md). Install the complete fixed fixture before starting and do not rewire
+during the run.
 
 Run these gates on both board targets:
 
-1. Four staged bridge cases:
-   - UART0 Debug Probe
-   - HW UART1 to PIO UART2
+1. Four fixture cases:
+   - HW UART0 to PIO UART2
    - PIO UART3 to PIO UART4
-   - UART5 loopback
-2. Concurrent performance benchmark using the full staged fixture. Pass
-   `--uart1 --uart1-peer <uart2> --uart4 --uart4-peer <uart3>` so the benchmark exercises HW1 to PIO2 and PIO3 to PIO4.
+   - HW UART1 loopback
+   - PIO UART5 loopback
+2. Concurrent performance benchmark using all six CDC endpoints and the same fixed fixture.
 3. Rapid line-coding changes on one hardware UART and one PIO UART while queued TX data drains and an RX peer is active.
 4. Disconnect/remount, watchdog recovery, DMA wrap/re-arm flood, and six-port full-duplex saturation checks.
 
@@ -182,10 +182,10 @@ Run optional tests only when the release notes claim the behavior:
 Before clicking **Publish** on the GitHub draft:
 
 1. **Artifact ↔ HIL SHA match**: the UF2/ELF/BIN attached to the draft (or their `SHA256SUMS-*`) are bit-identical to
-   the images used for the recorded HIL pass on **each** rated board (`pico` at 125 MHz and `pico2` at 150 MHz). Copy
-   the hashes into the [performance result log](tests/performance-test-results.md), then compare them against the
-   downloaded release `SHA256SUMS-*` files before promoting. Do not promote if HIL ran on a different local rebuild or
-   only one of the two targets.
+   the images used for the recorded HIL pass on **each** rated board (`pico` at 125 MHz and `pico2` at 150 MHz). Put the
+   hashes and retained transcript in the release evidence package, then compare them against the downloaded release
+   `SHA256SUMS-*` files before promoting. Do not promote if HIL ran on a different local rebuild or only one of the two
+   targets.
 2. **USB identity note**: release notes retain the `0xCAFE:0x4010` lab-project identity warning unless the artifact
    deliberately uses an allocated identity.
 3. **HIL transcript** is linked or attached (see above), covering both boards.

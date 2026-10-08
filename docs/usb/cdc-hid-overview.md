@@ -56,5 +56,4 @@ The detailed HID report layout is documented in [HID Report Reference](hid-repor
 3. Use `pico-uart overruns` before and after a test to verify RX overflow counts did not increase.
 4. Treat a clean serial byte stream without clean HID health as incomplete test evidence.
 
-For hardware test commands and acceptance criteria, use [Functional Test Plan](../tests/functional-test-plan.md) and
-[Performance Test Plan](../tests/performance-test-plan.md).
+For hardware test commands and acceptance criteria, use the [HIL Fixture Test Plan](../tests/hil-fixture-test-plan.md).

@@ -28,7 +28,6 @@ def _load(name: str):
 def functional_arguments() -> SimpleNamespace:
     return SimpleNamespace(
         pico_cdc0="cdc0",
-        debug_probe="probe",
         pico_cdc1="cdc1",
         pico_cdc2="cdc2",
         pico_cdc3="cdc3",
@@ -43,16 +42,12 @@ def functional_arguments() -> SimpleNamespace:
 
 def performance_arguments() -> SimpleNamespace:
     return SimpleNamespace(
-        uart0_pico="cdc0",
-        uart0_peer="probe",
-        uart1=None,
-        uart1_peer=None,
-        uart2="cdc2",
-        uart3="cdc3",
-        uart4=None,
-        uart4_peer=None,
-        uart5="cdc5",
-        uart0_baud=115200,
+        cdc0="cdc0",
+        cdc1="cdc1",
+        cdc2="cdc2",
+        cdc3="cdc3",
+        cdc4="cdc4",
+        cdc5="cdc5",
         rates="115200,460800",
         duration=10.0,
         payload_bytes=1024,
@@ -65,9 +60,9 @@ def test_functional_runner_builds_all_documented_stages() -> None:
     commands = runner.build_stage_commands(functional_arguments())
 
     assert [label for label, _ in commands] == [
-        "Debug Probe to HW UART0",
-        "HW UART1 to PIO UART2",
+        "HW UART0 to PIO UART2",
         "PIO UART3 to PIO UART4",
+        "HW UART1 loopback",
         "PIO UART5 loopback",
     ]
     assert "--loopback" in commands[-1][1]
@@ -81,7 +76,7 @@ def test_functional_runner_selects_one_stage() -> None:
 
     commands = runner.build_stage_commands(arguments)
 
-    assert [label for label, _ in commands] == ["HW UART1 to PIO UART2"]
+    assert [label for label, _ in commands] == ["PIO UART3 to PIO UART4"]
 
 
 def test_hardware_runner_streams_child_output_and_status() -> None:
@@ -119,7 +114,7 @@ def test_single_functional_stage_is_recorded_partial() -> None:
     }
 
     entry = runner.format_result_entry(
-        arguments, "2026-09-20T00:00:00+00:00", [("HW UART1 to PIO UART2", 0, "PASS")], clean, clean
+        arguments, "2026-09-20T00:00:00+00:00", [("HW UART0 to PIO UART2", 0, "PASS")], clean, clean
     )
 
     assert "**Result:** `PARTIAL`" in entry
@@ -127,48 +122,27 @@ def test_single_functional_stage_is_recorded_partial() -> None:
 
 def test_performance_runner_parses_pass_and_fail_lines() -> None:
     runner = _load("run_performance_test")
-    output = "PASS uart0-pico-to-peer: 100 bytes, 20.0 B/s\nFAIL uart5-loopback: received data did not match\n"
+    output = "PASS cdc0-to-cdc2: 100 bytes, 20.0 B/s\nFAIL cdc5-loopback: received data did not match\n"
 
     assert runner.parse_benchmark_output(output) == {
-        "uart0-pico-to-peer": ("PASS", "100", "20.0"),
-        "uart5-loopback": ("FAIL", "-", "received data did not match"),
+        "cdc0-to-cdc2": ("PASS", "100", "20.0"),
+        "cdc5-loopback": ("FAIL", "-", "received data did not match"),
     }
 
 
-def test_performance_runner_accepts_documented_peer_options(monkeypatch) -> None:
+def test_performance_runner_accepts_all_fixture_cdc_endpoints(monkeypatch) -> None:
     runner = _load("run_performance_test")
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "run_performance_test.py",
-            "--uart0-pico",
-            "cdc0",
-            "--uart0-peer",
-            "probe",
-            "--uart1",
-            "cdc1",
-            "--uart1-peer",
-            "cdc2",
-            "--uart2",
-            "cdc2",
-            "--uart3",
-            "cdc3",
-            "--uart4",
-            "cdc4",
-            "--uart4-peer",
-            "cdc3",
-            "--uart5",
-            "cdc5",
-        ],
-    )
+    arguments = ["run_performance_test.py"]
+    for channel in range(6):
+        arguments.extend([f"--cdc{channel}", f"cdc{channel}"])
+    monkeypatch.setattr(sys, "argv", arguments)
 
     arguments = runner.parse_arguments()
     command = runner.build_command(arguments)
 
-    assert arguments.uart1_peer == "cdc2"
-    assert arguments.uart4_peer == "cdc3"
-    assert command[-4:] == ["--uart4", "cdc4", "--uart4-peer", "cdc3"]
+    for channel in range(6):
+        assert getattr(arguments, f"cdc{channel}") == f"cdc{channel}"
+        assert command[command.index(f"--cdc{channel}") + 1] == f"cdc{channel}"
 
 
 def test_full_hardware_runner_defaults_to_usb_sustainable_rate(monkeypatch) -> None:
@@ -177,12 +151,14 @@ def test_full_hardware_runner_defaults_to_usb_sustainable_rate(monkeypatch) -> N
         "run_hardware_test.py",
         "--pico-cdc0",
         "cdc0",
-        "--debug-probe",
-        "probe",
+        "--pico-cdc1",
+        "cdc1",
         "--pico-cdc2",
         "cdc2",
         "--pico-cdc3",
         "cdc3",
+        "--pico-cdc4",
+        "cdc4",
         "--pico-cdc5",
         "cdc5",
     ]
@@ -194,15 +170,15 @@ def test_full_hardware_runner_defaults_to_usb_sustainable_rate(monkeypatch) -> N
 def test_performance_runner_preserves_rate_results() -> None:
     runner = _load("run_performance_test")
     output = (
-        "Benchmarking PIO/loopbacks at 115200 baud; UART0 at 115200 baud\n"
-        "PASS uart5-loopback: 100 bytes, 20.0 B/s\n"
-        "Benchmarking PIO/loopbacks at 1000000 baud; UART0 at 115200 baud\n"
-        "FAIL uart5-loopback: timeout\n"
+        "Benchmarking all six HIL fixture streams at 115200 baud\n"
+        "PASS cdc5-loopback: 100 bytes, 20.0 B/s\n"
+        "Benchmarking all six HIL fixture streams at 1000000 baud\n"
+        "FAIL cdc5-loopback: timeout\n"
     )
 
     assert runner.parse_benchmark_output_by_rate(output) == {
-        (115200, "uart5-loopback"): ("PASS", "100", "20.0"),
-        (1000000, "uart5-loopback"): ("FAIL", "-", "timeout"),
+        (115200, "cdc5-loopback"): ("PASS", "100", "20.0"),
+        (1000000, "cdc5-loopback"): ("FAIL", "-", "timeout"),
     }
 
 
@@ -228,6 +204,17 @@ def test_result_helper_prepends_before_template(tmp_path: Path) -> None:
     helper.prepend_result(results, "## New result\n\n**Result:** `PASS`")
 
     assert results.read_text(encoding="utf-8") == ("# Results\n\n## New result\n\n**Result:** `PASS`\n\n## Template\n")
+
+
+def test_result_helper_creates_missing_local_log(tmp_path: Path) -> None:
+    helper = _load("hardware_test_result")
+    results = tmp_path / "build" / "hil-results.md"
+
+    helper.prepend_result(results, "## New result\n\n**Result:** `PASS`")
+
+    assert results.read_text(encoding="utf-8") == (
+        "# PicoUart HIL Results\n\n## New result\n\n**Result:** `PASS`\n\n## Template\n"
+    )
 
 
 def test_result_helper_rejects_missing_template(tmp_path: Path) -> None:

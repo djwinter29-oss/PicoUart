@@ -40,6 +40,5 @@ python3 tools/release/verify-build.py --help
 
 - [Project README](../README.md)
 - [Firmware build and configuration](../firmware/build-and-config.md)
-- [Functional Test Plan](../docs/tests/functional-test-plan.md)
-- [Performance Test Plan](../docs/tests/performance-test-plan.md)
+- [HIL Fixture Test Plan](../docs/tests/hil-fixture-test-plan.md)
 - [Releasing](../docs/releasing.md)
