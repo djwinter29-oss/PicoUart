@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>PicoUart Diagnostics</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="/" aria-label="PicoUart diagnostics home">
+      <span class="mark">PU</span>
+      <span><small>HOST CONSOLE</small><strong>PicoUart</strong></span>
+    </a>
+    <div class="connection" id="connection" data-state="waiting">
+      <span class="connection-light" aria-hidden="true"></span>
+      <span id="connection-label">Connecting</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-heading">
+      <div>
+        <p class="eyebrow">SIX-CHANNEL UART BRIDGE</p>
+        <h1>Diagnostics</h1>
+      </div>
+      <p class="sample-time" id="sample-time">Waiting for HID telemetry</p>
+    </section>
+
+    <section class="summary" aria-label="Board summary">
+      <div class="summary-item"><span>Firmware</span><strong id="firmware">--</strong></div>
+      <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
+      <div class="summary-item"><span>Total RX overflow</span><strong id="overflow-total">--</strong></div>
+      <div class="summary-item"><span>Report sequence</span><strong id="sequence">--</strong></div>
+    </section>
+
+    <section class="channels-section" aria-labelledby="channels-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">LIVE HEALTH AND TRAFFIC</p>
+          <h2 id="channels-title">UART channels <span>01–06</span></h2>
+        </div>
+        <div class="actions" aria-label="Board controls">
+          <button class="button button-secondary" id="toggle-led" type="button">Toggle board LED</button>
+          <button class="button button-danger" id="reset-board" type="button" hidden>Reset board</button>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Port</th>
+              <th scope="col">Health</th>
+              <th scope="col">Backend</th>
+              <th scope="col">CDC</th>
+              <th scope="col">Traffic totals</th>
+              <th scope="col">RX overflow</th>
+              <th scope="col">Ring peak</th>
+            </tr>
+          </thead>
+          <tbody id="channel-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="status-line" role="status" aria-live="polite">
+      <span class="status-mark" aria-hidden="true"></span>
+      <span id="status-message">Starting HID monitor</span>
+    </footer>
+  </main>
+</body>
+</html>

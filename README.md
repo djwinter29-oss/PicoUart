@@ -24,6 +24,8 @@ Start here:
 - [Architecture](docs/architecture.md)
 - [UART Pinout and Wiring](docs/uart-pinout.md)
 - [CDC/HID Overview](docs/usb/cdc-hid-overview.md)
+- [Host Python package](host/python/README.md)
+- [Host Python development](docs/development/host-python.md)
 
 Hardware testing:
 
@@ -80,7 +82,7 @@ images; publish only after the gates in [Releasing](docs/releasing.md).
 
 - [docs](docs)
 - [firmware](firmware) - Pico SDK firmware project; see [build and configuration](firmware/build-and-config.md)
-- [host/python](host/python) - Python HID monitor and board-control utility (`src/`, tests in `tests/`)
+- [host/python](host/python) - Python HID client API, CLI, and local Flask diagnostics dashboard (`src/`, tests in `tests/`)
 - [tools](tools/README.md) - repo tooling grouped by firmware, hardware/HIL, release, and test helpers
 
 ## Target Devices

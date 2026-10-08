@@ -1,91 +1,75 @@
-# PicoUart HID Host Tool
+# PicoUart
 
-`src/pico_uart_hid.py` accesses PicoUart's vendor-defined HID interface (`cafe:4010`)
-for board controls and monitoring. It does not configure UARTs; CDC remains the
-owner of UART line coding.
+PicoUart provides a Python client and command-line tool for monitoring and
+controlling the HID diagnostics interface on the PicoUart six-channel USB-to-
+UART bridge. UART data and line settings remain on the six USB CDC interfaces.
 
-Status input reports use layout **v15** (63-byte payload after the Report ID).
-Older hosts expecting v14 / 64-byte `PU` headers are incompatible — see
-[`docs/usb/hid-report-reference.md`](../../docs/usb/hid-report-reference.md).
+## Requirements
 
-## Layout
-
-| Path | Purpose |
-| --- | --- |
-| `src/` | Host tool sources |
-| `tests/` | Pytest suite (no hardware required) |
-| `requirements.txt` | Runtime dependency (`hidapi`) |
-| `requirements-dev.txt` | Test extras (`pytest`) |
-| `requirements-lock.txt` | Python 3.10+ release/CI dependency lock with artifact hashes |
+- Python 3.10 or newer
+- A PicoUart-compatible RP2040 or RP2350 board
+- Host access to its HID interface; Linux may require a udev rule or suitable
+	permissions for the HID device node
 
 ## Install
 
-Python 3.10 or newer is required.
-
 ```sh
-python3 -m pip install -r host/python/requirements.txt
+python -m pip install pico-uart
 ```
 
-For an installed command-line tool from the repository root:
+## CLI
+
+Read a status sample, watch live health reports, or launch the local dashboard:
 
 ```sh
-python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
-python3 -m pip install --no-deps host/python
-pico-uart-hid --help
+pico-uart status
+pico-uart status --json
+pico-uart monitor --duration 10
+pico-uart overruns
+pico-uart web
 ```
 
-The first command installs the hash-locked runtime dependency; `--no-deps`
-prevents the local package install from bypassing that lock.
+The dashboard listens on `http://127.0.0.1:5000` and is bound to loopback. It
+shows all six channels' health and traffic, RX overflow counts, firmware
+version, and board temperature. It also offers an LED toggle and shows Reset
+only when the firmware advertises reset support. Use `pico-uart web --port N`
+to select another local port.
 
-For host automated tests (pytest):
+Other commands include `temperature`, `version`, `toggle-led`, and `reset`.
+For a specific board, use the global `--serial SERIAL` or `--device-path PATH`
+selector before the command, for example `pico-uart --serial ABC123 status`.
 
-```sh
-python3 -m pip install --require-hashes -r host/python/requirements-lock.txt
-python3 -m pytest -c host/python/pyproject.toml
+## Python API
+
+```python
+from pico_uart import PicoUartHid
+
+with PicoUartHid() as board:
+		status = board.read_status(timeout_ms=1000)
+		if status is not None:
+				print(status["channels"])
 ```
 
-CI and release qualification install `requirements-lock.txt` with
-`pip --require-hashes`. Dependabot is configured to update the lock file
-directly; regenerate it manually from the repository root with:
+`read_status()` returns `None` when no report arrives before its timeout.
+`read_board_status()` and `read_overflow_counts()` return decoded metadata.
+The API's `toggle_led()` and `reset_board()` methods perform the same HID board
+controls as the CLI.
 
-```sh
-uv pip compile host/python/requirements-dev.txt --universal --python-version 3.10 \
-	--generate-hashes --no-emit-index-url --output-file host/python/requirements-lock.txt
-```
+## Important Notes
 
-Firmware host C tests plus this pytest suite: [`firmware/tests/README.md`](../../firmware/tests/README.md).
+- Remote reset is disabled by default in firmware. The CLI and API refuse to
+	reset unless firmware advertises that capability.
+- The HID interface is for diagnostics and narrow board controls. It does not
+	carry UART data or configure UART line coding.
+- The published USB identity `cafe:4010` is a development/lab identity, not a
+	commercial VID/PID.
+- Linux users may need to grant access to the HID device node before running
+	the tool.
 
-Linux users may also need a udev rule that permits non-root access to vendor HID
-devices. Run the tool with the privileges required by the local HID device node.
+## Documentation
 
-## Commands
-
-```sh
-python3 host/python/src/pico_uart_hid.py monitor --duration 10
-python3 host/python/src/pico_uart_hid.py temperature
-python3 host/python/src/pico_uart_hid.py version
-python3 host/python/src/pico_uart_hid.py overruns
-python3 host/python/src/pico_uart_hid.py toggle-led
-python3 host/python/src/pico_uart_hid.py reset
-```
-
-`monitor` exits nonzero if its duration expires without a valid status report.
-Ordinary read timeouts, unexpected report IDs, and malformed status reports are
-reported distinctly so missing telemetry is not mistaken for a successful run.
-
-`version` prints the firmware semantic version (`MAJOR.MINOR.PATCH`) from HID
-feature report 3. USB `bcdDevice` advertises major.minor only (for example
-tag `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`).
-
-`reset` reads HID board-status first and sends arm (`3`) then reset (`2`) only
-when firmware advertises HID reset support (`reserved0` bit 0). Remote reset is
-**disabled by default** (`PICO_UART_ALLOW_HID_RESET=0`); build with
-`-DPICO_UART_ALLOW_HID_RESET=1` for the command to reboot the board. On the
-default image the host tool exits nonzero instead of sending a no-op sequence.
-
-The tool selects the unique HID collection with vendor usage page `0xFF00`,
-usage `0x0001`; this avoids opening another collection that happens to share the
-VID/PID. On hidapi backends that omit usage metadata, discovery only accepts a
-unique collection with the exact PicoUart product and expected HID interface
-number when that metadata is available. Ambiguous or contradictory discovery
-results fail closed.
+- [CDC/HID behavior](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/usb/cdc-hid-overview.md)
+- [HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/usb/hid-report-reference.md)
+- [UART pinout and wiring](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/uart-pinout.md)
+- [Security and USB identity policy](https://github.com/djwinter29-oss/PicoUart/blob/main/SECURITY.md)
+- [Host Python development guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-python.md)

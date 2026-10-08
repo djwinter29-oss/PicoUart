@@ -99,7 +99,8 @@ def test_hid_health_module_resolves_repository_root() -> None:
     health = _load("hardware_test_health")
 
     assert health.REPO_ROOT == Path(__file__).resolve().parents[3]
-    assert health.HID_TOOL == health.REPO_ROOT / "host/python/src/pico_uart_hid.py"
+    assert health.HOST_PYTHON_SRC == health.REPO_ROOT / "host/python/src"
+    assert health.HID_MODULE == "pico_uart"
 
 
 def test_single_functional_stage_is_recorded_partial() -> None:

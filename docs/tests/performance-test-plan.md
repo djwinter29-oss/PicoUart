@@ -215,8 +215,8 @@ After the baseline passes, repeat the concurrent test for 60 seconds at
 HID status before and after each run:
 
 ```sh
-python3 host/python/src/pico_uart_hid.py monitor --duration 5
-python3 host/python/src/pico_uart_hid.py overruns
+python3 -m pico_uart monitor --duration 5
+python3 -m pico_uart overruns
 ```
 
 For a stress run, hold one CDC host endpoint closed briefly while peer traffic

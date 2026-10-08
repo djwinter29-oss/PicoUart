@@ -23,7 +23,7 @@ Before shipping a commercial derivative:
 
 1. Obtain an allocated VID/PID (pid.codes or a commercial USB-IF vendor ID).
 2. Update `PICO_UART_USB_VID` / `PICO_UART_USB_PID` in `usb_identity.h`.
-3. Keep [`host/python/src/pico_uart_hid.py`](host/python/src/pico_uart_hid.py) in sync.
+3. Keep [`host/python/src/pico_uart/transport.py`](host/python/src/pico_uart/transport.py) in sync.
 4. Note the identity change in release notes (CI derives the USB needle from `usb_identity.h`).
 
 ## HID board controls
@@ -38,8 +38,6 @@ build that enables it.
 
 Mitigations:
 
-- Keep the default `PICO_UART_ALLOW_HID_RESET=0` for shared or production hosts.
-- Limit access to the HID `hidraw` node when reset is enabled. CDC `ttyACM`
   nodes are typically in the `dialout` group; that group does not cover HID.
 
 ## Reporting issues

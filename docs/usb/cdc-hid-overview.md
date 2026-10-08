@@ -13,7 +13,7 @@ healthy and whether a CDC control request was accepted by firmware.
 | Interface | Count | Purpose | Host tool |
 | --- | ---: | --- | --- |
 | CDC ACM | 6 | Serial data, DTR state, and CDC line-coding requests for UART0 through UART5 | Terminal programs, test runners, serial APIs |
-| Vendor HID | 1 | Status reports, firmware version, temperature, overflow counts, LED toggle, optional reset | `host/python/src/pico_uart_hid.py` |
+| Vendor HID | 1 | Status reports, firmware version, temperature, overflow counts, LED toggle, optional reset | `python -m pico_uart` |
 
 Each CDC port maps to one target-side UART channel. The GPIO pinout is defined
 in [UART Pinout and Wiring](../uart-pinout.md).
@@ -54,9 +54,9 @@ The detailed HID report layout is documented in
 ## Typical Host Workflow
 
 1. Open the desired CDC ports and run serial traffic or tests.
-2. Use `pico_uart_hid.py monitor` during bring-up or stress tests to watch
+2. Use `pico-uart monitor` during bring-up or stress tests to watch
    `control_error`, `rx_overrun`, and `rx_error` health bits.
-3. Use `pico_uart_hid.py overruns` before and after a test to verify RX overflow
+3. Use `pico-uart overruns` before and after a test to verify RX overflow
    counts did not increase.
 4. Treat a clean serial byte stream without clean HID health as incomplete test
    evidence.

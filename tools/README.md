@@ -10,6 +10,7 @@ file only maps the tool categories.
 | --- | --- |
 | `firmware/` | Pico SDK setup, firmware builds, and Debug Probe loading |
 | `hardware/` | Physical HIL runners and serial bridge/stress tools |
+| `host/` | Host Python environment setup |
 | `release/` | Release version, USB identity, and artifact verification |
 | `test/` | Host tests, coverage, syntax checks, static analysis, and smoke checks |
 
@@ -22,6 +23,10 @@ tools/firmware/build.sh --board pico
 tools/firmware/build.sh --board pico2
 
 # Host tests
+# Linux/macOS
+tools/host/setup-venv.sh
+# Windows PowerShell
+.\tools\host\setup-venv.ps1
 tools/test/test-host.sh
 tools/test/check.sh --skip-build
 

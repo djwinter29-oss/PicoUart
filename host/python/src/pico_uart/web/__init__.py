@@ -1,0 +1,1 @@
+"""Local Flask diagnostics UI for PicoUart."""

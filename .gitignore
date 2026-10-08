@@ -58,6 +58,7 @@ dkms.conf
 build/
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 docs/tests/raw/
 .venv/

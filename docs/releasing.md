@@ -60,7 +60,7 @@ Do not reuse these IDs for a commercial device: another project may collide on
 the same identity and operating-system driver association is undefined. A
 commercial derivative must obtain its own VID/PID and update
 [`firmware/src/config/usb_identity.h`](../firmware/src/config/usb_identity.h)
-and [`host/python/src/pico_uart_hid.py`](../host/python/src/pico_uart_hid.py).
+and [`host/python/src/pico_uart/transport.py`](../host/python/src/pico_uart/transport.py).
 See also [`SECURITY.md`](../SECURITY.md).
 
 ## Release HIL Gates

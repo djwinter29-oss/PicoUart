@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 import pytest
+from pico_uart import transport
+
+
+@pytest.fixture
+def hid_module():
+    if transport.hid is None:
+        pytest.skip("hidapi runtime not installed; skipping HID discovery test")
+    return transport
 
 
 def _install_hid_mock(monkeypatch, hid_module, devices):

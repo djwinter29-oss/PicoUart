@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 
-import pico_uart_hid as hid
+from pico_uart import protocol as hid
 
 
 def board_status_bytes(

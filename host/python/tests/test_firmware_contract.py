@@ -17,7 +17,7 @@ from contract import (
     firmware_usb_product_string,
     is_lab_placeholder_identity,
 )
-import pico_uart_hid as hid
+import pico_uart as hid
 
 
 def test_release_lock_matches_direct_requirement_pins(repo_root):

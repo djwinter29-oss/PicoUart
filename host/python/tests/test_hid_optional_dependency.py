@@ -1,4 +1,4 @@
-"""Regression test: pico_uart_hid must import without the hidapi runtime.
+"""Regression test: pico_uart must import without the hidapi runtime.
 
 Without this, a missing/unbuildable hidapi wheel (no prebuilt wheel for the
 host Python, or a native-extension build failure in a sandbox) previously
@@ -21,11 +21,24 @@ import pytest
 def _hid_unavailable():
     """Temporarily import without hidapi; restore exact modules even on failure."""
     with pytest.MonkeyPatch.context() as patch:
+        package_modules = sorted(
+            (
+                name for name in sys.modules
+                if name == "pico_uart" or name.startswith("pico_uart.")
+            ),
+            key=len,
+            reverse=True,
+        )
+        for name in package_modules:
+            patch.delitem(sys.modules, name, raising=False)
         patch.setitem(sys.modules, "hid", None)
-        patch.delitem(sys.modules, "pico_uart_hid", raising=False)
-        module = importlib.import_module("pico_uart_hid")
-        patch.setitem(sys.modules, "pico_uart_hid", module)
-        yield module
+        module = importlib.import_module("pico_uart")
+        try:
+            yield module
+        finally:
+            for name in tuple(sys.modules):
+                if name == "pico_uart" or name.startswith("pico_uart."):
+                    sys.modules.pop(name, None)
 
 
 def test_module_imports_without_hidapi_installed():
@@ -50,8 +63,10 @@ def test_hid_unavailable_helper_restores_real_hid_afterward(monkeypatch, body_fa
     """
     fake_hid = types.ModuleType("hid")
     monkeypatch.setitem(sys.modules, "hid", fake_hid)
-    monkeypatch.delitem(sys.modules, "pico_uart_hid", raising=False)
-    baseline = importlib.import_module("pico_uart_hid")
+    for name in tuple(sys.modules):
+        if name == "pico_uart" or name.startswith("pico_uart."):
+            monkeypatch.delitem(sys.modules, name, raising=False)
+    baseline = importlib.import_module("pico_uart")
 
     expected = pytest.raises(ValueError) if body_fails else contextlib.nullcontext()
     with expected:
@@ -61,7 +76,7 @@ def test_hid_unavailable_helper_restores_real_hid_afterward(monkeypatch, body_fa
                 raise ValueError("test body failed")
 
     assert sys.modules["hid"] is fake_hid
-    assert sys.modules["pico_uart_hid"] is baseline
+    assert sys.modules["pico_uart"] is baseline
     assert baseline.hid is fake_hid
 
 

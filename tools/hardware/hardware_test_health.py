@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -10,24 +11,33 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-HID_TOOL = REPO_ROOT / "host/python/src/pico_uart_hid.py"
+HOST_PYTHON_SRC = REPO_ROOT / "host/python/src"
+HID_MODULE = "pico_uart"
 HEALTH_PATTERN = re.compile(r"cdc([0-5]) health=0x([0-9a-fA-F]+)\[[^]]*\]")
 OVERRUN_PATTERN = re.compile(r"cdc([0-5])=([0-9]+)")
 READY_BIT = 1 << 0
 BAD_HEALTH_BITS = 0xCE  # init_failed, control_error, control_pending, rx_overrun, rx_error
 
 
+def _run_hid(*arguments: str) -> subprocess.CompletedProcess[str]:
+    python_path = os.pathsep.join(
+        part for part in (str(HOST_PYTHON_SRC), os.environ.get("PYTHONPATH", "")) if part
+    )
+    environment = {**os.environ, "PYTHONPATH": python_path}
+    return subprocess.run(
+        [sys.executable, "-m", HID_MODULE, *arguments],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+
 def _collect_hid_health_once() -> dict:
     """Collect one HID monitor sample and overflow snapshot."""
-    monitor = subprocess.run(
-        [sys.executable, str(HID_TOOL), "monitor", "--duration", "1"],
-        cwd=REPO_ROOT, capture_output=True, text=True)
-    overruns = subprocess.run(
-        [sys.executable, str(HID_TOOL), "overruns"],
-        cwd=REPO_ROOT, capture_output=True, text=True)
-    version = subprocess.run(
-        [sys.executable, str(HID_TOOL), "version"],
-        cwd=REPO_ROOT, capture_output=True, text=True)
+    monitor = _run_hid("monitor", "--duration", "1")
+    overruns = _run_hid("overruns")
+    version = _run_hid("version")
     output = monitor.stdout + monitor.stderr
     overflow_output = overruns.stdout + overruns.stderr
     channels = {int(index): int(flags, 16)

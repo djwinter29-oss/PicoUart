@@ -75,7 +75,7 @@ at least that large. The ring peak is cumulative from boot and saturates at
 Those deltas and `sequence` advance only after a successful interrupt IN
 publish. A control-pipe `GET_REPORT` of input report 1 returns the same
 uncommitted snapshot and does not advance `sequence` or the delta baseline.
-Use the interrupt stream (`pico_uart_hid.py monitor`) when the delta must be
+Use the interrupt stream (`pico-uart monitor`) when the delta must be
 committed. `SET_LINE_CODING` can still complete on the bus when firmware
 rejects it; watch health bit 2 on that interrupt stream.
 
@@ -108,7 +108,7 @@ interface strings:
    newer reject.
 2. Watch health bit 2 (`control_error`) after a parse failure, PIO non-8N1 reject,
    deferred-apply timeout (1 s), or CDC soft-pending mailbox timeout (1 s).
-3. Use `python3 host/python/src/pico_uart_hid.py monitor` - the tool decodes those
+3. Use `python3 -m pico_uart monitor` - the tool decodes those
    bits into `control_pending` / `control_error` labels.
 
 PIO UART ports remain 8N1-only. Hardware UART0/UART1 accept supported
@@ -161,10 +161,10 @@ known to have been overwritten but not yet retired by the CDC drain path.
 
 ## Host Tool
 
-The reference client at [host/python](../../host/python) (`src/pico_uart_hid.py`)
-discovers this vendor HID collection and offers `monitor`, `temperature`,
-`version`, `overruns`, `toggle-led`, and `reset` commands. Install its `hidapi`
-dependency before use.
+The reference client at [host/python](../../host/python) discovers this vendor
+HID collection and offers `monitor`, `status`, `temperature`, `version`,
+`overruns`, `toggle-led`, and `reset` through `python -m pico_uart`. Install its
+`hidapi` dependency before use.
 
 ## Compatibility
 
