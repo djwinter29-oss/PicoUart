@@ -19,16 +19,93 @@ separate USB-UART adapters.
 | UART0–UART1 | General UART traffic                                               | RP2040/RP2350 hardware UARTs      |
 | UART2–UART5 | General UART traffic                                               | PIO UARTs; 8N1 only               |
 
-## Using PicoUart
+### Channel Mapping
 
-Install and use the host client, CLI, or local diagnostics dashboard from the
-[PicoUart Python guide](host/python/README.md). Before connecting target hardware, check the
-[UART pinout and wiring](docs/uart-pinout.md) and the [CDC/HID overview](docs/usb/cdc-hid-overview.md).
+Each CDC port carries serial data for its corresponding UART. HID is a separate diagnostics and control interface; it
+does not carry UART data.
+
+```mermaid
+flowchart LR
+  subgraph USB["PicoUart USB interfaces"]
+    direction TB
+    CDC0["CDC 0"]
+    CDC1["CDC 1"]
+    CDC2["CDC 2"]
+    CDC3["CDC 3"]
+    CDC4["CDC 4"]
+    CDC5["CDC 5"]
+    HID["HID<br/>Status and diagnostics"]
+  end
+
+  subgraph UARTs["Target UART channels"]
+    direction TB
+    UART0["UART 0<br/>Hardware"]
+    UART1["UART 1<br/>Hardware"]
+    UART2["UART 2<br/>PIO"]
+    UART3["UART 3<br/>PIO"]
+    UART4["UART 4<br/>PIO"]
+    UART5["UART 5<br/>PIO"]
+  end
+
+  CDC0 <-->|"1:1"| UART0
+  CDC1 <-->|"1:1"| UART1
+  CDC2 <-->|"1:1"| UART2
+  CDC3 <-->|"1:1"| UART3
+  CDC4 <-->|"1:1"| UART4
+  CDC5 <-->|"1:1"| UART5
+```
+
+### Host Dashboard
+
+The optional local dashboard presents board health, traffic, and controls in one view.
+
+![PicoUart host dashboard showing six healthy UART channels and board telemetry.](docs/assets/pico-uart-dashboard.png)
+
+_Illustrative screenshot with sample telemetry; no physical board was connected._
+
+## Quick Start
+
+For a board with PicoUart firmware installed, connect it over USB, then install the host client and read a status
+sample:
+
+```sh
+python -m pip install pico-uart
+pico-uart status
+```
+
+Check the [UART pinout and wiring](docs/uart-pinout.md) before connecting target hardware. The
+[PicoUart Python guide](host/python/README.md) covers requirements, HID access, monitoring, and the local dashboard. See
+the [CDC/HID overview](docs/usb/cdc-hid-overview.md) for interface behavior.
 
 ## Supported Hardware
 
-- RP2040-based boards such as Raspberry Pi Pico (`--board pico`)
-- RP2350-based boards such as Raspberry Pi Pico 2 (`--board pico2`)
+<table width="100%">
+  <colgroup>
+    <col width="50%" />
+    <col width="50%" />
+  </colgroup>
+  <thead>
+    <tr>
+      <th align="center">RP2040 · Raspberry Pi Pico</th>
+      <th align="center">RP2350 · Raspberry Pi Pico 2</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><img src="docs/assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico reference board" width="100%" /></td>
+      <td align="center"><img src="docs/assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2 reference board" width="100%" /></td>
+    </tr>
+    <tr>
+      <td align="center"><code>--board pico</code></td>
+      <td align="center"><code>--board pico2</code></td>
+    </tr>
+  </tbody>
+</table>
+
+_Reference boards, not PicoUart-specific assemblies. Both photos are proportionally resized and padded to a shared 640 x
+400 canvas. Photos by Misael Reséndiz ([Pico source](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_Pico.jpg)) and
+Suyash Dwivedi ([Pico 2 source](https://commons.wikimedia.org/wiki/File:Raspberry_PI_Pico_2-01.jpg)), licensed under
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)._
 
 ## Important Limitations
 
