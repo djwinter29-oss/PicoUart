@@ -165,7 +165,9 @@ def format_result_entry(
             if all(parsed.get((rate, label), ("NOT REPORTED",))[0] == "PASS" for label in expected_labels)
         ]
         failing_rates = [
-            rate for rate in rates if any(parsed.get((rate, label), ("NOT REPORTED",))[0] != "PASS" for label in expected_labels)
+            rate
+            for rate in rates
+            if any(parsed.get((rate, label), ("NOT REPORTED",))[0] != "PASS" for label in expected_labels)
         ]
         lines.extend(
             [

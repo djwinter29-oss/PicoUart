@@ -336,7 +336,11 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser.add_argument(
         "--rates", default="115200", help="Concurrent full-fixture rate; use individual tests for higher baud rates"
     )
-    parser.add_argument("--incremental-performance", action="store_true", help="Increase the concurrent rate until failure")
+    parser.add_argument(
+        "--incremental-performance",
+        action="store_true",
+        help="Increase the concurrent rate until failure",
+    )
     parser.add_argument("--incremental-start-rate", type=int, default=460800)
     parser.add_argument("--incremental-rate-step", type=int, default=100000)
     parser.add_argument("--incremental-max-rate", type=int, default=3000000)

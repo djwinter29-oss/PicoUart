@@ -60,6 +60,17 @@ is not a pass. Test each pair individually, then run all six streams concurrentl
 process comma-separated rates sequentially in one process; they reopen and reconfigure the ports and wait for the settle
 interval before testing each rate.
 
+To find the concurrent six-port ceiling consistently, use `--incremental-performance` with the combined runner. It
+starts at 460800 baud, increases by 100000 baud, and stops at the first failed rate (capped at 3000000 baud by default).
+The summary reports the highest rate where all six streams passed and the first failed rate; that boundary failure is
+expected for a ceiling search. Override the start, step, or cap with `--incremental-start-rate`,
+`--incremental-rate-step`, or `--incremental-max-rate`. The standalone `pico-uart-hil performance --incremental` mode
+uses the same options.
+
+The serial setup also checks the host TTY's reported line speed and fails when either direction differs from the
+requested rate by 50% or more. This checks driver readback, not an independent measurement of the physical waveform;
+payload verification remains the end-to-end check that the firmware and UART link communicate correctly.
+
 | Layer               | Rate sweep                                                         | Duration                        |
 | ------------------- | ------------------------------------------------------------------ | ------------------------------- |
 | Single direction    | 460800, 600000, 800000, 1000000, 1100000, 1200000                  | 10 s per rate                   |

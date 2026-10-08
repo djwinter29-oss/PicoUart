@@ -394,7 +394,16 @@ def test_incremental_scan_stops_at_first_failure_and_reports_highest_pass(
 ) -> None:
     stress = _load_stress()
     arguments = stress.parse_arguments(
-        [*_cdc_cli_arguments(), "--incremental", "--incremental-start-rate", "400000", "--incremental-rate-step", "100000", "--incremental-max-rate", "800000"]
+        [
+            *_cdc_cli_arguments(),
+            "--incremental",
+            "--incremental-start-rate",
+            "400000",
+            "--incremental-rate-step",
+            "100000",
+            "--incremental-max-rate",
+            "800000",
+        ]
     )
     tested_rates = []
 
@@ -623,3 +632,5 @@ def test_hil_fixture_plan_matches_modes_and_timing(repo_root):
     assert "sequentially in one process" in plan
     assert "fresh port setup" in plan
     assert "tools/hil/runner/pair.sh" in plan
+    assert "--incremental-performance" in plan
+    assert "50% or more" in plan
