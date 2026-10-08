@@ -65,8 +65,12 @@ _Illustrative screenshot with sample telemetry; no physical board was connected.
 
 ## Quick Start
 
-For a board with PicoUart firmware installed, connect it over USB, then install the host client and read a status
-sample:
+Prebuilt firmware is available from [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases) after a
+release is published. Choose the rated `pico` or `pico2` UF2 for your board. Tagged releases remain drafts until
+required HIL qualification passes. If no release is published yet, follow the
+[Firmware Build and Configuration guide](firmware/build-and-config.md).
+
+For a board with firmware installed, connect it over USB, install the host client, and read a status sample:
 
 ```sh
 python -m pip install pico-uart
