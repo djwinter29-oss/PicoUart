@@ -40,6 +40,12 @@ phase. Add `--no-record` for a dry run. Install both crossed pairs and both loop
 wiring during the run. Use `tools/hil/runner/functional.sh --stage 1|2|3|4` only to diagnose one link on the same fixed
 fixture.
 
+Before every physical HIL test, flash the selected board with the firmware being tested; never assume the board is
+already running the intended image. For development tests, use `tools/firmware/load.sh --board <pico|pico2>` to build
+and flash. For release qualification, flash the exact packaged artifact with `--skip-build --elf <artifact>` as
+documented in [Releasing](../../../docs/releasing.md#flashing-release-artifacts). After flashing, verify the board
+re-enumerates and reports the expected firmware version, then record the artifact path and SHA-256 in the HIL run.
+
 ## Diagnostics
 
 - No hardware in the VM is expected; build and host-tool validation are the best available checks here.
