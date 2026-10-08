@@ -9,8 +9,7 @@
  * claim failures through @ref hw_uart_dma_claim_ops_t, without needing real
  * hardware or a stubbed SDK. Production always passes
  * @ref hw_uart_driver_dma_claim_ops_default, which forwards to the real
- * `dma_claim_unused_channel` / `dma_channel_unclaim` SDK calls with no
- * behavior change.
+ * `dma_claim_unused_channel` / `dma_channel_unclaim` SDK calls with no behavior change.
  */
 
 #ifndef HW_UART_DMA_CLAIM_H
@@ -26,7 +25,7 @@
  * functions. Host tests provide a fake instance to simulate claim exhaustion.
  */
 typedef struct {
-    int (*claim_channel)(bool required); /**< Mirrors `dma_claim_unused_channel`. */
+    int (*claim_channel)(bool required);           /**< Mirrors `dma_claim_unused_channel`. */
     void (*unclaim_channel)(unsigned int channel); /**< Mirrors `dma_channel_unclaim`. */
 } hw_uart_dma_claim_ops_t;
 
@@ -43,8 +42,6 @@ extern const hw_uart_dma_claim_ops_t hw_uart_driver_dma_claim_ops_default;
  *         failure any channel claimed during this call has been unclaimed
  *         and both outputs are reset to -1.
  */
-bool hw_uart_driver_claim_dma_channels(const hw_uart_dma_claim_ops_t *ops,
-                                      int *rx_dma_channel,
-                                      int *tx_dma_channel);
+bool hw_uart_driver_claim_dma_channels(const hw_uart_dma_claim_ops_t *ops, int *rx_dma_channel, int *tx_dma_channel);
 
 #endif

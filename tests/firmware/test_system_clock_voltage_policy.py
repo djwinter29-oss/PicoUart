@@ -139,7 +139,10 @@ def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defin
     exe = tmp_path / ("system_clock_test.exe" if os.name == "nt" else "system_clock_test")
     cmd = [
         shutil.which("cc") or shutil.which("gcc"),
-        "-std=c11", "-Wall", "-Wextra", "-Werror",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
         f"-DPICO_UART_SYSTEM_CLOCK_KHZ={clock_khz}u",
         *(f"-D{define}" for define in board_defines),
         f"-I{mock_sdk}",
@@ -147,7 +150,8 @@ def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defin
         str(system_c),
         str(tmp_path / "mock_runtime.c"),
         str(tmp_path / "main.c"),
-        "-o", str(exe),
+        "-o",
+        str(exe),
     ]
     compiled = subprocess.run(cmd, capture_output=True, text=True)
     assert compiled.returncode == 0, compiled.stderr
@@ -175,8 +179,7 @@ def test_real_sdk_startup_voltage_policy(build_dir):
         pytest.fail("empty build directory in PICO_UART_VOLTAGE_BUILD_DIRS")
     build = Path(build_dir).resolve()
     commands = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
-    entries = [entry for entry in commands
-               if Path(entry["file"]).name == "runtime_init_clocks.c"]
+    entries = [entry for entry in commands if Path(entry["file"]).name == "runtime_init_clocks.c"]
     assert len(entries) == 1, "expected the SDK startup source in the firmware target"
     entry = entries[0]
     argv = entry.get("arguments") or shlex.split(entry["command"])
@@ -188,10 +191,10 @@ def test_real_sdk_startup_voltage_policy(build_dir):
         assert artifact.is_file(), f"missing firmware artifact: {artifact}"
     # Use the actual cross compiler, generated headers, and defines to resolve
     # SDK defaults; just checking an application mock misses pre-main startup.
-    preprocess = [arg for i, arg in enumerate(argv)
-                  if i not in (output_index, output_index + 1) and arg != "-c"]
-    result = subprocess.run([*preprocess, "-E", "-dM"], cwd=entry["directory"],
-                            capture_output=True, text=True, check=True)
+    preprocess = [arg for i, arg in enumerate(argv) if i not in (output_index, output_index + 1) and arg != "-c"]
+    result = subprocess.run(
+        [*preprocess, "-E", "-dM"], cwd=entry["directory"], capture_output=True, text=True, check=True
+    )
     assert "#define SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST 0" in result.stdout.splitlines()
     nm = shutil.which("arm-none-eabi-nm")
     assert nm, "ARM nm required for the real firmware artifact check"

@@ -3,3 +3,6 @@ testpaths = ["host/python/tests", "tests"]
 pythonpath = ["host/python/src", "host/python/tests", "tools/release"]
 python_files = ["test_*.py"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 120

@@ -14,7 +14,10 @@ def _run_filter(repo_root, lock_text: str, exclude: str) -> str:
     script_path = repo_root / FILTER_SCRIPT
     result = subprocess.run(
         [sys.executable, str(script_path), "--exclude", exclude, "-"],
-        input=lock_text, text=True, capture_output=True, check=True,
+        input=lock_text,
+        text=True,
+        capture_output=True,
+        check=True,
     )
     return result.stdout
 
@@ -39,10 +42,16 @@ def test_hidapi_filter_drops_hidapi_and_its_only_dependent_setuptools(repo_root)
     assert filtered_count == original_count - 2  # hidapi + setuptools removed
 
     # Every other locked package (and its hashes) must be preserved verbatim.
-    for package in ("pytest==8.3.5", "iniconfig==2.3.0", "pluggy==1.6.0",
-                     "packaging==26.3", "exceptiongroup==1.3.1",
-                     "tomli==2.4.1", "typing-extensions==4.16.0",
-                     "colorama==0.4.6"):
+    for package in (
+        "pytest==8.3.5",
+        "iniconfig==2.3.0",
+        "pluggy==1.6.0",
+        "packaging==26.3",
+        "exceptiongroup==1.3.1",
+        "tomli==2.4.1",
+        "typing-extensions==4.16.0",
+        "colorama==0.4.6",
+    ):
         assert package in filtered
         assert package in lock  # sanity: package really exists upstream
 
@@ -101,7 +110,9 @@ def test_shell_fallback_preserves_failure_and_cleans_lock(repo_root, tmp_path, f
     """Exercise the shell policy, not pip: any first failure retries once."""
     shim = tmp_path / "python-shim"
     log = tmp_path / "calls.jsonl"
-    shim.write_text(f"#!{sys.executable}\n" + '''import json, os, sys
+    shim.write_text(
+        f"#!{sys.executable}\n"
+        + """import json, os, sys
 from pathlib import Path
 args = sys.argv[1:]
 if args == ["-m", "pip", "--version"]:
@@ -120,13 +131,20 @@ if "install" in args:
         sys.exit(1)
     sys.exit(int(os.environ["FALLBACK_FAILS"]))
 sys.exit(0)
-''')
+"""
+    )
     shim.chmod(0o700)
     result = subprocess.run(
         ["sh", str(repo_root / "tools/validation/run-host-tests.sh"), "--skip-c"],
-        env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
-             "FALLBACK_FAILS": str(int(fallback_fails)), "TMPDIR": str(tmp_path)},
-        capture_output=True, text=True,
+        env={
+            **os.environ,
+            "PYTHON_EXE": str(shim),
+            "CALL_LOG": str(log),
+            "FALLBACK_FAILS": str(int(fallback_fails)),
+            "TMPDIR": str(tmp_path),
+        },
+        capture_output=True,
+        text=True,
     )
     calls = [json.loads(line) for line in log.read_text().splitlines()]
     installs = [call for call in calls if "install" in call["args"]]

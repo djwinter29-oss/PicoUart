@@ -26,11 +26,8 @@
  * @param stale_ms Hang threshold.
  * @return `true` when the worker has incremented within @p stale_ms.
  */
-static inline bool uart_worker_heartbeat_is_fresh(uint32_t heartbeat,
-                                                  uint32_t *last_heartbeat,
-                                                  uint32_t now_ms,
-                                                  uint32_t *last_change_ms,
-                                                  uint32_t stale_ms)
+static inline bool uart_worker_heartbeat_is_fresh(uint32_t heartbeat, uint32_t *last_heartbeat, uint32_t now_ms,
+                                                  uint32_t *last_change_ms, uint32_t stale_ms)
 {
     if ((last_heartbeat == NULL) || (last_change_ms == NULL) || (stale_ms == 0u)) {
         return false;

@@ -30,9 +30,7 @@ HID_INTERFACE_NUMBER = 12
 def require_hid() -> None:
     """Raise a clear error if hidapi is unavailable, only when opening a device."""
     if hid is None:
-        raise RuntimeError(
-            "Missing dependency: install host/python/requirements.txt"
-        ) from _HID_IMPORT_ERROR
+        raise RuntimeError("Missing dependency: install host/python/requirements.txt") from _HID_IMPORT_ERROR
 
 
 class _LinuxHidrawDevice:
@@ -170,14 +168,10 @@ def open_device(serial_number: str | None = None, device_path: str | None = None
     ]
     if serial_number is not None:
         exact_matches = [
-            device_info for device_info in exact_matches
-            if device_info.get("serial_number") == serial_number
+            device_info for device_info in exact_matches if device_info.get("serial_number") == serial_number
         ]
     if device_path is not None:
-        exact_matches = [
-            device_info for device_info in exact_matches
-            if _device_path_matches(device_info, device_path)
-        ]
+        exact_matches = [device_info for device_info in exact_matches if _device_path_matches(device_info, device_path)]
     if len(exact_matches) == 1:
         return open_enumerated_device(exact_matches[0])
     if len(exact_matches) > 1:
@@ -194,28 +188,21 @@ def open_device(serial_number: str | None = None, device_path: str | None = None
         and not device_info.get("usage")
         and (
             device_info.get("product_string") == PRODUCT_STRING
-            or (
-                not device_info.get("product_string")
-                and device_info.get("interface_number") == HID_INTERFACE_NUMBER
-            )
+            or (not device_info.get("product_string") and device_info.get("interface_number") == HID_INTERFACE_NUMBER)
         )
         and device_info.get("interface_number") in (None, -1, HID_INTERFACE_NUMBER)
     ]
     if serial_number is not None:
         fallback_matches = [
-            device_info for device_info in fallback_matches
-            if device_info.get("serial_number") == serial_number
+            device_info for device_info in fallback_matches if device_info.get("serial_number") == serial_number
         ]
     if device_path is not None:
         fallback_matches = [
-            device_info for device_info in fallback_matches
-            if _device_path_matches(device_info, device_path)
+            device_info for device_info in fallback_matches if _device_path_matches(device_info, device_path)
         ]
     if len(fallback_matches) == 1:
         return open_enumerated_device(fallback_matches[0])
     if len(fallback_matches) > 1:
         raise RuntimeError("multiple PicoUart HID interfaces lacked usage metadata")
 
-    raise RuntimeError(
-        "PicoUart HID interface not found with the expected usage metadata"
-    )
+    raise RuntimeError("PicoUart HID interface not found with the expected usage metadata")

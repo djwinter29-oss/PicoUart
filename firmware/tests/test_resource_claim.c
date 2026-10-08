@@ -90,12 +90,11 @@ void setUp(void)
     }
 }
 
-void tearDown(void) {}
+void tearDown(void)
+{
+}
 
-static void assert_failed_outputs(bool tx_claimed,
-                                  bool rx_claimed,
-                                  int rx_dma,
-                                  int tx_dma)
+static void assert_failed_outputs(bool tx_claimed, bool rx_claimed, int rx_dma, int tx_dma)
 {
     TEST_ASSERT_FALSE(tx_claimed);
     TEST_ASSERT_FALSE(rx_claimed);
@@ -113,8 +112,7 @@ void test_all_resources_remain_claimed_on_success(void)
     dma_results[0] = 2;
     dma_results[1] = 3;
 
-    TEST_ASSERT_TRUE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
-                                                     &tx_sm_claimed, &rx_sm_claimed,
+    TEST_ASSERT_TRUE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u, &tx_sm_claimed, &rx_sm_claimed,
                                                      &rx_dma, &tx_dma));
     TEST_ASSERT_TRUE(tx_sm_claimed);
     TEST_ASSERT_TRUE(rx_sm_claimed);
@@ -130,8 +128,7 @@ void test_rx_dma_failure_releases_both_state_machines(void)
     int rx_dma = 9;
     int tx_dma = 9;
 
-    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
-                                                      &tx_sm_claimed, &rx_sm_claimed,
+    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u, &tx_sm_claimed, &rx_sm_claimed,
                                                       &rx_dma, &tx_dma));
     assert_failed_outputs(tx_sm_claimed, rx_sm_claimed, rx_dma, tx_dma);
     /* 2 is_claimed + 2 sm_claim + 1 dma_claim (rx, fails) + 2 sm_unclaim. */
@@ -151,8 +148,7 @@ void test_tx_dma_failure_releases_rx_dma_and_both_state_machines(void)
     dma_results[0] = 4;
     dma_results[1] = -1;
 
-    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
-                                                      &tx_sm_claimed, &rx_sm_claimed,
+    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u, &tx_sm_claimed, &rx_sm_claimed,
                                                       &rx_dma, &tx_dma));
     assert_failed_outputs(tx_sm_claimed, rx_sm_claimed, rx_dma, tx_dma);
     /* 2 is_claimed + 2 sm_claim + 2 dma_claim (rx ok, tx fails) + 1 dma_unclaim
@@ -174,8 +170,7 @@ void test_preclaimed_state_machine_rejects_without_cleanup(void)
     int tx_dma = 9;
     claimed_sm_mask = 1u << 1;
 
-    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
-                                                      &tx_sm_claimed, &rx_sm_claimed,
+    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u, &tx_sm_claimed, &rx_sm_claimed,
                                                       &rx_dma, &tx_dma));
     TEST_ASSERT_FALSE(tx_sm_claimed);
     TEST_ASSERT_FALSE(rx_sm_claimed);
@@ -194,9 +189,8 @@ void test_null_ops_rejected_without_claims(void)
     int rx_dma = 9;
     int tx_dma = 9;
 
-    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(NULL, (void *)1u, 1u, 2u,
-                                                      &tx_sm_claimed, &rx_sm_claimed,
-                                                      &rx_dma, &tx_dma));
+    TEST_ASSERT_FALSE(
+        pio_uart_driver_claim_resources(NULL, (void *)1u, 1u, 2u, &tx_sm_claimed, &rx_sm_claimed, &rx_dma, &tx_dma));
     TEST_ASSERT_TRUE(tx_sm_claimed);
     TEST_ASSERT_TRUE(rx_sm_claimed);
     TEST_ASSERT_EQUAL_INT(9, rx_dma);
@@ -211,9 +205,8 @@ void test_null_tx_sm_claimed_output_rejected_without_claims(void)
     int rx_dma = 9;
     int tx_dma = 9;
 
-    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
-                                                      NULL, &rx_sm_claimed,
-                                                      &rx_dma, &tx_dma));
+    TEST_ASSERT_FALSE(
+        pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u, NULL, &rx_sm_claimed, &rx_dma, &tx_dma));
     TEST_ASSERT_TRUE(rx_sm_claimed);
     TEST_ASSERT_EQUAL_INT(9, rx_dma);
     TEST_ASSERT_EQUAL_INT(9, tx_dma);
@@ -227,9 +220,8 @@ void test_null_rx_sm_claimed_output_rejected_without_claims(void)
     int rx_dma = 9;
     int tx_dma = 9;
 
-    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
-                                                      &tx_sm_claimed, NULL,
-                                                      &rx_dma, &tx_dma));
+    TEST_ASSERT_FALSE(
+        pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u, &tx_sm_claimed, NULL, &rx_dma, &tx_dma));
     TEST_ASSERT_TRUE(tx_sm_claimed);
     TEST_ASSERT_EQUAL_INT(9, rx_dma);
     TEST_ASSERT_EQUAL_INT(9, tx_dma);
@@ -243,9 +235,8 @@ void test_null_rx_dma_output_rejected_without_claims(void)
     bool rx_sm_claimed = true;
     int tx_dma = 9;
 
-    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
-                                                      &tx_sm_claimed, &rx_sm_claimed,
-                                                      NULL, &tx_dma));
+    TEST_ASSERT_FALSE(
+        pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u, &tx_sm_claimed, &rx_sm_claimed, NULL, &tx_dma));
     TEST_ASSERT_TRUE(tx_sm_claimed);
     TEST_ASSERT_TRUE(rx_sm_claimed);
     TEST_ASSERT_EQUAL_INT(9, tx_dma);
@@ -259,9 +250,8 @@ void test_null_tx_dma_output_rejected_without_claims(void)
     bool rx_sm_claimed = true;
     int rx_dma = 9;
 
-    TEST_ASSERT_FALSE(pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u,
-                                                      &tx_sm_claimed, &rx_sm_claimed,
-                                                      &rx_dma, NULL));
+    TEST_ASSERT_FALSE(
+        pio_uart_driver_claim_resources(&fake_ops, (void *)1u, 1u, 2u, &tx_sm_claimed, &rx_sm_claimed, &rx_dma, NULL));
     TEST_ASSERT_TRUE(tx_sm_claimed);
     TEST_ASSERT_TRUE(rx_sm_claimed);
     TEST_ASSERT_EQUAL_INT(9, rx_dma);

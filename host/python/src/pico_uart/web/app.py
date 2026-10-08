@@ -60,17 +60,13 @@ class DashboardService:
         device_path: str | None = None,
         client_factory: Callable[[], PicoUartHid] | None = None,
     ) -> None:
-        self._client_factory = client_factory or (
-            lambda: PicoUartHid(serial_number, device_path)
-        )
+        self._client_factory = client_factory or (lambda: PicoUartHid(serial_number, device_path))
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._client: PicoUartHid | None = None
         self._last_sequence: int | None = None
         self._snapshot = _empty_snapshot()
-        self._thread = threading.Thread(
-            target=self._poll, name="pico-uart-monitor", daemon=True
-        )
+        self._thread = threading.Thread(target=self._poll, name="pico-uart-monitor", daemon=True)
         self._thread.start()
 
     def snapshot(self) -> dict[str, Any]:
@@ -135,15 +131,10 @@ class DashboardService:
             self._snapshot["error"] = None
             self._snapshot["sequence"] = status["sequence"]
             previous_sequence = self._last_sequence
-            if (
-                previous_sequence is not None
-                and status["sequence"] != (previous_sequence + 1) % 256
-            ):
+            if previous_sequence is not None and status["sequence"] != (previous_sequence + 1) % 256:
                 self._snapshot["traffic_incomplete"] = True
             self._last_sequence = status["sequence"]
-            self._snapshot["updated_at"] = datetime.now(timezone.utc).isoformat(
-                timespec="seconds"
-            )
+            self._snapshot["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
             for source in status["channels"]:
                 channel = self._snapshot["channels"][source["id"]]
                 labels = decode_health(source["health"])
@@ -152,7 +143,9 @@ class DashboardService:
                 channel["state"] = (
                     "attention"
                     if FAULT_FLAGS.intersection(labels)
-                    else "ready" if "ready" in labels else "initializing"
+                    else "ready"
+                    if "ready" in labels
+                    else "initializing"
                 )
                 channel["backend"] = "PIO" if "pio" in labels else "Hardware"
                 channel["cdc_open"] = "cdc_open" in labels
@@ -241,8 +234,6 @@ def run_server(
     """Run the dashboard on loopback only; never expose board controls to a LAN."""
     dashboard = DashboardService(serial_number, device_path)
     try:
-        create_app(dashboard).run(
-            host="127.0.0.1", port=port, debug=False, use_reloader=False
-        )
+        create_app(dashboard).run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
     finally:
         dashboard.close()

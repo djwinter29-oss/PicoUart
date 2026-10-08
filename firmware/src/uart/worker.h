@@ -15,10 +15,10 @@ typedef void (*uart_worker_hook_t)(void);
  * @brief Driver hooks invoked by the UART worker in one deterministic order.
  */
 typedef struct {
-    uart_worker_hook_t initialize; /**< Enable worker-core backend service. */
+    uart_worker_hook_t initialize;      /**< Enable worker-core backend service. */
     uart_worker_hook_t service_control; /**< Apply mailbox and deferred control work. */
-    uart_worker_hook_t poll_io; /**< Advance all backend I/O. */
-    volatile uint32_t *heartbeat; /**< Counter published after every completed sweep. */
+    uart_worker_hook_t poll_io;         /**< Advance all backend I/O. */
+    volatile uint32_t *heartbeat;       /**< Counter published after every completed sweep. */
 } uart_worker_hooks_t;
 
 /**

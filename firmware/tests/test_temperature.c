@@ -23,10 +23,8 @@ void test_temperature_conversion_truncates_centidegrees(void)
 
 void test_temperature_conversion_saturates_hid_range(void)
 {
-    TEST_ASSERT_EQUAL_INT16(TEMPERATURE_HID_MAX_CENTIDEGREES,
-                            temperature_to_hid_centidegrees(400.0f));
-    TEST_ASSERT_EQUAL_INT16(TEMPERATURE_HID_MIN_CENTIDEGREES,
-                            temperature_to_hid_centidegrees(-400.0f));
+    TEST_ASSERT_EQUAL_INT16(TEMPERATURE_HID_MAX_CENTIDEGREES, temperature_to_hid_centidegrees(400.0f));
+    TEST_ASSERT_EQUAL_INT16(TEMPERATURE_HID_MIN_CENTIDEGREES, temperature_to_hid_centidegrees(-400.0f));
 }
 
 void test_temperature_conversion_rejects_non_finite_values(void)

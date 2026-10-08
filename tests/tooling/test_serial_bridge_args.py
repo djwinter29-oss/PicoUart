@@ -42,9 +42,7 @@ def test_write_all_honors_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("failure", ["tcgetattr", "tcsetattr", "tcflush"])
-def test_configure_port_closes_once_on_failure(
-    monkeypatch: pytest.MonkeyPatch, failure: str
-) -> None:
+def test_configure_port_closes_once_on_failure(monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
     bridge = _load_bridge()
     closes = []
     get_calls = 0
@@ -62,14 +60,12 @@ def test_configure_port_closes_once_on_failure(
     monkeypatch.setattr(
         bridge.termios,
         "tcsetattr",
-        lambda *_args: (_ for _ in ()).throw(OSError("set failed"))
-        if failure == "tcsetattr" else None,
+        lambda *_args: (_ for _ in ()).throw(OSError("set failed")) if failure == "tcsetattr" else None,
     )
     monkeypatch.setattr(
         bridge.termios,
         "tcflush",
-        lambda *_args: (_ for _ in ()).throw(OSError("flush failed"))
-        if failure == "tcflush" else None,
+        lambda *_args: (_ for _ in ()).throw(OSError("flush failed")) if failure == "tcflush" else None,
     )
 
     with pytest.raises(OSError):
@@ -132,9 +128,7 @@ def test_run_test_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.parametrize(("option", "value"), [("--timeout", "nan"), ("--settle-seconds", "inf")])
-def test_non_finite_timing_is_rejected(
-    monkeypatch: pytest.MonkeyPatch, option: str, value: str
-) -> None:
+def test_non_finite_timing_is_rejected(monkeypatch: pytest.MonkeyPatch, option: str, value: str) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
@@ -269,9 +263,11 @@ def test_run_flood_drains_during_write_backpressure(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(bridge.select, "select", fake_select)
     read_chunks = iter([b"drained-bytes"])
     monkeypatch.setattr(bridge.os, "read", lambda *_a: next(read_chunks, b""))
-    monkeypatch.setattr(bridge.os, "write", lambda *_a: (_ for _ in ()).throw(AssertionError(
-        "write must not be attempted while backpressured"
-    )))
+    monkeypatch.setattr(
+        bridge.os,
+        "write",
+        lambda *_a: (_ for _ in ()).throw(AssertionError("write must not be attempted while backpressured")),
+    )
 
     written, drained = bridge.run_flood(3, 4, 1.0, 64, 0.0)
 

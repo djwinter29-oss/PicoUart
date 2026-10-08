@@ -28,9 +28,7 @@ def test_release_lock_matches_direct_requirement_pins(repo_root):
     for name in ("requirements.txt", "requirements-dev.txt"):
         direct_pins.update(pin_pattern.findall((requirement_dir / name).read_text()))
 
-    locked_pins = dict(
-        pin_pattern.findall((requirement_dir / "requirements-lock.txt").read_text())
-    )
+    locked_pins = dict(pin_pattern.findall((requirement_dir / "requirements-lock.txt").read_text()))
     assert direct_pins.items() <= locked_pins.items()
 
 
@@ -60,9 +58,7 @@ def test_hid_layout_and_command_constants_match_firmware(repo_root):
     assert hid.BOARD_STATUS_RESERVED0_KNOWN_FLAGS == hid.BOARD_STATUS_FLAG_HID_RESET
     assert fw["USB_HID_SIGNATURE0"] == hid.STATUS_SIGNATURE
     assert hid.STATUS_SIZE == 63
-    assert hid.STATUS_SIZE == hid.STATUS_HEADER_SIZE + (
-        hid.UART_CHANNEL_COUNT * hid.STATUS_CHANNEL_SIZE
-    )
+    assert hid.STATUS_SIZE == hid.STATUS_HEADER_SIZE + (hid.UART_CHANNEL_COUNT * hid.STATUS_CHANNEL_SIZE)
     assert hid.BOARD_STATUS_SIZE == 8
     assert hid.OVERFLOW_COUNTS_SIZE == 25
     assert hid.STATUS_SIZE + 1 <= 64
@@ -73,10 +69,7 @@ def test_hid_descriptor_status_report_count_matches_host_payload(repo_root):
 
 
 def test_hid_descriptor_board_status_report_count_matches_host_payload(repo_root):
-    assert (
-        firmware_hid_report_count(repo_root, hid.REPORT_ID_BOARD_STATUS)
-        == hid.BOARD_STATUS_SIZE
-    )
+    assert firmware_hid_report_count(repo_root, hid.REPORT_ID_BOARD_STATUS) == hid.BOARD_STATUS_SIZE
 
 
 def test_hid_descriptor_command_report_count_matches_host_payload(repo_root):
@@ -84,10 +77,7 @@ def test_hid_descriptor_command_report_count_matches_host_payload(repo_root):
 
 
 def test_hid_descriptor_overflow_report_count_matches_host_payload(repo_root):
-    assert (
-        firmware_hid_report_count(repo_root, hid.REPORT_ID_OVERFLOW_COUNTS)
-        == hid.OVERFLOW_COUNTS_SIZE
-    )
+    assert firmware_hid_report_count(repo_root, hid.REPORT_ID_OVERFLOW_COUNTS) == hid.OVERFLOW_COUNTS_SIZE
 
 
 def test_lab_placeholder_helper_is_independent_of_tree_identity():

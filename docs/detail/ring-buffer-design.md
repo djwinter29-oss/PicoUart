@@ -12,13 +12,13 @@ Each logical UART port needs buffering in both directions:
 - USB to UART transmit path
 - UART to USB receive path
 
-The design should minimize CPU work, reduce unnecessary memory copies, and remain simple enough to debug on RP2040 and RP2350.
+The design should minimize CPU work, reduce unnecessary memory copies, and remain simple enough to debug on RP2040 and
+RP2350.
 
 ## Reading Guide
 
-This is a current implementation note. PicoUart uses split RX/TX rings per UART
-port; the shared-pool design near the end is retained only as rejected design
-context.
+This is a current implementation note. PicoUart uses split RX/TX rings per UART port; the shared-pool design near the
+end is retained only as rejected design context.
 
 ## End-To-End Scope
 
@@ -60,15 +60,14 @@ Implemented now:
 
 The following are deliberate scope boundaries, not undocumented gaps:
 
-| Feature | Current behavior | Why it is deferred | Revisit when |
-| --- | --- | --- | --- |
-| Full ring occupancy in compact HID input | Reports high-water blocks; feature report 5 exposes cumulative RX overflow counts | The compact interrupt report has a fixed full-speed packet budget, and high-water/overflow signals are sufficient for current monitoring | A host workflow needs instantaneous occupancy for active backpressure or tuning |
-| Host CDC RTS as UART flow control | CDC DTR is telemetry-only; UART-side RTS/CTS is board-configured and opt-in | Host CDC modem-control semantics must be mapped consistently across HW and PIO backends before claiming flow-control behavior | A defined host API and HIL matrix exist for both backend families |
-| Clearable overrun/framing counters | Counters are cumulative for the firmware session; startup baselining clears only bring-up errors | Clearing counters needs an explicit HID command, generation/reset semantics, and host tooling | Monitoring workflows require interval counters or user-triggered reset |
+| Feature                                  | Current behavior                                                                                 | Why it is deferred                                                                                                                       | Revisit when                                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Full ring occupancy in compact HID input | Reports high-water blocks; feature report 5 exposes cumulative RX overflow counts                | The compact interrupt report has a fixed full-speed packet budget, and high-water/overflow signals are sufficient for current monitoring | A host workflow needs instantaneous occupancy for active backpressure or tuning |
+| Host CDC RTS as UART flow control        | CDC DTR is telemetry-only; UART-side RTS/CTS is board-configured and opt-in                      | Host CDC modem-control semantics must be mapped consistently across HW and PIO backends before claiming flow-control behavior            | A defined host API and HIL matrix exist for both backend families               |
+| Clearable overrun/framing counters       | Counters are cumulative for the firmware session; startup baselining clears only bring-up errors | Clearing counters needs an explicit HID command, generation/reset semantics, and host tooling                                            | Monitoring workflows require interval counters or user-triggered reset          |
 
-These decisions preserve a stable telemetry contract while avoiding controls that
-could reset shared counters or change flow behavior without an explicit host and
-HIL design.
+These decisions preserve a stable telemetry contract while avoiding controls that could reset shared counters or change
+flow behavior without an explicit host and HIL design.
 
 ## Current Design: Split RX And TX Rings Per Port
 
@@ -107,20 +106,17 @@ This fixed ownership keeps race analysis simple.
 
 ### Memory Ordering Assumption
 
-The ring uses `volatile uint32_t` producer and consumer sequences with Pico SDK
-`__dmb()` barriers. On RP2040 and RP2350, aligned 32-bit cursor loads and stores
-are atomic, and the barriers order payload writes before a producer publishes a
-new sequence and consumer reads before it retires one.
+The ring uses `volatile uint32_t` producer and consumer sequences with Pico SDK `__dmb()` barriers. On RP2040 and
+RP2350, aligned 32-bit cursor loads and stores are atomic, and the barriers order payload writes before a producer
+publishes a new sequence and consumer reads before it retires one.
 
-This is target-specific synchronization, not a portable C11 threading
-implementation. Any future port must either preserve these hardware guarantees
-and barrier semantics or replace the cursor access with that platform's
-equivalent synchronization primitive.
+This is target-specific synchronization, not a portable C11 threading implementation. Any future port must either
+preserve these hardware guarantees and barrier semantics or replace the cursor access with that platform's equivalent
+synchronization primitive.
 
-This keeps direction ownership explicit, works naturally with DMA-backed RX and
-TX paths, and gives each port independent overflow and high-water accounting.
-The cost is fixed RAM per port and one copy when CDC OUT data enters the TX
-ring.
+This keeps direction ownership explicit, works naturally with DMA-backed RX and TX paths, and gives each port
+independent overflow and high-water accounting. The cost is fixed RAM per port and one copy when CDC OUT data enters the
+TX ring.
 
 ### Recommended Buffer Shape
 
@@ -162,9 +158,8 @@ Each logical port owns a pair of rings and one backend runtime binding:
 - RX DMA state
 - counters and status flags for monitoring
 
-The bridge module provides stateless, bounded transfer helpers. The current
-code uses this model across both the hardware UART and PIO UART backends, and
-the USB CDC layer drives the bridge end to end.
+The bridge module provides stateless, bounded transfer helpers. The current code uses this model across both the
+hardware UART and PIO UART backends, and the USB CDC layer drives the bridge end to end.
 
 ### Top-Level Blocks
 
@@ -219,9 +214,8 @@ This path handles USB CDC OUT traffic.
 2. TinyUSB reports bytes available on CDC `n`.
 3. Bridge layer reads bytes from TinyUSB.
 4. Bridge layer writes those bytes into port `n` TX ring.
-5. If the TX ring does not have enough space, the bridge stops reading from
-   TinyUSB for that CDC interface; unread OUT data remains in TinyUSB buffers
-   and USB endpoint backpressure applies until ring space frees.
+5. If the TX ring does not have enough space, the bridge stops reading from TinyUSB for that CDC interface; unread OUT
+   data remains in TinyUSB buffers and USB endpoint backpressure applies until ring space frees.
 6. If the backend TX DMA is idle, the backend reads the next contiguous TX span.
 7. Backend launches a TX DMA transfer from that span into the UART data register or PIO TX FIFO feed path.
 8. On DMA completion, the backend commits consumed bytes.
@@ -249,8 +243,8 @@ This path handles UART RX traffic.
 
 The design assumes a single TinyUSB owner.
 
-TinyUSB-facing work must run in one execution context only.
-That context may be the main loop or one dedicated core, but TinyUSB APIs should not be called from multiple cores.
+TinyUSB-facing work must run in one execution context only. That context may be the main loop or one dedicated core, but
+TinyUSB APIs should not be called from multiple cores.
 
 The current runtime is split across two cooperative loops:
 
@@ -268,9 +262,8 @@ Core 1 UART worker loop:
 3. publish RX DMA progress into RX rings
 4. complete or launch backend TX service, subject to the control boundary
 
-The two loops communicate through the per-port rings, the control mailbox, and
-the worker-owned stats sequence counters. TinyUSB remains core-0-only; backend
-DMA and PIO service remains core-1-only.
+The two loops communicate through the per-port rings, the control mailbox, and the worker-owned stats sequence counters.
+TinyUSB remains core-0-only; backend DMA and PIO service remains core-1-only.
 
 ## Ring Semantics
 
@@ -341,8 +334,7 @@ Reason:
 
 ## API Shape
 
-The ring helper is intentionally small and backend-agnostic. The current
-ring-buffer module API is:
+The ring helper is intentionally small and backend-agnostic. The current ring-buffer module API is:
 
 ```c
 bool ring_buffer_init(ring_buffer_t *ring, uint8_t *storage, size_t size);
@@ -365,13 +357,11 @@ size_t ring_buffer_pending_overflow(const ring_buffer_t *ring);
 size_t ring_buffer_recover_overflow(ring_buffer_t *ring);
 ```
 
-`ring_buffer_commit_produced()` and `ring_buffer_commit_consumed()` accept only
-counts within the caller's most recently returned contiguous span. Requesting a
-new span replaces an uncommitted reservation.
+`ring_buffer_commit_produced()` and `ring_buffer_commit_consumed()` accept only counts within the caller's most recently
+returned contiguous span. Requesting a new span replaces an uncommitted reservation.
 
-Snapshot reads use `ring_buffer_read_span_is_current()` plus
-`ring_buffer_commit_snapshot_consumed()` when the caller has already copied data
-out of the live ring storage and then needs to commit only the accepted bytes.
+Snapshot reads use `ring_buffer_read_span_is_current()` plus `ring_buffer_commit_snapshot_consumed()` when the caller
+has already copied data out of the live ring storage and then needs to commit only the accepted bytes.
 
 ## DMA Interaction Details
 
@@ -384,8 +374,8 @@ RX DMA:
 Current hardware UART implementation detail:
 
 - RX DMA runs with a 4096-byte ring buffer
-- software extends DMA transfer progress into a 32-bit producer sequence across
-	UART reconfiguration and DMA transfer-count restarts
+- software extends DMA transfer progress into a 32-bit producer sequence across UART reconfiguration and DMA
+  transfer-count restarts
 - `ring_buffer_produce_external()` publishes RX DMA byte deltas
 - the USB-side consumer records overwritten bytes before it reads the next span
 
@@ -402,7 +392,8 @@ Current hardware UART implementation detail:
 - after DMA completion, the backend commits exactly `tx_dma_bytes_in_flight`
 - if more data remains in the TX ring, the next contiguous span is launched immediately
 
-If a backend cannot DMA directly from the ring storage, that backend may use a bounce buffer, but only at the backend layer.
+If a backend cannot DMA directly from the ring storage, that backend may use a bounce buffer, but only at the backend
+layer.
 
 ## HID Status Fields
 
@@ -413,36 +404,29 @@ The compact HID monitor currently exposes, per channel:
 - the largest observed RX or TX ring occupancy in 16-byte blocks
 - controller TX/RX and CDC TX/RX byte deltas
 
-The compact HID report intentionally does not include full ring occupancy.
-Cumulative overflow counts are available through HID feature report 5.
+The compact HID report intentionally does not include full ring occupancy. Cumulative overflow counts are available
+through HID feature report 5.
 
-The compact HID health byte sets an RX-overrun flag while
-`ring_buffer_pending_overflow()` is nonzero. The flag remains set after recovery
-for the rest of the firmware session, while `ring_buffer_overflow_count()`
-retains the cumulative discarded-byte count. Core 0 services RX overrun recovery
-on every USB poll, including while a CDC interface is closed, so the 32-bit
-producer sequence cannot accumulate an ambiguous full epoch during normal operation.
+The compact HID health byte sets an RX-overrun flag while `ring_buffer_pending_overflow()` is nonzero. The flag remains
+set after recovery for the rest of the firmware session, while `ring_buffer_overflow_count()` retains the cumulative
+discarded-byte count. Core 0 services RX overrun recovery on every USB poll, including while a CDC interface is closed,
+so the 32-bit producer sequence cannot accumulate an ambiguous full epoch during normal operation.
 
 ## Overrun Boundary
 
-The ring detects and reports overwrite, but it cannot make an RX DMA buffer
-lossless after the producer outpaces the consumer. A consumer copy can only be
-best-effort while DMA remains able to overwrite the same circular storage.
-Targets that require every byte must use RTS/CTS or another source-side pacing
-protocol before the RX ring becomes full.
+The ring detects and reports overwrite, but it cannot make an RX DMA buffer lossless after the producer outpaces the
+consumer. A consumer copy can only be best-effort while DMA remains able to overwrite the same circular storage. Targets
+that require every byte must use RTS/CTS or another source-side pacing protocol before the RX ring becomes full.
 
 ## Self-Check
 
-Firmware startup runs `ring_buffer_self_check()` before UART initialization. It
-verifies full-buffer overwrite recovery, wrapped-span commit rejection, and
-32-bit producer-sequence wrap. The check is intentionally small and does not
-exercise concurrent DMA traffic; hardware flow control remains necessary when
-lossless behavior is required.
+Firmware startup runs `ring_buffer_self_check()` before UART initialization. It verifies full-buffer overwrite recovery,
+wrapped-span commit rejection, and 32-bit producer-sequence wrap. The check is intentionally small and does not exercise
+concurrent DMA traffic; hardware flow control remains necessary when lossless behavior is required.
 
-Host tests exercise ring invariants and the pure bridge helpers. Real backend
-callbacks, DMA timing, and multicore interleavings are validated by the
-firmware build and hardware-in-the-loop plans; they are not reproduced by the
-host ring tests.
+Host tests exercise ring invariants and the pure bridge helpers. Real backend callbacks, DMA timing, and multicore
+interleavings are validated by the firmware build and hardware-in-the-loop plans; they are not reproduced by the host
+ring tests.
 
 ## Failure Modes To Design For
 
@@ -467,9 +451,7 @@ Expected usage:
 
 ## Alternative Considered: Shared Memory Pool
 
-A shared memory pool with descriptors could reduce reserved RAM for idle ports
-and preserve packet boundaries explicitly. It was rejected for the current UART
-bridge because it adds allocator, descriptor, DMA restart, and overflow-debugging
-complexity without solving a measured problem. Revisit it only if fixed per-port
-rings become a real RAM-pressure issue or the firmware gains packet-oriented
-processing.
+A shared memory pool with descriptors could reduce reserved RAM for idle ports and preserve packet boundaries
+explicitly. It was rejected for the current UART bridge because it adds allocator, descriptor, DMA restart, and
+overflow-debugging complexity without solving a measured problem. Revisit it only if fixed per-port rings become a real
+RAM-pressure issue or the firmware gains packet-oriented processing.

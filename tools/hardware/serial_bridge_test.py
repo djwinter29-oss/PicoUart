@@ -104,15 +104,8 @@ def wait_for_marker(file_descriptor: int, marker: bytes, timeout: float) -> bool
     return False
 
 
-def test_direction(source_fd: int,
-                   destination_fd: int,
-                   direction: str,
-                   payload_size: int,
-                   timeout: float) -> bool:
-    marker = (
-        f"PICO_UART_TEST:{direction}:{secrets.token_hex(12)}:".encode("ascii")
-        + secrets.token_bytes(payload_size)
-    )
+def test_direction(source_fd: int, destination_fd: int, direction: str, payload_size: int, timeout: float) -> bool:
+    marker = f"PICO_UART_TEST:{direction}:{secrets.token_hex(12)}:".encode("ascii") + secrets.token_bytes(payload_size)
     termios.tcflush(destination_fd, termios.TCIFLUSH)
     deadline = time.monotonic() + timeout
     write_all(source_fd, marker, deadline)
@@ -144,11 +137,9 @@ def drain_available(file_descriptor: int, deadline: float, max_reads: int = 16) 
     return drained
 
 
-def run_flood(source_fd: int,
-              destination_fd: int | None,
-              duration: float,
-              chunk_size: int,
-              hold_destination_seconds: float) -> tuple[int, int]:
+def run_flood(
+    source_fd: int, destination_fd: int | None, duration: float, chunk_size: int, hold_destination_seconds: float
+) -> tuple[int, int]:
     """Sustained TX flood; optionally delay opening/draining the destination CDC.
 
     Writes and destination drains are multiplexed through one nonblocking
@@ -172,11 +163,7 @@ def run_flood(source_fd: int,
         now = time.monotonic()
         if now >= deadline:
             break
-        active_destination = (
-            destination_fd
-            if destination_fd is not None and now >= destination_open_at
-            else None
-        )
+        active_destination = destination_fd if destination_fd is not None and now >= destination_open_at else None
         read_fds = [active_destination] if active_destination is not None else []
         timeout = min(0.05, max(0.0, deadline - now))
         readable, writable, _ = select.select(read_fds, [source_fd], [], timeout)
@@ -215,9 +202,7 @@ def run_flood(source_fd: int,
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Verify both directions of one PicoUart CDC-to-UART link."
-    )
+    parser = argparse.ArgumentParser(description="Verify both directions of one PicoUart CDC-to-UART link.")
     parser.add_argument("--pico-port", required=True, help="PicoUart CDC device, for example /dev/ttyACM2")
     peer_group = parser.add_mutually_exclusive_group(required=True)
     peer_group.add_argument("--peer-port", help="Connected UART peer device, for example /dev/serial0")
@@ -264,10 +249,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
         if arguments.loopback:
             pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
             time.sleep(arguments.settle_seconds)
-            print(
-                f"Flooding {arguments.label} loopback at {baud_rate} baud "
-                f"for {arguments.flood_seconds:.1f}s"
-            )
+            print(f"Flooding {arguments.label} loopback at {baud_rate} baud for {arguments.flood_seconds:.1f}s")
             written, drained = run_flood(
                 pico_fd,
                 pico_fd,
@@ -309,10 +291,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
             else:
                 pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
                 time.sleep(arguments.settle_seconds)
-                print(
-                    f"Flooding {arguments.label} peer→pico at {baud_rate} baud "
-                    f"for {arguments.flood_seconds:.1f}s"
-                )
+                print(f"Flooding {arguments.label} peer→pico at {baud_rate} baud for {arguments.flood_seconds:.1f}s")
                 written, drained = run_flood(
                     peer_fd,
                     pico_fd,
@@ -326,8 +305,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
             result = 1
         elif expect_drain and drained <= 0:
             print(
-                f"FAIL flood: wrote {written} bytes but drained {drained} "
-                f"(CDC open window produced no RX)",
+                f"FAIL flood: wrote {written} bytes but drained {drained} (CDC open window produced no RX)",
                 file=sys.stderr,
             )
             result = 1
@@ -367,26 +345,14 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
         if arguments.loopback:
             time.sleep(arguments.settle_seconds)
             print(f"Testing {arguments.label} loopback at {baud_rate} baud")
-            passed = test_direction(pico_fd,
-                                    pico_fd,
-                                    "pico-loopback",
-                                    arguments.payload_bytes,
-                                    arguments.timeout)
+            passed = test_direction(pico_fd, pico_fd, "pico-loopback", arguments.payload_bytes, arguments.timeout)
             result = 0 if passed else 1
         else:
             peer_fd, peer_settings = configure_port(arguments.peer_port, baud_rate)
             time.sleep(arguments.settle_seconds)
             print(f"Testing {arguments.label} at {baud_rate} baud")
-            pico_to_peer = test_direction(pico_fd,
-                                          peer_fd,
-                                          "pico-to-peer",
-                                          arguments.payload_bytes,
-                                          arguments.timeout)
-            peer_to_pico = test_direction(peer_fd,
-                                          pico_fd,
-                                          "peer-to-pico",
-                                          arguments.payload_bytes,
-                                          arguments.timeout)
+            pico_to_peer = test_direction(pico_fd, peer_fd, "pico-to-peer", arguments.payload_bytes, arguments.timeout)
+            peer_to_pico = test_direction(peer_fd, pico_fd, "peer-to-pico", arguments.payload_bytes, arguments.timeout)
             result = 0 if pico_to_peer and peer_to_pico else 1
     except OSError as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)

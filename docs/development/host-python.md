@@ -1,8 +1,8 @@
 # Host Python Development
 
-This guide covers working on the Python package in [`host/python`](../../host/python/README.md).
-The package's end-user installation and usage guide is its [README](../../host/python/README.md),
-which is also included as the PyPI project description.
+This guide covers working on the Python package in [`host/python`](../../host/python/README.md). The package's end-user
+installation and usage guide is its [README](../../host/python/README.md), which is also included as the PyPI project
+description.
 
 ## Prerequisites
 
@@ -12,8 +12,8 @@ which is also included as the PyPI project description.
 
 ## Environment Setup
 
-From the repository root, the Bash helper creates `host/python/.venv`, installs
-the locked development dependencies, and installs `pico-uart` in editable mode:
+From the repository root, the Bash helper creates `host/python/.venv`, installs the locked development dependencies, and
+installs `pico-uart` in editable mode:
 
 ```bash
 tools/host/setup-venv.sh
@@ -27,10 +27,9 @@ On Windows PowerShell:
 .\host\python\.venv\Scripts\Activate.ps1
 ```
 
-Use `--venv-dir PATH` with Bash or `-VenvDir PATH` with PowerShell to choose a
-different location. Relative paths are resolved from the current working
-directory. See [tools/README.md](../../tools/README.md) for the repository's
-host setup helper entry points.
+Use `--venv-dir PATH` with Bash or `-VenvDir PATH` with PowerShell to choose a different location. Relative paths are
+resolved from the current working directory. See [tools/README.md](../../tools/README.md) for the repository's host
+setup helper entry points.
 
 ## Layout
 
@@ -41,9 +40,8 @@ host setup helper entry points.
 - `src/pico_uart/web/`: Flask dashboard and static assets
 - `tests/`: package tests, shared fixtures, and report helpers
 
-The CLI, dashboard, and tests should use the public `pico_uart` package rather
-than adding another top-level compatibility module.
-Repository-level test layout and validation commands are in the
+The CLI, dashboard, and tests should use the public `pico_uart` package rather than adding another top-level
+compatibility module. Repository-level test layout and validation commands are in the
 [firmware and repository testing guide](firmware-testing.md).
 
 ## Tests
@@ -60,9 +58,8 @@ To run only the installable `pico-uart` package tests, run from `host/python`:
 .venv/bin/python -m pytest -c pyproject.toml
 ```
 
-On Windows, use `host/python/.venv/Scripts/python.exe` in place of the POSIX
-interpreter path. The pytest suite does not require a board; hardware validation
-and acceptance criteria are documented in the [test index](../tests/README.md).
+On Windows, use `host/python/.venv/Scripts/python.exe` in place of the POSIX interpreter path. The pytest suite does not
+require a board; hardware validation and acceptance criteria are documented in the [test index](../tests/README.md).
 
 The repository-wide host test runner is `tools/validation/run-host-tests.sh`.
 
@@ -74,18 +71,17 @@ Measure package coverage from `host/python` with:
 
 ## Dependencies and Locking
 
-`requirements.txt` lists runtime dependencies. `requirements-dev.txt` adds the
-test runner. CI and release qualification install `requirements-lock.txt` with
-hash verification. After changing direct dependencies, regenerate that lock
-from the repository root with:
+`requirements.txt` lists runtime dependencies. `requirements-dev.txt` adds the test runner. CI and release qualification
+install `requirements-lock.txt` with hash verification. After changing direct dependencies, regenerate that lock from
+the repository root with:
 
 ```bash
 uv pip compile host/python/requirements-dev.txt --universal --python-version 3.10 \
   --generate-hashes --no-emit-index-url --output-file host/python/requirements-lock.txt
 ```
 
-The existing [dependency contract test](../../tests/contracts/test_firmware_contract.py)
-checks that the direct pins appear in the generated lock.
+The existing [dependency contract test](../../tests/contracts/test_firmware_contract.py) checks that the direct pins
+appear in the generated lock.
 
 ## Build the Distribution
 
@@ -95,6 +91,5 @@ Build the wheel from the repository root:
 uv build --wheel --directory host/python
 ```
 
-The project metadata points PyPI at `host/python/README.md` for its long
-description. Keep that file focused on package users; contributor setup and
-maintenance instructions belong in this guide.
+The project metadata points PyPI at `host/python/README.md` for its long description. Keep that file focused on package
+users; contributor setup and maintenance instructions belong in this guide.

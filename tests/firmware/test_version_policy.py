@@ -42,9 +42,7 @@ def _run(version: str) -> subprocess.CompletedProcess:
         ("255.255.255", 255, 255, 255, 0),
     ],
 )
-def test_version_policy_accepts_in_range_versions(
-    version: str, major: int, minor: int, patch: int, bcd: int
-) -> None:
+def test_version_policy_accepts_in_range_versions(version: str, major: int, minor: int, patch: int, bcd: int) -> None:
     result = _run(version)
 
     assert result.returncode == 0, result.stderr

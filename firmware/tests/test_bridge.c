@@ -77,14 +77,8 @@ void test_drain_rx_commits_valid_snapshot(void)
 
     TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
     TEST_ASSERT_EQUAL_UINT(5u, ring_buffer_write(&ring, (const uint8_t *)"hello", 5u));
-    TEST_ASSERT_EQUAL_UINT(5u,
-                           uart_bridge_drain_rx(&ring,
-                                                0u,
-                                                bridge_writer,
-                                                &writer,
-                                                bridge_snapshot_current,
-                                                &snapshot_current,
-                                                &stats_sequence));
+    TEST_ASSERT_EQUAL_UINT(5u, uart_bridge_drain_rx(&ring, 0u, bridge_writer, &writer, bridge_snapshot_current,
+                                                    &snapshot_current, &stats_sequence));
     TEST_ASSERT_EQUAL_UINT(5u, writer.length);
     TEST_ASSERT_EQUAL_UINT8_ARRAY((const uint8_t *)"hello", writer.data, writer.length);
     TEST_ASSERT_EQUAL_UINT(0u, ring_buffer_occupancy(&ring));
@@ -100,14 +94,8 @@ void test_drain_rx_rejects_stale_snapshot(void)
 
     TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
     TEST_ASSERT_EQUAL_UINT(3u, ring_buffer_write(&ring, (const uint8_t *)"old", 3u));
-    TEST_ASSERT_EQUAL_UINT(0u,
-                           uart_bridge_drain_rx(&ring,
-                                                0u,
-                                                bridge_writer,
-                                                &writer,
-                                                bridge_snapshot_current,
-                                                &snapshot_current,
-                                                &stats_sequence));
+    TEST_ASSERT_EQUAL_UINT(0u, uart_bridge_drain_rx(&ring, 0u, bridge_writer, &writer, bridge_snapshot_current,
+                                                    &snapshot_current, &stats_sequence));
     TEST_ASSERT_EQUAL_UINT(0u, writer.length);
     TEST_ASSERT_EQUAL_UINT(3u, ring_buffer_occupancy(&ring));
 }

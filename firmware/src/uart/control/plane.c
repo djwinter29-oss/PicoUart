@@ -15,33 +15,24 @@
 #define UART_CONTROL_PLANE_APPLY_TIMEOUT_MS 1000u
 
 static bool uart_control_plane_mailbox_has_pending_port(const uart_control_plane_t *control_plane,
-                                                         uart_port_id_t port_id)
+                                                        uart_port_id_t port_id)
 {
-    return (control_plane != NULL) && (control_plane->mailboxes != NULL) &&
-           (port_id < UART_PORT_COUNT) &&
-           uart_control_mailbox_has_pending_port(&control_plane->mailboxes[port_id],
-                                                 (uint32_t)port_id);
+    return (control_plane != NULL) && (control_plane->mailboxes != NULL) && (port_id < UART_PORT_COUNT) &&
+           uart_control_mailbox_has_pending_port(&control_plane->mailboxes[port_id], (uint32_t)port_id);
 }
 
-static void uart_control_plane_finish_worker_control(uart_control_plane_t *control_plane,
-                                                     uart_port_id_t port_id,
-                                                     uint32_t control_generation,
-                                                     bool success)
+static void uart_control_plane_finish_worker_control(uart_control_plane_t *control_plane, uart_port_id_t port_id,
+                                                     uint32_t control_generation, bool success)
 {
     uint32_t save = spin_lock_blocking(control_plane->status_lock);
 
     control_plane->pending_controls[port_id].pending = false;
     if (uart_control_pending_should_clear(control_plane->soft_pending_controls[port_id],
-                                          uart_control_plane_mailbox_has_pending_port(control_plane,
-                                                                                      port_id),
-                                          false)) {
+                                          uart_control_plane_mailbox_has_pending_port(control_plane, port_id), false)) {
         control_plane->status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
-    uart_control_apply_completion_error(&control_plane->status_flags[port_id],
-                                        UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                                        control_generation,
-                                        control_plane->control_generations[port_id],
-                                        success);
+    uart_control_apply_completion_error(&control_plane->status_flags[port_id], UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                                        control_generation, control_plane->control_generations[port_id], success);
     spin_unlock(control_plane->status_lock, save);
 }
 
@@ -52,19 +43,15 @@ static void uart_control_plane_finish_worker_control(uart_control_plane_t *contr
  * @param worker_generation Generation of a deferred apply cancelled because the
  *        new request already matches the backend. Ignored unless
  *        @p complete_worker is true.
- * @param complete_worker True when that deferred apply completes successfully
- *        in this same critical section.
+ * @param complete_worker True when that deferred apply completes successfully in this same critical section.
  *
  * Provisional ownership and mailbox completion share one `status_lock` hold.
  * Clearing `pending` and then unlocking before `CONTROL_ERROR` is written lets
  * a concurrent status read treat the port as unowned.
  */
-static void uart_control_plane_finish_mailbox_control(uart_control_plane_t *control_plane,
-                                                      uart_port_id_t port_id,
-                                                      uint32_t control_generation,
-                                                      bool success,
-                                                      bool drop_provisional_pending,
-                                                      uint32_t worker_generation,
+static void uart_control_plane_finish_mailbox_control(uart_control_plane_t *control_plane, uart_port_id_t port_id,
+                                                      uint32_t control_generation, bool success,
+                                                      bool drop_provisional_pending, uint32_t worker_generation,
                                                       bool complete_worker)
 {
     uint32_t save = spin_lock_blocking(control_plane->status_lock);
@@ -74,27 +61,20 @@ static void uart_control_plane_finish_mailbox_control(uart_control_plane_t *cont
     }
     if (complete_worker) {
         uart_control_apply_completion_error(&control_plane->status_flags[port_id],
-                                            UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                                            worker_generation,
-                                            control_plane->control_generations[port_id],
-                                            true);
+                                            UART_DRIVER_PORT_STATUS_CONTROL_ERROR, worker_generation,
+                                            control_plane->control_generations[port_id], true);
     }
-    if (uart_control_pending_should_clear(
-            control_plane->soft_pending_controls[port_id],
-            uart_control_plane_mailbox_has_pending_port(control_plane, port_id),
-            control_plane->pending_controls[port_id].pending)) {
+    if (uart_control_pending_should_clear(control_plane->soft_pending_controls[port_id],
+                                          uart_control_plane_mailbox_has_pending_port(control_plane, port_id),
+                                          control_plane->pending_controls[port_id].pending)) {
         control_plane->status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
-    uart_control_apply_completion_error(&control_plane->status_flags[port_id],
-                                        UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                                        control_generation,
-                                        control_plane->control_generations[port_id],
-                                        success);
+    uart_control_apply_completion_error(&control_plane->status_flags[port_id], UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+                                        control_generation, control_plane->control_generations[port_id], success);
     spin_unlock(control_plane->status_lock, save);
 }
 
-static void uart_control_plane_set_worker_pending(uart_control_plane_t *control_plane,
-                                                  uart_port_id_t port_id,
+static void uart_control_plane_set_worker_pending(uart_control_plane_t *control_plane, uart_port_id_t port_id,
                                                   uint32_t control_generation)
 {
     uint32_t save = spin_lock_blocking(control_plane->status_lock);
@@ -102,15 +82,13 @@ static void uart_control_plane_set_worker_pending(uart_control_plane_t *control_
     control_plane->pending_controls[port_id].pending = true;
     control_plane->pending_controls[port_id].control_generation = control_generation;
     control_plane->status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
-    if (uart_control_completion_is_current(control_generation,
-                                           control_plane->control_generations[port_id])) {
+    if (uart_control_completion_is_current(control_generation, control_plane->control_generations[port_id])) {
         control_plane->status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
     }
     spin_unlock(control_plane->status_lock, save);
 }
 
-static bool uart_control_plane_tx_boundary_drained(uart_runtime_port_t *port,
-                                                   uint32_t boundary_sequence)
+static bool uart_control_plane_tx_boundary_drained(uart_runtime_port_t *port, uint32_t boundary_sequence)
 {
     ring_buffer_t *tx_ring;
 
@@ -119,12 +97,10 @@ static bool uart_control_plane_tx_boundary_drained(uart_runtime_port_t *port,
     }
 
     tx_ring = port->ops->tx_ring(&port->backend);
-    return (tx_ring != NULL) &&
-           uart_control_tx_boundary_drained(tx_ring->consumer, boundary_sequence);
+    return (tx_ring != NULL) && uart_control_tx_boundary_drained(tx_ring->consumer, boundary_sequence);
 }
 
-static void uart_control_plane_service_pending(uart_control_plane_t *control_plane,
-                                               uart_port_id_t port_id)
+static void uart_control_plane_service_pending(uart_control_plane_t *control_plane, uart_port_id_t port_id)
 {
     uart_runtime_port_t *port = &control_plane->ports[port_id];
     uart_control_pending_t *pending_control = &control_plane->pending_controls[port_id];
@@ -136,19 +112,14 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
 
     if (!uart_control_plane_tx_boundary_drained(port, pending_control->tx_boundary_sequence)) {
         if (time_reached(pending_control->deadline)) {
-            uart_control_plane_finish_worker_control(control_plane,
-                                                      port_id,
-                                                      pending_control->control_generation,
-                                                      false);
+            uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation,
+                                                     false);
         }
         return;
     }
 
     if (port->ops == NULL) {
-        uart_control_plane_finish_worker_control(control_plane,
-                                                  port_id,
-                                                  pending_control->control_generation,
-                                                  false);
+        uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, false);
         return;
     }
 
@@ -156,37 +127,28 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
      * apply that races past an already-expired deadline must not be able to
      * report success and clear CONTROL_ERROR. */
     if (time_reached(pending_control->deadline)) {
-        uart_control_plane_finish_worker_control(control_plane,
-                                                  port_id,
-                                                  pending_control->control_generation,
-                                                  false);
+        uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, false);
         return;
     }
 
     applied = port->ops->set_line_coding(&port->backend, &pending_control->line_coding);
     if (!applied) {
-        bool backend_stopped = (port->ops->is_initialized != NULL) &&
-                               !port->ops->is_initialized(&port->backend);
+        bool backend_stopped = (port->ops->is_initialized != NULL) && !port->ops->is_initialized(&port->backend);
 
         if (backend_stopped) {
             uint32_t save = spin_lock_blocking(control_plane->status_lock);
 
             control_plane->status_flags[port_id] |= UART_DRIVER_PORT_STATUS_INIT_FAILED;
-            control_plane->status_flags[port_id] &=
-                (uint8_t)~UART_DRIVER_PORT_STATUS_READY;
+            control_plane->status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_READY;
             spin_unlock(control_plane->status_lock, save);
-            uart_control_plane_finish_worker_control(control_plane,
-                                                      port_id,
-                                                      pending_control->control_generation,
-                                                      false);
+            uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation,
+                                                     false);
             return;
         }
 
         if (time_reached(pending_control->deadline)) {
-            uart_control_plane_finish_worker_control(control_plane,
-                                                      port_id,
-                                                      pending_control->control_generation,
-                                                      false);
+            uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation,
+                                                     false);
         }
         return;
     }
@@ -196,15 +158,11 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
         port->info.baud_rate = port->ops->baud_rate(&port->backend);
         spin_unlock(control_plane->status_lock, save);
     }
-    uart_control_plane_finish_worker_control(control_plane,
-                                              port_id,
-                                              pending_control->control_generation,
-                                              true);
+    uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, true);
 }
 
 static void uart_control_plane_set_line_coding(uart_control_plane_t *control_plane,
-                                               const uart_control_mailbox_request_t *request,
-                                               bool prior_pending)
+                                               const uart_control_mailbox_request_t *request, bool prior_pending)
 {
     uart_port_id_t port_id = (uart_port_id_t)request->port_id;
     uart_runtime_port_t *port;
@@ -221,42 +179,25 @@ static void uart_control_plane_set_line_coding(uart_control_plane_t *control_pla
     port = &control_plane->ports[port_id];
     pending_control = &control_plane->pending_controls[port_id];
     if (!uart_line_coding_is_valid(&request->line_coding)) {
-        uart_control_plane_finish_mailbox_control(control_plane,
-                                                  port_id,
-                                                  request->control_generation,
-                                                  false,
-                                                  !prior_pending,
-                                                  0u,
-                                                  false);
+        uart_control_plane_finish_mailbox_control(control_plane, port_id, request->control_generation, false,
+                                                  !prior_pending, 0u, false);
         return;
     }
 
-    same_request = was_pending &&
-                   (pending_control->line_coding.baud_rate == request->line_coding.baud_rate) &&
+    same_request = was_pending && (pending_control->line_coding.baud_rate == request->line_coding.baud_rate) &&
                    (pending_control->line_coding.data_bits == request->line_coding.data_bits) &&
                    (pending_control->line_coding.stop_bits == request->line_coding.stop_bits) &&
                    (pending_control->line_coding.parity == request->line_coding.parity);
 
-    if ((port->ops != NULL) &&
-        port->ops->line_coding_matches(&port->backend, &request->line_coding)) {
-        uart_control_plane_finish_mailbox_control(control_plane,
-                                                   port_id,
-                                                   request->control_generation,
-                                                   true,
-                                                   !was_pending,
-                                                   pending_control->control_generation,
-                                                   was_pending);
+    if ((port->ops != NULL) && port->ops->line_coding_matches(&port->backend, &request->line_coding)) {
+        uart_control_plane_finish_mailbox_control(control_plane, port_id, request->control_generation, true,
+                                                  !was_pending, pending_control->control_generation, was_pending);
         return;
     }
 
     if ((port->ops == NULL) || !port->ops->line_coding_acceptable(&request->line_coding)) {
-        uart_control_plane_finish_mailbox_control(control_plane,
-                                                  port_id,
-                                                  request->control_generation,
-                                                  false,
-                                                  !prior_pending,
-                                                  0u,
-                                                  false);
+        uart_control_plane_finish_mailbox_control(control_plane, port_id, request->control_generation, false,
+                                                  !prior_pending, 0u, false);
         return;
     }
 
@@ -270,9 +211,8 @@ static void uart_control_plane_set_line_coding(uart_control_plane_t *control_pla
 
 void uart_control_plane_service(uart_control_plane_t *control_plane)
 {
-    if ((control_plane == NULL) || (control_plane->ports == NULL) ||
-        (control_plane->mailboxes == NULL) || (control_plane->pending_controls == NULL) ||
-        (control_plane->soft_pending_controls == NULL) ||
+    if ((control_plane == NULL) || (control_plane->ports == NULL) || (control_plane->mailboxes == NULL) ||
+        (control_plane->pending_controls == NULL) || (control_plane->soft_pending_controls == NULL) ||
         (control_plane->control_generations == NULL) || (control_plane->status_flags == NULL) ||
         (control_plane->status_lock == NULL) || (control_plane->stats_sequence == NULL) ||
         (control_plane->poll_start_index == NULL)) {
@@ -304,13 +244,8 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
         }
 
         if (request.port_id != (uint32_t)index) {
-            uart_control_plane_finish_mailbox_control(control_plane,
-                                                      (uart_port_id_t)index,
-                                                      request.control_generation,
-                                                      false,
-                                                      !prior_pending,
-                                                      0u,
-                                                      false);
+            uart_control_plane_finish_mailbox_control(control_plane, (uart_port_id_t)index, request.control_generation,
+                                                      false, !prior_pending, 0u, false);
             continue;
         }
 
@@ -331,8 +266,7 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
      * next worker step starts control and I/O on the same port. */
 }
 
-bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane,
-                                          uart_port_id_t port_id)
+bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane, uart_port_id_t port_id)
 {
     if ((control_plane == NULL) || (port_id >= UART_PORT_COUNT)) {
         return false;
@@ -340,6 +274,5 @@ bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_pl
 
     return !control_plane->pending_controls[port_id].pending ||
            !uart_control_plane_tx_boundary_drained(&control_plane->ports[port_id],
-                                                   control_plane->pending_controls[port_id]
-                                                       .tx_boundary_sequence);
+                                                   control_plane->pending_controls[port_id].tx_boundary_sequence);
 }

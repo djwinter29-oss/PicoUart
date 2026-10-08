@@ -21,9 +21,7 @@ def _load_stress():
 
 
 @pytest.mark.parametrize("failure", ["tcgetattr", "tcsetattr", "tcflush"])
-def test_configure_port_closes_once_on_failure(
-    monkeypatch: pytest.MonkeyPatch, failure: str
-) -> None:
+def test_configure_port_closes_once_on_failure(monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
     stress = _load_stress()
     closes = []
     get_calls = 0
@@ -41,14 +39,12 @@ def test_configure_port_closes_once_on_failure(
     monkeypatch.setattr(
         stress.termios,
         "tcsetattr",
-        lambda *_args: (_ for _ in ()).throw(OSError("set failed"))
-        if failure == "tcsetattr" else None,
+        lambda *_args: (_ for _ in ()).throw(OSError("set failed")) if failure == "tcsetattr" else None,
     )
     monkeypatch.setattr(
         stress.termios,
         "tcflush",
-        lambda *_args: (_ for _ in ()).throw(OSError("flush failed"))
-        if failure == "tcflush" else None,
+        lambda *_args: (_ for _ in ()).throw(OSError("flush failed")) if failure == "tcflush" else None,
     )
 
     with pytest.raises(OSError):
@@ -95,6 +91,7 @@ def test_run_stream_collects_first_transfer_timing(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(stress.time, "monotonic", lambda: next(ticks))
     transfers = []
     monkeypatch.setattr(stress, "write_all", lambda fd, payload, deadline: transfers.append(payload))
+
     def read_exact(fd, payload, deadline, timing=None):
         timing["first_receive_utc"] = stress.datetime.now(stress.timezone.utc).isoformat(timespec="milliseconds")
         timing["first_receive_monotonic"] = stress.time.monotonic()
@@ -113,9 +110,7 @@ def test_run_stream_collects_first_transfer_timing(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.parametrize("outcome", ["success", "timeout", "mismatch", "no_data"])
-def test_run_stream_records_first_nonempty_read(
-    monkeypatch: pytest.MonkeyPatch, outcome: str
-) -> None:
+def test_run_stream_records_first_nonempty_read(monkeypatch: pytest.MonkeyPatch, outcome: str) -> None:
     from datetime import datetime, timedelta, timezone
 
     stress = _load_stress()
@@ -181,15 +176,17 @@ def test_run_stream_records_first_nonempty_read(
     }
     assert result["test"] == expected_results[outcome]
     assert writes == ([first, second] if outcome == "success" else [first])
-    assert reads == {
-        "success": [64, 64, 56, 64, 56],
-        "timeout": [64, 64],
-        "mismatch": [64, 64, 56],
-        "no_data": [64],
-    }[outcome]
+    assert (
+        reads
+        == {
+            "success": [64, 64, 56, 64, 56],
+            "timeout": [64, 64],
+            "mismatch": [64, 64, 56],
+            "no_data": [64],
+        }[outcome]
+    )
     # Each payload retains its original read deadline across empty/partial reads.
-    assert all(now + remaining == (13 if now >= 3 else 10)
-               for now, remaining in waits)
+    assert all(now + remaining == (13 if now >= 3 else 10) for now, remaining in waits)
     stamps = timing["test"]
     if outcome == "no_data":
         assert "first_receive_monotonic" not in stamps
@@ -239,13 +236,15 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
             return None
 
     expected_keys = {
-        "thread_start_utc", "thread_start_monotonic",
-        "first_send_utc", "first_send_monotonic",
-        "first_receive_utc", "first_receive_monotonic",
+        "thread_start_utc",
+        "thread_start_monotonic",
+        "first_send_utc",
+        "first_send_monotonic",
+        "first_receive_utc",
+        "first_receive_monotonic",
     }
 
-    def fake_run_stream(label, _source, _destination, _duration, _payload,
-                         _timeout, _start, result, timing):
+    def fake_run_stream(label, _source, _destination, _duration, _payload, _timeout, _start, result, timing):
         timing[label] = {key: object() for key in expected_keys}
         result[label] = (64, None)
 
@@ -258,8 +257,7 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
 
     stdout = capsys.readouterr().out
     time_lines = [line for line in stdout.splitlines() if line.startswith("TIME ")]
-    stream_labels = ["uart0-pico-to-peer", "uart0-peer-to-pico",
-                      "uart5-loopback", "uart2-to-uart3", "uart3-to-uart2"]
+    stream_labels = ["uart0-pico-to-peer", "uart0-peer-to-pico", "uart5-loopback", "uart2-to-uart3", "uart3-to-uart2"]
 
     assert len(time_lines) == len(stream_labels)
     for label in stream_labels:
@@ -312,25 +310,34 @@ def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> N
     assert stress.benchmark_rate(arguments, 115200) is False
 
 
-@pytest.mark.parametrize(("option", "value"), [
-    ("--duration", "nan"), ("--timeout", "inf"),
-    ("--settle-seconds", "nan"), ("--settle-seconds", "inf"),
-    ("--settle-seconds", "-1"),
-])
-def test_non_finite_timing_is_rejected(
-    monkeypatch: pytest.MonkeyPatch, option: str, value: str
-) -> None:
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--duration", "nan"),
+        ("--timeout", "inf"),
+        ("--settle-seconds", "nan"),
+        ("--settle-seconds", "inf"),
+        ("--settle-seconds", "-1"),
+    ],
+)
+def test_non_finite_timing_is_rejected(monkeypatch: pytest.MonkeyPatch, option: str, value: str) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "serial_stress_benchmark.py",
-            "--uart0-pico", "/dev/null",
-            "--uart0-peer", "/dev/null",
-            "--uart2", "/dev/null",
-            "--uart3", "/dev/null",
-            "--uart5", "/dev/null",
-            option, value,
+            "--uart0-pico",
+            "/dev/null",
+            "--uart0-peer",
+            "/dev/null",
+            "--uart2",
+            "/dev/null",
+            "--uart3",
+            "/dev/null",
+            "--uart5",
+            "/dev/null",
+            option,
+            value,
         ],
     )
     stress = _load_stress()
@@ -412,11 +419,24 @@ def test_cross_fixture_arguments_parse(monkeypatch: pytest.MonkeyPatch) -> None:
         "argv",
         [
             "serial_stress_benchmark.py",
-            "--uart0-pico", "/dev/ttyACM0", "--uart0-peer", "/dev/ttyACM7",
-            "--uart1", "/dev/ttyACM1", "--uart1-peer", "/dev/ttyACM2",
-            "--uart2", "/dev/ttyACM2", "--uart3", "/dev/ttyACM3",
-            "--uart4", "/dev/ttyACM4", "--uart4-peer", "/dev/ttyACM3",
-            "--uart5", "/dev/ttyACM5",
+            "--uart0-pico",
+            "/dev/ttyACM0",
+            "--uart0-peer",
+            "/dev/ttyACM7",
+            "--uart1",
+            "/dev/ttyACM1",
+            "--uart1-peer",
+            "/dev/ttyACM2",
+            "--uart2",
+            "/dev/ttyACM2",
+            "--uart3",
+            "/dev/ttyACM3",
+            "--uart4",
+            "/dev/ttyACM4",
+            "--uart4-peer",
+            "/dev/ttyACM3",
+            "--uart5",
+            "/dev/ttyACM5",
         ],
     )
     stress = _load_stress()
@@ -446,8 +466,7 @@ def test_cross_fixture_rejects_partial_peer_arguments() -> None:
     arguments = type(
         "Arguments",
         (),
-        {"uart1": "/dev/ttyACM1", "uart1_peer": "/dev/ttyACM2",
-         "uart4": None, "uart4_peer": None},
+        {"uart1": "/dev/ttyACM1", "uart1_peer": "/dev/ttyACM2", "uart4": None, "uart4_peer": None},
     )()
 
     assert stress.cross_fixture_paths_valid(arguments) is False
@@ -489,9 +508,7 @@ def test_read_exact_rejects_first_byte_ready_at_deadline(monkeypatch, wake_at):
 
 @pytest.mark.parametrize("finish_at", [1.0, 1.1])
 @pytest.mark.parametrize("partial", [True, False])
-def test_read_exact_rejects_late_completion_but_keeps_first_read_timing(
-    monkeypatch, finish_at, partial
-):
+def test_read_exact_rejects_late_completion_but_keeps_first_read_timing(monkeypatch, finish_at, partial):
     stress = _load_stress()
     clock = [0.0]
     chunks = [(0.2, b"d"), (finish_at, b"ata")] if partial else [(finish_at, b"data")]
@@ -577,19 +594,35 @@ def test_write_all_rejects_completion_at_deadline(monkeypatch):
         stress.write_all(1, b"data", 1)
 
 
-@pytest.mark.parametrize(("uart1", "uart4", "cross"), [
-    (False, False, False), (True, False, False),
-    (False, True, False), (True, True, False), (True, True, True),
-])
+@pytest.mark.parametrize(
+    ("uart1", "uart4", "cross"),
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (True, True, False),
+        (True, True, True),
+    ],
+)
 def test_benchmark_modes_configure_actual_documented_streams(monkeypatch, uart1, uart4, cross):
     from types import SimpleNamespace
 
     stress = _load_stress()
     arguments = SimpleNamespace(
-        uart0_pico="cdc0", uart0_peer="probe", uart2="cdc2", uart3="cdc3", uart5="cdc5",
-        uart1="cdc1" if uart1 else None, uart4="cdc4" if uart4 else None,
-        uart1_peer="cdc2" if cross else None, uart4_peer="cdc3" if cross else None,
-        uart0_baud=115200, duration=1, payload_bytes=64, timeout=1, settle_seconds=0,
+        uart0_pico="cdc0",
+        uart0_peer="probe",
+        uart2="cdc2",
+        uart3="cdc3",
+        uart5="cdc5",
+        uart1="cdc1" if uart1 else None,
+        uart4="cdc4" if uart4 else None,
+        uart1_peer="cdc2" if cross else None,
+        uart4_peer="cdc3" if cross else None,
+        uart0_baud=115200,
+        duration=1,
+        payload_bytes=64,
+        timeout=1,
+        settle_seconds=0,
     )
     opened = []
     streams = []
@@ -617,11 +650,11 @@ def test_benchmark_modes_configure_actual_documented_streams(monkeypatch, uart1,
     monkeypatch.setattr(stress, "run_stream", run_stream)
     monkeypatch.setattr(stress, "close_ports", lambda *_: None)
     assert stress.benchmark_rate(arguments, 115200)
-    expected = [("uart0-pico-to-peer", 1, 2), ("uart0-peer-to-pico", 2, 1),
-                ("uart5-loopback", 5, 5)]
+    expected = [("uart0-pico-to-peer", 1, 2), ("uart0-peer-to-pico", 2, 1), ("uart5-loopback", 5, 5)]
     if cross:
-        expected.extend([("uart1-to-uart2", 6, 3), ("uart2-to-uart1", 3, 6),
-                         ("uart3-to-uart4", 4, 7), ("uart4-to-uart3", 7, 4)])
+        expected.extend(
+            [("uart1-to-uart2", 6, 3), ("uart2-to-uart1", 3, 6), ("uart3-to-uart4", 4, 7), ("uart4-to-uart3", 7, 4)]
+        )
     else:
         expected.extend([("uart2-to-uart3", 3, 4), ("uart3-to-uart2", 4, 3)])
         if uart1:
@@ -639,6 +672,6 @@ def test_performance_plan_matches_modes_and_timing(repo_root):
     assert "twelve simultaneous" not in plan
     assert "Optional `--uart1` and `--uart4` add independent" in plan
     assert "first-send-attempt" in plan
-    assert "last in-flight block" in plan
+    assert "last in-flight block" in " ".join(plan.split())
     assert "completes at or after its deadline" in plan
     assert "host scheduling jitter" in plan

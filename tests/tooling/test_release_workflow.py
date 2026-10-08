@@ -122,10 +122,13 @@ def test_resolve_release_version_uses_workflow_dispatch_input() -> None:
     assert result.stdout.strip() == "1.2.3"
 
 
-@pytest.mark.parametrize(("workflow", "expected"), [
-    (PR_WORKFLOW, PR_FIRMWARE_MATRIX),
-    (RELEASE_WORKFLOW, RELEASE_FIRMWARE_MATRIX),
-])
+@pytest.mark.parametrize(
+    ("workflow", "expected"),
+    [
+        (PR_WORKFLOW, PR_FIRMWARE_MATRIX),
+        (RELEASE_WORKFLOW, RELEASE_FIRMWARE_MATRIX),
+    ],
+)
 def test_firmware_matrix_builds_rated_and_overclock_images(workflow: Path, expected) -> None:
     text = workflow.read_text(encoding="utf-8")
 
@@ -150,7 +153,7 @@ def test_release_overclock_packages_use_distinct_names() -> None:
 
     assert "name: release-${{ matrix.label }}" in text
     assert "pico_uart-v${VERSION}-${LABEL}" in text
-    assert 'SHA256SUMS-${LABEL}.txt' in text
+    assert "SHA256SUMS-${LABEL}.txt" in text
     assert "pattern: release-*" in text
     assert "pico-250mhz" in text
     assert "pico2-300mhz" in text

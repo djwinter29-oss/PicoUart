@@ -22,10 +22,7 @@ def _hid_unavailable():
     """Temporarily import without hidapi; restore exact modules even on failure."""
     with pytest.MonkeyPatch.context() as patch:
         package_modules = sorted(
-            (
-                name for name in sys.modules
-                if name == "pico_uart" or name.startswith("pico_uart.")
-            ),
+            (name for name in sys.modules if name == "pico_uart" or name.startswith("pico_uart.")),
             key=len,
             reverse=True,
         )

@@ -18,9 +18,7 @@ def parse_c_u_define(text: str, name: str) -> int:
 
 def firmware_usb_product_string(repo_root: Path) -> str:
     """Parse the USB product string from usb_descriptors.c."""
-    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(
-        encoding="utf-8"
-    )
+    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(encoding="utf-8")
     match = re.search(
         r'^\s*#define\s+USB_STR_PRODUCT\s+"([^"]+)"\s*$',
         text,
@@ -33,9 +31,7 @@ def firmware_usb_product_string(repo_root: Path) -> str:
 
 def firmware_cdc_interface_strings(repo_root: Path) -> list[str]:
     """Parse CDC interface string literals from usb_descriptors.c."""
-    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(
-        encoding="utf-8"
-    )
+    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(encoding="utf-8")
     match = re.search(
         r"static char const \*string_desc_arr\[\] = \{(.*?)\};",
         text,
@@ -51,9 +47,7 @@ def firmware_cdc_interface_strings(repo_root: Path) -> list[str]:
 
 
 def firmware_usb_ids(repo_root: Path) -> tuple[int, int]:
-    text = (repo_root / "firmware" / "src" / "config" / "usb_identity.h").read_text(
-        encoding="utf-8"
-    )
+    text = (repo_root / "firmware" / "src" / "config" / "usb_identity.h").read_text(encoding="utf-8")
     return (
         parse_c_u_define(text, "PICO_UART_USB_VID"),
         parse_c_u_define(text, "PICO_UART_USB_PID"),
@@ -106,9 +100,7 @@ def is_lab_placeholder_identity(vid: int, pid: int) -> bool:
 
 def firmware_hid_report_count(repo_root: Path, report_id: int) -> int:
     """Parse Report Count for a HID report ID from usb_descriptors.c."""
-    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(
-        encoding="utf-8"
-    )
+    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(encoding="utf-8")
     # Match the Report ID item, then the following Report Count in the same report.
     match = re.search(
         rf"0x85,\s*0x{report_id:02X}\s*,.*?0x95,\s*(0x[0-9A-Fa-f]+)",
@@ -155,9 +147,7 @@ def firmware_hid_interface_number(repo_root: Path) -> int:
     ITF_NUM_CDC0 is explicitly 0. Later enumerators increment by one, so the
     HID interface number is its position in usb_interface_number_t.
     """
-    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(
-        encoding="utf-8"
-    )
+    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(encoding="utf-8")
     match = re.search(
         r"typedef enum \{(?P<body>.*?)\}\s*usb_interface_number_t\s*;",
         text,
@@ -175,9 +165,7 @@ def firmware_hid_interface_number(repo_root: Path) -> int:
 
 def firmware_uart_board_ports(repo_root: Path) -> list[dict[str, object]]:
     """Parse TX/RX pins and HW flow-control defaults from uart_board.c."""
-    text = (repo_root / "firmware" / "src" / "board" / "uart_board.c").read_text(
-        encoding="utf-8"
-    )
+    text = (repo_root / "firmware" / "src" / "board" / "uart_board.c").read_text(encoding="utf-8")
     ports: list[dict[str, object]] = []
     for match in re.finditer(
         r"\{\s*\.info\s*=\s*\{(.*?)\n\s*\},\s*"
@@ -187,9 +175,7 @@ def firmware_uart_board_ports(repo_root: Path) -> list[dict[str, object]]:
     ):
         info_body, backend_kind, backend_body = match.groups()
         id_match = re.search(r"\.id\s*=\s*(UART_PORT_\d+)", info_body)
-        backend_match = re.search(
-            r"\.backend\s*=\s*(UART_DRIVER_BACKEND_\w+)", info_body
-        )
+        backend_match = re.search(r"\.backend\s*=\s*(UART_DRIVER_BACKEND_\w+)", info_body)
         tx_match = re.search(r"\.tx_pin\s*=\s*(\d+)u", info_body)
         rx_match = re.search(r"\.rx_pin\s*=\s*(\d+)u", info_body)
         if not all((id_match, backend_match, tx_match, rx_match)):

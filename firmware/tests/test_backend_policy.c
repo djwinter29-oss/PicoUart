@@ -94,8 +94,7 @@ void test_worker_heartbeat_fresh_on_increment(void)
     uint32_t last = 4u;
     uint32_t last_change_ms = 100u;
 
-    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(5u, &last, 2500u, &last_change_ms,
-                                                    UART_WORKER_HEARTBEAT_STALE_MS));
+    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(5u, &last, 2500u, &last_change_ms, UART_WORKER_HEARTBEAT_STALE_MS));
     TEST_ASSERT_EQUAL_UINT32(5u, last);
     TEST_ASSERT_EQUAL_UINT32(2500u, last_change_ms);
 }
@@ -105,10 +104,9 @@ void test_worker_heartbeat_stale_when_silent(void)
     uint32_t last = 9u;
     uint32_t last_change_ms = 1000u;
 
-    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(9u, &last, 2999u, &last_change_ms,
-                                                    UART_WORKER_HEARTBEAT_STALE_MS));
-    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(9u, &last, 3000u, &last_change_ms,
-                                                     UART_WORKER_HEARTBEAT_STALE_MS));
+    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(9u, &last, 2999u, &last_change_ms, UART_WORKER_HEARTBEAT_STALE_MS));
+    TEST_ASSERT_FALSE(
+        uart_worker_heartbeat_is_fresh(9u, &last, 3000u, &last_change_ms, UART_WORKER_HEARTBEAT_STALE_MS));
     TEST_ASSERT_EQUAL_UINT32(9u, last);
     TEST_ASSERT_EQUAL_UINT32(1000u, last_change_ms);
 }
@@ -118,10 +116,9 @@ void test_worker_heartbeat_boot_window_is_fresh(void)
     uint32_t last = 0u;
     uint32_t last_change_ms = 0u;
 
-    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(0u, &last, 1999u, &last_change_ms,
-                                                    UART_WORKER_HEARTBEAT_STALE_MS));
-    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(0u, &last, 2000u, &last_change_ms,
-                                                     UART_WORKER_HEARTBEAT_STALE_MS));
+    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(0u, &last, 1999u, &last_change_ms, UART_WORKER_HEARTBEAT_STALE_MS));
+    TEST_ASSERT_FALSE(
+        uart_worker_heartbeat_is_fresh(0u, &last, 2000u, &last_change_ms, UART_WORKER_HEARTBEAT_STALE_MS));
 }
 
 void test_worker_heartbeat_handles_timestamp_wrap(void)
@@ -129,10 +126,8 @@ void test_worker_heartbeat_handles_timestamp_wrap(void)
     uint32_t last = 12u;
     uint32_t last_change_ms = UINT32_MAX - 100u;
 
-    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(12u, &last, 50u, &last_change_ms,
-                                                    200u));
-    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(12u, &last, 150u, &last_change_ms,
-                                                     200u));
+    TEST_ASSERT_TRUE(uart_worker_heartbeat_is_fresh(12u, &last, 50u, &last_change_ms, 200u));
+    TEST_ASSERT_FALSE(uart_worker_heartbeat_is_fresh(12u, &last, 150u, &last_change_ms, 200u));
 }
 
 void test_worker_heartbeat_rejects_null_state(void)

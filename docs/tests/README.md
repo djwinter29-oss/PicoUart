@@ -1,8 +1,7 @@
 # Test Documentation
 
-This directory separates automated validation from physical hardware
-qualification. Use the smallest applicable level first and do not treat a
-partial hardware run as a full pass.
+This directory separates automated validation from physical hardware qualification. Use the smallest applicable level
+first and do not treat a partial hardware run as a full pass.
 
 ## Test Levels
 
@@ -19,13 +18,13 @@ flowchart TD
     Performance -->|fail or partial| Diagnose
 ```
 
-| Level | Environment | Primary purpose | Result authority |
-| --- | --- | --- | --- |
-| Host tests | Native host | Pure policies, rings, claims, controls, adapter contract, facade guards | `ctest` result |
-| Firmware build | Pico SDK/toolchain | Compile/link both RP2040 and RP2350 targets | Build artifacts |
-| Functional HIL | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health | Functional result entry |
-| Performance HIL | Same fixture | Throughput, integrity, concurrency, soak, overflow behavior | Performance result entry |
-| Release HIL | Exact packaged artifacts | Qualification of artifacts intended for publication | Release checklist + hashes |
+| Level           | Environment                     | Primary purpose                                                         | Result authority           |
+| --------------- | ------------------------------- | ----------------------------------------------------------------------- | -------------------------- |
+| Host tests      | Native host                     | Pure policies, rings, claims, controls, adapter contract, facade guards | `ctest` result             |
+| Firmware build  | Pico SDK/toolchain              | Compile/link both RP2040 and RP2350 targets                             | Build artifacts            |
+| Functional HIL  | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health           | Functional result entry    |
+| Performance HIL | Same fixture                    | Throughput, integrity, concurrency, soak, overflow behavior             | Performance result entry   |
+| Release HIL     | Exact packaged artifacts        | Qualification of artifacts intended for publication                     | Release checklist + hashes |
 
 ## Automated Validation
 
@@ -39,9 +38,8 @@ tools/firmware/build.sh --board pico2
 git diff --check
 ```
 
-The host suite is not a hardware test. It does not prove DMA timing, USB
-enumeration, multicore scheduling under load, physical UART signaling, or
-RTS/CTS behavior.
+The host suite is not a hardware test. It does not prove DMA timing, USB enumeration, multicore scheduling under load,
+physical UART signaling, or RTS/CTS behavior.
 
 ## Hardware Test Sequence
 
@@ -53,7 +51,8 @@ RTS/CTS behavior.
 
 ## Recorded Hardware Reports
 
-- [2026-10-01 RP2040 validation](hardware-validation-2026-10-01.md): staged functional and throughput results, including the post-test CDC5 overrun caveat.
+- [2026-10-01 RP2040 validation](hardware-validation-2026-10-01.md): staged functional and throughput results, including
+  the post-test CDC5 overrun caveat.
 
 ## Result Semantics
 
@@ -61,8 +60,7 @@ RTS/CTS behavior.
 - `FAIL`: a required case failed or produced unexplained loss/error.
 - `PARTIAL`: a case, link, board, or required artifact was intentionally omitted.
 
-A `PARTIAL` result is useful diagnostic evidence, but it cannot qualify the
-full six-port design or a release.
+A `PARTIAL` result is useful diagnostic evidence, but it cannot qualify the full six-port design or a release.
 
 ## Evidence Minimum
 

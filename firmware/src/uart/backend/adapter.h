@@ -20,14 +20,14 @@
 typedef struct {
     uint32_t controller_tx_bytes; /**< Bytes transmitted by the backend. */
     uint32_t controller_rx_bytes; /**< Bytes received by the backend. */
-    uint32_t rx_error_count; /**< Receive-status errors observed by the backend. */
+    uint32_t rx_error_count;      /**< Receive-status errors observed by the backend. */
 } uart_backend_stats_t;
 
 /**
  * @brief Tagged storage for one configured HW or PIO backend instance.
  */
 typedef union {
-    hw_uart_driver_t hw; /**< Hardware UART backend storage. */
+    hw_uart_driver_t hw;   /**< Hardware UART backend storage. */
     pio_uart_driver_t pio; /**< PIO UART backend storage. */
 } uart_backend_instance_t;
 
@@ -38,21 +38,21 @@ typedef union {
  * port's tagged backend union. It is private to the UART implementation.
  */
 typedef struct {
-    bool (*is_initialized)(const uart_backend_instance_t *instance); /**< Return backend ready state. */
-    bool (*init)(uart_backend_instance_t *instance); /**< Initialize one backend. */
-    void (*deinit)(uart_backend_instance_t *instance); /**< Deinitialize one backend. */
+    bool (*is_initialized)(const uart_backend_instance_t *instance);         /**< Return backend ready state. */
+    bool (*init)(uart_backend_instance_t *instance);                         /**< Initialize one backend. */
+    void (*deinit)(uart_backend_instance_t *instance);                       /**< Deinitialize one backend. */
     void (*poll)(uart_backend_instance_t *instance, bool tx_launch_allowed); /**< Advance worker-owned I/O. */
-    ring_buffer_t *(*rx_ring)(uart_backend_instance_t *instance); /**< Return the UART-to-USB ring. */
-    ring_buffer_t *(*tx_ring)(uart_backend_instance_t *instance); /**< Return the USB-to-UART ring. */
+    ring_buffer_t *(*rx_ring)(uart_backend_instance_t *instance);            /**< Return the UART-to-USB ring. */
+    ring_buffer_t *(*tx_ring)(uart_backend_instance_t *instance);            /**< Return the USB-to-UART ring. */
     bool (*line_coding_matches)(const uart_backend_instance_t *instance,
-                                const uart_driver_line_coding_t *line_coding); /**< Compare active line coding. */
+                                const uart_driver_line_coding_t *line_coding);    /**< Compare active line coding. */
     bool (*line_coding_acceptable)(const uart_driver_line_coding_t *line_coding); /**< Check permanent support. */
     bool (*set_line_coding)(uart_backend_instance_t *instance,
                             const uart_driver_line_coding_t *line_coding); /**< Apply a safe line-coding change. */
     bool (*rx_snapshot_is_current)(const uart_backend_instance_t *instance,
-                                   uint32_t consumer_sequence); /**< Validate a copied RX span. */
-    void (*clear_rx_error_baseline)(uart_backend_instance_t *instance); /**< Discard startup RX errors. */
-    uint32_t (*baud_rate)(const uart_backend_instance_t *instance); /**< Return active baud rate. */
+                                   uint32_t consumer_sequence);             /**< Validate a copied RX span. */
+    void (*clear_rx_error_baseline)(uart_backend_instance_t *instance);     /**< Discard startup RX errors. */
+    uint32_t (*baud_rate)(const uart_backend_instance_t *instance);         /**< Return active baud rate. */
     uart_backend_stats_t (*stats)(const uart_backend_instance_t *instance); /**< Return backend counters. */
 } uart_backend_ops_t;
 
@@ -63,20 +63,11 @@ typedef struct {
  */
 static inline bool uart_backend_ops_is_complete(const uart_backend_ops_t *ops)
 {
-    return (ops != NULL) &&
-           (ops->is_initialized != NULL) &&
-           (ops->init != NULL) &&
-           (ops->deinit != NULL) &&
-           (ops->poll != NULL) &&
-           (ops->rx_ring != NULL) &&
-           (ops->tx_ring != NULL) &&
-           (ops->line_coding_matches != NULL) &&
-           (ops->line_coding_acceptable != NULL) &&
-           (ops->set_line_coding != NULL) &&
-           (ops->rx_snapshot_is_current != NULL) &&
-           (ops->clear_rx_error_baseline != NULL) &&
-           (ops->baud_rate != NULL) &&
-           (ops->stats != NULL);
+    return (ops != NULL) && (ops->is_initialized != NULL) && (ops->init != NULL) && (ops->deinit != NULL) &&
+           (ops->poll != NULL) && (ops->rx_ring != NULL) && (ops->tx_ring != NULL) &&
+           (ops->line_coding_matches != NULL) && (ops->line_coding_acceptable != NULL) &&
+           (ops->set_line_coding != NULL) && (ops->rx_snapshot_is_current != NULL) &&
+           (ops->clear_rx_error_baseline != NULL) && (ops->baud_rate != NULL) && (ops->stats != NULL);
 }
 
 /**

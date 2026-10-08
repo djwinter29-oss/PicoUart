@@ -16,10 +16,10 @@
  * @brief Deferred worker-owned line-coding state for one logical UART port.
  */
 typedef struct {
-    bool pending; /**< True while a line-coding change is waiting to be applied. */
-    uint32_t control_generation; /**< Host request generation that owns @ref pending. */
-    uint32_t tx_boundary_sequence; /**< Last TX byte admitted under the old line format. */
-    absolute_time_t deadline; /**< Absolute time when a deferred apply must succeed or fail. */
+    bool pending;                          /**< True while a line-coding change is waiting to be applied. */
+    uint32_t control_generation;           /**< Host request generation that owns @ref pending. */
+    uint32_t tx_boundary_sequence;         /**< Last TX byte admitted under the old line format. */
+    absolute_time_t deadline;              /**< Absolute time when a deferred apply must succeed or fail. */
     uart_driver_line_coding_t line_coding; /**< Latest requested line-coding payload. */
 } uart_control_pending_t;
 
@@ -27,15 +27,15 @@ typedef struct {
  * @brief Private state owned by the UART control plane.
  */
 typedef struct {
-    uart_runtime_port_t *ports; /**< Logical UART runtime ports. */
-    uart_control_mailbox_t *mailboxes; /**< One core-0 to worker request slot per port. */
+    uart_runtime_port_t *ports;               /**< Logical UART runtime ports. */
+    uart_control_mailbox_t *mailboxes;        /**< One core-0 to worker request slot per port. */
     uart_control_pending_t *pending_controls; /**< Worker-owned deferred requests. */
-    bool *soft_pending_controls; /**< Core-0 pending-request flags. */
-    uint32_t *control_generations; /**< Latest host generation per port. */
-    volatile uint8_t *status_flags; /**< Shared per-port status flags. */
-    spin_lock_t *status_lock; /**< Lock protecting shared control status. */
-    volatile uint32_t *stats_sequence; /**< Per-port telemetry snapshot sequences. */
-    size_t *poll_start_index; /**< Next port to service first. */
+    bool *soft_pending_controls;              /**< Core-0 pending-request flags. */
+    uint32_t *control_generations;            /**< Latest host generation per port. */
+    volatile uint8_t *status_flags;           /**< Shared per-port status flags. */
+    spin_lock_t *status_lock;                 /**< Lock protecting shared control status. */
+    volatile uint32_t *stats_sequence;        /**< Per-port telemetry snapshot sequences. */
+    size_t *poll_start_index;                 /**< Next port to service first. */
 } uart_control_plane_t;
 
 /**
@@ -50,7 +50,6 @@ void uart_control_plane_service(uart_control_plane_t *control_plane);
  * @param port_id Logical UART port.
  * @return `true` when launching a new TX transfer is safe.
  */
-bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane,
-                                          uart_port_id_t port_id);
+bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane, uart_port_id_t port_id);
 
 #endif

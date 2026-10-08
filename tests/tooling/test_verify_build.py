@@ -87,9 +87,7 @@ def test_pico2_uf2_accepts_separate_absolute_and_firmware_sequences() -> None:
         verifier.UF2_FAMILY_IDS["pico2"],
     )
 
-    verifier._verify_uf2_payload(
-        absolute + firmware, binary, verifier.UF2_FAMILY_IDS["pico2"]
-    )
+    verifier._verify_uf2_payload(absolute + firmware, binary, verifier.UF2_FAMILY_IDS["pico2"])
 
 
 def test_uf2_rejects_wrong_family() -> None:

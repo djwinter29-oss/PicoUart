@@ -38,8 +38,7 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
     (void)control_plane;
 }
 
-bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane,
-                                          uart_port_id_t port_id)
+bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane, uart_port_id_t port_id)
 {
     (void)control_plane;
     (void)port_id;

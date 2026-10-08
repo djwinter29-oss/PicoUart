@@ -18,9 +18,14 @@ def load_pair(repo_root, monkeypatch):
     return module
 
 
-@pytest.mark.parametrize(("outcome", "expected"), [
-    ("pass", 0), ("fail", 1), ("setup", 2),
-])
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [
+        ("pass", 0),
+        ("fail", 1),
+        ("setup", 2),
+    ],
+)
 def test_cli_preserves_failure_across_later_success(repo_root, monkeypatch, capsys, outcome, expected):
     pair = load_pair(repo_root, monkeypatch)
     monkeypatch.setattr(sys, "argv", ["pair", "stage2", "--rates", "115200", "--runs", "2"])
@@ -41,15 +46,27 @@ def test_cli_preserves_failure_across_later_success(repo_root, monkeypatch, caps
     assert {"pass": "PASS", "fail": "FAIL", "setup": "SETUP_FAIL"}[outcome] in output
 
 
-@pytest.mark.parametrize(("option", "value"), [
-    ("--rates", ""), ("--rates", "abc"), ("--rates", "115200,"),
-    ("--rates", "0"), ("--rates", "-1"),
-    ("--runs", "0"), ("--runs", "-1"),
-    ("--duration", "0"), ("--duration", "-1"),
-    ("--duration", "nan"), ("--duration", "inf"),
-    ("--settle", "-1"), ("--settle", "nan"), ("--settle", "inf"),
-    ("--payload", "0"), ("--payload", "-1"),
-])
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--rates", ""),
+        ("--rates", "abc"),
+        ("--rates", "115200,"),
+        ("--rates", "0"),
+        ("--rates", "-1"),
+        ("--runs", "0"),
+        ("--runs", "-1"),
+        ("--duration", "0"),
+        ("--duration", "-1"),
+        ("--duration", "nan"),
+        ("--duration", "inf"),
+        ("--settle", "-1"),
+        ("--settle", "nan"),
+        ("--settle", "inf"),
+        ("--payload", "0"),
+        ("--payload", "-1"),
+    ],
+)
 def test_invalid_cli_settings_fail_before_hardware(repo_root, monkeypatch, option, value):
     pair = load_pair(repo_root, monkeypatch)
     args = ["pair", "stage2"]

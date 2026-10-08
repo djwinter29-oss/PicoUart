@@ -22,8 +22,7 @@
  * validates the ring-buffer and UART topology contracts, starts the UART
  * worker, and finally initializes the USB CDC/HID services. A failed
  * unrecoverable startup check intentionally halts until the watchdog resets
- * the board. During normal operation, the watchdog is fed only while the
- * UART worker heartbeat remains fresh.
+ * the board. During normal operation, the watchdog is fed only while the UART worker heartbeat remains fresh.
  *
  * @return Never returns.
  */

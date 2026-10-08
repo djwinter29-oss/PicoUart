@@ -23,20 +23,34 @@ def build_functional_command(arguments: argparse.Namespace) -> list[str]:
     command = [
         sys.executable,
         str(SCRIPT_DIR / "run_functional_test.py"),
-        "--pico-cdc0", arguments.pico_cdc0,
-        "--debug-probe", arguments.debug_probe,
-        "--pico-cdc1", arguments.pico_cdc1,
-        "--pico-cdc2", arguments.pico_cdc2,
-        "--pico-cdc3", arguments.pico_cdc3,
-        "--pico-cdc4", arguments.pico_cdc4,
-        "--pico-cdc5", arguments.pico_cdc5,
-        "--baud", str(arguments.functional_baud),
-        "--payload-bytes", str(arguments.functional_payload_bytes),
-        "--timeout", str(arguments.timeout),
-        "--board", arguments.board,
-        "--tester", arguments.tester,
-        "--firmware-version", arguments.firmware_version,
-        "--firmware-commit", arguments.firmware_commit,
+        "--pico-cdc0",
+        arguments.pico_cdc0,
+        "--debug-probe",
+        arguments.debug_probe,
+        "--pico-cdc1",
+        arguments.pico_cdc1,
+        "--pico-cdc2",
+        arguments.pico_cdc2,
+        "--pico-cdc3",
+        arguments.pico_cdc3,
+        "--pico-cdc4",
+        arguments.pico_cdc4,
+        "--pico-cdc5",
+        arguments.pico_cdc5,
+        "--baud",
+        str(arguments.functional_baud),
+        "--payload-bytes",
+        str(arguments.functional_payload_bytes),
+        "--timeout",
+        str(arguments.timeout),
+        "--board",
+        arguments.board,
+        "--tester",
+        arguments.tester,
+        "--firmware-version",
+        arguments.firmware_version,
+        "--firmware-commit",
+        arguments.firmware_commit,
         "--no-record",
     ]
     if getattr(arguments, "artifact", None):
@@ -48,20 +62,34 @@ def build_performance_command(arguments: argparse.Namespace) -> list[str]:
     command = [
         sys.executable,
         str(SCRIPT_DIR / "run_performance_test.py"),
-        "--uart0-pico", arguments.pico_cdc0,
-        "--uart0-peer", arguments.debug_probe,
-        "--uart2", arguments.pico_cdc2,
-        "--uart3", arguments.pico_cdc3,
-        "--uart5", arguments.pico_cdc5,
-        "--uart0-baud", str(arguments.uart0_baud),
-        "--rates", arguments.rates,
-        "--duration", str(arguments.duration),
-        "--payload-bytes", str(arguments.performance_payload_bytes),
-        "--timeout", str(arguments.timeout),
-        "--board", arguments.board,
-        "--tester", arguments.tester,
-        "--firmware-version", arguments.firmware_version,
-        "--firmware-commit", arguments.firmware_commit,
+        "--uart0-pico",
+        arguments.pico_cdc0,
+        "--uart0-peer",
+        arguments.debug_probe,
+        "--uart2",
+        arguments.pico_cdc2,
+        "--uart3",
+        arguments.pico_cdc3,
+        "--uart5",
+        arguments.pico_cdc5,
+        "--uart0-baud",
+        str(arguments.uart0_baud),
+        "--rates",
+        arguments.rates,
+        "--duration",
+        str(arguments.duration),
+        "--payload-bytes",
+        str(arguments.performance_payload_bytes),
+        "--timeout",
+        str(arguments.timeout),
+        "--board",
+        arguments.board,
+        "--tester",
+        arguments.tester,
+        "--firmware-version",
+        arguments.firmware_version,
+        "--firmware-commit",
+        arguments.firmware_commit,
         "--no-record",
     ]
     if getattr(arguments, "artifact", None):
@@ -76,8 +104,7 @@ def build_performance_command(arguments: argparse.Namespace) -> list[str]:
 def run_child(label: str, command: list[str]) -> tuple[int, str]:
     command_text = shlex.join(command)
     print(f"RUN {label}: {command_text}")
-    process = subprocess.Popen(command, cwd=REPO_ROOT, stdin=None,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    process = subprocess.Popen(command, cwd=REPO_ROOT, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     chunks: list[bytes] = []
     assert process.stdout is not None
     while True:
@@ -92,16 +119,17 @@ def run_child(label: str, command: list[str]) -> tuple[int, str]:
     return returncode, f"Command: {command_text}\n{output}"
 
 
-def format_result_entry(arguments: argparse.Namespace,
-                        timestamp: str,
-                        functional: tuple[int, str] | None,
-                        performance: tuple[int, str] | None) -> str:
+def format_result_entry(
+    arguments: argparse.Namespace,
+    timestamp: str,
+    functional: tuple[int, str] | None,
+    performance: tuple[int, str] | None,
+) -> str:
     functional_code = functional[0] if functional else None
     performance_code = performance[0] if performance else None
     if any(code not in (None, 0) for code in (functional_code, performance_code)):
         overall = "FAIL"
-    elif (functional_code is None or performance_code is None or
-          not getattr(arguments, "full_fixture", False)):
+    elif functional_code is None or performance_code is None or not getattr(arguments, "full_fixture", False):
         overall = "PARTIAL"
     elif functional_code == 0 and performance_code == 0:
         overall = "PASS"
@@ -147,8 +175,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--functional-baud", type=int, default=115200)
     parser.add_argument("--functional-payload-bytes", type=int, default=64)
     parser.add_argument("--uart0-baud", type=int, default=115200)
-    parser.add_argument("--rates", default="115200",
-                        help="Concurrent full-fixture rate; use individual tests for higher baud rates")
+    parser.add_argument(
+        "--rates", default="115200", help="Concurrent full-fixture rate; use individual tests for higher baud rates"
+    )
     parser.add_argument("--duration", type=float, default=10.0)
     parser.add_argument("--performance-payload-bytes", type=int, default=1024)
     parser.add_argument("--timeout", type=float, default=3.0)
@@ -156,8 +185,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--tester", default="unknown")
     parser.add_argument("--firmware-version", default="unknown")
     parser.add_argument("--firmware-commit", default="unknown")
-    parser.add_argument("--artifact", type=Path,
-                        help="flashed ELF/UF2 artifact to hash into the evidence")
+    parser.add_argument("--artifact", type=Path, help="flashed ELF/UF2 artifact to hash into the evidence")
     parser.add_argument("--results-file", type=Path, default=DEFAULT_RESULTS_FILE)
     parser.add_argument("--skip-functional", action="store_true")
     parser.add_argument("--skip-performance", action="store_true")
@@ -185,7 +213,8 @@ def main() -> int:
         functional = run_child("functional test", build_functional_command(arguments))
 
     if not arguments.skip_performance and (
-            functional is None or functional[0] == 0 or arguments.continue_after_functional_failure):
+        functional is None or functional[0] == 0 or arguments.continue_after_functional_failure
+    ):
         performance = run_child("performance test", build_performance_command(arguments))
     elif not arguments.skip_performance:
         print("SKIP performance test: functional test failed", file=sys.stderr)

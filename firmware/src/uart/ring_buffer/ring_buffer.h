@@ -23,21 +23,20 @@ typedef struct {
  *
  * @note Shared cursors rely on aligned 32-bit accesses and `__dmb()` barriers
  * provided by the Pico SDK target. This is not a portable C11 thread-safety
- * primitive; use this type only with its documented single-producer,
- * single-consumer ownership contract.
+ * primitive; use this type only with its documented single-producer, single-consumer ownership contract.
  */
 typedef struct {
-    uint8_t *storage; /**< Caller-owned buffer storage. */
-    uint32_t size; /**< Total ring size in bytes. */
-    uint32_t mask; /**< Power-of-two mask used for wrap handling. */
-    volatile uint32_t producer; /**< Monotonic sequence written only by the producer. */
-    volatile uint32_t consumer; /**< Monotonic sequence written only by the consumer. */
-    volatile uint32_t high_watermark; /**< Largest observed occupancy. */
-    volatile uint32_t overflow_count; /**< Bytes discarded by consumer-side overrun recovery. */
+    uint8_t *storage;                    /**< Caller-owned buffer storage. */
+    uint32_t size;                       /**< Total ring size in bytes. */
+    uint32_t mask;                       /**< Power-of-two mask used for wrap handling. */
+    volatile uint32_t producer;          /**< Monotonic sequence written only by the producer. */
+    volatile uint32_t consumer;          /**< Monotonic sequence written only by the consumer. */
+    volatile uint32_t high_watermark;    /**< Largest observed occupancy. */
+    volatile uint32_t overflow_count;    /**< Bytes discarded by consumer-side overrun recovery. */
     uint32_t producer_reserved_sequence; /**< Producer sequence captured for the current writable span. */
-    uint32_t producer_reserved_count; /**< Bytes available in the current writable span. */
+    uint32_t producer_reserved_count;    /**< Bytes available in the current writable span. */
     uint32_t consumer_reserved_sequence; /**< Consumer sequence captured for the current readable span. */
-    uint32_t consumer_reserved_count; /**< Bytes available in the current readable span. */
+    uint32_t consumer_reserved_count;    /**< Bytes available in the current readable span. */
 } ring_buffer_t;
 
 /**
@@ -129,8 +128,7 @@ bool ring_buffer_commit_consumed(ring_buffer_t *ring, size_t count);
  * Call this only after copying a span to private storage and confirming it with
  * @ref ring_buffer_read_span_is_current. If the producer wraps while the copied
  * snapshot is being delivered, those accepted bytes remain valid; this helper
- * advances past them and records only subsequently overwritten, undelivered
- * bytes as overflow.
+ * advances past them and records only subsequently overwritten, undelivered bytes as overflow.
  */
 bool ring_buffer_commit_snapshot_consumed(ring_buffer_t *ring, size_t count);
 

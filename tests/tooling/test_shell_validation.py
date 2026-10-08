@@ -21,16 +21,16 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX executabl
 # Ceiling: POSIX-only; if Windows ever needs signal coverage, add a parallel table
 # keyed off sys.platform using Windows-specific signals (e.g. CTRL_C_EVENT).
 SIGNAL_EXIT_CASES = (
-    [(signal.SIGHUP, 129), (signal.SIGINT, 130), (signal.SIGTERM, 143)]
-    if sys.platform != "win32"
-    else []
+    [(signal.SIGHUP, 129), (signal.SIGINT, 130), (signal.SIGTERM, 143)] if sys.platform != "win32" else []
 )
 
 
 def test_static_analysis_covers_every_firmware_source_from_any_cwd(repo_root, tmp_path):
     shim = tmp_path / "cppcheck"
     log = tmp_path / "cppcheck.json"
-    shim.write_text(f"#!{sys.executable}\n" + '''import json, os, sys
+    shim.write_text(
+        f"#!{sys.executable}\n"
+        + """import json, os, sys
 from pathlib import Path
 inputs = [arg for arg in sys.argv[1:] if arg.startswith("firmware/")]
 files = []
@@ -44,10 +44,15 @@ for arg in inputs:
         files.append(str(path))
 Path(os.environ["ANALYSIS_LOG"]).write_text(json.dumps({"cwd": os.getcwd(), "files": files}))
 sys.exit(int(os.environ["ANALYSIS_STATUS"]))
-''')
+"""
+    )
     shim.chmod(0o700)
-    env = {**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
-           "ANALYSIS_LOG": str(log), "ANALYSIS_STATUS": "0"}
+    env = {
+        **os.environ,
+        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+        "ANALYSIS_LOG": str(log),
+        "ANALYSIS_STATUS": "0",
+    }
     command = ["sh", str(repo_root / "tools/validation/static-analyze.sh")]
     completed = subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True)
     assert completed.returncode == 0, completed.stderr
@@ -74,12 +79,17 @@ def test_host_runner_signal_exits_and_cleans_fallback(repo_root, tmp_path, shell
 @pytest.mark.parametrize("phase", ["full", "fallback", "pytest"])
 def test_host_runner_sigint_without_gnu_env_exits_and_cleans_fallback(repo_root, tmp_path, shell, phase):
     _assert_host_runner_signal_exit(
-        repo_root, tmp_path, shell, phase, signal.SIGINT, 130, force_env_fallback=True,
+        repo_root,
+        tmp_path,
+        shell,
+        phase,
+        signal.SIGINT,
+        130,
+        force_env_fallback=True,
     )
 
 
-def _assert_host_runner_signal_exit(repo_root, tmp_path, shell, phase, signum, status,
-                                    force_env_fallback=False):
+def _assert_host_runner_signal_exit(repo_root, tmp_path, shell, phase, signum, status, force_env_fallback=False):
     if shutil.which(shell) is None:
         pytest.skip(f"{shell} is not installed")
     shim = tmp_path / "python-shim"
@@ -88,14 +98,19 @@ def _assert_host_runner_signal_exit(repo_root, tmp_path, shell, phase, signum, s
     env_probe_file = tmp_path / "env-probe.json"
     if force_env_fallback:
         env_shim = tmp_path / "env"
-        env_shim.write_text(f"#!{sys.executable}\n" + '''import json, os, sys
+        env_shim.write_text(
+            f"#!{sys.executable}\n"
+            + """import json, os, sys
 from pathlib import Path
 Path(os.environ["ENV_PROBE_FILE"]).write_text(json.dumps(sys.argv[1:]))
 # Emulate BSD/MSYS env rejecting the GNU-only option, even on a GNU host.
 sys.exit(1)
-''')
+"""
+        )
         env_shim.chmod(0o700)
-    shim.write_text(f"#!{sys.executable}\n" + '''import json, os, signal, sys, time
+    shim.write_text(
+        f"#!{sys.executable}\n"
+        + """import json, os, signal, sys, time
 from pathlib import Path
 args = sys.argv[1:]
 if args == ["-m", "pip", "--version"]:
@@ -116,16 +131,25 @@ if phase == os.environ["SIGNAL_PHASE"]:
     while True:
         time.sleep(1)
 sys.exit(1 if phase == "full" else 0)
-''')
+"""
+    )
     shim.chmod(0o700)
     process = subprocess.Popen(
         [shell, str(repo_root / "tools/validation/run-host-tests.sh"), "--skip-c"],
         cwd=tmp_path,
-        env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
-             "SIGNAL_PHASE": phase, "CHILD_PID_FILE": str(child_pid_file), "TMPDIR": str(tmp_path),
-             "ENV_PROBE_FILE": str(env_probe_file),
-             "PATH": f"{shim.parent}:{os.environ.get('PATH', '')}"},
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        env={
+            **os.environ,
+            "PYTHON_EXE": str(shim),
+            "CALL_LOG": str(log),
+            "SIGNAL_PHASE": phase,
+            "CHILD_PID_FILE": str(child_pid_file),
+            "TMPDIR": str(tmp_path),
+            "ENV_PROBE_FILE": str(env_probe_file),
+            "PATH": f"{shim.parent}:{os.environ.get('PATH', '')}",
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     try:
         deadline = time.monotonic() + 5
@@ -150,7 +174,8 @@ sys.exit(1 if phase == "full" else 0)
             os.kill(child_pid, 0)
         calls = [json.loads(line) for line in log.read_text().splitlines()]
         assert [call["phase"] for call in calls] == {
-            "full": ["full"], "fallback": ["full", "fallback"],
+            "full": ["full"],
+            "fallback": ["full", "fallback"],
             "pytest": ["full", "fallback", "pytest"],
         }[phase]
         if phase == "full":
@@ -209,21 +234,18 @@ def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase, signal_
     # later reaped the same child.
     publish_marker = '        "$@" &\n    fi\n    CURRENT_CHILD_PID=$!\n'
     assert original.count(publish_marker) == 1, "publication marker not found; run-host-tests.sh changed shape"
-    publish_injected = (
-        '        "$@" &\n    fi\n'
-        f'    echo "$!" > {shlex.quote(str(child_pid_file))}\n'
-    )
+    publish_injected = f'        "$@" &\n    fi\n    echo "$!" > {shlex.quote(str(child_pid_file))}\n'
     if phase == "pre_publication":
         # Inject the trap handler at the exact race window after '$!' names
         # the child but before CURRENT_CHILD_PID is published.
         publish_injected += f"    forward_signal {signal_name} {status}\n"
-    publish_injected += '    CURRENT_CHILD_PID=$!\n'
+    publish_injected += "    CURRENT_CHILD_PID=$!\n"
     instrumented = original.replace(publish_marker, publish_injected)
 
     if phase == "pre_launch":
         # Inject the trap handler before the command is backgrounded, when no
         # child or '$!' exists yet.
-        launch_marker = '    LAUNCH_IN_PROGRESS=1\n'
+        launch_marker = "    LAUNCH_IN_PROGRESS=1\n"
         assert instrumented.count(launch_marker) == 1, "launch marker not found; run-host-tests.sh changed shape"
         instrumented = instrumented.replace(
             launch_marker,
@@ -234,7 +256,9 @@ def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase, signal_
     # argument-parsing loop, instead of relying on any selftest bypass in the
     # production script.
     loop_marker = 'while [ "$#" -gt 0 ]; do'
-    assert instrumented.count(loop_marker) == 1, "argument-parsing loop marker not found; run-host-tests.sh changed shape"
+    assert instrumented.count(loop_marker) == 1, (
+        "argument-parsing loop marker not found; run-host-tests.sh changed shape"
+    )
     loop_injected = f'run_interruptible true\nexit "$?"\n{loop_marker}'
     instrumented = instrumented.replace(loop_marker, loop_injected)
 
@@ -245,7 +269,9 @@ def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase, signal_
     completed = subprocess.run(
         ["sh", str(instrumented_path)],
         env={**os.environ},
-        capture_output=True, text=True, timeout=10,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert completed.returncode == status, completed.stdout + completed.stderr
     # The command must still be launched in both windows (deferred signals do
@@ -261,7 +287,9 @@ def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase, signal_
 def test_interrupted_initial_pip_is_not_retried(repo_root, tmp_path, status):
     shim = tmp_path / "python-shim"
     log = tmp_path / "calls.txt"
-    shim.write_text(f"#!{sys.executable}\n" + '''import os, sys
+    shim.write_text(
+        f"#!{sys.executable}\n"
+        + """import os, sys
 from pathlib import Path
 args = sys.argv[1:]
 if args == ["-m", "pip", "--version"]:
@@ -269,15 +297,23 @@ if args == ["-m", "pip", "--version"]:
 with open(os.environ["CALL_LOG"], "a") as stream:
     stream.write(" ".join(args) + "\\n")
 sys.exit(int(os.environ["INSTALL_STATUS"]))
-''')
+"""
+    )
     shim.chmod(0o700)
     completed = subprocess.run(
         ["sh", str(repo_root / "tools/validation/run-host-tests.sh"), "--skip-c"],
         cwd=repo_root,
-        env={**os.environ, "PYTHON_EXE": str(shim), "CALL_LOG": str(log),
-             "INSTALL_STATUS": str(status), "TMPDIR": str(tmp_path),
-             "PATH": f"{shim.parent}:{os.environ.get('PATH', '')}"},
-        capture_output=True, text=True, timeout=10,
+        env={
+            **os.environ,
+            "PYTHON_EXE": str(shim),
+            "CALL_LOG": str(log),
+            "INSTALL_STATUS": str(status),
+            "TMPDIR": str(tmp_path),
+            "PATH": f"{shim.parent}:{os.environ.get('PATH', '')}",
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert completed.returncode == status
     assert len(log.read_text().splitlines()) == 1

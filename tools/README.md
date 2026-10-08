@@ -1,17 +1,16 @@
 # Repository Tools
 
-The `tools/` directory contains local build, test, hardware, and release helpers.
-Use the root [README](../README.md) as the project documentation index; this
-file only maps the tool categories.
+The `tools/` directory contains local build, test, hardware, and release helpers. Use the root [README](../README.md) as
+the project documentation index; this file only maps the tool categories.
 
 ## Categories
 
-| Directory | Purpose |
-| --- | --- |
-| `firmware/` | Pico SDK setup, firmware builds, and Debug Probe loading |
-| `hardware/` | Physical HIL runners and serial bridge/stress tools |
-| `host/` | Host Python environment setup |
-| `release/` | Release version, USB identity, and artifact verification |
+| Directory     | Purpose                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| `firmware/`   | Pico SDK setup, firmware builds, and Debug Probe loading                                         |
+| `hardware/`   | Physical HIL runners and serial bridge/stress tools                                              |
+| `host/`       | Host Python environment setup                                                                    |
+| `release/`    | Release version, USB identity, and artifact verification                                         |
 | `validation/` | Test runners, lock filtering, coverage helpers, syntax checks, static analysis, and smoke checks |
 
 ## Common Commands

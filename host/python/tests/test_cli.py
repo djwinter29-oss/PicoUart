@@ -21,9 +21,7 @@ from pico_uart.protocol import parse_status
         ("reset", "", "reset"),
     ],
 )
-def test_main_dispatches_board_commands(
-    monkeypatch, capsys, command, expected_output, expected_action
-):
+def test_main_dispatches_board_commands(monkeypatch, capsys, command, expected_output, expected_action):
     calls = []
 
     class FakeClient:
@@ -61,9 +59,7 @@ def test_main_dispatches_board_commands(
     assert calls == [("selectors", "board-1", None), expected_action]
 
 
-def test_main_status_text_retries_empty_reads_and_selects_device_path(
-    monkeypatch, capsys
-):
+def test_main_status_text_retries_empty_reads_and_selects_device_path(monkeypatch, capsys):
     status = parse_status(status_report_bytes(sequence=17))
     read_timeouts = []
 

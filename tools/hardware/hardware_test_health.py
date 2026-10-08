@@ -20,9 +20,7 @@ BAD_HEALTH_BITS = 0xCE  # init_failed, control_error, control_pending, rx_overru
 
 
 def _run_hid(*arguments: str) -> subprocess.CompletedProcess[str]:
-    python_path = os.pathsep.join(
-        part for part in (str(HOST_PYTHON_SRC), os.environ.get("PYTHONPATH", "")) if part
-    )
+    python_path = os.pathsep.join(part for part in (str(HOST_PYTHON_SRC), os.environ.get("PYTHONPATH", "")) if part)
     environment = {**os.environ, "PYTHONPATH": python_path}
     return subprocess.run(
         [sys.executable, "-m", HID_MODULE, *arguments],
@@ -40,10 +38,8 @@ def _collect_hid_health_once() -> dict:
     version = _run_hid("version")
     output = monitor.stdout + monitor.stderr
     overflow_output = overruns.stdout + overruns.stderr
-    channels = {int(index): int(flags, 16)
-                for index, flags in HEALTH_PATTERN.findall(output)}
-    overflow_counts = {int(index): int(value)
-                       for index, value in OVERRUN_PATTERN.findall(overflow_output)}
+    channels = {int(index): int(flags, 16) for index, flags in HEALTH_PATTERN.findall(output)}
+    overflow_counts = {int(index): int(value) for index, value in OVERRUN_PATTERN.findall(overflow_output)}
     errors = []
     if monitor.returncode != 0:
         errors.append(f"HID monitor failed: {output.strip()}")
@@ -86,8 +82,7 @@ def health_is_clean(snapshot: dict | None, baseline: dict | None = None) -> bool
         return False
     if len(snapshot["channels"]) != 6 or len(snapshot["overruns"]) != 6:
         return False
-    if any(not flags & READY_BIT or flags & BAD_HEALTH_BITS
-           for flags in snapshot["channels"].values()):
+    if any(not flags & READY_BIT or flags & BAD_HEALTH_BITS for flags in snapshot["channels"].values()):
         return False
     if baseline is not None:
         if baseline.get("error"):
@@ -104,10 +99,8 @@ def health_summary(snapshot: dict | None) -> str:
         return "not collected"
     if snapshot.get("error"):
         return "ERROR: " + snapshot["error"]
-    channels = ", ".join(f"cdc{index}=0x{flags:02x}"
-                          for index, flags in sorted(snapshot["channels"].items()))
-    overruns = ", ".join(f"cdc{index}={count}"
-                          for index, count in sorted(snapshot["overruns"].items()))
+    channels = ", ".join(f"cdc{index}=0x{flags:02x}" for index, flags in sorted(snapshot["channels"].items()))
+    overruns = ", ".join(f"cdc{index}={count}" for index, count in sorted(snapshot["overruns"].items()))
     firmware_version = snapshot.get("firmware_version") or "unknown"
     return f"health [{channels}]; overruns [{overruns}]; firmware={firmware_version}"
 
@@ -116,10 +109,12 @@ def health_evidence(snapshot: dict | None) -> str:
     """Return the raw HID command evidence used by a health decision."""
     if snapshot is None:
         return "HID health: not collected\n"
-    return (f"HID health summary: {health_summary(snapshot)}\n"
-            f"HID monitor exit={snapshot.get('monitor_returncode')}\n"
-            f"{snapshot.get('monitor_output', '')}"
-            f"HID overruns exit={snapshot.get('overruns_returncode')}\n"
-            f"{snapshot.get('overruns_output', '')}"
-            f"HID version exit={snapshot.get('version_returncode')}\n"
-            f"{snapshot.get('version_output', '')}")
+    return (
+        f"HID health summary: {health_summary(snapshot)}\n"
+        f"HID monitor exit={snapshot.get('monitor_returncode')}\n"
+        f"{snapshot.get('monitor_output', '')}"
+        f"HID overruns exit={snapshot.get('overruns_returncode')}\n"
+        f"{snapshot.get('overruns_output', '')}"
+        f"HID version exit={snapshot.get('version_returncode')}\n"
+        f"{snapshot.get('version_output', '')}"
+    )

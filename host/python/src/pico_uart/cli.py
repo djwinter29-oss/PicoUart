@@ -66,13 +66,9 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     """Run the selected PicoUart HID command."""
     arguments = parse_arguments(argv)
-    if arguments.command == "monitor" and (
-        not math.isfinite(arguments.duration) or arguments.duration <= 0
-    ):
+    if arguments.command == "monitor" and (not math.isfinite(arguments.duration) or arguments.duration <= 0):
         raise SystemExit("--duration must be a finite value greater than zero")
-    if arguments.command == "status" and (
-        not math.isfinite(arguments.timeout) or arguments.timeout <= 0
-    ):
+    if arguments.command == "status" and (not math.isfinite(arguments.timeout) or arguments.timeout <= 0):
         raise SystemExit("--timeout must be a finite value greater than zero")
     if arguments.command == "web":
         if not 1 <= arguments.port <= 65535:

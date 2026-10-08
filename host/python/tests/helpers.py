@@ -19,9 +19,7 @@ def board_status_bytes(
     if layout_version is None:
         layout_version = hid.BOARD_STATUS_LAYOUT_VERSION
     centi = int(round(temperature_c * 100.0))
-    return struct.pack(
-        "<BBhBBBB", layout_version, reserved0, centi, major, minor, patch, reserved1
-    )
+    return struct.pack("<BBhBBBB", layout_version, reserved0, centi, major, minor, patch, reserved1)
 
 
 def overflow_counts_bytes(layout_version: int | None = None) -> bytes:
@@ -35,9 +33,7 @@ def status_report_bytes(sequence: int = 7, health0: int = 0x11) -> bytes:
     channels = b""
     for index in range(hid.UART_CHANNEL_COUNT):
         health = health0 if index == 0 else 0x01
-        channels += struct.pack(
-            "<BB4H", health, 2, 10 + index, 20 + index, 30 + index, 40 + index
-        )
+        channels += struct.pack("<BB4H", health, 2, 10 + index, 20 + index, 30 + index, 40 + index)
     assert len(header) + len(channels) == hid.STATUS_SIZE
     return header + channels
 

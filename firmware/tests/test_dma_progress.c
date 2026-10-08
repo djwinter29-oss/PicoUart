@@ -16,10 +16,8 @@ void tearDown(void)
 
 void test_bytes_produced_monotonic(void)
 {
-    TEST_ASSERT_EQUAL_UINT32(100u,
-                             uart_dma_rx_bytes_produced(150u, 50u, UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040));
-    TEST_ASSERT_EQUAL_UINT32(0u,
-                             uart_dma_rx_bytes_produced(50u, 50u, UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040));
+    TEST_ASSERT_EQUAL_UINT32(100u, uart_dma_rx_bytes_produced(150u, 50u, UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040));
+    TEST_ASSERT_EQUAL_UINT32(0u, uart_dma_rx_bytes_produced(50u, 50u, UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040));
 }
 
 void test_bytes_produced_wrap_rp2040(void)
@@ -44,22 +42,16 @@ void test_mask_remaining_clears_rp2350_mode_bits(void)
 {
     uint32_t raw = 0xf0000005u; /* MODE nibble set + COUNT 5 */
 
-    TEST_ASSERT_EQUAL_UINT32(5u,
-                             uart_dma_rx_mask_remaining(raw, UART_DMA_RX_TRANSFER_COUNT_MASK_RP2350));
-    TEST_ASSERT_EQUAL_UINT32(raw,
-                             uart_dma_rx_mask_remaining(raw, UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040));
+    TEST_ASSERT_EQUAL_UINT32(5u, uart_dma_rx_mask_remaining(raw, UART_DMA_RX_TRANSFER_COUNT_MASK_RP2350));
+    TEST_ASSERT_EQUAL_UINT32(raw, uart_dma_rx_mask_remaining(raw, UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040));
 }
 
 void test_progress_from_remaining(void)
 {
-    TEST_ASSERT_EQUAL_UINT32(
-        10u,
-        uart_dma_rx_progress_from_remaining(UART_DMA_RX_TRANSFER_COUNT_MASK_RP2350 - 10u,
-                                            UART_DMA_RX_TRANSFER_COUNT_MASK_RP2350));
-    TEST_ASSERT_EQUAL_UINT32(
-        0u,
-        uart_dma_rx_progress_from_remaining(UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040,
-                                            UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040));
+    TEST_ASSERT_EQUAL_UINT32(10u, uart_dma_rx_progress_from_remaining(UART_DMA_RX_TRANSFER_COUNT_MASK_RP2350 - 10u,
+                                                                      UART_DMA_RX_TRANSFER_COUNT_MASK_RP2350));
+    TEST_ASSERT_EQUAL_UINT32(0u, uart_dma_rx_progress_from_remaining(UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040,
+                                                                     UART_DMA_RX_TRANSFER_COUNT_MAX_RP2040));
 }
 
 void test_platform_count_constants(void)

@@ -17,9 +17,7 @@ void tearDown(void)
 {
 }
 
-static uart_driver_line_coding_t make_coding(uint32_t baud,
-                                             uint8_t data_bits,
-                                             uint8_t stop_bits,
+static uart_driver_line_coding_t make_coding(uint32_t baud, uint8_t data_bits, uint8_t stop_bits,
                                              uart_driver_parity_t parity)
 {
     uart_driver_line_coding_t coding = {
@@ -52,22 +50,10 @@ void test_hw_parity_and_stop_accepted_but_not_pio(void)
 
 void test_baud_bounds(void)
 {
-    uart_driver_line_coding_t too_slow = make_coding(UART_LINE_CODING_BAUD_MIN - 1u,
-                                                     8u,
-                                                     1u,
-                                                     UART_DRIVER_PARITY_NONE);
-    uart_driver_line_coding_t min_ok = make_coding(UART_LINE_CODING_BAUD_MIN,
-                                                   8u,
-                                                   1u,
-                                                   UART_DRIVER_PARITY_NONE);
-    uart_driver_line_coding_t max_ok = make_coding(UART_LINE_CODING_BAUD_MAX,
-                                                   8u,
-                                                   1u,
-                                                   UART_DRIVER_PARITY_NONE);
-    uart_driver_line_coding_t too_fast = make_coding(UART_LINE_CODING_BAUD_MAX + 1u,
-                                                     8u,
-                                                     1u,
-                                                     UART_DRIVER_PARITY_NONE);
+    uart_driver_line_coding_t too_slow = make_coding(UART_LINE_CODING_BAUD_MIN - 1u, 8u, 1u, UART_DRIVER_PARITY_NONE);
+    uart_driver_line_coding_t min_ok = make_coding(UART_LINE_CODING_BAUD_MIN, 8u, 1u, UART_DRIVER_PARITY_NONE);
+    uart_driver_line_coding_t max_ok = make_coding(UART_LINE_CODING_BAUD_MAX, 8u, 1u, UART_DRIVER_PARITY_NONE);
+    uart_driver_line_coding_t too_fast = make_coding(UART_LINE_CODING_BAUD_MAX + 1u, 8u, 1u, UART_DRIVER_PARITY_NONE);
 
     TEST_ASSERT_FALSE(uart_line_coding_is_valid(&too_slow));
     TEST_ASSERT_TRUE(uart_line_coding_is_valid(&min_ok));

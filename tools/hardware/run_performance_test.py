@@ -14,8 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from hardware_test_result import prepend_result
-from hardware_test_health import (collect_hid_health, health_evidence, health_is_clean,
-                                  health_summary)
+from hardware_test_health import collect_hid_health, health_evidence, health_is_clean, health_summary
 from hardware_test_result import artifact_metadata
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -34,16 +33,26 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
     command = [
         sys.executable,
         str(SCRIPT_DIR / "serial_stress_benchmark.py"),
-        "--uart0-pico", arguments.uart0_pico,
-        "--uart0-peer", arguments.uart0_peer,
-        "--uart2", arguments.uart2,
-        "--uart3", arguments.uart3,
-        "--uart5", arguments.uart5,
-        "--uart0-baud", str(arguments.uart0_baud),
-        "--rates", arguments.rates,
-        "--duration", str(arguments.duration),
-        "--payload-bytes", str(arguments.payload_bytes),
-        "--timeout", str(arguments.timeout),
+        "--uart0-pico",
+        arguments.uart0_pico,
+        "--uart0-peer",
+        arguments.uart0_peer,
+        "--uart2",
+        arguments.uart2,
+        "--uart3",
+        arguments.uart3,
+        "--uart5",
+        arguments.uart5,
+        "--uart0-baud",
+        str(arguments.uart0_baud),
+        "--rates",
+        arguments.rates,
+        "--duration",
+        str(arguments.duration),
+        "--payload-bytes",
+        str(arguments.payload_bytes),
+        "--timeout",
+        str(arguments.timeout),
     ]
     if arguments.uart1:
         command.extend(["--uart1", arguments.uart1])
@@ -65,10 +74,9 @@ def parse_benchmark_output(output: str) -> dict[str, tuple[str, str, str]]:
         match.group("label"): ("PASS", match.group("bytes"), match.group("throughput"))
         for match in PASS_PATTERN.finditer(output)
     }
-    results.update({
-        match.group("label"): ("FAIL", "-", match.group("error"))
-        for match in FAIL_PATTERN.finditer(output)
-    })
+    results.update(
+        {match.group("label"): ("FAIL", "-", match.group("error")) for match in FAIL_PATTERN.finditer(output)}
+    )
     return results
 
 
@@ -87,19 +95,23 @@ def parse_benchmark_output_by_rate(output: str) -> dict[tuple[int, str], tuple[s
             continue
         if pass_match:
             results[(current_rate, pass_match.group("label"))] = (
-                "PASS", pass_match.group("bytes"), pass_match.group("throughput"))
+                "PASS",
+                pass_match.group("bytes"),
+                pass_match.group("throughput"),
+            )
         elif fail_match:
-            results[(current_rate, fail_match.group("label"))] = (
-                "FAIL", "-", fail_match.group("error"))
+            results[(current_rate, fail_match.group("label"))] = ("FAIL", "-", fail_match.group("error"))
     return results
 
 
-def format_result_entry(arguments: SimpleNamespace,
-                        timestamp: str,
-                        result: int,
-                        output: str,
-                        health_before: dict | None = None,
-                        health_after: dict | None = None) -> str:
+def format_result_entry(
+    arguments: SimpleNamespace,
+    timestamp: str,
+    result: int,
+    output: str,
+    health_before: dict | None = None,
+    health_after: dict | None = None,
+) -> str:
     parsed = parse_benchmark_output_by_rate(output)
     clean = result == 0 and health_is_clean(health_after, health_before)
     overall = "PASS" if clean and arguments.uart1 and arguments.uart4 else "PARTIAL" if clean else "FAIL"
@@ -138,11 +150,19 @@ def format_result_entry(arguments: SimpleNamespace,
     ]
     for rate in (int(item) for item in arguments.rates.split(",")):
         for label in expected_labels:
-            status, verified, throughput = parsed.get(
-                (rate, label), ("NOT REPORTED", "-", "-"))
+            status, verified, throughput = parsed.get((rate, label), ("NOT REPORTED", "-", "-"))
             lines.append(f"| {rate} | {label} | {status} | {verified} | {throughput} |")
-    lines.extend(["", "### Health", "", f"- Before: {health_summary(health_before)}",
-                  f"- After: {health_summary(health_after)}", "", "---"])
+    lines.extend(
+        [
+            "",
+            "### Health",
+            "",
+            f"- Before: {health_summary(health_before)}",
+            f"- After: {health_summary(health_after)}",
+            "",
+            "---",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -158,8 +178,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--uart4")
     parser.add_argument("--uart4-peer")
     parser.add_argument("--uart0-baud", type=int, default=115200)
-    parser.add_argument("--rates", default="115200",
-                        help="Concurrent full-fixture rate; use individual tests for higher baud rates")
+    parser.add_argument(
+        "--rates", default="115200", help="Concurrent full-fixture rate; use individual tests for higher baud rates"
+    )
     parser.add_argument("--duration", type=float, default=10.0)
     parser.add_argument("--payload-bytes", type=int, default=1024)
     parser.add_argument("--timeout", type=float, default=3.0)
@@ -178,13 +199,13 @@ def main() -> int:
     artifact = artifact_metadata(arguments.artifact)
     arguments.artifact_path = artifact["path"]
     arguments.artifact_sha256 = artifact["sha256"]
-    if (arguments.duration <= 0 or arguments.timeout <= 0 or
-            arguments.payload_bytes < 32 or arguments.uart0_baud <= 0):
+    if arguments.duration <= 0 or arguments.timeout <= 0 or arguments.payload_bytes < 32 or arguments.uart0_baud <= 0:
         print("duration, timeout, UART0 baud, and payload must be valid", file=sys.stderr)
         return 2
     for option, peer, expected in (
-            ("--uart1-peer", arguments.uart1_peer, arguments.uart2),
-            ("--uart4-peer", arguments.uart4_peer, arguments.uart3)):
+        ("--uart1-peer", arguments.uart1_peer, arguments.uart2),
+        ("--uart4-peer", arguments.uart4_peer, arguments.uart3),
+    ):
         if not peer_path_matches(peer, expected):
             print(f"{option} must resolve to the corresponding peer endpoint", file=sys.stderr)
             return 2
@@ -199,16 +220,14 @@ def main() -> int:
     health_before = collect_hid_health()
     print(health_evidence(health_before), end="")
     print(f"RUN performance benchmark: {' '.join(shlex.quote(part) for part in command)}")
-    completed = subprocess.run(command, cwd=REPO_ROOT, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, text=True)
+    completed = subprocess.run(command, cwd=REPO_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     output = completed.stdout
     print(output, end="")
 
     timestamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
     health_after = collect_hid_health()
     print(health_evidence(health_after), end="")
-    entry = format_result_entry(arguments, timestamp, completed.returncode, output,
-                                health_before, health_after)
+    entry = format_result_entry(arguments, timestamp, completed.returncode, output, health_before, health_after)
     if not arguments.no_record:
         prepend_result(arguments.results_file.resolve(), entry)
         print(f"Recorded result in {arguments.results_file}")

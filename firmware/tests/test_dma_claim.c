@@ -94,7 +94,7 @@ void test_rx_claim_released_when_tx_claim_fails(void)
     int rx = 7;
     int tx = 7;
 
-    fake_claim_results[0] = 2; /* RX claim succeeds with channel 2. */
+    fake_claim_results[0] = 2;  /* RX claim succeeds with channel 2. */
     fake_claim_results[1] = -1; /* TX claim exhausted. */
 
     TEST_ASSERT_FALSE(hw_uart_driver_claim_dma_channels(&fake_ops, &rx, &tx));

@@ -17,8 +17,7 @@ void tearDown(void)
 void test_txstall_wait_floors_high_baud(void)
 {
     /* ceil(375000 / 1e6) = 1 → floor 2 */
-    TEST_ASSERT_EQUAL_UINT32(PIO_UART_TXSTALL_REASSERT_WAIT_FLOOR_US,
-                             pio_uart_txstall_reassert_wait_us(1000000u));
+    TEST_ASSERT_EQUAL_UINT32(PIO_UART_TXSTALL_REASSERT_WAIT_FLOOR_US, pio_uart_txstall_reassert_wait_us(1000000u));
 }
 
 void test_txstall_wait_mid_baud(void)

@@ -86,12 +86,12 @@
  * @brief Compact traffic and queue snapshot for one CDC/UART channel.
  */
 typedef struct {
-    uint8_t health; /**< UART status flags plus @ref USB_HID_CHANNEL_STATUS_* flags. */
+    uint8_t health;                     /**< UART status flags plus @ref USB_HID_CHANNEL_STATUS_* flags. */
     uint8_t ring_high_watermark_blocks; /**< Largest UART RX/TX ring occupancy in 16-byte blocks. */
-    uint16_t controller_tx_bytes; /**< Saturated controller TX byte delta since the preceding report. */
-    uint16_t controller_rx_bytes; /**< Saturated controller RX byte delta since the preceding report. */
-    uint16_t cdc_tx_bytes; /**< Saturated CDC-to-host byte delta since the preceding report. */
-    uint16_t cdc_rx_bytes; /**< Saturated host-to-CDC byte delta since the preceding report. */
+    uint16_t controller_tx_bytes;       /**< Saturated controller TX byte delta since the preceding report. */
+    uint16_t controller_rx_bytes;       /**< Saturated controller RX byte delta since the preceding report. */
+    uint16_t cdc_tx_bytes;              /**< Saturated CDC-to-host byte delta since the preceding report. */
+    uint16_t cdc_rx_bytes;              /**< Saturated host-to-CDC byte delta since the preceding report. */
 } __attribute__((packed)) usb_hid_channel_status_t;
 
 /**
@@ -100,9 +100,9 @@ typedef struct {
  * Layout is 63 bytes so TinyUSB can prepend Report ID 1 inside a 64-byte FS EP.
  */
 typedef struct {
-    uint8_t signature0; /**< Fixed report signature byte (`P`). */
-    uint8_t version; /**< Report layout version. */
-    uint8_t sequence; /**< Monotonic report sequence number. */
+    uint8_t signature0;                                /**< Fixed report signature byte (`P`). */
+    uint8_t version;                                   /**< Report layout version. */
+    uint8_t sequence;                                  /**< Monotonic report sequence number. */
     usb_hid_channel_status_t channel[UART_PORT_COUNT]; /**< Per-CDC/UART bridge snapshots. */
 } __attribute__((packed)) usb_hid_status_report_t;
 
@@ -115,13 +115,13 @@ _Static_assert(sizeof(usb_hid_status_report_t) + 1u <= PICO_UART_USB_HID_ENDPOIN
  * @brief HID feature report containing temperature and firmware version.
  */
 typedef struct {
-    uint8_t version; /**< Report layout version. */
+    uint8_t version;   /**< Report layout version. */
     uint8_t reserved0; /**< Board-status flags; bit 0 is @ref USB_HID_BOARD_STATUS_FLAG_HID_RESET. */
     int16_t temperature_centidegrees_celsius; /**< Internal temperature in hundredths of a degree Celsius. */
-    uint8_t firmware_major; /**< Firmware semantic version major component. */
-    uint8_t firmware_minor; /**< Firmware semantic version minor component. */
-    uint8_t firmware_patch; /**< Firmware semantic version patch component. */
-    uint8_t reserved1; /**< Reserved; always zero. */
+    uint8_t firmware_major;                   /**< Firmware semantic version major component. */
+    uint8_t firmware_minor;                   /**< Firmware semantic version minor component. */
+    uint8_t firmware_patch;                   /**< Firmware semantic version patch component. */
+    uint8_t reserved1;                        /**< Reserved; always zero. */
 } __attribute__((packed)) usb_hid_board_status_report_t;
 
 _Static_assert(sizeof(usb_hid_board_status_report_t) == 8u,
@@ -131,7 +131,7 @@ _Static_assert(sizeof(usb_hid_board_status_report_t) == 8u,
  * @brief Feature report containing cumulative UART-to-USB drop counts.
  */
 typedef struct {
-    uint8_t version; /**< HID report layout version. */
+    uint8_t version;                             /**< HID report layout version. */
     uint32_t rx_overflow_count[UART_PORT_COUNT]; /**< Per-port dropped RX bytes, including pending recovery. */
 } __attribute__((packed)) usb_hid_overflow_counts_report_t;
 
@@ -188,31 +188,27 @@ static void usb_hid_build_board_status_report(usb_hid_board_status_report_t *rep
 #if PICO_UART_ALLOW_HID_RESET
     report->reserved0 = USB_HID_BOARD_STATUS_FLAG_HID_RESET;
 #endif
-    report->temperature_centidegrees_celsius =
-        temperature_to_hid_centidegrees(temperature_read_celsius());
+    report->temperature_centidegrees_celsius = temperature_to_hid_centidegrees(temperature_read_celsius());
     report->firmware_major = (uint8_t)PICO_UART_VERSION_MAJOR;
     report->firmware_minor = (uint8_t)PICO_UART_VERSION_MINOR;
     report->firmware_patch = (uint8_t)PICO_UART_VERSION_PATCH;
 }
 
-static void usb_hid_build_overflow_counts_report(
-    usb_hid_overflow_counts_report_t *report,
-    const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT])
+static void usb_hid_build_overflow_counts_report(usb_hid_overflow_counts_report_t *report,
+                                                 const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT])
 {
     memset(report, 0, sizeof(*report));
     report->version = USB_HID_REPORT_VERSION;
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        report->rx_overflow_count[index] = uart_saturating_add_u32(
-            uart_stats[index].rx_ring_overflow_count,
-            uart_stats[index].rx_ring_pending_overflow_count);
+        report->rx_overflow_count[index] = uart_saturating_add_u32(uart_stats[index].rx_ring_overflow_count,
+                                                                   uart_stats[index].rx_ring_pending_overflow_count);
     }
 }
 
-static void usb_hid_build_status_report(
-    usb_hid_status_report_t *report,
-    const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT],
-    const usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT])
+static void usb_hid_build_status_report(usb_hid_status_report_t *report,
+                                        const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT],
+                                        const usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT])
 {
     memset(report, 0, sizeof(*report));
     report->signature0 = USB_HID_SIGNATURE0;
@@ -245,18 +241,15 @@ static void usb_hid_build_status_report(
         if (uart_stats[index].rx_ring_high_watermark > ring_high_watermark) {
             ring_high_watermark = uart_stats[index].rx_ring_high_watermark;
         }
-        report->channel[index].ring_high_watermark_blocks = usb_hid_clamp_u8(
-            (ring_high_watermark + 15u) / 16u);
+        report->channel[index].ring_high_watermark_blocks = usb_hid_clamp_u8((ring_high_watermark + 15u) / 16u);
         report->channel[index].controller_tx_bytes = usb_hid_clamp_u16(
-            uart_stats[index].controller_tx_bytes -
-            usb_hid_last_reported_uart_stats[index].controller_tx_bytes);
+            uart_stats[index].controller_tx_bytes - usb_hid_last_reported_uart_stats[index].controller_tx_bytes);
         report->channel[index].controller_rx_bytes = usb_hid_clamp_u16(
-            uart_stats[index].controller_rx_bytes -
-            usb_hid_last_reported_uart_stats[index].controller_rx_bytes);
-        report->channel[index].cdc_tx_bytes = usb_hid_clamp_u16(
-            cdc_stats[index].tx_bytes - usb_hid_last_reported_cdc_stats[index].tx_bytes);
-        report->channel[index].cdc_rx_bytes = usb_hid_clamp_u16(
-            cdc_stats[index].rx_bytes - usb_hid_last_reported_cdc_stats[index].rx_bytes);
+            uart_stats[index].controller_rx_bytes - usb_hid_last_reported_uart_stats[index].controller_rx_bytes);
+        report->channel[index].cdc_tx_bytes =
+            usb_hid_clamp_u16(cdc_stats[index].tx_bytes - usb_hid_last_reported_cdc_stats[index].tx_bytes);
+        report->channel[index].cdc_rx_bytes =
+            usb_hid_clamp_u16(cdc_stats[index].rx_bytes - usb_hid_last_reported_cdc_stats[index].rx_bytes);
     }
 }
 
@@ -294,8 +287,7 @@ void usb_hid_poll(void)
 
     if (!tud_hid_ready()) {
         /* Keep the signed deadline comparison bounded across very long outages. */
-        usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time()) +
-                                 USB_HID_STATUS_INTERVAL_MS;
+        usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time()) + USB_HID_STATUS_INTERVAL_MS;
         return;
     }
 
@@ -311,10 +303,7 @@ void usb_hid_poll(void)
     usb_hid_next_report_ms = now_ms + USB_HID_STATUS_INTERVAL_MS;
 }
 
-uint16_t tud_hid_get_report_cb(uint8_t instance,
-                               uint8_t report_id,
-                               hid_report_type_t report_type,
-                               uint8_t *buffer,
+uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer,
                                uint16_t reqlen)
 {
     usb_hid_board_status_report_t board_status_report;
@@ -335,8 +324,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance,
         return reqlen;
     }
 
-    if ((report_type == HID_REPORT_TYPE_FEATURE) &&
-        (report_id == USB_HID_REPORT_ID_OVERFLOW_COUNTS)) {
+    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_OVERFLOW_COUNTS)) {
         usb_hid_sample_stats(uart_stats, cdc_stats);
         usb_hid_build_overflow_counts_report(&overflow_counts_report, uart_stats);
         if (reqlen > sizeof(overflow_counts_report)) {
@@ -361,17 +349,12 @@ uint16_t tud_hid_get_report_cb(uint8_t instance,
     return reqlen;
 }
 
-void tud_hid_set_report_cb(uint8_t instance,
-                           uint8_t report_id,
-                           hid_report_type_t report_type,
-                           uint8_t const *buffer,
+void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer,
                            uint16_t bufsize)
 {
     (void)instance;
 
-    if ((report_id != USB_HID_REPORT_ID_COMMAND) ||
-        (report_type != HID_REPORT_TYPE_FEATURE) ||
-        (bufsize < 1u)) {
+    if ((report_id != USB_HID_REPORT_ID_COMMAND) || (report_type != HID_REPORT_TYPE_FEATURE) || (bufsize < 1u)) {
         return;
     }
 

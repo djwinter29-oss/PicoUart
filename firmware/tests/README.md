@@ -1,8 +1,7 @@
 # Firmware Host Tests
 
-This directory contains native C tests for firmware logic that can run without
-a Pico board. The tests use Unity, CMake, and CTest; they do not exercise the
-TinyUSB device stack, live DMA IRQs, or physical UART wiring.
+This directory contains native C tests for firmware logic that can run without a Pico board. The tests use Unity, CMake,
+and CTest; they do not exercise the TinyUSB device stack, live DMA IRQs, or physical UART wiring.
 
 ## What Is Tested
 
@@ -13,8 +12,8 @@ TinyUSB device stack, live DMA IRQs, or physical UART wiring.
 - Hardware/PIO resource claim rollback
 - LED policy behavior
 
-The test source files are the detailed inventory. The production design notes
-are linked from the root [README](../../README.md).
+The test source files are the detailed inventory. The production design notes are linked from the root
+[README](../../README.md).
 
 ## Run C Tests
 
@@ -44,8 +43,7 @@ cmake --build build/host-tests
 ctest --test-dir build/host-tests --output-on-failure
 ```
 
-Firmware HIL and physical UART behavior are documented in
-[docs/tests](../../docs/tests) and [docs/releasing.md](../../docs/releasing.md).
-Python package tests live under [host/python/tests](../../host/python/tests).
-Repository-level Python tests live under [tests](../../tests)
-and are discovered with the repository [pyproject.toml](../../pyproject.toml).
+Firmware HIL and physical UART behavior are documented in [docs/tests](../../docs/tests) and
+[docs/releasing.md](../../docs/releasing.md). Python package tests live under
+[host/python/tests](../../host/python/tests). Repository-level Python tests live under [tests](../../tests) and are
+discovered with the repository [pyproject.toml](../../pyproject.toml).

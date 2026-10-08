@@ -34,24 +34,23 @@ float temperature_read_celsius(void);
 /**
  * @brief Convert a Celsius reading to the bounded HID centidegree format.
  * @param temperature_celsius Temperature estimate in degrees Celsius.
- * @return Truncated centidegrees, saturated to the signed 16-bit HID range;
- *         non-finite input returns zero.
+ * @return Truncated centidegrees, saturated to the signed 16-bit HID range; non-finite input returns zero.
  */
 static inline int16_t temperature_to_hid_centidegrees(float temperature_celsius)
 {
-	if (!isfinite(temperature_celsius)) {
-		return 0;
-	}
+    if (!isfinite(temperature_celsius)) {
+        return 0;
+    }
 
-	float centidegrees = temperature_celsius * 100.0f;
-	if (centidegrees <= (float)TEMPERATURE_HID_MIN_CENTIDEGREES) {
-		return TEMPERATURE_HID_MIN_CENTIDEGREES;
-	}
-	if (centidegrees >= (float)TEMPERATURE_HID_MAX_CENTIDEGREES) {
-		return TEMPERATURE_HID_MAX_CENTIDEGREES;
-	}
+    float centidegrees = temperature_celsius * 100.0f;
+    if (centidegrees <= (float)TEMPERATURE_HID_MIN_CENTIDEGREES) {
+        return TEMPERATURE_HID_MIN_CENTIDEGREES;
+    }
+    if (centidegrees >= (float)TEMPERATURE_HID_MAX_CENTIDEGREES) {
+        return TEMPERATURE_HID_MAX_CENTIDEGREES;
+    }
 
-	return (int16_t)centidegrees;
+    return (int16_t)centidegrees;
 }
 
 #endif

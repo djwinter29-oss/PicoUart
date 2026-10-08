@@ -18,8 +18,7 @@
  * @param consumer_sequence RX ring sequence captured for the offered span.
  * @return `true` when the backend has not overwritten the span.
  */
-typedef bool (*uart_bridge_rx_snapshot_is_current_t)(void *context,
-                                                      uint32_t consumer_sequence);
+typedef bool (*uart_bridge_rx_snapshot_is_current_t)(void *context, uint32_t consumer_sequence);
 
 /**
  * @brief Drain a DMA-backed RX ring through a caller-owned writer.
@@ -32,13 +31,10 @@ typedef bool (*uart_bridge_rx_snapshot_is_current_t)(void *context,
  * @param stats_sequence Worker-owned sequence counter protecting backend state.
  * @return Number of RX bytes committed from @p rx_ring.
  */
-size_t uart_bridge_drain_rx(ring_buffer_t *rx_ring,
-                            size_t capacity,
+size_t uart_bridge_drain_rx(ring_buffer_t *rx_ring, size_t capacity,
                             uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length),
-                            void *writer_context,
-                            uart_bridge_rx_snapshot_is_current_t snapshot_is_current,
-                            void *snapshot_context,
-                            volatile uint32_t *stats_sequence);
+                            void *writer_context, uart_bridge_rx_snapshot_is_current_t snapshot_is_current,
+                            void *snapshot_context, volatile uint32_t *stats_sequence);
 
 /**
  * @brief Retire unread RX bytes already overwritten by the live producer.
@@ -55,9 +51,7 @@ size_t uart_bridge_recover_rx(ring_buffer_t *rx_ring);
  * @param context Opaque context passed to @p reader.
  * @return Number of TX bytes committed into @p tx_ring.
  */
-size_t uart_bridge_fill_tx(ring_buffer_t *tx_ring,
-                           size_t capacity,
-                           uint32_t (*reader)(void *context, uint8_t *data, uint32_t length),
-                           void *context);
+size_t uart_bridge_fill_tx(ring_buffer_t *tx_ring, size_t capacity,
+                           uint32_t (*reader)(void *context, uint8_t *data, uint32_t length), void *context);
 
 #endif

@@ -13,8 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from hardware_test_result import artifact_metadata, prepend_result
-from hardware_test_health import (collect_hid_health, health_evidence, health_is_clean,
-                                  health_summary)
+from hardware_test_health import collect_hid_health, health_evidence, health_is_clean, health_summary
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
@@ -24,38 +23,78 @@ DEFAULT_RESULTS_FILE = REPO_ROOT / "docs/tests/performance-test-results.md"
 def build_stage_commands(arguments: SimpleNamespace) -> list[tuple[str, list[str]]]:
     """Build the four documented serial_bridge_test invocations."""
     bridge = str(SCRIPT_DIR / "serial_bridge_test.py")
-    common = [sys.executable, bridge, "--payload-bytes", str(arguments.payload_bytes),
-              "--timeout", str(arguments.timeout), "--baud", str(arguments.baud)]
+    common = [
+        sys.executable,
+        bridge,
+        "--payload-bytes",
+        str(arguments.payload_bytes),
+        "--timeout",
+        str(arguments.timeout),
+        "--baud",
+        str(arguments.baud),
+    ]
     stages = [
-        ("Debug Probe to HW UART0", common + [
-            "--pico-port", arguments.pico_cdc0, "--peer-port", arguments.debug_probe,
-            "--label", "stage1-debug-probe-hw-uart",
-        ]),
-        ("HW UART1 to PIO UART2", common + [
-            "--pico-port", arguments.pico_cdc1, "--peer-port", arguments.pico_cdc2,
-            "--label", "stage2-hw-to-pio",
-        ]),
-        ("PIO UART3 to PIO UART4", common + [
-            "--pico-port", arguments.pico_cdc3, "--peer-port", arguments.pico_cdc4,
-            "--label", "stage3-pio-to-pio",
-        ]),
-        ("PIO UART5 loopback", common + [
-            "--pico-port", arguments.pico_cdc5, "--loopback",
-            "--label", "stage4-pio-loopback",
-        ]),
+        (
+            "Debug Probe to HW UART0",
+            common
+            + [
+                "--pico-port",
+                arguments.pico_cdc0,
+                "--peer-port",
+                arguments.debug_probe,
+                "--label",
+                "stage1-debug-probe-hw-uart",
+            ],
+        ),
+        (
+            "HW UART1 to PIO UART2",
+            common
+            + [
+                "--pico-port",
+                arguments.pico_cdc1,
+                "--peer-port",
+                arguments.pico_cdc2,
+                "--label",
+                "stage2-hw-to-pio",
+            ],
+        ),
+        (
+            "PIO UART3 to PIO UART4",
+            common
+            + [
+                "--pico-port",
+                arguments.pico_cdc3,
+                "--peer-port",
+                arguments.pico_cdc4,
+                "--label",
+                "stage3-pio-to-pio",
+            ],
+        ),
+        (
+            "PIO UART5 loopback",
+            common
+            + [
+                "--pico-port",
+                arguments.pico_cdc5,
+                "--loopback",
+                "--label",
+                "stage4-pio-loopback",
+            ],
+        ),
     ]
     if arguments.stage == "all":
         return stages
     return [stages[int(arguments.stage) - 1]]
 
 
-def format_result_entry(arguments: SimpleNamespace,
-                        timestamp: str,
-                        stages: list[tuple[str, int, str]],
-                        health_before: dict | None = None,
-                        health_after: dict | None = None) -> str:
-    clean = stages and all(code == 0 for _, code, _ in stages) and health_is_clean(
-        health_after, health_before)
+def format_result_entry(
+    arguments: SimpleNamespace,
+    timestamp: str,
+    stages: list[tuple[str, int, str]],
+    health_before: dict | None = None,
+    health_after: dict | None = None,
+) -> str:
+    clean = stages and all(code == 0 for _, code, _ in stages) and health_is_clean(health_after, health_before)
     overall = "PASS" if clean and len(stages) == 4 else "PARTIAL" if clean else "FAIL"
     stage_results = {label: code == 0 for label, code, _ in stages}
     lines = [
@@ -89,8 +128,17 @@ def format_result_entry(arguments: SimpleNamespace,
     ):
         if label in stage_results:
             lines.append(f"| {label} | {'PASS' if stage_results[label] else 'FAIL'} |")
-    lines.extend(["", "### Health", "", f"- Before: {health_summary(health_before)}",
-                  f"- After: {health_summary(health_after)}", "", "---"])
+    lines.extend(
+        [
+            "",
+            "### Health",
+            "",
+            f"- Before: {health_summary(health_before)}",
+            f"- After: {health_summary(health_after)}",
+            "",
+            "---",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -114,8 +162,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--results-file", type=Path, default=DEFAULT_RESULTS_FILE)
     parser.add_argument("--no-record", action="store_true")
     parser.add_argument("--continue-on-failure", action="store_true")
-    parser.add_argument("--stage", choices=("all", "1", "2", "3", "4"), default="all",
-                        help="Run one connection, or all prewired connections")
+    parser.add_argument(
+        "--stage",
+        choices=("all", "1", "2", "3", "4"),
+        default="all",
+        help="Run one connection, or all prewired connections",
+    )
     return parser.parse_args()
 
 
@@ -155,8 +207,7 @@ def main() -> int:
     print(health_evidence(health_before), end="")
     for label, command in build_stage_commands(arguments):
         print(f"RUN {label}: {' '.join(shlex.quote(part) for part in command)}")
-        completed = subprocess.run(command, cwd=REPO_ROOT, stdout=subprocess.PIPE,
-                       stderr=subprocess.STDOUT, text=True)
+        completed = subprocess.run(command, cwd=REPO_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         output = completed.stdout
         print(output, end="")
         stages.append((label, completed.returncode, output))
@@ -171,8 +222,9 @@ def main() -> int:
         prepend_result(arguments.results_file.resolve(), entry)
         print(f"Recorded result in {arguments.results_file}")
 
-    return 0 if stages and all(code == 0 for _, code, _ in stages) and \
-        health_is_clean(health_after, health_before) else 1
+    return (
+        0 if stages and all(code == 0 for _, code, _ in stages) and health_is_clean(health_after, health_before) else 1
+    )
 
 
 if __name__ == "__main__":

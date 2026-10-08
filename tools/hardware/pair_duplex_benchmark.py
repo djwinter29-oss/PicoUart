@@ -16,8 +16,7 @@ PAIRS = {
 
 
 def configure(path: str, baud: int):
-    port = serial.Serial(path, baud, bytesize=8, parity="N", stopbits=1,
-                         timeout=1, write_timeout=3)
+    port = serial.Serial(path, baud, bytesize=8, parity="N", stopbits=1, timeout=1, write_timeout=3)
     try:
         port.reset_input_buffer()
         port.reset_output_buffer()
@@ -31,25 +30,32 @@ def synchronize(a, b, settle: float, direction: str) -> None:
     """Wait for deferred line coding and verify only the requested direction(s)."""
     time.sleep(settle)
     for attempt in range(3):
-        a.reset_input_buffer(); a.reset_output_buffer()
-        b.reset_input_buffer(); b.reset_output_buffer()
+        a.reset_input_buffer()
+        a.reset_output_buffer()
+        b.reset_input_buffer()
+        b.reset_output_buffer()
         if direction in ("both", "a-to-b"):
-            a.write(b"SYNC-A->B"); a.flush()
+            a.write(b"SYNC-A->B")
+            a.flush()
             if b.read(9) != b"SYNC-A->B":
                 continue
         if direction in ("both", "b-to-a"):
-            b.write(b"SYNC-B->A"); b.flush()
+            b.write(b"SYNC-B->A")
+            b.flush()
             if a.read(9) != b"SYNC-B->A":
                 continue
-        a.reset_input_buffer(); a.reset_output_buffer()
-        b.reset_input_buffer(); b.reset_output_buffer()
+        a.reset_input_buffer()
+        a.reset_output_buffer()
+        b.reset_input_buffer()
+        b.reset_output_buffer()
         time.sleep(0.5)
         return
     raise RuntimeError(f"{direction} synchronization failed after 3 attempts")
 
 
-def run(rate: int, suffixes: tuple[str, str], duration: float, settle: float,
-        payload_size: int, direction: str) -> tuple[bool, dict[str, tuple[int, str | None]]]:
+def run(
+    rate: int, suffixes: tuple[str, str], duration: float, settle: float, payload_size: int, direction: str
+) -> tuple[bool, dict[str, tuple[int, str | None]]]:
     a = configure(PICO + suffixes[0], rate)
     b = None
     results: dict[str, tuple[int, str | None]] = {}
@@ -65,8 +71,13 @@ def run(rate: int, suffixes: tuple[str, str], duration: float, settle: float,
                 deadline = time.monotonic() + duration
                 count = 0
                 while time.monotonic() < deadline:
-                    payload = (label.encode() + b":" + str(count).zfill(10).encode() + b":" +
-                               bytes(i % 251 for i in range(payload_size)))[:payload_size]
+                    payload = (
+                        label.encode()
+                        + b":"
+                        + str(count).zfill(10).encode()
+                        + b":"
+                        + bytes(i % 251 for i in range(payload_size))
+                    )[:payload_size]
                     source.write(payload)
                     source.flush()
                     received = bytearray()
@@ -99,8 +110,7 @@ def run(rate: int, suffixes: tuple[str, str], duration: float, settle: float,
         finally:
             if b is not None:
                 b.close()
-    passed = all(label in results and results[label][0] > 0 and results[label][1] is None
-                 for label in labels)
+    passed = all(label in results and results[label][0] > 0 and results[label][1] is None for label in labels)
     return passed, results
 
 
@@ -137,15 +147,12 @@ def main() -> int:
     for rate in args.rates:
         for run_number in range(1, args.runs + 1):
             try:
-                passed, results = run(rate, suffixes, args.duration, args.settle, args.payload,
-                                     args.direction)
-                print(f"{args.pair} rate={rate} run={run_number} "
-                      f"{'PASS' if passed else 'FAIL'} {results}", flush=True)
+                passed, results = run(rate, suffixes, args.duration, args.settle, args.payload, args.direction)
+                print(f"{args.pair} rate={rate} run={run_number} {'PASS' if passed else 'FAIL'} {results}", flush=True)
                 if not passed:
                     exit_code = max(exit_code, 1)
             except Exception as exc:
-                print(f"{args.pair} rate={rate} run={run_number} SETUP_FAIL {exc!r}",
-                      flush=True)
+                print(f"{args.pair} rate={rate} run={run_number} SETUP_FAIL {exc!r}", flush=True)
                 exit_code = 2
     return exit_code
 

@@ -14,7 +14,9 @@ import pytest
 def voltage_policy_without_native_compiler(repo_root, tmp_path, monkeypatch):
     monkeypatch.setenv("PICO_UART_VOLTAGE_BUILD_DIRS", str(tmp_path))
     monkeypatch.setattr(
-        shutil, "which", lambda name: "arm-none-eabi-nm" if name == "arm-none-eabi-nm" else None,
+        shutil,
+        "which",
+        lambda name: "arm-none-eabi-nm" if name == "arm-none-eabi-nm" else None,
     )
     spec = importlib.util.spec_from_file_location(
         "voltage_policy_without_native_compiler",
@@ -24,12 +26,20 @@ def voltage_policy_without_native_compiler(repo_root, tmp_path, monkeypatch):
     spec.loader.exec_module(module)
 
     argv = [
-        "arm-none-eabi-gcc", "-DSYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0",
-        "-c", "runtime_init_clocks.c", "-o", "runtime_init_clocks.c.o",
+        "arm-none-eabi-gcc",
+        "-DSYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0",
+        "-c",
+        "runtime_init_clocks.c",
+        "-o",
+        "runtime_init_clocks.c.o",
     ]
-    (tmp_path / "compile_commands.json").write_text(json.dumps([
-        {"file": "runtime_init_clocks.c", "directory": str(tmp_path), "arguments": argv},
-    ]))
+    (tmp_path / "compile_commands.json").write_text(
+        json.dumps(
+            [
+                {"file": "runtime_init_clocks.c", "directory": str(tmp_path), "arguments": argv},
+            ]
+        )
+    )
     for name in ("runtime_init_clocks.c.o", "pico_uart.elf"):
         (tmp_path / name).write_bytes(b"mock artifact")
 
@@ -57,30 +67,44 @@ def test_only_native_mock_skips_without_native_compiler(voltage_policy_without_n
     skips = [mark for mark in marks if mark.name == "skipif"]
     assert len(skips) == 1
     assert skips[0].args == (True,)
-    assert not any(mark.name in {"skip", "skipif"}
-                   for mark in module.test_real_sdk_startup_voltage_policy.pytestmark)
+    assert not any(mark.name in {"skip", "skipif"} for mark in module.test_real_sdk_startup_voltage_policy.pytestmark)
 
 
 def test_configured_sdk_check_runs_without_native_compiler(
-    voltage_policy_without_native_compiler, tmp_path,
+    voltage_policy_without_native_compiler,
+    tmp_path,
 ):
     module, calls = voltage_policy_without_native_compiler
     module.test_real_sdk_startup_voltage_policy(str(tmp_path))
     assert [command[0] for command in calls] == [
-        "arm-none-eabi-gcc", "arm-none-eabi-nm", "arm-none-eabi-nm",
+        "arm-none-eabi-gcc",
+        "arm-none-eabi-nm",
+        "arm-none-eabi-nm",
     ]
 
 
-@pytest.mark.parametrize("missing", [
-    "compile_commands.json", "runtime_init_clocks.c.o", "pico_uart.elf", "compiler", "nm",
-])
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "compile_commands.json",
+        "runtime_init_clocks.c.o",
+        "pico_uart.elf",
+        "compiler",
+        "nm",
+    ],
+)
 def test_configured_sdk_check_fails_not_skips_without_native_compiler(
-    voltage_policy_without_native_compiler, tmp_path, monkeypatch, missing,
+    voltage_policy_without_native_compiler,
+    tmp_path,
+    monkeypatch,
+    missing,
 ):
     module, _ = voltage_policy_without_native_compiler
     if missing == "compiler":
+
         def missing_compiler(*args, **kwargs):
             raise FileNotFoundError("arm-none-eabi-gcc")
+
         monkeypatch.setattr(module.subprocess, "run", missing_compiler)
         expected, message = FileNotFoundError, "arm-none-eabi-gcc"
     elif missing == "nm":
@@ -95,7 +119,8 @@ def test_configured_sdk_check_fails_not_skips_without_native_compiler(
 
 
 def test_sdk_check_skips_only_when_unconfigured(
-    voltage_policy_without_native_compiler, monkeypatch,
+    voltage_policy_without_native_compiler,
+    monkeypatch,
 ):
     module, _ = voltage_policy_without_native_compiler
     monkeypatch.delenv("PICO_UART_VOLTAGE_BUILD_DIRS")
@@ -111,8 +136,9 @@ def test_voltage_workflow_uses_hash_required_minimal_lock(repo_root, workflow_na
     workflow = (repo_root / ".github/workflows" / workflow_name).read_text()
     step = workflow.split("      - name: Verify no SDK regulator auto-adjust in the real build\n", 1)[1]
     step = step.split("\n      - name:", 1)[0]
-    installs = [shlex.split(line.strip()) for line in step.splitlines()
-                if line.strip().startswith("python3 -m pip install ")]
+    installs = [
+        shlex.split(line.strip()) for line in step.splitlines() if line.strip().startswith("python3 -m pip install ")
+    ]
     assert len(installs) == 1
     command = installs[0]
     assert "--require-hashes" in command
@@ -147,6 +173,9 @@ def test_voltage_lock_is_exact_pytest_subset_of_host_lock(repo_root):
     subset = _lock_entries(host / "requirements-voltage-lock.txt")
     full = _lock_entries(host / "requirements-lock.txt")
     assert {entry.split("==")[0] for entry in subset} == {
-        "iniconfig", "packaging", "pluggy", "pytest",
+        "iniconfig",
+        "packaging",
+        "pluggy",
+        "pytest",
     }
     assert subset == {entry: full[entry] for entry in subset}

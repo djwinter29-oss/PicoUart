@@ -55,16 +55,13 @@ static ring_buffer_t *uart_backend_hw_tx_ring(uart_backend_instance_t *instance)
 }
 
 static bool uart_backend_hw_line_coding_matches(const uart_backend_instance_t *instance,
-                                                 const uart_driver_line_coding_t *line_coding)
+                                                const uart_driver_line_coding_t *line_coding)
 {
     const hw_uart_driver_t *driver = &instance->hw;
     uint32_t actual_rate;
 
-    return hw_uart_baud_rate_supported(line_coding->baud_rate,
-                                       clock_get_hz(clk_peri),
-                                       &actual_rate) &&
-           (driver->config.baud_rate == actual_rate) &&
-           (driver->config.data_bits == line_coding->data_bits) &&
+    return hw_uart_baud_rate_supported(line_coding->baud_rate, clock_get_hz(clk_peri), &actual_rate) &&
+           (driver->config.baud_rate == actual_rate) && (driver->config.data_bits == line_coding->data_bits) &&
            (driver->config.stop_bits == line_coding->stop_bits) &&
            (driver->config.parity == uart_backend_hw_parity(line_coding->parity));
 }
@@ -73,23 +70,17 @@ static bool uart_backend_hw_line_coding_acceptable(const uart_driver_line_coding
 {
     uint32_t actual_rate;
 
-    return hw_uart_baud_rate_supported(line_coding->baud_rate,
-                                       clock_get_hz(clk_peri),
-                                       &actual_rate);
+    return hw_uart_baud_rate_supported(line_coding->baud_rate, clock_get_hz(clk_peri), &actual_rate);
 }
 
 static bool uart_backend_hw_set_line_coding(uart_backend_instance_t *instance,
-                                             const uart_driver_line_coding_t *line_coding)
+                                            const uart_driver_line_coding_t *line_coding)
 {
-    return hw_uart_driver_set_line_format(&instance->hw,
-                                          line_coding->baud_rate,
-                                          line_coding->data_bits,
-                                          line_coding->stop_bits,
-                                          uart_backend_hw_parity(line_coding->parity));
+    return hw_uart_driver_set_line_format(&instance->hw, line_coding->baud_rate, line_coding->data_bits,
+                                          line_coding->stop_bits, uart_backend_hw_parity(line_coding->parity));
 }
 
-static bool uart_backend_hw_rx_snapshot_is_current(const uart_backend_instance_t *instance,
-                                                    uint32_t consumer_sequence)
+static bool uart_backend_hw_rx_snapshot_is_current(const uart_backend_instance_t *instance, uint32_t consumer_sequence)
 {
     return hw_uart_driver_rx_snapshot_is_current(&instance->hw, consumer_sequence);
 }
@@ -146,14 +137,12 @@ static ring_buffer_t *uart_backend_pio_tx_ring(uart_backend_instance_t *instance
 }
 
 static bool uart_backend_pio_line_coding_matches(const uart_backend_instance_t *instance,
-                                                  const uart_driver_line_coding_t *line_coding)
+                                                 const uart_driver_line_coding_t *line_coding)
 {
     const pio_uart_driver_t *driver = &instance->pio;
 
-    return (driver->config.baud_rate == line_coding->baud_rate) &&
-           (line_coding->data_bits == 8u) &&
-           (line_coding->stop_bits == 1u) &&
-           (line_coding->parity == UART_DRIVER_PARITY_NONE);
+    return (driver->config.baud_rate == line_coding->baud_rate) && (line_coding->data_bits == 8u) &&
+           (line_coding->stop_bits == 1u) && (line_coding->parity == UART_DRIVER_PARITY_NONE);
 }
 
 static bool uart_backend_pio_line_coding_acceptable(const uart_driver_line_coding_t *line_coding)
@@ -162,13 +151,12 @@ static bool uart_backend_pio_line_coding_acceptable(const uart_driver_line_codin
 }
 
 static bool uart_backend_pio_set_line_coding(uart_backend_instance_t *instance,
-                                              const uart_driver_line_coding_t *line_coding)
+                                             const uart_driver_line_coding_t *line_coding)
 {
     return pio_uart_driver_set_baud_rate(&instance->pio, line_coding->baud_rate);
 }
 
-static bool uart_backend_pio_rx_snapshot_is_current(const uart_backend_instance_t *instance,
-                                                     uint32_t consumer_sequence)
+static bool uart_backend_pio_rx_snapshot_is_current(const uart_backend_instance_t *instance, uint32_t consumer_sequence)
 {
     return pio_uart_driver_rx_snapshot_is_current(&instance->pio, consumer_sequence);
 }

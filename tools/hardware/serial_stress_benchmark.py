@@ -93,8 +93,7 @@ def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
             raise TimeoutError("write timed out")
 
 
-def read_exact(file_descriptor: int, expected: bytes, deadline: float,
-               timing: dict | None = None) -> None:
+def read_exact(file_descriptor: int, expected: bytes, deadline: float, timing: dict | None = None) -> None:
     received = bytearray()
     while len(received) < len(expected):
         remaining = deadline - time.monotonic()
@@ -123,26 +122,27 @@ def read_exact(file_descriptor: int, expected: bytes, deadline: float,
 
 
 def payload_for(label: str, sequence: int, size: int) -> bytes:
-    prefix = (b"PU:" + label.encode("ascii")[:8].ljust(8, b"_") +
-              struct.pack(">Q", sequence))
+    prefix = b"PU:" + label.encode("ascii")[:8].ljust(8, b"_") + struct.pack(">Q", sequence)
     if len(prefix) >= size:
         return prefix[:size]
     pattern = bytes(range(256))
     payload = bytearray(prefix)
     while len(payload) < size:
-        payload.extend(pattern[:size - len(payload)])
+        payload.extend(pattern[: size - len(payload)])
     return bytes(payload)
 
 
-def run_stream(label: str,
-               source_fd: int,
-               destination_fd: int,
-               duration: float,
-               payload_bytes: int,
-               timeout: float,
-               start: threading.Barrier,
-               result: dict,
-               timing: dict) -> None:
+def run_stream(
+    label: str,
+    source_fd: int,
+    destination_fd: int,
+    duration: float,
+    payload_bytes: int,
+    timeout: float,
+    start: threading.Barrier,
+    result: dict,
+    timing: dict,
+) -> None:
     bytes_verified = 0
 
     def stamp() -> str:
@@ -182,9 +182,7 @@ def parse_rates(value: str) -> tuple[int, ...]:
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Benchmark all configured PicoUart test links concurrently."
-    )
+    parser = argparse.ArgumentParser(description="Benchmark all configured PicoUart test links concurrently.")
     parser.add_argument("--uart0-pico", required=True, help="PicoUart CDC0 device")
     parser.add_argument("--uart0-peer", required=True, help="Debug Probe UART device")
     parser.add_argument("--uart1", help="Optional PicoUart CDC1 device; loopback without peer options")
@@ -194,20 +192,28 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--uart4", help="Optional PicoUart CDC4 device; loopback without peer options")
     parser.add_argument("--uart4-peer", help="CDC3 peer; cross-fixture mode requires all UART1/UART4 options")
     parser.add_argument("--uart5", required=True, help="PicoUart CDC5 device")
-    parser.add_argument("--uart0-baud", type=int, default=115200, choices=BAUD_RATES,
-                        help="UART0 and Debug Probe rate; defaults to 115200")
-    parser.add_argument("--rates", type=parse_rates, default=DEFAULT_RATES,
-                        help="PIO/HW loopback rates to test, comma-separated")
-    parser.add_argument("--duration", type=float, default=10.0,
-                        help="Transmit duration per rate in seconds")
-    parser.add_argument("--payload-bytes", type=int, default=1024,
-                        help="Bytes per verified stream block")
-    parser.add_argument("--timeout", type=float, default=3.0,
-                        help="Timeout for each block write/read phase; an in-flight block may finish after duration")
-    parser.add_argument("--settle-seconds", type=float, default=8.0,
-                        help="wait after configuring all ports")
-    parser.add_argument("--setup-only", action="store_true",
-                        help="configure ports and settle, but do not transmit data")
+    parser.add_argument(
+        "--uart0-baud",
+        type=int,
+        default=115200,
+        choices=BAUD_RATES,
+        help="UART0 and Debug Probe rate; defaults to 115200",
+    )
+    parser.add_argument(
+        "--rates", type=parse_rates, default=DEFAULT_RATES, help="PIO/HW loopback rates to test, comma-separated"
+    )
+    parser.add_argument("--duration", type=float, default=10.0, help="Transmit duration per rate in seconds")
+    parser.add_argument("--payload-bytes", type=int, default=1024, help="Bytes per verified stream block")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=3.0,
+        help="Timeout for each block write/read phase; an in-flight block may finish after duration",
+    )
+    parser.add_argument("--settle-seconds", type=float, default=8.0, help="wait after configuring all ports")
+    parser.add_argument(
+        "--setup-only", action="store_true", help="configure ports and settle, but do not transmit data"
+    )
     return parser.parse_args()
 
 
@@ -236,16 +242,13 @@ def _same_serial_path(left: str, right: str) -> bool:
 
 def cross_fixture_paths_valid(arguments: argparse.Namespace) -> bool:
     """Require cross-fixture peer arguments to name the opened CDC peers."""
-    cross_values = [getattr(arguments, name, None)
-                    for name in ("uart1", "uart1_peer", "uart4", "uart4_peer")]
+    cross_values = [getattr(arguments, name, None) for name in ("uart1", "uart1_peer", "uart4", "uart4_peer")]
     use_cross_fixture = bool(cross_values[1] or cross_values[3])
     if use_cross_fixture and not all(cross_values):
-        print("cross-fixture mode requires --uart1 --uart1-peer --uart4 --uart4-peer",
-              file=sys.stderr)
+        print("cross-fixture mode requires --uart1 --uart1-peer --uart4 --uart4-peer", file=sys.stderr)
         return False
 
-    if not all(hasattr(arguments, name) for name in
-               ("uart0_pico", "uart0_peer", "uart2", "uart3", "uart5")):
+    if not all(hasattr(arguments, name) for name in ("uart0_pico", "uart0_peer", "uart2", "uart3", "uart5")):
         if not any(cross_values):
             return True
         return False
@@ -308,11 +311,9 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             ("uart5-loopback", uart5, uart5),
         ]
 
-        use_cross_fixture = bool(getattr(arguments, "uart1_peer", None) and
-                                 getattr(arguments, "uart4_peer", None))
+        use_cross_fixture = bool(getattr(arguments, "uart1_peer", None) and getattr(arguments, "uart4_peer", None))
         if not use_cross_fixture:
-            streams.extend([("uart2-to-uart3", uart2, uart3),
-                            ("uart3-to-uart2", uart3, uart2)])
+            streams.extend([("uart2-to-uart3", uart2, uart3), ("uart3-to-uart2", uart3, uart2)])
 
         if arguments.uart1 and getattr(arguments, "uart1_peer", None):
             uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
@@ -320,8 +321,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             # The peer path is the already opened CDC2 descriptor. Reusing it
             # avoids a second termios configuration and input flush on the same node.
             uart1_peer = uart2
-            streams.extend([("uart1-to-uart2", uart1, uart1_peer),
-                            ("uart2-to-uart1", uart1_peer, uart1)])
+            streams.extend([("uart1-to-uart2", uart1, uart1_peer), ("uart2-to-uart1", uart1_peer, uart1)])
         elif arguments.uart1:
             uart1, uart1_settings = configure_port(arguments.uart1, stream_baud)
             ports.append((uart1, uart1_settings))
@@ -331,8 +331,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             ports.append((uart4, uart4_settings))
             # The peer path is the already opened CDC3 descriptor.
             uart4_peer = uart3
-            streams.extend([("uart3-to-uart4", uart4_peer, uart4),
-                            ("uart4-to-uart3", uart4, uart4_peer)])
+            streams.extend([("uart3-to-uart4", uart4_peer, uart4), ("uart4-to-uart3", uart4, uart4_peer)])
         elif arguments.uart4:
             uart4, uart4_settings = configure_port(arguments.uart4, stream_baud)
             ports.append((uart4, uart4_settings))
@@ -346,9 +345,20 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         start = threading.Barrier(len(streams))
         timing: dict[str, dict] = {}
         threads = [
-            threading.Thread(target=run_stream,
-                             args=(label, source_fd, destination_fd, arguments.duration,
-                                   arguments.payload_bytes, arguments.timeout, start, results, timing))
+            threading.Thread(
+                target=run_stream,
+                args=(
+                    label,
+                    source_fd,
+                    destination_fd,
+                    arguments.duration,
+                    arguments.payload_bytes,
+                    arguments.timeout,
+                    start,
+                    results,
+                    timing,
+                ),
+            )
             for label, source_fd, destination_fd in streams
         ]
 
@@ -358,10 +368,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         if arguments.uart4:
             extras.append("UART4")
         extra_note = f"; including {', '.join(extras)}" if extras else ""
-        print(
-            f"Benchmarking PIO/loopbacks at {stream_baud} baud; "
-            f"UART0 at {arguments.uart0_baud} baud{extra_note}"
-        )
+        print(f"Benchmarking PIO/loopbacks at {stream_baud} baud; UART0 at {arguments.uart0_baud} baud{extra_note}")
         started = time.monotonic()
         for thread in threads:
             thread.start()

@@ -106,8 +106,11 @@ def test_hid_health_module_resolves_repository_root() -> None:
 def test_single_functional_stage_is_recorded_partial() -> None:
     runner = _load("run_functional_test")
     arguments = SimpleNamespace(
-        board="pico", firmware_version="0.0.0", firmware_commit="local",
-        baud=115200, payload_bytes=64,
+        board="pico",
+        firmware_version="0.0.0",
+        firmware_commit="local",
+        baud=115200,
+        payload_bytes=64,
     )
     clean = {
         "channels": {index: 1 for index in range(6)},
@@ -116,18 +119,15 @@ def test_single_functional_stage_is_recorded_partial() -> None:
     }
 
     entry = runner.format_result_entry(
-        arguments, "2026-09-20T00:00:00+00:00",
-        [("HW UART1 to PIO UART2", 0, "PASS")], clean, clean)
+        arguments, "2026-09-20T00:00:00+00:00", [("HW UART1 to PIO UART2", 0, "PASS")], clean, clean
+    )
 
     assert "**Result:** `PARTIAL`" in entry
 
 
 def test_performance_runner_parses_pass_and_fail_lines() -> None:
     runner = _load("run_performance_test")
-    output = (
-        "PASS uart0-pico-to-peer: 100 bytes, 20.0 B/s\n"
-        "FAIL uart5-loopback: received data did not match\n"
-    )
+    output = "PASS uart0-pico-to-peer: 100 bytes, 20.0 B/s\nFAIL uart5-loopback: received data did not match\n"
 
     assert runner.parse_benchmark_output(output) == {
         "uart0-pico-to-peer": ("PASS", "100", "20.0"),
@@ -137,14 +137,31 @@ def test_performance_runner_parses_pass_and_fail_lines() -> None:
 
 def test_performance_runner_accepts_documented_peer_options(monkeypatch) -> None:
     runner = _load("run_performance_test")
-    monkeypatch.setattr(sys, "argv", [
-        "run_performance_test.py",
-        "--uart0-pico", "cdc0", "--uart0-peer", "probe",
-        "--uart1", "cdc1", "--uart1-peer", "cdc2",
-        "--uart2", "cdc2", "--uart3", "cdc3",
-        "--uart4", "cdc4", "--uart4-peer", "cdc3",
-        "--uart5", "cdc5",
-    ])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_performance_test.py",
+            "--uart0-pico",
+            "cdc0",
+            "--uart0-peer",
+            "probe",
+            "--uart1",
+            "cdc1",
+            "--uart1-peer",
+            "cdc2",
+            "--uart2",
+            "cdc2",
+            "--uart3",
+            "cdc3",
+            "--uart4",
+            "cdc4",
+            "--uart4-peer",
+            "cdc3",
+            "--uart5",
+            "cdc5",
+        ],
+    )
 
     arguments = runner.parse_arguments()
     command = runner.build_command(arguments)
@@ -156,8 +173,19 @@ def test_performance_runner_accepts_documented_peer_options(monkeypatch) -> None
 
 def test_full_hardware_runner_defaults_to_usb_sustainable_rate(monkeypatch) -> None:
     runner = _load("run_hardware_test")
-    arguments = ["run_hardware_test.py", "--pico-cdc0", "cdc0", "--debug-probe", "probe",
-                 "--pico-cdc2", "cdc2", "--pico-cdc3", "cdc3", "--pico-cdc5", "cdc5"]
+    arguments = [
+        "run_hardware_test.py",
+        "--pico-cdc0",
+        "cdc0",
+        "--debug-probe",
+        "probe",
+        "--pico-cdc2",
+        "cdc2",
+        "--pico-cdc3",
+        "cdc3",
+        "--pico-cdc5",
+        "cdc5",
+    ]
     monkeypatch.setattr(sys, "argv", arguments)
 
     assert runner.parse_arguments().rates == "115200"
@@ -181,12 +209,13 @@ def test_performance_runner_preserves_rate_results() -> None:
 def test_hardware_runner_marks_failed_functional_phase_as_fail() -> None:
     runner = _load("run_hardware_test")
     arguments = SimpleNamespace(
-        board="pico", tester="test", firmware_version="1.2.3",
+        board="pico",
+        tester="test",
+        firmware_version="1.2.3",
         firmware_commit="abc1234",
     )
 
-    entry = runner.format_result_entry(arguments, "2026-09-20T00:00:00+00:00",
-                                       (1, "functional failed"), None)
+    entry = runner.format_result_entry(arguments, "2026-09-20T00:00:00+00:00", (1, "functional failed"), None)
 
     assert "**Result:** `FAIL`" in entry
 
@@ -198,9 +227,7 @@ def test_result_helper_prepends_before_template(tmp_path: Path) -> None:
 
     helper.prepend_result(results, "## New result\n\n**Result:** `PASS`")
 
-    assert results.read_text(encoding="utf-8") == (
-        "# Results\n\n## New result\n\n**Result:** `PASS`\n\n## Template\n"
-    )
+    assert results.read_text(encoding="utf-8") == ("# Results\n\n## New result\n\n**Result:** `PASS`\n\n## Template\n")
 
 
 def test_result_helper_rejects_missing_template(tmp_path: Path) -> None:

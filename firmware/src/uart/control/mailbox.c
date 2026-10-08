@@ -27,12 +27,10 @@ void uart_control_mailbox_reset(uart_control_mailbox_t *mailbox)
 
 bool uart_control_mailbox_can_publish(const uart_control_mailbox_t *mailbox)
 {
-    return (mailbox != NULL) &&
-           uart_control_mailbox_is_empty(mailbox->request_sequence, mailbox->response_sequence);
+    return (mailbox != NULL) && uart_control_mailbox_is_empty(mailbox->request_sequence, mailbox->response_sequence);
 }
 
-bool uart_control_mailbox_publish(uart_control_mailbox_t *mailbox,
-                                  const uart_control_mailbox_request_t *request)
+bool uart_control_mailbox_publish(uart_control_mailbox_t *mailbox, const uart_control_mailbox_request_t *request)
 {
     uint32_t request_sequence;
 
@@ -47,8 +45,7 @@ bool uart_control_mailbox_publish(uart_control_mailbox_t *mailbox,
     return true;
 }
 
-bool uart_control_mailbox_take(uart_control_mailbox_t *mailbox,
-                               uart_control_mailbox_request_t *request)
+bool uart_control_mailbox_take(uart_control_mailbox_t *mailbox, uart_control_mailbox_request_t *request)
 {
     uint32_t request_sequence;
 
@@ -68,8 +65,7 @@ bool uart_control_mailbox_take(uart_control_mailbox_t *mailbox,
     return true;
 }
 
-bool uart_control_mailbox_has_pending_port(const uart_control_mailbox_t *mailbox,
-                                           uint32_t port_id)
+bool uart_control_mailbox_has_pending_port(const uart_control_mailbox_t *mailbox, uint32_t port_id)
 {
     uint32_t request_sequence;
 

@@ -10,7 +10,6 @@ void setUp(void)
 {
 }
 
-
 void tearDown(void)
 {
 }
@@ -69,8 +68,7 @@ void test_actual_rate_and_error_are_reported(void)
     uint32_t actual_rate;
     uint32_t error_ppm;
 
-    TEST_ASSERT_TRUE(hw_uart_baud_rate_calculate(115200u, 125000000u,
-                                                  &actual_rate, &error_ppm));
+    TEST_ASSERT_TRUE(hw_uart_baud_rate_calculate(115200u, 125000000u, &actual_rate, &error_ppm));
     TEST_ASSERT_TRUE(actual_rate > 0u);
     TEST_ASSERT_TRUE(error_ppm <= HW_UART_BAUD_RATE_MAX_ERROR_PPM);
 }

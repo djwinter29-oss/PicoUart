@@ -96,10 +96,8 @@ void test_overflow_count_saturates_at_uint32_max(void)
     ring_buffer_t ring;
     uint8_t storage[4];
 
-    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX,
-                             uart_saturating_add_u32(UINT32_MAX - 1u, 2u));
-    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX - 1u,
-                             uart_saturating_add_u32(UINT32_MAX - 2u, 1u));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, uart_saturating_add_u32(UINT32_MAX - 1u, 2u));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX - 1u, uart_saturating_add_u32(UINT32_MAX - 2u, 1u));
 
     TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
     TEST_ASSERT_EQUAL_UINT(4u, ring_buffer_write(&ring, (const uint8_t *)"abcd", 4u));

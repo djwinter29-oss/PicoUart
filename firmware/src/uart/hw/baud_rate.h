@@ -25,9 +25,7 @@
  * @param error_ppm Output storage for the absolute rate error in ppm.
  * @return `true` when the requested rate has a legal PL011 divisor.
  */
-static inline bool hw_uart_baud_rate_calculate(uint32_t requested_rate,
-                                               uint32_t peripheral_hz,
-                                               uint32_t *actual_rate,
+static inline bool hw_uart_baud_rate_calculate(uint32_t requested_rate, uint32_t peripheral_hz, uint32_t *actual_rate,
                                                uint32_t *error_ppm)
 {
     uint64_t baud_rate_div;
@@ -36,8 +34,7 @@ static inline bool hw_uart_baud_rate_calculate(uint32_t requested_rate,
     uint64_t actual;
     uint64_t difference;
 
-    if ((requested_rate == 0u) || (peripheral_hz == 0u) ||
-        (actual_rate == NULL) || (error_ppm == NULL)) {
+    if ((requested_rate == 0u) || (peripheral_hz == 0u) || (actual_rate == NULL) || (error_ppm == NULL)) {
         return false;
     }
 
@@ -53,20 +50,16 @@ static inline bool hw_uart_baud_rate_calculate(uint32_t requested_rate,
     }
 
     actual = ((uint64_t)peripheral_hz * 4u) / encoded_divisor;
-    difference = (actual > requested_rate) ? (actual - requested_rate) :
-                 ((uint64_t)requested_rate - actual);
+    difference = (actual > requested_rate) ? (actual - requested_rate) : ((uint64_t)requested_rate - actual);
     *actual_rate = (uint32_t)actual;
-    *error_ppm = (uint32_t)((difference * 1000000u + ((uint64_t)requested_rate / 2u)) /
-                            (uint64_t)requested_rate);
+    *error_ppm = (uint32_t)((difference * 1000000u + ((uint64_t)requested_rate / 2u)) / (uint64_t)requested_rate);
     return true;
 }
 
 /**
  * @brief Return whether a requested hardware UART rate is within the supported error tolerance.
  */
-static inline bool hw_uart_baud_rate_supported(uint32_t requested_rate,
-                                               uint32_t peripheral_hz,
-                                               uint32_t *actual_rate)
+static inline bool hw_uart_baud_rate_supported(uint32_t requested_rate, uint32_t peripheral_hz, uint32_t *actual_rate)
 {
     uint32_t error_ppm;
 

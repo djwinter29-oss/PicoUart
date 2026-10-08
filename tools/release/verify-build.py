@@ -226,10 +226,14 @@ def _verify_uf2_payload(
     covered = bytearray(len(binary))
     for offset in range(0, len(uf2), 512):
         block = uf2[offset : offset + 512]
-        magic0, magic1, flags, target, payload_size, block_number, block_count, family_id = (
-            struct.unpack_from("<IIIIIIII", block)
+        magic0, magic1, flags, target, payload_size, block_number, block_count, family_id = struct.unpack_from(
+            "<IIIIIIII", block
         )
-        if magic0 != UF2_MAGIC_START0 or magic1 != UF2_MAGIC_START1 or struct.unpack_from("<I", block, 508)[0] != UF2_MAGIC_END:
+        if (
+            magic0 != UF2_MAGIC_START0
+            or magic1 != UF2_MAGIC_START1
+            or struct.unpack_from("<I", block, 508)[0] != UF2_MAGIC_END
+        ):
             raise ValueError("pico_uart.uf2 has an invalid block marker")
         if payload_size == 0 or payload_size > 476:
             raise ValueError("pico_uart.uf2 has an invalid payload size")
@@ -276,9 +280,7 @@ def _verify_uf2_payload(
             raise ValueError("pico_uart.uf2 has a malformed RP2350 absolute block")
 
     flash_blocks = [
-        entry
-        for entry in blocks_by_family[expected_family_id].values()
-        if (entry[0] & UF2_FLAG_NOT_MAIN_FLASH) == 0
+        entry for entry in blocks_by_family[expected_family_id].values() if (entry[0] & UF2_FLAG_NOT_MAIN_FLASH) == 0
     ]
     if not flash_blocks:
         raise ValueError("pico_uart.uf2 contains no main-flash payload")
@@ -354,9 +356,7 @@ def main() -> int:
     matching_devices = [
         descriptor
         for descriptor in _device_descriptors(data)
-        if descriptor[7:10] == (vid, pid, bcd_device)
-        and descriptor[3:6] == (0xEF, 0x02, 0x01)
-        and descriptor[13] == 1
+        if descriptor[7:10] == (vid, pid, bcd_device) and descriptor[3:6] == (0xEF, 0x02, 0x01) and descriptor[13] == 1
     ]
     if len(matching_devices) != 1:
         raise SystemExit(f"expected one matching USB device descriptor, found {len(matching_devices)}")
@@ -402,9 +402,7 @@ def main() -> int:
         constants["USB_HID_REPORT_ID_COMMAND"]: (firmware_hid_report_count(args.repo_root, 4), 8, 11),
         constants["USB_HID_REPORT_ID_OVERFLOW_COUNTS"]: (firmware_hid_report_count(args.repo_root, 5), 8, 11),
     }
-    matching_reports = [
-        reports for reports in _hid_reports(data, hid_report_lengths[0]) if reports == expected_reports
-    ]
+    matching_reports = [reports for reports in _hid_reports(data, hid_report_lengths[0]) if reports == expected_reports]
     if len(matching_reports) != 1:
         raise SystemExit("compiled HID report descriptor does not match the firmware/host contract")
 

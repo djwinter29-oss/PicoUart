@@ -66,9 +66,7 @@ def send_command(device: Any, command: int) -> None:
 def reset_board(device: Any) -> None:
     """Arm then reset the board only when firmware enables remote reset."""
     if not read_board_status(device)["hid_reset_enabled"]:
-        raise RuntimeError(
-            "firmware HID reset is disabled; rebuild with -DPICO_UART_ALLOW_HID_RESET=1"
-        )
+        raise RuntimeError("firmware HID reset is disabled; rebuild with -DPICO_UART_ALLOW_HID_RESET=1")
     send_command(device, COMMAND_ARM_RESET)
     time.sleep(min(0.05, RESET_ARM_WINDOW_S / 10.0))
     send_command(device, COMMAND_RESET_BOARD)

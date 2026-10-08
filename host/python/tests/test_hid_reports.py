@@ -23,16 +23,12 @@ def test_version_and_temperature(hid_module):
 
 
 def test_board_status_reports_hid_reset_capability(hid_module):
-    device = FakeHidDevice(
-        board_status_bytes(reserved0=hid_module.BOARD_STATUS_FLAG_HID_RESET)
-    )
+    device = FakeHidDevice(board_status_bytes(reserved0=hid_module.BOARD_STATUS_FLAG_HID_RESET))
     assert hid_module.read_board_status(device)["hid_reset_enabled"] is True
 
 
 def test_overflow_counts(hid_module):
-    device = FakeHidDevice(
-        overflow_counts_bytes(), report_id=hid_module.REPORT_ID_OVERFLOW_COUNTS
-    )
+    device = FakeHidDevice(overflow_counts_bytes(), report_id=hid_module.REPORT_ID_OVERFLOW_COUNTS)
     assert hid_module.read_overflow_counts(device) == [1, 2, 3, 4, 5, 6]
 
 
@@ -76,12 +72,8 @@ def test_rejects_malformed_feature_and_status_payloads(hid_module):
 
 
 @pytest.mark.parametrize("reserved0,reserved1", [(0x02, 0), (0, 1), (0x03, 0)])
-def test_rejects_unknown_board_status_reserved_fields(
-    hid_module, reserved0, reserved1
-):
-    device = FakeHidDevice(
-        board_status_bytes(reserved0=reserved0, reserved1=reserved1)
-    )
+def test_rejects_unknown_board_status_reserved_fields(hid_module, reserved0, reserved1):
+    device = FakeHidDevice(board_status_bytes(reserved0=reserved0, reserved1=reserved1))
     with pytest.raises(RuntimeError, match="unknown reserved fields"):
         hid_module.read_board_status(device)
 
@@ -204,9 +196,7 @@ def test_monitor_rejects_empty_reads(monkeypatch, hid_module):
 def test_monitor_rejects_malformed_status(monkeypatch, hid_module):
     from pico_uart import cli
 
-    client = _run_one_monitor_iteration(
-        monkeypatch, RuntimeError("unexpected status report size 62")
-    )
+    client = _run_one_monitor_iteration(monkeypatch, RuntimeError("unexpected status report size 62"))
     with pytest.raises(RuntimeError, match="unexpected status report size"):
         cli.monitor(client, 1.0)
 
@@ -288,9 +278,7 @@ def test_client_reset_uses_guarded_reset_sequence(monkeypatch, hid_module):
 
     class FakeDevice:
         def get_feature_report(self, report_id, _size):
-            return [report_id, *board_status_bytes(
-                reserved0=hid_module.BOARD_STATUS_FLAG_HID_RESET
-            )]
+            return [report_id, *board_status_bytes(reserved0=hid_module.BOARD_STATUS_FLAG_HID_RESET)]
 
         def send_feature_report(self, report):
             writes.append(report)

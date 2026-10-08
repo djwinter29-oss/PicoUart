@@ -40,9 +40,7 @@ def test_dashboard_routes_require_csrf_and_dispatch_controls():
     assert client.post("/api/actions/toggle-led").status_code == 403
 
     token = _csrf_token(client)
-    response = client.post(
-        "/api/actions/toggle-led", headers={"X-CSRF-Token": token}
-    )
+    response = client.post("/api/actions/toggle-led", headers={"X-CSRF-Token": token})
     assert response.status_code == 200
     assert response.json == {"ok": True}
     assert service.actions == ["toggle-led"]

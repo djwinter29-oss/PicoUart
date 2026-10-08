@@ -38,8 +38,7 @@ static uart_control_pending_t test_pending_controls[UART_PORT_COUNT];
  * uart_control_mailbox_has_pending_port flips to false). At that precise
  * boundary, @ref uart_control_pending_t.pending must already be true, or a
  * status read racing the real hardware locks between this unlock and a
- * later, separate registration could observe the request owned by neither
- * the mailbox nor the worker.
+ * later, separate registration could observe the request owned by neither the mailbox nor the worker.
  *
  * The probe also evaluates @ref uart_control_pending_should_clear() with the
  * exact arguments a concurrent core 0 soft-pending reject/timeout
@@ -60,8 +59,7 @@ static void spin_unlock_ownership_probe(void)
 
     observed_mailbox_acked_without_worker_ownership = !test_pending_controls[UART_PORT_0].pending;
     observed_concurrent_reject_would_clear_control_pending = uart_control_pending_should_clear(
-        false,
-        uart_control_mailbox_has_pending_port(&test_mailboxes[UART_PORT_0], UART_PORT_0),
+        false, uart_control_mailbox_has_pending_port(&test_mailboxes[UART_PORT_0], UART_PORT_0),
         test_pending_controls[UART_PORT_0].pending);
     spin_unlock_ownership_probe_armed = false;
 }
@@ -91,8 +89,7 @@ static bool test_is_initialized(const uart_backend_instance_t *instance)
     return backend_alive;
 }
 
-static bool test_set_line_coding(uart_backend_instance_t *instance,
-                                 const uart_driver_line_coding_t *line_coding)
+static bool test_set_line_coding(uart_backend_instance_t *instance, const uart_driver_line_coding_t *line_coding)
 {
     (void)instance;
     if (fail_closed) {
@@ -149,9 +146,7 @@ static void spin_unlock_completion_gap_probe(void)
         return;
     }
 
-    unowned = uart_control_pending_should_clear(false,
-                                                false,
-                                                test_pending_controls[UART_PORT_0].pending);
+    unowned = uart_control_pending_should_clear(false, false, test_pending_controls[UART_PORT_0].pending);
     if (!unowned) {
         return;
     }
@@ -182,8 +177,7 @@ static void publish_request_for_port(uint32_t port_id, uint32_t tx_boundary_sequ
         .line_coding = test_line_coding(),
     };
 
-    uart_control_mailbox_t *slot =
-        &test_mailboxes[(port_id < UART_PORT_COUNT) ? port_id : UART_PORT_0];
+    uart_control_mailbox_t *slot = &test_mailboxes[(port_id < UART_PORT_COUNT) ? port_id : UART_PORT_0];
 
     TEST_ASSERT_TRUE(uart_control_mailbox_publish(slot, &request));
 }
@@ -209,15 +203,13 @@ void setUp(void)
     test_spin_unlock_hook = NULL;
     pico_test_time_us = 0;
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        test_ports[index] = (index == UART_PORT_0)
-                                ? (uart_runtime_port_t){.ops = &test_backend_ops}
-                                : (uart_runtime_port_t){0};
+        test_ports[index] =
+            (index == UART_PORT_0) ? (uart_runtime_port_t){.ops = &test_backend_ops} : (uart_runtime_port_t){0};
         uart_control_mailbox_reset(&test_mailboxes[index]);
         test_pending_controls[index] = (uart_control_pending_t){0};
         test_soft_pending_controls[index] = false;
         test_control_generations[index] = (index == UART_PORT_0) ? 1u : 0u;
-        test_status_flags[index] =
-            (index == UART_PORT_0) ? UART_DRIVER_PORT_STATUS_CONTROL_PENDING : 0u;
+        test_status_flags[index] = (index == UART_PORT_0) ? UART_DRIVER_PORT_STATUS_CONTROL_PENDING : 0u;
         test_stats_sequence[index] = 0u;
     }
     test_poll_start_index = 0u;
@@ -269,8 +261,7 @@ void test_control_plane_drops_invalid_mailbox_port(void)
 
     TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
 }
@@ -302,8 +293,7 @@ void test_control_plane_invalid_line_coding_releases_provisional_ownership(void)
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
     TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
     TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_0));
@@ -331,8 +321,7 @@ void test_control_plane_unacceptable_line_coding_releases_provisional_ownership(
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
     TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
     TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_0));
@@ -359,8 +348,7 @@ void test_control_plane_unavailable_backend_releases_provisional_ownership(void)
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_1].pending);
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
     TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_1]));
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_1]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_1]);
     TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_1));
@@ -382,8 +370,7 @@ void test_control_plane_rejects_payload_aimed_at_another_port(void)
 
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_1].pending);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
     TEST_ASSERT_EQUAL_UINT8(0u, test_status_flags[UART_PORT_1]);
@@ -400,12 +387,10 @@ void test_control_plane_stops_immediately_when_backend_is_retired(void)
     TEST_ASSERT_FALSE(backend_alive);
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_INIT_FAILED,
-                     UART_DRIVER_PORT_STATUS_INIT_FAILED,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_INIT_FAILED, UART_DRIVER_PORT_STATUS_INIT_FAILED,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_READY, 0u, test_status_flags[UART_PORT_0]);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
 }
@@ -425,8 +410,7 @@ void test_control_plane_reports_error_after_apply_timeout(void)
     uart_control_plane_service(&test_control_plane);
 
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
 }
@@ -491,11 +475,9 @@ void test_control_plane_mailbox_reject_keeps_worker_pending(void)
     TEST_ASSERT_EQUAL_UINT32(1u, test_pending_controls[UART_PORT_0].control_generation);
     TEST_ASSERT_EQUAL_UINT32(9u, test_pending_controls[UART_PORT_0].tx_boundary_sequence);
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING,
-                     UART_DRIVER_PORT_STATUS_CONTROL_PENDING,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, UART_DRIVER_PORT_STATUS_CONTROL_PENDING,
                      test_status_flags[UART_PORT_0]);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
 
     test_tx_ring.consumer = 9u;
@@ -505,8 +487,7 @@ void test_control_plane_mailbox_reject_keeps_worker_pending(void)
     TEST_ASSERT_EQUAL_UINT32(1u, apply_count);
     TEST_ASSERT_EQUAL_UINT32(230400u, applied_line_coding.baud_rate);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
 }
 
@@ -564,8 +545,7 @@ void test_control_plane_immediate_completion_has_no_unowned_gap(void)
 
     TEST_ASSERT_FALSE(observed_completion_gap);
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
 
@@ -601,8 +581,7 @@ void test_control_plane_expired_deadline_blocks_backend_apply(void)
 
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
-    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
-                     UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
+    TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
 }

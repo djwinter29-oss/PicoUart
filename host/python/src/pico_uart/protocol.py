@@ -40,9 +40,7 @@ def parse_board_status(payload: bytes) -> dict[str, object]:
     """Decode temperature, firmware version, and supported board capabilities."""
     if len(payload) != BOARD_STATUS_SIZE:
         raise RuntimeError(f"unexpected board-status report size {len(payload)}")
-    version, reserved0, centidegrees, major, minor, patch, reserved1 = struct.unpack(
-        "<BBhBBBB", payload
-    )
+    version, reserved0, centidegrees, major, minor, patch, reserved1 = struct.unpack("<BBhBBBB", payload)
     if version != BOARD_STATUS_LAYOUT_VERSION:
         raise RuntimeError(f"unsupported board-status report version {version}")
     if (reserved0 & ~BOARD_STATUS_RESERVED0_KNOWN_FLAGS) != 0 or reserved1 != 0:
