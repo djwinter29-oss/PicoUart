@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios/fcntl")
+
 
 def load_pair(repo_root, monkeypatch):
     # pyserial is a hardware-tool dependency, not part of the host HID test lock.

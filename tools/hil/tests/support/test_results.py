@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -89,6 +91,27 @@ def test_concurrent_writers_preserve_each_result(tmp_path, monkeypatch) -> None:
 
     document = results_file.read_text(encoding="utf-8")
     assert all(f"## Result {index}" in document for index in range(8))
+
+
+def test_result_writer_without_fcntl(tmp_path, monkeypatch) -> None:
+    calls = []
+    results_file = tmp_path / "results.md"
+    try:
+        with monkeypatch.context() as patch:
+            patch.setitem(sys.modules, "fcntl", None)
+            patch.setitem(
+                sys.modules,
+                "msvcrt",
+                SimpleNamespace(LK_LOCK=1, locking=lambda *args: calls.append(args)),
+            )
+            results = _load_results()
+            results.prepend_result(results_file, "## Windows result")
+            assert results.fcntl is None
+            assert len(calls) == 1
+            assert calls[0][1:] == (1, 1)
+            assert "## Windows result" in results_file.read_text(encoding="utf-8")
+    finally:
+        _load_results()
 
 
 def test_artifact_metadata_for_missing_artifact() -> None:

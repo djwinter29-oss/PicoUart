@@ -2,10 +2,16 @@
 """Shared result-log helpers for the physical UART test runners."""
 
 import hashlib
-import fcntl
 import os
 import tempfile
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:
+    import msvcrt
+
+    fcntl = None
 
 
 def firmware_version_for_report(version: str | None) -> str | None:
@@ -24,7 +30,11 @@ def prepend_result(results_file: Path, entry: str) -> None:
     lock_path = results_file.with_name(f".{results_file.name}.lock")
     with lock_path.open("a+b") as lock_file:
         # Keep a stable sidecar inode so writers serialize across result-file replacements.
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        if fcntl is None:
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         if results_file.is_file():
             document = results_file.read_text(encoding="utf-8")
         else:
