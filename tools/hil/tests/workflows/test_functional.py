@@ -69,6 +69,8 @@ def test_single_successful_stage_is_recorded_partial() -> None:
         board="pico",
         firmware_version="0.0.0",
         firmware_commit="local",
+        runner_git_commit="0123456789abcdef",
+        runner_worktree="clean",
         baud=115200,
         payload_bytes=64,
     )
@@ -79,10 +81,16 @@ def test_single_successful_stage_is_recorded_partial() -> None:
     }
 
     entry = functional.format_result_entry(
-        arguments, "2026-09-20T00:00:00+00:00", [("HW UART0 to PIO UART2", 0, "PASS")], clean, clean
+        arguments,
+        "2026-09-20T00:00:00+00:00",
+        [("HW UART0 to PIO UART2", 0, "PASS pico-to-peer: 117 bytes\nPASS peer-to-pico: 117 bytes")],
+        clean,
+        clean,
     )
 
     assert "**Result:** `PARTIAL`" in entry
+    assert "**Runner Git commit:** `0123456789abcdef`" in entry
+    assert "| HW UART0 to PIO UART2 | PASS | 234 |" in entry
 
 
 @pytest.mark.parametrize(("stage_status", "expected"), [(0, 0), (1, 1)])
@@ -102,6 +110,7 @@ def test_main_returns_stage_status_without_hardware(monkeypatch, stage_status, e
         "error": None,
     }
     monkeypatch.setattr(functional, "artifact_metadata", lambda _artifact: {"path": "none", "sha256": "none"})
+    monkeypatch.setattr(functional, "git_metadata", lambda: ("commit", "clean"))
     monkeypatch.setattr(functional, "fixture_paths_valid", lambda _arguments: True)
     monkeypatch.setattr(functional, "collect_hid_health", lambda: snapshot)
     monkeypatch.setattr(functional, "health_evidence", lambda _snapshot: "")

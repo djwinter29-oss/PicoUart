@@ -49,6 +49,26 @@ physical UART signaling, or RTS/CTS behavior.
    `build/hil-results.md`.
 4. For releases, use the exact packaged artifacts and follow [Releasing](../releasing.md).
 
+From the repository root, run the combined functional and concurrent-performance checks and generate a dated result:
+
+```sh
+tools/hil/runner/full.sh \
+    --pico-cdc0 /dev/serial/by-id/<pico-cdc0> \
+    --pico-cdc1 /dev/serial/by-id/<pico-cdc1> \
+    --pico-cdc2 /dev/serial/by-id/<pico-cdc2> \
+    --pico-cdc3 /dev/serial/by-id/<pico-cdc3> \
+    --pico-cdc4 /dev/serial/by-id/<pico-cdc4> \
+    --pico-cdc5 /dev/serial/by-id/<pico-cdc5> \
+    --board pico --firmware-version 1.2.3 --firmware-commit <commit> \
+    --artifact /path/to/flashed/pico_uart.uf2 \
+    --rates 460800,500000,600000 --duration 30
+```
+
+Replace the example values with the attached board's endpoints and firmware metadata. The runner creates
+`docs/tests/records/` if needed and avoids overwriting earlier records. This command records the functional and
+concurrent six-port phases; use the [HIL Fixture Test Plan](hil-fixture-test-plan.md) for the separate pair sweeps and
+soak checks.
+
 ## Result Semantics
 
 - `PASS`: every required case for the declared test level passed.

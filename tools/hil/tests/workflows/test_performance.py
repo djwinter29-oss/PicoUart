@@ -51,7 +51,34 @@ def test_preserves_results_for_repeated_rates() -> None:
     }
 
 
-@pytest.mark.parametrize(("command_status", "health_error", "expected"), [(0, None, 0), (0, "device lost", 1), (1, None, 1)])
+def test_performance_report_includes_runner_git_metadata_and_summary_table() -> None:
+    performance = _load_performance()
+    arguments = SimpleNamespace(
+        board="pico2",
+        firmware_version="1.2.3",
+        firmware_commit="firmware-commit",
+        runner_git_commit="runner-commit",
+        runner_worktree="dirty",
+        rates="115200",
+        duration=10,
+        payload_bytes=1024,
+        artifact_path="firmware.elf",
+        artifact_sha256="deadbeef",
+    )
+    output = "Benchmarking all six HIL fixture streams at 115200 baud\nPASS cdc0-to-cdc2: 100 bytes, 20.0 B/s\n"
+
+    report = performance.format_result_entry(arguments, "2026-10-08T00:00:00+00:00", 0, output)
+
+    assert "**Runner Git commit:** `runner-commit`" in report
+    assert "**Runner worktree:** `dirty`" in report
+    assert "| 115200 | cdc0-to-cdc2 | PASS | 100 | 20.0 |" in report
+    assert "Command:" not in report
+
+
+@pytest.mark.parametrize(
+    ("command_status", "health_error", "expected"),
+    [(0, None, 0), (0, "device lost", 1), (1, None, 1)],
+)
 def test_main_combines_benchmark_and_health_status(monkeypatch, command_status, health_error, expected) -> None:
     performance = _load_performance()
     arguments = performance.parse_arguments(
@@ -71,6 +98,7 @@ def test_main_combines_benchmark_and_health_status(monkeypatch, command_status, 
     after = {**clean, "error": health_error}
     snapshots = iter([clean, after])
     monkeypatch.setattr(performance, "artifact_metadata", lambda _artifact: {"path": "none", "sha256": "none"})
+    monkeypatch.setattr(performance, "git_metadata", lambda: ("commit", "clean"))
     monkeypatch.setattr(performance, "build_command", lambda _arguments: ["stress"])
     monkeypatch.setattr(performance, "collect_hid_health", lambda: next(snapshots))
     monkeypatch.setattr(performance, "health_evidence", lambda _snapshot: "")

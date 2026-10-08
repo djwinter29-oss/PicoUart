@@ -30,8 +30,8 @@ tools/validation/run-host-tests.sh
 tools/validation/validate.sh --skip-build
 
 # Hardware test project
-uv sync --project tools/hil --extra test
-uv run --project tools/hil --extra test pytest tools/hil/tests
+uv sync --frozen --project tools/hil --extra test
+uv run --frozen --project tools/hil --extra test pytest tools/hil/tests
 tools/hil/runner/full.sh --help
 
 # Release artifact verification

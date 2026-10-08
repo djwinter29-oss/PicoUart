@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -15,6 +16,7 @@ from types import SimpleNamespace
 from ..support.results import artifact_metadata, prepend_result
 from ..support.health import collect_hid_health, health_evidence, health_is_clean, health_summary
 from ..support.paths import REPO_ROOT
+from ..support.repository import git_metadata
 
 DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
 
@@ -94,12 +96,14 @@ def format_result_entry(
 ) -> str:
     clean = stages and all(code == 0 for _, code, _ in stages) and health_is_clean(health_after, health_before)
     overall = "PASS" if clean and len(stages) == 4 else "PARTIAL" if clean else "FAIL"
-    stage_results = {label: code == 0 for label, code, _ in stages}
+    stage_results = {label: (code == 0, output) for label, code, output in stages}
     lines = [
         f"## {timestamp} - {arguments.board} - Functional Test",
         "",
         f"**Result:** `{overall}`",
         f"**Firmware:** {arguments.firmware_version}, `{arguments.firmware_commit}`",
+        f"**Runner Git commit:** `{getattr(arguments, 'runner_git_commit', 'unknown')}`",
+        f"**Runner worktree:** `{getattr(arguments, 'runner_worktree', 'unknown')}`",
         f"**Board:** `{arguments.board}`",
         f"**Test date/time:** `{timestamp}`",
         "**Wiring:** HIL fixture stages 1-4",
@@ -115,8 +119,8 @@ def format_result_entry(
         "",
         "### Results",
         "",
-        "| Link | Result |",
-        "| --- | --- |",
+        "| Link | Result | Verified bytes |",
+        "| --- | --- | ---: |",
     ]
     for label in (
         "HW UART0 to PIO UART2",
@@ -125,7 +129,11 @@ def format_result_entry(
         "PIO UART5 loopback",
     ):
         if label in stage_results:
-            lines.append(f"| {label} | {'PASS' if stage_results[label] else 'FAIL'} |")
+            passed, output = stage_results[label]
+            verified_bytes = sum(
+                int(value) for value in re.findall(r"^PASS [^:]+: ([0-9]+) bytes", output, re.MULTILINE)
+            )
+            lines.append(f"| {label} | {'PASS' if passed else 'FAIL'} | {verified_bytes or '-'} |")
     lines.extend(
         [
             "",
@@ -195,6 +203,7 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
 def main(arguments: argparse.Namespace | None = None) -> int:
     if arguments is None:
         arguments = parse_arguments()
+    arguments.runner_git_commit, arguments.runner_worktree = git_metadata()
     artifact = artifact_metadata(arguments.artifact)
     arguments.artifact_path = artifact["path"]
     arguments.artifact_sha256 = artifact["sha256"]

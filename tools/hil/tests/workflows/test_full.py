@@ -72,6 +72,21 @@ def test_parse_defaults_to_usb_sustainable_rate() -> None:
     assert arguments.record_dir == full.DEFAULT_RECORDS_DIR
 
 
+def test_git_metadata_reads_commit_and_worktree_state(monkeypatch) -> None:
+    full = _load_full()
+    responses = iter([SimpleNamespace(stdout="0123456789abcdef\n"), SimpleNamespace(stdout=" M file.py\n")])
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        return next(responses)
+
+    monkeypatch.setattr(full.subprocess, "run", run)
+
+    assert full.git_metadata() == ("0123456789abcdef", "dirty")
+    assert commands == [["git", "rev-parse", "HEAD"], ["git", "status", "--porcelain"]]
+
+
 def test_parser_does_not_advertise_unused_uart0_baud_option() -> None:
     full = _load_full()
 
@@ -89,7 +104,7 @@ def test_marks_failed_functional_phase_as_fail() -> None:
 
     entry = full.format_result_entry(arguments, "2026-09-20T00:00:00+00:00", (1, "functional failed"), None)
 
-    assert "**Result:** `FAIL`" in entry
+    assert "**Overall result:** `FAIL`" in entry
 
 
 def test_writes_fixed_record_sections_and_board_metadata(tmp_path: Path) -> None:
@@ -99,25 +114,61 @@ def test_writes_fixed_record_sections_and_board_metadata(tmp_path: Path) -> None
         tester="operator",
         firmware_version="1.2.3",
         firmware_commit="abc1234",
+        runner_git_commit="0123456789abcdef",
+        runner_worktree="dirty",
+        rates="460800",
         full_fixture=True,
         artifact_path="pico_uart.elf",
         artifact_sha256="deadbeef",
     )
     run_at = datetime(2026, 10, 8, 14, 30, tzinfo=timezone.utc)
+    functional_output = "\n".join(
+        [
+            "HID health summary: health clean before",
+            "RUN HW UART0 to PIO UART2: child command hidden",
+            "PASS pico-to-peer: 117 bytes",
+            "PASS peer-to-pico: 117 bytes",
+            "RUN PIO UART3 to PIO UART4: child command hidden",
+            "PASS pico-to-peer: 117 bytes",
+            "PASS peer-to-pico: 117 bytes",
+            "RUN HW UART1 loopback: child command hidden",
+            "PASS pico-loopback: 118 bytes",
+            "RUN PIO UART5 loopback: child command hidden",
+            "PASS pico-loopback: 118 bytes",
+            "HID health summary: health clean after",
+        ]
+    )
+    performance_output = "\n".join(
+        [
+            "Benchmarking all six HIL fixture streams at 460800 baud",
+            "PASS cdc0-to-cdc2: 1000 bytes, 100.0 B/s",
+            "PASS cdc2-to-cdc0: 1000 bytes, 101.0 B/s",
+            "PASS cdc3-to-cdc4: 1000 bytes, 102.0 B/s",
+            "PASS cdc4-to-cdc3: 1000 bytes, 103.0 B/s",
+            "PASS cdc1-loopback: 1000 bytes, 104.0 B/s",
+            "PASS cdc5-loopback: 1000 bytes, 105.0 B/s",
+            "HID health summary: health clean final",
+        ]
+    )
     content = full.format_result_entry(
-        arguments, run_at.isoformat(), (0, "functional output"), (0, "performance output")
+        arguments, run_at.isoformat(), (0, functional_output), (0, performance_output)
     )
 
     record = full.write_hil_record(tmp_path, run_at, arguments.board, content)
 
     assert record.name == "2026-10-08-143000Z-pico2-hil.md"
     text = record.read_text(encoding="utf-8")
-    assert "**Result:** `PASS`" in text
+    assert "**Overall result:** `PASS`" in text
     assert "**Artifact SHA-256:** `deadbeef`" in text
-    assert "## Functional Test" in text
-    assert "## Performance Test" in text
-    assert "functional output" in text
-    assert "performance output" in text
+    assert "**Runner Git commit:** `0123456789abcdef`" in text
+    assert "**Runner worktree:** `dirty`" in text
+    assert "## Functional Summary" in text
+    assert "| HW UART0 to PIO UART2 | CDC0 <-> CDC2 | PASS | 234 |" in text
+    assert "## Concurrent Performance Summary" in text
+    assert "| 460800 | cdc0-to-cdc2 | PASS | 1000 | 100.0 B/s |" in text
+    assert "health clean final" in text
+    assert "child command hidden" not in text
+    assert "Command:" not in text
 
 
 def test_record_writer_never_overwrites_same_run_name(tmp_path: Path) -> None:
@@ -148,6 +199,7 @@ def test_main_sequences_phases_and_preserves_failure(
     arguments = _arguments()
     arguments.continue_after_functional_failure = continue_after_failure
     phases = []
+    monkeypatch.setattr(full, "git_metadata", lambda: ("commit", "clean"))
     monkeypatch.setattr(full, "artifact_metadata", lambda _artifact: {"path": "none", "sha256": "none"})
 
     def run_child(label, _command):
@@ -165,6 +217,7 @@ def test_main_rejects_skipping_both_phases(monkeypatch, capsys) -> None:
     arguments = _arguments()
     arguments.skip_functional = True
     arguments.skip_performance = True
+    monkeypatch.setattr(full, "git_metadata", lambda: ("commit", "clean"))
     monkeypatch.setattr(full, "artifact_metadata", lambda _artifact: {"path": "none", "sha256": "none"})
     monkeypatch.setattr(full, "run_child", lambda *_args: pytest.fail("no phase should run"))
 

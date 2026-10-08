@@ -15,8 +15,89 @@ from types import SimpleNamespace
 
 from ..support.results import artifact_metadata
 from ..support.paths import REPO_ROOT
+from ..support.repository import git_metadata
+from .performance import parse_benchmark_output_by_rate
 
 DEFAULT_RECORDS_DIR = REPO_ROOT / "docs/tests/records"
+FUNCTIONAL_CASES = (
+    ("HW UART0 to PIO UART2", "CDC0 <-> CDC2", ("pico-to-peer", "peer-to-pico")),
+    ("PIO UART3 to PIO UART4", "CDC3 <-> CDC4", ("pico-to-peer", "peer-to-pico")),
+    ("HW UART1 loopback", "CDC1 loopback", ("pico-loopback",)),
+    ("PIO UART5 loopback", "CDC5 loopback", ("pico-loopback",)),
+)
+PERFORMANCE_LINKS = (
+    "cdc0-to-cdc2",
+    "cdc2-to-cdc0",
+    "cdc3-to-cdc4",
+    "cdc4-to-cdc3",
+    "cdc1-loopback",
+    "cdc5-loopback",
+)
+FUNCTIONAL_RESULT_PATTERN = re.compile(r"^(PASS|FAIL) (pico-to-peer|peer-to-pico|pico-loopback): (.+)$")
+HEALTH_SUMMARY_PATTERN = re.compile(r"^HID health summary: (.+)$", re.MULTILINE)
+
+
+def functional_summary_rows(result: tuple[int, str] | None) -> list[tuple[str, str, str, str]]:
+    """Summarize functional link outcomes without embedding child transcripts."""
+    observed: dict[str, list[tuple[str, str, int | None]]] = {label: [] for label, _, _ in FUNCTIONAL_CASES}
+    output = result[1] if result is not None else ""
+    active_case = None
+    for line in output.splitlines():
+        if line.startswith("RUN "):
+            active_case = next((label for label, _, _ in FUNCTIONAL_CASES if line.startswith(f"RUN {label}:")), None)
+            continue
+        match = FUNCTIONAL_RESULT_PATTERN.match(line)
+        if active_case is not None and match:
+            count_match = re.search(r"([0-9]+) bytes", match.group(3))
+            count = int(count_match.group(1)) if count_match else None
+            observed[active_case].append((match.group(2), match.group(1), count))
+
+    rows = []
+    for label, connection, expected_directions in FUNCTIONAL_CASES:
+        outcomes = observed[label]
+        if result is None or f"RUN {label}:" not in output:
+            status = "NOT RUN"
+        elif any(outcome == "FAIL" for _, outcome, _ in outcomes):
+            status = "FAIL"
+        elif len(outcomes) == len(expected_directions) and {direction for direction, _, _ in outcomes} == set(
+            expected_directions
+        ):
+            status = "PASS"
+        else:
+            status = "FAIL" if result[0] != 0 else "NOT REPORTED"
+        verified_bytes = sum(count for _, outcome, count in outcomes if outcome == "PASS" and count is not None)
+        rows.append((label, connection, status, str(verified_bytes) if verified_bytes else "-"))
+    return rows
+
+
+def performance_summary_rows(
+    rates: str, result: tuple[int, str] | None
+) -> list[tuple[str, str, str, str, str]]:
+    """Summarize each configured rate and stream from benchmark output."""
+    parsed = parse_benchmark_output_by_rate(result[1]) if result is not None else {}
+    rows = []
+    for rate in (value.strip() for value in rates.split(",") if value.strip()):
+        for label in PERFORMANCE_LINKS:
+            outcome = parsed.get((int(rate), label))
+            if result is None:
+                status, verified, metric = "NOT RUN", "-", "-"
+            elif outcome is None:
+                status, verified, metric = "NOT REPORTED", "-", "-"
+            else:
+                status, verified, metric = outcome
+                if status == "PASS":
+                    metric = f"{metric} B/s"
+            rows.append((rate, label, status, verified, metric))
+    return rows
+
+
+def final_health_summary(*results: tuple[int, str] | None) -> str:
+    for result in reversed(results):
+        if result is not None:
+            summaries = HEALTH_SUMMARY_PATTERN.findall(result[1])
+            if summaries:
+                return summaries[-1]
+    return "not reported"
 
 
 def build_functional_command(arguments: argparse.Namespace) -> list[str]:
@@ -132,47 +213,62 @@ def format_result_entry(
     else:
         overall = "FAIL"
 
-    def transcript_block(result: tuple[int, str] | None) -> str:
-        if result is None:
-            return "Not run."
-        output = result[1].rstrip() or "No output."
-        longest_fence = max((len(match) for match in re.findall(r"`+", output)), default=0)
-        fence = "`" * max(3, longest_fence + 1)
-        return f"{fence}text\n{output}\n{fence}"
-
-    return "\n".join(
+    functional_status = "PASS" if functional_code == 0 else "FAIL" if functional_code is not None else "NOT RUN"
+    performance_status = "PASS" if performance_code == 0 else "FAIL" if performance_code is not None else "NOT RUN"
+    lines = [
+        "# PicoUart HIL Record",
+        "",
+        f"- **Overall result:** `{overall}`",
+        f"- **Run time (UTC):** `{timestamp}`",
+        f"- **Board:** `{arguments.board}`",
+        f"- **Tester:** {arguments.tester}",
+        f"- **Firmware:** `{arguments.firmware_version}`",
+        f"- **Firmware commit:** `{arguments.firmware_commit}`",
+        f"- **Runner Git commit:** `{getattr(arguments, 'runner_git_commit', 'unknown')}`",
+        f"- **Runner worktree:** `{getattr(arguments, 'runner_worktree', 'unknown')}`",
+        f"- **Artifact:** {getattr(arguments, 'artifact_path', 'not supplied')}",
+        f"- **Artifact SHA-256:** `{getattr(arguments, 'artifact_sha256', 'not supplied')}`",
+        "- **Fixture:** HW UART0 <-> PIO UART2, PIO UART3 <-> PIO UART4, HW UART1 loopback, PIO UART5 loopback",
+        "- **RTS/CTS:** disabled",
+        "",
+        "## Functional Summary",
+        "",
+        f"**Phase result:** `{functional_status}`",
+        "",
+        "| Stage | Connection | Result | Verified bytes |",
+        "| --- | --- | --- | ---: |",
+    ]
+    lines.extend(
+        f"| {label} | {connection} | {status} | {count} |"
+        for label, connection, status, count in functional_summary_rows(functional)
+    )
+    lines.extend(
         [
-            "# PicoUart HIL Record",
             "",
-            f"- **Result:** `{overall}`",
-            f"- **Run time (UTC):** `{timestamp}`",
-            f"- **Board:** `{arguments.board}`",
-            f"- **Tester:** {arguments.tester}",
-            f"- **Firmware:** `{arguments.firmware_version}`",
-            f"- **Source commit:** `{arguments.firmware_commit}`",
-            f"- **Artifact:** {getattr(arguments, 'artifact_path', 'not supplied')}",
-            f"- **Artifact SHA-256:** `{getattr(arguments, 'artifact_sha256', 'not supplied')}`",
-            "- **Fixture:** HW UART0↔PIO UART2, PIO UART3↔PIO UART4, HW UART1 loopback, PIO UART5 loopback",
-            "- **RTS/CTS:** disabled",
+            "## Concurrent Performance Summary",
             "",
-            "## Functional Test",
+            f"**Phase result:** `{performance_status}`",
             "",
-            f"**Result:** `{'PASS' if functional_code == 0 else 'FAIL' if functional_code is not None else 'NOT RUN'}`",
+            "| Rate (baud) | Stream | Result | Verified bytes | Throughput / error |",
+            "| ---: | --- | --- | ---: | --- |",
+        ]
+    )
+    lines.extend(
+        f"| {rate} | {label} | {status} | {verified} | {metric} |"
+        for rate, label, status, verified, metric in performance_summary_rows(
+            getattr(arguments, "rates", ""), performance
+        )
+    )
+    lines.extend(
+        [
             "",
-            transcript_block(functional),
+            "## HID Health",
             "",
-            "## Performance Test",
-            "",
-            f"**Result:** `{'PASS' if performance_code == 0 else 'FAIL' if performance_code is not None else 'NOT RUN'}`",
-            "",
-            transcript_block(performance),
-            "",
-            "## Review Notes",
-            "",
-            "Confirm per-link verified bytes, HID health, and any anomalies before treating this record as release evidence.",
+            final_health_summary(functional, performance),
             "",
         ]
     )
+    return "\n".join(lines)
 
 
 def write_hil_record(record_dir: Path, run_at: dt.datetime, board: str, content: str) -> Path:
@@ -228,6 +324,7 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
 def main(arguments: argparse.Namespace | None = None) -> int:
     if arguments is None:
         arguments = parse_arguments()
+    arguments.runner_git_commit, arguments.runner_worktree = git_metadata()
     artifact = artifact_metadata(arguments.artifact)
     arguments.artifact_path = artifact["path"]
     arguments.artifact_sha256 = artifact["sha256"]

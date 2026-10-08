@@ -18,13 +18,17 @@ If a name already exists, the runner adds a numeric suffix rather than overwriti
 
 ## Record Format
 
-Each generated record contains:
+Combined and standalone functional/performance reports use the same concise format. Each entry contains:
 
 - Overall `PASS`, `FAIL`, or `PARTIAL` status
-- Board, UTC run time, firmware version, source commit, and artifact SHA-256 when supplied
-- Functional stage outcomes and performance outcome
-- The exact child commands and captured output
-- HIL health snapshots and any caveats
+- Board, UTC run time, firmware version, firmware commit, runner Git commit, and worktree state
+- Artifact name and SHA-256 when supplied
+- A functional summary table with each fixture link, result, and verified byte count
+- A concurrent performance table with each baud rate, stream, result, verified bytes, and throughput/error
+- A compact final HID health summary
+
+Reports intentionally omit child command lines and verbose monitor transcripts. The terminal still shows live test output
+while a run is in progress. Standalone phase entries are appended to the ignored local log at `build/hil-results.md`.
 
 A local record is evidence, not automatic release qualification. Release evidence must use the exact packaged artifacts
 and pass the gates in [Releasing](../../releasing.md).
