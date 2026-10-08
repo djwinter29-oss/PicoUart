@@ -213,5 +213,5 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
         run_interruptible "$PYTHON_EXE" -m pip install -q --require-hashes -r "$NO_HIDAPI_LOCK_FILE"
     fi
     CDPATH='' cd -- "$REPO_ROOT"
-    run_interruptible "$PYTHON_EXE" -m pytest -c host/python/pyproject.toml
+    run_interruptible "$PYTHON_EXE" -m pytest -c pyproject.toml
 fi

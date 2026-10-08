@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 
@@ -22,7 +21,6 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    sys.path.insert(0, str(args.repo_root / "host" / "python" / "tests"))
     from contract import firmware_usb_ids, is_lab_placeholder_identity
 
     vid, pid = firmware_usb_ids(args.repo_root)

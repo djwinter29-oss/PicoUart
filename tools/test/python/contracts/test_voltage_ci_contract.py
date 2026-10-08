@@ -18,7 +18,7 @@ def voltage_policy_without_native_compiler(repo_root, tmp_path, monkeypatch):
     )
     spec = importlib.util.spec_from_file_location(
         "voltage_policy_without_native_compiler",
-        repo_root / "host/python/tests/test_system_clock_voltage_policy.py",
+        repo_root / "tools/test/python/firmware/test_system_clock_voltage_policy.py",
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -118,7 +118,7 @@ def test_voltage_workflow_uses_hash_required_minimal_lock(repo_root, workflow_na
     assert "--require-hashes" in command
     assert command[command.index("-r") + 1] == "host/python/requirements-voltage-lock.txt"
     assert 'PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/firmware-${LABEL}"' in step
-    assert "host/python/tests/test_system_clock_voltage_policy.py -k real_sdk" in step
+    assert "tools/test/python/firmware/test_system_clock_voltage_policy.py -k real_sdk" in step
     assert 'python-version: "3.12"' in workflow
 
 

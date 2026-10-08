@@ -48,10 +48,10 @@ function renderChannels(data) {
     const traffic = document.createElement("td");
     traffic.className = "traffic";
     [
-      ["UART TX", channel.totals.uart_tx],
-      ["UART RX", channel.totals.uart_rx],
-      ["USB TX", channel.totals.usb_tx],
-      ["USB RX", channel.totals.usb_rx],
+      ["UART TX >=", channel.totals.uart_tx],
+      ["UART RX >=", channel.totals.uart_rx],
+      ["USB TX >=", channel.totals.usb_tx],
+      ["USB RX >=", channel.totals.usb_rx],
     ].forEach(([label, count]) => {
       const metric = document.createElement("span");
       const value = document.createElement("b");
@@ -84,11 +84,20 @@ function render(data) {
     ? `${data.overflow_counts.reduce((sum, count) => sum + count, 0)} B`
     : "--";
   document.querySelector("#reset-board").hidden = !data.board?.hid_reset_enabled;
+  const trafficNote = document.querySelector("#traffic-note");
+  trafficNote.dataset.incomplete = String(data.traffic_incomplete);
+  if (data.traffic_incomplete) {
+    trafficNote.textContent = "A report gap or saturated delta was detected; traffic totals are lower bounds.";
+  }
   renderChannels(data);
 
-  const message = data.error || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
+  const message = data.error
+    || (data.metadata_error ? `Board metadata unavailable: ${data.metadata_error}` : null)
+    || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
   statusMessage.textContent = message;
-  statusMessage.parentElement.dataset.error = Boolean(data.error || !data.connected);
+  statusMessage.parentElement.dataset.error = Boolean(
+    data.error || data.metadata_error || !data.connected,
+  );
 }
 
 async function refresh() {

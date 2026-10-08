@@ -7,6 +7,9 @@ import sys
 import pytest
 
 from helpers import FakeHidDevice, board_status_bytes, overflow_counts_bytes, status_report_bytes
+from pico_uart import transport
+from pico_uart.client import read_board_status, send_command
+from pico_uart.protocol import COMMAND_TOGGLE_LED
 
 
 def test_version_and_temperature(hid_module):
@@ -31,6 +34,28 @@ def test_overflow_counts(hid_module):
         overflow_counts_bytes(), report_id=hid_module.REPORT_ID_OVERFLOW_COUNTS
     )
     assert hid_module.read_overflow_counts(device) == [1, 2, 3, 4, 5, 6]
+
+
+def test_hidraw_feature_read_rejects_short_ioctl_result(monkeypatch):
+    if transport.fcntl is None:
+        pytest.skip("hidraw ioctl is only available on Linux")
+    device = object.__new__(transport._LinuxHidrawDevice)
+    device._file_descriptor = 7
+    monkeypatch.setattr(transport.fcntl, "ioctl", lambda *args: 2)
+
+    with pytest.raises(RuntimeError, match="unexpected report"):
+        read_board_status(device)
+
+
+def test_hidraw_feature_write_propagates_short_ioctl_result(monkeypatch):
+    if transport.fcntl is None:
+        pytest.skip("hidraw ioctl is only available on Linux")
+    device = object.__new__(transport._LinuxHidrawDevice)
+    device._file_descriptor = 7
+    monkeypatch.setattr(transport.fcntl, "ioctl", lambda *args: 1)
+
+    with pytest.raises(RuntimeError, match="incomplete"):
+        send_command(device, COMMAND_TOGGLE_LED)
 
 
 def test_rejects_unsupported_board_status_layout(hid_module):

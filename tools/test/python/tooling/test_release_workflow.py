@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PR_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-check.yml"
 RESOLVE_SCRIPT = REPO_ROOT / "tools" / "release" / "resolve-release-version.sh"

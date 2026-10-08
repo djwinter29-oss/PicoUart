@@ -28,8 +28,10 @@ def _empty_snapshot() -> dict[str, Any]:
     return {
         "connected": False,
         "error": None,
+        "metadata_error": None,
         "updated_at": None,
         "sequence": None,
+        "traffic_incomplete": False,
         "board": None,
         "overflow_counts": [None] * UART_CHANNEL_COUNT,
         "channels": [
@@ -64,6 +66,7 @@ class DashboardService:
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._client: PicoUartHid | None = None
+        self._last_sequence: int | None = None
         self._snapshot = _empty_snapshot()
         self._thread = threading.Thread(
             target=self._poll, name="pico-uart-monitor", daemon=True
@@ -100,6 +103,7 @@ class DashboardService:
                 with self._lock:
                     self._client = client
                     self._snapshot = _empty_snapshot()
+                    self._last_sequence = None
                     self._snapshot["connected"] = True
                 next_metadata_read = 0.0
                 while not self._stop.is_set():
@@ -130,6 +134,13 @@ class DashboardService:
             self._snapshot["connected"] = True
             self._snapshot["error"] = None
             self._snapshot["sequence"] = status["sequence"]
+            previous_sequence = self._last_sequence
+            if (
+                previous_sequence is not None
+                and status["sequence"] != (previous_sequence + 1) % 256
+            ):
+                self._snapshot["traffic_incomplete"] = True
+            self._last_sequence = status["sequence"]
             self._snapshot["updated_at"] = datetime.now(timezone.utc).isoformat(
                 timespec="seconds"
             )
@@ -148,6 +159,8 @@ class DashboardService:
                 channel["ring_high_watermark"] = source["ring_high_watermark"]
                 for field, source_field in TRAFFIC_FIELDS.items():
                     delta = source[source_field]
+                    if delta == 65535:
+                        self._snapshot["traffic_incomplete"] = True
                     channel["traffic"][field] = delta
                     channel["totals"][field] += delta
 
@@ -157,9 +170,12 @@ class DashboardService:
             overflows = client.read_overflow_counts()
         except (OSError, RuntimeError) as error:
             with self._lock:
-                self._snapshot["error"] = str(error)
+                self._snapshot["metadata_error"] = str(error)
+                self._snapshot["board"] = None
+                self._snapshot["overflow_counts"] = [None] * UART_CHANNEL_COUNT
             return
         with self._lock:
+            self._snapshot["metadata_error"] = None
             self._snapshot["board"] = board
             self._snapshot["overflow_counts"] = overflows
 
@@ -169,6 +185,7 @@ def create_app(service: DashboardService | None = None) -> Flask:
     app = Flask(__name__)
     app.config.update(
         SECRET_KEY=secrets.token_bytes(32),
+        TRUSTED_HOSTS=["localhost", "127.0.0.1"],
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
     )

@@ -113,6 +113,8 @@ tbody tr:hover { background: #f8faf8; }
 .cdc-closed { color: var(--muted); }
 .traffic { display: grid; grid-template-columns: repeat(2, max-content); gap: 4px 12px; color: #43595e; font: 10px var(--mono); }
 .traffic b { color: var(--ink); font-weight: 600; }
+.traffic-note { margin: 10px 0 0; color: var(--muted); font-size: 11px; }
+.traffic-note[data-incomplete="true"] { color: var(--coral); }
 .health-flags { display: block; margin-top: 3px; color: var(--muted); font: 9px var(--mono); }
 .status-line { min-height: 46px; margin-top: 18px; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
 .status-mark { width: 7px; height: 7px; background: var(--teal); }

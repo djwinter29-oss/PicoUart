@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 VERSION_CHECK_SCRIPT = REPO_ROOT / "firmware" / "version.cmake"
 
 pytestmark = pytest.mark.skipif(shutil.which("cmake") is None, reason="cmake not installed")

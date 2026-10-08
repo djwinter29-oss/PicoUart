@@ -39,17 +39,27 @@ host setup helper entry points.
 - `src/pico_uart/protocol.py`: HID report constants and decoders
 - `src/pico_uart/cli.py`: command-line interface
 - `src/pico_uart/web/`: Flask dashboard and static assets
-- `tests/`: hardware-free host tests
+- `tests/pico_uart/`: package HID client, transport, and dashboard tests
+- `tools/test/python/firmware/`: firmware policy and PIO behavior tests
+- `tools/test/python/tooling/`: repository host-tool tests
+- `tools/test/python/contracts/`: cross-component and CI contract tests
+- `tests/`: package fixtures and report helpers
 
 The CLI, dashboard, and tests should use the public `pico_uart` package rather
 than adding another top-level compatibility module.
 
 ## Tests
 
-Run the host Python suite from the repository root:
+Run all package and repository Python tests from the repository root:
 
 ```bash
-host/python/.venv/bin/python -m pytest -c host/python/pyproject.toml
+host/python/.venv/bin/python -m pytest -c pyproject.toml
+```
+
+To run only the installable `pico-uart` package tests, run from `host/python`:
+
+```bash
+.venv/bin/python -m pytest -c pyproject.toml
 ```
 
 On Windows, use `host/python/.venv/Scripts/python.exe` in place of the POSIX
@@ -70,7 +80,7 @@ uv pip compile host/python/requirements-dev.txt --universal --python-version 3.1
   --generate-hashes --no-emit-index-url --output-file host/python/requirements-lock.txt
 ```
 
-The existing [dependency contract test](../../host/python/tests/test_firmware_contract.py)
+The existing [dependency contract test](../../tools/test/python/contracts/test_firmware_contract.py)
 checks that the direct pins appear in the generated lock.
 
 ## Build the Distribution

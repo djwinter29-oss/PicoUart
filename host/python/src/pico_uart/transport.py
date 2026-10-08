@@ -55,20 +55,24 @@ class _LinuxHidrawDevice:
             raise OSError("hidraw fallback requires fcntl")
         report = bytearray(size)
         report[0] = report_id
-        fcntl.ioctl(self._file_descriptor, _hidraw_feature_ioctl(0x07, size), report, True)
-        return list(report)
+        bytes_read = fcntl.ioctl(
+            self._file_descriptor,
+            _hidraw_feature_ioctl(0x07, size),
+            report,
+            True,
+        )
+        return list(report[:bytes_read])
 
     def send_feature_report(self, report: list[int]) -> int:
         if fcntl is None:
             raise OSError("hidraw fallback requires fcntl")
         payload = bytearray(report)
-        fcntl.ioctl(
+        return fcntl.ioctl(
             self._file_descriptor,
             _hidraw_feature_ioctl(0x06, len(payload)),
             payload,
             True,
         )
-        return len(payload)
 
 
 def _hidraw_feature_ioctl(command: int, size: int) -> int:

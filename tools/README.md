@@ -12,7 +12,7 @@ file only maps the tool categories.
 | `hardware/` | Physical HIL runners and serial bridge/stress tools |
 | `host/` | Host Python environment setup |
 | `release/` | Release version, USB identity, and artifact verification |
-| `test/` | Host tests, coverage, syntax checks, static analysis, and smoke checks |
+| `test/` | Repository tests (`python/`), coverage, syntax checks, static analysis, and smoke checks |
 
 ## Common Commands
 

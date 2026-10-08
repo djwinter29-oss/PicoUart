@@ -46,5 +46,6 @@ ctest --test-dir build/host-tests --output-on-failure
 
 Firmware HIL and physical UART behavior are documented in
 [docs/tests](../../docs/tests) and [docs/releasing.md](../../docs/releasing.md).
-Python host-tool tests live under [host/python/tests](../../host/python/tests)
-and use [host/python/pyproject.toml](../../host/python/pyproject.toml).
+Python package tests live under [host/python/tests](../../host/python/tests).
+Repository-level Python tests live under [tools/test/python](../../tools/test/python)
+and are discovered with the repository [pyproject.toml](../../pyproject.toml).

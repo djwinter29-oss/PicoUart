@@ -59,7 +59,7 @@ bitloop_cts:
 ;     The next start bit is at cycle 320, leaving a 9-cycle idle-high margin.
 ;     That is 9/32 of a bit. At 125 MHz the 3 Mbaud cap is already an RX
 ;     divider of 1.30; a longer bit falls through the divider floor.
-;   - host/python/tests/test_pio_rx_majority.py checks every 1-of-3 pattern,
+;   - tools/test/python/firmware/test_pio_rx_majority.py checks every 1-of-3 pattern,
 ;     the 2-of-3 stop-bit framing rule, 32-cycle data tails, sample offsets
 ;     0,4 and 0,4,8, and that 9-cycle margin.
 ;

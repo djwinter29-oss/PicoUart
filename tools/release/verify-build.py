@@ -312,7 +312,6 @@ def main() -> int:
     parser.add_argument("--objcopy", default="arm-none-eabi-objcopy")
     args = parser.parse_args()
 
-    sys.path.insert(0, str(args.repo_root / "host" / "python" / "tests"))
     from contract import (  # pylint: disable=import-error,import-outside-toplevel
         firmware_hid_constants,
         firmware_hid_report_count,

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
 
 from pico_uart.protocol import parse_status
-from pico_uart.web.app import DashboardService, create_app
+from pico_uart.web.app import DashboardService, _empty_snapshot, create_app
 from helpers import board_status_bytes, overflow_counts_bytes, status_report_bytes
 
 
@@ -45,6 +46,23 @@ def test_dashboard_routes_require_csrf_and_dispatch_controls():
     assert response.status_code == 200
     assert response.json == {"ok": True}
     assert service.actions == ["toggle-led"]
+
+
+def test_dashboard_rejects_untrusted_host_before_serving_controls():
+    service = FakeDashboard()
+    client = create_app(service).test_client()
+
+    assert client.get("/", base_url="http://attacker.example").status_code == 400
+    page = client.get("/", base_url="http://localhost")
+    token = re.search(rb'name="csrf-token" content="([^"]+)"', page.data).group(1).decode()
+    response = client.post(
+        "/api/actions/toggle-led",
+        base_url="http://attacker.example",
+        headers={"X-CSRF-Token": token},
+    )
+
+    assert response.status_code == 400
+    assert service.actions == []
 
 
 def test_dashboard_passes_reset_capability_errors_to_the_host():
@@ -101,3 +119,47 @@ def test_dashboard_service_polls_status_and_metadata():
     assert snapshot["board"]["firmware_version"] == "1.2.3"
     assert snapshot["overflow_counts"] == [0, 1, 2, 3, 4, 5]
     assert fake.closed
+
+
+def test_metadata_errors_survive_telemetry_and_clear_stale_values():
+    service = object.__new__(DashboardService)
+    service._lock = threading.RLock()
+    service._snapshot = _empty_snapshot()
+    service._last_sequence = None
+    service._snapshot["board"] = {"firmware_version": "stale"}
+    service._snapshot["overflow_counts"] = [99] * 6
+
+    class BrokenMetadata:
+        def read_board_status(self):
+            raise OSError("feature read failed")
+
+        def read_overflow_counts(self):
+            return [0] * 6
+
+    service._read_metadata(BrokenMetadata())
+    service._apply_status(parse_status(status_report_bytes(sequence=4)))
+
+    snapshot = service.snapshot()
+    assert snapshot["connected"] is True
+    assert snapshot["error"] is None
+    assert snapshot["metadata_error"] == "feature read failed"
+    assert snapshot["board"] is None
+    assert snapshot["overflow_counts"] == [None] * 6
+
+
+def test_dashboard_marks_traffic_incomplete_on_gaps_and_saturated_deltas():
+    service = object.__new__(DashboardService)
+    service._lock = threading.RLock()
+    service._snapshot = _empty_snapshot()
+    service._last_sequence = None
+
+    first = parse_status(status_report_bytes(sequence=255))
+    first["channels"][0]["controller_tx_bytes"] = 65535
+    service._apply_status(first)
+    assert service.snapshot()["traffic_incomplete"] is True
+
+    service._snapshot["traffic_incomplete"] = False
+    service._apply_status(parse_status(status_report_bytes(sequence=0)))
+    assert service.snapshot()["traffic_incomplete"] is False
+    service._apply_status(parse_status(status_report_bytes(sequence=2)))
+    assert service.snapshot()["traffic_incomplete"] is True
