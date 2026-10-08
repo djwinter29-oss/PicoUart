@@ -171,14 +171,21 @@ fi
 
 if [ "$SKIP_PYTHON" -eq 0 ]; then
     if ! "$PYTHON_EXE" -m pip --version >/dev/null 2>&1; then
-        if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
-            PYTHON_EXE="$REPO_ROOT/.venv/bin/python"
-        fi
+        for candidate in \
+            "$REPO_ROOT/host/python/.venv/bin/python" \
+            "$REPO_ROOT/.venv/bin/python" \
+            "$REPO_ROOT/host/python/.venv/Scripts/python.exe" \
+            "$REPO_ROOT/.venv/Scripts/python.exe"; do
+            if [ -x "$candidate" ] && "$candidate" -m pip --version >/dev/null 2>&1; then
+                PYTHON_EXE="$candidate"
+                break
+            fi
+        done
     fi
 
     if ! "$PYTHON_EXE" -m pip --version >/dev/null 2>&1; then
         echo "Python pip is unavailable for '$PYTHON_EXE' and no usable repo virtualenv was found." >&2
-        echo "Install python3-venv, create .venv, and rerun, or use --skip-python for C tests only." >&2
+        echo "Install python3-venv or run tools/host/setup-venv.sh, then retry; use --skip-python for C tests only." >&2
         exit 1
     fi
 

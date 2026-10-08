@@ -23,6 +23,7 @@ Firmware constraints to account for during development:
 - CDC carries UART data and line coding; HID reports status and limited board controls.
 - The two hardware UART ports support the wider CDC line-coding set; PIO ports are 8N1-only.
 - Flow control and remote HID reset are disabled by default.
+- Trusted lab builds can enable HID reset with `-DPICO_UART_ALLOW_HID_RESET=1`; do not enable it for untrusted hosts.
 - Firmware startup preserves the regulator voltage present on entry; clock overrides do not set core voltage.
 
 ## Test Layout

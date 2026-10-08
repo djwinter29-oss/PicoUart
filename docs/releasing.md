@@ -49,6 +49,16 @@ Before requesting HIL, confirm:
 
 Do not begin physical testing from an uncommitted or locally modified image.
 
+## Security Reporting Setup
+
+Before publishing a release, maintainers must enable private vulnerability
+reporting in the repository's GitHub **Settings → Security → Code security and
+analysis**. This makes the private **Security → Advisories → Report a
+vulnerability** flow available to users. Acknowledge reports privately and
+coordinate disclosure before requesting any public issue or CVE disclosure.
+User reporting instructions and device-security notes are in
+[`SECURITY.md`](../SECURITY.md).
+
 ## USB identity
 
 PicoUart publishes lab and test artifacts using `cafe:4010`, an unallocated
@@ -61,7 +71,8 @@ the same identity and operating-system driver association is undefined. A
 commercial derivative must obtain its own VID/PID and update
 [`firmware/src/config/usb_identity.h`](../firmware/src/config/usb_identity.h)
 and [`host/python/src/pico_uart/transport.py`](../host/python/src/pico_uart/transport.py).
-See also [`SECURITY.md`](../SECURITY.md).
+Treat the identity change as a breaking USB change, update release notes, and
+run the firmware/host USB identity contract tests before publishing.
 
 ## Release HIL Gates
 

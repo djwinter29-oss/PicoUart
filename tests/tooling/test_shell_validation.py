@@ -173,16 +173,18 @@ sys.exit(1 if phase == "full" else 0)
                 process.communicate(timeout=5)
 
 
-@pytest.mark.parametrize("phase", ["pre_launch", "pre_publication"])
-def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase):
-    """Regression test for the run_interruptible/forward_signal launch race in
-    run-host-tests.sh. A HUP can arrive in either of two handoff windows:
+@pytest.mark.parametrize(
+    ("phase", "signal_name", "status"),
+    [("pre_launch", "TERM", 143), ("pre_publication", "HUP", 129)],
+)
+def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase, signal_name, status):
+    """Exercise deferred signal forwarding in both child-launch handoff windows.
 
-    * "pre_launch": immediately after LAUNCH_IN_PROGRESS=1, before the
-      command has even been backgrounded with '&' (no child, no '$!' yet).
-    * "pre_publication": immediately after the '&', before CURRENT_CHILD_PID
-      is published (a child exists, but only '$!' names it, and only
-      transiently).
+        * "pre_launch": the TERM handler runs after LAUNCH_IN_PROGRESS=1, before
+            the command is backgrounded (no child or '$!' yet).
+        * "pre_publication": the HUP handler runs after '&' but before
+            CURRENT_CHILD_PID is published. OS-delivered signals are tested by the
+            separate signal-forwarding cases below.
 
     In both windows forward_signal must defer the signal (PENDING_SIGNAL_NAME)
     rather than read '$!' directly, since in the pre_launch window '$!' may be
@@ -212,27 +214,28 @@ def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase):
         f'    echo "$!" > {shlex.quote(str(child_pid_file))}\n'
     )
     if phase == "pre_publication":
-        # Signal this same shell (HUP) synchronously inside the exact race
-        # window, after '$!' names the child but before CURRENT_CHILD_PID is
-        # published, exercising forward_signal's LAUNCH_IN_PROGRESS deferral.
-        publish_injected += '    kill -s HUP "$$"\n'
+        # Inject the trap handler at the exact race window after '$!' names
+        # the child but before CURRENT_CHILD_PID is published.
+        publish_injected += f"    forward_signal {signal_name} {status}\n"
     publish_injected += '    CURRENT_CHILD_PID=$!\n'
     instrumented = original.replace(publish_marker, publish_injected)
 
     if phase == "pre_launch":
-        # Signal this same shell (HUP) before the command is even
-        # backgrounded: no child exists yet and '$!' would be stale/empty, so
-        # this exercises the deferral path with nothing to (mis)read.
+        # Inject the trap handler before the command is backgrounded, when no
+        # child or '$!' exists yet.
         launch_marker = '    LAUNCH_IN_PROGRESS=1\n'
         assert instrumented.count(launch_marker) == 1, "launch marker not found; run-host-tests.sh changed shape"
-        instrumented = instrumented.replace(launch_marker, launch_marker + '    kill -s HUP "$$"\n')
+        instrumented = instrumented.replace(
+            launch_marker,
+            launch_marker + f"    forward_signal {signal_name} {status}\n",
+        )
 
     # Invoke the real run_interruptible directly, ahead of the normal
     # argument-parsing loop, instead of relying on any selftest bypass in the
     # production script.
     loop_marker = 'while [ "$#" -gt 0 ]; do'
     assert instrumented.count(loop_marker) == 1, "argument-parsing loop marker not found; run-host-tests.sh changed shape"
-    loop_injected = f'run_interruptible sleep 30\nexit "$?"\n{loop_marker}'
+    loop_injected = f'run_interruptible true\nexit "$?"\n{loop_marker}'
     instrumented = instrumented.replace(loop_marker, loop_injected)
 
     instrumented_path = tmp_path / "test-host-instrumented.sh"
@@ -244,7 +247,7 @@ def test_host_runner_launch_race_reaps_child(repo_root, tmp_path, phase):
         env={**os.environ},
         capture_output=True, text=True, timeout=10,
     )
-    assert completed.returncode == 129, completed.stdout + completed.stderr
+    assert completed.returncode == status, completed.stdout + completed.stderr
     # The command must still be launched in both windows (deferred signals do
     # not skip the launch), and its PID is recorded exactly once, at the real
     # publication site, never from a stale/empty '$!' read during injection.
