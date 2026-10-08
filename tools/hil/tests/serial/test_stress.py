@@ -312,6 +312,25 @@ def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> N
     assert stress.benchmark_rate(arguments, 115200) is False
 
 
+def test_setup_only_fails_when_port_cleanup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    stress = _load_stress()
+    arguments = type(
+        "Arguments",
+        (),
+        {
+            **{f"cdc{channel}": f"/dev/cdc{channel}" for channel in range(6)},
+            "settle_seconds": 0.0,
+            "setup_only": True,
+        },
+    )()
+    descriptors = iter(range(20, 26))
+    monkeypatch.setattr(stress, "configure_port", lambda *_args, **_kwargs: (next(descriptors), []))
+    monkeypatch.setattr(stress.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(stress, "close_ports", lambda _ports: OSError("restore failed"))
+
+    assert stress.benchmark_rate(arguments, 115200) is False
+
+
 @pytest.mark.parametrize(
     ("option", "value"),
     [
@@ -555,3 +574,6 @@ def test_hil_fixture_plan_matches_modes_and_timing(repo_root):
     assert "last in-flight block" in plan
     assert "completes at or after its deadline" in plan
     assert "host scheduling jitter" in plan.lower()
+    assert "sequentially in one process" in plan
+    assert "fresh port setup" in plan
+    assert "tools/hil/runner/pair.sh" in plan

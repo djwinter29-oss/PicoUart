@@ -26,6 +26,21 @@ def test_pair_map_matches_the_fixed_hil_fixture(repo_root, monkeypatch):
     }
 
 
+def test_pair_cli_uses_selected_device_base(repo_root, monkeypatch):
+    pair = load_pair(repo_root, monkeypatch)
+    arguments = pair.parse_arguments(["stage1", "--rates", "115200", "--pico-device", "/dev/by-id/pico"])
+    calls = []
+
+    def run(*args):
+        calls.append(args)
+        return True, {"a-to-b": (64, None)}
+
+    monkeypatch.setattr(pair, "run", run)
+
+    assert pair.main(arguments) == 0
+    assert calls[0][-1] == "/dev/by-id/pico"
+
+
 @pytest.mark.parametrize(
     ("outcome", "expected"),
     [

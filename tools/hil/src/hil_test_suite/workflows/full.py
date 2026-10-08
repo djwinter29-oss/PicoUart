@@ -202,7 +202,6 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser.add_argument("--pico-cdc5", required=True)
     parser.add_argument("--functional-baud", type=int, default=115200)
     parser.add_argument("--functional-payload-bytes", type=int, default=64)
-    parser.add_argument("--uart0-baud", type=int, default=115200)
     parser.add_argument(
         "--rates", default="115200", help="Concurrent full-fixture rate; use individual tests for higher baud rates"
     )

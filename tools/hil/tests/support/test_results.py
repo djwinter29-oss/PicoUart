@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import time
 
 import pytest
 
@@ -41,6 +44,41 @@ def test_rejects_existing_log_without_template(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="template marker"):
         results.prepend_result(results_file, "## New result")
+
+
+def test_failed_atomic_replace_preserves_existing_log(tmp_path, monkeypatch) -> None:
+    results = _load_results()
+    results_file = tmp_path / "results.md"
+    original = "# Results\n\n## Existing\n\n## Template\n"
+    results_file.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(results.os, "replace", lambda *_args: (_ for _ in ()).throw(OSError("replace failed")))
+
+    with pytest.raises(OSError, match="replace failed"):
+        results.prepend_result(results_file, "## New result")
+
+    assert results_file.read_text(encoding="utf-8") == original
+    assert {path.name for path in tmp_path.iterdir()} == {"results.md", ".results.md.lock"}
+
+
+def test_concurrent_writers_preserve_each_result(tmp_path, monkeypatch) -> None:
+    results = _load_results()
+    results_file = tmp_path / "results.md"
+    results_file.write_text("# Results\n\n## Template\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def delayed_read_text(path, *args, **kwargs):
+        content = original_read_text(path, *args, **kwargs)
+        if path == results_file:
+            time.sleep(0.02)
+        return content
+
+    monkeypatch.setattr(Path, "read_text", delayed_read_text)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(lambda index: results.prepend_result(results_file, f"## Result {index}"), range(8)))
+
+    document = results_file.read_text(encoding="utf-8")
+    assert all(f"## Result {index}" in document for index in range(8))
 
 
 def test_artifact_metadata_for_missing_artifact() -> None:

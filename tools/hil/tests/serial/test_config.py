@@ -53,6 +53,32 @@ def test_configure_port_closes_if_readback_does_not_match(monkeypatch):
     assert closes == [17]
 
 
+def test_configure_port_restores_settings_if_setup_fails(monkeypatch):
+    serial_port = _load_serial_config()
+    original = [0, 0, 0, 0, serial_port.termios.B9600, serial_port.termios.B9600, [0] * 32]
+    current = [*original[:6], original[6][:]]
+    set_calls = []
+    closes = []
+
+    def set_attributes(_fd, _when, settings):
+        set_calls.append(settings)
+        current[:] = [*settings[:6], settings[6][:]]
+
+    monkeypatch.setattr(serial_port.os, "open", lambda *_args: 17)
+    monkeypatch.setattr(serial_port.os, "close", closes.append)
+    monkeypatch.setattr(serial_port.termios, "tcgetattr", lambda _fd: [*current[:6], current[6][:]])
+    monkeypatch.setattr(serial_port.termios, "tcsetattr", set_attributes)
+    monkeypatch.setattr(serial_port, "verify_line_speed", lambda *_args: None)
+    monkeypatch.setattr(serial_port.termios, "tcflush", lambda *_args: (_ for _ in ()).throw(OSError("flush failed")))
+
+    with pytest.raises(OSError, match="flush failed"):
+        serial_port.configure_port("/dev/fake", 115200)
+
+    assert current == original
+    assert len(set_calls) == 2
+    assert closes == [17]
+
+
 def test_configure_port_sets_and_verifies_arbitrary_baud(monkeypatch):
     serial_port = _load_serial_config()
     current = {"input": 9600, "output": 9600, "cflag": 0}

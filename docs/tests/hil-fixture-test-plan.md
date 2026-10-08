@@ -3,6 +3,9 @@
 Use this plan to qualify the fixed PicoUart HIL fixture. It covers functional validation first, then performance testing
 on the same wiring. Physical hardware is required; CI runs host tests and firmware builds only.
 
+This is the baseline fixture plan, not the complete release gate. Release qualification also requires the recovery and
+stress checks listed in [Releasing](../releasing.md#required-hil-matrix).
+
 ## Setup
 
 Follow [HIL Fixture Setup](hil-fixture-setup.md) and install both crossed pairs and both loopbacks before testing. The
@@ -53,17 +56,42 @@ not a full functional pass. Use `--continue-on-failure` to collect all stage res
 ## Performance Pass
 
 Run performance testing only after functional pass. Every stream verifies returned payload bytes; traffic activity alone
-is not a pass. Test each pair individually, then run all six streams concurrently. Use a separate process for each
-candidate rate so line-coding changes settle before traffic begins.
+is not a pass. Test each pair individually, then run all six streams concurrently. The pair and concurrent runners
+process comma-separated rates sequentially in one process; they reopen and reconfigure the ports and wait for the settle
+interval before testing each rate.
 
-| Layer               | Rate sweep                                                         | Duration                           |
-| ------------------- | ------------------------------------------------------------------ | ---------------------------------- |
-| Single direction    | 460800, 600000, 800000, 1000000, 1100000, 1200000                  | 10 s per rate                      |
-| Single pair duplex  | 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000 | 30 s per rate                      |
-| Concurrent six-port | 460800, 500000, 600000                                             | 30 s per rate, independent process |
+| Layer               | Rate sweep                                                         | Duration                        |
+| ------------------- | ------------------------------------------------------------------ | ------------------------------- |
+| Single direction    | 460800, 600000, 800000, 1000000, 1100000, 1200000                  | 10 s per rate                   |
+| Single pair duplex  | 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000 | 30 s per rate                   |
+| Concurrent six-port | 460800, 500000, 600000                                             | 30 s per rate, fresh port setup |
 
-For synchronized pair diagnostics, use `tools/hil/runner/pair.sh stage1 --rates <rates>` for CDC0↔CDC2 and
-`stage2 --rates <rates>` for CDC3↔CDC4. Test both loopback endpoints with
+Before the pair sweeps, set `PICO_DEVICE_BASE` to the PicoUart `/dev/serial/by-id` path before its `-if00`/`-if04`
+interface suffixes.
+
+For the single-direction sweep, test both directions on each crossed pair:
+
+```sh
+for stage in stage1 stage2; do
+  for direction in a-to-b b-to-a; do
+    tools/hil/runner/pair.sh "$stage" --pico-device "$PICO_DEVICE_BASE" \
+      --rates 460800,600000,800000,1000000,1100000,1200000 \
+      --duration 10 --direction "$direction"
+  done
+done
+```
+
+For synchronized pair-duplex sweeps, test both crossed pairs:
+
+```sh
+for stage in stage1 stage2; do
+  tools/hil/runner/pair.sh "$stage" --pico-device "$PICO_DEVICE_BASE" \
+    --rates 460800,600000,800000,900000,1000000,1040000,1060000,1080000 \
+    --duration 30 --direction both
+done
+```
+
+The pair runner appends the appropriate interface suffix for each stage. Test both loopback endpoints with
 `tools/hil/runner/bridge.sh --pico-port <endpoint> --loopback`. The full concurrent command is:
 
 ```sh

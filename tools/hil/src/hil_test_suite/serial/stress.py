@@ -216,45 +216,45 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         if getattr(arguments, "setup_only", False):
             print(f"SETUP PASS at {stream_baud} baud")
             passed = True
-            return passed
-        start = threading.Barrier(len(streams))
-        timing: dict[str, dict] = {}
-        threads = [
-            threading.Thread(
-                target=run_stream,
-                args=(
-                    label,
-                    source_fd,
-                    destination_fd,
-                    arguments.duration,
-                    arguments.payload_bytes,
-                    arguments.timeout,
-                    start,
-                    results,
-                    timing,
-                ),
-            )
-            for label, source_fd, destination_fd in streams
-        ]
+        else:
+            start = threading.Barrier(len(streams))
+            timing: dict[str, dict] = {}
+            threads = [
+                threading.Thread(
+                    target=run_stream,
+                    args=(
+                        label,
+                        source_fd,
+                        destination_fd,
+                        arguments.duration,
+                        arguments.payload_bytes,
+                        arguments.timeout,
+                        start,
+                        results,
+                        timing,
+                    ),
+                )
+                for label, source_fd, destination_fd in streams
+            ]
 
-        print(f"Benchmarking all six HIL fixture streams at {stream_baud} baud")
-        started = time.monotonic()
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        elapsed = time.monotonic() - started
-        passed = True
-        for label, _, _ in streams:
-            bytes_verified, error = results.get(label, (0, "stream did not report a result"))
-            throughput = bytes_verified / elapsed if elapsed > 0 else 0.0
-            if error is None:
-                print(f"PASS {label}: {bytes_verified} bytes, {throughput:.1f} B/s")
-            else:
-                print(f"FAIL {label}: {bytes_verified} bytes, {error}", file=sys.stderr)
-                passed = False
-        for label, timestamps in timing.items():
-            print(f"TIME {label}: {timestamps}")
+            print(f"Benchmarking all six HIL fixture streams at {stream_baud} baud")
+            started = time.monotonic()
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            elapsed = time.monotonic() - started
+            passed = True
+            for label, _, _ in streams:
+                bytes_verified, error = results.get(label, (0, "stream did not report a result"))
+                throughput = bytes_verified / elapsed if elapsed > 0 else 0.0
+                if error is None:
+                    print(f"PASS {label}: {bytes_verified} bytes, {throughput:.1f} B/s")
+                else:
+                    print(f"FAIL {label}: {bytes_verified} bytes, {error}", file=sys.stderr)
+                    passed = False
+            for label, timestamps in timing.items():
+                print(f"TIME {label}: {timestamps}")
     except OSError as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
         passed = False

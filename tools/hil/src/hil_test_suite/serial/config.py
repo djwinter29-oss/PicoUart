@@ -63,6 +63,7 @@ def configure_port(
         raise ValueError(f"unsupported standard baud rate: {baud_rate}")
 
     file_descriptor = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    original_settings = None
     try:
         original_settings = termios.tcgetattr(file_descriptor)
         settings = termios.tcgetattr(file_descriptor)
@@ -89,6 +90,10 @@ def configure_port(
         verify_line_speed(file_descriptor, baud_rate)
         termios.tcflush(file_descriptor, termios.TCIOFLUSH)
         return file_descriptor, original_settings
-    except Exception:
-        os.close(file_descriptor)
+    except BaseException:
+        try:
+            if original_settings is not None:
+                termios.tcsetattr(file_descriptor, termios.TCSANOW, original_settings)
+        finally:
+            os.close(file_descriptor)
         raise

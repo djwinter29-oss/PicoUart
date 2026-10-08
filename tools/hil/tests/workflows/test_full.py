@@ -72,6 +72,12 @@ def test_parse_defaults_to_usb_sustainable_rate() -> None:
     assert arguments.record_dir == full.DEFAULT_RECORDS_DIR
 
 
+def test_parser_does_not_advertise_unused_uart0_baud_option() -> None:
+    full = _load_full()
+
+    assert "--uart0-baud" not in full.build_parser().format_help()
+
+
 def test_marks_failed_functional_phase_as_fail() -> None:
     full = _load_full()
     arguments = SimpleNamespace(
@@ -129,7 +135,11 @@ def test_record_writer_never_overwrites_same_run_name(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("functional_code", "continue_after_failure", "expected_phases", "expected_status"),
-    [(0, False, ["functional test", "performance test"], 0), (1, False, ["functional test"], 1), (1, True, ["functional test", "performance test"], 1)],
+    [
+        (0, False, ["functional test", "performance test"], 0),
+        (1, False, ["functional test"], 1),
+        (1, True, ["functional test", "performance test"], 1),
+    ],
 )
 def test_main_sequences_phases_and_preserves_failure(
     monkeypatch, functional_code, continue_after_failure, expected_phases, expected_status

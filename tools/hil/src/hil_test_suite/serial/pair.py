@@ -57,15 +57,21 @@ def synchronize(a, b, settle: float, direction: str) -> None:
 
 
 def run(
-    rate: int, suffixes: tuple[str, str], duration: float, settle: float, payload_size: int, direction: str
+    rate: int,
+    suffixes: tuple[str, str],
+    duration: float,
+    settle: float,
+    payload_size: int,
+    direction: str,
+    pico_device: str = PICO,
 ) -> tuple[bool, dict[str, tuple[int, str | None]]]:
-    a = configure(PICO + suffixes[0], rate)
+    a = configure(pico_device + suffixes[0], rate)
     b = None
     results: dict[str, tuple[int, str | None]] = {}
     labels = ("a-to-b", "b-to-a") if direction == "both" else (direction,)
     barrier = threading.Barrier(len(labels))
     try:
-        b = configure(PICO + suffixes[1], rate)
+        b = configure(pico_device + suffixes[1], rate)
         synchronize(a, b, settle, direction)
 
         def flow(label, source, destination):
@@ -130,6 +136,11 @@ def parse_rates(value: str) -> tuple[int, ...]:
 def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, add_help=add_help)
     parser.add_argument("pair", choices=PAIRS)
+    parser.add_argument(
+        "--pico-device",
+        default=PICO,
+        help="PicoUart by-id base path before its -if00/-if04 interface suffixes",
+    )
     parser.add_argument("--rates", required=True, type=parse_rates, help="comma-separated baud rates")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--duration", type=float, default=30.0)
@@ -159,7 +170,9 @@ def main(arguments: argparse.Namespace | None = None) -> int:
     for rate in args.rates:
         for run_number in range(1, args.runs + 1):
             try:
-                passed, results = run(rate, suffixes, args.duration, args.settle, args.payload, args.direction)
+                passed, results = run(
+                    rate, suffixes, args.duration, args.settle, args.payload, args.direction, args.pico_device
+                )
                 print(f"{args.pair} rate={rate} run={run_number} {'PASS' if passed else 'FAIL'} {results}", flush=True)
                 if not passed:
                     exit_code = max(exit_code, 1)
