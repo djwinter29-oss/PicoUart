@@ -12,8 +12,8 @@ YYYY-MM-DD-HHMMSSZ-pico-hil.md
 YYYY-MM-DD-HHMMSSZ-pico2-hil.md
 ```
 
-If a name already exists, the runner adds a numeric suffix rather than overwriting it. Single-phase runs and direct
-`pico-uart-hil-functional` / `pico-uart-hil-performance` invocations append to the ignored local log at
+If a name already exists, the runner adds a numeric suffix rather than overwriting it. Single-phase runs and
+`pico-uart-hil functional` / `pico-uart-hil performance` invocations append to the ignored local log at
 `build/hil-results.md` instead.
 
 ## Record Format

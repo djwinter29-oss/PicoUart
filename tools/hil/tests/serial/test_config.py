@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-HARDWARE_SRC = Path(__file__).resolve().parents[1] / "src"
+HARDWARE_SRC = Path(__file__).resolve().parents[2] / "src"
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios/fcntl")
 
 
 def _load_serial_config():
     if str(HARDWARE_SRC) not in sys.path:
         sys.path.insert(0, str(HARDWARE_SRC))
-    module = importlib.import_module("hil_test_suite.serial_config")
+    module = importlib.import_module("hil_test_suite.serial.config")
     return importlib.reload(module)
 
 

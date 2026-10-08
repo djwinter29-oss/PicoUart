@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import importlib
+import subprocess
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+
+def _load_performance():
+    module = importlib.import_module("hil_test_suite.workflows.performance")
+    return importlib.reload(module)
+
+
+def test_parses_pass_and_fail_lines() -> None:
+    performance = _load_performance()
+    output = "PASS cdc0-to-cdc2: 100 bytes, 20.0 B/s\nFAIL cdc5-loopback: received data did not match\n"
+
+    assert performance.parse_benchmark_output(output) == {
+        "cdc0-to-cdc2": ("PASS", "100", "20.0"),
+        "cdc5-loopback": ("FAIL", "-", "received data did not match"),
+    }
+
+
+def test_builds_stress_command_for_all_fixture_endpoints() -> None:
+    performance = _load_performance()
+    command_arguments = [item for channel in range(6) for item in (f"--cdc{channel}", f"cdc{channel}")]
+    arguments = performance.parse_arguments(command_arguments)
+
+    command = performance.build_command(arguments)
+
+    assert command[:3] == [sys.executable, "-m", "hil_test_suite.serial.stress"]
+    for channel in range(6):
+        assert getattr(arguments, f"cdc{channel}") == f"cdc{channel}"
+        assert command[command.index(f"--cdc{channel}") + 1] == f"cdc{channel}"
+
+
+def test_preserves_results_for_repeated_rates() -> None:
+    performance = _load_performance()
+    output = (
+        "Benchmarking all six HIL fixture streams at 115200 baud\n"
+        "PASS cdc5-loopback: 100 bytes, 20.0 B/s\n"
+        "Benchmarking all six HIL fixture streams at 1000000 baud\n"
+        "FAIL cdc5-loopback: timeout\n"
+    )
+
+    assert performance.parse_benchmark_output_by_rate(output) == {
+        (115200, "cdc5-loopback"): ("PASS", "100", "20.0"),
+        (1000000, "cdc5-loopback"): ("FAIL", "-", "timeout"),
+    }
+
+
+@pytest.mark.parametrize(("command_status", "health_error", "expected"), [(0, None, 0), (0, "device lost", 1), (1, None, 1)])
+def test_main_combines_benchmark_and_health_status(monkeypatch, command_status, health_error, expected) -> None:
+    performance = _load_performance()
+    arguments = performance.parse_arguments(
+        [item for channel in range(6) for item in (f"--cdc{channel}", f"cdc{channel}")]
+    )
+    arguments.board = "pico"
+    arguments.firmware_version = "1.2.3"
+    arguments.firmware_commit = "abc1234"
+    arguments.artifact = None
+    arguments.no_record = True
+    clean = {
+        "channels": {index: 1 for index in range(6)},
+        "overruns": {index: 0 for index in range(6)},
+        "firmware_version": "1.2.3",
+        "error": None,
+    }
+    after = {**clean, "error": health_error}
+    snapshots = iter([clean, after])
+    monkeypatch.setattr(performance, "artifact_metadata", lambda _artifact: {"path": "none", "sha256": "none"})
+    monkeypatch.setattr(performance, "build_command", lambda _arguments: ["stress"])
+    monkeypatch.setattr(performance, "collect_hid_health", lambda: next(snapshots))
+    monkeypatch.setattr(performance, "health_evidence", lambda _snapshot: "")
+    monkeypatch.setattr(
+        performance.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=command_status, stdout=""),
+    )
+
+    assert performance.main(arguments) == expected

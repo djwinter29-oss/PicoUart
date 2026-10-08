@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from .hardware_test_result import artifact_metadata, prepend_result
-from .hardware_test_health import collect_hid_health, health_evidence, health_is_clean, health_summary
-from .paths import REPO_ROOT
+from ..support.results import artifact_metadata, prepend_result
+from ..support.health import collect_hid_health, health_evidence, health_is_clean, health_summary
+from ..support.paths import REPO_ROOT
 
 DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
 PASS_PATTERN = re.compile(
@@ -26,11 +26,11 @@ RATE_PATTERN = re.compile(r"^Benchmarking .*? at (?P<rate>[0-9]+) baud", re.MULT
 
 
 def build_command(arguments: SimpleNamespace) -> list[str]:
-    """Build the documented serial_stress_benchmark invocation."""
+    """Build the internal serial_stress_benchmark invocation."""
     command = [
         sys.executable,
         "-m",
-        "hil_test_suite.serial_stress_benchmark",
+        "hil_test_suite.serial.stress",
         "--cdc0",
         arguments.cdc0,
         "--cdc1",
@@ -153,8 +153,8 @@ def format_result_entry(
     return "\n".join(lines)
 
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__, add_help=add_help)
     for channel in range(6):
         parser.add_argument(f"--cdc{channel}", required=True)
     parser.add_argument(
@@ -170,11 +170,16 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--artifact", type=Path)
     parser.add_argument("--results-file", type=Path, default=DEFAULT_RESULTS_FILE)
     parser.add_argument("--no-record", action="store_true")
-    return parser.parse_args()
+    return parser
 
 
-def main() -> int:
-    arguments = parse_arguments()
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
+
+
+def main(arguments: argparse.Namespace | None = None) -> int:
+    if arguments is None:
+        arguments = parse_arguments()
     artifact = artifact_metadata(arguments.artifact)
     arguments.artifact_path = artifact["path"]
     arguments.artifact_sha256 = artifact["sha256"]

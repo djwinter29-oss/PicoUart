@@ -32,7 +32,7 @@ tools/validation/validate.sh --skip-build
 # Hardware test project
 uv sync --project tools/hil --extra test
 uv run --project tools/hil --extra test pytest tools/hil/tests
-uv run --project tools/hil --extra test pico-uart-hil --help
+tools/hil/runner/full.sh --help
 
 # Release artifact verification
 python3 tools/release/verify-build.py --help

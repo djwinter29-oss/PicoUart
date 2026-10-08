@@ -31,7 +31,9 @@ The root [pyproject.toml](../../pyproject.toml) configures repository-wide pytes
 hardware-in-the-loop tools have a separate [Python project](../../tools/hil/pyproject.toml) and test suite.
 
 - `host/python/tests/`: host package tests, fixtures, and HID report helpers
-- `tools/hil/src/hil_test_suite/`: reusable HIL runners, serial configuration, and health/evidence helpers
+- `tools/hil/src/hil_test_suite/workflows/`: full, functional, and performance orchestration
+- `tools/hil/src/hil_test_suite/serial/`: bridge, stress, pair, and serial-port configuration
+- `tools/hil/src/hil_test_suite/support/`: repository paths, HID health, and result-record helpers
 - `tools/hil/tests/`: unit tests for HIL utilities and CLI behavior
 - `tests/firmware/`: firmware policy and PIO tests
 - `tests/tooling/`: repository validation scripts and cross-project contract tests

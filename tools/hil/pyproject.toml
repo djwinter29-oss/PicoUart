@@ -13,12 +13,7 @@ dependencies = ["pico-uart", "pyserial==3.5"]
 test = ["pytest==8.3.5"]
 
 [project.scripts]
-pico-uart-hil = "hil_test_suite.run_hardware_test:main"
-pico-uart-hil-functional = "hil_test_suite.run_functional_test:main"
-pico-uart-hil-performance = "hil_test_suite.run_performance_test:main"
-pico-uart-hil-bridge = "hil_test_suite.serial_bridge_test:main"
-pico-uart-hil-stress = "hil_test_suite.serial_stress_benchmark:main"
-pico-uart-hil-pair = "hil_test_suite.pair_duplex_benchmark:main"
+pico-uart-hil = "hil_test_suite.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

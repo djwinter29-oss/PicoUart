@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-HARDWARE_SRC = Path(__file__).resolve().parents[1] / "src"
+HARDWARE_SRC = Path(__file__).resolve().parents[2] / "src"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
 
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial to
 def _load_stress():
     if str(HARDWARE_SRC) not in sys.path:
         sys.path.insert(0, str(HARDWARE_SRC))
-    module = importlib.import_module("hil_test_suite.serial_stress_benchmark")
+    module = importlib.import_module("hil_test_suite.serial.stress")
     return importlib.reload(module)
 
 
@@ -388,7 +388,7 @@ def test_performance_test_plan_documents_time_diagnostic_output(repo_root: Path)
     """
     plan = " ".join((repo_root / "docs/tests/hil-fixture-test-plan.md").read_text().split())
     assert "TIME" in plan
-    assert "not parsed by `pico-uart-hil-performance`" in plan
+    assert "not parsed by `pico-uart-hil performance`" in plan
 
 
 @pytest.mark.parametrize("wake_at", [1.0, 1.1])

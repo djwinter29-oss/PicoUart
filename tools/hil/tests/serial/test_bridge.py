@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-HARDWARE_SRC = Path(__file__).resolve().parents[1] / "src"
+HARDWARE_SRC = Path(__file__).resolve().parents[2] / "src"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
 
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial to
 def _load_bridge():
     if str(HARDWARE_SRC) not in sys.path:
         sys.path.insert(0, str(HARDWARE_SRC))
-    module = importlib.import_module("hil_test_suite.serial_bridge_test")
+    module = importlib.import_module("hil_test_suite.serial.bridge")
     return importlib.reload(module)
 
 

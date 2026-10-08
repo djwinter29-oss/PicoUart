@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from .hardware_test_result import artifact_metadata, prepend_result
-from .hardware_test_health import collect_hid_health, health_evidence, health_is_clean, health_summary
-from .paths import REPO_ROOT
+from ..support.results import artifact_metadata, prepend_result
+from ..support.health import collect_hid_health, health_evidence, health_is_clean, health_summary
+from ..support.paths import REPO_ROOT
 
 DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
 
@@ -24,7 +24,7 @@ def build_stage_commands(arguments: SimpleNamespace) -> list[tuple[str, list[str
     common = [
         sys.executable,
         "-m",
-        "hil_test_suite.serial_bridge_test",
+        "hil_test_suite.serial.bridge",
         "--payload-bytes",
         str(arguments.payload_bytes),
         "--timeout",
@@ -140,8 +140,8 @@ def format_result_entry(
     return "\n".join(lines)
 
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__, add_help=add_help)
     parser.add_argument("--pico-cdc0", required=True)
     parser.add_argument("--pico-cdc1", required=True)
     parser.add_argument("--pico-cdc2", required=True)
@@ -165,7 +165,7 @@ def parse_arguments() -> argparse.Namespace:
         default="all",
         help="Run one connection, or all prewired connections",
     )
-    return parser.parse_args()
+    return parser
 
 
 def fixture_paths_valid(arguments: argparse.Namespace) -> bool:
@@ -188,8 +188,13 @@ def fixture_paths_valid(arguments: argparse.Namespace) -> bool:
     return True
 
 
-def main() -> int:
-    arguments = parse_arguments()
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
+
+
+def main(arguments: argparse.Namespace | None = None) -> int:
+    if arguments is None:
+        arguments = parse_arguments()
     artifact = artifact_metadata(arguments.artifact)
     arguments.artifact_path = artifact["path"]
     arguments.artifact_sha256 = artifact["sha256"]

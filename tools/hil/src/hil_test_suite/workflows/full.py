@@ -13,8 +13,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from .hardware_test_result import artifact_metadata
-from .paths import REPO_ROOT
+from ..support.results import artifact_metadata
+from ..support.paths import REPO_ROOT
 
 DEFAULT_RECORDS_DIR = REPO_ROOT / "docs/tests/records"
 
@@ -23,7 +23,7 @@ def build_functional_command(arguments: argparse.Namespace) -> list[str]:
     command = [
         sys.executable,
         "-m",
-        "hil_test_suite.run_functional_test",
+        "hil_test_suite.workflows.functional",
         "--pico-cdc0",
         arguments.pico_cdc0,
         "--pico-cdc1",
@@ -61,7 +61,7 @@ def build_performance_command(arguments: argparse.Namespace) -> list[str]:
     command = [
         sys.executable,
         "-m",
-        "hil_test_suite.run_performance_test",
+        "hil_test_suite.workflows.performance",
         "--cdc0",
         arguments.pico_cdc0,
         "--cdc1",
@@ -192,8 +192,8 @@ def write_hil_record(record_dir: Path, run_at: dt.datetime, board: str, content:
             suffix += 1
 
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__, add_help=add_help)
     parser.add_argument("--pico-cdc0", required=True)
     parser.add_argument("--pico-cdc1", required=True)
     parser.add_argument("--pico-cdc2", required=True)
@@ -219,11 +219,16 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--skip-performance", action="store_true")
     parser.add_argument("--continue-after-functional-failure", action="store_true")
     parser.add_argument("--no-record", action="store_true")
-    return parser.parse_args()
+    return parser
 
 
-def main() -> int:
-    arguments = parse_arguments()
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
+
+
+def main(arguments: argparse.Namespace | None = None) -> int:
+    if arguments is None:
+        arguments = parse_arguments()
     artifact = artifact_metadata(arguments.artifact)
     arguments.artifact_path = artifact["path"]
     arguments.artifact_sha256 = artifact["sha256"]

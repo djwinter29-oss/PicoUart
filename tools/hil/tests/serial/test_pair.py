@@ -13,7 +13,7 @@ def load_pair(repo_root, monkeypatch):
     source = str(repo_root / "tools/hil/src")
     if source not in sys.path:
         sys.path.insert(0, source)
-    module = importlib.import_module("hil_test_suite.pair_duplex_benchmark")
+    module = importlib.import_module("hil_test_suite.serial.pair")
     return importlib.reload(module)
 
 

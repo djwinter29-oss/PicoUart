@@ -11,7 +11,7 @@ import termios
 import threading
 import time
 from datetime import datetime, timezone
-from .serial_config import BAUD_RATES, configure_port
+from .config import BAUD_RATES, configure_port
 
 DEFAULT_RATES = tuple(BAUD_RATES)
 LINE_CODING_SETTLE_SECONDS = 8.0
@@ -125,8 +125,10 @@ def parse_rates(value: str) -> tuple[int, ...]:
     return rates
 
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark the fixed six-port PicoUart HIL fixture concurrently.")
+def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Benchmark the fixed six-port PicoUart HIL fixture concurrently.", add_help=add_help
+    )
     for channel in range(6):
         parser.add_argument(f"--cdc{channel}", required=True, help=f"PicoUart CDC{channel} device")
     parser.add_argument(
@@ -144,7 +146,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--setup-only", action="store_true", help="configure ports and settle, but do not transmit data"
     )
-    return parser.parse_args()
+    return parser
+
+
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
 
 
 def close_port(file_descriptor: int, settings: list) -> None:
@@ -260,8 +266,9 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     return passed
 
 
-def main() -> int:
-    arguments = parse_arguments()
+def main(arguments: argparse.Namespace | None = None) -> int:
+    if arguments is None:
+        arguments = parse_arguments()
     if not math.isfinite(arguments.duration) or arguments.duration <= 0:
         print("--duration must be greater than zero", file=sys.stderr)
         return 2

@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 
-from .serial_config import verify_line_speed
+from .config import verify_line_speed
 
 PICO = "/dev/serial/by-id/usb-PicoUart_PicoUart_CDC+HID_PIO_8N1_5303284748A07A1C"
 PAIRS = {
@@ -127,8 +127,8 @@ def parse_rates(value: str) -> tuple[int, ...]:
     return rates
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
+def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__, add_help=add_help)
     parser.add_argument("pair", choices=PAIRS)
     parser.add_argument("--rates", required=True, type=parse_rates, help="comma-separated baud rates")
     parser.add_argument("--runs", type=int, default=1)
@@ -136,7 +136,16 @@ def main() -> int:
     parser.add_argument("--settle", type=float, default=8.0)
     parser.add_argument("--payload", type=int, default=1024)
     parser.add_argument("--direction", choices=("both", "a-to-b", "b-to-a"), default="both")
-    args = parser.parse_args()
+    return parser
+
+
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
+
+
+def main(arguments: argparse.Namespace | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args() if arguments is None else arguments
     if args.runs < 1:
         parser.error("--runs must be greater than zero")
     if not math.isfinite(args.duration) or args.duration <= 0:

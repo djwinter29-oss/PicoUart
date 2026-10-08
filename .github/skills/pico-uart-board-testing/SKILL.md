@@ -29,15 +29,16 @@ Read the relevant document before testing:
 The repository provides runners that implement the documented workflow:
 
 ```sh
-  uv run --project tools/hil --extra test pico-uart-hil-functional --help
-  uv run --project tools/hil --extra test pico-uart-hil-performance --help
-  uv run --project tools/hil --extra test pico-uart-hil --help
+  tools/hil/runner/functional.sh --help
+  tools/hil/runner/performance.sh --help
+  tools/hil/runner/full.sh --help
 ```
 
-Use `pico-uart-hil` for the normal end-to-end run. It runs functional testing before performance testing and records a
-dated result. Use the individual commands when diagnosing one phase. Add `--no-record` for a dry run. Install both
-crossed pairs and both loopbacks before starting and do not change wiring during the run. Use
-`pico-uart-hil-functional --stage 1|2|3|4` only to diagnose one link on the same fixed fixture.
+Use `tools/hil/runner/full.sh` for the normal end-to-end run. It runs functional testing before performance testing and
+records a dated result. Use `tools/hil/runner/functional.sh` or `tools/hil/runner/performance.sh` when diagnosing one
+phase. Add `--no-record` for a dry run. Install both crossed pairs and both loopbacks before starting and do not change
+wiring during the run. Use `tools/hil/runner/functional.sh --stage 1|2|3|4` only to diagnose one link on the same fixed
+fixture.
 
 ## Diagnostics
 

@@ -10,7 +10,7 @@ import sys
 import termios
 import time
 
-from .serial_config import BAUD_RATES, STANDARD_BAUD_RATES, configure_port
+from .config import BAUD_RATES, STANDARD_BAUD_RATES, configure_port
 
 
 def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
@@ -167,8 +167,10 @@ def run_flood(
     return written, drained
 
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Verify both directions of one PicoUart CDC-to-UART link.")
+def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Verify both directions of one PicoUart CDC-to-UART link.", add_help=add_help
+    )
     parser.add_argument("--pico-port", required=True, help="PicoUart CDC device, for example /dev/ttyACM2")
     peer_group = parser.add_mutually_exclusive_group(required=True)
     peer_group.add_argument("--peer-port", help="Connected UART peer device, for example /dev/serial0")
@@ -197,7 +199,11 @@ def parse_arguments() -> argparse.Namespace:
         default=0.0,
         help="With --flood-seconds and --peer-port, defer opening (and draining) the pico CDC for N seconds",
     )
-    return parser.parse_args()
+    return parser
+
+
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
 
 
 def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
@@ -337,8 +343,9 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
     return result
 
 
-def main() -> int:
-    arguments = parse_arguments()
+def main(arguments: argparse.Namespace | None = None) -> int:
+    if arguments is None:
+        arguments = parse_arguments()
     if arguments.payload_bytes < 1 or arguments.payload_bytes > 4096:
         print("--payload-bytes must be between 1 and 4096", file=sys.stderr)
         return 2
