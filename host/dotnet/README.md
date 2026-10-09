@@ -4,16 +4,6 @@ The .NET 10 host provides a C# HID client, diagnostics CLI, and an ASP.NET Core 
 HTML, CSS, and JavaScript as the Python dashboard, sourced from `host/web`. UART data and line settings still belong
 to the six CDC interfaces; this application only uses the diagnostics HID interface.
 
-The shared frontend layout is:
-
-```text
-host/web/
-	index.html
-	favicon.svg
-	css/dashboard.css
-	js/dashboard.js
-```
-
 ## Run
 
 Install the .NET 10 SDK, then run from the repository root:
@@ -39,14 +29,11 @@ require suitable hidraw permissions. Reset remains capability-gated and sends th
 The public `PicoUartHid` class owns the connection and implements `IDisposable`. `Protocol` exposes the pure report
 decoders and typed results. HidSharp supplies cross-platform USB HID discovery and transport.
 
-`ReadHardwareInfo()` and the `hardware` command query feature report 6 for MCU identity and the SDK-reported current
-system clock in Hz. Results retain the raw `mcu_id`; unrecognized values display as `Unknown MCU (ID)` without losing
-their clock. The shared dashboard shows the model and clock in MHz. Older firmware leaves these fields unknown
-and reports a hardware-information error without discarding existing board metadata or channel telemetry.
+`ReadHardwareInfo()` and the `hardware` command query feature report 6 for MCU identity and system clock. See the
+[HID Report Reference](../../docs/design/usb/hid-report-reference.md) for payload and compatibility details.
 
-HidSharp 2.6.4 returns an additional report-ID prefix for numbered feature reads on Linux. The client accounts for it
-explicitly and validates both IDs; Windows/macOS use a single prefix. Feature buffers also accommodate Windows' maximum
-feature-report length. Keep the framing checks when changing the HID dependency.
+Numbered HID feature reports have platform-specific framing. Preserve the client's framing validation and tests when
+changing the HID transport dependency.
 
 ## Publish
 
@@ -66,15 +53,12 @@ dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"
 host/python/.venv/bin/python -m pytest tests/tooling/test_dotnet_host.py
 ```
 
-The xUnit project uses VSTest and reports each case independently. It tests report sizes, signatures, versions,
-endianness, temperature boundaries, health bits, platform feature framing, dashboard traffic and sequence accounting,
-JSON field names, disconnected controls, and CLI validation. All unit tests are hardware-free and tagged `Category=Unit`.
-To run only protocol tests, add `--filter "FullyQualifiedName~ProtocolTests"` instead of the category filter. Add
-`--logger trx --results-directory build/host-dotnet-tests` to retain a test report.
+The xUnit unit suite is hardware-free and tagged `Category=Unit`. To run only protocol tests, use
+`--filter "FullyQualifiedName~ProtocolTests"`; add `--logger trx --results-directory build/host-dotnet-tests` to retain
+a test report.
 
-The Python integration checks publish the app and verify shared asset bytes, JSON shape, host restrictions, CSRF, and
-CLI validation. They skip when `dotnet` is not on `PATH`; set `DOTNET_EXE` to use another SDK executable. CI runs both
-suites on Linux and Windows.
+The Python integration checks publish the app and validate the shared frontend/API contract. They skip when `dotnet` is
+not on `PATH`; set `DOTNET_EXE` to use another SDK executable. CI runs both suites on Linux and Windows.
 
 Physical device discovery, telemetry, LED, reset, unplug/reconnect, and platform-specific HID behavior still require
 board validation. Do not treat these host checks as HIL qualification; use the [test index](../../docs/tests/README.md).

@@ -4,7 +4,7 @@ This document describes the PicoUart target-side UART pinout for Pico-class RP20
 and connector planning; the fixed hardware-in-the-loop test fixture is documented separately in
 [HIL Fixture Setup](tests/hil-fixture-setup.md).
 
-The firmware source of truth for this pinout is `firmware/src/board/uart_board.c`.
+The [board configuration](../firmware/src/board/uart_board.c) is the source of truth for this pinout.
 
 ## Port Map
 
@@ -24,12 +24,9 @@ the default firmware configuration.
 
 ## Default Firmware Behavior
 
-- Hardware UART0 and UART1 leave RTS/CTS disabled by default (`hardware_flow_control = false`). Their RTS/CTS pins are
-  not muxed unless flow control is explicitly enabled in `firmware/src/board/uart_board.c`.
-- PIO UART RTS/CTS pins are assigned but not claimed by default. PIO RX RTS is claimed only when
-  `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL` is enabled. CTS TX gating is claimed only when
-  `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL` is enabled.
-- The USB HID interface reports status and board controls, but it does not change this static pinout.
+RTS/CTS assignments are reserved but flow control is disabled by default. Enabling it is backend-specific; see the
+[hardware UART](design/uart/hardware-uart-design.md) and [PIO UART](design/uart/pio-uart-design.md) designs. USB HID
+reports status and board controls but does not change the pinout.
 
 ## Wiring Rules
 
@@ -67,10 +64,3 @@ HIL fixture wiring belongs in [HIL Fixture Setup](tests/hil-fixture-setup.md). U
 - Decide explicitly whether external UART targets are self-powered or powered from the fixture.
 - Do not assume the Pico board can power six external targets directly.
 - If a connector provides target power, document current limits and protection.
-
-## Future Board Decisions
-
-The firmware pinout above is defined. A PCB or harness that uses it still needs separate mechanical choices:
-
-- Connector style and pin order
-- Whether the six UART ports are exposed as one header block or repeated per-port connectors

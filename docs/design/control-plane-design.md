@@ -3,60 +3,25 @@
 This document describes PicoUart's UART control plane: how CDC line-coding requests move from TinyUSB on core 0 to UART
 backend reconfiguration on core 1, and how failures are reported through HID health.
 
-The data plane is documented separately in [Ring Buffer Design](ring-buffer-design.md) and
-[PIO UART Design](pio-uart-design.md). The host-facing CDC/HID relationship is summarized in
+The data plane is documented separately in [Ring Buffer Design](uart/ring-buffer-design.md) and
+[PIO UART Design](uart/pio-uart-design.md). The host-facing CDC/HID relationship is summarized in
 [CDC/HID Overview](usb/cdc-hid-overview.md).
 
 ## Scope
 
-The control plane covers:
-
-- CDC `SET_LINE_CODING` callbacks
-- soft-pending requests waiting for the worker mailbox
-- one core 0 to core 1 mailbox slot per UART port
-- deferred worker-side line-coding changes
-- `CONTROL_PENDING` and `CONTROL_ERROR` HID health bits
-- TX ingress blocking while a UART format may change
-- USB mount/unmount state reset
-
-It does not carry UART bytes; byte traffic remains on the RX/TX rings.
-
-## Participants
-
-| Participant            | Core                      | Responsibility                                                      |
-| ---------------------- | ------------------------- | ------------------------------------------------------------------- |
-| TinyUSB CDC callback   | core 0                    | Parses host line-coding requests and accepts/rejects obvious cases. |
-| CDC soft-pending state | core 0                    | Holds one per-port request while the worker mailbox is busy.        |
-| UART control mailbox   | shared                    | Carries one request per port from core 0 to core 1.                 |
-| UART worker            | core 1                    | Waits for a safe backend boundary and applies/rejects the change.   |
-| HID status             | core 0 reads shared flags | Reports pending/error state to the host.                            |
+The control plane handles CDC line-coding requests, not UART bytes. It coordinates USB-side validation with deferred
+per-port backend application and reports pending or failed requests through HID. UART bytes remain on the RX/TX rings.
 
 ## Request Lifecycle
 
-1. TinyUSB accepts `SET_LINE_CODING` at the USB layer and calls firmware.
-2. Firmware parses the CDC line-coding payload.
-3. Permanent rejects, such as invalid format or unsupported PIO framing, set `CONTROL_ERROR` for the port.
-4. Valid requests become soft-pending while core 0 waits for the worker mailbox.
-5. When the mailbox is empty, core 0 publishes the request with:
-   - target port
-   - requested line coding
-   - control generation
-   - TX producer sequence boundary
-6. Core 1 receives the request, validates it again, and either completes it immediately or holds it as worker-pending
-   until the backend is safe to change.
-7. Completion clears `CONTROL_PENDING` only if no newer owner still exists, and updates `CONTROL_ERROR` only if the
-   completion generation is still current.
+Valid requests move from USB-side pending to the per-port mailbox, then to worker ownership until the backend reaches a
+safe apply boundary. Invalid or unsupported formats set `CONTROL_ERROR`. The worker applies a request only after TX has
+drained to its captured boundary and backend-specific quiescence is satisfied.
 
-Step 6's mailbox acknowledgement and worker-ownership registration (`pending_controls[...].pending = true`) happen
-inside the same `status_lock` critical section. This is required, not incidental: a concurrent core 0 soft-pending
-reject or timeout reads mailbox and worker ownership under that same lock to decide whether `CONTROL_PENDING` may clear.
-If ownership registration ran after that section's unlock, a reject racing exactly that window could see the mailbox
-already acknowledged but no worker owner yet, and wrongly clear `CONTROL_PENDING` (reopening TX ingress) while the
-worker apply is still in flight. The worker also re-checks its apply deadline immediately before touching the backend,
-after the TX-boundary and backend-liveness checks. This close ordering keeps a backend apply that would otherwise
-succeed from clearing `CONTROL_ERROR` once its deadline has already expired. When the request does not become a deferred
-apply, the provisional `pending` bit is cleared in that same completion critical section, together with `CONTROL_ERROR`
-or the `CONTROL_PENDING` clear.
+Mailbox acknowledgement and worker-ownership changes must be atomic under the shared status lock. Otherwise a concurrent
+reject or timeout could clear `CONTROL_PENDING` after mailbox acknowledgement but before worker ownership is visible,
+allowing TX during an active format change. The worker also checks its deadline immediately before touching the backend,
+so a late apply cannot report success after timeout.
 
 ```mermaid
 sequenceDiagram
@@ -84,37 +49,9 @@ firmware applies or rejects it. Hosts must watch HID health bit 2 (`control_erro
 
 ## Ownership States
 
-`CONTROL_PENDING` can be owned by three states:
-
-| Owner           | Meaning                                                                       |
-| --------------- | ----------------------------------------------------------------------------- |
-| Soft-pending    | Core 0 accepted a valid host request but has not published it to the mailbox. |
-| Mailbox-pending | That port's mailbox slot contains a request.                                  |
-| Worker-pending  | Core 1 accepted the request and is waiting for a safe backend boundary.       |
-
-TX ingress from USB to that UART is blocked while any owner exists. This keeps new bytes from entering the old-format TX
-ring after the request boundary.
-
-A mailbox completion — invalid payload, unsupported format, or a slot whose `port_id` does not match — clears
-`CONTROL_PENDING` only when soft-pending, mailbox-pending, and worker-pending are all clear. Rejecting a newer request
-must not reopen TX ingress while an older worker-pending apply is still waiting on its TX boundary. The older apply
-still runs, and its completion cannot clear `CONTROL_ERROR` belonging to the newer reject.
-
-The worker-side boundary is the TX producer sequence captured when the mailbox request is published. Core 1 must drain
-old-format bytes up to that boundary before applying the new format.
-
-```mermaid
-stateDiagram-v2
-  [*] --> Idle
-  Idle --> SoftPending: core 0 accepts request
-  SoftPending --> MailboxPending: slot becomes available
-  MailboxPending --> WorkerPending: core 1 takes request
-  WorkerPending --> Applying: TX boundary and backend are safe
-  Applying --> Idle: completion succeeds
-  Applying --> Error: backend reject or timeout
-  SoftPending --> Error: mailbox timeout or permanent reject
-  Error --> Idle
-```
+`CONTROL_PENDING` remains set while any of the soft-pending, mailbox, or worker owners remain. It blocks new TX bytes
+until the captured old-format boundary is drained. Clear it only after all owners have completed; a newer reject must
+not unblock TX while an older apply is still active.
 
 ## Generations and Stale Completions
 
@@ -127,34 +64,15 @@ erase the newer error.
 
 ## Timeouts
 
-Two time windows prevent indefinite stalls:
-
-- CDC soft-pending timeout: core 0 reports `CONTROL_ERROR` if a request cannot enter that port's worker mailbox within 1
-  second. Another port's busy slot does not consume this window.
-- Worker apply timeout: core 1 reports failure if a backend cannot reach a safe apply boundary within 1 second.
-
-Identical retries do not refresh an existing deadline forever. A distinct replacement request gets a new window.
-
-```mermaid
-flowchart TD
-  Request["Host control request"] --> Generation["Increment per-port generation"]
-  Generation --> Current{"Completion generation == latest?"}
-  Current -->|no| Stale["Do not change CONTROL_ERROR"]
-  Current -->|yes and success| Clear["Clear CONTROL_ERROR"]
-  Current -->|yes and failure| Set["Set CONTROL_ERROR"]
-```
+Soft-pending and worker application use separate bounded per-port deadlines; one busy port does not consume another
+port's timeout. Repeating the same request does not extend its deadline indefinitely, while a distinct replacement gets
+a new deadline. Timeout reports `CONTROL_ERROR`; the configured duration is maintained in the control-plane
+implementation.
 
 ## USB Mount and Unmount Reset
 
-USB enumeration changes reset host-facing state:
-
-- CDC open/DTR state is cleared.
-- CDC soft-pending requests and deadlines are canceled.
-- pending CDC IN flush deadlines are cleared.
-- HID reset-arm state and report scheduling are reset.
-
-Both TinyUSB mount and unmount callbacks reset this state. A canceled soft- pending request uses a nil deadline and must
-not later manufacture a timeout `CONTROL_ERROR`.
+USB mount and unmount clear host-facing CDC state, cancel soft-pending requests, and reset HID scheduling and reset-arm
+state. Canceled requests must not later produce timeout errors.
 
 ## Host-Visible Rules
 
@@ -166,18 +84,6 @@ not later manufacture a timeout `CONTROL_ERROR`.
 
 ## Test Coverage
 
-Host unit tests cover the pure ownership rules in `ownership.h` and `cdc_soft_pending.h`:
-
-- deadline refresh policy for identical versus replacement requests
-- nil-deadline cancellation after reset
-- mailbox sequence wrap behavior
-- independent per-port mailbox slots
-- stale completion generation checks
-- TX blocking while any control owner is active
-- atomicity of mailbox acknowledgement and worker-ownership registration under a single status-lock critical section
-- provisional ownership cleanup for invalid, backend-unacceptable, and backend-unavailable requests, in the same lock as
-  mailbox completion
-- apply deadline checked before the backend is touched
-
-End-to-end USB lifecycle and backend quiescing still require hardware-in-the- loop validation because the real path
-crosses TinyUSB callbacks, shared UART state, core 1 worker timing, and physical USB re-enumeration.
+Host tests cover mailbox ownership, deadlines, stale completions, and TX blocking. They do not validate TinyUSB
+lifecycle or backend quiescing; those require physical hardware. See the
+[HIL fixture plan](../tests/hil-fixture-test-plan.md).

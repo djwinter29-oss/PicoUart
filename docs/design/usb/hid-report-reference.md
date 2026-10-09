@@ -34,9 +34,11 @@ command values are board-scoped only.
 | `5`       | Feature | Host reads from device | 25 bytes | Cumulative UART-to-USB RX dropped-byte counts.      |
 | `6`       | Feature | Host reads from device | 6 bytes  | MCU identity and current system clock frequency.    |
 
+Report IDs `1`, `3`, and `5` share layout version `15`. Report ID `6` uses an independent layout version, currently `1`.
+
 Report ID bytes are managed by the HID transport and are not included in the payload layouts below. Status is 63 bytes
 so Report ID + payload fit in one full-speed interrupt packet (64 bytes). The device attempts to publish report ID `1`
-every 100 ms while its HID IN endpoint is ready. Reports are not queued when the endpoint is busy.
+periodically while its HID IN endpoint is ready. Reports are not queued when the endpoint is busy.
 
 ## Report ID 1: Status
 
@@ -46,7 +48,7 @@ All multi-byte values are little-endian. Channels use logical UART port IDs, so 
 | Offset | Size | Field        | Meaning                                                     |
 | ------ | ---: | ------------ | ----------------------------------------------------------- |
 | 0      |    1 | `signature0` | ASCII `P` (`0x50`).                                         |
-| 1      |    1 | `version`    | Report layout version, currently `15`.                      |
+| 1      |    1 | `version`    | Shared report layout version.                               |
 | 2      |    1 | `sequence`   | Increments after each successfully published status report. |
 | 3      |   60 | `channel[6]` | Six consecutive 10-byte CDC/UART channel snapshots.         |
 
@@ -85,18 +87,11 @@ firmware rejects it; watch health bit 2 on that interrupt stream.
 
 ## Line-coding rejects
 
-Hosts typically treat CDC `SET_LINE_CODING` as fire-and-forget. PicoUart cannot STALL that transfer after TinyUSB has
-already accepted it, so firmware surfaces rejects through HID and advertises PIO 8N1 in the USB product string and CDC
-interface strings:
-
-1. Watch health bit 3 (`control_pending`) while the worker applies a change, and while CDC soft-pending waits for the
-   worker mailbox (up to 1 s from the first arm; an identical `SET_LINE_CODING` retry keeps that original deadline, but
-   a distinct replacement request refreshes it and starts a new 1 s window). Invalid follow-up line-coding requests set
-   `control_error` without canceling an in-flight pending apply; that older apply may finish, but cannot clear the newer
-   reject.
-2. Watch health bit 2 (`control_error`) after a parse failure, PIO non-8N1 reject, deferred-apply timeout (1 s), or CDC
-   soft-pending mailbox timeout (1 s).
-3. Use `python3 -m pico_uart monitor` - the tool decodes those bits into `control_pending` / `control_error` labels.
+Hosts typically treat CDC `SET_LINE_CODING` as fire-and-forget. TinyUSB may complete the transfer before firmware
+applies or rejects the request, so hosts should monitor health bit 3 (`control_pending`) and then bit 2
+(`control_error`). PIO accepts 8N1 only. Request ordering, timeout, and retry semantics are specified in the
+[Control Plane Design](../control-plane-design.md); host monitoring is covered by the
+[CDC/HID Overview](cdc-hid-overview.md).
 
 PIO UART ports remain 8N1-only. Hardware UART0/UART1 accept supported baud/data/parity/stop combinations within firmware
 bounds (50-3 000 000 baud, 5-8 data bits, 1/2 stop, none/odd/even parity).
@@ -109,7 +104,7 @@ Tag `v1.2.3` builds advertise `1.2.3` here. The USB device descriptor `bcdDevice
 
 | Offset | Size | Field                              | Meaning                                                                                                                                          |
 | ------ | ---: | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0      |    1 | `version`                          | Report layout version, currently `15`.                                                                                                           |
+| 0      |    1 | `version`                          | Shared report layout version.                                                                                                                    |
 | 1      |    1 | `reserved0`                        | Board-status flags. Bit 0 is set when HID arm/reset is compiled in (`PICO_UART_ALLOW_HID_RESET=1`). Other bits remain reserved and must be zero. |
 | 2      |    2 | `temperature_centidegrees_celsius` | Signed little-endian temperature estimate in hundredths of a degree Celsius.                                                                     |
 | 4      |    1 | `firmware_major`                   | Firmware semantic version major component.                                                                                                       |
@@ -141,17 +136,17 @@ large.
 
 | Offset | Size | Field                  | Meaning                                                    |
 | ------ | ---: | ---------------------- | ---------------------------------------------------------- |
-| 0      |    1 | `version`              | Report layout version, currently `15`.                     |
+| 0      |    1 | `version`              | Shared report layout version.                              |
 | 1      |   24 | `rx_overflow_count[6]` | Six little-endian `uint32_t` values for CDC0 through CDC5. |
 
 ## Report ID 6: Hardware Info
 
-Request feature report ID `6` to identify the MCU and query the current system clock. Its independent layout version
-is `1`; the existing v15 reports are unchanged. All multi-byte values are little-endian.
+Request feature report ID `6` to identify the MCU and query the current system clock. Its layout version is independent
+of the shared version used by reports `1`, `3`, and `5`. All multi-byte values are little-endian.
 
 | Offset | Size | Field             | Meaning                                           |
 | ------ | ---- | ----------------- | ------------------------------------------------- |
-| 0      | 1    | `version`         | Hardware-info layout version, currently `1`.       |
+| 0      | 1    | `version`         | Hardware-info layout version.                      |
 | 1      | 1    | `mcu`             | `1` = RP2040; `2` = RP2350.                         |
 | 2      | 4    | `system_clock_hz` | Current `clock_get_hz(clk_sys)` value in Hz.        |
 
@@ -164,28 +159,22 @@ changing this payload layout; ported firmware must explicitly assign the appropr
 
 ## Host Tool
 
-The reference client at [host/python](../../../host/python) discovers this vendor HID collection and offers `monitor`,
-`status`, `temperature`, `version`, `overruns`, `hardware`, `toggle-led`, and `reset` through `python -m pico_uart`.
-Install its `hidapi` dependency before use.
-
-`pico-uart hardware` and the [.NET host](../../../host/dotnet/README.md)'s `hardware` command return
-`{"mcu":"RP2040","mcu_id":1,"system_clock_hz":125000000}`-shaped JSON. The client APIs expose `read_hardware_info()` and
-`ReadHardwareInfo()`. The shared dashboard shows MCU and system clock in MHz, refreshing alongside board metadata.
+Host command and client behavior are documented in the [Python host guide](../../../host/python/README.md) and
+[.NET host guide](../../../host/dotnet/README.md).
 
 ## Compatibility
 
 Hosts must validate `signature0` and `version` before decoding a status report. Treat unknown report IDs, newer
 versions, and unknown reserved bits as unsupported rather than attempting to infer behavior. Board-status `reserved0`
-bit 0 is a defined v15 capability flag (HID reset compiled in); default firmware still sends `0`. Older host tools that
+bit 0 indicates that HID reset is enabled; default firmware sends `0`. Older host tools that
 rejected any nonzero `reserved0` will fail board-status reads only against reset-enabled lab builds.
 
 Report `6` is additive: older hosts can continue reading reports `1`, `3`, and `5` from new firmware. Firmware predating
-report `6` cannot supply hardware info; updated dashboards keep existing board metadata and telemetry while showing
-unknown MCU/clock and a hardware-information error. The explicit `hardware` CLI command fails rather than guessing.
+report `6` cannot supply hardware information; clients should handle that absence without discarding existing reports.
+See the host guides for client-specific presentation and error behavior.
 
-For a valid version-1 report containing an unrecognized MCU ID, both hosts preserve `mcu_id` and `system_clock_hz`.
-For example, ID `3` at 200 MHz decodes to `{"mcu":"Unknown MCU (3)","mcu_id":3,"system_clock_hz":200000000}`.
-This does not imply that ID `3` identifies a particular future chip; its mapping must be defined when that MCU is added.
+For a valid report containing an unrecognized MCU ID, hosts preserve the raw ID and system clock and present the MCU as
+unknown. This does not assign meaning to future IDs; firmware must define each mapping when adding MCU support.
 
 The source of truth for the implementation is [usb_hid.c](../../../firmware/src/usb/usb_hid.c) and the report descriptor in
 [usb_descriptors.c](../../../firmware/src/usb/usb_descriptors.c).

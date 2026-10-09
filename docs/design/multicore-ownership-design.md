@@ -1,64 +1,22 @@
 # Multicore Ownership Design
 
 This document defines the synchronization and ownership rules between RP2040/ RP2350 core 0 and core 1. It complements
-the data-path details in [Ring Buffer Design](ring-buffer-design.md) and the request lifecycle in
+the data-path details in [Ring Buffer Design](uart/ring-buffer-design.md) and the request lifecycle in
 [Control Plane Design](control-plane-design.md).
 
 ## Core Responsibilities
 
-```mermaid
-flowchart LR
-    subgraph Core0["Core 0: USB-facing"]
-        TinyUSB["TinyUSB task"]
-        Bridge["CDC bridge"]
-        HID["HID snapshots"]
-    end
-    subgraph Shared["Shared synchronization"]
-        Rings["Per-port RX/TX rings"]
-        Mailbox["Per-port control mailbox"]
-        Status["Status flags + generations"]
-        Stats["Stats sequence counters"]
-    end
-    subgraph Core1["Core 1: UART worker"]
-        Worker["Worker scheduler"]
-        Control["Deferred control apply"]
-        Backend["HW/PIO polling and DMA"]
-        Heartbeat["Worker heartbeat"]
-    end
-    TinyUSB --> Bridge
-    Bridge --> Rings
-    Bridge --> Mailbox
-    HID --> Status
-    HID --> Stats
-    Rings --> Backend
-    Mailbox --> Control
-    Status --> Control
-    Stats --> Backend
-    Worker --> Control
-    Worker --> Backend
-    Backend --> Rings
-    Backend --> Stats
-    Heartbeat --> HID
-```
-
-Core 0 is the only TinyUSB owner. Core 1 is the only steady-state UART backend owner. Neither core calls the other
-core's private implementation directly.
+Core 0 exclusively owns TinyUSB and USB-side bridge work. Core 1 owns steady-state UART backend service. They
+communicate through per-port rings, control mailboxes, and shared status; neither calls the other core's private
+implementation.
 
 ## Ring Ownership
 
-Each logical port has two SPSC rings:
-
-| Ring | Producer           | Consumer          | Synchronization                   |
-| ---- | ------------------ | ----------------- | --------------------------------- |
-| TX   | core-0 CDC bridge  | core-1 backend    | producer/consumer sequences + DMB |
-| RX   | core-1 backend/DMA | core-0 CDC bridge | producer/consumer sequences + DMB |
+Per-port RX/TX direction and overflow behavior are defined in [Ring Buffer Design](uart/ring-buffer-design.md).
 
 Aligned 32-bit cursor accesses are atomic on the supported RP2040/RP2350 platforms. Payload publication and cursor
 retirement are ordered with Pico SDK `__dmb()` barriers. This is target-specific synchronization, not a portable C11
-thread implementation.
-
-The RX bridge copies a reserved span to a private snapshot before delivering it to USB. It validates both the ring
-reservation and live DMA progress before committing the copied bytes.
+thread implementation. Ring ownership and DMA snapshot validation remain separate from status locking.
 
 ## Control Mailbox Ordering
 
@@ -81,43 +39,19 @@ sequenceDiagram
     C1->>M: Publish response sequence
 ```
 
-A mailbox request is considered owned until the consumer publishes the matching response sequence. `CONTROL_PENDING`
-remains asserted while a request moves through soft-pending, mailbox-pending, and worker-pending states so TX admission
-cannot slip through the handoff.
+A mailbox request remains owned until the consumer publishes its matching response sequence. This ordering supports the
+pending-state and TX-blocking guarantees defined in [Control Plane Design](control-plane-design.md).
 
 ## Status Lock and Generations
 
-The status lock protects core-0-visible control state:
-
-- per-port status flags
-- soft-pending ownership
-- control generations
-- metadata updates such as the active baud rate
-
-Each host control request receives a per-port generation. A completion may change `CONTROL_ERROR` only when its
-generation is still the latest generation. This prevents a stale worker result from erasing a newer host-visible
-failure.
-
-The lock does not protect ring cursors. Ring cursors use the SPSC ownership model and barriers instead. Keeping these
-synchronization mechanisms separate prevents a USB status read from becoming a global UART data-path lock.
+The status lock protects core-0-visible flags, control ownership, generations, and metadata. It does not protect ring
+cursors, which use SPSC ownership and barriers; keeping the mechanisms separate prevents status reads from becoming a
+global data-path lock. Per-request generation behavior is described in [Control Plane Design](control-plane-design.md).
 
 ## Telemetry Sequence Counters
 
-Each port has a worker-published stats sequence counter:
-
-```mermaid
-stateDiagram-v2
-    [*] --> Even
-    Even --> Odd: core 1 begins backend update
-    Odd --> Even: core 1 completes update
-    Even --> Even: no update
-    Odd --> Retry: core 0 observes odd sequence
-    Retry --> Even: retry later
-```
-
-Core 1 increments the sequence to an odd value before polling a backend and to an even value after the update, with
-barriers around the transitions. Core 0 accepts a telemetry snapshot only when the sequence is even and unchanged before
-and after reading the rings and backend counters.
+Core 1 brackets each stats update with an odd/even sequence and memory barriers. Core 0 accepts a snapshot only when the
+sequence is even and unchanged across the read.
 
 ## Worker Heartbeat
 
@@ -127,9 +61,6 @@ watchdog recovery rather than allowing a wedged core-1 UART worker to run unnoti
 
 ## Failure and Recovery Rules
 
-- A backend initialization failure rolls back initialized ports before core 1 launches.
-- A worker control timeout reports `CONTROL_ERROR` and clears worker ownership.
-- A USB mount/unmount reset clears only core-0 soft-pending state; mailbox- and worker-owned changes remain under core-1
-  completion rules.
-- RX overflow recovery advances the consumer and records loss; it never lets the producer rewrite the consumer cursor.
-- Physical DMA, IRQ, and multicore timing behavior requires HIL validation.
+Startup rollback, control completion, and RX overflow recovery are defined in the [UART subsystem](uart/README.md),
+[Control Plane Design](control-plane-design.md), and [Ring Buffer Design](uart/ring-buffer-design.md). Physical DMA,
+IRQ, and multicore timing require [hardware-in-the-loop testing](../tests/hil-fixture-test-plan.md).

@@ -11,6 +11,15 @@
 - For an unknown QSPI ID, use the documented `FLASHSIZE` auto-detection override only after confirming flash
   capacity from the chip marking/datasheet; never guess capacity or use the override to hide failed SWD access.
 
+## Documentation
+
+- Keep documents focused; give each design contract, procedure, and measured result one authoritative home.
+- Use overview documents for stable concepts and navigation. Link to focused designs, workflows, test plans, and dated
+  HIL records instead of copying their detailed inventories or results.
+- Avoid duplicating values and snapshots that change with firmware, board configuration, or test runs. Keep details
+  readers need to act safely, such as pin maps and release gates, and link to their implementation or evidence source.
+- When behavior changes, update its authoritative document and affected links rather than propagating duplicate copies.
+
 ## Engineering Style
 
 Use a preferred line width of 120 columns for source, configuration, and Markdown prose. Do not pad short lines; keep
