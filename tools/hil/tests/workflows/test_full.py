@@ -77,13 +77,16 @@ def test_builds_incremental_performance_command() -> None:
     assert command[command.index("--incremental-max-rate") + 1] == "800000"
 
 
-def test_parse_defaults_to_usb_sustainable_rate() -> None:
+def test_parse_defaults_to_concurrent_rate_sweep() -> None:
     full = _load_full()
     endpoints = [item for channel in range(6) for item in (f"--pico-cdc{channel}", f"cdc{channel}")]
 
     arguments = full.parse_arguments(endpoints)
 
-    assert arguments.rates == "115200"
+    expected_rates = "115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000"
+    assert arguments.rates == expected_rates
+    command = full.build_performance_command(arguments)
+    assert command[command.index("--rates") + 1] == expected_rates
     assert arguments.record_dir == full.DEFAULT_RECORDS_DIR
 
 

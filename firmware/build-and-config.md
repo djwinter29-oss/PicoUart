@@ -27,7 +27,7 @@ The scripts honor an exported `PICO_SDK_PATH`; otherwise they use the pinned rep
 
 ```sh
 tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
-tools/firmware/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock
+tools/firmware/build.sh --board pico2 --system-clock-khz 280000 --unsafe-overclock
 ```
 
 Those examples are intentionally unsafe overrides. Production builds use the rated 125000 kHz (`pico`) or 150000 kHz
@@ -35,9 +35,14 @@ Those examples are intentionally unsafe overrides. Production builds use the rat
 qualification; CMake otherwise rejects a non-rated clock.
 
 PR and release workflows build overrides in addition to the rated defaults: `pico` at 250 MHz (`pico-250mhz`) and
-`pico2` at 300 MHz (`pico2-300mhz`) in both workflows. Neither overclock target writes the core voltage; both boards
+`pico2` at 280 MHz (`pico2-280mhz`) in both workflows. Neither overclock target writes the core voltage; both boards
 retain the regulator setting present on entry. The build ceiling is 400000 kHz for RP2040 and 500000 kHz for RP2350, not
 a stability guarantee. The promote HIL gate covers the rated images. See [Releasing](../docs/releasing.md).
+
+Some Pico 2 boards may not support 300 MHz reliably: one tested board failed USB bring-up with the v0.5.0
+300 MHz artifact, even after a power cycle, while its standard 150 MHz image passed the fixture tests.
+The development target is now 280 MHz; this reduction is not a stability guarantee and still needs exact-board HIL.
+Existing v0.5.0 release files are unchanged. See [Releasing](../docs/releasing.md) for the observed failure and limits.
 
 The firmware target explicitly sets `SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST=0` for both application and SDK startup sources,
 including the SDK's own pre-`main()` clock init (`runtime_init_clocks.c`, board default 125/150 MHz). The SDK
@@ -98,7 +103,7 @@ ring definitions document where that requirement applies.
 - Default board is `pico`.
 - Default system-clock targets are 125000 kHz for RP2040 and 150000 kHz for RP2350. Higher clock rates are
   board-specific overrides. Startup never writes the core voltage; it preserves the regulator setting on entry rather
-  than measuring or restoring a specific voltage. Neither development overclock image (RP2040 250 MHz, RP2350 300 MHz)
+  than measuring or restoring a specific voltage. Neither development overclock image (RP2040 250 MHz, RP2350 280 MHz)
   is qualified for stability, thermal margin, or lifetime without exact-board HIL over the intended workload and
   temperature range.
 - Startup initializes the selected board's default LED when it defines `PICO_DEFAULT_LED_PIN`; the LED starts off.

@@ -8,7 +8,7 @@ and never matches a real tag like v1.2.3. These tests pin the fixed glob
 and the release-tag version policy enforced by tools/release/resolve-release-version.sh.
 
 They also pin the PR and release firmware matrices: rated pico/pico2 plus
-the development overclock images (pico at 250 MHz; pico2 at 300 MHz in both
+the development overclock images (pico at 250 MHz; pico2 at 280 MHz in both
 PR checks and releases).
 """
 
@@ -32,7 +32,7 @@ PR_FIRMWARE_MATRIX = (
     ("pico", "125000", "false", "pico"),
     ("pico2", "150000", "false", "pico2"),
     ("pico", "250000", "true", "pico-250mhz"),
-    ("pico2", "300000", "true", "pico2-300mhz"),
+    ("pico2", "280000", "true", "pico2-280mhz"),
 )
 # ponytail: PR and release targets are intentionally identical today; keep
 # separate names to make any future workflow-specific divergence explicit.
@@ -156,7 +156,8 @@ def test_release_overclock_packages_use_distinct_names() -> None:
     assert "SHA256SUMS-${LABEL}.txt" in text
     assert "pattern: release-*" in text
     assert "pico-250mhz" in text
-    assert "pico2-300mhz" in text
+    assert "pico2-280mhz" in text
+    assert "pico2-300mhz" not in text
     assert "pico2-500mhz" not in text
 
 
@@ -168,7 +169,9 @@ def test_release_notes_and_docs_match_release_clocks() -> None:
         mhz = int(clock_khz) // 1000
         assert f"**{label}** ({mhz} MHz)" in body
         assert label in docs
-    assert "RP2350 300 MHz" in docs
-    assert "--system-clock-khz 300000 --unsafe-overclock" in docs
+    assert "RP2350 280 MHz" in docs
+    assert "--system-clock-khz 280000 --unsafe-overclock" in docs
     assert "pico2-500mhz" not in docs
     assert "promote HIL gate covers the rated images" in body
+    assert "Some Pico 2 boards may not support 300 MHz reliably" in body
+    assert "280 MHz remains an unqualified development overclock" in docs

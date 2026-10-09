@@ -31,9 +31,22 @@ def test_builds_stress_command_for_all_fixture_endpoints() -> None:
     command = performance.build_command(arguments)
 
     assert command[:3] == [sys.executable, "-m", "hil_test_suite.serial.stress"]
+    expected_rates = "115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000"
+    assert arguments.rates == expected_rates
+    assert command[command.index("--rates") + 1] == expected_rates
     for channel in range(6):
         assert getattr(arguments, f"cdc{channel}") == f"cdc{channel}"
         assert command[command.index(f"--cdc{channel}") + 1] == f"cdc{channel}"
+
+
+def test_preserves_custom_performance_rates() -> None:
+    performance = _load_performance()
+    endpoints = [item for channel in range(6) for item in (f"--cdc{channel}", f"cdc{channel}")]
+    arguments = performance.parse_arguments(endpoints + ["--rates", "115200,256000"])
+
+    command = performance.build_command(arguments)
+
+    assert command[command.index("--rates") + 1] == "115200,256000"
 
 
 def test_builds_incremental_stress_command() -> None:

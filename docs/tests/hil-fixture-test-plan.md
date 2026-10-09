@@ -60,7 +60,12 @@ is not a pass. Test each pair individually, then run all six streams concurrentl
 process comma-separated rates sequentially in one process; they reopen and reconfigure the ports and wait for the settle
 interval before testing each rate.
 
-To find the concurrent six-port ceiling consistently, use `--incremental-performance` with the combined runner. It
+The standalone performance runner and combined runner default to this concurrent six-port sweep, in order:
+115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, and 3000000 baud. The default sweep
+does not test above 3 Mbaud. Use `--rates` to select a different list; each configured rate is tested even if an
+earlier rate fails.
+
+For an optional concurrent six-port ceiling search, use `--incremental-performance` with the combined runner. It
 starts at 460800 baud, increases by 100000 baud, and stops at the first failed rate (capped at 3000000 baud by default).
 The summary reports the highest rate where all six streams passed and the first failed rate; that boundary failure is
 expected for a ceiling search. Override the start, step, or cap with `--incremental-start-rate`,
@@ -75,7 +80,7 @@ payload verification remains the end-to-end check that the firmware and UART lin
 | ------------------- | ------------------------------------------------------------------ | ------------------------------- |
 | Single direction    | 460800, 600000, 800000, 1000000, 1100000, 1200000                  | 10 s per rate                   |
 | Single pair duplex  | 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000 | 30 s per rate                   |
-| Concurrent six-port | 460800, 500000, 600000                                             | 30 s per rate, fresh port setup |
+| Concurrent six-port | 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, 3000000 | 30 s per rate, fresh port setup |
 
 Before the pair sweeps, set `PICO_DEVICE_BASE` to the PicoUart `/dev/serial/by-id` path before its `-if00`/`-if04`
 interface suffixes.
@@ -113,7 +118,8 @@ tools/hil/runner/performance.sh \
   --cdc3 /dev/serial/by-id/<pico-cdc3> \
   --cdc4 /dev/serial/by-id/<pico-cdc4> \
   --cdc5 /dev/serial/by-id/<pico-cdc5> \
-  --rates 460800,500000,600000 --duration 30 --payload-bytes 1024 --timeout 3 \
+  --rates 115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000 \
+  --duration 30 --payload-bytes 1024 --timeout 3 \
   --board pico --firmware-version 1.2.3 --firmware-commit <commit>
 ```
 

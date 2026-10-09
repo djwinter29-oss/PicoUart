@@ -2,7 +2,7 @@
 
 Release tags matching `vMAJOR.MINOR.PATCH` run [`.github/workflows/release.yml`](../.github/workflows/release.yml). The
 workflow builds the rated `pico` (125 MHz) and `pico2` (150 MHz) images plus development overclock images `pico-250mhz`
-(250 MHz) and `pico2-300mhz` (300 MHz), runs host tests, packages UF2/ELF/BIN/HEX plus `SHA256SUMS-*`, and opens a
+(250 MHz) and `pico2-280mhz` (280 MHz), runs host tests, packages UF2/ELF/BIN/HEX plus `SHA256SUMS-*`, and opens a
 **draft** GitHub Release. The promote HIL gate covers the rated images.
 
 Do not publish the draft until exact-artifact hardware-in-the-loop (HIL) evidence passes the gates below.
@@ -37,7 +37,7 @@ Before requesting HIL, confirm:
 1. The change is reviewed and the working tree contains no unintended files.
 2. The version is a valid `vMAJOR.MINOR.PATCH` release tag.
 3. Rated `pico` and `pico2` firmware artifacts build successfully, and the development overclock images (`pico` at 250
-   MHz, `pico2` at 300 MHz) build with them.
+   MHz, `pico2` at 280 MHz) build with them.
 4. The host suite passes, including the UART facade and backend contract tests.
 5. `git diff --check` passes.
 6. The release notes identify any USB/HID compatibility or behavior changes.
@@ -74,11 +74,18 @@ Cloud CI proves builds and host tests only. A publishable release needs recorded
 - Raspberry Pi Pico / RP2040 (`pico`, rated 125 MHz)
 - Raspberry Pi Pico 2 / RP2350 (`pico2`, rated 150 MHz)
 
-Release CI also packages development overclock images: `pico-250mhz` (RP2040 at 250 MHz) and `pico2-300mhz` (RP2350 at
-300 MHz). The promote HIL gate covers the rated images. A recorded overclock result qualifies only the matching
+Release CI also packages development overclock images: `pico-250mhz` (RP2040 at 250 MHz) and `pico2-280mhz` (RP2350 at
+280 MHz). The promote HIL gate covers the rated images. A recorded overclock result qualifies only the matching
 overclock artifact. Neither overclock image writes the core voltage: both preserve the regulator setting on entry,
 without measuring or restoring a specific voltage. Clock stability, temperature margin, and lifetime remain unqualified
 until exact-board HIL covers the intended operating range.
+
+Some Pico 2 boards may not support 300 MHz reliably. During v0.5.0 testing, one RP2350 rev 3 board
+(USB serial `575393D4D2C8C043`) failed to enumerate USB with the exact `pico2-300mhz` artifact after verified
+flashing and a user power cycle; the same board passed the standard 150 MHz fixture run. The cause of the
+300 MHz bring-up failure was not established. Future PR and release builds use 280 MHz instead, but
+280 MHz remains an unqualified development overclock until the exact artifact passes board-specific HIL.
+Existing v0.5.0 release artifacts remain 300 MHz images; this workflow change does not replace or qualify them.
 
 HIL must use the exact UF2/ELF from the draft release or workflow dry-run. Do not rebuild locally for release
 qualification.
@@ -112,7 +119,7 @@ not replace physical testing.
 | RP2040 firmware   | `tools/firmware/build.sh --board pico`                                               | Rated 125 MHz compile/link and UF2 outputs                      |
 | RP2350 firmware   | `tools/firmware/build.sh --board pico2`                                              | Rated 150 MHz compile/link and platform-specific paths          |
 | RP2040 250 MHz    | `tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock`  | Development overclock image (`pico-250mhz`)                     |
-| RP2350 300 MHz    | `tools/firmware/build.sh --board pico2 --system-clock-khz 300000 --unsafe-overclock` | Development overclock image (`pico2-300mhz`)                    |
+| RP2350 280 MHz    | `tools/firmware/build.sh --board pico2 --system-clock-khz 280000 --unsafe-overclock` | Development overclock image (`pico2-280mhz`)                    |
 | Patch hygiene     | `git diff --check`                                                                   | Whitespace and patch formatting                                 |
 
 The host suite should include the backend contract test and the real facade contract test. Firmware builds must complete

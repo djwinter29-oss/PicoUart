@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from ..support.results import artifact_metadata
 from ..support.paths import REPO_ROOT
 from ..support.repository import git_metadata
-from .performance import RATE_PATTERN, parse_benchmark_output_by_rate
+from .performance import DEFAULT_RATES, RATE_PATTERN, parse_benchmark_output_by_rate
 
 DEFAULT_RECORDS_DIR = REPO_ROOT / "docs/tests/records"
 FUNCTIONAL_CASES = (
@@ -334,7 +334,7 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser.add_argument("--functional-baud", type=int, default=115200)
     parser.add_argument("--functional-payload-bytes", type=int, default=64)
     parser.add_argument(
-        "--rates", default="115200", help="Concurrent full-fixture rate; use individual tests for higher baud rates"
+        "--rates", default=DEFAULT_RATES, help="Concurrent full-fixture rates, comma-separated (default: %(default)s)"
     )
     parser.add_argument(
         "--incremental-performance",
