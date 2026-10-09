@@ -31,6 +31,7 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
     """Build the internal serial_stress_benchmark invocation."""
     command = [
         sys.executable,
+        "-u",
         "-m",
         "hil_test_suite.serial.stress",
         "--cdc0",
@@ -51,6 +52,7 @@ def build_command(arguments: SimpleNamespace) -> list[str]:
         str(arguments.payload_bytes),
         "--timeout",
         str(arguments.timeout),
+        "--check-hid-health",
     ]
     if getattr(arguments, "incremental", False):
         command.extend(
@@ -114,6 +116,7 @@ def format_result_entry(
     health_after: dict | None = None,
 ) -> str:
     parsed = parse_benchmark_output_by_rate(output)
+    attempted_rates = {int(rate) for rate in RATE_PATTERN.findall(output)}
     clean = result == 0 and health_is_clean(health_after, health_before)
     overall = "PASS" if clean else "FAIL"
     expected_labels = [
@@ -157,7 +160,8 @@ def format_result_entry(
         rates = [int(item) for item in arguments.rates.split(",")]
     for rate in rates:
         for label in expected_labels:
-            status, verified, throughput = parsed.get((rate, label), ("NOT REPORTED", "-", "-"))
+            missing_status = "NOT REPORTED" if rate in attempted_rates else "NOT RUN"
+            status, verified, throughput = parsed.get((rate, label), (missing_status, "-", "-"))
             lines.append(f"| {rate} | {label} | {status} | {verified} | {throughput} |")
     if getattr(arguments, "incremental", False):
         passing_rates = [
@@ -179,6 +183,10 @@ def format_result_entry(
         )
     lines.extend(
         [
+            "",
+            "### Per-Rate HID Health",
+            "",
+            *[f"- {line}" for line in output.splitlines() if line.startswith("HID rate ")],
             "",
             "### Health",
             "",

@@ -205,8 +205,9 @@ def test_run_stream_records_first_nonempty_read(monkeypatch: pytest.MonkeyPatch,
         assert stamps["first_receive_utc"] == "2026-01-01T00:00:02.000+00:00"
 
 
+@pytest.mark.parametrize("health_failure", [None, "before", "after", "overflow"])
 def test_benchmark_rate_collects_and_prints_stream_timing(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], health_failure
 ) -> None:
     """Each stream's timing dict (collected by run_stream) must survive into
     benchmark_rate's final report as a ``TIME <label>: {...}`` line, with the
@@ -222,6 +223,7 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
             "payload_bytes": 64,
             "timeout": 1.0,
             "settle_seconds": 0.0,
+            "check_hid_health": True,
         },
     )()
     next_descriptor = iter(range(20, 26))
@@ -255,9 +257,29 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(stress, "close_ports", lambda *_args: None)
 
-    assert stress.benchmark_rate(arguments, 115200) is True
+    clean = {
+        "channels": {index: 1 for index in range(6)},
+        "overruns": {index: 0 for index in range(6)},
+        "firmware_version": "0.5.0",
+        "error": None,
+    }
+    before = {**clean, "error": "HID lost"} if health_failure == "before" else clean
+    after = {**clean, "error": "HID lost"} if health_failure == "after" else clean
+    if health_failure == "overflow":
+        after = {**clean, "overruns": {index: 1 for index in range(6)}}
+    snapshots = iter([before, after])
+    monkeypatch.setattr(stress, "collect_hid_health", lambda: next(snapshots))
 
-    stdout = capsys.readouterr().out
+    assert stress.benchmark_rate(arguments, 115200) is (health_failure is None)
+
+    captured = capsys.readouterr()
+    stdout = captured.out
+    if health_failure == "before":
+        assert "TIME " not in stdout
+        assert captured.err.count("no traffic sent") == 6
+        return
+    if health_failure is not None:
+        assert captured.err.count("HID health failed after rate") == 6
     time_lines = [line for line in stdout.splitlines() if line.startswith("TIME ")]
     stream_labels = [
         "cdc0-to-cdc2",
@@ -436,6 +458,22 @@ def test_incremental_scan_fails_when_first_rate_fails(monkeypatch: pytest.Monkey
     monkeypatch.setattr(stress, "benchmark_rate", lambda *_args: False)
 
     assert stress.main(arguments) == 1
+
+
+def test_normal_sweep_stops_before_contaminating_later_rates(monkeypatch, capsys) -> None:
+    stress = _load_stress()
+    arguments = stress.parse_arguments([*_cdc_cli_arguments(), "--rates", "115200,256000,460800"])
+    tested_rates = []
+
+    def benchmark_rate(_arguments, rate):
+        tested_rates.append(rate)
+        return rate == 115200
+
+    monkeypatch.setattr(stress, "benchmark_rate", benchmark_rate)
+
+    assert stress.main(arguments) == 1
+    assert tested_rates == [115200, 256000]
+    assert "STOP concurrent sweep after failed rate: 256000 baud" in capsys.readouterr().out
 
 
 def test_fixture_paths_reject_duplicate_endpoint() -> None:

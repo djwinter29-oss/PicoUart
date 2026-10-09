@@ -165,3 +165,8 @@ also has a bounded timeout so continuous UART traffic cannot pause USB ingress i
 - The compact HID report exposes high-water mark blocks and sticky overrun health; exact overflow counts are available
   through HID feature report 5.
 - Sustained multi-port 1 Mbaud is bounded by USB full-speed aggregate bandwidth and host drain rate.
+- The measured six-port envelope is clock-dependent: rated Pico at 125 MHz passed through 256000 baud,
+  Pico at 250 MHz through 921600 baud, and Pico 2 at 150/280 MHz through 3 Mbaud in the recorded sweeps.
+  Treat the rated Pico result as an operating limit, not proof of a dual-core logic defect. Faster-board throughput
+  plateaus are consistent with shared USB full-speed path limits; neither core utilization nor bus saturation was
+  measured. See [Measured Six-Port Envelope](tests/hil-fixture-test-plan.md#measured-six-port-envelope).

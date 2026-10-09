@@ -30,13 +30,35 @@ def test_builds_stress_command_for_all_fixture_endpoints() -> None:
 
     command = performance.build_command(arguments)
 
-    assert command[:3] == [sys.executable, "-m", "hil_test_suite.serial.stress"]
+    assert command[:4] == [sys.executable, "-u", "-m", "hil_test_suite.serial.stress"]
+    assert "--check-hid-health" in command
     expected_rates = "115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000"
     assert arguments.rates == expected_rates
     assert command[command.index("--rates") + 1] == expected_rates
     for channel in range(6):
         assert getattr(arguments, f"cdc{channel}") == f"cdc{channel}"
         assert command[command.index(f"--cdc{channel}") + 1] == f"cdc{channel}"
+
+
+def test_child_preserves_rate_and_failure_order_without_environment_override(monkeypatch) -> None:
+    performance = _load_performance()
+    endpoints = [item for channel in range(6) for item in (f"--cdc{channel}", f"cdc{channel}")]
+    command = performance.build_command(performance.parse_arguments(endpoints))
+    monkeypatch.delenv("PYTHONUNBUFFERED", raising=False)
+    script = (
+        "import sys\n"
+        "for rate in (115200, 460800):\n"
+        " print(f'Benchmarking all six HIL fixture streams at {rate} baud')\n"
+        " print('FAIL cdc0-to-cdc2: timeout', file=sys.stderr)\n"
+    )
+
+    completed = subprocess.run(command[:2] + ["-c", script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+    assert completed.returncode == 0
+    assert performance.parse_benchmark_output_by_rate(completed.stdout) == {
+        (115200, "cdc0-to-cdc2"): ("FAIL", "-", "timeout"),
+        (460800, "cdc0-to-cdc2"): ("FAIL", "-", "timeout"),
+    }
 
 
 def test_preserves_custom_performance_rates() -> None:
@@ -134,6 +156,23 @@ def test_incremental_report_shows_only_attempted_rates_and_highest_supported() -
     assert "Highest supported concurrent rate:** `560800`" in report
     assert "First failed tested rate:** `660800`" in report
     assert "760800" not in report
+
+
+def test_report_marks_unattempted_rates_and_preserves_rate_health() -> None:
+    performance = _load_performance()
+    endpoints = [item for channel in range(6) for item in (f"--cdc{channel}", f"cdc{channel}")]
+    arguments = performance.parse_arguments(endpoints + ["--rates", "115200,460800"])
+    output = (
+        "Benchmarking all six HIL fixture streams at 115200 baud\n"
+        "HID rate 115200 after: rx_error\n"
+        "FAIL cdc0-to-cdc2: HID health failed after rate\n"
+    )
+
+    report = performance.format_result_entry(arguments, "2026-10-09T00:00:00+00:00", 1, output)
+
+    assert "| 115200 | cdc0-to-cdc2 | FAIL" in report
+    assert "| 460800 | cdc0-to-cdc2 | NOT RUN" in report
+    assert "- HID rate 115200 after: rx_error" in report
 
 
 @pytest.mark.parametrize(
