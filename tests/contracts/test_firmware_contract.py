@@ -18,6 +18,7 @@ from contract import (
     is_lab_placeholder_identity,
 )
 import pico_uart as hid
+from pico_uart import protocol
 
 
 def test_release_lock_matches_direct_requirement_pins(repo_root):
@@ -78,6 +79,16 @@ def test_hid_descriptor_command_report_count_matches_host_payload(repo_root):
 
 def test_hid_descriptor_overflow_report_count_matches_host_payload(repo_root):
     assert firmware_hid_report_count(repo_root, hid.REPORT_ID_OVERFLOW_COUNTS) == hid.OVERFLOW_COUNTS_SIZE
+
+
+def test_hardware_info_contract_preserves_existing_report_layouts(repo_root):
+    fw = firmware_hid_constants(repo_root)
+    assert fw["USB_HID_REPORT_ID_HARDWARE_INFO"] == protocol.REPORT_ID_HARDWARE_INFO == 6
+    assert fw["USB_HID_HARDWARE_INFO_VERSION"] == protocol.HARDWARE_INFO_LAYOUT_VERSION == 1
+    assert fw["USB_HID_MCU_RP2040"] == protocol.MCU_RP2040
+    assert fw["USB_HID_MCU_RP2350"] == protocol.MCU_RP2350
+    assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_HARDWARE_INFO) == protocol.HARDWARE_INFO_SIZE == 6
+    assert fw["USB_HID_REPORT_VERSION"] == 15
 
 
 def test_lab_placeholder_helper_is_independent_of_tree_identity():

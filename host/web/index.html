@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
-  <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <script src="/js/dashboard.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -30,6 +31,8 @@
     </section>
 
     <section class="summary" aria-label="Board summary">
+      <div class="summary-item"><span>MCU</span><strong id="mcu">--</strong></div>
+      <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
       <div class="summary-item"><span>Firmware</span><strong id="firmware">--</strong></div>
       <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
       <div class="summary-item"><span>Total RX overflow</span><strong id="overflow-total">--</strong></div>

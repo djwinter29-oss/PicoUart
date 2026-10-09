@@ -6,7 +6,9 @@ import re
 import threading
 import time
 
-from pico_uart.protocol import parse_status
+import pytest
+
+from pico_uart.protocol import parse_hardware_info, parse_status
 from pico_uart.web.app import DashboardService, _empty_snapshot, create_app
 from helpers import board_status_bytes, overflow_counts_bytes, status_report_bytes
 
@@ -44,6 +46,27 @@ def test_dashboard_routes_require_csrf_and_dispatch_controls():
     assert response.status_code == 200
     assert response.json == {"ok": True}
     assert service.actions == ["toggle-led"]
+
+
+def test_dashboard_serves_shared_assets():
+    client = create_app(FakeDashboard()).test_client()
+    page = client.get("/")
+    assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page.data
+    assert b'id="mcu"' in page.data
+    assert b'id="system-clock"' in page.data
+    assert b'href="/css/dashboard.css"' in page.data
+    assert b'src="/js/dashboard.js"' in page.data
+    assert b"{{" not in page.data
+    for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
+        response = client.get(f"/{path}")
+        assert response.status_code == 200
+        assert response.data
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        if path == "favicon.svg":
+            assert response.mimetype == "image/svg+xml"
+            assert b'<svg xmlns="http://www.w3.org/2000/svg"' in response.data
+    for path in ("index.html", "css/index.html", "js/index.html", "css/../index.html", "js/../index.html"):
+        assert client.get(f"/{path}").status_code == 404
 
 
 def test_dashboard_rejects_untrusted_host_before_serving_controls():
@@ -112,6 +135,9 @@ def test_dashboard_service_polls_status_and_metadata():
         def read_overflow_counts(self):
             return [0, 1, 2, 3, 4, 5]
 
+        def read_hardware_info(self):
+            return {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
+
         def close(self):
             self.closed = True
 
@@ -133,6 +159,8 @@ def test_dashboard_service_polls_status_and_metadata():
     assert snapshot["channels"][0]["totals"]["uart_tx"] == 10
     assert snapshot["board"]["firmware_version"] == "1.2.3"
     assert snapshot["overflow_counts"] == [0, 1, 2, 3, 4, 5]
+    assert snapshot["hardware"] == {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
+    assert snapshot["hardware_error"] is None
     assert fake.closed
 
 
@@ -168,11 +196,50 @@ def test_metadata_errors_survive_telemetry_and_clear_stale_values():
         def read_overflow_counts(self):
             return [0] * 6
 
+        def read_hardware_info(self):
+            return {"mcu": "RP2350", "mcu_id": 2, "system_clock_hz": 150_000_000}
+
     service._read_metadata(HealthyMetadata())
     snapshot = service.snapshot()
     assert snapshot["metadata_error"] is None
     assert snapshot["board"]["firmware_version"] == "1.2.3"
     assert snapshot["overflow_counts"] == [0] * 6
+
+
+@pytest.mark.parametrize("mcu,model", [(2, "RP2350"), (3, "Unknown MCU (3)")])
+def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, model):
+    service = object.__new__(DashboardService)
+    service._lock = threading.RLock()
+    service._snapshot = _empty_snapshot()
+    service._snapshot["hardware"] = {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
+
+    class OlderFirmware:
+        unsupported = True
+
+        def read_board_status(self):
+            return {"firmware_version": "0.5.0"}
+
+        def read_overflow_counts(self):
+            return [0] * 6
+
+        def read_hardware_info(self):
+            if self.unsupported:
+                raise OSError("hardware-info report is unsupported")
+            return parse_hardware_info(bytes([1, mcu]) + (200_000_000).to_bytes(4, "little"))
+
+    client = OlderFirmware()
+    service._read_metadata(client)
+    snapshot = service.snapshot()
+    assert snapshot["board"] == {"firmware_version": "0.5.0"}
+    assert snapshot["overflow_counts"] == [0] * 6
+    assert snapshot["metadata_error"] is None
+    assert snapshot["hardware"] is None
+    assert snapshot["hardware_error"] == "hardware-info report is unsupported"
+    client.unsupported = False
+    service._read_metadata(client)
+    recovered = service.snapshot()
+    assert recovered["hardware_error"] is None
+    assert recovered["hardware"] == {"mcu": model, "mcu_id": mcu, "system_clock_hz": 200_000_000}
 
 
 def test_dashboard_service_disconnects_and_closes_after_read_failure():

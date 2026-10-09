@@ -24,12 +24,17 @@ pico-uart status
 pico-uart status --json
 pico-uart monitor --duration 10
 pico-uart overruns
+pico-uart hardware
 pico-uart web
 ```
 
 The dashboard listens on `http://127.0.0.1:5000` and is bound to loopback. It shows all six channels' health and
-traffic, RX overflow counts, firmware version, and board temperature. It also offers an LED toggle and shows Reset only
-when the firmware advertises reset support. Use `pico-uart web --port N` to select another local port.
+traffic, RX overflow counts, MCU model, system clock, firmware version, and board temperature. It also offers an LED
+toggle and shows Reset only when the firmware advertises reset support. Use `pico-uart web --port N` to select another
+local port.
+
+Its frontend is shared with the [.NET host](https://github.com/djwinter29-oss/PicoUart/blob/main/host/dotnet/README.md).
+The Python package includes the frontend; .NET is not required to use it.
 
 Other commands include `temperature`, `version`, `toggle-led`, and `reset`. For a specific board, use the global
 `--serial SERIAL` or `--device-path PATH` selector before the command, for example `pico-uart --serial ABC123 status`.
@@ -49,6 +54,11 @@ with PicoUartHid() as board:
 `read_overflow_counts()` return decoded metadata. The API's `toggle_led()` and `reset_board()` methods perform the same
 HID board controls as the CLI.
 
+`read_hardware_info()` returns `mcu`, the raw `mcu_id`, and `system_clock_hz`; `pico-uart hardware` prints these fields
+as JSON. Known models are `RP2040` and `RP2350`; other IDs display as `Unknown MCU (ID)` while retaining their clocks.
+This requires firmware supporting feature report 6. Older firmware still supplies the original
+dashboard metadata and telemetry; MCU and system clock remain unknown rather than being inferred.
+
 ## Important Notes
 
 - Remote reset is disabled by default in firmware. The CLI and API refuse to reset unless firmware advertises that
@@ -60,8 +70,8 @@ HID board controls as the CLI.
 
 ## Documentation
 
-- [CDC/HID behavior](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/usb/cdc-hid-overview.md)
-- [HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/usb/hid-report-reference.md)
+- [CDC/HID behavior](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/cdc-hid-overview.md)
+- [HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
 - [UART pinout and wiring](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/uart-pinout.md)
 - [Security and USB identity policy](https://github.com/djwinter29-oss/PicoUart/blob/main/SECURITY.md)
-- [Host Python development guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-python.md)
+- [Host tools development guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md)

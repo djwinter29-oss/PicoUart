@@ -16,7 +16,7 @@ was accepted by firmware.
 | Vendor HID |     1 | Status reports, firmware version, temperature, overflow counts, LED toggle, optional reset | `python -m pico_uart`                        |
 
 Each CDC port maps to one target-side UART channel. The GPIO pinout is defined in
-[UART Pinout and Wiring](../uart-pinout.md).
+[UART Pinout and Wiring](../../uart-pinout.md).
 
 ## CDC Behavior
 
@@ -39,6 +39,7 @@ The HID interface does not carry UART data and does not select UART pins or back
 
 - periodic per-channel health and traffic reports
 - firmware version and board temperature
+- MCU identity (RP2040/RP2350) and SDK-reported current system clock
 - cumulative UART-to-USB RX overflow counts
 - board LED toggle
 - optional arm-then-reset command when compiled into trusted lab firmware
@@ -56,4 +57,4 @@ The detailed HID report layout is documented in [HID Report Reference](hid-repor
 3. Use `pico-uart overruns` before and after a test to verify RX overflow counts did not increase.
 4. Treat a clean serial byte stream without clean HID health as incomplete test evidence.
 
-For hardware test commands and acceptance criteria, use the [HIL Fixture Test Plan](../tests/hil-fixture-test-plan.md).
+For hardware test commands and acceptance criteria, use the [HIL Fixture Test Plan](../../tests/hil-fixture-test-plan.md).

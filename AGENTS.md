@@ -70,8 +70,8 @@ the 6×CDC/HID descriptor is the best available end-to-end check here.
 
 ### Non-obvious firmware caveats
 
-- CDC/HID ownership and report contracts: [docs/usb/cdc-hid-overview.md](docs/usb/cdc-hid-overview.md) and
-  [docs/usb/hid-report-reference.md](docs/usb/hid-report-reference.md).
+- CDC/HID ownership and report contracts: [docs/design/usb/cdc-hid-overview.md](docs/design/usb/cdc-hid-overview.md) and
+  [docs/design/usb/hid-report-reference.md](docs/design/usb/hid-report-reference.md).
 - Control-plane lifecycle and `CONTROL_ERROR` / `CONTROL_PENDING` behavior:
-  [docs/detail/control-plane-design.md](docs/detail/control-plane-design.md).
+  [docs/design/control-plane-design.md](docs/design/control-plane-design.md).
 - Release and OpenOCD/HIL gates: [docs/releasing.md](docs/releasing.md).

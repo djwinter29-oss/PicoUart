@@ -23,7 +23,7 @@ include = ["pico_uart*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-"pico_uart.web" = ["templates/*.html", "static/*.css", "static/*.js"]
+"pico_uart.web" = ["assets/index.html", "assets/*.svg", "assets/css/*.css", "assets/js/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -13,6 +13,7 @@
 #include "uart/saturating.h"
 #include "usb/usb_cdc.h"
 
+#include "hardware/clocks.h"
 #include "pico/stdlib.h"
 #include "tusb.h"
 
@@ -48,6 +49,14 @@
 #define USB_HID_REPORT_ID_COMMAND 4u
 /** @brief HID feature report ID for cumulative per-port RX overflow counts. */
 #define USB_HID_REPORT_ID_OVERFLOW_COUNTS 5u
+/** @brief HID feature report ID for MCU identity and the current system clock. */
+#define USB_HID_REPORT_ID_HARDWARE_INFO 6u
+/** @brief Independent layout version of the hardware-info feature payload. */
+#define USB_HID_HARDWARE_INFO_VERSION 1u
+/** @brief Hardware-info MCU identifier for RP2040. */
+#define USB_HID_MCU_RP2040 1u
+/** @brief Hardware-info MCU identifier for RP2350. */
+#define USB_HID_MCU_RP2350 2u
 
 /** @brief HID command value that toggles the board LED. */
 #define USB_HID_COMMAND_TOGGLE_LED 1u
@@ -126,6 +135,16 @@ typedef struct {
 
 _Static_assert(sizeof(usb_hid_board_status_report_t) == 8u,
                "HID board-status report must match the HID report descriptor");
+
+/** @brief Feature report identifying the MCU and reporting its configured system clock. */
+typedef struct {
+    uint8_t version;         /**< Hardware-info layout version. */
+    uint8_t mcu;             /**< MCU identifier: RP2040 or RP2350. */
+    uint32_t system_clock_hz; /**< Current SDK-reported clk_sys frequency in Hz. */
+} __attribute__((packed)) usb_hid_hardware_info_report_t;
+
+_Static_assert(sizeof(usb_hid_hardware_info_report_t) == 6u,
+               "HID hardware-info report must match the HID report descriptor");
 
 /**
  * @brief Feature report containing cumulative UART-to-USB drop counts.
@@ -307,12 +326,28 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
                                uint16_t reqlen)
 {
     usb_hid_board_status_report_t board_status_report;
+    usb_hid_hardware_info_report_t hardware_info_report;
     usb_hid_overflow_counts_report_t overflow_counts_report;
     usb_hid_status_report_t report;
     uart_driver_port_stats_t uart_stats[UART_PORT_COUNT];
     usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT];
 
     (void)instance;
+
+        if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_HARDWARE_INFO)) {
+        hardware_info_report.version = USB_HID_HARDWARE_INFO_VERSION;
+    #if PICO_RP2350
+        hardware_info_report.mcu = USB_HID_MCU_RP2350;
+    #else
+        hardware_info_report.mcu = USB_HID_MCU_RP2040;
+    #endif
+        hardware_info_report.system_clock_hz = clock_get_hz(clk_sys);
+        if (reqlen > sizeof(hardware_info_report)) {
+            reqlen = sizeof(hardware_info_report);
+        }
+        memcpy(buffer, &hardware_info_report, reqlen);
+        return reqlen;
+        }
 
     if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_BOARD_STATUS)) {
         usb_hid_build_board_status_report(&board_status_report);

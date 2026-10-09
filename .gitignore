@@ -56,6 +56,8 @@ dkms.conf
 
 # Generated build output
 build/
+host/dotnet/**/bin/
+host/dotnet/**/obj/
 __pycache__/
 *.py[cod]
 *.egg-info/

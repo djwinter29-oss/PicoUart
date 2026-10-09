@@ -141,22 +141,22 @@ also has a bounded timeout so continuous UART traffic cannot pause USB ingress i
 
 ## Detailed References
 
-- [Overall UART Design](detail/uart-design.md) is the entry point for the UART facade, core ownership, rings, control
+- [Overall UART Design](design/uart-design.md) is the entry point for the UART facade, core ownership, rings, control
   plane, and HW/PIO abstraction.
-- [Multicore Ownership Design](detail/multicore-ownership-design.md) defines ring, mailbox, lock, telemetry, and
+- [Multicore Ownership Design](design/multicore-ownership-design.md) defines ring, mailbox, lock, telemetry, and
   heartbeat synchronization rules.
-- [Ring Buffer Design](detail/ring-buffer-design.md) covers buffer ownership, overflow policy, DMA interaction, and HID
+- [Ring Buffer Design](design/ring-buffer-design.md) covers buffer ownership, overflow policy, DMA interaction, and HID
   buffer observability.
-- [PIO UART Design](detail/pio-uart-design.md) covers PIO RX/TX ownership, hybrid TX, and PIO line-coding limits.
-- [Hardware UART Design](detail/hw-uart-design.md) covers PL011 UART DMA, flow control, line coding, cleanup, and
+- [PIO UART Design](design/pio-uart-design.md) covers PIO RX/TX ownership, hybrid TX, and PIO line-coding limits.
+- [Hardware UART Design](design/hw-uart-design.md) covers PL011 UART DMA, flow control, line coding, cleanup, and
   hardware-specific limits.
-- [Control Plane Design](detail/control-plane-design.md) covers CDC line-coding requests, worker mailbox ownership, and
+- [Control Plane Design](design/control-plane-design.md) covers CDC line-coding requests, worker mailbox ownership, and
   HID error reporting.
-- [Backend Adapter Design](detail/backend-adapter-design.md) covers the typed HW/PIO operation contract, lifecycle,
+- [Backend Adapter Design](design/backend-adapter-design.md) covers the typed HW/PIO operation contract, lifecycle,
   readiness, and line-coding dispatch.
-- [CDC/HID Overview](usb/cdc-hid-overview.md) explains the relationship between the six CDC ports and the HID
+- [CDC/HID Overview](design/usb/cdc-hid-overview.md) explains the relationship between the six CDC ports and the HID
   status/control interface.
-- [HID Report Reference](usb/hid-report-reference.md) defines status bits, feature reports, and host compatibility
+- [HID Report Reference](design/usb/hid-report-reference.md) defines status bits, feature reports, and host compatibility
   rules.
 - [Releasing PicoUart](releasing.md) defines release HIL and artifact gates.
 

@@ -72,6 +72,10 @@ function renderChannels(data) {
 function render(data) {
   connection.dataset.state = data.connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
+  document.querySelector("#mcu").textContent = data.hardware?.mcu ?? "--";
+  document.querySelector("#system-clock").textContent = data.hardware
+    ? `${(data.hardware.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
+    : "--";
   document.querySelector("#firmware").textContent = data.board?.firmware_version ?? "--";
   document.querySelector("#temperature").textContent = data.board
     ? `${data.board.temperature_celsius.toFixed(2)} °C`
@@ -93,10 +97,11 @@ function render(data) {
 
   const message = data.error
     || (data.metadata_error ? `Board metadata unavailable: ${data.metadata_error}` : null)
+    || (data.hardware_error ? `Hardware information unavailable: ${data.hardware_error}` : null)
     || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
   statusMessage.textContent = message;
   statusMessage.parentElement.dataset.error = Boolean(
-    data.error || data.metadata_error || !data.connected,
+    data.error || data.metadata_error || data.hardware_error || !data.connected,
   );
 }
 

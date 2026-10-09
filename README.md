@@ -79,7 +79,7 @@ pico-uart status
 
 Check the [UART pinout and wiring](docs/uart-pinout.md) before connecting target hardware. The
 [PicoUart Python guide](host/python/README.md) covers requirements, HID access, monitoring, and the local dashboard. See
-the [CDC/HID overview](docs/usb/cdc-hid-overview.md) for interface behavior.
+the [CDC/HID overview](docs/design/usb/cdc-hid-overview.md) for interface behavior.
 
 ## Supported Hardware
 
@@ -142,11 +142,12 @@ for evidence and the independent UART-source testing needed to qualify sustained
 ## Documentation
 
 - [Host Python installation and usage](host/python/README.md)
+- [Host .NET CLI and shared dashboard](host/dotnet/README.md)
 - [UART pinout and wiring](docs/uart-pinout.md)
-- [CDC/HID behavior](docs/usb/cdc-hid-overview.md)
-- [HID report reference](docs/usb/hid-report-reference.md)
+- [CDC/HID behavior](docs/design/usb/cdc-hid-overview.md)
+- [HID report reference](docs/design/usb/hid-report-reference.md)
 - [Hardware test index](docs/tests/README.md)
 - [Release policy and qualification](docs/releasing.md)
 - [Firmware development and repository testing](docs/development/firmware-testing.md)
-- [Host Python package development](docs/development/host-python.md)
+- [Host tools development](docs/development/host-tools.md)
 - [Firmware architecture](docs/architecture.md)
