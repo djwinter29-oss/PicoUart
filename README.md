@@ -1,7 +1,11 @@
 # PicoUart
 
-PicoUart is a six-channel USB-to-UART bridge for Raspberry Pi RP2040 and RP2350 boards. Each USB CDC interface maps to
-one UART channel on the target.
+**PicoUart turns an RP2040 or RP2350 device into a six-channel USB-to-UART bridge.** This embedded systems engineering
+project combines composite USB firmware, hardware and PIO-based UARTs, DMA-backed data paths, HID diagnostics, and
+Python, .NET, and browser-based host tools.
+
+The project covers end-to-end embedded development, from peripheral handling and transport architecture through
+runtime observability, automated testing, and gated release workflows.
 
 ## Why PicoUart
 
@@ -9,6 +13,22 @@ Embedded bring-up often means watching several UARTs at once: a boot log, a co-p
 example. PicoUart explores using one Pico-class MCU to expose six independent serial links over USB, with a separate HID
 interface for health diagnostics. The goal is a compact, inspectable tool for multi-port development without a stack of
 separate USB-UART adapters.
+
+## Engineering Challenges Addressed
+
+- **Limited hardware UART availability:** Combined two hardware UART peripherals with four PIO-based UART
+  implementations to provide six independent channels.
+- **Concurrent data movement:** Combined per-channel buffering with DMA-assisted transport to service multiple active
+  channels, aiming to reduce CPU load.
+- **USB composite-device complexity:** Exposed six CDC ACM interfaces and a separate HID diagnostics interface through
+  one USB device.
+- **Runtime diagnostics:** Added per-channel telemetry and health reporting while keeping HID diagnostics separate
+  from CDC UART data and line configuration.
+- **Cross-target support:** Maintained a consistent transport architecture across RP2040 and RP2350 builds.
+- **Verification without permanent hardware access:** Separated host-testable logic and tooling from physical HIL
+  validation; automated checks do not replace hardware qualification.
+- **Release traceability:** Stamped build versions into firmware metadata, the USB device version (`bcdDevice`), and
+  runtime HID reports without changing the VID/PID.
 
 ## At a Glance
 
@@ -54,6 +74,18 @@ flowchart LR
   CDC4 <-->|"1:1"| UART4
   CDC5 <-->|"1:1"| UART5
 ```
+
+### Architectural Decisions
+
+These choices balance host compatibility, peripheral limits, concurrent transport, and verifiable release behavior.
+The linked design documents describe implementation and ownership details.
+
+| Decision | Rationale | Trade-off / Constraint | Design Reference |
+| --- | --- | --- | --- |
+| CDC ACM for UART data and line coding; separate HID diagnostics | Standard serial APIs and terminal tools handle UART traffic, while HID exposes health without changing UART settings. | Multiple USB interfaces and separate HID permissions; hosts must check HID health for deferred line-coding rejects. | [CDC/HID roles](docs/design/usb/cdc-hid-overview.md) |
+| Two hardware UARTs plus four PIO UARTs; PIO remains 8N1 | Use the two hardware peripherals and extend channel count with PIO. Fixed 8N1 framing keeps PIO timing and implementation complexity bounded. | PIO consumes finite state-machine/instruction resources and rejects unsupported framing; it is not a full hardware-UART replacement. | [UART architecture](docs/design/uart-design.md), [PIO design](docs/design/pio-uart-design.md) |
+| DMA-assisted I/O and per-channel ring buffers | Decouple UART service from USB polling with buffered data paths and explicit producer/consumer ownership. | Buffers and DMA channels are finite; overflow accounting, memory ordering, and physical timing still require careful handling and validation. | [Ring-buffer design](docs/design/ring-buffer-design.md), [Multicore ownership](docs/design/multicore-ownership-design.md) |
+| Exact-artifact HIL gates before release promotion | Host tests and builds cannot prove physical UART signaling, USB behavior, or DMA/multicore timing under load. Match hardware evidence to the image being published. | Physical fixtures and board-specific runs are required; a local pass or an older artifact's result does not qualify a different release image. | [Release qualification](docs/releasing.md#release-hil-gates) |
 
 ### Host Dashboard
 
@@ -133,6 +165,28 @@ licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); 
   traffic.
 - Sustained multi-port throughput is limited by USB full-speed bandwidth and host drain rate.
 - `cafe:4010` is a development/lab USB identity, not for commercial derivatives; see [SECURITY.md](SECURITY.md).
+
+## Verification Evidence
+
+The project separates automated checks, recorded target-hardware results, and release qualification gates. Hardware
+records identify firmware versions and exact artifact hashes; their results apply to those images and tested conditions,
+not automatically to later builds.
+
+| Area | Evidence | Result / Scope |
+| --- | --- | --- |
+| Host-side C logic | [Unity/CTest suite](firmware/tests/README.md), [host CI checks](.github/workflows/host-validation.yml) | Automated logic checks; not evidence of physical DMA timing or UART signaling. |
+| Python, .NET, and WebHID tooling | [Host test workflow](.github/workflows/host-validation.yml), [test commands and coverage](docs/development/host-tools.md) | pytest, xUnit, and Node checks; mocked device/browser tests do not establish native USB compatibility. |
+| RP2040/RP2350 firmware builds | [Firmware build workflow](.github/workflows/pr-check.yml) | Automated target compilation and artifact verification; a successful build is not a hardware pass. |
+| RP2040 / Pico hardware | [2026-10-09 v0.5.0 report](docs/tests/records/2026-10-09-070652Z-pico-hil.md) | Functional `PASS`; all-stream concurrent checks passed through 256000 baud, with higher-rate failures. Overall record: `FAIL`. |
+| RP2350 / Pico 2 hardware | [2026-10-09 v0.5.0 report](docs/tests/records/2026-10-09-072834Z-pico2-hil.md) | Functional and concurrent `PASS` through the tested 3 Mbaud setting; no higher rates tested. |
+| USB descriptor/version contract | [Contract tests](tests/contracts/test_firmware_contract.py), [binary artifact verifier](tools/release/verify-build.py) | Automated VID/PID, device-version, and interface/report checks; distinct from physical bus enumeration. |
+| UART transport | [Pico functional results](docs/tests/records/2026-10-09-070652Z-pico-hil.md#functional-summary), [Pico 2 functional results](docs/tests/records/2026-10-09-072834Z-pico2-hil.md#functional-summary) | Recorded crossed HW/PIO links and loopbacks, with verified byte counts and per-phase results. |
+| Release readiness | [Release/HIL gates](docs/releasing.md#release-hil-gates), [record requirements](docs/tests/records/README.md) | Qualification requirements, not a blanket readiness claim; exact artifacts and required board-specific HIL must match. |
+
+See the [test evidence index](docs/tests/README.md) for test levels and `PASS` / `FAIL` / `PARTIAL` semantics, and the
+[dated record archive](docs/tests/records/README.md) for retained hardware evidence, including overclock variants.
+Links to automated suites and workflows describe the checks; consult the corresponding CI run logs/artifacts for
+execution results. Test plans and release checklists are not substitutes for completed reports.
 
 ### Measured Six-Port Performance
 
