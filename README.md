@@ -120,6 +120,25 @@ licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); 
 - Sustained multi-port throughput is limited by USB full-speed bandwidth and host drain rate.
 - `cafe:4010` is a development/lab USB identity, not for commercial derivatives; see [SECURITY.md](SECURITY.md).
 
+### Measured Six-Port Performance
+
+Recorded 8N1 fixture results with all six streams active, using 30-second tests per rate:
+
+| Image | Highest Passing Baud Setting | Payload Throughput Per Stream | First Failed Baud Setting |
+| --- | ---: | ---: | ---: |
+| Pico, 125 MHz | 256000 | 24.8-24.9 kB/s | 460800 |
+| Pico, 250 MHz overclock | 921600 | 77.5-77.9 kB/s | 1000000 |
+| Pico 2, 150 MHz | 3000000 | 83.4-83.7 kB/s | Not reached |
+| Pico 2, 280 MHz overclock | 3000000 | 88.8-89.0 kB/s | Not reached |
+
+Throughput is measured at each row's highest passing setting; kB/s uses 1000 bytes per second.
+These are single-sweep payload-integrity results under USB-paced traffic, not guaranteed continuous UART capacity
+or exact maximum baud rates. No rates above 3 Mbaud were tested. Each payload crosses USB twice, so the faster
+boards' roughly 0.47-0.53 MB/s aggregate verified throughput consumes roughly twice that in combined USB payload
+traffic. The plateau is consistent with USB full-speed path limits, not proof that USB alone is the bottleneck.
+See [measured performance and fixture limits](docs/tests/hil-fixture-test-plan.md#measured-six-port-envelope)
+for evidence and the independent UART-source testing needed to qualify sustained full-rate operation.
+
 ## Documentation
 
 - [Host Python installation and usage](host/python/README.md)

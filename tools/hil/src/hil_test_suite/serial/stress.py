@@ -12,6 +12,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from .config import BAUD_RATES, configure_port
+from ..support.health import collect_hid_health, health_is_clean, health_summary
 
 DEFAULT_RATES = tuple(BAUD_RATES)
 LINE_CODING_SETTLE_SECONDS = 8.0
@@ -158,6 +159,9 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     )
     parser.add_argument("--settle-seconds", type=float, default=8.0, help="wait after configuring all ports")
     parser.add_argument(
+        "--check-hid-health", action="store_true", help="require clean HID health before and after each rate"
+    )
+    parser.add_argument(
         "--setup-only", action="store_true", help="configure ports and settle, but do not transmit data"
     )
     return parser
@@ -205,6 +209,8 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     results: dict[str, tuple[int, str | None]] = {}
     passed = False
 
+    if not getattr(arguments, "setup_only", False):
+        print(f"Benchmarking all six HIL fixture streams at {stream_baud} baud")
     if not fixture_paths_valid(arguments):
         return False
 
@@ -231,6 +237,14 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             print(f"SETUP PASS at {stream_baud} baud")
             passed = True
         else:
+            health_before = None
+            if getattr(arguments, "check_hid_health", False):
+                health_before = collect_hid_health()
+                print(f"HID rate {stream_baud} before: {health_summary(health_before)}")
+                if not health_is_clean(health_before):
+                    for label, _, _ in streams:
+                        print(f"FAIL {label}: HID health not clean before rate; no traffic sent", file=sys.stderr)
+                    return False
             start = threading.Barrier(len(streams))
             timing: dict[str, dict] = {}
             threads = [
@@ -251,13 +265,19 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
                 for label, source_fd, destination_fd in streams
             ]
 
-            print(f"Benchmarking all six HIL fixture streams at {stream_baud} baud")
             started = time.monotonic()
             for thread in threads:
                 thread.start()
             for thread in threads:
                 thread.join()
             elapsed = time.monotonic() - started
+            if getattr(arguments, "check_hid_health", False):
+                health_after = collect_hid_health()
+                print(f"HID rate {stream_baud} after: {health_summary(health_after)}")
+                if not health_is_clean(health_after, health_before):
+                    for label, _, _ in streams:
+                        verified, error = results.get(label, (0, "stream did not report a result"))
+                        results[label] = (verified, error or "HID health failed after rate")
             passed = True
             for label, _, _ in streams:
                 bytes_verified, error = results.get(label, (0, "stream did not report a result"))
@@ -322,9 +342,10 @@ def main(arguments: argparse.Namespace | None = None) -> int:
             print(f"Incremental result: {rate} baud {'PASS' if rate_passed else 'FAIL'}")
             if rate_passed:
                 highest_passing_rate = rate
-            else:
-                first_failing_rate = rate
-                break
+        if not rate_passed:
+            first_failing_rate = rate
+            print(f"STOP concurrent sweep after failed rate: {rate} baud")
+            break
     if arguments.incremental:
         highest = f"{highest_passing_rate} baud" if highest_passing_rate is not None else "none"
         failed = f"{first_failing_rate} baud" if first_failing_rate is not None else "not reached"

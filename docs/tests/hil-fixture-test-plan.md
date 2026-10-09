@@ -62,8 +62,19 @@ interval before testing each rate.
 
 The standalone performance runner and combined runner default to this concurrent six-port sweep, in order:
 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, and 3000000 baud. The default sweep
-does not test above 3 Mbaud. Use `--rates` to select a different list; each configured rate is tested even if an
-earlier rate fails.
+does not test above 3 Mbaud. Use `--rates` to select a different list. Concurrent sweeps stop at the first failed
+rate; later configured rates are reported as `NOT RUN`, not as failures or missing measurements.
+
+The standalone performance workflow and combined runner require clean HID health before and after each rate,
+including unchanged overrun counts. A health failure blocks traffic or fails the completed rate even if payload
+verification passed. Raw `stress` invocations opt into these same checks with `--check-hid-health`.
+Each rate reopens the endpoints, configures line coding, and settles before its health baseline is collected.
+After a failure, reset or reflash the intended image and verify clean health before running a different rate in
+a separate invocation. Do not interpret later measurements from older continue-after-failure sweeps as isolated
+clean-start results. The runners never reset, reflash, or change regulator voltage automatically.
+
+Benchmark children run with unbuffered Python output, so stdout rate headings and stderr failures retain their
+emission order without requiring an external `PYTHONUNBUFFERED` setting. Reports retain per-rate HID summaries.
 
 For an optional concurrent six-port ceiling search, use `--incremental-performance` with the combined runner. It
 starts at 460800 baud, increases by 100000 baud, and stops at the first failed rate (capped at 3000000 baud by default).
@@ -144,6 +155,59 @@ python3 -m pico_uart overruns
 Record every tested rate, including failures. A rate is stable only if every direction and stream passes repeatedly.
 Full-speed USB bandwidth limits aggregate throughput; a concurrent failure does not by itself establish a single-UART
 baud limit. A data mismatch, unexplained loss, unexpected reset, persistent disconnect, or new RX error is a failure.
+
+## Measured Six-Port Envelope
+
+The October 9 fixture sweeps establish these observed payload-integrity envelopes under USB-paced traffic for the
+tested boards and images, not universal MCU baud limits or continuous full-rate UART capacity. Use the passing
+range for comparable workloads; higher rates are ceiling-search tests.
+
+| Image | Highest tested rate with all six payload streams passing | First failed tested rate | Evidence |
+| --- | ---: | ---: | --- |
+| Pico, 125 MHz | 256000 baud | 460800 baud | [Rated Pico](records/2026-10-09-070652Z-pico-hil.md) |
+| Pico, 250 MHz | 921600 baud | 1000000 baud | [Overclock Pico](records/2026-10-09-071809Z-pico-250mhz-hil.md) |
+| Pico 2, 150 MHz | 3000000 baud | None within sweep | [Rated Pico 2](records/2026-10-09-072834Z-pico2-hil.md) |
+| Pico 2, 280 MHz | 3000000 baud | None within sweep | [Local 280 MHz build](records/2026-10-09-074700Z-pico2-280mhz-hil.md) |
+
+For the rated Pico, 256000 baud is the documented conservative six-port operating envelope from this matrix,
+not an exact maximum: intermediate rates between 256000 and 460800 were not tested. To verify that envelope,
+use `--rates 115200,128000,153600,230400,256000`; the default wider sweep intentionally probes unsupported rates.
+The clock-dependent improvement at 250 MHz is consistent with limited service capacity in the dual-core
+USB/UART path at 125 MHz. No core profiling was collected, so a specific multicore defect or CPU bottleneck is
+not established. The recorded failures outside this envelope remain failures, not valid payload transfers.
+
+The faster-board aggregate verified throughput approaches roughly 0.47-0.53 MB/s despite higher requested UART
+rates. This plateau is consistent with the shared USB full-speed path becoming the limiting resource, including
+CDC scheduling, host drain rate, and the benchmark's write/read pacing. It is not a direct measurement of USB
+bus saturation or proof that CPU, DMA, or host scheduling contribute nothing. Pico 250 MHz still failed at
+1 Mbaud; Pico 2 at 150 MHz and 280 MHz passed all streams through 3 Mbaud in single sweeps. Repeated stability,
+per-rate health for these historical runs, and the separate recovery/soak gates are not established by these results.
+
+### USB-Paced Traffic And UART Capacity
+
+Every verified payload in the fixed fixture crosses USB twice: host OUT to the source UART, then destination
+UART to host IN. Each stream writes a block and waits for its returned payload before sending the next block.
+Shared USB bandwidth and this pacing constrain both the traffic generator and the receiver, leaving possible
+idle gaps on the UART wire. A pass at a configured baud therefore proves integrity at the achieved load, not
+continuous full-rate operation at that baud.
+
+The standard Pico 2 record's `83413.3 B/s` is one stream's verified payload throughput at a configured 3 Mbaud,
+not its physical line speed or a universal maximum. In 8N1, that payload rate corresponds to about 834133 bit/s
+of average framing-inclusive traffic, including the effect of idle gaps. The six streams together verified about
+0.501 MB/s, corresponding to about 1.002 MB/s of combined USB OUT and IN payload traffic, before USB overhead.
+This supports a USB full-speed path bottleneck interpretation, but does not isolate USB bus saturation from
+CDC scheduling, host scheduling, CPU/DMA service, or benchmark pacing.
+
+The passes support confidence in 921600-baud operation under comparable workloads. They do not prove continuous
+full-rate 921600-baud operation: the standard Pico 2 streams achieved about 73.8-74.4 kB/s at that setting,
+below the theoretical 92.16 kB/s per stream for 8N1. The small throughput increase at 1 Mbaud shows a benefit
+from the higher setting, not independent proof of sustained UART capacity. Configured rates above 921600 also
+passed at the achieved USB-paced load; neither those passes nor the plateau establish a UART maximum.
+
+To qualify continuous UART capacity, use independently paced external UART sources that do not rely on this
+device's USB OUT path. Verify received payloads, loss/error counters, duration, and actual wire timing while the
+host drains USB IN. If all receive channels are loaded concurrently, retain the shared USB IN bandwidth limit
+when interpreting losses; separate UART/backend capacity from end-to-end USB bridge capacity.
 
 ## Results and Release Evidence
 

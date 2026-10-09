@@ -90,6 +90,21 @@ Existing v0.5.0 release artifacts remain 300 MHz images; this workflow change do
 HIL must use the exact UF2/ELF from the draft release or workflow dry-run. Do not rebuild locally for release
 qualification.
 
+### Prior Evidence And v0.6.0
+
+The v0.5.0 measurements remain valid historical evidence for the tested images and documented
+[six-port operating envelopes](tests/hil-fixture-test-plan.md#measured-six-port-envelope). The v0.5.0-to-v0.6.0
+firmware runtime source diff changes only a clock-description comment, not transport logic; the Pico 2 development
+build target changes from 300 MHz to 280 MHz, and the local 280 MHz build has a separate passing fixture record.
+Do not discard the earlier rated-board results merely because a new tag exists, or classify operation beyond the
+rated Pico's measured envelope as proof of an unlocated multicore logic defect.
+
+v0.6.0 qualification is a separate artifact-validation exercise. Unchanged runtime logic supports carrying the
+earlier results as a regression baseline, not relabeling their firmware version or SHA-256. Release version stamping,
+clock settings, SDK/toolchain changes, and packaged binary identity must still be accounted for. Compare the exact
+release artifacts with the recorded images and retain new exact-artifact evidence when their hashes differ.
+The historical 300 MHz failure does not qualify 280 MHz; the local 280 MHz pass qualifies only its recorded ELF.
+
 This gate is intentionally manual: the repository has no CI-attached Pico, Debug Probe, USB cable, or jumper fixture.
 Automated workflows must not mark a release as physically qualified without linked human-run HIL evidence.
 

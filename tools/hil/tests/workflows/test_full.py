@@ -90,6 +90,16 @@ def test_parse_defaults_to_concurrent_rate_sweep() -> None:
     assert arguments.record_dir == full.DEFAULT_RECORDS_DIR
 
 
+def test_performance_summary_marks_rates_skipped_after_failure() -> None:
+    full = _load_full()
+    output = "Benchmarking all six HIL fixture streams at 115200 baud\nFAIL cdc0-to-cdc2: timeout\n"
+
+    rows = full.performance_summary_rows("115200,460800", (1, output))
+
+    assert rows[0][2] == "FAIL"
+    assert all(row[2] == "NOT RUN" for row in rows if row[0] == "460800")
+
+
 def test_git_metadata_reads_commit_and_worktree_state(monkeypatch) -> None:
     full = _load_full()
     responses = iter([SimpleNamespace(stdout="0123456789abcdef\n"), SimpleNamespace(stdout=" M file.py\n")])

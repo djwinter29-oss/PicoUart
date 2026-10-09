@@ -75,11 +75,12 @@ def performance_summary_rows(
 ) -> list[tuple[str, str, str, str, str]]:
     """Summarize each configured rate and stream from benchmark output."""
     parsed = parse_benchmark_output_by_rate(result[1]) if result is not None else {}
+    attempted_rates = {int(rate) for rate in RATE_PATTERN.findall(result[1])} if result is not None else set()
     rows = []
     for rate in (value.strip() for value in rates.split(",") if value.strip()):
         for label in PERFORMANCE_LINKS:
             outcome = parsed.get((int(rate), label))
-            if result is None:
+            if result is None or int(rate) not in attempted_rates:
                 status, verified, metric = "NOT RUN", "-", "-"
             elif outcome is None:
                 status, verified, metric = "NOT REPORTED", "-", "-"
@@ -296,6 +297,14 @@ def format_result_entry(
         )
     lines.extend(
         [
+            "",
+            "## Per-Rate HID Health",
+            "",
+            *[
+                f"- {line}"
+                for line in (performance[1] if performance else "").splitlines()
+                if line.startswith("HID rate ")
+            ],
             "",
             "## HID Health",
             "",

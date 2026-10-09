@@ -25,6 +25,7 @@ Combined and standalone functional/performance reports use the same concise form
 - Artifact name and SHA-256 when supplied
 - A functional summary table with each fixture link, result, and verified byte count
 - A concurrent performance table with each baud rate, stream, result, verified bytes, and throughput/error
+- Per-rate HID health summaries when collected; rates skipped after a failure are marked `NOT RUN`
 - A compact final HID health summary
 
 Reports intentionally omit child command lines and verbose monitor transcripts. The terminal still shows live test output
