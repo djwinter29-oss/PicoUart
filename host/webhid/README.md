@@ -43,11 +43,9 @@ Installing an OS access rule may require administrator approval in the OS; do no
 
 ## Contract And Tests
 
-The client filters `cafe:4010` with usage page `0xFF00`, usage `1`. It reads feature reports 3, 5, and 6 and listens for
-input report 1. Input reports exclude the report-ID prefix; their ID is supplied separately by the browser event.
-Chromium returns numbered feature reports with their report-ID prefix; the client validates it and allows zero padding
-from fixed-length platform buffers. Unknown MCU IDs retain their raw ID and clock, matching Python/.NET behavior.
-Unsupported versions, malformed reports, nonzero padding, and zero clocks are rejected.
+The client opens the PicoUart HID interface and displays read-only diagnostics. The
+[HID Report Reference](../../docs/design/usb/hid-report-reference.md) is the source for report layouts, versions, and
+MCU compatibility. Keep browser-specific feature-report framing validation covered by the tests.
 
 Run the hardware-free Node tests with Node 22 or newer:
 
@@ -56,7 +54,5 @@ node --test host/webhid/tests/*.test.mjs
 node --check host/webhid/js/app.mjs
 ```
 
-Tests cover report framing, signedness/byte order, unknown IDs, chooser cancellation, permission/open failures,
-read recovery, unplug/close races, reconnect, and live sequence/counter accounting. They use mocked HID devices and do
-not qualify real browser/OS USB
-behavior; validate native selection and unplug on the browser's machine before claiming hardware compatibility.
+Tests use mocked HID devices and do not qualify real browser/OS USB behavior. Validate device selection and
+unplug/reconnect on the browser's machine before claiming hardware compatibility.

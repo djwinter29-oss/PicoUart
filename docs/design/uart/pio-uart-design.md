@@ -4,7 +4,7 @@ This document describes the PIO UART backend used for logical UART ports 2-5. It
 core ownership, RX DMA, hybrid TX, flow-control hooks, and safe baud-rate changes.
 
 For shared ring semantics, see [Ring Buffer Design](ring-buffer-design.md). For host-visible status bits, see
-[HID Report Reference](usb/hid-report-reference.md).
+[HID Report Reference](../usb/hid-report-reference.md).
 
 ## Ownership Model
 
@@ -47,14 +47,11 @@ Important details:
   sample.
 - PIO and hardware UART TX pins are driven at fast slew and 12 mA. The reset pad (slow slew, 4 mA) makes an edge wider
   than that vote window around 1.5 Mbaud.
-- Keep TX at this 8-clock side-set program. Back-to-back frames are 10 bit-times (start + 8 data + 1 stop), so the byte
-  rate at a given baud is `baud/10`. The stop bit is the `pull side 1 [7]` at the next frame boundary. A 16-clock
-  OUT-only TX was slower on the same jumper fixture without overclock (HW→PIO 1.5 Mbaud, PIO→HW 1.2, PIO3→PIO4 1.3,
-  PIO4→PIO3 1.5). Restoring this program, still without overclock, measured at least HW→PIO 1.5, PIO→HW 1.2, PIO3→PIO4
-  1.8, and PIO4→PIO3 2.0. Those Stage 3 rates are above either earlier run. The Stage 2 figures are confirmed floors,
-  not a new ceiling. Those floors were measured on an earlier RX program. The current 32-clock vote arms its next-start
-  wait 9 PIO cycles before a 1-stop peer's next start. Nine cycles is 9/32 of a bit, about 281 ns at 1 Mbaud and 94 ns
-  at 3 Mbaud. At 125 MHz that 3 Mbaud cap is already RX divider 1.30, so a longer bit would be rejected.
+- TX uses an 8-clock-per-bit side-set program. Back-to-back 8N1 frames take 10 bit-times, and the stop bit is the
+  `pull side 1 [7]` at the next frame boundary. A 16-clock OUT-only alternative produced lower rates in fixture tests;
+  see the [HIL record archive](../../tests/records/README.md) for measured results. The 32-clock RX vote arms its
+  next-start wait 9 PIO cycles before a 1-stop peer's next start; divider limits and sampling timing are specific to
+  the current PIO program.
 - The IN shift is configured so LSB-first UART samples form a natural byte in FIFO bits `[31:24]`; RX DMA reads one byte
   from `rxf+3`.
 - RX DMA transfer counts use the SDK encoder so RP2350 does not enter ENDLESS mode.
@@ -91,12 +88,9 @@ PIO TX is hybrid. Core 1 chooses one action per port during each worker poll:
 2. If TX DMA is idle and backlog is large enough, launch a bounded DMA transfer.
 3. Otherwise, drain bytes directly into the joined PIO TX FIFO from the poll loop.
 
-The default thresholds keep small writes cheap while avoiding excessive CPU work for deeper queues:
-
-| Setting             |   Default | Purpose                                                      |
-| ------------------- | --------: | ------------------------------------------------------------ |
-| DMA start threshold |  64 bytes | Minimum TX backlog before DMA is preferred.                  |
-| DMA max transfer    | 256 bytes | Bound one DMA launch so a port cannot monopolize the worker. |
+Small backlogs are drained through the FIFO; larger backlogs use bounded DMA. The threshold and transfer limit are
+tuning values maintained in the [PIO driver](../../../firmware/src/uart/pio/pio_uart_driver.c) and
+[capacity configuration](../../../firmware/src/config/capacity_config.h).
 
 Each initialized PIO port claims its TX DMA channel once during init and holds that channel until deinit. A launch
 reuses the claimed channel; it does not claim or release a channel per transfer. If that launch does not start, the same
@@ -107,8 +101,8 @@ those bytes are committed only after DMA completion. The channel stays claimed.
 flowchart TD
   Sweep["Worker poll"] --> Active{"TX DMA active?"}
   Active -->|yes| Complete["Poll DMA completion\ncommit owned span"]
-  Active -->|no| Backlog{"Backlog >= 64 bytes?"}
-  Backlog -->|yes| Launch["Launch bounded TX DMA\nup to 256 bytes"]
+  Active -->|no| Backlog{"Backlog above threshold?"}
+  Backlog -->|yes| Launch["Launch bounded TX DMA"]
   Backlog -->|no| FIFO["Drain joined TX FIFO"]
   Launch --> Next["Next worker sweep"]
   FIFO --> Next
@@ -125,12 +119,11 @@ and uses DMA only when queued work is large enough to amortize setup.
 
 PIO RTS/CTS support is opt-in through board pin flags:
 
-| Flag                                            | Behavior                                                                                                                                                                                        |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL`      | Drives the configured active-low RTS pin from RX-ring occupancy.                                                                                                                                |
-| `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL`      | Gates TX frame starts on the configured active-low CTS pin. The CTS program holds the stop bit for 7 PIO clocks and lets the following `wait` supply the 8th clock when CTS is already granted. |
-| `PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP`           | Enables a pull-up on the RX pin during backend init.                                                                                                                                            |
-| `PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH` | Requires idle-high RX before applying a deferred baud change.                                                                                                                                   |
+- `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL`: drives active-low RTS from RX-ring occupancy.
+- `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL`: gates TX frame starts on active-low CTS; the stop-bit hold preserves
+  frame timing while CTS is asserted.
+- `PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP`: enables a pull-up on RX during backend initialization.
+- `PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH`: requires idle-high RX before a deferred baud change.
 
 The default board configuration leaves PIO RTS/CTS disabled. Do not claim lossless RX behavior without testing the
 relevant flow-control variant.
@@ -193,17 +186,12 @@ Relevant host-visible signals:
 - PIO baud rates must be representable by both the TX and RX PIO clock dividers and are rejected fail-fast otherwise.
   TX's 8x ratio hits the divider ceiling first at very low baud; RX's 32x ratio hits the divider floor first at very
   high baud.
-- The RX program is 24 instructions (TX is 4, TX_CTS is 5). On the shipped board (no port ever enables CTS) a PIO block
-  holds TX + RX = 28/32 instructions. One of those RX instructions is the preamble `nop` past the 31-cycle delay field.
-  A hypothetical future block mixing a CTS port with a plain-TX port and RX would need 4 + 5 + 24 = 33/32, which does
-  not fit. `pio_can_add_program()` fails fast rather than silently overflowing if that configuration is ever attempted.
-- TX DMA thresholds are static defaults, not adaptive to live load.
+- PIO instruction memory is finite. Backend initialization checks whether the selected programs fit and rejects a
+  configuration that exceeds the available space.
 - Each worker step services every port. Deferred control and backend polling start on the same port in that step. The
   shared start index advances once, after the I/O sweep. There is no separate TX priority scheduler.
-- Sustained multi-port 1 Mbaud remains bounded by USB full-speed aggregate bandwidth and host drain rate.
+- Sustained multi-port throughput depends on USB full-speed bandwidth and host drain rate; see the
+  [HIL fixture plan](../../tests/hil-fixture-test-plan.md) for measured results and limits.
 
-## Follow-Up Options
-
-1. Tune TX DMA threshold and max transfer size from measured worker load and end-to-end latency.
-2. Add an explicit worker-side TX scheduler if multiple PIO ports sustain high TX pressure at the same time.
-3. Add dedicated HIL coverage for PIO RTS/CTS hold/release behavior before advertising flow-control guarantees.
+Flow-control behavior and sustained transport rates require board-specific HIL; do not infer those capabilities from
+the configured baud or backend support alone.

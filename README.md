@@ -63,39 +63,27 @@ flowchart LR
   CDC5 <-->|"1:1"| UART5
 ```
 
-### Architectural Decisions
+### Data Flow
 
-These choices balance host compatibility, peripheral limits, concurrent transport, and verifiable release behavior.
-The linked design documents describe implementation and ownership details.
+CDC carries serial bytes through per-port buffers and UART backends. HID reports bridge status separately.
 
-| Decision | Rationale | Trade-off / Constraint | Design Reference |
-| --- | --- | --- | --- |
-| CDC ACM for UART data and line coding; separate HID diagnostics | Standard serial APIs and terminal tools handle UART traffic, while HID exposes health without changing UART settings. | Multiple USB interfaces and separate HID permissions; hosts must check HID health for deferred line-coding rejects. | [CDC/HID roles](docs/design/usb/cdc-hid-overview.md) |
-| Two hardware UARTs plus four PIO UARTs; PIO remains 8N1 | Use the two hardware peripherals and extend channel count with PIO. Fixed 8N1 framing keeps PIO timing and implementation complexity bounded. | PIO consumes finite state-machine/instruction resources and rejects unsupported framing; it is not a full hardware-UART replacement. | [UART architecture](docs/design/uart-design.md), [PIO design](docs/design/pio-uart-design.md) |
-| DMA-assisted I/O and per-channel ring buffers | Decouple UART service from USB polling with buffered data paths and explicit producer/consumer ownership. | Buffers and DMA channels are finite; overflow accounting, memory ordering, and physical timing still require careful handling and validation. | [Ring-buffer design](docs/design/ring-buffer-design.md), [Multicore ownership](docs/design/multicore-ownership-design.md) |
-| Exact-artifact HIL gates before release promotion | Host tests and builds cannot prove physical UART signaling, USB behavior, or DMA/multicore timing under load. Match hardware evidence to the image being published. | Physical fixtures and board-specific runs are required; a local pass or an older artifact's result does not qualify a different release image. | [Release qualification](docs/releasing.md#release-hil-gates) |
+```mermaid
+flowchart LR
+  Host["Host application"]
+  subgraph PicoUart["PicoUart firmware"]
+    CDC["6 CDC ports"]
+    Rings["Per-port RX/TX buffers"]
+    Backends["2 hardware UARTs<br/>4 PIO UARTs"]
+    HID["HID status and diagnostics"]
+    CDC <-->|"Serial data"| Rings
+    Rings <-->|"UART data"| Backends
+  end
+  Target["Target devices"]
 
-### Host Dashboard
-
-The optional local dashboard presents board health, traffic, and controls in one view.
-
-![PicoUart host dashboard showing six healthy UART channels and board telemetry.](docs/assets/pico-uart-dashboard.png)
-
-_Illustrative screenshot with sample telemetry; no physical board was connected._
-
-### Browser-Only WebHID
-
-The [WebHID dashboard](host/webhid/README.md) provides read-only diagnostics directly in desktop Chrome or Edge,
-without a Python/.NET application backend. It shows six-channel health and traffic, firmware version, temperature,
-overflow counts, MCU identity, and system clock with compatible firmware.
-
-**Connect the Pico to the computer running the browser.** WebHID accesses local USB devices; serving or forwarding the
-page from another machine does not forward that machine's USB devices. Use HTTPS or localhost and approve the browser's
-device chooser. OS USB permissions may still require setup. For a remotely attached Pico, use the Python/.NET dashboard.
-
-See the [WebHID setup guide](host/webhid/README.md) and [host tools development guide](docs/development/host-tools.md#webhid-development)
-for hosting, troubleshooting, and tests. The WebHID frontend is independent of the Python/.NET web UI; UART configuration,
-WebSerial, and board-control writes are not included.
+  Host <-->|"USB CDC"| CDC
+  Host <-->|"USB HID"| HID
+  Backends <-->|"UART0–UART5"| Target
+```
 
 ## Quick Start
 
@@ -146,6 +134,28 @@ licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); 
 ([source](https://commons.wikimedia.org/wiki/File:DEV-26124-PICO-2-angle.jpg)), licensed under
 [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)._
 
+## Host Dashboard
+
+The optional local dashboard presents board health, traffic, and controls in one view.
+
+![PicoUart host dashboard showing six healthy UART channels and board telemetry.](docs/assets/pico-uart-dashboard.png)
+
+_Illustrative screenshot with sample telemetry; no physical board was connected._
+
+## Browser-Only WebHID
+
+The [WebHID dashboard](host/webhid/README.md) provides read-only diagnostics directly in desktop Chrome or Edge,
+without a Python/.NET application backend. It shows six-channel health and traffic, firmware version, temperature,
+overflow counts, MCU identity, and system clock with compatible firmware.
+
+**Connect the Pico to the computer running the browser.** WebHID accesses local USB devices; serving or forwarding the
+page from another machine does not forward that machine's USB devices. Use HTTPS or localhost and approve the browser's
+device chooser. OS USB permissions may still require setup. For a remotely attached Pico, use the Python/.NET dashboard.
+
+See the [WebHID setup guide](host/webhid/README.md) and [host tools development guide](docs/development/host-tools.md#webhid-development)
+for hosting, troubleshooting, and tests. The WebHID frontend is independent of the Python/.NET web UI; UART configuration,
+WebSerial, and board-control writes are not included.
+
 ## Important Limitations
 
 - PIO UART channels support 8N1 only; unsupported line coding is rejected.
@@ -165,10 +175,8 @@ not automatically to later builds.
 | Host-side C logic | [Unity/CTest suite](firmware/tests/README.md), [host CI checks](.github/workflows/host-validation.yml) | Automated logic checks; not evidence of physical DMA timing or UART signaling. |
 | Python, .NET, and WebHID tooling | [Host test workflow](.github/workflows/host-validation.yml), [test commands and coverage](docs/development/host-tools.md) | pytest, xUnit, and Node checks; mocked device/browser tests do not establish native USB compatibility. |
 | RP2040/RP2350 firmware builds | [Firmware build workflow](.github/workflows/pr-check.yml) | Automated target compilation and artifact verification; a successful build is not a hardware pass. |
-| RP2040 / Pico hardware | [2026-10-09 v0.5.0 report](docs/tests/records/2026-10-09-070652Z-pico-hil.md) | Functional `PASS`; all-stream concurrent checks passed through 256000 baud, with higher-rate failures. Overall record: `FAIL`. |
-| RP2350 / Pico 2 hardware | [2026-10-09 v0.5.0 report](docs/tests/records/2026-10-09-072834Z-pico2-hil.md) | Functional and concurrent `PASS` through the tested 3 Mbaud setting; no higher rates tested. |
+| Physical HIL (Pico/Pico 2) | [Dated hardware-test records](docs/tests/records/README.md) | Check the report matching the board, firmware, artifact, and test conditions; results do not qualify later builds. |
 | USB descriptor/version contract | [Contract tests](tests/contracts/test_firmware_contract.py), [binary artifact verifier](tools/release/verify-build.py) | Automated VID/PID, device-version, and interface/report checks; distinct from physical bus enumeration. |
-| UART transport | [Pico functional results](docs/tests/records/2026-10-09-070652Z-pico-hil.md#functional-summary), [Pico 2 functional results](docs/tests/records/2026-10-09-072834Z-pico2-hil.md#functional-summary) | Recorded crossed HW/PIO links and loopbacks, with verified byte counts and per-phase results. |
 | Release readiness | [Release/HIL gates](docs/releasing.md#release-hil-gates), [record requirements](docs/tests/records/README.md) | Qualification requirements, not a blanket readiness claim; exact artifacts and required board-specific HIL must match. |
 
 See the [test evidence index](docs/tests/README.md) for test levels and `PASS` / `FAIL` / `PARTIAL` semantics, and the
@@ -176,24 +184,12 @@ See the [test evidence index](docs/tests/README.md) for test levels and `PASS` /
 Links to automated suites and workflows describe the checks; consult the corresponding CI run logs/artifacts for
 execution results. Test plans and release checklists are not substitutes for completed reports.
 
-### Measured Six-Port Performance
+### Six-Port Performance
 
-Recorded 8N1 fixture results with all six streams active, using 30-second tests per rate:
-
-| Image | Highest Passing Baud Setting | Payload Throughput Per Stream | First Failed Baud Setting |
-| --- | ---: | ---: | ---: |
-| Pico, 125 MHz | 256000 | 24.8-24.9 kB/s | 460800 |
-| Pico, 250 MHz overclock | 921600 | 77.5-77.9 kB/s | 1000000 |
-| Pico 2, 150 MHz | 3000000 | 83.4-83.7 kB/s | Not reached |
-| Pico 2, 280 MHz overclock | 3000000 | 88.8-89.0 kB/s | Not reached |
-
-Throughput is measured at each row's highest passing setting; kB/s uses 1000 bytes per second.
-These are single-sweep payload-integrity results under USB-paced traffic, not guaranteed continuous UART capacity
-or exact maximum baud rates. No rates above 3 Mbaud were tested. Each payload crosses USB twice, so the faster
-boards' roughly 0.47-0.53 MB/s aggregate verified throughput consumes roughly twice that in combined USB payload
-traffic. The plateau is consistent with USB full-speed path limits, not proof that USB alone is the bottleneck.
-See [measured performance and fixture limits](docs/tests/hil-fixture-test-plan.md#measured-six-port-envelope)
-for evidence and the independent UART-source testing needed to qualify sustained full-rate operation.
+Six-port throughput depends on USB full-speed bandwidth and host/fixture pacing. HIL passes establish payload
+integrity at the achieved test load, not sustained UART capacity at the configured baud. See the
+[fixture plan and measured envelope](docs/tests/hil-fixture-test-plan.md#measured-six-port-envelope) and
+[dated hardware-test records](docs/tests/records/README.md) for per-run results and conditions.
 
 ## Engineering Challenges Addressed
 
@@ -210,6 +206,18 @@ for evidence and the independent UART-source testing needed to qualify sustained
   validation; automated checks do not replace hardware qualification.
 - **Release traceability:** Stamped build versions into firmware metadata, the USB device version (`bcdDevice`), and
   runtime HID reports without changing the VID/PID.
+
+## Architectural Decisions
+
+These choices balance host compatibility, peripheral limits, concurrent transport, and verifiable release behavior.
+The linked design documents describe implementation and ownership details.
+
+| Decision | Rationale | Trade-off / Constraint | Design Reference |
+| --- | --- | --- | --- |
+| CDC ACM for UART data and line coding; separate HID diagnostics | Standard serial APIs and terminal tools handle UART traffic, while HID exposes health without changing UART settings. | Multiple USB interfaces and separate HID permissions; hosts must check HID health for deferred line-coding rejects. | [CDC/HID roles](docs/design/usb/cdc-hid-overview.md) |
+| Two hardware UARTs plus four PIO UARTs; PIO remains 8N1 | Use the two hardware peripherals and extend channel count with PIO. Fixed 8N1 framing keeps PIO timing and implementation complexity bounded. | PIO consumes finite state-machine/instruction resources and rejects unsupported framing; it is not a full hardware-UART replacement. | [UART architecture](docs/design/uart/README.md), [PIO design](docs/design/uart/pio-uart-design.md) |
+| DMA-assisted I/O and per-channel ring buffers | Decouple UART service from USB polling with buffered data paths and explicit producer/consumer ownership. | Buffers and DMA channels are finite; overflow accounting, memory ordering, and physical timing still require careful handling and validation. | [Ring-buffer design](docs/design/uart/ring-buffer-design.md), [Multicore ownership](docs/design/multicore-ownership-design.md) |
+| Exact-artifact HIL gates before release promotion | Host tests and builds cannot prove physical UART signaling, USB behavior, or DMA/multicore timing under load. Match hardware evidence to the image being published. | Physical fixtures and board-specific runs are required; a local pass or an older artifact's result does not qualify a different release image. | [Release qualification](docs/releasing.md#release-hil-gates) |
 
 ## Documentation
 

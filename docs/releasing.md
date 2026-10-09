@@ -1,19 +1,13 @@
 # Releasing PicoUart
 
-Release tags matching `vMAJOR.MINOR.PATCH` run [`.github/workflows/release.yml`](../.github/workflows/release.yml). The
-workflow builds the rated `pico` (125 MHz) and `pico2` (150 MHz) images plus development overclock images `pico-250mhz`
-(250 MHz) and `pico2-280mhz` (280 MHz), runs host tests, packages UF2/ELF/BIN/HEX plus `SHA256SUMS-*`, and opens a
-**draft** GitHub Release. The promote HIL gate covers the rated images.
+Release tags run [`.github/workflows/release.yml`](../.github/workflows/release.yml), which builds and packages firmware,
+runs host validation, and opens a **draft** GitHub Release. The workflow and
+[firmware build guide](../firmware/build-and-config.md) define the current board matrix, clocks, and artifact names.
+The promote HIL gate covers the rated images.
 
 Do not publish the draft until exact-artifact hardware-in-the-loop (HIL) evidence passes the gates below.
 
-Suggested flow:
-
-1. Run a `workflow_dispatch` dry-run.
-2. Download those artifacts and run HIL on the exact files.
-3. Tag `vMAJOR.MINOR.PATCH`.
-4. Compare draft artifacts with the HIL hashes.
-5. Publish only after the promote checklist passes.
+A `workflow_dispatch` run creates artifacts for preflight HIL; a release tag creates the draft to promote.
 
 ```mermaid
 flowchart LR
@@ -35,126 +29,37 @@ when its image hash matches the artifact attached to the draft release.
 Before requesting HIL, confirm:
 
 1. The change is reviewed and the working tree contains no unintended files.
-2. The version is a valid `vMAJOR.MINOR.PATCH` release tag.
-3. Rated `pico` and `pico2` firmware artifacts build successfully, and the development overclock images (`pico` at 250
-   MHz, `pico2` at 280 MHz) build with them.
-4. The host suite passes, including the UART facade and backend contract tests.
-5. `git diff --check` passes.
-6. The release notes identify any USB/HID compatibility or behavior changes.
+2. The version follows the [release tag policy](#versioning).
+3. Host validation and all required target builds pass in the release workflow.
+4. `git diff --check` passes.
+5. Release notes identify USB/HID compatibility or behavior changes.
 
 Do not begin physical testing from an uncommitted or locally modified image.
 
 ## Security Reporting Setup
 
-Before publishing a release, maintainers must enable private vulnerability reporting in the repository's GitHub
-**Settings → Security → Code security and analysis**. This makes the private **Security → Advisories → Report a
-vulnerability** flow available to users. Acknowledge reports privately and coordinate disclosure before requesting any
-public issue or CVE disclosure. User reporting instructions and device-security notes are in
-[`SECURITY.md`](../SECURITY.md).
+Before publishing, enable private vulnerability reporting in repository settings and handle reports privately. User
+instructions and device-security notes are in [`SECURITY.md`](../SECURITY.md).
 
 ## USB identity
 
-PicoUart publishes lab and test artifacts using `cafe:4010`, an unallocated development USB identity. This project is
-not a commercial product, so the release workflow deliberately permits this identity and does not gate tag releases on a
-VID/PID allocation.
-
-Do not reuse these IDs for a commercial device: another project may collide on the same identity and operating-system
-driver association is undefined. A commercial derivative must obtain its own VID/PID and update
-[`firmware/src/config/usb_identity.h`](../firmware/src/config/usb_identity.h) and
-[`host/python/src/pico_uart/transport.py`](../host/python/src/pico_uart/transport.py). Treat the identity change as a
-breaking USB change, update release notes, and run the firmware/host USB identity contract tests before publishing.
+PicoUart artifacts use `cafe:4010`, an unallocated lab identity. Do not reuse it commercially; derivatives need an
+allocated VID/PID and must treat the identity change as a breaking USB change. See [`SECURITY.md`](../SECURITY.md) and
+the USB identity contract tests before publishing.
 
 ## Release HIL Gates
 
-Use the [Test Documentation Index](tests/README.md) for the complete automated-to-HIL test sequence and result
-semantics.
+Use the [Test Documentation Index](tests/README.md) for automated validation, HIL sequence, and result semantics. CI
+validates builds and host tests; it cannot establish physical qualification.
 
-Cloud CI proves builds and host tests only. A publishable release needs recorded HIL on both packaged board images:
+Release promotion requires a complete `PASS` on every rated board artifact in the release workflow. Run HIL on the exact
+packaged UF2/ELF and verify its SHA-256 against the draft; a local rebuild or a result for another artifact does not
+qualify the release. Overclock results apply only to the matching artifact and do not establish general stability or
+operating margins.
 
-- Raspberry Pi Pico / RP2040 (`pico`, rated 125 MHz)
-- Raspberry Pi Pico 2 / RP2350 (`pico2`, rated 150 MHz)
-
-Release CI also packages development overclock images: `pico-250mhz` (RP2040 at 250 MHz) and `pico2-280mhz` (RP2350 at
-280 MHz). The promote HIL gate covers the rated images. A recorded overclock result qualifies only the matching
-overclock artifact. Neither overclock image writes the core voltage: both preserve the regulator setting on entry,
-without measuring or restoring a specific voltage. Clock stability, temperature margin, and lifetime remain unqualified
-until exact-board HIL covers the intended operating range.
-
-Some Pico 2 boards may not support 300 MHz reliably. During v0.5.0 testing, one RP2350 rev 3 board
-(USB serial `575393D4D2C8C043`) failed to enumerate USB with the exact `pico2-300mhz` artifact after verified
-flashing and a user power cycle; the same board passed the standard 150 MHz fixture run. The cause of the
-300 MHz bring-up failure was not established. Future PR and release builds use 280 MHz instead, but
-280 MHz remains an unqualified development overclock until the exact artifact passes board-specific HIL.
-Existing v0.5.0 release artifacts remain 300 MHz images; this workflow change does not replace or qualify them.
-
-HIL must use the exact UF2/ELF from the draft release or workflow dry-run. Do not rebuild locally for release
-qualification.
-
-### Prior Evidence And v0.6.0
-
-The v0.5.0 measurements remain valid historical evidence for the tested images and documented
-[six-port operating envelopes](tests/hil-fixture-test-plan.md#measured-six-port-envelope). The v0.5.0-to-v0.6.0
-firmware runtime source diff changes only a clock-description comment, not transport logic; the Pico 2 development
-build target changes from 300 MHz to 280 MHz, and the local 280 MHz build has a separate passing fixture record.
-Do not discard the earlier rated-board results merely because a new tag exists, or classify operation beyond the
-rated Pico's measured envelope as proof of an unlocated multicore logic defect.
-
-v0.6.0 qualification is a separate artifact-validation exercise. Unchanged runtime logic supports carrying the
-earlier results as a regression baseline, not relabeling their firmware version or SHA-256. Release version stamping,
-clock settings, SDK/toolchain changes, and packaged binary identity must still be accounted for. Compare the exact
-release artifacts with the recorded images and retain new exact-artifact evidence when their hashes differ.
-The historical 300 MHz failure does not qualify 280 MHz; the local 280 MHz pass qualifies only its recorded ELF.
-
-This gate is intentionally manual: the repository has no CI-attached Pico, Debug Probe, USB cable, or jumper fixture.
-Automated workflows must not mark a release as physically qualified without linked human-run HIL evidence.
-
-Record all of the following in the generated [HIL run record](tests/records/README.md) or a retained transcript attached
-to the release evidence package. The combined HIL runner writes one record per invocation; standalone phase runners
-write their output to the ignored local `build/hil-results.md` log.
-
-- board target and physical board used
-- artifact path/name and SHA-256
-- firmware version and commit
-- command lines
-- verified bytes and throughput per link
-- HID health before and after tests
-- expected `control_error`, `rx_overrun`, or receive-loss notes when applicable
-
-A release without this recorded evidence is lab-only.
-
-## Automated Validation Matrix
-
-Run these checks before starting HIL. They validate the host-testable and build-time parts of the UART design; they do
-not replace physical testing.
-
-| Check             | Command                                                                              | Covers                                                          |
-| ----------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| Host suite        | `tools/validation/run-host-tests.sh`                                                 | Ring, bridge, worker, control, policy, claims, and facade tests |
-| Direct host suite | `ctest --test-dir build/host-tests --output-on-failure`                              | CTest result detail after host configuration                    |
-| RP2040 firmware   | `tools/firmware/build.sh --board pico`                                               | Rated 125 MHz compile/link and UF2 outputs                      |
-| RP2350 firmware   | `tools/firmware/build.sh --board pico2`                                              | Rated 150 MHz compile/link and platform-specific paths          |
-| RP2040 250 MHz    | `tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock`  | Development overclock image (`pico-250mhz`)                     |
-| RP2350 280 MHz    | `tools/firmware/build.sh --board pico2 --system-clock-khz 280000 --unsafe-overclock` | Development overclock image (`pico2-280mhz`)                    |
-| Patch hygiene     | `git diff --check`                                                                   | Whitespace and patch formatting                                 |
-
-The host suite should include the backend contract test and the real facade contract test. Firmware builds must complete
-for both board targets before HIL results are interpreted as firmware behavior rather than a build artifact problem.
-
-## Evidence Package
-
-For each board target, keep one evidence bundle containing:
-
-- exact artifact filename and SHA-256
-- board target and physical board identity
-- firmware version and source commit
-- tool versions or environment details when relevant
-- command lines used for flashing and testing
-- functional and performance result summaries
-- HID health before and after the run
-- raw transcript for failures, partial runs, or unusual expected conditions
-
-The result status must distinguish `PASS`, `FAIL`, and `PARTIAL`. A partial run is useful diagnostic evidence but cannot
-qualify a release gate.
+Follow the [HIL fixture setup](tests/hil-fixture-setup.md) and [test plan](tests/hil-fixture-test-plan.md) for required
+phases and acceptance criteria. Preserve per-board records using the [HIL record format](tests/records/README.md), with
+artifact hashes and any failures or partial conditions. Without matching recorded evidence, the release remains lab-only.
 
 ## Flashing Release Artifacts
 
@@ -195,61 +100,26 @@ not recover failed SWD access, repair reset/wiring, or prove the selected capaci
 
 ## Required HIL Matrix
 
-Follow [`.github/skills/pico-uart-board-testing/SKILL.md`](../.github/skills/pico-uart-board-testing/SKILL.md) and
-[HIL Fixture Setup](tests/hil-fixture-setup.md). Install the complete fixed fixture before starting and do not rewire
-during the run.
-
-Run these gates on both board targets:
-
-1. Four fixture cases:
-   - HW UART0 to PIO UART2
-   - PIO UART3 to PIO UART4
-   - HW UART1 loopback
-   - PIO UART5 loopback
-2. Concurrent performance benchmark using all six CDC endpoints and the same fixed fixture.
-3. Rapid line-coding changes on one hardware UART and one PIO UART while queued TX data drains and an RX peer is active.
-4. Disconnect/remount, watchdog recovery, DMA wrap/re-arm flood, and six-port full-duplex saturation checks.
-
-A promoted result has no unexplained byte mismatch, timeout, USB disconnect, `rx_error`, `rx_overrun`, or
-`control_error`.
+Follow the [board-testing skill](../.github/skills/pico-uart-board-testing/SKILL.md), [fixture setup](tests/hil-fixture-setup.md),
+and [HIL test plan](tests/hil-fixture-test-plan.md) for the current required test matrix. Promotion requires no
+unexplained data loss, timeout, USB disconnect, or relevant HID error.
 
 ## Optional Claims
 
 Run optional tests only when the release notes claim the behavior:
 
-- CDC-hold / RX flood backpressure (`--flood-seconds` / `--hold-cdc-seconds`).
-- Hardware RTS/CTS after enabling `hardware_flow_control` in `firmware/src/board/uart_board.c`.
-- PIO RTS/CTS after enabling the selected PIO flow-control pin flags and running CTS hold/release plus RTS backpressure
-  checks.
+- Backpressure and hardware/PIO RTS/CTS require the matching board configuration and HIL variants described in the
+   [fixture test plan](tests/hil-fixture-test-plan.md).
 
 ## Promote checklist (draft → published)
 
-Before clicking **Publish** on the GitHub draft:
-
-1. **Artifact ↔ HIL SHA match**: the UF2/ELF/BIN attached to the draft (or their `SHA256SUMS-*`) are bit-identical to
-   the images used for the recorded HIL pass on **each** rated board (`pico` at 125 MHz and `pico2` at 150 MHz). Put the
-   hashes and retained transcript in the release evidence package, then compare them against the downloaded release
-   `SHA256SUMS-*` files before promoting. Do not promote if HIL ran on a different local rebuild or only one of the two
-   targets.
-2. **USB identity note**: release notes retain the `0xCAFE:0x4010` lab-project identity warning unless the artifact
-   deliberately uses an allocated identity.
-3. **HIL transcript** is linked or attached (see above), covering both boards.
-4. Release notes call out any breaking HID layout changes.
-5. **Python dependency lock**: release CI installed `host/python/requirements-lock.txt` with `pip --require-hashes`; any
-   lock regeneration is present in the reviewed release change.
+Before publishing, verify the draft hashes match complete HIL records for all rated targets, link those records, and
+include any USB identity or HID compatibility notes in the release notes. Release CI must pass its reviewed dependency
+lock and build gates.
 
 ## Versioning
 
-Tag form is `vMAJOR.MINOR.PATCH` (no `-rc` / pre-release suffixes for publish). Major and minor must be `0-99`; patch
-must be `0-255`. This range is a **release-tag policy** (enforced by the `Resolve version` step in `release.yml`), not a
-firmware build limit: local/manual builds via `tools/firmware/build.sh --firmware-version ...` accept major, minor, and
-patch each up to `255`, and USB `bcdDevice` falls back to `0x0000` once major or minor exceeds `99` (see
-`firmware/CMakeLists.txt`). The tag stamps HID firmware version `MAJOR.MINOR.PATCH` and USB `bcdDevice` as major.minor
-BCD only (for example `v1.2.3` → HID `1.2.3`, `bcdDevice` `0x0102`). Details are in the root README.
-
-Release and PR workflows build against Pico SDK 2.3.0 at commit `98a542c1a62fb549ffb5d66a3e5892b06276b670` and print the
-verified revision in the job log.
-
-Python release qualification uses the reviewed, fully transitive `host/python/requirements-lock.txt` with artifact
-hashes. Regenerate it only in a packaging-enabled, reviewed change; the pinned direct requirements remain the
-human-edited inputs rather than the release installation source.
+Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release version resolver owns tag bounds; firmware
+build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the
+[HID Report Reference](design/usb/hid-report-reference.md) for encoding details. Release workflows own the SDK and
+toolchain pins and install the reviewed, hash-locked Python requirements.
