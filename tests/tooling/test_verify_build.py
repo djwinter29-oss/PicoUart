@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import struct
 from pathlib import Path
 
@@ -16,6 +17,16 @@ def _load_verifier():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_hid_descriptor_parser_recognizes_hardware_info_and_unchanged_legacy_reports():
+    verifier = _load_verifier()
+    source = (VERIFY_BUILD.parents[2] / "firmware/src/usb/usb_descriptors.c").read_text()
+    body = re.search(r"hid_report_descriptor\[\]\s*=\s*\{(.*?)\};", source, re.DOTALL).group(1)
+    descriptor = bytes(int(value, 16) for value in re.findall(r"0x([0-9A-Fa-f]+)", body))
+    assert verifier._hid_reports(descriptor, len(descriptor)) == [{
+        1: (63, 8, 8), 3: (8, 8, 11), 4: (1, 8, 11), 5: (25, 8, 11), 6: (6, 8, 11),
+    }]
 
 
 def _uf2_block(

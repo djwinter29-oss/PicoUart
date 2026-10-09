@@ -4,7 +4,7 @@ This document describes the PIO UART backend used for logical UART ports 2-5. It
 core ownership, RX DMA, hybrid TX, flow-control hooks, and safe baud-rate changes.
 
 For shared ring semantics, see [Ring Buffer Design](ring-buffer-design.md). For host-visible status bits, see
-[HID Report Reference](../usb/hid-report-reference.md).
+[HID Report Reference](usb/hid-report-reference.md).
 
 ## Ownership Model
 

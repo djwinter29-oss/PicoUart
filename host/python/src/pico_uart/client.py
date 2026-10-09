@@ -10,14 +10,17 @@ from .protocol import (
     COMMAND_ARM_RESET,
     COMMAND_RESET_BOARD,
     COMMAND_TOGGLE_LED,
+    HARDWARE_INFO_SIZE,
     OVERFLOW_COUNTS_SIZE,
     REPORT_ID_BOARD_STATUS,
     REPORT_ID_COMMAND,
     REPORT_ID_OVERFLOW_COUNTS,
+    REPORT_ID_HARDWARE_INFO,
     REPORT_ID_STATUS,
     RESET_ARM_WINDOW_S,
     STATUS_SIZE,
     parse_board_status,
+    parse_hardware_info,
     parse_overflow_counts,
     parse_status,
     require_payload,
@@ -54,6 +57,11 @@ def read_overflow_counts(device: Any) -> list[int]:
     """Read cumulative UART-to-USB dropped-byte counts for every channel."""
     payload = read_feature(device, REPORT_ID_OVERFLOW_COUNTS, OVERFLOW_COUNTS_SIZE)
     return parse_overflow_counts(payload)
+
+
+def read_hardware_info(device: Any) -> dict[str, object]:
+    """Read the MCU model and current system clock from hardware-info report 6."""
+    return parse_hardware_info(read_feature(device, REPORT_ID_HARDWARE_INFO, HARDWARE_INFO_SIZE))
 
 
 def send_command(device: Any, command: int) -> None:
@@ -117,6 +125,10 @@ class PicoUartHid:
     def read_overflow_counts(self) -> list[int]:
         with self._lock:
             return read_overflow_counts(self._require_open())
+
+    def read_hardware_info(self) -> dict[str, object]:
+        with self._lock:
+            return read_hardware_info(self._require_open())
 
     def toggle_led(self) -> None:
         with self._lock:

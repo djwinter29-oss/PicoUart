@@ -5,7 +5,7 @@ backend reconfiguration on core 1, and how failures are reported through HID hea
 
 The data plane is documented separately in [Ring Buffer Design](ring-buffer-design.md) and
 [PIO UART Design](pio-uart-design.md). The host-facing CDC/HID relationship is summarized in
-[CDC/HID Overview](../usb/cdc-hid-overview.md).
+[CDC/HID Overview](usb/cdc-hid-overview.md).
 
 ## Scope
 

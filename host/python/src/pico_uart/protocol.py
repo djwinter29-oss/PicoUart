@@ -7,6 +7,11 @@ REPORT_ID_STATUS = 1
 REPORT_ID_BOARD_STATUS = 3
 REPORT_ID_COMMAND = 4
 REPORT_ID_OVERFLOW_COUNTS = 5
+REPORT_ID_HARDWARE_INFO = 6
+HARDWARE_INFO_SIZE = 6
+HARDWARE_INFO_LAYOUT_VERSION = 1
+MCU_RP2040 = 1
+MCU_RP2350 = 2
 
 COMMAND_TOGGLE_LED = 1
 COMMAND_RESET_BOARD = 2
@@ -53,6 +58,19 @@ def parse_board_status(payload: bytes) -> dict[str, object]:
         "firmware_patch": patch,
         "hid_reset_enabled": bool(reserved0 & BOARD_STATUS_FLAG_HID_RESET),
     }
+
+
+def parse_hardware_info(payload: bytes) -> dict[str, object]:
+    """Decode the MCU identity and SDK-reported system clock in Hz."""
+    if len(payload) != HARDWARE_INFO_SIZE:
+        raise RuntimeError(f"unexpected hardware-info report size {len(payload)}")
+    version, mcu, system_clock_hz = struct.unpack("<BBI", payload)
+    if version != HARDWARE_INFO_LAYOUT_VERSION:
+        raise RuntimeError(f"unsupported hardware-info report version {version}")
+    if system_clock_hz == 0:
+        raise RuntimeError("invalid hardware-info system clock")
+    model = {MCU_RP2040: "RP2040", MCU_RP2350: "RP2350"}.get(mcu, f"Unknown MCU ({mcu})")
+    return {"mcu": model, "mcu_id": mcu, "system_clock_hz": system_clock_hz}
 
 
 def parse_overflow_counts(payload: bytes) -> list[int]:

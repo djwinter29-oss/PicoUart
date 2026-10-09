@@ -13,7 +13,7 @@ configuration steps remain in [Firmware Build and Configuration](../../firmware/
 
 Keep board pin mapping separate from USB and UART transport logic. System architecture and data ownership are documented
 in [Architecture](../architecture.md); board wiring is in [UART Pinout](../uart-pinout.md), and USB behavior is in the
-[CDC/HID overview](../usb/cdc-hid-overview.md).
+[CDC/HID overview](../design/usb/cdc-hid-overview.md).
 
 Firmware constraints to account for during development:
 

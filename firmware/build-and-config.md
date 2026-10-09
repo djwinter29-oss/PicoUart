@@ -115,8 +115,8 @@ ring definitions document where that requirement applies.
 Detailed firmware behavior lives in:
 
 - [Architecture](../docs/architecture.md)
-- [CDC/HID Overview](../docs/usb/cdc-hid-overview.md)
-- [HID Report Reference](../docs/usb/hid-report-reference.md)
-- [Control Plane Design](../docs/detail/control-plane-design.md)
-- [Ring Buffer Design](../docs/detail/ring-buffer-design.md)
-- [PIO UART Design](../docs/detail/pio-uart-design.md)
+- [CDC/HID Overview](../docs/design/usb/cdc-hid-overview.md)
+- [HID Report Reference](../docs/design/usb/hid-report-reference.md)
+- [Control Plane Design](../docs/design/control-plane-design.md)
+- [Ring Buffer Design](../docs/design/ring-buffer-design.md)
+- [PIO UART Design](../docs/design/pio-uart-design.md)

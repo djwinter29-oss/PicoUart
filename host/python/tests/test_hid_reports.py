@@ -9,6 +9,45 @@ import pytest
 from helpers import FakeHidDevice, board_status_bytes, overflow_counts_bytes, status_report_bytes
 from pico_uart import transport
 from pico_uart.client import PicoUartHid, read_board_status, send_command
+from pico_uart.client import read_hardware_info
+from pico_uart.protocol import parse_hardware_info, REPORT_ID_HARDWARE_INFO
+
+
+@pytest.mark.parametrize("mcu,clock_hz,model", [
+    (1, 125_000_000, "RP2040"),
+    (1, 200_000_000, "RP2040"),
+    (1, 250_000_000, "RP2040"),
+    (2, 150_000_000, "RP2350"),
+    (2, 280_000_000, "RP2350"),
+    (0, 200_000_000, "Unknown MCU (0)"),
+    (3, 200_000_000, "Unknown MCU (3)"),
+    (255, 0xFFFFFFFF, "Unknown MCU (255)"),
+])
+def test_hardware_info_decodes_mcu_and_current_clock(mcu, clock_hz, model):
+    import struct
+
+    payload = struct.pack("<BBI", 1, mcu, clock_hz)
+    expected = {"mcu": model, "mcu_id": mcu, "system_clock_hz": clock_hz}
+    assert parse_hardware_info(payload) == expected
+    device = FakeHidDevice(payload, REPORT_ID_HARDWARE_INFO)
+    assert read_hardware_info(device) == expected
+    assert PicoUartHid(device=device).read_hardware_info() == expected
+
+
+@pytest.mark.parametrize("payload", [
+    b"",
+    bytes(5),
+    bytes(7),
+    bytes([0, 1, 1, 0, 0, 0]),
+    bytes([2, 1, 1, 0, 0, 0]),
+    bytes([1, 1, 0, 0, 0, 0]),
+    bytes([1, 3, 0, 0, 0, 0]),
+])
+def test_hardware_info_rejects_invalid_layout_or_clock(payload):
+    with pytest.raises(RuntimeError):
+        parse_hardware_info(payload)
+
+
 from pico_uart.protocol import COMMAND_TOGGLE_LED
 
 

@@ -6,7 +6,7 @@ interface. All UART receivers start at board boot and bridge data whenever their
 DTR state is reported for monitoring only.
 
 The HID interface uses vendor usage page `0xFF00`, vendor usage `0x01`, no boot protocol, and a 63-byte status report
-alongside compact board-status and command feature reports. The device is identified as USB `cafe:4010` (the project's
+alongside compact diagnostic and command feature reports. The device is identified as USB `cafe:4010` (the project's
 unallocated lab identity, permitted for published project artifacts) and has one HID interface after the twelve CDC
 control/data interfaces. The USB product string is `PicoUart CDC+HID PIO 8N1`. CDC interface strings advertise backend
 limits: `CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
@@ -32,6 +32,7 @@ command values are board-scoped only.
 | `3`       | Feature | Host reads from device | 8 bytes  | Temperature estimate and firmware semantic version. |
 | `4`       | Feature | Host writes to device  | 1 byte   | Board-control command.                              |
 | `5`       | Feature | Host reads from device | 25 bytes | Cumulative UART-to-USB RX dropped-byte counts.      |
+| `6`       | Feature | Host reads from device | 6 bytes  | MCU identity and current system clock frequency.    |
 
 Report ID bytes are managed by the HID transport and are not included in the payload layouts below. Status is 63 bytes
 so Report ID + payload fit in one full-speed interrupt packet (64 bytes). The device attempts to publish report ID `1`
@@ -143,11 +144,33 @@ large.
 | 0      |    1 | `version`              | Report layout version, currently `15`.                     |
 | 1      |   24 | `rx_overflow_count[6]` | Six little-endian `uint32_t` values for CDC0 through CDC5. |
 
+## Report ID 6: Hardware Info
+
+Request feature report ID `6` to identify the MCU and query the current system clock. Its independent layout version
+is `1`; the existing v15 reports are unchanged. All multi-byte values are little-endian.
+
+| Offset | Size | Field             | Meaning                                           |
+| ------ | ---- | ----------------- | ------------------------------------------------- |
+| 0      | 1    | `version`         | Hardware-info layout version, currently `1`.       |
+| 1      | 1    | `mcu`             | `1` = RP2040; `2` = RP2350.                         |
+| 2      | 4    | `system_clock_hz` | Current `clock_get_hz(clk_sys)` value in Hz.        |
+
+RP2040 corresponds to the MCU used by Pico, and RP2350 to Pico 2. This identifies the silicon, not the board's vendor
+or product model. The clock is the SDK-reported configured system frequency, read on every query; it reflects clock
+overrides rather than assuming rated 125/150 MHz defaults. It is not an independently calibrated oscillator measurement.
+Hosts retain the raw MCU ID and display unrecognized values as `Unknown MCU (ID)` without discarding the clock.
+Unsupported layout versions, malformed sizes, and zero frequency remain errors. New MCU IDs can be added without
+changing this payload layout; ported firmware must explicitly assign the appropriate ID rather than assuming RP2040.
+
 ## Host Tool
 
-The reference client at [host/python](../../host/python) discovers this vendor HID collection and offers `monitor`,
-`status`, `temperature`, `version`, `overruns`, `toggle-led`, and `reset` through `python -m pico_uart`. Install its
-`hidapi` dependency before use.
+The reference client at [host/python](../../../host/python) discovers this vendor HID collection and offers `monitor`,
+`status`, `temperature`, `version`, `overruns`, `hardware`, `toggle-led`, and `reset` through `python -m pico_uart`.
+Install its `hidapi` dependency before use.
+
+`pico-uart hardware` and the [.NET host](../../../host/dotnet/README.md)'s `hardware` command return
+`{"mcu":"RP2040","mcu_id":1,"system_clock_hz":125000000}`-shaped JSON. The client APIs expose `read_hardware_info()` and
+`ReadHardwareInfo()`. The shared dashboard shows MCU and system clock in MHz, refreshing alongside board metadata.
 
 ## Compatibility
 
@@ -156,5 +179,13 @@ versions, and unknown reserved bits as unsupported rather than attempting to inf
 bit 0 is a defined v15 capability flag (HID reset compiled in); default firmware still sends `0`. Older host tools that
 rejected any nonzero `reserved0` will fail board-status reads only against reset-enabled lab builds.
 
-The source of truth for the implementation is [usb_hid.c](../../firmware/src/usb/usb_hid.c) and the report descriptor in
-[usb_descriptors.c](../../firmware/src/usb/usb_descriptors.c).
+Report `6` is additive: older hosts can continue reading reports `1`, `3`, and `5` from new firmware. Firmware predating
+report `6` cannot supply hardware info; updated dashboards keep existing board metadata and telemetry while showing
+unknown MCU/clock and a hardware-information error. The explicit `hardware` CLI command fails rather than guessing.
+
+For a valid version-1 report containing an unrecognized MCU ID, both hosts preserve `mcu_id` and `system_clock_hz`.
+For example, ID `3` at 200 MHz decodes to `{"mcu":"Unknown MCU (3)","mcu_id":3,"system_clock_hz":200000000}`.
+This does not imply that ID `3` identifies a particular future chip; its mapping must be defined when that MCU is added.
+
+The source of truth for the implementation is [usb_hid.c](../../../firmware/src/usb/usb_hid.c) and the report descriptor in
+[usb_descriptors.c](../../../firmware/src/usb/usb_descriptors.c).

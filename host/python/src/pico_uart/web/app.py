@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from pathlib import Path
 import secrets
 import threading
 import time
 from typing import Any, Callable
 
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, render_template, request, send_from_directory, session
 
 from ..client import PicoUartHid
 from ..protocol import UART_CHANNEL_COUNT, decode_health
@@ -29,6 +30,8 @@ def _empty_snapshot() -> dict[str, Any]:
         "connected": False,
         "error": None,
         "metadata_error": None,
+        "hardware_error": None,
+        "hardware": None,
         "updated_at": None,
         "sequence": None,
         "traffic_incomplete": False,
@@ -166,16 +169,31 @@ class DashboardService:
                 self._snapshot["metadata_error"] = str(error)
                 self._snapshot["board"] = None
                 self._snapshot["overflow_counts"] = [None] * UART_CHANNEL_COUNT
+                self._snapshot["hardware"] = None
+                self._snapshot["hardware_error"] = None
             return
         with self._lock:
             self._snapshot["metadata_error"] = None
             self._snapshot["board"] = board
             self._snapshot["overflow_counts"] = overflows
+        try:
+            hardware = client.read_hardware_info()
+        except (OSError, RuntimeError) as error:
+            with self._lock:
+                self._snapshot["hardware"] = None
+                self._snapshot["hardware_error"] = str(error)
+            return
+        with self._lock:
+            self._snapshot["hardware"] = hardware
+            self._snapshot["hardware_error"] = None
 
 
 def create_app(service: DashboardService | None = None) -> Flask:
     """Create the web app; an injected service keeps route tests hardware-free."""
-    app = Flask(__name__)
+    web_root = Path(__file__).parent / "assets"
+    if not web_root.is_dir():
+        web_root = Path(__file__).resolve().parents[4] / "web"
+    app = Flask(__name__, template_folder=str(web_root), static_folder=None)
     app.config.update(
         SECRET_KEY=secrets.token_bytes(32),
         TRUSTED_HOSTS=["localhost", "127.0.0.1"],
@@ -199,6 +217,14 @@ def create_app(service: DashboardService | None = None) -> Flask:
     def index():
         token = session.setdefault("csrf_token", secrets.token_urlsafe(32))
         return render_template("index.html", csrf_token=token)
+
+    @app.get("/favicon.svg")
+    def favicon():
+        return send_from_directory(web_root, "favicon.svg", mimetype="image/svg+xml")
+
+    @app.get("/<any(css,js):asset_type>/<path:filename>")
+    def asset(asset_type: str, filename: str):
+        return send_from_directory(web_root / asset_type, filename)
 
     @app.get("/api/status")
     def status():

@@ -17,6 +17,7 @@ from pico_uart.protocol import parse_status
         ("temperature", "temperature=23.50 C\n", "temperature"),
         ("version", "1.2.3\n", "version"),
         ("overruns", "cdc0=0 cdc1=1 cdc2=2 cdc3=3 cdc4=4 cdc5=5\n", "overruns"),
+        ("hardware", '{"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 250000000}\n', "hardware"),
         ("toggle-led", "", "toggle-led"),
         ("reset", "", "reset"),
     ],
@@ -45,6 +46,10 @@ def test_main_dispatches_board_commands(monkeypatch, capsys, command, expected_o
         def read_overflow_counts(self):
             calls.append("overruns")
             return list(range(6))
+
+        def read_hardware_info(self):
+            calls.append("hardware")
+            return {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 250_000_000}
 
         def toggle_led(self):
             calls.append("toggle-led")
