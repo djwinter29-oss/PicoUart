@@ -1,5 +1,9 @@
 # PicoUart
 
+[![PR Check](https://github.com/djwinter29-oss/PicoUart/actions/workflows/pr-check.yml/badge.svg)](https://github.com/djwinter29-oss/PicoUart/actions/workflows/pr-check.yml)
+[![Release](https://github.com/djwinter29-oss/PicoUart/actions/workflows/release.yml/badge.svg)](https://github.com/djwinter29-oss/PicoUart/actions/workflows/release.yml)
+[![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
+
 **PicoUart turns an RP2040 or RP2350 device into a six-channel USB-to-UART bridge.** This embedded systems engineering
 project combines composite USB firmware, hardware and PIO-based UARTs, DMA-backed data paths, HID diagnostics, and
 Python, .NET, and browser-based host tools.
@@ -13,22 +17,6 @@ Embedded bring-up often means watching several UARTs at once: a boot log, a co-p
 example. PicoUart explores using one Pico-class MCU to expose six independent serial links over USB, with a separate HID
 interface for health diagnostics. The goal is a compact, inspectable tool for multi-port development without a stack of
 separate USB-UART adapters.
-
-## Engineering Challenges Addressed
-
-- **Limited hardware UART availability:** Combined two hardware UART peripherals with four PIO-based UART
-  implementations to provide six independent channels.
-- **Concurrent data movement:** Combined per-channel buffering with DMA-assisted transport to service multiple active
-  channels, aiming to reduce CPU load.
-- **USB composite-device complexity:** Exposed six CDC ACM interfaces and a separate HID diagnostics interface through
-  one USB device.
-- **Runtime diagnostics:** Added per-channel telemetry and health reporting while keeping HID diagnostics separate
-  from CDC UART data and line configuration.
-- **Cross-target support:** Maintained a consistent transport architecture across RP2040 and RP2350 builds.
-- **Verification without permanent hardware access:** Separated host-testable logic and tooling from physical HIL
-  validation; automated checks do not replace hardware qualification.
-- **Release traceability:** Stamped build versions into firmware metadata, the USB device version (`bcdDevice`), and
-  runtime HID reports without changing the VID/PID.
 
 ## At a Glance
 
@@ -207,6 +195,22 @@ traffic. The plateau is consistent with USB full-speed path limits, not proof th
 See [measured performance and fixture limits](docs/tests/hil-fixture-test-plan.md#measured-six-port-envelope)
 for evidence and the independent UART-source testing needed to qualify sustained full-rate operation.
 
+## Engineering Challenges Addressed
+
+- **Limited hardware UART availability:** Combined two hardware UART peripherals with four PIO-based UART
+  implementations to provide six independent channels.
+- **Concurrent data movement:** Combined per-channel buffering with DMA-assisted transport to service multiple active
+  channels, aiming to reduce CPU load.
+- **USB composite-device complexity:** Exposed six CDC ACM interfaces and a separate HID diagnostics interface through
+  one USB device.
+- **Runtime diagnostics:** Added per-channel telemetry and health reporting while keeping HID diagnostics separate
+  from CDC UART data and line configuration.
+- **Cross-target support:** Maintained a consistent transport architecture across RP2040 and RP2350 builds.
+- **Verification without permanent hardware access:** Separated host-testable logic and tooling from physical HIL
+  validation; automated checks do not replace hardware qualification.
+- **Release traceability:** Stamped build versions into firmware metadata, the USB device version (`bcdDevice`), and
+  runtime HID reports without changing the VID/PID.
+
 ## Documentation
 
 - [Host Python installation and usage](host/python/README.md)
@@ -220,3 +224,11 @@ for evidence and the independent UART-source testing needed to qualify sustained
 - [Firmware development and repository testing](docs/development/firmware-testing.md)
 - [Host tools development](docs/development/host-tools.md)
 - [Firmware architecture](docs/architecture.md)
+- [Contributing](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+
+## License
+
+PicoUart is licensed under the [BSD 3-Clause License](LICENSE). The `cafe:4010` USB identity is for development and lab
+use only; see [SECURITY.md](SECURITY.md) before building commercial derivatives.
+
