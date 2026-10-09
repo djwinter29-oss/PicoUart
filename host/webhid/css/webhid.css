@@ -1,0 +1,19 @@
+.actions .button { width: 110px; }
+.device-details { margin: 0; border-top: 1px solid var(--line); }
+.device-details > div {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.device-details dt { color: var(--muted); }
+.device-details dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.status-line { align-items: baseline; }
+.status-line .status-mark { flex-shrink: 0; }
+#status-message { overflow-wrap: anywhere; }
+
+@media (max-width: 720px) {
+  .actions .button { width: auto; min-width: 0; }
+  .device-details > div { grid-template-columns: 100px minmax(0, 1fr); gap: 12px; }
+}

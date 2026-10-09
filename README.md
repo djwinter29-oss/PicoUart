@@ -63,6 +63,20 @@ The optional local dashboard presents board health, traffic, and controls in one
 
 _Illustrative screenshot with sample telemetry; no physical board was connected._
 
+### Browser-Only WebHID
+
+The [WebHID dashboard](host/webhid/README.md) provides read-only diagnostics directly in desktop Chrome or Edge,
+without a Python/.NET application backend. It shows six-channel health and traffic, firmware version, temperature,
+overflow counts, MCU identity, and system clock with compatible firmware.
+
+**Connect the Pico to the computer running the browser.** WebHID accesses local USB devices; serving or forwarding the
+page from another machine does not forward that machine's USB devices. Use HTTPS or localhost and approve the browser's
+device chooser. OS USB permissions may still require setup. For a remotely attached Pico, use the Python/.NET dashboard.
+
+See the [WebHID setup guide](host/webhid/README.md) and [host tools development guide](docs/development/host-tools.md#webhid-development)
+for hosting, troubleshooting, and tests. The WebHID frontend is independent of the Python/.NET web UI; UART configuration,
+WebSerial, and board-control writes are not included.
+
 ## Quick Start
 
 Prebuilt firmware is available from [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases) after a
@@ -143,6 +157,7 @@ for evidence and the independent UART-source testing needed to qualify sustained
 
 - [Host Python installation and usage](host/python/README.md)
 - [Host .NET CLI and shared dashboard](host/dotnet/README.md)
+- [Browser-only WebHID prototype](host/webhid/README.md)
 - [UART pinout and wiring](docs/uart-pinout.md)
 - [CDC/HID behavior](docs/design/usb/cdc-hid-overview.md)
 - [HID report reference](docs/design/usb/hid-report-reference.md)
