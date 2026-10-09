@@ -7,6 +7,24 @@ permissions:
   contents: read
 
 jobs:
+  host-webhid:
+    name: Host WebHID
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
+      - name: Check WebHID page and client
+        run: |
+          node --check host/webhid/js/view.mjs
+          node --check host/webhid/js/app.mjs
+          node --test host/webhid/tests/*.test.mjs
+
   host-dotnet:
     name: Host .NET (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

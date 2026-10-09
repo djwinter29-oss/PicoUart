@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>PicoUart WebHID</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <link rel="stylesheet" href="css/webhid.css">
+  <script type="module" src="js/app.mjs"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="./" aria-label="PicoUart WebHID home">
+      <span class="mark">PU</span>
+      <span><small>BROWSER CONSOLE</small><strong>PicoUart</strong></span>
+    </a>
+    <div class="connection" id="connection" data-state="disconnected">
+      <span class="connection-light" aria-hidden="true"></span>
+      <span id="connection-label">Disconnected</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-heading">
+      <div>
+        <p class="eyebrow">WEBHID</p>
+        <h1>Diagnostics</h1>
+      </div>
+      <p class="sample-time" id="sample-time">No sample</p>
+    </section>
+
+    <section class="summary" aria-label="Board summary">
+      <div class="summary-item"><span>MCU</span><strong id="mcu">--</strong></div>
+      <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
+      <div class="summary-item"><span>Firmware</span><strong id="firmware">--</strong></div>
+      <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
+      <div class="summary-item"><span>Total RX overflow</span><strong id="overflow-total">--</strong></div>
+      <div class="summary-item"><span>Report sequence</span><strong id="sequence">--</strong></div>
+    </section>
+
+    <section class="channels-section" aria-labelledby="channels-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">LIVE HEALTH AND TRAFFIC</p>
+          <h2 id="channels-title">UART channels <span>01-06</span></h2>
+        </div>
+        <div class="actions" aria-label="Device connection">
+          <button class="button button-secondary" id="connect" type="button" disabled>Connect</button>
+          <button class="button button-secondary" id="refresh" type="button" disabled>Refresh</button>
+          <button class="button button-danger" id="disconnect" type="button" disabled>Disconnect</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Port</th>
+              <th scope="col">Health</th>
+              <th scope="col">Backend</th>
+              <th scope="col">CDC</th>
+              <th scope="col">Observed traffic (&gt;=)</th>
+              <th scope="col">RX overflow</th>
+              <th scope="col">Ring peak</th>
+            </tr>
+          </thead>
+          <tbody id="channel-rows"></tbody>
+        </table>
+      </div>
+      <p class="traffic-note" id="traffic-note">Observed lower bounds since monitoring began.</p>
+      <dl class="device-details">
+        <div><dt>Device</dt><dd id="device-name">--</dd></div>
+        <div><dt>USB identity</dt><dd id="usb-identity">--</dd></div>
+        <div><dt>MCU ID</dt><dd id="mcu-id">--</dd></div>
+      </dl>
+    </section>
+
+    <footer class="status-line" role="status" aria-live="polite">
+      <span class="status-mark" aria-hidden="true"></span>
+      <span id="status-message">No device selected</span>
+    </footer>
+    <noscript>JavaScript is unavailable.</noscript>
+  </main>
+</body>
+</html>
