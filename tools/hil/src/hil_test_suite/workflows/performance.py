@@ -18,6 +18,7 @@ from ..support.paths import REPO_ROOT
 from ..support.repository import git_metadata
 
 DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
+DEFAULT_RATES = "115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000"
 PASS_PATTERN = re.compile(
     r"^PASS (?P<label>[^:]+): (?P<bytes>[0-9]+) bytes, (?P<throughput>[0-9.]+) B/s$",
     re.MULTILINE,
@@ -195,7 +196,7 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     for channel in range(6):
         parser.add_argument(f"--cdc{channel}", required=True)
     parser.add_argument(
-        "--rates", default="115200", help="Concurrent full-fixture rate; use individual tests for higher baud rates"
+        "--rates", default=DEFAULT_RATES, help="Concurrent full-fixture rates, comma-separated (default: %(default)s)"
     )
     parser.add_argument("--incremental", action="store_true", help="Increase baud until the first failing rate")
     parser.add_argument("--incremental-start-rate", type=int, default=460800)
