@@ -52,14 +52,37 @@ the USB identity contract tests before publishing.
 Use the [Test Documentation Index](tests/README.md) for automated validation, HIL sequence, and result semantics. CI
 validates builds and host tests; it cannot establish physical qualification.
 
-Release promotion requires a complete `PASS` on every rated board artifact in the release workflow. Run HIL on the exact
-packaged UF2/ELF and verify its SHA-256 against the draft; a local rebuild or a result for another artifact does not
-qualify the release. Overclock results apply only to the matching artifact and do not establish general stability or
-operating margins.
+Release promotion requires HIL on every rated board artifact: `pico` at 125 MHz and `pico2` at 150 MHz. Run that HIL on
+the exact packaged UF2/ELF and verify its SHA-256 against the draft. A local rebuild or a result for another artifact
+does not qualify the release.
+
+The promote gate is the
+[measured six-port envelope](tests/hil-fixture-test-plan.md#measured-six-port-envelope). For the rated Pico image, six
+concurrent streams pass through 256000 baud, and 460800 baud is the first failed rate of the wider sweep. That boundary
+is the documented operating envelope for the 125 MHz image. For the rated Pico 2 image, the same fixture passed every
+stream through 3000000 baud. Promotion requires a pass of functional HIL and of every concurrent rate inside that
+envelope, with no unexplained data loss, timeout, USB disconnect, or relevant HID error on those rates. A ceiling-search
+stop at the documented first-failed rate is the expected boundary for that image.
+
+Development overclock images ship beside the rated images: `pico-250mhz` at 250 MHz and `pico2-280mhz`.
+The Pico 2 development image is RP2350 280 MHz. Build that override with:
+
+```sh
+tools/firmware/build.sh --board pico2 --system-clock-khz 280000 --unsafe-overclock
+```
+
+280 MHz remains an unqualified development overclock until the exact artifact passes board-specific HIL. Overclock
+results apply only to the matching artifact and do not establish general stability or operating margins. The promote HIL
+gate covers the rated images.
+
+Some Pico 2 boards may not support 300 MHz reliably. During v0.5.0 testing, one RP2350 rev 3 board failed to enumerate
+USB with the exact `pico2-300mhz` artifact after a verified flash and a power cycle; the same board passed the 150 MHz
+fixture run. Current PR and release builds use 280 MHz. Existing v0.5.0 release artifacts that were built at 300 MHz
+remain those images; this workflow change does not replace or qualify them.
 
 Follow the [HIL fixture setup](tests/hil-fixture-setup.md) and [test plan](tests/hil-fixture-test-plan.md) for required
 phases and acceptance criteria. Preserve per-board records using the [HIL record format](tests/records/README.md), with
-artifact hashes and any failures or partial conditions. Without matching recorded evidence, the release remains lab-only.
+artifact hashes and any ceiling boundary. Without matching recorded evidence, the release remains lab-only.
 
 ## Flashing Release Artifacts
 
@@ -101,8 +124,9 @@ not recover failed SWD access, repair reset/wiring, or prove the selected capaci
 ## Required HIL Matrix
 
 Follow the [board-testing skill](../.github/skills/pico-uart-board-testing/SKILL.md), [fixture setup](tests/hil-fixture-setup.md),
-and [HIL test plan](tests/hil-fixture-test-plan.md) for the current required test matrix. Promotion requires no
-unexplained data loss, timeout, USB disconnect, or relevant HID error.
+and [HIL test plan](tests/hil-fixture-test-plan.md) for the current required test matrix. Promotion uses the measured
+envelope in [Release HIL Gates](#release-hil-gates): rates inside that envelope must pass, and the documented
+first-failed rate is the ceiling for that image.
 
 ## Optional Claims
 
