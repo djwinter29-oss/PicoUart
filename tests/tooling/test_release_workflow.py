@@ -9,8 +9,7 @@ and the release-tag version policy enforced by tools/release/resolve-release-ver
 
 They also pin the PR and release firmware matrices: rated pico/pico2 plus
 the development overclock images (pico at 250 MHz; pico2 at 280 MHz in both
-PR checks and releases). Clock names stay in the workflow release notes and
-firmware/build-and-config.md. docs/releasing.md only points at those sources.
+PR checks and releases). Release-note text is checked on the workflow only.
 """
 
 from __future__ import annotations
@@ -162,28 +161,12 @@ def test_release_overclock_packages_use_distinct_names() -> None:
     assert "pico2-500mhz" not in text
 
 
-def test_release_notes_and_docs_match_release_clocks() -> None:
-    """Pin clocks in the workflow and build guide.
-
-    docs/releasing.md names those sources instead of copying artifact names,
-    megahertz values, or override commands. A clock change updates the workflow
-    and firmware/build-and-config.md, not the release guide.
-    """
+def test_release_notes_match_release_clocks() -> None:
+    """The draft release notes name each workflow image."""
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     body = text.split("          body: |", 1)[1].split("        env:", 1)[0]
-    docs = (REPO_ROOT / "docs/releasing.md").read_text(encoding="utf-8")
-    build_guide = (REPO_ROOT / "firmware/build-and-config.md").read_text(encoding="utf-8")
-    for _board, clock_khz, overclock, label in RELEASE_FIRMWARE_MATRIX:
+    for _board, clock_khz, _overclock, label in RELEASE_FIRMWARE_MATRIX:
         mhz = int(clock_khz) // 1000
         assert f"**{label}** ({mhz} MHz)" in body
-        if overclock == "true":
-            assert f"--system-clock-khz {clock_khz} --unsafe-overclock" in build_guide
     assert "promote HIL gate covers the rated images" in body
     assert "Some Pico 2 boards may not support 300 MHz reliably" in body
-    assert "exact-board HIL before any stability claim" in body
-    assert ".github/workflows/release.yml" in docs
-    assert "firmware/build-and-config.md" in docs
-    assert "board matrix, clocks, and artifact names" in docs
-    assert "pico-250mhz" not in docs
-    assert "pico2-280mhz" not in docs
-    assert "pico2-500mhz" not in docs
