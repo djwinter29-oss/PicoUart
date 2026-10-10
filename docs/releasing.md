@@ -52,12 +52,10 @@ the USB identity contract tests before publishing.
 Use the [Test Documentation Index](tests/README.md) for automated validation, HIL sequence, and result semantics. CI
 validates builds and host tests; it cannot establish physical qualification.
 
-Release promotion follows the measured six-port envelope in the
-[HIL test plan](tests/hil-fixture-test-plan.md#measured-six-port-envelope). Rates inside that envelope must pass. A stop
-at the plan's documented first-failed rate is the expected ceiling for that image. Run HIL on the exact packaged UF2/ELF
-and verify its SHA-256 against the draft; a local rebuild or a result for another artifact does not qualify the
-release. Overclock results apply only to the matching artifact and do not establish general stability or operating
-margins.
+Release promotion requires a complete `PASS` on every rated board artifact in the release workflow. Run HIL on the exact
+packaged UF2/ELF and verify its SHA-256 against the draft; a local rebuild or a result for another artifact does not
+qualify the release. Overclock results apply only to the matching artifact and do not establish general stability or
+operating margins.
 
 Follow the [HIL fixture setup](tests/hil-fixture-setup.md) and [test plan](tests/hil-fixture-test-plan.md) for required
 phases and acceptance criteria. Preserve per-board records using the [HIL record format](tests/records/README.md), with
@@ -103,8 +101,8 @@ not recover failed SWD access, repair reset/wiring, or prove the selected capaci
 ## Required HIL Matrix
 
 Follow the [board-testing skill](../.github/skills/pico-uart-board-testing/SKILL.md), [fixture setup](tests/hil-fixture-setup.md),
-and [HIL test plan](tests/hil-fixture-test-plan.md) for the current required test matrix. Inside the measured envelope,
-promotion requires no unexplained data loss, timeout, USB disconnect, or relevant HID error.
+and [HIL test plan](tests/hil-fixture-test-plan.md) for the current required test matrix. Promotion requires no
+unexplained data loss, timeout, USB disconnect, or relevant HID error.
 
 ## Optional Claims
 
