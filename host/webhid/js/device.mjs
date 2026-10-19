@@ -39,6 +39,35 @@ export function decodeBoardReport(report) {
     hid_reset_enabled: Boolean(payload.getUint8(1) & 1) };
 }
 
+export function decodeIdentityReport(report) {
+  const payload = featurePayload(report, 7, 49);
+  if (payload.getUint8(0) !== 1) throw new Error("Unsupported identity layout version");
+  const bytes = new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+  const product = bytes.subarray(1, 33);
+  const end = product.indexOf(0);
+  const serial = String.fromCharCode(...bytes.subarray(33, 49));
+  if (end <= 0 || product.subarray(0, end).some(byte => byte < 32 || byte > 126)
+    || product.subarray(end).some(byte => byte !== 0) || !/^[0-9a-f]{16}$/i.test(serial)) {
+    throw new Error("Invalid HID product or serial identity");
+  }
+  return { product_name: String.fromCharCode(...product.subarray(0, end)), serial_number: serial };
+}
+
+export function decodeRuntimeReport(report) {
+  const payload = featurePayload(report, 8, 21);
+  const version = payload.getUint8(0);
+  if (version !== 1 && version !== 2) throw new Error("Unsupported runtime layout version");
+  const uptime = payload.getBigUint64(1, true);
+  const cpu = [payload.getUint16(9, true), payload.getUint16(11, true)];
+  const reserved = payload.getUint32(13, true);
+  const total = payload.getUint32(17, true);
+  if (uptime > BigInt(Number.MAX_SAFE_INTEGER) || cpu.some(value => value > 10000 && value !== 65535)
+    || !total || reserved > total) throw new Error("Invalid runtime uptime, CPU or RAM values");
+  return { uptime_ms: Number(uptime),
+    cpu_usage_basis_points: cpu.map(value => version === 1 || value === 65535 ? null : value),
+    ram_reserved_bytes: reserved, ram_total_bytes: total };
+}
+
 export function decodeOverflowReport(report) {
   const payload = featurePayload(report, 5, 25);
   if (payload.getUint8(0) !== 15) throw new Error("Unsupported overflow-count layout version");
@@ -67,8 +96,21 @@ export function decodeStatusReport(data) {
   }) };
 }
 
+export function decodeLedReport(value) {
+  const payload = featurePayload(value, 9, 2);
+  const flags = payload.getUint8(1);
+  if (payload.getUint8(0) !== 1 || (flags & ~7)) throw new Error("Unsupported LED version or flags");
+  if ((!(flags & 1) && flags !== 0) || ((flags & 2) && !(flags & 4))) {
+    throw new Error("Inconsistent LED state");
+  }
+  return { manual_on: flags & 1 ? Boolean(flags & 2) : null,
+    output_on: flags & 1 ? Boolean(flags & 4) : null };
+}
+
 function emptyDashboard() {
   return { connected: false, error: null, metadata_error: null, hardware_error: null, hardware: null,
+    identity: null, identity_error: null, runtime: null, runtime_error: null,
+    led: null, led_error: null,
     board: null, overflow_counts: Array(6).fill(null), sequence: null, updated_at: null, traffic_incomplete: false,
     channels: Array.from({ length: 6 }, (_, id) => ({ id, health: null, health_labels: [], state: "unknown",
       backend: "unknown", cdc_open: false, ring_high_watermark: 0,
@@ -201,8 +243,39 @@ export class PicoUartWebHid {
       this.update({ dashboard: { ...this.state.dashboard, board: null, overflow_counts: Array(6).fill(null),
         metadata_error: error.message } });
     }
+    for (const [field, id, decode] of [
+      ["identity", 7, decodeIdentityReport], ["runtime", 8, decodeRuntimeReport],
+      ["led", 9, decodeLedReport],
+    ]) {
+      try {
+        const value = decode(await device.receiveFeatureReport(id));
+        if (generation !== this.generation || device !== this.device) return;
+        this.update({ dashboard: { ...this.state.dashboard, [field]: value, [`${field}_error`]: null } });
+      } catch (error) {
+        if (generation !== this.generation || device !== this.device) return;
+        this.update({ dashboard: { ...this.state.dashboard, [field]: null, [`${field}_error`]: error.message } });
+      }
+    }
     this.update({ phase: "connected", message: "Diagnostics received",
-      error: this.state.dashboard.hardware_error ?? this.state.dashboard.metadata_error });
+      error: this.state.dashboard.hardware_error ?? this.state.dashboard.metadata_error
+        ?? this.state.dashboard.identity_error ?? this.state.dashboard.runtime_error ?? this.state.dashboard.led_error });
+  }
+
+  async toggleLed() {
+    const device = this.device;
+    if (!device || this.state.phase !== "connected") return;
+    const generation = this.generation;
+    this.update({ phase: "writing", message: "Toggling board LED", error: null });
+    try {
+      await device.sendFeatureReport(4, Uint8Array.of(1));
+      if (generation !== this.generation || device !== this.device) return;
+      this.update({ phase: "connected" });
+      await this.refresh();
+    } catch (error) {
+      if (generation !== this.generation || device !== this.device) return;
+      this.update({ phase: "connected", message: "LED toggle failed", error: error.message,
+        dashboard: { ...this.state.dashboard, led: null, led_error: error.message } });
+    }
   }
 
   async disconnect() {

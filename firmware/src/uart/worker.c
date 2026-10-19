@@ -4,6 +4,7 @@
  */
 
 #include "uart/worker.h"
+#include "driver/service_load.h"
 
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
@@ -35,7 +36,9 @@ void uart_worker_run(const uart_worker_hooks_t *hooks)
     // cppcheck-suppress nullPointerRedundantCheck
     hooks->initialize();
     while (true) {
+        service_load_begin(1u, time_us_32());
         uart_worker_step(hooks);
         tight_loop_contents();
+        service_load_end(1u, time_us_32());
     }
 }

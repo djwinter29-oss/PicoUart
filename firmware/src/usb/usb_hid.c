@@ -6,7 +6,9 @@
 #include "usb/usb_hid.h"
 
 #include "config/capacity_config.h"
+#include "config/usb_identity.h"
 #include "driver/led.h"
+#include "driver/service_load.h"
 #include "driver/system.h"
 #include "driver/temperature.h"
 #include "uart/uart_driver.h"
@@ -14,10 +16,13 @@
 #include "usb/usb_cdc.h"
 
 #include "hardware/clocks.h"
+#include "hardware/regs/addressmap.h"
 #include "pico/stdlib.h"
+#include "pico/unique_id.h"
 #include "tusb.h"
 
 #include <limits.h>
+#include <stddef.h>
 #include <string.h>
 
 #ifndef PICO_UART_VERSION_MAJOR
@@ -57,6 +62,17 @@
 #define USB_HID_MCU_RP2040 1u
 /** @brief Hardware-info MCU identifier for RP2350. */
 #define USB_HID_MCU_RP2350 2u
+/** @brief HID feature report ID for product name and SDK unique board serial. */
+#define USB_HID_REPORT_ID_IDENTITY 7u
+/** @brief Independent identity feature payload layout version. */
+#define USB_HID_IDENTITY_VERSION 1u
+/** @brief HID feature report ID for uptime, active CPU time and reserved SRAM. */
+#define USB_HID_REPORT_ID_RUNTIME 8u
+/** @brief Independent runtime feature payload layout version. */
+#define USB_HID_RUNTIME_VERSION 2u
+
+/** @brief Independent LED feature report: version followed by availability/manual/output flags. */
+#define USB_HID_REPORT_ID_LED 9u
 
 /** @brief HID command value that toggles the board LED. */
 #define USB_HID_COMMAND_TOGGLE_LED 1u
@@ -146,6 +162,38 @@ typedef struct {
 _Static_assert(sizeof(usb_hid_hardware_info_report_t) == 6u,
                "HID hardware-info report must match the HID report descriptor");
 
+/** @brief Product and unique board identity, independent of the MCU type in report 6. */
+typedef struct {
+    uint8_t version;  /**< Identity layout version. */
+    char product[32]; /**< NUL-padded ASCII USB product name. */
+    char serial[16];  /**< SDK board ID as ASCII hex, without a trailing NUL; flash-derived on RP2040. */
+} __attribute__((packed)) usb_hid_identity_report_t;
+
+_Static_assert(sizeof(usb_hid_identity_report_t) == 49u, "HID identity payload must be 49 bytes");
+_Static_assert(offsetof(usb_hid_identity_report_t, serial) == 33u, "HID identity serial offset must be 33");
+_Static_assert(sizeof(PICO_UART_USB_PRODUCT) <= 32u, "HID product name must fit with its trailing NUL");
+_Static_assert(2u * PICO_UNIQUE_BOARD_ID_SIZE_BYTES == 16u, "HID serial must match the SDK board ID size");
+
+/** @brief Little-endian runtime snapshot; packed integer fields target the RP2 little-endian ABI. */
+typedef struct {
+    uint8_t version;                  /**< Runtime layout version. */
+    uint64_t uptime_ms;               /**< SDK monotonic microseconds since boot divided by 1000, without 32-bit wrap. */
+    uint16_t service_load_basis_points[2]; /**< Measured per-core service-pass load; 0xffff until the first window. */
+    uint32_t ram_reserved_bytes;      /**< Linked static SRAM extent, scratch sections and both reserved stacks. */
+    uint32_t ram_total_bytes;         /**< Physical SRAM capacity, excluding XIP cache SRAM. */
+} __attribute__((packed)) usb_hid_runtime_report_t;
+
+_Static_assert(sizeof(usb_hid_runtime_report_t) == 21u, "HID runtime payload must be 21 bytes");
+_Static_assert(offsetof(usb_hid_runtime_report_t, uptime_ms) == 1u, "HID uptime offset must be 1");
+_Static_assert(offsetof(usb_hid_runtime_report_t, service_load_basis_points) == 9u, "HID service-load offset must be 9");
+_Static_assert(offsetof(usb_hid_runtime_report_t, ram_reserved_bytes) == 13u, "HID reserved RAM offset must be 13");
+_Static_assert(offsetof(usb_hid_runtime_report_t, ram_total_bytes) == 17u, "HID total RAM offset must be 17");
+
+/** @brief SDK linker boundaries; addresses represent extents, not readable objects. */
+extern char __end__, __scratch_x_start__, __scratch_x_end__, __scratch_y_start__, __scratch_y_end__;
+/** @brief SDK linker boundaries for core 0 and core 1 stack reservations. */
+extern char __StackBottom, __StackTop, __StackOneBottom, __StackOneTop;
+
 /**
  * @brief Feature report containing cumulative UART-to-USB drop counts.
  */
@@ -211,6 +259,40 @@ static void usb_hid_build_board_status_report(usb_hid_board_status_report_t *rep
     report->firmware_major = (uint8_t)PICO_UART_VERSION_MAJOR;
     report->firmware_minor = (uint8_t)PICO_UART_VERSION_MINOR;
     report->firmware_patch = (uint8_t)PICO_UART_VERSION_PATCH;
+}
+
+/**
+ * @brief Build identity from the same product definition and SDK serial API as USB enumeration.
+ * @param report Destination feature payload.
+ */
+static void usb_hid_build_identity_report(usb_hid_identity_report_t *report)
+{
+    char serial[2u * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1u];
+
+    memset(report, 0, sizeof(*report));
+    report->version = USB_HID_IDENTITY_VERSION;
+    memcpy(report->product, PICO_UART_USB_PRODUCT, sizeof(PICO_UART_USB_PRODUCT));
+    pico_get_unique_board_id_string(serial, sizeof(serial));
+    memcpy(report->serial, serial, sizeof(report->serial));
+}
+
+/**
+ * @brief Snapshot measured service load and link-time SRAM reservations, not live heap/stack use.
+ * @param report Destination feature payload.
+ */
+static void usb_hid_build_runtime_report(usb_hid_runtime_report_t *report)
+{
+    report->version = USB_HID_RUNTIME_VERSION;
+    report->uptime_ms = time_us_64() / 1000u;
+    report->service_load_basis_points[0] = service_load_read(0u);
+    report->service_load_basis_points[1] = service_load_read(1u);
+    report->ram_reserved_bytes = (uint32_t)(
+        ((uintptr_t)&__end__ - SRAM_BASE) +
+        ((uintptr_t)&__scratch_x_end__ - (uintptr_t)&__scratch_x_start__) +
+        ((uintptr_t)&__scratch_y_end__ - (uintptr_t)&__scratch_y_start__) +
+        ((uintptr_t)&__StackTop - (uintptr_t)&__StackBottom) +
+        ((uintptr_t)&__StackOneTop - (uintptr_t)&__StackOneBottom));
+    report->ram_total_bytes = SRAM_END - SRAM_BASE;
 }
 
 static void usb_hid_build_overflow_counts_report(usb_hid_overflow_counts_report_t *report,
@@ -283,6 +365,7 @@ static bool usb_hid_publish_status_report(void)
     if (!tud_hid_report(USB_HID_REPORT_ID_STATUS, &report, sizeof(report))) {
         return false;
     }
+    service_load_note(0u);
 
     memcpy(usb_hid_last_reported_uart_stats, uart_stats, sizeof(usb_hid_last_reported_uart_stats));
     memcpy(usb_hid_last_reported_cdc_stats, cdc_stats, sizeof(usb_hid_last_reported_cdc_stats));
@@ -327,12 +410,44 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 {
     usb_hid_board_status_report_t board_status_report;
     usb_hid_hardware_info_report_t hardware_info_report;
+    usb_hid_identity_report_t identity_report;
+    usb_hid_runtime_report_t runtime_report;
     usb_hid_overflow_counts_report_t overflow_counts_report;
     usb_hid_status_report_t report;
     uart_driver_port_stats_t uart_stats[UART_PORT_COUNT];
     usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT];
 
     (void)instance;
+
+    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_LED)) {
+        bool manual_on, output_on;
+        bool available = led_read_state(&manual_on, &output_on);
+        const uint8_t led_report[2] = {1u, available ? (uint8_t)(1u | (manual_on ? 2u : 0u) |
+                                                               (output_on ? 4u : 0u)) : 0u};
+        if (reqlen > sizeof(led_report)) {
+            reqlen = sizeof(led_report);
+        }
+        memcpy(buffer, led_report, reqlen);
+        return reqlen;
+    }
+
+    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_IDENTITY)) {
+        usb_hid_build_identity_report(&identity_report);
+        if (reqlen > sizeof(identity_report)) {
+            reqlen = sizeof(identity_report);
+        }
+        memcpy(buffer, &identity_report, reqlen);
+        return reqlen;
+    }
+
+    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_RUNTIME)) {
+        usb_hid_build_runtime_report(&runtime_report);
+        if (reqlen > sizeof(runtime_report)) {
+            reqlen = sizeof(runtime_report);
+        }
+        memcpy(buffer, &runtime_report, reqlen);
+        return reqlen;
+    }
 
         if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_HARDWARE_INFO)) {
         hardware_info_report.version = USB_HID_HARDWARE_INFO_VERSION;

@@ -26,6 +26,7 @@ def test_hid_descriptor_parser_recognizes_hardware_info_and_unchanged_legacy_rep
     descriptor = bytes(int(value, 16) for value in re.findall(r"0x([0-9A-Fa-f]+)", body))
     assert verifier._hid_reports(descriptor, len(descriptor)) == [{
         1: (63, 8, 8), 3: (8, 8, 11), 4: (1, 8, 11), 5: (25, 8, 11), 6: (6, 8, 11),
+        7: (49, 8, 11), 8: (21, 8, 11), 9: (2, 8, 11),
     }]
 
 

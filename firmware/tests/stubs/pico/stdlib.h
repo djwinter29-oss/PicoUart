@@ -6,6 +6,8 @@
 #ifndef PICO_STDLIB_H
 #define PICO_STDLIB_H
 
+#include "pico/time.h"
+
 static inline void tight_loop_contents(void)
 {
 }

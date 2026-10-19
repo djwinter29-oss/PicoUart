@@ -87,6 +87,7 @@ target_sources(pico_uart PRIVATE
     src/board/uart_board.c
     src/board/uart_topology.c
     src/driver/led.c
+    src/driver/service_load.c
     src/driver/system.c
     src/driver/temperature.c
     src/main.c

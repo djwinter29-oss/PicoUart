@@ -3,6 +3,8 @@ const connection = document.querySelector("#connection");
 const channelRows = document.querySelector("#channel-rows");
 const statusMessage = document.querySelector("#status-message");
 const actionButtons = [...document.querySelectorAll(".actions button")];
+let actionBusy = false;
+let latestData = null;
 
 function makeCell(className, text) {
   const cell = document.createElement("td");
@@ -70,6 +72,7 @@ function renderChannels(data) {
 }
 
 function render(data) {
+  latestData = data;
   connection.dataset.state = data.connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
   document.querySelector("#mcu").textContent = data.hardware?.mcu ?? "--";
@@ -77,10 +80,30 @@ function render(data) {
     ? `${(data.hardware.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
     : "--";
   document.querySelector("#firmware").textContent = data.board?.firmware_version ?? "--";
+  document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
+  document.querySelector("#serial").textContent = data.identity?.serial_number ?? "--";
+  const runtime = data.runtime;
+  const seconds = runtime ? Math.floor(runtime.uptime_ms / 1000) : 0;
+  document.querySelector("#uptime").textContent = runtime
+    ? `${Math.floor(seconds / 86400)}d ${Math.floor(seconds % 86400 / 3600)}h `
+      + `${Math.floor(seconds % 3600 / 60)}m ${seconds % 60}s` : "--";
+  document.querySelector("#cpu-usage").textContent = runtime
+    ? runtime.cpu_usage_basis_points.map(value => value == null ? "--" : `${(value / 100).toFixed(1)}%`).join(" / ")
+    : "--";
+  document.querySelector("#ram-usage").textContent = runtime
+    ? `${(runtime.ram_reserved_bytes / 1024).toFixed(1)} / ${(runtime.ram_total_bytes / 1024).toFixed(0)} KiB `
+      + `(${(runtime.ram_reserved_bytes * 100 / runtime.ram_total_bytes).toFixed(1)}%)` : "--";
   document.querySelector("#temperature").textContent = data.board
     ? `${data.board.temperature_celsius.toFixed(2)} °C`
     : "--";
-  document.querySelector("#sequence").textContent = data.sequence ?? "--";
+  const led = data.connected ? data.led : null;
+  const ledButton = document.querySelector("#toggle-led");
+  ledButton.dataset.state = led?.output_on == null ? "unknown" : led.output_on ? "on" : "off";
+  ledButton.textContent = `Board LED: ${led?.output_on == null ? "--" : led.output_on ? "On" : "Off"}`;
+  ledButton.title = led?.manual_on == null ? "Toggle manual LED state; USB activity may also light the LED"
+    : `Toggle manual LED state (currently ${led.manual_on ? "On" : "Off"}); USB activity may also light the LED`;
+  document.querySelector("#toggle-led").disabled = actionBusy || !data.connected || led?.output_on === null;
+  document.querySelector("#reset-board").disabled = actionBusy || !data.connected;
   document.querySelector("#sample-time").textContent = data.updated_at
     ? `Last report ${new Date(data.updated_at).toLocaleTimeString()}`
     : "Waiting for HID telemetry";
@@ -98,10 +121,14 @@ function render(data) {
   const message = data.error
     || (data.metadata_error ? `Board metadata unavailable: ${data.metadata_error}` : null)
     || (data.hardware_error ? `Hardware information unavailable: ${data.hardware_error}` : null)
+    || (data.identity_error ? `Device identity unavailable: ${data.identity_error}` : null)
+    || (data.runtime_error ? `Runtime status unavailable: ${data.runtime_error}` : null)
+    || (data.led_error ? `LED state unavailable: ${data.led_error}` : null)
     || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
   statusMessage.textContent = message;
   statusMessage.parentElement.dataset.error = Boolean(
-    data.error || data.metadata_error || data.hardware_error || !data.connected,
+    data.error || data.metadata_error || data.hardware_error || data.identity_error || data.runtime_error
+      || data.led_error || !data.connected,
   );
 }
 
@@ -118,6 +145,7 @@ async function refresh() {
 
 async function runAction(action) {
   if (action === "reset" && !window.confirm("Reset the PicoUart board?")) return;
+  actionBusy = true;
   actionButtons.forEach((button) => { button.disabled = true; });
   try {
     const response = await fetch(`/api/actions/${action}`, {
@@ -128,11 +156,14 @@ async function runAction(action) {
     if (!response.ok) throw new Error(result.error || `Action failed (${response.status})`);
     statusMessage.textContent = action === "reset" ? "Reset command sent" : "LED toggle command sent";
     statusMessage.parentElement.dataset.error = "false";
+    await refresh();
   } catch (error) {
     statusMessage.textContent = error.message;
     statusMessage.parentElement.dataset.error = "true";
   } finally {
-    actionButtons.forEach((button) => { button.disabled = false; });
+    actionBusy = false;
+    document.querySelector("#toggle-led").disabled = !latestData?.connected || latestData.led?.output_on === null;
+    document.querySelector("#reset-board").disabled = !latestData?.connected;
   }
 }
 

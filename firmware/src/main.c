@@ -7,6 +7,7 @@
 
 #include "board/uart_board.h"
 #include "driver/led.h"
+#include "driver/service_load.h"
 #include "driver/system.h"
 #include "driver/temperature.h"
 #include "uart/ring_buffer/ring_buffer.h"
@@ -32,6 +33,7 @@ int main(void)
     system_init_clock();
     led_init();
     temperature_init();
+    service_load_init();
 
     /* Validate shared invariants before starting UART and USB services. */
     hard_assert(ring_buffer_self_check());
@@ -41,11 +43,13 @@ int main(void)
     usb_hid_init();
 
     while (true) {
+        service_load_begin(0u, time_us_32());
         usb_cdc_poll();
         usb_hid_poll();
         if (uart_driver_worker_heartbeat_is_fresh()) {
             system_watchdog_update();
         }
         tight_loop_contents();
+        service_load_end(0u, time_us_32());
     }
 }

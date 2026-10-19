@@ -8,7 +8,7 @@ DTR state is reported for monitoring only.
 The HID interface uses vendor usage page `0xFF00`, vendor usage `0x01`, no boot protocol, and a 63-byte status report
 alongside compact diagnostic and command feature reports. The device is identified as USB `cafe:4010` (the project's
 unallocated lab identity, permitted for published project artifacts) and has one HID interface after the twelve CDC
-control/data interfaces. The USB product string is `PicoUart CDC+HID PIO 8N1`. CDC interface strings advertise backend
+control/data interfaces. The USB and HID product name is `PicoUart`. CDC interface strings advertise backend
 limits: `CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
 
 ## Ownership
@@ -33,8 +33,13 @@ command values are board-scoped only.
 | `4`       | Feature | Host writes to device  | 1 byte   | Board-control command.                              |
 | `5`       | Feature | Host reads from device | 25 bytes | Cumulative UART-to-USB RX dropped-byte counts.      |
 | `6`       | Feature | Host reads from device | 6 bytes  | MCU identity and current system clock frequency.    |
+| `7`       | Feature | Host reads from device | 49 bytes | Product and USB serial / board UID.                 |
+| `8`       | Feature | Host reads from device | 21 bytes | Uptime, per-core service load, and reserved RAM.     |
+| `9`       | Feature | Host reads from device | 2 bytes  | Board LED availability, manual state, and output.   |
 
 Report IDs `1`, `3`, and `5` share layout version `15`. Report ID `6` uses an independent layout version, currently `1`.
+Reports `7` and `8` have independent layout versions, currently `1` and `2` respectively.
+Report `9` uses independent layout version `1`.
 
 Report ID bytes are managed by the HID transport and are not included in the payload layouts below. Status is 63 bytes
 so Report ID + payload fit in one full-speed interrupt packet (64 bytes). The device attempts to publish report ID `1`
@@ -157,6 +162,77 @@ Hosts retain the raw MCU ID and display unrecognized values as `Unknown MCU (ID)
 Unsupported layout versions, malformed sizes, and zero frequency remain errors. New MCU IDs can be added without
 changing this payload layout; ported firmware must explicitly assign the appropriate ID rather than assuming RP2040.
 
+## Report ID 7: Device Identity
+
+Feature report `7` provides the identity independently of browser USB APIs. All text is ASCII.
+
+| Offset | Size | Field           | Meaning                                                  |
+| ------ | ---: | --------------- | -------------------------------------------------------- |
+| 0      | 1    | `version`       | Identity layout version, `1`.                            |
+| 1      | 32   | `product_name`  | USB product string, NUL-terminated and zero-padded.       |
+| 33     | 16   | `serial_number` | Sixteen hexadecimal ASCII characters, no terminator.     |
+
+The dashboards label this **Serial / UID**. It is the same SDK unique board ID used for the USB serial descriptor,
+not report `6`'s numeric MCU-type identifier. On RP2040 the SDK derives this board identity from the external QSPI
+flash unique ID; do not describe it as an RP2040 silicon serial. The SDK supplies the platform-specific identity on
+RP2350. No host-generated serial or browser-session identifier is substituted.
+
+## Report ID 8: Runtime Status
+
+Feature report `8` provides live device counters. All multi-byte fields are little-endian.
+
+| Offset | Size | Field                    | Meaning                                                  |
+| ------ | ---: | ------------------------ | -------------------------------------------------------- |
+| 0      | 1    | `version`                | Runtime layout version, `2`.                             |
+| 1      | 8    | `uptime_ms`              | SDK monotonic milliseconds since boot.                   |
+| 9      | 2    | `core0_service_load_basis_points` | Core 0 service load; `10000` = 100%, `65535` unknown. |
+| 11     | 2    | `core1_service_load_basis_points` | Core 1 service load; same scale and sentinel.        |
+| 13     | 4    | `ram_reserved_bytes`     | Static and reserved SRAM, not live allocation/stack use.  |
+| 17     | 4    | `ram_total_bytes`        | Total SRAM for the target MCU.                           |
+
+Service load is the elapsed wall time of service passes that handle work, divided by the actual measurement-window
+duration, in basis points (one basis point is 0.01%). Each core publishes after at least one second; before its first
+completed window it reports `65535`. Empty polling passes are excluded. Core 0 counts USB events, CDC transfers,
+control progress and HID status publication; core 1 counts UART data progress, control handling and error recovery.
+Waiting for a DMA transfer alone does not count as work.
+
+The complete marked pass is charged once, including its polling overhead and any interrupts during that pass.
+This is a workload proxy, not instruction-level profiling, total CPU utilization, UART line occupancy, or calibrated
+remaining throughput. Both cores still busy-poll; no sleep or transport scheduling policy is changed. Monitoring traffic
+and noisy RX/error handling can produce nonzero load without application traffic.
+
+Runtime version `1` has the same byte layout but reports the previous fixed active-CPU values, not service load.
+Updated hosts accept its uptime and RAM fields but show per-core load as unavailable. The shared host JSON retains
+the historical `cpu_usage_basis_points` key for compatibility; only version `2` supplies measured values through it.
+
+Hosts reject load values above `10000` except the unavailable sentinel, zero total RAM, and reservations exceeding total.
+Uptime is device uptime, not time since the monitoring page connected. RAM is displayed as reserved / total KiB and a
+percentage, never as a heap/stack high-water mark.
+
+The reservation is linked SRAM from `SRAM_BASE` through `__end__`, plus scratch X/Y linked sections and both SDK stack
+reservations. It excludes the remaining heap capacity and does not measure live heap allocations or stack occupancy.
+Total SRAM is `SRAM_END - SRAM_BASE`, including scratch banks. These values come from the selected target/linker layout,
+not a board-name lookup in the host.
+
+## Report ID 9: Board LED State
+
+| Offset | Size | Field     | Meaning                                                         |
+| ------ | ---: | --------- | --------------------------------------------------------------- |
+| 0      | 1    | `version` | LED layout version, `1`.                                        |
+| 1      | 1    | `flags`   | Bit 0: LED available; bit 1: manual on; bit 2: physical output on. |
+
+Other flag bits are reserved and zero. An unavailable LED reports zero flags; hosts show unknown states, not Off.
+The physical GPIO output is the OR of the persistent manual state and transient CDC activity. Toggling report `4`'s
+existing LED command changes only the manual state, so USB activity may keep the output lit after toggling manual Off.
+Manual On with physical Off is invalid. All LED access occurs on core 0.
+
+Both dashboards use one button beside the Runtime status heading: `Board LED: On` is teal, `Board LED: Off` is neutral,
+and `Board LED: --` has an unknown-state outline. Its text and colour report physical output; clicking toggles manual state.
+The button tooltip identifies the manual state. Successful toggles reread state instead of predicting the result.
+Older firmware can still accept the toggle command without report `9`; hosts retain the button, show `--` for state,
+and surface the unsupported read. Boards explicitly reporting no LED have the toggle disabled.
+The report sequence remains internal to gap detection and is not displayed.
+
 ## Host Tool
 
 Host command and client behavior are documented in the [Python host guide](../../../host/python/README.md) and
@@ -172,6 +248,10 @@ rejected any nonzero `reserved0` will fail board-status reads only against reset
 Report `6` is additive: older hosts can continue reading reports `1`, `3`, and `5` from new firmware. Firmware predating
 report `6` cannot supply hardware information; clients should handle that absence without discarding existing reports.
 See the host guides for client-specific presentation and error behavior.
+
+Reports `7` and `8` are additive too: existing report layouts and the six CDC interfaces are unchanged. Firmware
+predating them cannot supply these values. Hosts retain legacy telemetry, show unavailable fields, and surface the
+failed identity/runtime reads rather than estimating uptime or inventing a serial or utilization.
 
 For a valid report containing an unrecognized MCU ID, hosts preserve the raw ID and system clock and present the MCU as
 unknown. This does not assign meaning to future IDs; firmware must define each mapping when adding MCU support.

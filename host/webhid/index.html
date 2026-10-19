@@ -31,13 +31,39 @@
       <p class="sample-time" id="sample-time">No sample</p>
     </section>
 
-    <section class="summary" aria-label="Board summary">
-      <div class="summary-item"><span>MCU</span><strong id="mcu">--</strong></div>
-      <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
-      <div class="summary-item"><span>Firmware</span><strong id="firmware">--</strong></div>
-      <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
+    <section aria-labelledby="identity-title">
+      <div class="section-heading"><h2 id="identity-title">Device identity</h2></div>
+      <div class="summary identity-summary">
+        <div class="summary-item"><span>Product</span><strong id="product-name">--</strong></div>
+        <div class="summary-item"><span>Microcontroller</span><strong id="mcu">--</strong></div>
+        <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
+        <div class="summary-item"><span>Firmware version</span><strong id="firmware">--</strong></div>
+        <div class="summary-item"><span>Serial / UID</span><strong id="serial">--</strong></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="runtime-title">
+      <div class="section-heading">
+        <div><p class="eyebrow">LIVE REPORT</p><h2 id="runtime-title">Runtime status</h2></div>
+        <div class="actions" aria-label="Board controls">
+          <button class="button button-led" id="toggle-led" type="button" data-state="unknown"
+            title="Toggle manual LED state; USB activity may also light the LED" disabled>Board LED: --</button>
+        </div>
+      </div>
+      <div class="summary runtime-summary">
+        <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>
+        <div class="summary-item" title="Wall time of passes handling work over a one-second window; excludes empty polling">
+          <span>Service load (core 0 / core 1)</span><strong id="cpu-usage">--</strong>
+        </div>
+        <div class="summary-item" title="Linked static SRAM and reserved stacks; excludes live heap/stack occupancy">
+          <span>RAM reserved</span><strong id="ram-usage">--</strong>
+        </div>
+        <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
+      </div>
+    </section>
+
+    <section class="summary traffic-summary" aria-label="UART report summary">
       <div class="summary-item"><span>Total RX overflow</span><strong id="overflow-total">--</strong></div>
-      <div class="summary-item"><span>Report sequence</span><strong id="sequence">--</strong></div>
     </section>
 
     <section class="channels-section" aria-labelledby="channels-title">
@@ -70,9 +96,7 @@
       </div>
       <p class="traffic-note" id="traffic-note">Observed lower bounds since monitoring began.</p>
       <dl class="device-details">
-        <div><dt>Device</dt><dd id="device-name">--</dd></div>
         <div><dt>USB identity</dt><dd id="usb-identity">--</dd></div>
-        <div><dt>MCU ID</dt><dd id="mcu-id">--</dd></div>
       </dl>
     </section>
 

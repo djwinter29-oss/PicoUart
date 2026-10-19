@@ -8,6 +8,12 @@ REPORT_ID_BOARD_STATUS = 3
 REPORT_ID_COMMAND = 4
 REPORT_ID_OVERFLOW_COUNTS = 5
 REPORT_ID_HARDWARE_INFO = 6
+REPORT_ID_IDENTITY = 7
+REPORT_ID_RUNTIME = 8
+REPORT_ID_LED = 9
+LED_SIZE = 2
+IDENTITY_SIZE = 49
+RUNTIME_SIZE = 21
 HARDWARE_INFO_SIZE = 6
 HARDWARE_INFO_LAYOUT_VERSION = 1
 MCU_RP2040 = 1
@@ -29,6 +35,17 @@ STATUS_CHANNEL_SIZE = 10
 RESET_ARM_WINDOW_S = 2.0
 BOARD_STATUS_FLAG_HID_RESET = 1 << 0
 BOARD_STATUS_RESERVED0_KNOWN_FLAGS = BOARD_STATUS_FLAG_HID_RESET
+
+
+def parse_led(payload: bytes) -> dict[str, bool | None]:
+    """Decode the manual state and merged physical LED output."""
+    if len(payload) != LED_SIZE or payload[0] != 1 or payload[1] & ~7:
+        raise RuntimeError("unsupported LED report size, version, or flags")
+    flags = payload[1]
+    if not flags & 1 and flags != 0 or flags & 2 and not flags & 4:
+        raise RuntimeError("inconsistent LED state")
+    return {"manual_on": bool(flags & 2) if flags & 1 else None,
+            "output_on": bool(flags & 4) if flags & 1 else None}
 
 
 def require_payload(report: list[int], report_id: int, payload_size: int) -> bytes:
@@ -81,6 +98,37 @@ def parse_overflow_counts(payload: bytes) -> list[int]:
     if version != STATUS_LAYOUT_VERSION:
         raise RuntimeError(f"unsupported overflow-count report version {version}")
     return overflow_counts
+
+
+def parse_identity(payload: bytes) -> dict[str, object]:
+    """Decode the product and SDK board UID used as the USB serial."""
+    if len(payload) != IDENTITY_SIZE or payload[0] != 1:
+        raise RuntimeError("unsupported identity report size or version")
+    product_bytes = payload[1:33]
+    product, separator, padding = product_bytes.partition(b"\0")
+    serial = payload[33:49]
+    if (
+        not product or not separator or any(padding)
+        or any(byte < 32 or byte > 126 for byte in product)
+        or any(byte not in b"0123456789abcdefABCDEF" for byte in serial)
+    ):
+        raise RuntimeError("invalid HID product or serial identity")
+    return {"product_name": product.decode("ascii"), "serial_number": serial.decode("ascii")}
+
+
+def parse_runtime(payload: bytes) -> dict[str, object]:
+    """Decode uptime, per-core measured service load, and reserved SRAM."""
+    if len(payload) != RUNTIME_SIZE or payload[0] not in (1, 2):
+        raise RuntimeError("unsupported runtime report size or version")
+    _, uptime, core0, core1, reserved, total = struct.unpack("<BQHHII", payload)
+    if any(value > 10000 and value != 0xffff for value in (core0, core1)) or not total or reserved > total:
+        raise RuntimeError("invalid runtime CPU or RAM values")
+    return {
+        "uptime_ms": uptime,
+        "cpu_usage_basis_points": [None if payload[0] == 1 or value == 0xffff else value for value in (core0, core1)],
+        "ram_reserved_bytes": reserved,
+        "ram_total_bytes": total,
+    }
 
 
 def parse_status(payload: bytes) -> dict[str, object]:

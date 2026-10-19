@@ -62,9 +62,27 @@ export function renderDashboard(data) {
     ? `${(data.hardware.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
     : "--";
   document.querySelector("#firmware").textContent = data.board?.firmware_version ?? "--";
+  document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
+  document.querySelector("#serial").textContent = data.identity?.serial_number ?? "--";
+  const runtime = data.runtime;
+  const seconds = runtime ? Math.floor(runtime.uptime_ms / 1000) : 0;
+  document.querySelector("#uptime").textContent = runtime
+    ? `${Math.floor(seconds / 86400)}d ${Math.floor(seconds % 86400 / 3600)}h `
+      + `${Math.floor(seconds % 3600 / 60)}m ${seconds % 60}s` : "--";
+  document.querySelector("#cpu-usage").textContent = runtime
+    ? runtime.cpu_usage_basis_points.map(value => value == null ? "--" : `${(value / 100).toFixed(1)}%`).join(" / ")
+    : "--";
+  document.querySelector("#ram-usage").textContent = runtime
+    ? `${(runtime.ram_reserved_bytes / 1024).toFixed(1)} / ${(runtime.ram_total_bytes / 1024).toFixed(0)} KiB `
+      + `(${(runtime.ram_reserved_bytes * 100 / runtime.ram_total_bytes).toFixed(1)}%)` : "--";
   document.querySelector("#temperature").textContent = data.board
     ? `${data.board.temperature_celsius.toFixed(2)} \u00b0C` : "--";
-  document.querySelector("#sequence").textContent = data.sequence ?? "--";
+  const led = data.connected ? data.led : null;
+  const ledButton = document.querySelector("#toggle-led");
+  ledButton.dataset.state = led?.output_on == null ? "unknown" : led.output_on ? "on" : "off";
+  ledButton.textContent = `Board LED: ${led?.output_on == null ? "--" : led.output_on ? "On" : "Off"}`;
+  ledButton.title = led?.manual_on == null ? "Toggle manual LED state; USB activity may also light the LED"
+    : `Toggle manual LED state (currently ${led.manual_on ? "On" : "Off"}); USB activity may also light the LED`;
   document.querySelector("#sample-time").textContent = data.updated_at
     ? `Last report ${new Date(data.updated_at).toLocaleTimeString()}` : "Waiting for HID telemetry";
   document.querySelector("#overflow-total").textContent = data.overflow_counts.every(value => value !== null)
@@ -80,8 +98,12 @@ export function renderDashboard(data) {
   statusMessage.textContent = data.error
     || (data.metadata_error ? `Board metadata unavailable: ${data.metadata_error}` : null)
     || (data.hardware_error ? `Hardware information unavailable: ${data.hardware_error}` : null)
+    || (data.identity_error ? `Device identity unavailable: ${data.identity_error}` : null)
+    || (data.runtime_error ? `Runtime status unavailable: ${data.runtime_error}` : null)
+    || (data.led_error ? `LED state unavailable: ${data.led_error}` : null)
     || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
   statusMessage.parentElement.dataset.error = Boolean(
-    data.error || data.metadata_error || data.hardware_error || !data.connected,
+    data.error || data.metadata_error || data.hardware_error || data.identity_error || data.runtime_error
+      || data.led_error || !data.connected,
   );
 }

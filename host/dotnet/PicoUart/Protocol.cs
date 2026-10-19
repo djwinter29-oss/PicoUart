@@ -8,6 +8,12 @@ public sealed record BoardStatus(double TemperatureCelsius, string FirmwareVersi
 
 public sealed record HardwareInfo(string Mcu, uint SystemClockHz, byte McuId = 0);
 
+public sealed record BoardIdentity(string ProductName, string SerialNumber);
+public sealed record LedStatus(bool? ManualOn, bool? OutputOn);
+
+public sealed record RuntimeStatus(ulong UptimeMs, ushort?[] CpuUsageBasisPoints,
+    uint RamReservedBytes, uint RamTotalBytes);
+
 public sealed record ChannelStatus(int Id, byte Health, int RingHighWatermark,
     ushort ControllerTxBytes, ushort ControllerRxBytes, ushort CdcTxBytes, ushort CdcRxBytes);
 
@@ -15,6 +21,17 @@ public sealed record Status(byte Sequence, ChannelStatus[] Channels);
 
 public static class Protocol
 {
+    public static LedStatus ParseLed(ReadOnlySpan<byte> payload)
+    {
+        Require(payload.Length == 2 && payload[0] == 1 && (payload[1] & ~7) == 0,
+            "unsupported LED report size, version, or flags");
+        var flags = payload[1];
+        Require(((flags & 1) != 0 || flags == 0) && ((flags & 2) == 0 || (flags & 4) != 0),
+            "inconsistent LED state");
+        return new((flags & 1) != 0 ? (flags & 2) != 0 : null,
+            (flags & 1) != 0 ? (flags & 4) != 0 : null);
+    }
+
     public const int ChannelCount = 6;
     public const byte LayoutVersion = 15;
     public const byte HardwareInfoReportId = 6;
@@ -78,6 +95,36 @@ public static class Protocol
             counts[index] = BinaryPrimitives.ReadUInt32LittleEndian(payload[(1 + index * 4)..]);
         }
         return counts;
+    }
+
+    public static BoardIdentity ParseIdentity(ReadOnlySpan<byte> payload)
+    {
+        Require(payload.Length == 49 && payload[0] == 1, "unsupported identity report size or version");
+        var product = payload.Slice(1, 32);
+        var end = product.IndexOf((byte)0);
+        Require(end > 0, "invalid HID product identity");
+        for (var index = 0; index < product.Length; index++)
+            Require(index < end ? product[index] is >= 32 and <= 126 : product[index] == 0,
+                "invalid HID product identity");
+        var serial = System.Text.Encoding.ASCII.GetString(payload.Slice(33, 16));
+        Require(serial.All(char.IsAsciiHexDigit), "invalid HID serial identity");
+        return new(System.Text.Encoding.ASCII.GetString(product[..end]), serial);
+    }
+
+    public static RuntimeStatus ParseRuntime(ReadOnlySpan<byte> payload)
+    {
+        Require(payload.Length == 21 && payload[0] is 1 or 2, "unsupported runtime report size or version");
+        ushort?[] cpu = new ushort?[2];
+        for (var core = 0; core < cpu.Length; core++)
+        {
+            var value = BinaryPrimitives.ReadUInt16LittleEndian(payload[(9 + core * 2)..]);
+            Require(value <= 10000 || value == ushort.MaxValue, "invalid runtime CPU value");
+            cpu[core] = payload[0] == 1 || value == ushort.MaxValue ? null : value;
+        }
+        var reserved = BinaryPrimitives.ReadUInt32LittleEndian(payload[13..]);
+        var total = BinaryPrimitives.ReadUInt32LittleEndian(payload[17..]);
+        Require(total != 0 && reserved <= total, "invalid runtime RAM values");
+        return new(BinaryPrimitives.ReadUInt64LittleEndian(payload[1..]), cpu, reserved, total);
     }
 
     public static string[] DecodeHealth(byte health)

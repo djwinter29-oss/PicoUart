@@ -50,6 +50,11 @@ public sealed class PicoUartHid : IDisposable
     public HardwareInfo ReadHardwareInfo() => Protocol.ParseHardwareInfo(
         ReadFeature(Protocol.HardwareInfoReportId, Protocol.HardwareInfoSize));
 
+    public BoardIdentity ReadIdentity() => Protocol.ParseIdentity(ReadFeature(7, 49));
+
+    public RuntimeStatus ReadRuntime() => Protocol.ParseRuntime(ReadFeature(8, 21));
+    public LedStatus ReadLed() => Protocol.ParseLed(ReadFeature(9, 2));
+
     public void ToggleLed()
     {
         lock (gate) SendCommand(1);

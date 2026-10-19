@@ -27,6 +27,18 @@ class FakeDashboard:
         self.actions.append("reset")
 
 
+class BoardTelemetry:
+    def read_led(self):
+        return {"manual_on": False, "output_on": False}
+
+    def read_identity(self):
+        return {"product_name": "PicoUart", "serial_number": "0123456789ABCDEF"}
+
+    def read_runtime(self):
+        return {"uptime_ms": 4294967296, "cpu_usage_basis_points": [10000, 10000],
+                "ram_reserved_bytes": 65536, "ram_total_bytes": 270336}
+
+
 def _csrf_token(client):
     response = client.get("/")
     match = re.search(rb'name="csrf-token" content="([^"]+)"', response.data)
@@ -117,7 +129,7 @@ def test_dashboard_maps_action_io_errors_and_unknown_actions():
 
 
 def test_dashboard_service_polls_status_and_metadata():
-    class FakeClient:
+    class FakeClient(BoardTelemetry):
         def __init__(self):
             self.first_report = True
             self.closed = False
@@ -161,6 +173,8 @@ def test_dashboard_service_polls_status_and_metadata():
     assert snapshot["overflow_counts"] == [0, 1, 2, 3, 4, 5]
     assert snapshot["hardware"] == {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
     assert snapshot["hardware_error"] is None
+    assert snapshot["identity"] == fake.read_identity()
+    assert snapshot["runtime"] == fake.read_runtime()
     assert fake.closed
 
 
@@ -172,7 +186,7 @@ def test_metadata_errors_survive_telemetry_and_clear_stale_values():
     service._snapshot["board"] = {"firmware_version": "stale"}
     service._snapshot["overflow_counts"] = [99] * 6
 
-    class BrokenMetadata:
+    class BrokenMetadata(BoardTelemetry):
         def read_board_status(self):
             raise OSError("feature read failed")
 
@@ -189,7 +203,7 @@ def test_metadata_errors_survive_telemetry_and_clear_stale_values():
     assert snapshot["board"] is None
     assert snapshot["overflow_counts"] == [None] * 6
 
-    class HealthyMetadata:
+    class HealthyMetadata(BoardTelemetry):
         def read_board_status(self):
             return {"firmware_version": "1.2.3"}
 
@@ -213,7 +227,7 @@ def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, 
     service._snapshot = _empty_snapshot()
     service._snapshot["hardware"] = {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
 
-    class OlderFirmware:
+    class OlderFirmware(BoardTelemetry):
         unsupported = True
 
         def read_board_status(self):

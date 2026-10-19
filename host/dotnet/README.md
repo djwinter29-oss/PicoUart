@@ -9,6 +9,14 @@ to the six CDC interfaces; this application only uses the diagnostics HID interf
 Install the .NET 10 SDK, then run from the repository root:
 
 ```sh
+tools/host/run-dotnet.sh                 # Dashboard (Linux/macOS/WSL)
+tools/host/run-dotnet.sh status          # CLI
+```
+
+The launcher defaults to `web` on port 5000. Application arguments pass through unchanged. Native Windows users,
+or anyone preferring the SDK directly, can use:
+
+```sh
 dotnet run --project host/dotnet/PicoUart -- status
 dotnet run --project host/dotnet/PicoUart -- hardware
 dotnet run --project host/dotnet/PicoUart -- monitor --duration 10
@@ -24,7 +32,8 @@ Other commands are `overruns`, `hardware`, `temperature`, `version`, `toggle-led
 hardware info, and overflow counts are emitted as JSON; `--json` is also accepted. Temperature and version are plain
 values. Select a board with
 `--serial SERIAL` or `--device-path PATH`, but not both. The client rejects ambiguous matches. Linux HID access may
-require suitable hidraw permissions. Reset remains capability-gated and sends the arm command before the reset command.
+require [HID permissions setup](../../tools/README.md#linux-hid-permissions).
+Reset remains capability-gated and sends the arm command before the reset command.
 
 The public `PicoUartHid` class owns the connection and implements `IDisposable`. `Protocol` exposes the pure report
 decoders and typed results. HidSharp supplies cross-platform USB HID discovery and transport.

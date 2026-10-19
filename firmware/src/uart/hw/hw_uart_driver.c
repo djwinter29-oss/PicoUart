@@ -4,6 +4,7 @@
  */
 
 #include "uart/hw/hw_uart_driver.h"
+#include "driver/service_load.h"
 
 #include "uart/backend/policy.h"
 #include "uart/dma/progress.h"
@@ -323,6 +324,7 @@ static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
 
     driver->tx_dma_bytes_in_flight = transfer_length;
     driver->tx_active = true;
+    service_load_note(1u);
     return true;
 }
 
@@ -333,6 +335,7 @@ static void hw_uart_driver_poll_tx(hw_uart_driver_t *driver, bool tx_launch_allo
     }
 
     if (!dma_channel_is_busy((uint)driver->tx_dma_channel)) {
+        service_load_note(1u);
         (void)ring_buffer_commit_consumed(&driver->tx_ring, driver->tx_dma_bytes_in_flight);
         driver->controller_tx_bytes += (uint32_t)driver->tx_dma_bytes_in_flight;
         driver->tx_active = false;
@@ -364,6 +367,9 @@ static void hw_uart_driver_publish_rx(hw_uart_driver_t *driver)
      */
     produced = uart_dma_rx_bytes_produced(progress, driver->rx_dma_last_progress, uart_dma_rx_transfer_count_max());
     driver->controller_rx_bytes += produced;
+    if (produced != 0u) {
+        service_load_note(1u);
+    }
     driver->rx_dma_last_progress = progress;
     ring_buffer_produce_external(&driver->rx_ring, produced);
 }
@@ -378,6 +384,7 @@ static void hw_uart_driver_record_rx_errors(hw_uart_driver_t *driver)
 
     errors = uart_get_hw(driver->config.instance)->rsr;
     if ((errors & UART_UARTRSR_BITS) != 0u) {
+        service_load_note(1u);
         driver->rx_error_count += 1u;
         uart_get_hw(driver->config.instance)->rsr = 0u;
     }
@@ -402,6 +409,7 @@ void hw_uart_driver_poll(hw_uart_driver_t *driver, bool tx_launch_allowed)
             /* Consume a sticky completion before restart so a delayed ISR cannot rearm twice. */
             dma_irqn_acknowledge_channel(HW_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel);
             hw_uart_driver_rearm_rx_dma(driver);
+            service_load_note(1u);
         }
         restore_interrupts(interrupt_status);
     }

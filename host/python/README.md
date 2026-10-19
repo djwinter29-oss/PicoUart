@@ -7,7 +7,7 @@ the PicoUart six-channel USB-to- UART bridge. UART data and line settings remain
 
 - Python 3.10 or newer
 - A PicoUart-compatible RP2040 or RP2350 board
-- Host access to its HID interface; Linux may require a udev rule or suitable permissions for the HID device node
+- Host access to its HID interface; Linux users can use the [permission helpers](../../tools/README.md#linux-hid-permissions)
 
 ## Install
 
@@ -16,6 +16,10 @@ python -m pip install pico-uart
 ```
 
 ## CLI
+
+From a source checkout on Linux/macOS/WSL, `tools/host/run-python.sh` prepares its Python environment and starts the
+dashboard. Pass commands such as `tools/host/run-python.sh status` to use the CLI instead. See
+[Repository Tools](../../tools/README.md) for launcher options.
 
 Read a status sample, watch live health reports, or launch the local dashboard:
 

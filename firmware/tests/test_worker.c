@@ -6,6 +6,9 @@
 #include "unity.h"
 
 #include "uart/worker.h"
+#include "pico/time.h"
+
+absolute_time_t pico_test_time_us;
 
 static uint8_t worker_order[2];
 static size_t worker_order_length;

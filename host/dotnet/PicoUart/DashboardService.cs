@@ -30,6 +30,12 @@ public sealed class DashboardSnapshot
     public string? MetadataError { get; set; }
     public string? HardwareError { get; set; }
     public HardwareInfo? Hardware { get; set; }
+    public BoardIdentity? Identity { get; set; }
+    public string? IdentityError { get; set; }
+    public RuntimeStatus? Runtime { get; set; }
+    public string? RuntimeError { get; set; }
+    public LedStatus? Led { get; set; }
+    public string? LedError { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
     public byte? Sequence { get; set; }
     public bool TrafficIncomplete { get; set; }
@@ -88,8 +94,33 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
         {
             if (client is null)
                 throw new InvalidOperationException(snapshot.Error ?? "PicoUart HID interface is not connected");
-            if (action == "toggle-led") client.ToggleLed();
+            if (action == "toggle-led")
+            {
+                client.ToggleLed();
+                ReadLed(client);
+            }
             else client.ResetBoard();
+        }
+    }
+
+    private void ReadLed(PicoUartHid connection)
+    {
+        try
+        {
+            var led = connection.ReadLed();
+            lock (gate)
+            {
+                snapshot.Led = led;
+                snapshot.LedError = null;
+            }
+        }
+        catch (Exception error) when (IsDeviceError(error))
+        {
+            lock (gate)
+            {
+                snapshot.Led = null;
+                snapshot.LedError = error.Message;
+            }
         }
     }
 
@@ -115,6 +146,42 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                         lock (gate) snapshot.Apply(status);
                     }
                     if (DateTimeOffset.UtcNow < nextMetadataRead) continue;
+                    ReadLed(connection);
+                    try
+                    {
+                        var identity = connection.ReadIdentity();
+                        lock (gate)
+                        {
+                            snapshot.Identity = identity;
+                            snapshot.IdentityError = null;
+                        }
+                    }
+                    catch (Exception error) when (IsDeviceError(error))
+                    {
+                        lock (gate)
+                        {
+                            snapshot.Identity = null;
+                            snapshot.IdentityError = error.Message;
+                        }
+                    }
+                    try
+                    {
+                        var runtime = connection.ReadRuntime();
+                        lock (gate)
+                        {
+                            snapshot.Runtime = runtime;
+                            snapshot.RuntimeError = null;
+                        }
+                    }
+                    catch (Exception error) when (IsDeviceError(error))
+                    {
+                        lock (gate)
+                        {
+                            snapshot.Runtime = null;
+                            snapshot.Led = null;
+                            snapshot.RuntimeError = error.Message;
+                        }
+                    }
                     try
                     {
                         var board = connection.ReadBoardStatus();
@@ -163,6 +230,10 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 {
                     snapshot.Connected = false;
                     snapshot.Error = error.Message;
+                    snapshot.Identity = null;
+                    snapshot.Runtime = null;
+                    snapshot.Board = null;
+                    snapshot.Hardware = null;
                 }
             }
             finally

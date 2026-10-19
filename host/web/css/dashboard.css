@@ -63,22 +63,27 @@ h1 { margin-bottom: 0; font-size: 34px; line-height: 1.05; font-weight: 650; }
 h2 { margin: 0; font-size: 21px; font-weight: 650; }
 h2 span { margin-left: 9px; color: var(--muted); font: 500 12px var(--mono); }
 .sample-time { margin: 0 0 4px; color: var(--muted); font: 11px var(--mono); }
+.page-heading + section { margin-top: 28px; }
 
 .summary {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 28px 0 40px;
   background: var(--paper);
   border-top: 2px solid var(--teal);
   border-bottom: 1px solid var(--line);
 }
+.runtime-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.summary.traffic-summary { grid-template-columns: minmax(0, 1fr); }
+.identity-summary { margin-top: 16px; }
+.runtime-summary strong { font-size: 14px; }
 .summary-item { min-height: 82px; padding: 16px 20px; display: grid; align-content: space-between; border-right: 1px solid var(--line); }
 .summary-item:last-child { border-right: 0; }
 .summary-item span { color: var(--muted); font-size: 12px; }
 .summary-item strong { font: 600 17px var(--mono); overflow-wrap: anywhere; min-width: 0; }
 
 .section-heading { margin-bottom: 16px; align-items: end; }
-.actions { display: flex; gap: 8px; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .button {
   min-height: 38px;
   padding: 0 14px;
@@ -91,6 +96,11 @@ h2 span { margin-left: 9px; color: var(--muted); font: 500 12px var(--mono); }
 .button:disabled { cursor: wait; opacity: 0.55; }
 .button-secondary { background: var(--teal); color: #fff; }
 .button-secondary:hover:not(:disabled) { background: var(--teal-dark); }
+.button-led { min-width: 112px; background: var(--paper); border-color: var(--muted); color: var(--ink); }
+.button-led:hover:not(:disabled) { background: #e8eeeb; }
+.button-led[data-state="on"] { background: var(--teal); border-color: var(--teal); color: #fff; }
+.button-led[data-state="on"]:hover:not(:disabled) { background: var(--teal-dark); }
+.button-led[data-state="unknown"] { color: var(--muted); border-style: dashed; }
 .button-danger { background: #fff; border-color: #dbb5aa; color: var(--coral); }
 .button-danger:hover:not(:disabled) { background: #fff3ef; }
 

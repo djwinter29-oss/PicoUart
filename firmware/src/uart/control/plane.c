@@ -4,6 +4,7 @@
  */
 
 #include "uart/control/plane.h"
+#include "driver/service_load.h"
 
 #include "uart/control/ownership.h"
 #include "uart/line_coding.h"
@@ -24,6 +25,7 @@ static bool uart_control_plane_mailbox_has_pending_port(const uart_control_plane
 static void uart_control_plane_finish_worker_control(uart_control_plane_t *control_plane, uart_port_id_t port_id,
                                                      uint32_t control_generation, bool success)
 {
+    service_load_note(1u);
     uint32_t save = spin_lock_blocking(control_plane->status_lock);
 
     control_plane->pending_controls[port_id].pending = false;
@@ -131,6 +133,7 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
         return;
     }
 
+    service_load_note(1u);
     applied = port->ops->set_line_coding(&port->backend, &pending_control->line_coding);
     if (!applied) {
         bool backend_stopped = (port->ops->is_initialized != NULL) && !port->ops->is_initialized(&port->backend);
@@ -242,6 +245,7 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
         if (!taken) {
             continue;
         }
+        service_load_note(1u);
 
         if (request.port_id != (uint32_t)index) {
             uart_control_plane_finish_mailbox_control(control_plane, (uart_port_id_t)index, request.control_generation,

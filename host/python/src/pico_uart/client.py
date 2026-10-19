@@ -11,16 +11,25 @@ from .protocol import (
     COMMAND_RESET_BOARD,
     COMMAND_TOGGLE_LED,
     HARDWARE_INFO_SIZE,
+    IDENTITY_SIZE,
+    RUNTIME_SIZE,
+    LED_SIZE,
+    REPORT_ID_LED,
+    parse_led,
     OVERFLOW_COUNTS_SIZE,
     REPORT_ID_BOARD_STATUS,
     REPORT_ID_COMMAND,
     REPORT_ID_OVERFLOW_COUNTS,
     REPORT_ID_HARDWARE_INFO,
+    REPORT_ID_IDENTITY,
+    REPORT_ID_RUNTIME,
     REPORT_ID_STATUS,
     RESET_ARM_WINDOW_S,
     STATUS_SIZE,
     parse_board_status,
     parse_hardware_info,
+    parse_identity,
+    parse_runtime,
     parse_overflow_counts,
     parse_status,
     require_payload,
@@ -130,9 +139,24 @@ class PicoUartHid:
         with self._lock:
             return read_hardware_info(self._require_open())
 
+    def read_identity(self) -> dict[str, object]:
+        """Read the product and USB serial / board UID."""
+        with self._lock:
+            return parse_identity(read_feature(self._require_open(), REPORT_ID_IDENTITY, IDENTITY_SIZE))
+
+    def read_runtime(self) -> dict[str, object]:
+        """Read the device's runtime counters, not host session estimates."""
+        with self._lock:
+            return parse_runtime(read_feature(self._require_open(), REPORT_ID_RUNTIME, RUNTIME_SIZE))
+
     def toggle_led(self) -> None:
         with self._lock:
             send_command(self._require_open(), COMMAND_TOGGLE_LED)
+
+    def read_led(self) -> dict[str, bool | None]:
+        """Read the manual override and physical LED output."""
+        with self._lock:
+            return parse_led(read_feature(self._require_open(), REPORT_ID_LED, LED_SIZE))
 
     def reset_board(self) -> None:
         with self._lock:

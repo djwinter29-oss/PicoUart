@@ -6,6 +6,97 @@ namespace PicoUart.Tests;
 [Trait("Category", "Unit")]
 public sealed class ProtocolTests
 {
+    [Theory]
+    [InlineData(0, null, null)]
+    [InlineData(1, false, false)]
+    [InlineData(5, false, true)]
+    [InlineData(7, true, true)]
+    public void LedReportsActualOutputAndManualState(byte flags, bool? manual, bool? output)
+    {
+        Assert.Equal(new LedStatus(manual, output), Protocol.ParseLed([1, flags]));
+    }
+
+    [Theory]
+    [InlineData(2, 1)]
+    [InlineData(1, 8)]
+    [InlineData(1, 2)]
+    [InlineData(1, 3)]
+    [InlineData(1, 4)]
+    public void LedRejectsInvalidState(byte version, byte flags)
+    {
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseLed([version, flags]));
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseLed([]));
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseLed([1, 1, 0]));
+    }
+
+    [Fact]
+    public void BoardIdentityAndRuntimeDecodeDeviceValues()
+    {
+        var identity = new byte[49];
+        identity[0] = 1;
+        System.Text.Encoding.ASCII.GetBytes("PicoUart").CopyTo(identity, 1);
+        System.Text.Encoding.ASCII.GetBytes("0123456789ABCDEF").CopyTo(identity, 33);
+        Assert.Equal(new BoardIdentity("PicoUart", "0123456789ABCDEF"), Protocol.ParseIdentity(identity));
+
+        var runtime = new byte[21];
+        runtime[0] = 2;
+        BinaryPrimitives.WriteUInt64LittleEndian(runtime.AsSpan(1), 4294967296);
+        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 10000);
+        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(11), ushort.MaxValue);
+        BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(13), 65536);
+        BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(17), 270336);
+        var status = Protocol.ParseRuntime(runtime);
+        Assert.Equal(4294967296ul, status.UptimeMs);
+        Assert.Equal(new ushort?[] { 10000, null }, status.CpuUsageBasisPoints);
+        Assert.Equal(65536u, status.RamReservedBytes);
+        Assert.Equal(270336u, status.RamTotalBytes);
+
+        identity[33] = (byte)'G';
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(identity));
+        identity[33] = (byte)'0';
+        identity[10] = (byte)'X';
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(identity));
+        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 10001);
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(runtime));
+        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(17), 65535);
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(runtime));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(20)]
+    [InlineData(22)]
+    [InlineData(48)]
+    [InlineData(50)]
+    public void BoardTelemetryRejectsWrongSizes(int length)
+    {
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(new byte[length]));
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(new byte[length]));
+    }
+
+    [Fact]
+    public void BoardTelemetryRejectsUnknownVersions()
+    {
+        var identity = new byte[49];
+        identity[0] = 2;
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(identity));
+        var runtime = new byte[21];
+        runtime[0] = 3;
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(runtime));
+    }
+
+    [Fact]
+    public void LegacyRuntimeCpuIsNotDisplayedAsMeasuredServiceLoad()
+    {
+        var runtime = new byte[21];
+        runtime[0] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 10000);
+        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(11), 10000);
+        BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(17), 270336);
+        Assert.Equal(new ushort?[] { null, null }, Protocol.ParseRuntime(runtime).CpuUsageBasisPoints);
+    }
+
     [Fact]
     public void StatusDecodesEveryFieldForAllSixChannels()
     {

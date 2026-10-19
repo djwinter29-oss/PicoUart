@@ -4,21 +4,21 @@ import { renderDashboard } from "./view.mjs";
 const connectButton = document.querySelector("#connect");
 const refreshButton = document.querySelector("#refresh");
 const disconnectButton = document.querySelector("#disconnect");
+const toggleLedButton = document.querySelector("#toggle-led");
 const connection = document.querySelector("#connection");
 const statusMessage = document.querySelector("#status-message");
 
 function render(state) {
   renderDashboard(state.dashboard);
-  const connected = ["connected", "reading"].includes(state.phase);
-  const busy = ["connecting", "reading", "disconnecting"].includes(state.phase);
+  const connected = ["connected", "reading", "writing"].includes(state.phase);
+  const busy = ["connecting", "reading", "writing", "disconnecting"].includes(state.phase);
   connection.dataset.state = connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = state.phase === "unsupported" ? "Unavailable"
     : connected ? "Connected" : state.phase === "connecting" ? "Connecting" : "Disconnected";
   connectButton.disabled = state.phase !== "disconnected";
   refreshButton.disabled = !connected || busy;
   disconnectButton.disabled = !connected || state.phase === "disconnecting";
-  document.querySelector("#mcu-id").textContent = state.hardware?.mcu_id ?? "--";
-  document.querySelector("#device-name").textContent = state.deviceName ?? "--";
+  toggleLedButton.disabled = !connected || busy || state.dashboard.led?.output_on === null;
   document.querySelector("#usb-identity").textContent = connected
     ? `${DEVICE_FILTER.vendorId.toString(16).toUpperCase()}:${DEVICE_FILTER.productId.toString(16).toUpperCase()}`
     : "--";
@@ -34,3 +34,5 @@ render(client.state);
 connectButton.addEventListener("click", () => client.connect());
 refreshButton.addEventListener("click", () => client.refresh());
 disconnectButton.addEventListener("click", () => client.disconnect());
+toggleLedButton.addEventListener("click", () => client.toggleLed());
+globalThis.setInterval(() => client.refresh(), 2000);

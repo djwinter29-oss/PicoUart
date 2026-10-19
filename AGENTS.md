@@ -29,12 +29,15 @@ The update script refreshes the host checkout. It does not start a service:
 
 ```sh
 set -euo pipefail
-tools/host/setup-venv.sh
+python3 -m venv host/python/.venv
+host/python/.venv/bin/python -m pip install --require-hashes -r host/python/requirements-lock.txt
+host/python/.venv/bin/python -m pip install --no-deps --no-build-isolation -e host/python
 . tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0 --sdk-revision 98a542c1a62fb549ffb5d66a3e5892b06276b670
 ```
 
-`tools/host/setup-venv.sh` installs `host/python/requirements-lock.txt` into `host/python/.venv` and installs
-`pico-uart` editable. `setup-sdk-env.sh` is idempotent: it clones Pico SDK 2.3.0
+The Python commands install locked development dependencies and `pico-uart` editable; see
+[host developer setup](docs/development/host-tools.md#python-environment-setup).
+`setup-sdk-env.sh` is idempotent: it clones Pico SDK 2.3.0
 (`98a542c1a62fb549ffb5d66a3e5892b06276b670`) into gitignored `.pico-sdk/` when that checkout is missing, and otherwise
 confirms the pin. Keep the SDK line in the update script. A fresh checkout does not carry `.pico-sdk/`.
 

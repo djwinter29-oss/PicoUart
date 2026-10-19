@@ -12,6 +12,7 @@
 #include "usb/usb_hid.h"
 
 #include "driver/led.h"
+#include "driver/service_load.h"
 #include "driver/led_activity.h"
 #include "pico/time.h"
 #include "tusb.h"
@@ -131,6 +132,7 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
         bool deadline_is_nil = is_nil_time(pending->deadline);
         bool deadline_reached = !deadline_is_nil && time_reached(pending->deadline);
         if (usb_cdc_soft_pending_has_timed_out(deadline_is_nil, deadline_reached)) {
+            service_load_note(0u);
             pending->pending = false;
             uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
             return;
@@ -139,12 +141,14 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
 
     /* Permanent rejects must not retry forever with soft-pending stuck true. */
     if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &pending->line_coding)) {
+        service_load_note(0u);
         pending->pending = false;
         uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
         return;
     }
 
     if (usb_cdc_apply_line_coding(itf, &pending->line_coding, pending->control_generation)) {
+        service_load_note(0u);
         pending->pending = false;
     }
 }
@@ -169,6 +173,7 @@ static void usb_cdc_bridge_usb_to_uart(uint8_t itf)
         size_t drained = uart_driver_fill_tx((uart_port_id_t)itf, available, usb_cdc_usb_reader, &itf);
 
         if (drained != 0u) {
+            service_load_note(0u);
             usb_cdc_stats[itf].rx_bytes += (uint32_t)drained;
             led_activity_window_note(&usb_cdc_activity_window, to_us_since_boot(get_absolute_time()),
                                      USB_CDC_ACTIVITY_LED_ON_US);
@@ -185,6 +190,7 @@ static uint32_t usb_cdc_usb_writer(void *context, const uint8_t *data, uint32_t 
 static void usb_cdc_flush_if_due(uint8_t itf)
 {
     if (usb_cdc_tx_flush_pending[itf] && time_reached(usb_cdc_tx_flush_deadline[itf])) {
+        service_load_note(0u);
         tud_cdc_n_write_flush(itf);
         usb_cdc_tx_flush_pending[itf] = false;
     }
@@ -215,7 +221,9 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
 
     if (writable == 0u) {
         /* Still retire RX overruns so a stalled host cannot wrap the ring. */
-        (void)uart_driver_recover_rx((uart_port_id_t)itf);
+        if (uart_driver_recover_rx((uart_port_id_t)itf) != 0u) {
+            service_load_note(0u);
+        }
         return;
     }
 
@@ -225,6 +233,7 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
 
     written = uart_driver_drain_rx((uart_port_id_t)itf, writable, usb_cdc_usb_writer, &itf);
     if (written != 0u) {
+        service_load_note(0u);
         usb_cdc_stats[itf].tx_bytes += (uint32_t)written;
         led_activity_window_note(&usb_cdc_activity_window, to_us_since_boot(get_absolute_time()),
                                  USB_CDC_ACTIVITY_LED_ON_US);
@@ -294,6 +303,9 @@ void usb_cdc_poll(void)
 {
     uint8_t start_itf = usb_cdc_poll_start_itf;
 
+    if (tud_task_event_ready()) {
+        service_load_note(0u);
+    }
     tud_task();
 
     for (uint8_t offset = 0u; offset < USB_CDC_PORT_COUNT; ++offset) {

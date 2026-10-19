@@ -32,6 +32,12 @@ def _empty_snapshot() -> dict[str, Any]:
         "metadata_error": None,
         "hardware_error": None,
         "hardware": None,
+        "identity": None,
+        "identity_error": None,
+        "runtime": None,
+        "runtime_error": None,
+        "led": None,
+        "led_error": None,
         "updated_at": None,
         "sequence": None,
         "traffic_incomplete": False,
@@ -77,7 +83,9 @@ class DashboardService:
             return deepcopy(self._snapshot)
 
     def toggle_led(self) -> None:
-        self._require_client().toggle_led()
+        client = self._require_client()
+        client.toggle_led()
+        self._read_led(client)
 
     def reset_board(self) -> None:
         self._require_client().reset_board()
@@ -117,6 +125,11 @@ class DashboardService:
                 with self._lock:
                     self._snapshot["connected"] = False
                     self._snapshot["error"] = str(error)
+                    self._snapshot["identity"] = None
+                    self._snapshot["runtime"] = None
+                    self._snapshot["led"] = None
+                    self._snapshot["board"] = None
+                    self._snapshot["hardware"] = None
             finally:
                 with self._lock:
                     if self._client is client:
@@ -160,7 +173,31 @@ class DashboardService:
                     channel["traffic"][field] = delta
                     channel["totals"][field] += delta
 
+    def _read_led(self, client: PicoUartHid) -> None:
+        try:
+            led = client.read_led()
+        except (OSError, RuntimeError) as error:
+            with self._lock:
+                self._snapshot["led"] = None
+                self._snapshot["led_error"] = str(error)
+        else:
+            with self._lock:
+                self._snapshot["led"] = led
+                self._snapshot["led_error"] = None
+
     def _read_metadata(self, client: PicoUartHid) -> None:
+        self._read_led(client)
+        for field, reader in (("identity", client.read_identity), ("runtime", client.read_runtime)):
+            try:
+                value = reader()
+            except (OSError, RuntimeError) as error:
+                with self._lock:
+                    self._snapshot[field] = None
+                    self._snapshot[f"{field}_error"] = str(error)
+            else:
+                with self._lock:
+                    self._snapshot[field] = value
+                    self._snapshot[f"{field}_error"] = None
         try:
             board = client.read_board_status()
             overflows = client.read_overflow_counts()

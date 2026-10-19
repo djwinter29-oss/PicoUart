@@ -18,9 +18,22 @@ own assets and renderer. Its hardware-free checks use Node rather than the Pytho
 
 ## Python Environment Setup
 
-Use the repository setup helper to create the editable Python environment and install locked development dependencies:
-`tools/host/setup-venv.sh` on Linux/macOS or `tools/host/setup-venv.ps1` on Windows. Options and other host setup
-commands are documented in [Repository Tools](../../tools/README.md).
+To run an application from a checkout, use the [host launchers](../../tools/README.md); no separate setup command is
+needed. For development and tests, explicitly create an environment and install the hash-locked development packages
+from the repository root:
+
+```sh
+python3 -m venv host/python/.venv
+host/python/.venv/bin/python -m pip install --require-hashes -r host/python/requirements-lock.txt
+host/python/.venv/bin/python -m pip install --no-deps --no-build-isolation -e host/python
+```
+
+On native Windows, use `python` for the first command and `host/python/.venv/Scripts/python.exe` for subsequent commands.
+Repeat both install commands when dependency manifests or locks change. The launchers are POSIX shell scripts for
+Linux/macOS/WSL; native Windows application commands remain in the package guides.
+If hidapi has no wheel for your Python/platform, installation needs its native build prerequisites. Installation errors
+stop the Python launcher; it does not silently run without HID access. A supported Python version with an available
+wheel avoids that source build. The WebHID launcher needs only the Python standard library.
 
 ## Python Layout
 
@@ -47,17 +60,22 @@ Measure package coverage from `host/python` with:
 
 ## Python Dependencies and Locking
 
-`requirements.txt` lists runtime dependencies. `requirements-dev.txt` adds the test runner. CI and release qualification
-install `requirements-lock.txt` with hash verification. After changing direct dependencies, regenerate that lock from
+`requirements.txt` lists runtime dependencies. `requirements-dev.txt` adds the test runner. The Python launcher installs
+`requirements-runtime-lock.txt` from public PyPI, without inheriting private pip index configuration. CI and release
+qualification install `requirements-lock.txt` with hash verification. After changing direct dependencies, regenerate both
+locks from
 the repository root with:
 
 ```bash
 uv pip compile host/python/requirements-dev.txt --universal --python-version 3.10 \
   --generate-hashes --no-emit-index-url --output-file host/python/requirements-lock.txt
+uv pip compile host/python/requirements.txt --universal --python-version 3.10 \
+  --generate-hashes --no-emit-index-url --output-file host/python/requirements-runtime-lock.txt
 ```
 
-The existing [dependency contract test](../../tests/contracts/test_firmware_contract.py) checks that the direct pins
-appear in the generated lock.
+The [dependency contract tests](../../tests/contracts/test_firmware_contract.py) check direct pins, alignment between both
+locks, and that the runtime lock contains no test packages. hidapi `0.14.0.post4` supplies a Python 3.13 Linux ARM64 wheel,
+avoiding the original `0.14.0` source-build failure on that platform.
 
 ## Python Distribution
 
@@ -92,7 +110,7 @@ See the [.NET host guide](../../host/dotnet/README.md#publish) for publishing an
 
 ## WebHID Development
 
-WebHID is a standalone, read-only browser app in `host/webhid`, independent of the Python/.NET server and shared
+WebHID is a standalone browser app in `host/webhid`, independent of the Python/.NET server and shared
 `host/web` frontend. Keep its assets and device code local to that app; user setup, deployment, architecture, and tests
 are documented in the [WebHID guide](../../host/webhid/README.md).
 
@@ -106,3 +124,14 @@ Python and .NET serve the same frontend from `host/web`. Keep templates backend-
 contract; do not add a second frontend. The [.NET integration tests](../../tests/tooling/test_dotnet_host.py) guard
 shared assets and API behavior. Distribution details belong in the [Python](../../host/python/README.md) and
 [.NET](../../host/dotnet/README.md) guides.
+
+Both dashboards separate device identity from live runtime status, retaining the six UART channel table. The
+`/api/status` snapshot carries `identity` (product and serial) and `runtime` (uptime, per-core service-load basis points, reserved
+and total RAM), with independent `identity_error` and `runtime_error` fields. Unsupported or failed feature reads clear
+the affected values without discarding legacy channel/board reports; disconnect clears device identity and runtime.
+Metadata is sampled every two seconds. See the [HID report reference](../design/usb/hid-report-reference.md) for
+the authoritative field definitions, UID source, service-load semantics and legacy compatibility, and RAM accounting.
+
+`led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
+The Runtime status heading contains the physical LED indicator and manual toggle; sequence numbers remain internal
+for report-gap detection rather than appearing in the UI.

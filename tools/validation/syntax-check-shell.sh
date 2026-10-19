@@ -5,6 +5,11 @@ for script in \
     tools/firmware/build.sh \
     tools/firmware/load.sh \
     tools/firmware/setup-sdk-env.sh \
+    tools/host/run-python.sh \
+    tools/host/run-dotnet.sh \
+    tools/host/run-webhid.sh \
+    tools/host/hid-permissions-check.sh \
+    tools/host/hid-permissions-setup.sh \
     tools/release/resolve-release-version.sh \
     tools/validation/validate.sh \
     tools/validation/coverage-firmware-c.sh \

@@ -23,7 +23,7 @@ VENDOR_ID = 0xCAFE  # Keep in sync with firmware/src/config/usb_identity.h
 PRODUCT_ID = 0x4010  # Development placeholder; see SECURITY.md
 USAGE_PAGE = 0xFF00
 USAGE = 0x0001
-PRODUCT_STRING = "PicoUart CDC+HID PIO 8N1"
+PRODUCT_STRING = "PicoUart"
 HID_INTERFACE_NUMBER = 12
 
 

@@ -25,5 +25,7 @@
 #define PICO_UART_USB_VID 0xCafeu
 /** @brief USB product ID used by PicoUart (development placeholder). */
 #define PICO_UART_USB_PID 0x4010u
+/** @brief ASCII product name shared by USB enumeration and HID board identity. */
+#define PICO_UART_USB_PRODUCT "PicoUart"
 
 #endif
