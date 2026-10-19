@@ -32,7 +32,12 @@
     </section>
 
     <section aria-labelledby="identity-title">
-      <div class="section-heading"><h2 id="identity-title">Device identity</h2></div>
+      <div class="section-heading">
+        <h2 id="identity-title">Device identity</h2>
+        <div class="actions" aria-label="Device connection">
+          <button class="button button-secondary" id="connect" type="button" disabled>Connect</button>
+        </div>
+      </div>
       <div class="summary identity-summary">
         <div class="summary-item"><span>Product</span><strong id="product-name">--</strong></div>
         <div class="summary-item"><span>Microcontroller</span><strong id="mcu">--</strong></div>
@@ -68,11 +73,6 @@
         <div>
           <p class="eyebrow">LIVE HEALTH AND TRAFFIC</p>
           <h2 id="channels-title">UART channels <span>01-06</span></h2>
-        </div>
-        <div class="actions" aria-label="Device connection">
-          <button class="button button-secondary" id="connect" type="button" disabled>Connect</button>
-          <button class="button button-secondary" id="refresh" type="button" disabled>Refresh</button>
-          <button class="button button-danger" id="disconnect" type="button" disabled>Disconnect</button>
         </div>
       </div>
       <div class="table-scroll">

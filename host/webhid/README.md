@@ -24,12 +24,13 @@ parent directory, or files from `host/web` are needed.
 Use `--port N` to change the local port. Without a POSIX shell (for example native Windows), run
 `python -m http.server 8000 --bind 127.0.0.1 --directory host/webhid` from the repository root instead.
 
-Click Connect and select the PicoUart vendor HID interface. Device selection is explicitly user-initiated; the page
+Click Connect at the top-right of Device identity and select the PicoUart vendor HID interface. The same button
+becomes Disconnect while connected. Device selection is explicitly user-initiated; the page
 never reconnects automatically or requests a broader USB device filter. Metadata and runtime refresh every two seconds;
-Refresh also reads them immediately. Disconnect closes the browser connection; unplugging clears the last sample.
+Disconnect closes the browser connection; unplugging clears the last sample.
 Older firmware may supply only some diagnostics; unavailable fields remain `--` with an explicit read error.
 Read failures leave
-the device available for Refresh/Disconnect, but clear stale metadata rather than inventing a clock or MCU.
+the device available for automatic polling or Disconnect, but clear stale metadata rather than inventing a clock or MCU.
 
 Linux may require [HID permissions setup](../../tools/README.md#linux-hid-permissions) even after browser permission is
 granted. Close competing HID clients when
