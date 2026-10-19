@@ -121,6 +121,12 @@ def test_dotnet_status_matches_python_dashboard_shape(server):
         assert channel["totals"].keys() == expected["channels"][0]["totals"].keys()
 
 
+def test_dotnet_startup_prints_dashboard_url_without_framework_info_logs(server, published_host):
+    log = (published_host / "server.log").read_text()
+    assert f"PicoUart dashboard: http://127.0.0.1:{server}/ (Ctrl+C to stop)" in log
+    assert "info: Microsoft." not in log
+
+
 def test_dotnet_controls_reject_bad_hosts_and_csrf(server):
     token, cookie, _, _ = session(server)
     path = "/api/actions/toggle-led"

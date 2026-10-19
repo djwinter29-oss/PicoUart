@@ -122,23 +122,16 @@ def _open_hidraw_device(path: str) -> Any:
 def open_enumerated_device(device_info: dict[str, Any]) -> Any:
     """Open one enumerated HID device, resolving Linux interface paths when needed."""
     require_hid()
-    device = hid.device()
     path = device_info.get("path", b"")
-
+    original_path = os.fsdecode(path)
+    resolved_path = _resolve_hidraw_path(original_path)
     try:
+        if resolved_path is not None:
+            # libusb may detach usbhid and leave .NET/WebHID unable to discover the board after close.
+            return _open_hidraw_device(resolved_path)
+        device = hid.device()
         device.open_path(path)
     except OSError as error:
-        original_path = path.decode("utf-8", errors="replace") if isinstance(path, bytes) else path
-        resolved_path = _resolve_hidraw_path(original_path)
-        if resolved_path is not None:
-            try:
-                device.open_path(os.fsencode(resolved_path))
-                return device
-            except OSError:
-                try:
-                    return _open_hidraw_device(resolved_path)
-                except OSError:
-                    pass
         raise RuntimeError(
             f"failed to open PicoUart HID interface at {original_path}; check hidraw permissions"
         ) from error

@@ -73,8 +73,6 @@ h2 span { margin-left: 9px; color: var(--muted); font: 500 12px var(--mono); }
   border-top: 2px solid var(--teal);
   border-bottom: 1px solid var(--line);
 }
-.runtime-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.summary.traffic-summary { grid-template-columns: minmax(0, 1fr); }
 .identity-summary { margin-top: 16px; }
 .runtime-summary strong { font-size: 14px; }
 .summary-item { min-height: 82px; padding: 16px 20px; display: grid; align-content: space-between; border-right: 1px solid var(--line); }

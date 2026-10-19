@@ -60,6 +60,8 @@ static void WriteJson<TValue>(TValue value) => Console.WriteLine(JsonSerializer.
 static async Task RunWeb(Options options)
 {
     var builder = WebApplication.CreateBuilder(Array.Empty<string>());
+    builder.Logging.AddFilter("Microsoft",
+        builder.Configuration.GetValue("Logging:LogLevel:Microsoft", LogLevel.Warning));
     builder.WebHost.UseUrls($"http://127.0.0.1:{options.Port}");
     builder.Services.AddDistributedMemoryCache();
     builder.Services.AddSession(configuration =>
@@ -129,6 +131,8 @@ static async Task RunWeb(Options options)
         }
         return Results.Json(new { ok = true });
     });
+    app.Lifetime.ApplicationStarted.Register(() =>
+        Console.WriteLine($"PicoUart dashboard: http://127.0.0.1:{options.Port}/ (Ctrl+C to stop)"));
     await app.RunAsync();
 }
 

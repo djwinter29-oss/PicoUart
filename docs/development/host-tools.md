@@ -35,6 +35,10 @@ If hidapi has no wheel for your Python/platform, installation needs its native b
 stop the Python launcher; it does not silently run without HID access. A supported Python version with an available
 wheel avoids that source build. The WebHID launcher needs only the Python standard library.
 
+On Linux, Python prefers the existing hidraw node even when hidapi uses libusb. This avoids detaching the kernel HID
+driver and breaking subsequent .NET/WebHID discovery. A hidraw permission error is surfaced rather than retrying through
+libusb. Boards left detached by an older client need a USB reconnect after that client closes.
+
 ## Python Layout
 
 The installable package lives in `host/python/src/pico_uart`; use its public API rather than adding another top-level
@@ -125,7 +129,9 @@ contract; do not add a second frontend. The [.NET integration tests](../../tests
 shared assets and API behavior. Distribution details belong in the [Python](../../host/python/README.md) and
 [.NET](../../host/dotnet/README.md) guides.
 
-Both dashboards separate device identity from live runtime status, retaining the six UART channel table. The
+Both dashboards separate device identity from live runtime status, retaining the six UART channel table.
+The runtime cards include total RX overflow across all six channels alongside uptime, service load, RAM and temperature.
+The
 `/api/status` snapshot carries `identity` (product and serial) and `runtime` (uptime, per-core service-load basis points, reserved
 and total RAM), with independent `identity_error` and `runtime_error` fields. Unsupported or failed feature reads clear
 the affected values without discarding legacy channel/board reports; disconnect clears device identity and runtime.

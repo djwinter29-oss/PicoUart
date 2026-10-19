@@ -36,7 +36,9 @@ for (const frontend of ["webhid", "web"]) {
       assert.ok(identity.includes(`id="${id}"`));
       assert.ok(!runtime.includes(`id="${id}"`));
     }
-    for (const id of ["uptime", "cpu-usage", "ram-usage", "temperature"]) {
+    assert.ok(!html.includes("traffic-summary"));
+    assert.equal([...html.matchAll(/id="overflow-total"/g)].length, 1);
+    for (const id of ["uptime", "cpu-usage", "ram-usage", "temperature", "overflow-total"]) {
       assert.ok(runtime.includes(`id="${id}"`));
       assert.ok(!identity.includes(`id="${id}"`));
     }
@@ -69,6 +71,12 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(text("cpu-usage"), "100.0% / --");
       assert.equal(text("ram-usage"), "64.0 / 512 KiB (12.5%)");
       assert.equal(text("temperature"), "25.30 \u00b0C");
+      assert.equal(text("overflow-total"), "0 B");
+      render({ ...data, overflow_counts: [1, 2, 3, 4, 5, 6] });
+      assert.equal(text("overflow-total"), "21 B");
+      render({ ...data, overflow_counts: [null, 0, 0, 0, 0, 0] });
+      assert.equal(text("overflow-total"), "--");
+      render(data);
       assert.equal(text("toggle-led"), "Board LED: On");
       assert.equal(document.querySelector("#toggle-led").dataset.state, "on");
       render({ ...data, led: { manual_on: false, output_on: false } });

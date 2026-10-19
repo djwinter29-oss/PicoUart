@@ -23,6 +23,13 @@ dotnet run --project host/dotnet/PicoUart -- monitor --duration 10
 dotnet run --project host/dotnet/PicoUart -- web --port 5001
 ```
 
+Web startup prints one dashboard URL; framework warnings and errors remain visible. For framework diagnostic logs, set
+`Logging__LogLevel__Microsoft=Information` before launching.
+
+If the page loads but reports no HID interface, check the error in the page or `/api/status`, then follow
+[Linux HID permissions](../../tools/README.md#linux-hid-permissions). After using older Python builds backed by libusb,
+Linux's HID driver may remain detached: close the other client and reconnect the board's USB data cable to restore it.
+
 The dashboard binds only to `http://127.0.0.1:5001` in this example. Both servers implement `/api/status` and
 `/api/actions/{toggle-led,reset}` with the same JSON field names. The HTML's `{{ csrf_token }}` placeholder is filled
 by each server, and control requests require that session's token in `X-CSRF-Token`. Keep shared frontend changes

@@ -55,13 +55,13 @@ def test_discovery_resolves_linux_interface_path_to_hidraw(monkeypatch, hid_modu
     devices = [_exact_device(hid_module, b"1-3:1.12")]
     opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
     monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda path: "/dev/hidraw7")
+    adapter = object()
+    monkeypatch.setattr(hid_module, "_open_hidraw_device", lambda path: adapter)
+    assert hid_module.open_device() is adapter
+    assert opened_paths == []
 
-    hid_module.open_device()
 
-    assert opened_paths == [b"1-3:1.12"]
-
-
-def test_discovery_uses_hidraw_adapter_when_hidapi_open_fails(monkeypatch, hid_module):
+def test_discovery_uses_hidraw_without_attempting_libusb_open(monkeypatch, hid_module):
     devices = [_exact_device(hid_module, b"1-3:1.12")]
     opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
     fallback_device = object()
@@ -76,13 +76,13 @@ def test_discovery_uses_hidraw_adapter_when_hidapi_open_fails(monkeypatch, hid_m
     monkeypatch.setattr(hid_module.hid, "device", FailingDevice)
 
     assert hid_module.open_device() is fallback_device
-    assert opened_paths == [b"1-3:1.12", b"/dev/hidraw7"]
+    assert opened_paths == []
 
 
-def test_discovery_uses_hidapi_with_resolved_hidraw_path(monkeypatch, hid_module):
-    devices = [_exact_device(hid_module, b"1-3:1.12")]
+def test_discovery_uses_hidapi_when_no_hidraw_path_is_available(monkeypatch, hid_module):
+    devices = [_exact_device(hid_module, b"native-path")]
     opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
-    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda _path: "/dev/hidraw7")
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda _path: None)
 
     class Device:
         def open_path(self, path):
@@ -95,7 +95,7 @@ def test_discovery_uses_hidapi_with_resolved_hidraw_path(monkeypatch, hid_module
     result = hid_module.open_device()
 
     assert isinstance(result, Device)
-    assert opened_paths == [b"1-3:1.12", b"/dev/hidraw7"]
+    assert opened_paths == [b"native-path"]
 
 
 def test_discovery_reports_open_failure_when_hidraw_fallback_fails(monkeypatch, hid_module):
