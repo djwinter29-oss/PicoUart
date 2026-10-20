@@ -3,7 +3,7 @@
 A browser dashboard with separate device identity and live runtime sections, plus six-channel health and
 traffic. It talks directly to PicoUart through WebHID; there is no Python/.NET application backend. Its HTML, CSS,
 favicon, and renderer live entirely in this folder, independently of the Python/.NET dashboard.
-Device identity provides an **Identify board** action and LED output state; see
+Device identity provides a **Board LED** toggle with an output-state indicator; see
 [dashboard controls](../../docs/development/host-tools.md#pythonnet-web-ui). Reset and WebSerial are not implemented.
 
 ## Run
@@ -27,7 +27,7 @@ Use `--port N` to change the local port. Without a POSIX shell (for example nati
 
 Click Connect at the top-right of Device identity and select the PicoUart vendor HID interface. The same button
 becomes Disconnect while connected. Device selection is explicitly user-initiated; the page
-never reconnects automatically or requests a broader USB device filter. Metadata and runtime refresh every two seconds;
+never reconnects automatically or requests a broader USB device filter. Metadata and runtime refresh every second;
 Disconnect closes the browser connection; unplugging clears the last sample.
 Older firmware may supply only some diagnostics; unavailable fields remain `--` with an explicit read error.
 Read failures leave

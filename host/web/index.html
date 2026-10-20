@@ -7,7 +7,7 @@
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/dashboard.css">
-  <script src="/js/dashboard.js" defer></script>
+  <script src="/js/dashboard.js?v=2" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -34,8 +34,7 @@
         <h2 id="identity-title">Device identity</h2>
         <div class="actions" aria-label="Board identification">
           <button class="button button-led" id="toggle-led" type="button" data-state="unknown"
-            title="Toggle the board LED to identify this device; USB activity may also light it" disabled>Identify board</button>
-          <span class="led-state" id="led-state">LED --</span>
+            title="Toggle manual LED state; USB activity may also light the LED" disabled>Board LED: --</button>
         </div>
       </div>
       <div class="summary identity-summary">

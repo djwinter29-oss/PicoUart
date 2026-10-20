@@ -101,11 +101,13 @@ h2 span { margin-left: 9px; color: var(--muted); font: 500 12px var(--mono); }
 .button:disabled { cursor: wait; opacity: 0.55; }
 .button-secondary { background: var(--teal); color: #fff; box-shadow: 0 2px 4px #087b7026; }
 .button-secondary:hover:not(:disabled) { background: var(--teal-dark); }
-.button-led { min-width: 112px; background: var(--paper); border-color: #cbd6d3; color: var(--ink); }
+.button-led { min-width: 136px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--paper); border-color: #cbd6d3; color: var(--ink); }
+.button-led::before { content: ""; width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: #a7b4b0; }
+.button-led[data-state="on"]::before { background: var(--teal); }
+.button-led[data-state="unknown"]::before { background: transparent; border: 1px solid var(--muted); }
 .button-led:hover:not(:disabled) { background: #e8eeeb; }
 .button-led[data-state="on"] { border-color: var(--teal); }
 .button-led[data-state="unknown"] { color: var(--muted); border-style: dashed; }
-.led-state { color: var(--muted); font: 12px var(--mono); white-space: nowrap; }
 .button-danger { background: #fff; border-color: #dbb5aa; color: var(--coral); }
 .button-danger:hover:not(:disabled) { background: #fff3ef; }
 

@@ -194,9 +194,8 @@ function render(data) {
     : "--";
   const led = data.connected ? data.led : null;
   const ledButton = document.querySelector("#toggle-led");
-  ledButton.textContent = "Identify board";
+  ledButton.textContent = `Board LED: ${led?.output_on == null ? "--" : led.output_on ? "On" : "Off"}`;
   ledButton.dataset.state = led?.output_on == null ? "unknown" : led.output_on ? "on" : "off";
-  document.querySelector("#led-state").textContent = `LED ${led?.output_on == null ? "--" : led.output_on ? "on" : "off"}`;
   ledButton.title = led?.manual_on == null ? "Toggle manual LED state; USB activity may also light the LED"
     : `Toggle manual LED state (currently ${led.manual_on ? "On" : "Off"}); USB activity may also light the LED`;
   document.querySelector("#toggle-led").disabled = actionBusy || !data.connected || led?.output_on === null;

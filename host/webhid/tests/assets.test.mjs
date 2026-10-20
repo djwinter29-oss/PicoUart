@@ -10,7 +10,7 @@ test("HTML references only WebHID-owned assets", () => {
   const html = readFileSync(join(root, "index.html"), "utf8");
   for (const match of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
     assert.ok(!match[1].startsWith(".."), match[1]);
-    assert.ok(existsSync(join(root, match[1])), match[1]);
+    assert.ok(existsSync(join(root, match[1].split("?")[0])), match[1]);
   }
   assert.match(html, /href="css\/dashboard\.css"/);
   assert.match(html, /href="favicon\.svg"/);
@@ -22,7 +22,7 @@ test("WebHID module imports stay within its own codebase", () => {
     const file = join(root, "js", name);
     const source = readFileSync(file, "utf8");
     for (const match of source.matchAll(/from "([^"]+)"/g)) {
-      const target = resolve(dirname(file), match[1]);
+      const target = resolve(dirname(file), match[1].split("?")[0]);
       assert.ok(!relative(root, target).startsWith(".."), match[1]);
       assert.ok(existsSync(target), match[1]);
     }

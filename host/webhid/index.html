@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/dashboard.css">
   <link rel="stylesheet" href="css/webhid.css">
-  <script type="module" src="js/app.mjs"></script>
+  <script type="module" src="js/app.mjs?v=2"></script>
 </head>
 <body>
   <header class="topbar">
@@ -35,8 +35,7 @@
         <h2 id="identity-title">Device identity</h2>
         <div class="actions" aria-label="Device connection and identification">
           <button class="button button-led" id="toggle-led" type="button" data-state="unknown"
-            title="Toggle the board LED to identify this device; USB activity may also light it" disabled>Identify board</button>
-          <span class="led-state" id="led-state">LED --</span>
+            title="Toggle manual LED state; USB activity may also light the LED" disabled>Board LED: --</button>
           <button class="button button-secondary" id="connect" type="button" disabled>Connect</button>
         </div>
       </div>
@@ -88,9 +87,6 @@
         </table>
       </div>
       <p class="traffic-note" id="traffic-note" hidden></p>
-      <dl class="device-details">
-        <div><dt>USB identity</dt><dd id="usb-identity">--</dd></div>
-      </dl>
     </section>
 
     <footer class="status-line" role="status" aria-live="polite">

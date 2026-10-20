@@ -38,9 +38,8 @@ function fixture(secure = true, hid = {}) {
   vm.runInNewContext(source, { document, navigator: { hid }, isSecureContext: secure,
     PicoUartWebHid: FakeClient, renderDashboard() {},
     updateReportAge(data) { assert.equal(data, client.state.dashboard); },
-    DEVICE_FILTER: { vendorId: 0xcafe, productId: 0x4010 },
     setInterval(callback, interval) {
-      if (interval === 2000) polling = { callback, interval };
+      if (!polling) polling = { callback, interval };
       else agePolling = { callback, interval };
     } });
   return { html, client, polling, agePolling, get: id => document.querySelector(`#${id}`) };
@@ -55,11 +54,13 @@ test("one connection button belongs to Device identity, with no separate refresh
   assert.equal([...html.matchAll(/id="connect"/g)].length, 1);
   assert.ok(!html.includes('id="disconnect"'));
   assert.ok(!html.includes('id="refresh"'));
+  assert.ok(!html.includes('id="usb-identity"'));
+  assert.ok(!html.includes("USB identity"));
 });
 
-test("metadata continues refreshing automatically every two seconds", () => {
+test("metadata continues refreshing automatically every second", () => {
   const { client, polling, agePolling } = fixture();
-  assert.equal(polling.interval, 2000);
+  assert.equal(polling.interval, 1000);
   polling.callback();
   assert.deepEqual(client.calls, ["refresh"]);
   assert.equal(agePolling.interval, 1000);

@@ -226,7 +226,7 @@ for (const frontend of ["webhid", "web"]) {
     assert.ok(runtime.includes("RAM (reserved / total)"));
     assert.ok(!html.includes('id="sequence"'));
     assert.ok(identity.includes('id="toggle-led"'));
-    assert.ok(identity.includes('id="led-state"'));
+    assert.ok(!html.includes('id="led-state"'));
     assert.ok(!runtime.includes('id="toggle-led"'));
     assert.ok(!html.includes("LIVE REPORT") && !html.includes("LIVE HEALTH AND TRAFFIC"));
     const css = readFileSync(new URL(`../../${frontend}/css/dashboard.css`, import.meta.url), "utf8");
@@ -291,21 +291,17 @@ for (const frontend of ["webhid", "web"]) {
       render({ ...data, overflow_counts: [null, 0, 0, 0, 0, 0] });
       assert.equal(text("overflow-total"), "--");
       render(data);
-      assert.equal(text("toggle-led"), "Identify board");
-      assert.equal(text("led-state"), "LED on");
+      assert.equal(text("toggle-led"), "Board LED: On");
       assert.equal(document.querySelector("#toggle-led").dataset.state, "on");
       render({ ...data, led: { manual_on: false, output_on: false } });
-      assert.equal(text("toggle-led"), "Identify board");
-      assert.equal(text("led-state"), "LED off");
+      assert.equal(text("toggle-led"), "Board LED: Off");
       assert.equal(document.querySelector("#toggle-led").dataset.state, "off");
       render({ ...data, led: null, led_error: "LED unsupported" });
-      assert.equal(text("toggle-led"), "Identify board");
-      assert.equal(text("led-state"), "LED --");
+      assert.equal(text("toggle-led"), "Board LED: --");
       assert.equal(document.querySelector("#toggle-led").dataset.state, "unknown");
       assert.match(text("status-message"), /LED unsupported/);
       render({ ...data, connected: false });
-      assert.equal(text("toggle-led"), "Identify board");
-      assert.equal(text("led-state"), "LED --");
+      assert.equal(text("toggle-led"), "Board LED: --");
       assert.equal(document.querySelector("#toggle-led").dataset.state, "unknown");
       if (frontend === "web") {
         render({ ...data, led: null });

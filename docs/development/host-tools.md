@@ -139,8 +139,9 @@ Metadata is sampled every two seconds. See the [HID report reference](../design/
 the authoritative field definitions, UID source, service-load semantics and legacy compatibility, and RAM accounting.
 
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
-The Device identity heading contains an outline **Identify board** action and separate physical LED state.
-The action toggles the manual LED setting; USB activity may also light the LED. Sequence numbers remain internal
+The Device identity heading contains one outline **Board LED: On/Off** button with a physical-output indicator dot.
+Clicking toggles the manual LED setting; USB activity may also light the LED. Unknown output is shown as `--`.
+Sequence numbers remain internal
 for report-gap detection rather than appearing in the UI. Compact identity/runtime cards leave more room for UART
 monitoring, and uptime omits zero-valued units except seconds.
 The connection indicator includes report age, updated every second and marked stale after three seconds without a
@@ -152,7 +153,8 @@ All three dashboards show applied baud/framing and TX/RX GPIOs from the optional
 [channel diagnostic reports](../design/usb/hid-report-reference.md#reports-10-15-channel-diagnostics), never from a
 hard-coded board map or a CDC request that might have been rejected. Snapshots expose `channel_diagnostics` (six records
 in channel order) and an independent `diagnostics_error`; unsupported/failed reads clear those records while legacy
-status reports continue to work. Diagnostics refresh with the two-second metadata cycle. Older firmware displays
+status reports continue to work. Diagnostics refresh with metadata: every second in WebHID and every two seconds in
+the Python/.NET hosts. Older firmware displays
 unavailable settings and cannot provide counts or detection times.
 
 Each channel shows a health badge and simple error flags with short troubleshooting tooltips, without expandable
