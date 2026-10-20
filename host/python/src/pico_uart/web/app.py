@@ -401,17 +401,17 @@ def create_app(service: DashboardBoards | None = None) -> Flask:
     def status():
         try:
             return jsonify(dashboard.snapshot(request.args.get("board")))
-        except RuntimeError as error:
-            return jsonify(error=str(error)), 409
+        except RuntimeError:
+            return jsonify(error="request could not be completed"), 409
 
     @app.get("/api/boards")
     def boards():
         try:
             return jsonify(dashboard.boards())
-        except RuntimeError as error:
-            return jsonify(error=str(error)), 409
-        except OSError as error:
-            return jsonify(error=str(error)), 503
+        except RuntimeError:
+            return jsonify(error="request could not be completed"), 409
+        except OSError:
+            return jsonify(error="service temporarily unavailable"), 503
 
     @app.post("/api/configuration")
     def save_configuration():
@@ -426,12 +426,12 @@ def create_app(service: DashboardBoards | None = None) -> Flask:
             return jsonify(error="expected a clock profile and boolean unsafe_overclock acknowledgement"), 400
         try:
             dashboard.save_configuration(request.args.get("board"), body["profile"], body["unsafe_overclock"])
-        except ValueError as error:
-            return jsonify(error=str(error)), 400
-        except RuntimeError as error:
-            return jsonify(error=str(error)), 409
-        except OSError as error:
-            return jsonify(error=str(error)), 503
+        except ValueError:
+            return jsonify(error="invalid request"), 400
+        except RuntimeError:
+            return jsonify(error="request could not be completed"), 409
+        except OSError:
+            return jsonify(error="service temporarily unavailable"), 503
         return jsonify(ok=True)
 
     @app.post("/api/actions/<action>")
@@ -447,10 +447,10 @@ def create_app(service: DashboardBoards | None = None) -> Flask:
                 dashboard.reset_board(request.args.get("board"))
             else:
                 return jsonify(error="unknown action"), 404
-        except RuntimeError as error:
-            return jsonify(error=str(error)), 409
-        except OSError as error:
-            return jsonify(error=str(error)), 503
+        except RuntimeError:
+            return jsonify(error="request could not be completed"), 409
+        except OSError:
+            return jsonify(error="service temporarily unavailable"), 503
         return jsonify(ok=True)
 
     return app
