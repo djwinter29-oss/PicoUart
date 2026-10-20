@@ -280,7 +280,6 @@ test("decode board, overflow, and payload-only status reports", () => {
   assert.equal(status.channels.length, 6);
   assert.equal(status.channels[5].traffic.usb_rx, 18);
   assert.equal(status.channels[0].ring_high_watermark, 32);
-  assert.equal(status.channels[0].backend, "PIO");
   assert.equal(status.channels[0].cdc_open, true);
 });
 

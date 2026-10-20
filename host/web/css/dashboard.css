@@ -116,7 +116,7 @@ tbody tr:hover { background: #f8faf8; }
 .state-attention::before { background: var(--coral); }
 .state-initializing { color: var(--amber); }
 .state-initializing::before { background: var(--amber); }
-.backend, .cdc-state, .ring, .overflow { font: 11px var(--mono); }
+.cdc-state, .overflow { font: 11px var(--mono); }
 .cdc-open { color: var(--teal-dark); }
 .cdc-closed { color: var(--muted); }
 .traffic { display: grid; grid-template-columns: repeat(2, max-content); gap: 4px 12px; color: #43595e; font: 10px var(--mono); }

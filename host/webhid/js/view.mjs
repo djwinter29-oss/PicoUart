@@ -30,7 +30,6 @@ function renderChannels(data) {
       .join(" \u00b7 ") || "No active flags";
     health.append(flags);
     row.append(health);
-    row.append(makeCell("backend", channel.backend));
     row.append(makeCell(`cdc-state ${channel.cdc_open ? "cdc-open" : "cdc-closed"}`,
       channel.cdc_open ? "Open" : "Closed"));
     const traffic = document.createElement("td");
@@ -47,7 +46,6 @@ function renderChannels(data) {
     row.append(traffic);
     const overflow = data.overflow_counts[channel.id];
     row.append(makeCell("overflow", overflow === null ? "--" : `${overflow} B`));
-    row.append(makeCell("ring", `${channel.ring_high_watermark} B`));
     channelRows.append(row);
   });
 }
@@ -73,8 +71,8 @@ export function renderDashboard(data) {
     ? runtime.cpu_usage_basis_points.map(value => value == null ? "--" : `${(value / 100).toFixed(1)}%`).join(" / ")
     : "--";
   document.querySelector("#ram-usage").textContent = runtime
-    ? `${(runtime.ram_reserved_bytes / 1024).toFixed(1)} / ${(runtime.ram_total_bytes / 1024).toFixed(0)} KiB `
-      + `(${(runtime.ram_reserved_bytes * 100 / runtime.ram_total_bytes).toFixed(1)}%)` : "--";
+    ? `${(runtime.ram_reserved_bytes / 1024).toFixed(1)} / ${(runtime.ram_total_bytes / 1024).toFixed(0)} KiB`
+    : "--";
   document.querySelector("#temperature").textContent = data.board
     ? `${data.board.temperature_celsius.toFixed(2)} \u00b0C` : "--";
   const led = data.connected ? data.led : null;

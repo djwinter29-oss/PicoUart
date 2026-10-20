@@ -33,7 +33,6 @@ public sealed class DashboardTests
             Assert.Null(channel.Health);
             Assert.Empty(channel.HealthLabels);
             Assert.Equal("unknown", channel.State);
-            Assert.Equal("unknown", channel.Backend);
             Assert.False(channel.CdcOpen);
             Assert.Equal(0, channel.RingHighWatermark);
             AssertTraffic(channel.Traffic, 0, 0, 0, 0);
@@ -62,21 +61,20 @@ public sealed class DashboardTests
     }
 
     [Theory]
-    [InlineData(0, "initializing", "Hardware", false)]
-    [InlineData(1, "ready", "Hardware", false)]
-    [InlineData(8, "initializing", "Hardware", false)]
-    [InlineData(9, "ready", "Hardware", false)]
-    [InlineData(17, "ready", "Hardware", true)]
-    [InlineData(33, "ready", "PIO", false)]
-    [InlineData(49, "ready", "PIO", true)]
-    [InlineData(2, "attention", "Hardware", false)]
-    [InlineData(3, "attention", "Hardware", false)]
-    [InlineData(5, "attention", "Hardware", false)]
-    [InlineData(65, "attention", "Hardware", false)]
-    [InlineData(129, "attention", "Hardware", false)]
-    [InlineData(255, "attention", "PIO", true)]
-    public void TelemetryMapsHealthAndBackendForEveryChannel(
-        byte health, string state, string backend, bool cdcOpen)
+    [InlineData(0, "initializing", false)]
+    [InlineData(1, "ready", false)]
+    [InlineData(8, "initializing", false)]
+    [InlineData(9, "ready", false)]
+    [InlineData(17, "ready", true)]
+    [InlineData(33, "ready", false)]
+    [InlineData(49, "ready", true)]
+    [InlineData(2, "attention", false)]
+    [InlineData(3, "attention", false)]
+    [InlineData(5, "attention", false)]
+    [InlineData(65, "attention", false)]
+    [InlineData(129, "attention", false)]
+    [InlineData(255, "attention", true)]
+    public void TelemetryMapsHealthForEveryChannel(byte health, string state, bool cdcOpen)
     {
         var snapshot = new DashboardSnapshot();
         snapshot.Apply(CreateStatus(0, health));
@@ -86,7 +84,6 @@ public sealed class DashboardTests
             Assert.Equal(health, channel.Health);
             Assert.Equal(Protocol.DecodeHealth(health), channel.HealthLabels);
             Assert.Equal(state, channel.State);
-            Assert.Equal(backend, channel.Backend);
             Assert.Equal(cdcOpen, channel.CdcOpen);
             Assert.Equal(32, channel.RingHighWatermark);
         });
@@ -235,7 +232,7 @@ public sealed class DashboardTests
         Assert.Equal(280000000u, hardware.GetProperty("system_clock_hz").GetUInt32());
         Assert.Equal(uint.MaxValue, populated.RootElement.GetProperty("overflow_counts")[5].GetUInt32());
         var channel = populated.RootElement.GetProperty("channels")[0];
-        Assert.Equal(new[] { "backend", "cdc_open", "health", "health_labels", "id", "ring_high_watermark",
+        Assert.Equal(new[] { "cdc_open", "health", "health_labels", "id", "ring_high_watermark",
             "state", "totals", "traffic" }, channel.EnumerateObject().Select(property => property.Name).Order());
         Assert.Equal(new[] { "uart_rx", "uart_tx", "usb_rx", "usb_tx" },
             channel.GetProperty("totals").EnumerateObject().Select(property => property.Name).Order());

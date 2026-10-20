@@ -49,7 +49,6 @@ def _empty_snapshot() -> dict[str, Any]:
                 "health": None,
                 "health_labels": [],
                 "state": "unknown",
-                "backend": "unknown",
                 "cdc_open": False,
                 "ring_high_watermark": 0,
                 "traffic": {field: 0 for field in TRAFFIC_FIELDS},
@@ -163,7 +162,6 @@ class DashboardService:
                     if "ready" in labels
                     else "initializing"
                 )
-                channel["backend"] = "PIO" if "pio" in labels else "Hardware"
                 channel["cdc_open"] = "cdc_open" in labels
                 channel["ring_high_watermark"] = source["ring_high_watermark"]
                 for field, source_field in TRAFFIC_FIELDS.items():

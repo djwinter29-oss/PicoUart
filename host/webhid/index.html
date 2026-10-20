@@ -58,10 +58,10 @@
       <div class="summary runtime-summary">
         <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>
         <div class="summary-item" title="Wall time of passes handling work over a one-second window; excludes empty polling">
-          <span>Service load (core 0 / core 1)</span><strong id="cpu-usage">--</strong>
+          <span>CPU load (core 0 / core 1)</span><strong id="cpu-usage">--</strong>
         </div>
         <div class="summary-item" title="Linked static SRAM and reserved stacks; excludes live heap/stack occupancy">
-          <span>RAM reserved</span><strong id="ram-usage">--</strong>
+          <span>RAM (reserved/total)</span><strong id="ram-usage">--</strong>
         </div>
         <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
         <div class="summary-item"><span>Total RX overflow</span><strong id="overflow-total">--</strong></div>
@@ -81,11 +81,9 @@
             <tr>
               <th scope="col">Port</th>
               <th scope="col">Health</th>
-              <th scope="col">Backend</th>
               <th scope="col">CDC</th>
               <th scope="col">Observed traffic (&gt;=)</th>
               <th scope="col">RX overflow</th>
-              <th scope="col">Ring peak</th>
             </tr>
           </thead>
           <tbody id="channel-rows"></tbody>

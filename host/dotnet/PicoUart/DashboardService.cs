@@ -16,7 +16,6 @@ public sealed class DashboardChannel(int id)
     public byte? Health { get; set; }
     public string[] HealthLabels { get; set; } = [];
     public string State { get; set; } = "unknown";
-    public string Backend { get; set; } = "unknown";
     public bool CdcOpen { get; set; }
     public int RingHighWatermark { get; set; }
     public Traffic Traffic { get; set; } = new();
@@ -58,7 +57,6 @@ public sealed class DashboardSnapshot
             channel.HealthLabels = Protocol.DecodeHealth(source.Health);
             channel.State = (source.Health & 0xC6) != 0 ? "attention"
                 : (source.Health & 1) != 0 ? "ready" : "initializing";
-            channel.Backend = (source.Health & 0x20) != 0 ? "PIO" : "Hardware";
             channel.CdcOpen = (source.Health & 0x10) != 0;
             channel.RingHighWatermark = source.RingHighWatermark;
             channel.Traffic = new()

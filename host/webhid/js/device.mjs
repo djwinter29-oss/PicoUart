@@ -89,7 +89,7 @@ export function decodeStatusReport(data) {
     return { id: index, health,
       health_labels: HEALTH_LABELS.filter((_, bit) => health & (1 << bit)),
       state: health & 0xc6 ? "attention" : health & 1 ? "ready" : "initializing",
-      backend: health & 0x20 ? "PIO" : "Hardware", cdc_open: Boolean(health & 0x10),
+      cdc_open: Boolean(health & 0x10),
       ring_high_watermark: data.getUint8(offset + 1) * 16,
       traffic: Object.fromEntries(TRAFFIC_FIELDS.map((field, direction) =>
         [field, data.getUint16(offset + 2 + direction * 2, true)])) };
@@ -113,7 +113,7 @@ function emptyDashboard() {
     led: null, led_error: null,
     board: null, overflow_counts: Array(6).fill(null), sequence: null, updated_at: null, traffic_incomplete: false,
     channels: Array.from({ length: 6 }, (_, id) => ({ id, health: null, health_labels: [], state: "unknown",
-      backend: "unknown", cdc_open: false, ring_high_watermark: 0,
+      cdc_open: false, ring_high_watermark: 0,
       traffic: Object.fromEntries(TRAFFIC_FIELDS.map(field => [field, 0])),
       totals: Object.fromEntries(TRAFFIC_FIELDS.map(field => [field, 0])) })) };
 }

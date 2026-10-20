@@ -166,7 +166,7 @@ def test_dashboard_service_polls_status_and_metadata():
 
     assert snapshot["connected"] is True
     assert snapshot["channels"][0]["state"] == "ready"
-    assert snapshot["channels"][0]["backend"] == "PIO"
+    assert "backend" not in snapshot["channels"][0]
     assert snapshot["channels"][0]["cdc_open"] is True
     assert snapshot["channels"][0]["totals"]["uart_tx"] == 10
     assert snapshot["board"]["firmware_version"] == "1.2.3"

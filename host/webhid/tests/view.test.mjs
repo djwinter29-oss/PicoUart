@@ -25,6 +25,8 @@ for (const frontend of ["webhid", "web"]) {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
     const runtime = html.match(/<section aria-labelledby="runtime-title">([\s\S]*?)<\/section>/)[1];
+    assert.ok(runtime.includes("CPU load (core 0 / core 1)"));
+    assert.ok(runtime.includes("RAM (reserved/total)"));
     assert.ok(!html.includes('id="sequence"'));
     assert.ok(runtime.includes('id="toggle-led"'));
     assert.ok(!html.includes('id="led-state"'));
@@ -69,7 +71,7 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(text("serial"), "0123456789ABCDEF");
       assert.equal(text("uptime"), "1d 1h 1m 1s");
       assert.equal(text("cpu-usage"), "100.0% / --");
-      assert.equal(text("ram-usage"), "64.0 / 512 KiB (12.5%)");
+      assert.equal(text("ram-usage"), "64.0 / 512 KiB");
       assert.equal(text("temperature"), "25.30 \u00b0C");
       assert.equal(text("overflow-total"), "0 B");
       render({ ...data, overflow_counts: [1, 2, 3, 4, 5, 6] });
