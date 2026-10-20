@@ -63,6 +63,7 @@ def test_dashboard_routes_require_csrf_and_dispatch_controls():
 def test_dashboard_serves_shared_assets():
     client = create_app(FakeDashboard()).test_client()
     page = client.get("/")
+    assert b"<small>PYTHON</small>" in page.data
     assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page.data
     assert b'id="mcu"' in page.data
     assert b'id="system-clock"' in page.data

@@ -108,7 +108,8 @@ static async Task RunWeb(Options options)
             token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             context.Session.SetString("csrf_token", token);
         }
-        return Results.Content(template.Replace("{{ csrf_token }}", token), "text/html");
+        return Results.Content(template.Replace("{{ csrf_token }}", token).Replace("{{ dashboard_type }}", ".NET"),
+            "text/html");
     });
     app.MapGet("/api/status", async (HttpContext context, DashboardService dashboard) =>
     {

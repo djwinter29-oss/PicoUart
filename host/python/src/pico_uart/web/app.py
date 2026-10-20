@@ -251,7 +251,7 @@ def create_app(service: DashboardService | None = None) -> Flask:
     @app.get("/")
     def index():
         token = session.setdefault("csrf_token", secrets.token_urlsafe(32))
-        return render_template("index.html", csrf_token=token)
+        return render_template("index.html", csrf_token=token, dashboard_type="PYTHON")
 
     @app.get("/favicon.svg")
     def favicon():
