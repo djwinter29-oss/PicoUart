@@ -93,6 +93,13 @@ def test_hid_led_report_contract(repo_root):
     assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_LED) == protocol.LED_SIZE
 
 
+def test_channel_diagnostic_reports_preserve_legacy_layout(repo_root):
+    assert firmware_hid_constants(repo_root)["USB_HID_REPORT_ID_CHANNEL_BASE"] == protocol.REPORT_ID_CHANNEL_BASE
+    assert protocol.CHANNEL_DIAGNOSTICS_SIZE == 59
+    for report_id in range(protocol.REPORT_ID_CHANNEL_BASE, protocol.REPORT_ID_CHANNEL_BASE + 6):
+        assert firmware_hid_report_count(repo_root, report_id) == protocol.CHANNEL_DIAGNOSTICS_SIZE
+
+
 def test_hid_descriptor_overflow_report_count_matches_host_payload(repo_root):
     assert firmware_hid_report_count(repo_root, hid.REPORT_ID_OVERFLOW_COUNTS) == hid.OVERFLOW_COUNTS_SIZE
 

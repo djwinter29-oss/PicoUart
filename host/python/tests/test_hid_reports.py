@@ -13,6 +13,47 @@ from pico_uart.client import read_hardware_info
 from pico_uart.protocol import parse_hardware_info, REPORT_ID_HARDWARE_INFO
 
 
+def test_channel_diagnostics_and_client_read_all_six_channels():
+    import struct
+    from pico_uart.protocol import parse_channel_diagnostics
+
+    payload = bytearray(struct.pack("<BBIBBBBB", 1, 0x81, 115200, 8, 1, 0, 20, 21) + bytes(48))
+    struct.pack_into("<IQ", payload, 47, 3, 4294967296)
+    result = parse_channel_diagnostics(payload)
+    assert (result["baud_rate"], result["parity"], result["tx_pin"], result["rx_pin"]) == (115200, "N", 20, 21)
+    assert result["faults"]["rx_error"] == {"count": 3, "last_seen_ms": 4294967296}
+    assert result["faults"]["control_error"] == {"count": 0, "last_seen_ms": None}
+
+    class DiagnosticDevice:
+        def __init__(self):
+            self.reads = []
+
+        def get_feature_report(self, report_id, size):
+            self.reads.append((report_id, size))
+            return [report_id, *payload]
+
+        def close(self):
+            pass
+
+    device = DiagnosticDevice()
+    with PicoUartHid(device=device) as client:
+        assert client.read_channel_diagnostics() == [result] * 6
+    assert device.reads == [(report_id, 60) for report_id in range(10, 16)]
+
+
+@pytest.mark.parametrize("offset,value", [(0, 2), (6, 4), (7, 3), (8, 3), (9, 48), (10, 254)])
+def test_channel_diagnostics_reject_invalid_settings(offset, value):
+    import struct
+    from pico_uart.protocol import parse_channel_diagnostics
+
+    payload = bytearray(struct.pack("<BBIBBBBB", 1, 1, 115200, 8, 1, 0, 0, 1) + bytes(48))
+    payload[offset] = value
+    with pytest.raises(RuntimeError):
+        parse_channel_diagnostics(payload)
+    with pytest.raises(RuntimeError):
+        parse_channel_diagnostics(payload[:-1])
+
+
 @pytest.mark.parametrize("mcu,clock_hz,model", [
     (1, 125_000_000, "RP2040"),
     (1, 200_000_000, "RP2040"),

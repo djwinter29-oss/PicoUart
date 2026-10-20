@@ -141,3 +141,27 @@ the authoritative field definitions, UID source, service-load semantics and lega
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
 The Runtime status heading contains the physical LED indicator and manual toggle; sequence numbers remain internal
 for report-gap detection rather than appearing in the UI.
+
+### Channel diagnostics and traffic presentation
+
+All three dashboards show applied baud/framing and TX/RX GPIOs from the optional
+[channel diagnostic reports](../design/usb/hid-report-reference.md#reports-10-15-channel-diagnostics), never from a
+hard-coded board map or a CDC request that might have been rejected. Snapshots expose `channel_diagnostics` (six records
+in channel order) and an independent `diagnostics_error`; unsupported/failed reads clear those records while legacy
+status reports continue to work. Diagnostics refresh with the two-second metadata cycle. Older firmware displays
+unavailable settings and cannot provide counts or detection times.
+
+Each channel's expandable fault history gives counts, last detection at device uptime, and troubleshooting guidance.
+Channel diagnostics are read-only: dashboards cannot clear or acknowledge faults, and recorded faults keep the channel
+in **Attention** while telemetry is fresh, even if the corresponding live flag is no longer asserted.
+Healthy, closed CDC channels without observed throughput are labelled **Idle**, not disconnected: UART RX remains
+active and reported faults remain visible even with CDC closed.
+
+The four directions display observed B/s over windows of at least one second. Hover a rate for cumulative observed
+bytes since the monitor connected. Initial/stale windows and windows containing report gaps or saturated deltas show
+`--`; they recover after a clean window. Three seconds without a new status sample makes rates stale. `traffic_gaps`
+is a monotonic count of incomplete status observations, allowing each page to invalidate its current rate window while
+retaining the sticky `traffic_incomplete` notice. Totals remain lower bounds after missing/saturated reports.
+
+The independent WebHID renderer and hosted renderer retain their separate assets; the shared Node presentation tests
+exercise the same rate, read-only fault history, fallback and state contracts against both.

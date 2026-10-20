@@ -18,9 +18,38 @@ public sealed record ChannelStatus(int Id, byte Health, int RingHighWatermark,
     ushort ControllerTxBytes, ushort ControllerRxBytes, ushort CdcTxBytes, ushort CdcRxBytes);
 
 public sealed record Status(byte Sequence, ChannelStatus[] Channels);
+public sealed record FaultHistory(uint Count, ulong? LastSeenMs);
+public sealed record ChannelDiagnostics(byte Health, uint BaudRate, byte DataBits, byte StopBits,
+    string? Parity, byte? TxPin, byte? RxPin, Dictionary<string, FaultHistory> Faults);
 
 public static class Protocol
 {
+    public const byte ChannelDiagnosticsReportId = 10;
+    public const int ChannelDiagnosticsSize = 59;
+
+    public static ChannelDiagnostics ParseChannelDiagnostics(ReadOnlySpan<byte> payload)
+    {
+        Require(payload.Length == ChannelDiagnosticsSize && payload[0] == 1,
+            "unsupported channel diagnostics size or version");
+        var baud = BinaryPrimitives.ReadUInt32LittleEndian(payload[2..]);
+        Require(baud == 0 || (payload[6] is >= 5 and <= 8 && payload[7] is 1 or 2 && payload[8] <= 2),
+            "invalid applied UART framing");
+        Require((payload[9] <= 47 || payload[9] == 255) && (payload[10] <= 47 || payload[10] == 255),
+            "invalid UART GPIO");
+        string[] labels = ["init_failed", "control_error", "rx_overrun", "rx_error"];
+        var faults = new Dictionary<string, FaultHistory>();
+        for (var index = 0; index < labels.Length; index++)
+        {
+            var offset = 11 + index * 12;
+            var count = BinaryPrimitives.ReadUInt32LittleEndian(payload[offset..]);
+            var seen = BinaryPrimitives.ReadUInt64LittleEndian(payload[(offset + 4)..]);
+            Require(seen <= 9007199254740991ul && (count != 0 || seen == 0), "invalid channel fault timestamp");
+            faults[labels[index]] = new(count, count == 0 ? null : seen);
+        }
+        return new(payload[1], baud, payload[6], payload[7], baud == 0 ? null : "NOE"[payload[8]].ToString(),
+            payload[9] == 255 ? null : payload[9], payload[10] == 255 ? null : payload[10], faults);
+    }
+
     public static LedStatus ParseLed(ReadOnlySpan<byte> payload)
     {
         Require(payload.Length == 2 && payload[0] == 1 && (payload[1] & ~7) == 0,

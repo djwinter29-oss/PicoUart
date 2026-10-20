@@ -1,7 +1,54 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEVICE_FILTER, decodeHardwareReport, decodeBoardReport, decodeOverflowReport, decodeStatusReport,
-  decodeIdentityReport, decodeRuntimeReport, decodeLedReport, PicoUartWebHid } from "../js/device.mjs";
+  decodeIdentityReport, decodeRuntimeReport, decodeLedReport, decodeChannelDiagnostics, PicoUartWebHid } from "../js/device.mjs";
+
+function channelReport(id = 10) {
+  const data = new DataView(new ArrayBuffer(60));
+  data.setUint8(0, id);
+  data.setUint8(1, 1);
+  data.setUint8(2, 1);
+  data.setUint32(3, 115200, true);
+  data.setUint8(7, 8);
+  data.setUint8(8, 1);
+  data.setUint8(10, (id - 10) * 4);
+  data.setUint8(11, (id - 10) * 4 + 1);
+  return data;
+}
+
+test("channel diagnostics validate settings and expose counts with 64-bit detection times", () => {
+  const data = channelReport();
+  data.setUint32(48, 3, true);
+  data.setBigUint64(52, 4294967296n, true);
+  const decoded = decodeChannelDiagnostics(data, 10);
+  assert.equal(decoded.baud_rate, 115200);
+  assert.equal(decoded.parity, "N");
+  assert.equal(decoded.tx_pin, 0);
+  assert.deepEqual(decoded.faults.rx_error, { count: 3, last_seen_ms: 4294967296 });
+  assert.deepEqual(decoded.faults.control_error, { count: 0, last_seen_ms: null });
+  for (const [offset, value] of [[1, 2], [7, 4], [8, 3], [9, 3], [10, 48], [11, 254]]) {
+    const invalid = channelReport();
+    invalid.setUint8(offset, value);
+    assert.throws(() => decodeChannelDiagnostics(invalid, 10));
+  }
+  assert.throws(() => decodeChannelDiagnostics(data, 11));
+  data.setBigUint64(52, 2n ** 53n, true);
+  assert.throws(() => decodeChannelDiagnostics(data, 10), /timestamp/);
+});
+
+test("unavailable channel diagnostics remain explicit and do not remove legacy telemetry", async () => {
+  const hid = new FakeHid();
+  const device = hid.devices[0];
+  const receive = device.receiveFeatureReport.bind(device);
+  device.receiveFeatureReport = id => id >= 10 ? Promise.reject(new Error("Firmware upgrade required")) : receive(id);
+  const client = new PicoUartWebHid(hid);
+  await client.connect();
+  assert.equal(client.state.dashboard.channel_diagnostics, null);
+  assert.equal(client.state.dashboard.diagnostics_error, "Firmware upgrade required");
+  device.input(statusReport(1));
+  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 10);
+  await client.disconnect();
+});
 
 function report(mcu = 2, clock = 150000000, size = 7, offset = 0) {
   const view = new DataView(new ArrayBuffer(offset + size), offset, size);
@@ -83,6 +130,7 @@ class FakeDevice extends EventTarget {
     if (id === 7) return identityReport();
     if (id === 8) return runtimeReport();
     if (id === 9) return new DataView(Uint8Array.of(9, 1, this.ledFlags).buffer);
+    if (id >= 10 && id <= 15) return channelReport(id);
     return report();
   }
   input(data, reportId = 1) {
@@ -141,7 +189,7 @@ test("select only the PicoUart collection and read report 6", async () => {
   assert.deepEqual(hid.options, { filters: [{ ...DEVICE_FILTER }] });
   assert.equal(client.state.phase, "connected");
   assert.equal(client.state.hardware.mcu, "RP2350");
-  assert.deepEqual(hid.devices[0].reads, [6, 3, 5, 7, 8, 9]);
+  assert.deepEqual(hid.devices[0].reads, [6, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   assert.equal(client.state.dashboard.identity.serial_number, "0123456789ABCDEF");
   assert.equal(client.state.dashboard.runtime.uptime_ms, 4294967296);
   assert.equal(client.state.dashboard.board.firmware_version, "1.2.3");
@@ -236,7 +284,7 @@ test("ignore other devices and prevent duplicate connection requests", async () 
   const hid = new FakeHid();
   const client = new PicoUartWebHid(hid);
   await Promise.all([client.connect(), client.connect()]);
-  assert.deepEqual(hid.devices[0].reads, [6, 3, 5, 7, 8, 9]);
+  assert.deepEqual(hid.devices[0].reads, [6, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   hid.unplug(new FakeDevice());
   assert.equal(client.state.phase, "connected");
 });

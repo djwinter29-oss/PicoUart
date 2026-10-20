@@ -53,6 +53,9 @@ public sealed class PicoUartHid : IDisposable
     public BoardIdentity ReadIdentity() => Protocol.ParseIdentity(ReadFeature(7, 49));
 
     public RuntimeStatus ReadRuntime() => Protocol.ParseRuntime(ReadFeature(8, 21));
+    public ChannelDiagnostics[] ReadChannelDiagnostics() => Enumerable.Range(0, Protocol.ChannelCount)
+        .Select(index => Protocol.ParseChannelDiagnostics(ReadFeature(
+            (byte)(Protocol.ChannelDiagnosticsReportId + index), Protocol.ChannelDiagnosticsSize))).ToArray();
     public LedStatus ReadLed() => Protocol.ParseLed(ReadFeature(9, 2));
 
     public void ToggleLed()

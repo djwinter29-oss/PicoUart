@@ -6,6 +6,34 @@ namespace PicoUart.Tests;
 [Trait("Category", "Unit")]
 public sealed class ProtocolTests
 {
+    [Fact]
+    public void ChannelDiagnosticsDecodeAppliedSettingsAndLongUptime()
+    {
+        var data = new byte[59];
+        data[0] = 1;
+        data[1] = 0x81;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(2), 115200);
+        data[6] = 8;
+        data[7] = 1;
+        data[9] = 20;
+        data[10] = 21;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(47), 3);
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(51), 4294967296ul);
+        var decoded = Protocol.ParseChannelDiagnostics(data);
+        Assert.Equal(115200u, decoded.BaudRate);
+        Assert.Equal("N", decoded.Parity);
+        Assert.Equal((byte)20, decoded.TxPin);
+        Assert.Equal(new FaultHistory(3, 4294967296ul), decoded.Faults["rx_error"]);
+        Assert.Equal(new FaultHistory(0, null), decoded.Faults["control_error"]);
+        foreach (var (offset, value) in new (int, byte)[] { (0, 2), (6, 4), (7, 3), (8, 3), (9, 48), (10, 254) })
+        {
+            var invalid = (byte[])data.Clone();
+            invalid[offset] = value;
+            Assert.Throws<InvalidOperationException>(() => Protocol.ParseChannelDiagnostics(invalid));
+        }
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseChannelDiagnostics(data.AsSpan(1)));
+    }
+
     [Theory]
     [InlineData(0, null, null)]
     [InlineData(1, false, false)]

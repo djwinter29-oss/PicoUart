@@ -29,6 +29,22 @@ absolute_time_t pico_test_time_us;
 static bool led_manual_on;
 static bool led_output_on;
 static bool led_available;
+static uart_driver_port_stats_t diagnostic_stats;
+static uint8_t diagnostic_health;
+
+bool tud_hid_ready(void)
+{
+    return false;
+}
+
+bool tud_hid_report(uint8_t report_id, void const *report, uint16_t len)
+{
+    (void)report_id;
+    (void)report;
+    (void)len;
+    TEST_FAIL_MESSAGE("The unavailable interrupt endpoint must not publish reports");
+    return false;
+}
 
 bool led_read_state(bool *manual_on, bool *output_on)
 {
@@ -44,6 +60,8 @@ void setUp(void)
     led_manual_on = false;
     led_output_on = false;
     led_available = true;
+    memset(&diagnostic_stats, 0, sizeof(diagnostic_stats));
+    diagnostic_health = UART_DRIVER_PORT_STATUS_READY;
     usb_hid_init();
 }
 
@@ -71,7 +89,7 @@ float temperature_read_celsius(void)
 bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *stats)
 {
     (void)port_id;
-    memset(stats, 0, sizeof(*stats));
+    *stats = diagnostic_stats;
     return true;
 }
 
@@ -86,13 +104,18 @@ bool uart_driver_port_info(uart_port_id_t port_id, uart_driver_port_info_t *info
 {
     (void)port_id;
     memset(info, 0, sizeof(*info));
+    info->baud_rate = 115200u;
+    info->data_bits = 8u;
+    info->stop_bits = 1u;
+    info->tx_pin = (uint32_t)port_id * 4u;
+    info->rx_pin = info->tx_pin + 1u;
     return true;
 }
 
 uint8_t uart_driver_port_status(uart_port_id_t port_id)
 {
     (void)port_id;
-    return 0u;
+    return diagnostic_health;
 }
 
 static void test_identity_payload(void)
@@ -153,7 +176,72 @@ static void test_legacy_report_lengths(void)
     TEST_ASSERT_EQUAL_UINT16(8u, tud_hid_get_report_cb(0, 3, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     TEST_ASSERT_EQUAL_UINT16(25u, tud_hid_get_report_cb(0, 5, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     TEST_ASSERT_EQUAL_UINT16(6u, tud_hid_get_report_cb(0, 6, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 16, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+}
+
+static void test_channel_diagnostics_history(void)
+{
+    uint8_t buffer[64];
+    usb_hid_channel_diagnostics_t report;
+    diagnostic_stats.rx_error_count = 3u;
+    diagnostic_stats.rx_ring_pending_overflow_count = 7u;
+    diagnostic_health |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    pico_test_time_us = INT64_C(0x100000001) * 1000;
+    memset(buffer, 0xa5, sizeof(buffer));
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    memcpy(&report, buffer, sizeof(report));
+    TEST_ASSERT_EQUAL_UINT8(1u, report.version);
+    TEST_ASSERT_EQUAL_UINT32(115200u, report.baud_rate);
+    TEST_ASSERT_EQUAL_UINT8(8u, report.data_bits);
+    TEST_ASSERT_EQUAL_UINT8(1u, report.stop_bits);
+    TEST_ASSERT_EQUAL_UINT8(0u, report.tx_pin);
+    TEST_ASSERT_EQUAL_UINT8(1u, report.rx_pin);
+    TEST_ASSERT_EQUAL_UINT32(1u, report.faults[1].count);
+    TEST_ASSERT_EQUAL_UINT32(7u, report.faults[2].count);
+    TEST_ASSERT_EQUAL_UINT32(3u, report.faults[3].count);
+    TEST_ASSERT_EQUAL_UINT64(UINT64_C(0x100000001), report.faults[3].last_seen_ms);
+    TEST_ASSERT_EQUAL_HEX8(0xa5, buffer[59]);
+    pico_test_time_us += 1000000;
+    diagnostic_stats.rx_ring_overflow_count = 7u;
+    diagnostic_stats.rx_ring_pending_overflow_count = 0u;
+    diagnostic_health &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    (void)tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer));
+    memcpy(&report, buffer, sizeof(report));
+    TEST_ASSERT_EQUAL_UINT32(7u, report.faults[2].count);
+    TEST_ASSERT_EQUAL_UINT64(UINT64_C(0x100000001), report.faults[3].last_seen_ms);
+    diagnostic_stats.rx_error_count++;
+    diagnostic_health |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
+    (void)tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer));
+    memcpy(&report, buffer, sizeof(report));
+    TEST_ASSERT_EQUAL_UINT32(2u, report.faults[1].count);
+    TEST_ASSERT_EQUAL_UINT32(4u, report.faults[3].count);
+    TEST_ASSERT_EQUAL_UINT64(UINT64_C(0x1000003e9), report.faults[3].last_seen_ms);
+    TEST_ASSERT_EQUAL_UINT16(2u, tud_hid_get_report_cb(0, 15, HID_REPORT_TYPE_FEATURE, buffer, 2u));
+    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
+}
+
+static void test_channel_diagnostics_sample_without_interrupt_endpoint(void)
+{
+    diagnostic_stats.rx_error_count = 2u;
+    diagnostic_health |= UART_DRIVER_PORT_STATUS_INIT_FAILED;
+    pico_test_time_us = 100000;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT32(2u, usb_hid_diagnostics[0].faults[3].count);
+    TEST_ASSERT_EQUAL_UINT64(100u, usb_hid_diagnostics[0].faults[3].last_seen_ms);
+    diagnostic_stats.rx_error_count = 5u;
+    pico_test_time_us = 150000;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT32(2u, usb_hid_diagnostics[0].faults[3].count);
+    pico_test_time_us = 200000;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT32(5u, usb_hid_diagnostics[0].faults[3].count);
+    TEST_ASSERT_EQUAL_UINT32(1u, usb_hid_diagnostics[0].faults[0].count);
+    TEST_ASSERT_EQUAL_UINT64(200u, usb_hid_diagnostics[0].faults[3].last_seen_ms);
+    usb_hid_diagnostics[0].faults[3].count = UINT32_MAX - 1u;
+    diagnostic_stats.rx_error_count = 10u;
+    pico_test_time_us = 300000;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, usb_hid_diagnostics[0].faults[3].count);
 }
 
 static void test_led_payload(void)
@@ -181,5 +269,7 @@ int main(void)
     RUN_TEST(test_runtime_payload);
     RUN_TEST(test_legacy_report_lengths);
     RUN_TEST(test_led_payload);
+    RUN_TEST(test_channel_diagnostics_history);
+    RUN_TEST(test_channel_diagnostics_sample_without_interrupt_endpoint);
     return UNITY_END();
 }

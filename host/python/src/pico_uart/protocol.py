@@ -30,11 +30,34 @@ BOARD_STATUS_LAYOUT_VERSION = 15
 STATUS_LAYOUT_VERSION = 15
 STATUS_SIGNATURE = ord("P")
 UART_CHANNEL_COUNT = 6
+REPORT_ID_CHANNEL_BASE = 10
+CHANNEL_DIAGNOSTICS_SIZE = 59
+FAULT_LABELS = ("init_failed", "control_error", "rx_overrun", "rx_error")
 STATUS_HEADER_SIZE = 3
 STATUS_CHANNEL_SIZE = 10
 RESET_ARM_WINDOW_S = 2.0
 BOARD_STATUS_FLAG_HID_RESET = 1 << 0
 BOARD_STATUS_RESERVED0_KNOWN_FLAGS = BOARD_STATUS_FLAG_HID_RESET
+
+
+def parse_channel_diagnostics(payload: bytes) -> dict[str, object]:
+    """Decode applied settings and sampled fault history; times are device boot uptime in milliseconds."""
+    if len(payload) != CHANNEL_DIAGNOSTICS_SIZE or payload[0] != 1:
+        raise RuntimeError("unsupported channel diagnostics size or version")
+    _, health, baud, data, stop, parity, tx, rx = struct.unpack_from("<BBIBBBBB", payload)
+    if baud and (not 5 <= data <= 8 or stop not in (1, 2) or parity > 2):
+        raise RuntimeError("invalid applied UART framing")
+    if any(pin > 47 and pin != 255 for pin in (tx, rx)):
+        raise RuntimeError("invalid UART GPIO")
+    faults = {}
+    for index, name in enumerate(FAULT_LABELS):
+        count, last_seen = struct.unpack_from("<IQ", payload, 11 + index * 12)
+        if last_seen > 2**53 - 1 or (not count and last_seen):
+            raise RuntimeError("invalid channel fault timestamp")
+        faults[name] = {"count": count, "last_seen_ms": last_seen if count else None}
+    return {"health": health, "baud_rate": baud, "data_bits": data, "stop_bits": stop,
+            "parity": "NOE"[parity] if baud else None,
+            "tx_pin": None if tx == 255 else tx, "rx_pin": None if rx == 255 else rx, "faults": faults}
 
 
 def parse_led(payload: bytes) -> dict[str, bool | None]:

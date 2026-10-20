@@ -28,6 +28,10 @@ class FakeDashboard:
 
 
 class BoardTelemetry:
+    def read_channel_diagnostics(self):
+        return [{"baud_rate": 115200, "data_bits": 8, "parity": "N", "stop_bits": 1,
+                 "tx_pin": index * 4, "rx_pin": index * 4 + 1, "faults": {}} for index in range(6)]
+
     def read_led(self):
         return {"manual_on": False, "output_on": False}
 
@@ -169,6 +173,9 @@ def test_dashboard_service_polls_status_and_metadata():
     assert snapshot["channels"][0]["state"] == "ready"
     assert "backend" not in snapshot["channels"][0]
     assert snapshot["channels"][0]["cdc_open"] is True
+    assert snapshot["channel_diagnostics"][0]["baud_rate"] == 115200
+    assert snapshot["channel_diagnostics"][5]["tx_pin"] == 20
+    assert snapshot["diagnostics_error"] is None
     assert snapshot["channels"][0]["totals"]["uart_tx"] == 10
     assert snapshot["board"]["firmware_version"] == "1.2.3"
     assert snapshot["overflow_counts"] == [0, 1, 2, 3, 4, 5]
@@ -335,7 +342,10 @@ def test_dashboard_marks_traffic_incomplete_on_gaps_and_saturated_deltas():
     assert service.snapshot()["traffic_incomplete"] is True
 
     service._snapshot["traffic_incomplete"] = False
+    assert service.snapshot()["traffic_gaps"] == 1
     service._apply_status(parse_status(status_report_bytes(sequence=0)))
     assert service.snapshot()["traffic_incomplete"] is False
+    assert service.snapshot()["traffic_gaps"] == 1
     service._apply_status(parse_status(status_report_bytes(sequence=2)))
     assert service.snapshot()["traffic_incomplete"] is True
+    assert service.snapshot()["traffic_gaps"] == 2

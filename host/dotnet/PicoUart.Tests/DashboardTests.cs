@@ -200,9 +200,9 @@ public sealed class DashboardTests
     {
         using var service = new DashboardService(null, null);
         using var initial = JsonDocument.Parse(service.SnapshotJson());
-        Assert.Equal(new[] { "board", "channels", "connected", "error", "hardware", "hardware_error",
+        Assert.Equal(new[] { "board", "channel_diagnostics", "channels", "connected", "diagnostics_error", "error", "hardware", "hardware_error",
             "identity", "identity_error", "led", "led_error", "metadata_error", "overflow_counts", "runtime", "runtime_error",
-            "sequence", "traffic_incomplete", "updated_at" },
+            "sequence", "traffic_gaps", "traffic_incomplete", "updated_at" },
             initial.RootElement.EnumerateObject().Select(property => property.Name).Order());
         Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("board").ValueKind);
         Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("hardware").ValueKind);

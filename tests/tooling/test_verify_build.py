@@ -27,6 +27,7 @@ def test_hid_descriptor_parser_recognizes_hardware_info_and_unchanged_legacy_rep
     assert verifier._hid_reports(descriptor, len(descriptor)) == [{
         1: (63, 8, 8), 3: (8, 8, 11), 4: (1, 8, 11), 5: (25, 8, 11), 6: (6, 8, 11),
         7: (49, 8, 11), 8: (21, 8, 11), 9: (2, 8, 11),
+        **{report_id: (59, 8, 11) for report_id in range(10, 16)},
     }]
 
 

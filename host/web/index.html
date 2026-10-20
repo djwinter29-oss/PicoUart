@@ -76,16 +76,20 @@
           <thead>
             <tr>
               <th scope="col">Port</th>
+              <th scope="col">UART configuration</th>
               <th scope="col">Health</th>
-              <th scope="col">CDC</th>
-              <th scope="col">Observed traffic (>=)</th>
+              <th scope="col">Host session</th>
+              <th scope="col">Throughput</th>
               <th scope="col">RX overflow</th>
             </tr>
           </thead>
           <tbody id="channel-rows"></tbody>
         </table>
       </div>
-      <p class="traffic-note" id="traffic-note">Observed lower bounds since monitoring began; missed reports and saturated deltas can reduce totals.</p>
+      <p class="traffic-note" id="traffic-note">Waiting for throughput samples.</p>
+      <p class="traffic-note">RX flags record historical faults, not necessarily live errors. Channel diagnostics are
+        read-only; recorded faults remain visible and cannot be cleared or acknowledged in this dashboard.
+        Diagnostics refresh every two seconds. Idle means CDC closed, not that RX is disconnected.</p>
     </section>
 
     <footer class="status-line" role="status" aria-live="polite">

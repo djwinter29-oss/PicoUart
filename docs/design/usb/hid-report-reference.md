@@ -18,6 +18,7 @@ limits: `CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
 | UART data                                                     | CDC0 through CDC5          | Transfers bytes to and from the matching UART.                                                                                                                                                                                                                               |
 | Baud, data bits, parity, stop bits                            | CDC line-coding request    | Parsed from `SET_LINE_CODING` and queued to the matching UART backend. TinyUSB accepts the USB transfer before firmware validation; rejected or unsupported requests set health bit 2 (`control_error`) instead of stalling the CDC control pipe. PIO ports accept 8N1 only. |
 | Health, traffic, ring peak, temperature, and firmware version | HID                        | Read-only monitoring data.                                                                                                                                                                                                                                                   |
+| Applied UART settings, GPIOs, and fault history | HID feature reports 10-15 | Read-only snapshots. These reports cannot change line coding or pin mapping. |
 | Toggle default board LED                                      | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one.                                                                                                                                                                                                          |
 | Reset board                                                   | HID command feature report | Disabled by default; trusted lab builds may enable arm (`3`) then reset (`2`) within 2 seconds with `PICO_UART_ALLOW_HID_RESET=1`. Enabled builds set board-status `reserved0` bit 0; the host `reset` command fails closed when that bit is clear.                          |
 
@@ -36,14 +37,53 @@ command values are board-scoped only.
 | `7`       | Feature | Host reads from device | 49 bytes | Product and USB serial / board UID.                 |
 | `8`       | Feature | Host reads from device | 21 bytes | Uptime, per-core service load, and reserved RAM.     |
 | `9`       | Feature | Host reads from device | 2 bytes  | Board LED availability, manual state, and output.   |
+| `10`-`15` | Feature | Host reads from device | 59 bytes | Applied settings, GPIOs and fault history for CDC0-CDC5. |
 
 Report IDs `1`, `3`, and `5` share layout version `15`. Report ID `6` uses an independent layout version, currently `1`.
 Reports `7` and `8` have independent layout versions, currently `1` and `2` respectively.
 Report `9` uses independent layout version `1`.
+Reports `10`-`15` use independent layout version `1`; older firmware does not implement them.
 
 Report ID bytes are managed by the HID transport and are not included in the payload layouts below. Status is 63 bytes
 so Report ID + payload fit in one full-speed interrupt packet (64 bytes). The device attempts to publish report ID `1`
 periodically while its HID IN endpoint is ready. Reports are not queued when the endpoint is busy.
+
+## Reports 10-15: Channel Diagnostics
+
+Report `10 + channel` addresses a single channel without a selector command or any change to UART ownership.
+All integers are little-endian. Existing report layouts and command values are unchanged.
+
+| Offset | Size | Field | Meaning |
+| -----: | ---: | ----- | ------- |
+| 0 | 1 | `version` | Independent layout version, `1`. |
+| 1 | 1 | `health` | Sampled driver bits 0-3 and RX historical flags 6-7; no CDC-open/backend bits. |
+| 2 | 4 | `baud_rate` | Successfully applied controller baud rate, not the last requested baud. Zero if unavailable. |
+| 6 | 1 | `data_bits` | Successfully applied data-bit count. |
+| 7 | 1 | `stop_bits` | Successfully applied stop-bit count, 1 or 2. |
+| 8 | 1 | `parity` | None=0, odd=1, even=2. |
+| 9 | 1 | `tx_pin` | Board-configured TX GPIO; 255 means unassigned. |
+| 10 | 1 | `rx_pin` | Board-configured RX GPIO; 255 means unassigned. |
+| 11 | 12 | `init_failed` | Fault history record. |
+| 23 | 12 | `control_error` | Fault history record. |
+| 35 | 12 | `rx_overrun` | Fault history record, count measured in dropped bytes. |
+| 47 | 12 | `rx_error` | Fault history record, count measured in controller error observations. |
+
+Each history record contains a saturating `uint32_t count` and a `uint64_t last_seen_ms` (boot uptime at detection).
+A zero count means no observation; a nonzero count can legitimately have timestamp zero during the first boot millisecond.
+The USB core samples diagnostics approximately every 100 ms, including when the HID IN endpoint is not ready, and on
+diagnostic reads. Timestamps describe **detection**, not the exact instant of a wire error. Counts are retained until
+firmware initialization; counter resets are treated as a new baseline without subtracting accumulated history.
+
+`init_failed` and `control_error` count observed deasserted-to-asserted transitions, not individual failed requests.
+Multiple transitions between samples can coalesce. RX error counts come from the backend's sticky error observations;
+multiple bad frames before a hardware/PIO error flag is harvested can also coalesce. These are not per-byte error counts.
+`rx_overrun` includes both retired and still-pending overwritten bytes without counting retirement twice.
+At counter saturation, the count cannot distinguish further events.
+
+RX flags in report 1 are historical latches based on nonzero counters, not live signal-level indicators. A closed CDC
+port does not stop the UART receiver. Floating/undriven RX, a break, incorrect baud/framing, or wiring problems are
+possible causes, but this report cannot identify which one occurred. See [UART pinout](../../uart-pinout.md).
+There is no device-side clear command. Dashboards display fault history read-only, without local acknowledgement.
 
 ## Report ID 1: Status
 

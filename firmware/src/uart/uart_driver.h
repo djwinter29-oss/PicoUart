@@ -30,6 +30,9 @@ typedef struct {
     uint32_t baud_rate; /**< Current baud rate (startup default; updated after a successful line-coding apply). */
     uint32_t tx_pin;    /**< Configured TX GPIO, or unassigned marker. */
     uint32_t rx_pin;    /**< Configured RX GPIO, or unassigned marker. */
+    uint8_t data_bits;  /**< Successfully applied data-bit count. */
+    uint8_t stop_bits;  /**< Successfully applied stop-bit count. */
+    uart_driver_parity_t parity; /**< Successfully applied parity mode. */
 } uart_driver_port_info_t;
 
 /**
@@ -43,7 +46,7 @@ typedef struct {
     uint32_t tx_ring_overflow_count;         /**< Bytes rejected by the USB-to-UART ring. */
     uint32_t rx_ring_overflow_count;         /**< Bytes dropped by the UART-to-USB ring. */
     uint32_t rx_ring_pending_overflow_count; /**< Unread UART-to-USB bytes already overwritten. */
-    uint32_t rx_error_count; /**< Hardware UART receive-status events observed since the post-boot baseline. */
+    uint32_t rx_error_count; /**< Controller receive-status events observed since the post-boot baseline. */
 } uart_driver_port_stats_t;
 
 /**

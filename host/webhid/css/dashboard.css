@@ -128,7 +128,13 @@ tbody tr:hover { background: #f0f7f5; }
 .cdc-state, .overflow { font: 11px var(--mono); }
 .cdc-open { color: var(--teal-dark); }
 .cdc-closed { color: var(--muted); }
-.traffic { display: grid; grid-template-columns: repeat(2, max-content); gap: 4px 16px; color: #53666a; font: 10px var(--mono); }
+.traffic-metrics { display: grid; grid-template-columns: repeat(2, max-content); gap: 6px 16px; color: #53666a; font: 11px var(--mono); }
+.uart-configuration { font: 12px var(--mono); white-space: nowrap; }
+.uart-configuration small { display: block; margin-top: 6px; color: var(--muted); font: 10px var(--sans); }
+.state-idle { color: var(--muted); }
+.fault-details { max-width: 330px; margin-top: 6px; font-size: 11px; }
+.fault-details summary { cursor: pointer; color: var(--teal-dark); }
+.fault-details p { margin: 8px 0; line-height: 1.6; }
 .traffic b { color: var(--ink); font-weight: 600; }
 .traffic-note { margin: 12px 2px 0; color: var(--muted); font-size: 11px; }
 .traffic-note[data-incomplete="true"] { color: var(--coral); }
@@ -156,7 +162,7 @@ tbody tr:hover { background: #f0f7f5; }
 @media (max-width: 420px) {
   .summary { grid-template-columns: 1fr; }
   .summary-item { min-height: 68px; }
-  .traffic { grid-template-columns: 1fr; }
+  .traffic-metrics { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

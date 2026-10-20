@@ -41,6 +41,9 @@ def _empty_snapshot() -> dict[str, Any]:
         "updated_at": None,
         "sequence": None,
         "traffic_incomplete": False,
+        "traffic_gaps": 0,
+        "channel_diagnostics": None,
+        "diagnostics_error": None,
         "board": None,
         "overflow_counts": [None] * UART_CHANNEL_COUNT,
         "channels": [
@@ -129,6 +132,7 @@ class DashboardService:
                     self._snapshot["led"] = None
                     self._snapshot["board"] = None
                     self._snapshot["hardware"] = None
+                    self._snapshot["channel_diagnostics"] = None
             finally:
                 with self._lock:
                     if self._client is client:
@@ -146,10 +150,11 @@ class DashboardService:
             self._snapshot["error"] = None
             self._snapshot["sequence"] = status["sequence"]
             previous_sequence = self._last_sequence
-            if previous_sequence is not None and status["sequence"] != (previous_sequence + 1) % 256:
+            incomplete = previous_sequence is not None and status["sequence"] != (previous_sequence + 1) % 256
+            if incomplete:
                 self._snapshot["traffic_incomplete"] = True
             self._last_sequence = status["sequence"]
-            self._snapshot["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._snapshot["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
             for source in status["channels"]:
                 channel = self._snapshot["channels"][source["id"]]
                 labels = decode_health(source["health"])
@@ -168,8 +173,11 @@ class DashboardService:
                     delta = source[source_field]
                     if delta == 65535:
                         self._snapshot["traffic_incomplete"] = True
+                        incomplete = True
                     channel["traffic"][field] = delta
                     channel["totals"][field] += delta
+            if incomplete:
+                self._snapshot["traffic_gaps"] += 1
 
     def _read_led(self, client: PicoUartHid) -> None:
         try:
@@ -185,6 +193,16 @@ class DashboardService:
 
     def _read_metadata(self, client: PicoUartHid) -> None:
         self._read_led(client)
+        try:
+            diagnostics = client.read_channel_diagnostics()
+        except (OSError, RuntimeError) as error:
+            with self._lock:
+                self._snapshot["channel_diagnostics"] = None
+                self._snapshot["diagnostics_error"] = str(error)
+        else:
+            with self._lock:
+                self._snapshot["channel_diagnostics"] = diagnostics
+                self._snapshot["diagnostics_error"] = None
         for field, reader in (("identity", client.read_identity), ("runtime", client.read_runtime)):
             try:
                 value = reader()

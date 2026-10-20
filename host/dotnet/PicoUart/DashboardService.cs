@@ -38,6 +38,9 @@ public sealed class DashboardSnapshot
     public DateTimeOffset? UpdatedAt { get; set; }
     public byte? Sequence { get; set; }
     public bool TrafficIncomplete { get; set; }
+    public long TrafficGaps { get; set; }
+    public ChannelDiagnostics[]? ChannelDiagnostics { get; set; }
+    public string? DiagnosticsError { get; set; }
     public BoardStatus? Board { get; set; }
     public uint?[] OverflowCounts { get; set; } = new uint?[Protocol.ChannelCount];
     public DashboardChannel[] Channels { get; } = Enumerable.Range(0, Protocol.ChannelCount)
@@ -47,7 +50,7 @@ public sealed class DashboardSnapshot
     {
         Connected = true;
         Error = null;
-        if (Sequence is not null && status.Sequence != (Sequence + 1) % 256) TrafficIncomplete = true;
+        var incomplete = Sequence is not null && status.Sequence != (Sequence + 1) % 256;
         Sequence = status.Sequence;
         UpdatedAt = DateTimeOffset.UtcNow;
         foreach (var source in status.Channels)
@@ -70,7 +73,12 @@ public sealed class DashboardSnapshot
             channel.Totals.UsbRx += source.CdcRxBytes;
             if (source.ControllerTxBytes == ushort.MaxValue || source.ControllerRxBytes == ushort.MaxValue
                 || source.CdcTxBytes == ushort.MaxValue || source.CdcRxBytes == ushort.MaxValue)
-                TrafficIncomplete = true;
+                incomplete = true;
+        }
+        if (incomplete)
+        {
+            TrafficIncomplete = true;
+            TrafficGaps++;
         }
     }
 }
@@ -145,6 +153,23 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     }
                     if (DateTimeOffset.UtcNow < nextMetadataRead) continue;
                     ReadLed(connection);
+                    try
+                    {
+                        var diagnostics = connection.ReadChannelDiagnostics();
+                        lock (gate)
+                        {
+                            snapshot.ChannelDiagnostics = diagnostics;
+                            snapshot.DiagnosticsError = null;
+                        }
+                    }
+                    catch (Exception error) when (IsDeviceError(error))
+                    {
+                        lock (gate)
+                        {
+                            snapshot.ChannelDiagnostics = null;
+                            snapshot.DiagnosticsError = error.Message;
+                        }
+                    }
                     try
                     {
                         var identity = connection.ReadIdentity();
@@ -228,6 +253,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 {
                     snapshot.Connected = false;
                     snapshot.Error = error.Message;
+                    snapshot.ChannelDiagnostics = null;
                     snapshot.Identity = null;
                     snapshot.Runtime = null;
                     snapshot.Board = null;

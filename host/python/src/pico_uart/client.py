@@ -33,6 +33,9 @@ from .protocol import (
     parse_overflow_counts,
     parse_status,
     require_payload,
+    REPORT_ID_CHANNEL_BASE,
+    CHANNEL_DIAGNOSTICS_SIZE,
+    parse_channel_diagnostics,
 )
 from .transport import open_device
 
@@ -148,6 +151,13 @@ class PicoUartHid:
         """Read the device's runtime counters, not host session estimates."""
         with self._lock:
             return parse_runtime(read_feature(self._require_open(), REPORT_ID_RUNTIME, RUNTIME_SIZE))
+
+    def read_channel_diagnostics(self) -> list[dict[str, object]]:
+        """Read six independently addressed channel diagnostic feature reports."""
+        with self._lock:
+            return [parse_channel_diagnostics(read_feature(
+                self._require_open(), REPORT_ID_CHANNEL_BASE + index, CHANNEL_DIAGNOSTICS_SIZE))
+                for index in range(6)]
 
     def toggle_led(self) -> None:
         with self._lock:

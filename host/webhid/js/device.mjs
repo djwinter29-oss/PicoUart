@@ -78,6 +78,28 @@ const TRAFFIC_FIELDS = ["uart_tx", "uart_rx", "usb_tx", "usb_rx"];
 const HEALTH_LABELS = ["ready", "init_failed", "control_error", "control_pending",
   "cdc_open", "pio", "rx_overrun", "rx_error"];
 
+export function decodeChannelDiagnostics(report, reportId) {
+  const data = featurePayload(report, reportId, 59);
+  if (data.getUint8(0) !== 1) throw new Error("Unsupported channel diagnostics version");
+  const baud = data.getUint32(2, true);
+  const bits = data.getUint8(6), stop = data.getUint8(7), parity = data.getUint8(8);
+  const tx = data.getUint8(9), rx = data.getUint8(10);
+  if (baud && (bits < 5 || bits > 8 || ![1, 2].includes(stop) || parity > 2)) {
+    throw new Error("Invalid applied UART framing");
+  }
+  if ([tx, rx].some(pin => pin > 47 && pin !== 255)) throw new Error("Invalid UART GPIO");
+  const faults = Object.fromEntries(["init_failed", "control_error", "rx_overrun", "rx_error"].map((name, index) => {
+    const count = data.getUint32(11 + index * 12, true);
+    const seen = data.getBigUint64(15 + index * 12, true);
+    if (seen > BigInt(Number.MAX_SAFE_INTEGER) || (!count && seen !== 0n)) {
+      throw new Error("Invalid channel fault timestamp");
+    }
+    return [name, { count, last_seen_ms: count ? Number(seen) : null }];
+  }));
+  return { health: data.getUint8(1), baud_rate: baud, data_bits: bits, stop_bits: stop,
+    parity: baud ? "NOE"[parity] : null, tx_pin: tx === 255 ? null : tx, rx_pin: rx === 255 ? null : rx, faults };
+}
+
 export function decodeStatusReport(data) {
   if (!(data instanceof DataView) || data.byteLength !== 63 || data.getUint8(0) !== 0x50) {
     throw new Error("Unexpected status report signature or size");
@@ -110,7 +132,7 @@ export function decodeLedReport(value) {
 function emptyDashboard() {
   return { connected: false, error: null, metadata_error: null, hardware_error: null, hardware: null,
     identity: null, identity_error: null, runtime: null, runtime_error: null,
-    led: null, led_error: null,
+    led: null, led_error: null, channel_diagnostics: null, diagnostics_error: null, traffic_gaps: 0,
     board: null, overflow_counts: Array(6).fill(null), sequence: null, updated_at: null, traffic_incomplete: false,
     channels: Array.from({ length: 6 }, (_, id) => ({ id, health: null, health_labels: [], state: "unknown",
       cdc_open: false, ring_high_watermark: 0,
@@ -145,15 +167,15 @@ export class PicoUartWebHid {
       try {
         const status = decodeStatusReport(event.data);
         const previous = this.state.dashboard;
-        let incomplete = previous.traffic_incomplete
-          || (previous.sequence !== null && status.sequence !== (previous.sequence + 1) % 256);
+        let gap = previous.sequence !== null && status.sequence !== (previous.sequence + 1) % 256;
         const channels = status.channels.map(channel => {
-          if (Object.values(channel.traffic).includes(65535)) incomplete = true;
+          if (Object.values(channel.traffic).includes(65535)) gap = true;
           return { ...channel, totals: Object.fromEntries(TRAFFIC_FIELDS.map(field =>
             [field, previous.channels[channel.id].totals[field] + channel.traffic[field]])) };
         });
         this.update({ dashboard: { ...previous, connected: true, error: null, channels,
-          sequence: status.sequence, updated_at: new Date().toISOString(), traffic_incomplete: incomplete } });
+          sequence: status.sequence, updated_at: new Date().toISOString(),
+          traffic_incomplete: previous.traffic_incomplete || gap, traffic_gaps: previous.traffic_gaps + Number(gap) } });
       } catch (error) {
         this.update({ dashboard: { ...this.state.dashboard, error: error.message } });
       }
@@ -255,6 +277,17 @@ export class PicoUartWebHid {
         if (generation !== this.generation || device !== this.device) return;
         this.update({ dashboard: { ...this.state.dashboard, [field]: null, [`${field}_error`]: error.message } });
       }
+    }
+    try {
+      const diagnostics = [];
+      for (let index = 0; index < 6; index++) {
+        diagnostics.push(decodeChannelDiagnostics(await device.receiveFeatureReport(10 + index), 10 + index));
+        if (generation !== this.generation || device !== this.device) return;
+      }
+      this.update({ dashboard: { ...this.state.dashboard, channel_diagnostics: diagnostics, diagnostics_error: null } });
+    } catch (error) {
+      if (generation !== this.generation || device !== this.device) return;
+      this.update({ dashboard: { ...this.state.dashboard, channel_diagnostics: null, diagnostics_error: error.message } });
     }
     this.update({ phase: "connected", message: "Diagnostics received",
       error: this.state.dashboard.hardware_error ?? this.state.dashboard.metadata_error

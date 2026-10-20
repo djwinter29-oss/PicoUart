@@ -159,6 +159,9 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
     {
         uint32_t save = spin_lock_blocking(control_plane->status_lock);
         port->info.baud_rate = port->ops->baud_rate(&port->backend);
+        port->info.data_bits = pending_control->line_coding.data_bits;
+        port->info.stop_bits = pending_control->line_coding.stop_bits;
+        port->info.parity = pending_control->line_coding.parity;
         spin_unlock(control_plane->status_lock, save);
     }
     uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, true);

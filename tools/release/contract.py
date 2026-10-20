@@ -71,6 +71,7 @@ def firmware_hid_constants(repo_root: Path) -> dict[str, int]:
         "USB_HID_REPORT_ID_RUNTIME",
         "USB_HID_RUNTIME_VERSION",
         "USB_HID_REPORT_ID_LED",
+        "USB_HID_REPORT_ID_CHANNEL_BASE",
         "USB_HID_COMMAND_TOGGLE_LED",
         "USB_HID_COMMAND_RESET_BOARD",
         "USB_HID_COMMAND_ARM_RESET",

@@ -73,6 +73,34 @@
 
 /** @brief Independent LED feature report: version followed by availability/manual/output flags. */
 #define USB_HID_REPORT_ID_LED 9u
+/** @brief First of six independent read-only per-channel diagnostic feature reports. */
+#define USB_HID_REPORT_ID_CHANNEL_BASE 10u
+
+/** @brief Sampled fault history; RX counts are controller events or dropped bytes, not individual bad frames. */
+typedef struct {
+    uint32_t count;        /**< Saturating cumulative count observed by the monitor. */
+    uint64_t last_seen_ms; /**< Boot uptime when a count increase was detected; zero when never detected. */
+} __attribute__((packed)) usb_hid_fault_history_t;
+
+/** @brief Applied channel settings and fault history, owned and sampled by the USB core. */
+typedef struct {
+    uint8_t version;     /**< Independent diagnostic layout version, currently 1. */
+    uint8_t health;      /**< Latest sampled driver status and RX fault flags. */
+    uint32_t baud_rate;  /**< Applied baud rate; zero if the port information is unavailable. */
+    uint8_t data_bits;   /**< Applied data bits. */
+    uint8_t stop_bits;   /**< Applied stop bits. */
+    uint8_t parity;      /**< Applied parity: none=0, odd=1, even=2. */
+    uint8_t tx_pin;      /**< TX GPIO; 255 means unassigned. */
+    uint8_t rx_pin;      /**< RX GPIO; 255 means unassigned. */
+    usb_hid_fault_history_t faults[4]; /**< Init/control assertion observations, RX dropped bytes, RX error events. */
+} __attribute__((packed)) usb_hid_channel_diagnostics_t;
+
+_Static_assert(sizeof(usb_hid_channel_diagnostics_t) == 59u, "Channel diagnostics must fit the HID control buffer");
+
+/** @brief USB-core-owned fault history, retained independently of status report publication. */
+static usb_hid_channel_diagnostics_t usb_hid_diagnostics[UART_PORT_COUNT];
+/** @brief Previous RX counters used to observe increments without modifying backend-owned counters. */
+static uint32_t usb_hid_diagnostic_rx_counts[UART_PORT_COUNT][2];
 
 /** @brief HID command value that toggles the board LED. */
 #define USB_HID_COMMAND_TOGGLE_LED 1u
@@ -305,6 +333,53 @@ static void usb_hid_build_overflow_counts_report(usb_hid_overflow_counts_report_
         report->rx_overflow_count[index] = uart_saturating_add_u32(uart_stats[index].rx_ring_overflow_count,
                                                                    uart_stats[index].rx_ring_pending_overflow_count);
     }
+
+}
+
+/**
+ * @brief Observe diagnostic changes on the USB core; timestamps describe detection, not the exact wire event.
+ * @param index Logical channel.
+ * @param stats Coherent driver statistics, or the last successfully sampled statistics.
+ */
+static void usb_hid_sample_diagnostics(size_t index, const uart_driver_port_stats_t *stats)
+{
+    usb_hid_channel_diagnostics_t *report = &usb_hid_diagnostics[index];
+    uart_driver_port_info_t info;
+    uint8_t health = uart_driver_port_status((uart_port_id_t)index);
+    uint32_t counts[2] = {
+        uart_saturating_add_u32(stats->rx_ring_overflow_count, stats->rx_ring_pending_overflow_count),
+        stats->rx_error_count,
+    };
+    uint64_t now = time_us_64() / 1000u;
+
+    report->version = 1u;
+    if (uart_driver_port_info((uart_port_id_t)index, &info)) {
+        report->baud_rate = info.baud_rate;
+        report->data_bits = info.data_bits;
+        report->stop_bits = info.stop_bits;
+        report->parity = (uint8_t)info.parity;
+        report->tx_pin = info.tx_pin <= UINT8_MAX ? (uint8_t)info.tx_pin : UINT8_MAX;
+        report->rx_pin = info.rx_pin <= UINT8_MAX ? (uint8_t)info.rx_pin : UINT8_MAX;
+    }
+    for (size_t fault = 0u; fault < 4u; ++fault) {
+        uint32_t increment;
+        if (fault < 2u) {
+            uint8_t mask = (uint8_t)(1u << (fault + 1u));
+            increment = ((health & mask) != 0u) && ((report->health & mask) == 0u);
+        } else {
+            size_t counter = fault - 2u;
+            uint32_t previous = usb_hid_diagnostic_rx_counts[index][counter];
+            increment = counts[counter] >= previous ? counts[counter] - previous : counts[counter];
+            usb_hid_diagnostic_rx_counts[index][counter] = counts[counter];
+        }
+        if (increment != 0u) {
+            report->faults[fault].count = uart_saturating_add_u32(report->faults[fault].count, increment);
+            report->faults[fault].last_seen_ms = now;
+        }
+    }
+    if (counts[0] != 0u) health |= USB_HID_CHANNEL_STATUS_RX_OVERRUN;
+    if (counts[1] != 0u) health |= USB_HID_CHANNEL_STATUS_RX_ERROR;
+    report->health = health;
 }
 
 static void usb_hid_build_status_report(usb_hid_status_report_t *report,
@@ -354,13 +429,11 @@ static void usb_hid_build_status_report(usb_hid_status_report_t *report,
     }
 }
 
-static bool usb_hid_publish_status_report(void)
+static bool usb_hid_publish_status_report(const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT],
+                                          const usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT])
 {
-    uart_driver_port_stats_t uart_stats[UART_PORT_COUNT];
-    usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT];
     usb_hid_status_report_t report;
 
-    usb_hid_sample_stats(uart_stats, cdc_stats);
     usb_hid_build_status_report(&report, uart_stats, cdc_stats);
     if (!tud_hid_report(USB_HID_REPORT_ID_STATUS, &report, sizeof(report))) {
         return false;
@@ -381,25 +454,29 @@ void usb_hid_init(void)
     memset(usb_hid_last_reported_uart_stats, 0, sizeof(usb_hid_last_reported_uart_stats));
     memset(usb_hid_last_sampled_uart_stats, 0, sizeof(usb_hid_last_sampled_uart_stats));
     memset(usb_hid_last_reported_cdc_stats, 0, sizeof(usb_hid_last_reported_cdc_stats));
+    memset(usb_hid_diagnostics, 0, sizeof(usb_hid_diagnostics));
+    memset(usb_hid_diagnostic_rx_counts, 0, sizeof(usb_hid_diagnostic_rx_counts));
 }
 
 void usb_hid_poll(void)
 {
     uint32_t now_ms;
 
-    if (!tud_hid_ready()) {
-        /* Keep the signed deadline comparison bounded across very long outages. */
-        usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time()) + USB_HID_STATUS_INTERVAL_MS;
-        return;
-    }
-
     now_ms = to_ms_since_boot(get_absolute_time());
     if ((int32_t)(now_ms - usb_hid_next_report_ms) < 0) {
         return;
     }
 
-    if (!usb_hid_publish_status_report()) {
-        return;
+    {
+        uart_driver_port_stats_t uart_stats[UART_PORT_COUNT];
+        usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT];
+        usb_hid_sample_stats(uart_stats, cdc_stats);
+        for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+            usb_hid_sample_diagnostics(index, &uart_stats[index]);
+        }
+        if (tud_hid_ready() && !usb_hid_publish_status_report(uart_stats, cdc_stats)) {
+            return;
+        }
     }
 
     usb_hid_next_report_ms = now_ms + USB_HID_STATUS_INTERVAL_MS;
@@ -419,6 +496,15 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 
     (void)instance;
 
+    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id >= USB_HID_REPORT_ID_CHANNEL_BASE) &&
+        (report_id < USB_HID_REPORT_ID_CHANNEL_BASE + UART_PORT_COUNT)) {
+        size_t index = report_id - USB_HID_REPORT_ID_CHANNEL_BASE;
+        usb_hid_sample_stats(uart_stats, cdc_stats);
+        usb_hid_sample_diagnostics(index, &uart_stats[index]);
+        uint16_t length = reqlen < sizeof(usb_hid_diagnostics[index]) ? reqlen : sizeof(usb_hid_diagnostics[index]);
+        memcpy(buffer, &usb_hid_diagnostics[index], length);
+        return length;
+    }
     if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_LED)) {
         bool manual_on, output_on;
         bool available = led_read_state(&manual_on, &output_on);
