@@ -151,7 +151,8 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     {
                         lock (gate) snapshot.Apply(status);
                     }
-                    if (DateTimeOffset.UtcNow < nextMetadataRead) continue;
+                    var now = DateTimeOffset.UtcNow;
+                    if (now < nextMetadataRead) continue;
                     ReadLed(connection);
                     try
                     {
@@ -244,7 +245,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             snapshot.HardwareError = null;
                         }
                     }
-                    nextMetadataRead = DateTimeOffset.UtcNow.AddSeconds(2);
+                    nextMetadataRead = now.AddSeconds(1);
                 }
             }
             catch (Exception error) when (IsDeviceError(error))

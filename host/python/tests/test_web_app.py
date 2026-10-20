@@ -187,6 +187,35 @@ def test_dashboard_service_polls_status_and_metadata():
     assert fake.closed
 
 
+def test_dashboard_metadata_refreshes_every_second(monkeypatch):
+    service = object.__new__(DashboardService)
+    service._lock = threading.RLock()
+    service._stop = threading.Event()
+    service._client = None
+    samples = iter([0.0, 0.99, 1.0, 1.99, 2.0])
+    now = 0.0
+    reads = []
+
+    class FakeClient:
+        def read_status(self, timeout_ms):
+            nonlocal now
+            now = next(samples)
+            if now == 2.0:
+                service._stop.set()
+            return None
+
+        def close(self):
+            pass
+
+    service._client_factory = FakeClient
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    monkeypatch.setattr(service, "_read_metadata", lambda _client: reads.append(now))
+
+    service._poll()
+
+    assert reads == [0.0, 1.0, 2.0]
+
+
 def test_metadata_errors_survive_telemetry_and_clear_stale_values():
     service = object.__new__(DashboardService)
     service._lock = threading.RLock()

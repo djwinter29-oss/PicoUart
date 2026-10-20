@@ -127,7 +127,7 @@ class DashboardService:
                     now = time.monotonic()
                     if now >= next_metadata_read:
                         self._read_metadata(client)
-                        next_metadata_read = now + 2.0
+                        next_metadata_read = now + 1.0
             except (OSError, RuntimeError) as error:
                 with self._lock:
                     self._snapshot["connected"] = False

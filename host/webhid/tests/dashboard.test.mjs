@@ -46,6 +46,7 @@ function page() {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [`#${id}`, new Element()]));
   const requests = [];
   let interval;
+  let intervalMs;
   const context = vm.createContext({
     document: {
       querySelector: selector => selector.startsWith("meta") ? { content: "csrf" } : elements.get(selector),
@@ -53,12 +54,12 @@ function page() {
       createElement: () => new Element(),
       createTextNode: text => { const element = new Element(); element.textContent = text; return element; },
     },
-    window: { setInterval(callback) { interval = callback; }, confirm: () => true },
+    window: { setInterval(callback, delay) { interval = callback; intervalMs = delay; }, confirm: () => true },
     fetch: (url, options) => new Promise(resolve => requests.push({ url, options, resolve })),
   });
   vm.runInContext(script, context);
   return {
-    context, requests, element: id => elements.get(`#${id}`),
+    context, requests, intervalMs, element: id => elements.get(`#${id}`),
     tick: () => interval(),
     async respond(data, status = 200) {
       const request = requests.shift();
@@ -84,6 +85,8 @@ async function connect(view) {
 
 test("hosted pages select independently and render board labels as text", async () => {
   const alice = page(), bob = page();
+  assert.equal(alice.intervalMs, 1000);
+  assert.equal(bob.intervalMs, 1000);
   await connect(alice);
   await connect(bob);
   assert.equal(alice.element("board-select").value, "A");
@@ -94,6 +97,33 @@ test("hosted pages select independently and render board labels as text", async 
   await bob.respond(snapshot("second"));
   assert.equal(bob.element("serial").textContent, "second");
   assert.equal(alice.element("serial").textContent, "first");
+});
+
+test("board discovery runs only at startup or on an explicit rescan, never on status ticks", async () => {
+  for (const startup of [
+    { data: catalog, status: 200, board: "A" },
+    { data: { boards: [], default_board_id: null }, status: 200, board: null },
+    { data: { error: "enumeration failed" }, status: 503, board: null },
+  ]) {
+    const view = page();
+    assert.equal(view.intervalMs, 1000);
+    assert.equal(view.requests.length, 1);
+    assert.equal(view.requests[0].url, "/api/boards");
+    await view.respond(startup.data, startup.status);
+    if (startup.status === 200) await view.respond({ ...snapshot(null), connected: false });
+    for (let tick = 0; tick < 3; tick++) {
+      view.tick();
+      assert.equal(view.requests.length, 1);
+      assert.equal(view.requests[0].url, startup.board ? `/api/status?board=${startup.board}` : "/api/status");
+      await view.respond({ ...snapshot(null), connected: false });
+    }
+    view.element("rescan-boards").events.click();
+    assert.equal(view.requests.length, 1);
+    assert.equal(view.requests[0].url, "/api/boards");
+    await view.respond(catalog);
+    await view.respond(snapshot("first"));
+    assert.equal(view.requests.length, 0);
+  }
 });
 
 test("switching clears history and ignores an earlier board's in-flight response", async () => {

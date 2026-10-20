@@ -131,8 +131,10 @@ shared assets and API behavior. Distribution details belong in the [Python](../.
 
 ### Board selection and shared monitoring
 
-The **Board** dropdown lists boards attached to the dashboard server, not the browser's computer. **Rescan** refreshes
-the list without changing an existing selection. Initially the page selects the first discovered board (or the only
+The **Board** dropdown lists boards attached to the dashboard server, not the browser's computer. The page scans this
+list only at startup or when the user clicks **Rescan**, without changing an existing selection. Status refreshes once
+per second and does not rescan the board list, even when disconnected or after a failed scan.
+Initially the page selects the first discovered board (or the only
 board). With `--serial` or `--device-path`, that board is the preferred initial selection; all boards remain available,
 and an absent preferred board leaves the page unselected.
 
@@ -162,7 +164,7 @@ The
 `/api/status` snapshot carries `identity` (product and serial) and `runtime` (uptime, per-core service-load basis points, reserved
 and total RAM), with independent `identity_error` and `runtime_error` fields. Unsupported or failed feature reads clear
 the affected values without discarding unrelated valid reports; disconnect clears device identity and runtime.
-Metadata is sampled every two seconds. See the [HID report reference](../design/usb/hid-report-reference.md) for
+Metadata, including uptime, is sampled every second. See the [HID report reference](../design/usb/hid-report-reference.md) for
 the authoritative version-1 field definitions, UID source, service-load semantics, and RAM accounting.
 
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
@@ -181,8 +183,7 @@ All three dashboards show applied baud/framing and TX/RX GPIOs from the
 hard-coded board map or a CDC request that might have been rejected. Snapshots expose `channel_diagnostics` (six records
 in channel order) and an independent `diagnostics_error`; failed reads clear those records and surface an error,
 while unrelated valid reports remain visible. All HID reports use the current version-1 contract; no legacy decoder
-or missing-report compatibility mode is provided. Diagnostics refresh with metadata: every second in WebHID and
-every two seconds in the Python/.NET hosts.
+or missing-report compatibility mode is provided. Diagnostics refresh with metadata every second in all three dashboards.
 
 Each channel shows a health badge and simple error flags with short troubleshooting tooltips, without expandable
 history, counts, or detection times. The underlying diagnostic records remain available to host tools.
