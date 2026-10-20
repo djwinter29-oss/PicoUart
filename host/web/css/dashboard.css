@@ -132,9 +132,6 @@ tbody tr:hover { background: #f0f7f5; }
 .uart-configuration { font: 12px var(--mono); white-space: nowrap; }
 .uart-configuration small { display: block; margin-top: 6px; color: var(--muted); font: 10px var(--sans); }
 .state-idle { color: var(--muted); }
-.fault-details { max-width: 330px; margin-top: 6px; font-size: 11px; }
-.fault-details summary { cursor: pointer; color: var(--teal-dark); }
-.fault-details p { margin: 8px 0; line-height: 1.6; }
 .traffic b { color: var(--ink); font-weight: 600; }
 .traffic-note { margin: 12px 2px 0; color: var(--muted); font-size: 11px; }
 .traffic-note[data-incomplete="true"] { color: var(--coral); }

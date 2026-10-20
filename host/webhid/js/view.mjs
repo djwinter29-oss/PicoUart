@@ -8,18 +8,11 @@ function makeCell(className, text) {
 const channelHistory = new Map();
 const directions = [["UART TX", "uart_tx"], ["UART RX", "uart_rx"], ["USB TX", "usb_tx"], ["USB RX", "usb_rx"]];
 const faultHelp = {
-  init_failed: "Backend initialization failed. Check firmware resources and configuration.",
-  control_error: "A line-coding request failed. Check the applied settings; PIO supports 8N1 only.",
-  rx_overrun: "UART-to-USB data was dropped. Check whether the host is reading and whether flow control is needed.",
-  rx_error: "Receive error events, not a count of bad bytes. Check baud/framing, common ground and RX wiring. "
-    + "An undriven RX input or a break can cause errors; the monitor cannot determine the cause.",
+  init_failed: "Initialization failure recorded; check firmware resources and configuration.",
+  control_error: "UART configuration failure recorded; check the applied settings.",
+  rx_overrun: "Dropped UART data recorded; check that the host is reading.",
+  rx_error: "Receive error recorded; check baud rate, framing and wiring.",
 };
-
-function uptimeLabel(milliseconds) {
-  const seconds = Math.floor(milliseconds / 1000);
-  return `${Math.floor(seconds / 86400)}d ${Math.floor(seconds % 86400 / 3600)}h `
-    + `${Math.floor(seconds % 3600 / 60)}m ${seconds % 60}s`;
-}
 
 export function channelPresentation(data, channel, now = Date.now()) {
   const sample = Date.parse(data.updated_at);
@@ -29,7 +22,7 @@ export function channelPresentation(data, channel, now = Date.now()) {
     || directions.some(([, key]) => channel.totals[key] < history.totals[key])) {
     history = { serial: data.identity?.serial_number, uptime: data.runtime?.uptime_ms,
       totals: { ...channel.totals }, sample, observedSample: sample, receivedAt: now,
-      gaps: data.traffic_gaps, rates: null, open: false };
+      gaps: data.traffic_gaps, rates: null };
     channelHistory.set(channel.id, history);
   }
   const elapsed = sample - history.sample;
@@ -57,19 +50,18 @@ export function channelPresentation(data, channel, now = Date.now()) {
   const fresh = data.connected && Number.isFinite(sample) && now - history.receivedAt >= 0
     && now - history.receivedAt <= 3000;
   const diagnostic = data.connected ? data.channel_diagnostics?.[channel.id] : null;
-  const faults = Object.entries(diagnostic?.faults ?? {}).filter(([, value]) => value.count > 0);
-  const hasFault = faults.length > 0 || channel.health_labels.some(name => name in faultHelp);
+  const faults = Object.keys(faultHelp).filter(name =>
+    channel.health_labels.includes(name) || diagnostic?.faults[name]?.count > 0);
   const traffic = directions.some(([, key]) => (history.rates?.[key] ?? 0) > 0);
   const state = !fresh || channel.health === null ? "unknown"
-    : hasFault ? "attention"
+    : faults.length ? "attention"
     : !channel.health_labels.includes("ready") ? "initializing"
     : !channel.cdc_open && !traffic ? "idle" : "ready";
-  return { history, diagnostic, faults, state, rates: fresh ? history.rates : null };
+  return { diagnostic, faults, state, rates: fresh ? history.rates : null };
 }
 
 function renderChannels(data) {
   const channelRows = document.querySelector("#channel-rows");
-  const focusedAction = document.activeElement?.dataset.channelAction;
   channelRows.replaceChildren();
   data.channels.forEach((channel) => {
     const view = channelPresentation(data, channel);
@@ -104,30 +96,10 @@ function renderChannels(data) {
     health.append(state);
     const flags = document.createElement("small");
     flags.className = "health-flags";
-    flags.textContent = channel.health_labels.includes("control_pending") ? "Applying settings"
-      : view.faults.length ? "Recorded history; expand for details" : view.state === "idle" ? "CDC closed; receiver still active"
-      : channel.health_labels.filter(label => label in faultHelp).join(", ") || "No active flags";
+    flags.textContent = view.faults.join(", ") || (channel.health_labels.includes("control_pending") ? "Applying settings"
+      : view.state === "idle" ? "CDC closed; receiver still active" : "No active flags");
+    flags.title = view.faults.map(name => faultHelp[name]).join(" ");
     health.append(flags);
-    if (view.faults.length) {
-      const details = document.createElement("details");
-      details.className = "fault-details";
-      details.open = view.history.open;
-      details.addEventListener("toggle", () => {
-        if (details.isConnected) view.history.open = details.open;
-      });
-      const summary = document.createElement("summary");
-      summary.dataset.channelAction = `details-${channel.id}`;
-      summary.textContent = view.faults.map(([name, value]) => `${name} (${value.count})`).join(", ");
-      details.append(summary);
-      for (const [name, value] of view.faults) {
-        const fault = document.createElement("p");
-        const unit = name === "rx_overrun" ? "dropped bytes" : name === "rx_error" ? "events" : "observed assertions";
-        fault.textContent = `${name}: ${value.count} ${unit}; last detected at uptime `
-          + `${uptimeLabel(value.last_seen_ms)}. ${faultHelp[name]}`;
-        details.append(fault);
-      }
-      health.append(details);
-    }
     row.append(health);
     row.append(makeCell(`cdc-state ${channel.cdc_open ? "cdc-open" : "cdc-closed"}`,
       channel.cdc_open ? "Open" : "Closed"));
@@ -151,9 +123,6 @@ function renderChannels(data) {
     row.append(makeCell("overflow", overflow === null ? "--" : `${overflow} B`));
     channelRows.append(row);
   });
-  if (focusedAction) {
-    document.querySelector(`[data-channel-action="${focusedAction}"]`)?.focus({ preventScroll: true });
-  }
 }
 
 export function renderDashboard(data) {
@@ -178,6 +147,7 @@ export function renderDashboard(data) {
     : "--";
   document.querySelector("#ram-usage").textContent = runtime
     ? `${(runtime.ram_reserved_bytes / 1024).toFixed(1)} / ${(runtime.ram_total_bytes / 1024).toFixed(0)} KiB`
+      + ` (${(runtime.ram_reserved_bytes / runtime.ram_total_bytes * 100).toFixed(1)}%)`
     : "--";
   document.querySelector("#temperature").textContent = data.board
     ? `${data.board.temperature_celsius.toFixed(1)} \u00b0C` : "--";

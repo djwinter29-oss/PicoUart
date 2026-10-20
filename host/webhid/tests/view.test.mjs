@@ -95,7 +95,7 @@ for (const frontend of ["webhid", "web"]) {
     }
   });
 
-  test(`${frontend} renders settings and read-only fault history without clearing actions`, () => {
+  test(`${frontend} renders settings and simple read-only fault flags`, () => {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     assert.ok(!html.includes("Backend</th>") && !html.includes("Ring peak"));
     assert.ok(html.includes("UART configuration") && html.includes("Throughput"));
@@ -113,8 +113,11 @@ for (const frontend of ["webhid", "web"]) {
       let rows = document.querySelector("#channel-rows");
       assert.equal(rows.children[0].children.length, 6);
       assert.match(rows.textContent, /115200 8N1TX GP0 \/ RX GP1/);
-      assert.match(rows.textContent, /rx_error: 3 events; last detected at uptime 0d 0h 0m 5s/);
-      assert.match(rows.textContent, /Check baud\/framing, common ground and RX wiring/);
+      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "rx_error");
+      assert.ok(descendants(rows).some(node =>
+        node.title === "Receive error recorded; check baud rate, framing and wiring."));
+      assert.ok(!/last detected|events|expand|rx_error \(/.test(rows.textContent));
+      assert.equal(descendants(rows).filter(node => ["details", "summary", "button"].includes(node.tag)).length, 0);
       assert.match(rows.textContent, /attention/);
       assert.ok(!rows.textContent.includes(">="));
       assert.ok(descendants(rows).some(node => node.title?.includes("0 B observed total")));
@@ -123,19 +126,26 @@ for (const frontend of ["webhid", "web"]) {
       channel.health_labels = ["ready"];
       render(data);
       assert.match(rows.textContent, /attention/);
-      assert.match(rows.textContent, /rx_error: 3 events/);
+      assert.match(rows.textContent, /rx_error/);
       diagnostic.faults.rx_error = { count: 4, last_seen_ms: 6000 };
       render(data);
       assert.match(rows.textContent, /attention/);
-      assert.match(rows.textContent, /rx_error: 4 events; last detected at uptime 0d 0h 0m 6s/);
+      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "rx_error");
       diagnostic.faults = {};
       render(data);
       assert.match(rows.textContent, /idle/);
       channel.health_labels.push("control_error");
       render(data);
       assert.match(rows.textContent, /attention/);
+      channel.health_labels.push("rx_error", "control_pending");
+      diagnostic.faults.rx_error = { count: 4, last_seen_ms: 6000 };
+      render(data);
+      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
+        "control_error, rx_error");
       render({ ...data, channel_diagnostics: null, diagnostics_error: "Firmware upgrade required" });
       assert.match(rows.textContent, /Firmware diagnostics unavailable/);
+      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
+        "control_error, rx_error");
       assert.ok(descendants(rows).some(node => node.title === "Firmware upgrade required"));
       assert.equal(descendants(rows).filter(node => node.textContent === "Clear flags").length, 0);
     } finally {
@@ -148,7 +158,7 @@ for (const frontend of ["webhid", "web"]) {
     const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
     const runtime = html.match(/<section aria-labelledby="runtime-title">([\s\S]*?)<\/section>/)[1];
     assert.ok(runtime.includes("CPU load (core 0 / core 1)"));
-    assert.ok(runtime.includes("RAM (reserved/total)"));
+    assert.ok(runtime.includes("RAM (reserved / total)"));
     assert.ok(!html.includes('id="sequence"'));
     assert.ok(runtime.includes('id="toggle-led"'));
     assert.ok(!html.includes('id="led-state"'));
@@ -193,7 +203,7 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(text("serial"), "0123456789ABCDEF");
       assert.equal(text("uptime"), "1d 1h 1m 1s");
       assert.equal(text("cpu-usage"), "100.0% / --");
-      assert.equal(text("ram-usage"), "64.0 / 512 KiB");
+      assert.equal(text("ram-usage"), "64.0 / 512 KiB (12.5%)");
       assert.equal(text("temperature"), "22.9 \u00b0C");
       assert.equal(text("overflow-total"), "0 B");
       render({ ...data, overflow_counts: [1, 2, 3, 4, 5, 6] });

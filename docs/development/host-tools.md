@@ -151,7 +151,8 @@ in channel order) and an independent `diagnostics_error`; unsupported/failed rea
 status reports continue to work. Diagnostics refresh with the two-second metadata cycle. Older firmware displays
 unavailable settings and cannot provide counts or detection times.
 
-Each channel's expandable fault history gives counts, last detection at device uptime, and troubleshooting guidance.
+Each channel shows a health badge and simple error flags with short troubleshooting tooltips, without expandable
+history, counts, or detection times. The underlying diagnostic records remain available to host tools.
 Channel diagnostics are read-only: dashboards cannot clear or acknowledge faults, and recorded faults keep the channel
 in **Attention** while telemetry is fresh, even if the corresponding live flag is no longer asserted.
 Healthy, closed CDC channels without observed throughput are labelled **Idle**, not disconnected: UART RX remains
@@ -164,4 +165,4 @@ is a monotonic count of incomplete status observations, allowing each page to in
 retaining the sticky `traffic_incomplete` notice. Totals remain lower bounds after missing/saturated reports.
 
 The independent WebHID renderer and hosted renderer retain their separate assets; the shared Node presentation tests
-exercise the same rate, read-only fault history, fallback and state contracts against both.
+exercise the same rate, read-only fault flag, fallback and state contracts against both.
