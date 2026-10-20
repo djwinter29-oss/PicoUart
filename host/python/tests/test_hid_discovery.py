@@ -51,6 +51,20 @@ def test_discovery_opens_correct_collection_among_incorrect(monkeypatch, hid_mod
     assert opened_paths == [b"correct"]
 
 
+def test_enumeration_lists_validated_interfaces_without_opening(monkeypatch, hid_module):
+    exact = _exact_device(hid_module)
+    fallback = {"path": b"fallback", "product_string": hid_module.PRODUCT_STRING}
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, [
+        exact, fallback,
+        {"path": b"wrong", "usage_page": 1, "usage": 2},
+        {"path": b"wrong-interface", "product_string": hid_module.PRODUCT_STRING, "interface_number": 0},
+    ])
+    assert hid_module.enumerate_devices() == [exact, fallback]
+    assert opened_paths == []
+    hid_module.open_device()
+    assert opened_paths == [exact["path"]]
+
+
 def test_discovery_resolves_linux_interface_path_to_hidraw(monkeypatch, hid_module):
     devices = [_exact_device(hid_module, b"1-3:1.12")]
     opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)

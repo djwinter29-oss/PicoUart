@@ -6,6 +6,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 import secrets
+import hashlib
+import os
 import threading
 import time
 from typing import Any, Callable
@@ -14,6 +16,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory,
 
 from ..client import PicoUartHid
 from ..protocol import UART_CHANNEL_COUNT, decode_health
+from ..transport import enumerate_devices
 
 
 TRAFFIC_FIELDS = {
@@ -85,12 +88,14 @@ class DashboardService:
             return deepcopy(self._snapshot)
 
     def toggle_led(self) -> None:
-        client = self._require_client()
-        client.toggle_led()
-        self._read_led(client)
+        with self._lock:
+            client = self._require_client()
+            client.toggle_led()
+            self._read_led(client)
 
     def reset_board(self) -> None:
-        self._require_client().reset_board()
+        with self._lock:
+            self._require_client().reset_board()
 
     def close(self) -> None:
         self._stop.set()
@@ -241,7 +246,84 @@ class DashboardService:
             self._snapshot["hardware_error"] = None
 
 
-def create_app(service: DashboardService | None = None) -> Flask:
+class DashboardBoards:
+    """Share one reader per board across all requests; selection belongs to the page, not the server."""
+
+    def __init__(
+        self,
+        serial_number: str | None = None,
+        device_path: str | None = None,
+        discover: Callable[[], list[dict[str, Any]]] = enumerate_devices,
+        monitor_factory: Callable[..., DashboardService] = DashboardService,
+    ) -> None:
+        self._serial = serial_number
+        self._path = device_path
+        self._discover = discover
+        self._monitor_factory = monitor_factory
+        self._lock = threading.RLock()
+        self._known: dict[str, dict[str, Any]] = {}
+        self._monitors: dict[str, DashboardService] = {}
+        self._closed = False
+
+    def boards(self) -> dict[str, Any]:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("dashboard is shutting down")
+            devices = self._discover()
+            boards = []
+            seen = set()
+            for device in devices:
+                serial = device.get("serial_number") or None
+                path = os.fsdecode(device["path"])
+                identifier = hashlib.sha256((f"serial:{serial}" if serial else f"path:{path}").encode()).hexdigest()
+                if identifier in seen:
+                    raise RuntimeError("duplicate PicoUart board identity; board serials must be unique")
+                seen.add(identifier)
+                board = {"id": identifier, "product_name": device.get("product_string") or "PicoUart",
+                         "serial_number": serial, "device_path": path}
+                boards.append(board)
+            self._known.update((board["id"], board) for board in boards)
+            preferred = next((board["id"] for board in boards
+                              if (self._serial and board["serial_number"] == self._serial)
+                              or (self._path and board["device_path"] == self._path)), None)
+            return {"boards": boards, "default_board_id": preferred or (
+                None if self._serial or self._path else boards[0]["id"] if boards else None)}
+
+    def _monitor(self, board_id: str | None) -> DashboardService:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("dashboard is shutting down")
+            if not board_id or board_id not in self._known:
+                raise RuntimeError("unknown board; rescan and select a listed board")
+            if board_id not in self._monitors:
+                board = self._known[board_id]
+                self._monitors[board_id] = self._monitor_factory(
+                    serial_number=board["serial_number"],
+                    device_path=None if board["serial_number"] else board["device_path"])
+            return self._monitors[board_id]
+
+    def snapshot(self, board_id: str | None = None) -> dict[str, Any]:
+        if board_id is None:
+            return _empty_snapshot()
+        return self._monitor(board_id).snapshot()
+
+    def toggle_led(self, board_id: str | None) -> None:
+        self._monitor(board_id).toggle_led()
+
+    def reset_board(self, board_id: str | None) -> None:
+        self._monitor(board_id).reset_board()
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            monitors = list(self._monitors.values())
+        for monitor in monitors:
+            monitor.close()
+
+
+def create_app(service: DashboardBoards | None = None) -> Flask:
     """Create the web app; an injected service keeps route tests hardware-free."""
     web_root = Path(__file__).parent / "assets"
     if not web_root.is_dir():
@@ -253,7 +335,7 @@ def create_app(service: DashboardService | None = None) -> Flask:
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
     )
-    dashboard = service if service is not None else DashboardService()
+    dashboard = service if service is not None else DashboardBoards()
 
     @app.after_request
     def set_security_headers(response):
@@ -281,7 +363,19 @@ def create_app(service: DashboardService | None = None) -> Flask:
 
     @app.get("/api/status")
     def status():
-        return jsonify(dashboard.snapshot())
+        try:
+            return jsonify(dashboard.snapshot(request.args.get("board")))
+        except RuntimeError as error:
+            return jsonify(error=str(error)), 409
+
+    @app.get("/api/boards")
+    def boards():
+        try:
+            return jsonify(dashboard.boards())
+        except RuntimeError as error:
+            return jsonify(error=str(error)), 409
+        except OSError as error:
+            return jsonify(error=str(error)), 503
 
     @app.post("/api/actions/<action>")
     def action(action: str):
@@ -291,9 +385,9 @@ def create_app(service: DashboardService | None = None) -> Flask:
             return jsonify(error="request token missing or invalid"), 403
         try:
             if action == "toggle-led":
-                dashboard.toggle_led()
+                dashboard.toggle_led(request.args.get("board"))
             elif action == "reset":
-                dashboard.reset_board()
+                dashboard.reset_board(request.args.get("board"))
             else:
                 return jsonify(error="unknown action"), 404
         except RuntimeError as error:
@@ -311,7 +405,7 @@ def run_server(
     device_path: str | None = None,
 ) -> None:
     """Run the dashboard on loopback only; never expose board controls to a LAN."""
-    dashboard = DashboardService(serial_number, device_path)
+    dashboard = DashboardBoards(serial_number, device_path)
     try:
         create_app(dashboard).run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
     finally:

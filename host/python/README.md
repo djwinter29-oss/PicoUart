@@ -38,7 +38,9 @@ toggle and shows Reset only when the firmware advertises reset support. Use `pic
 local port.
 
 Its frontend is shared with the [.NET host](../dotnet/README.md). The Python package includes the frontend; .NET is not
-required to use it.
+required to use it. Use **Board** and **Rescan** to choose among attached boards independently in each page.
+See [board selection and shared monitoring](../../docs/development/host-tools.md#board-selection-and-shared-monitoring)
+for multi-user behavior and how CLI selectors set the initial selection.
 
 Other commands include `temperature`, `version`, `toggle-led`, and `reset`. For a specific board, use the global
 `--serial SERIAL` or `--device-path PATH` selector before the command, for example `pico-uart --serial ABC123 status`.

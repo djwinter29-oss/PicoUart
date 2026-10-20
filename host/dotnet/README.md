@@ -30,8 +30,11 @@ If the page loads but reports no HID interface, check the error in the page or `
 [Linux HID permissions](../../tools/README.md#linux-hid-permissions). After using older Python builds backed by libusb,
 Linux's HID driver may remain detached: close the other client and reconnect the board's USB data cable to restore it.
 
-The dashboard binds only to `http://127.0.0.1:5001` in this example. Both servers implement `/api/status` and
-`/api/actions/{toggle-led,reset}` with the same JSON field names. The HTML's `{{ csrf_token }}` placeholder is filled
+The dashboard binds only to `http://127.0.0.1:5001` in this example. Use **Board** and **Rescan** to select among attached
+boards independently in each page; viewers of the same board share one reader.
+The [shared dashboard guide](../../docs/development/host-tools.md#board-selection-and-shared-monitoring) owns selection,
+reader lifetime, CLI defaults, and the board-scoped API contract.
+Both servers use the same JSON field names. The HTML's `{{ csrf_token }}` placeholder is filled
 by each server, and control requests require that session's token in `X-CSRF-Token`. Keep shared frontend changes
 backend-neutral; do not add Flask-only template expressions or a second frontend under the C# project.
 

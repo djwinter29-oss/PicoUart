@@ -128,6 +128,24 @@ def test_dotnet_startup_prints_dashboard_url_without_framework_info_logs(server,
     assert "info: Microsoft." not in log
 
 
+def test_dotnet_board_catalog_and_invalid_selection(server):
+    status, _, payload = request(server, "/api/boards")
+    assert status == 200
+    listing = json.loads(payload)
+    assert listing.keys() == {"boards", "default_board_id"}
+    for board in listing["boards"]:
+        assert board.keys() == {"id", "product_name", "serial_number", "device_path"}
+    assert listing["default_board_id"] is None or listing["default_board_id"] in {
+        board["id"] for board in listing["boards"]
+    }
+    token, cookie, _, _ = session(server)
+    headers = {"Cookie": cookie, "X-CSRF-Token": token}
+    assert request(server, "/api/status?board=unknown")[0] == 409
+    assert request(server, "/api/actions/toggle-led?board=unknown", "POST", headers)[0] == 409
+    assert request(server, "/api/actions/reset", "POST", headers)[0] == 409
+    assert request(server, "/api/status")[0] == 200
+
+
 def test_dotnet_controls_reject_bad_hosts_and_csrf(server):
     token, cookie, _, _ = session(server)
     path = "/api/actions/toggle-led"

@@ -2,6 +2,8 @@ using HidSharp;
 
 namespace PicoUart;
 
+public sealed record HidBoard(string DevicePath, string? SerialNumber, string ProductName);
+
 public sealed class PicoUartHid : IDisposable
 {
     private readonly HidStream stream;
@@ -12,11 +14,10 @@ public sealed class PicoUartHid : IDisposable
     {
         if (serialNumber is not null && devicePath is not null)
             throw new ArgumentException("--serial and --device-path cannot be used together");
-        var devices = DeviceList.Local.GetHidDevices(0xCAFE, 0x4010)
+        var devices = MatchingDevices()
             .Where(device => devicePath is null || device.DevicePath == devicePath)
             .Where(device => serialNumber is null || device.GetSerialNumber() == serialNumber)
-            .Where(device => device.GetReportDescriptor().DeviceItems
-                .Any(item => item.Usages.GetAllValues().Contains(0xFF000001u))).ToArray();
+            .ToArray();
         if (devices.Length == 0)
             throw new InvalidOperationException("PicoUart HID interface not found with the expected usage metadata");
         if (devices.Length != 1)
@@ -25,6 +26,13 @@ public sealed class PicoUartHid : IDisposable
         stream.ReadTimeout = 250;
         stream.WriteTimeout = 1000;
     }
+
+    private static IEnumerable<HidDevice> MatchingDevices() => DeviceList.Local.GetHidDevices(0xCAFE, 0x4010)
+        .Where(device => device.GetReportDescriptor().DeviceItems
+            .Any(item => item.Usages.GetAllValues().Contains(0xFF000001u)));
+
+    public static HidBoard[] Discover() => MatchingDevices().Select(device =>
+        new HidBoard(device.DevicePath, device.GetSerialNumber(), device.GetProductName())).ToArray();
 
     public Status? ReadStatus(int timeoutMs = 250)
     {

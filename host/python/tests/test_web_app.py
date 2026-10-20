@@ -17,13 +17,13 @@ class FakeDashboard:
     def __init__(self):
         self.actions = []
 
-    def snapshot(self):
+    def snapshot(self, board_id=None):
         return {"connected": False, "channels": []}
 
-    def toggle_led(self):
+    def toggle_led(self, board_id=None):
         self.actions.append("toggle-led")
 
-    def reset_board(self):
+    def reset_board(self, board_id=None):
         self.actions.append("reset")
 
 
@@ -73,7 +73,7 @@ def test_dashboard_serves_shared_assets():
     assert b'id="mcu"' in page.data
     assert b'id="system-clock"' in page.data
     assert b'href="/css/dashboard.css"' in page.data
-    assert b'src="/js/dashboard.js?v=3"' in page.data
+    assert b'src="/js/dashboard.js?v=4"' in page.data
     assert b"{{" not in page.data
     for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
         response = client.get(f"/{path}")
@@ -106,7 +106,7 @@ def test_dashboard_rejects_untrusted_host_before_serving_controls():
 
 def test_dashboard_passes_reset_capability_errors_to_the_host():
     class ResetDisabledDashboard(FakeDashboard):
-        def reset_board(self):
+        def reset_board(self, board_id=None):
             raise RuntimeError("firmware HID reset is disabled")
 
     client = create_app(ResetDisabledDashboard()).test_client()
@@ -119,7 +119,7 @@ def test_dashboard_passes_reset_capability_errors_to_the_host():
 
 def test_dashboard_maps_action_io_errors_and_unknown_actions():
     class BrokenDashboard(FakeDashboard):
-        def toggle_led(self):
+        def toggle_led(self, board_id=None):
             raise OSError("HID write failed")
 
     client = create_app(BrokenDashboard()).test_client()
@@ -313,7 +313,7 @@ def test_run_server_binds_loopback_and_closes_service(monkeypatch):
 
     service = FakeService()
     server_options = {}
-    monkeypatch.setattr(web_app, "DashboardService", lambda *_args: service)
+    monkeypatch.setattr(web_app, "DashboardBoards", lambda *_args: service)
     monkeypatch.setattr(
         web_app.Flask,
         "run",

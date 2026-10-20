@@ -71,8 +71,8 @@ static async Task RunWeb(Options options)
         configuration.Cookie.SameSite = SameSiteMode.Strict;
         configuration.Cookie.IsEssential = true;
     });
-    builder.Services.AddSingleton(new DashboardService(options.Serial, options.DevicePath));
-    builder.Services.AddHostedService(provider => provider.GetRequiredService<DashboardService>());
+    builder.Services.AddSingleton(new DashboardBoards(options.Serial, options.DevicePath));
+    builder.Services.AddHostedService(provider => provider.GetRequiredService<DashboardBoards>());
     var app = builder.Build();
     app.Use(async (context, next) =>
     {
@@ -111,12 +111,24 @@ static async Task RunWeb(Options options)
         return Results.Content(template.Replace("{{ csrf_token }}", token).Replace("{{ dashboard_type }}", ".NET"),
             "text/html");
     });
-    app.MapGet("/api/status", async (HttpContext context, DashboardService dashboard) =>
+    app.MapGet("/api/boards", (DashboardBoards dashboard) =>
+    {
+        try { return Results.Json(dashboard.Boards(), Protocol.JsonOptions); }
+        catch (Exception error) when (DashboardService.IsDeviceError(error))
+        {
+            return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);
+        }
+    });
+    app.MapGet("/api/status", async (HttpContext context, DashboardBoards dashboard) =>
     {
         await context.Session.LoadAsync();
-        return Results.Content(dashboard.SnapshotJson(), "application/json");
+        try { return Results.Content(dashboard.SnapshotJson(context.Request.Query["board"]), "application/json"); }
+        catch (Exception error) when (DashboardService.IsDeviceError(error))
+        {
+            return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);
+        }
     });
-    app.MapPost("/api/actions/{action}", (string action, HttpContext context, DashboardService dashboard) =>
+    app.MapPost("/api/actions/{action}", (string action, HttpContext context, DashboardBoards dashboard) =>
     {
         var token = context.Session.GetString("csrf_token");
         var supplied = context.Request.Headers["X-CSRF-Token"].ToString();
@@ -125,7 +137,7 @@ static async Task RunWeb(Options options)
             return Results.Json(new { error = "request token missing or invalid" }, statusCode: 403);
         if (action is not ("toggle-led" or "reset"))
             return Results.Json(new { error = "unknown action" }, statusCode: 404);
-        try { dashboard.Action(action); }
+        try { dashboard.Action(context.Request.Query["board"], action); }
         catch (Exception error) when (DashboardService.IsDeviceError(error))
         {
             return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);

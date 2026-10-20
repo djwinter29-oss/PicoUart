@@ -129,6 +129,33 @@ contract; do not add a second frontend. The [.NET integration tests](../../tests
 shared assets and API behavior. Distribution details belong in the [Python](../../host/python/README.md) and
 [.NET](../../host/dotnet/README.md) guides.
 
+### Board selection and shared monitoring
+
+The **Board** dropdown lists boards attached to the dashboard server, not the browser's computer. **Rescan** refreshes
+the list without changing an existing selection. Initially the page selects the first discovered board (or the only
+board). With `--serial` or `--device-path`, that board is the preferred initial selection; all boards remain available,
+and an absent preferred board leaves the page unselected.
+
+Selection is local to each page: different users or tabs can view different boards on the same server. Selecting a
+board clears the previous board's display and rate history immediately. LED and reset commands target only that page's
+selected board. Unplugging never silently selects another board; rescans retain a missing selection as **not found**.
+Boards with serial numbers reconnect by serial even if the OS path changes. Devices without serials are identified by
+their OS path, which cannot distinguish a replacement device reusing that path.
+
+Each server starts one HID reader lazily per selected board and shares its cached snapshot among all viewers.
+Additional viewers do not read the HID stream or consume its deltas again. Readers remain active until server shutdown,
+including when no page is viewing them, and retry disconnected boards. Observed traffic totals belong to the shared
+reader's current connection, not to a browser session. Run only one host monitor/server per physical board; separate
+server processes and standalone HID clients do not share these readers.
+
+`GET /api/boards` returns `boards` (`id`, `product_name`, `serial_number`, `device_path`) and `default_board_id`.
+Pass the opaque `id` as `?board=ID` to `GET /api/status` and `POST /api/actions/{toggle-led,reset}`. A status request
+without a board returns an empty six-channel snapshot; actions require a known board and the existing session CSRF
+token. Unknown IDs and duplicate board identities fail explicitly. Servers remain loopback-only; this is not a change
+to network exposure or access control. WebHID retains its native browser chooser and is unchanged.
+
+### Status presentation
+
 Both dashboards separate device identity from live runtime status, retaining the six UART channel table.
 The runtime cards include total RX overflow across all six channels alongside uptime, service load, RAM and temperature.
 The

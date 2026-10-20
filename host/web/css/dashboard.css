@@ -89,6 +89,20 @@ h2 span { margin-left: 9px; color: var(--muted); font: 500 12px var(--mono); }
 
 .section-heading { margin-bottom: 8px; align-items: center; }
 .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+#board-select {
+  min-height: 38px;
+  max-width: min(330px, 100%);
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid #cbd6d3;
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 12px var(--mono);
+}
+#board-select:focus-visible { outline: 3px solid var(--lime); outline-offset: 2px; }
+#rescan-boards { min-width: auto; }
+#rescan-boards::before { content: none; }
 .button {
   min-height: 38px;
   padding: 0 14px;

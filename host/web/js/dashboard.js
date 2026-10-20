@@ -3,8 +3,16 @@ const connection = document.querySelector("#connection");
 const channelRows = document.querySelector("#channel-rows");
 const statusMessage = document.querySelector("#status-message");
 const actionButtons = [...document.querySelectorAll(".actions button")];
+const boardSelect = document.querySelector("#board-select");
+const rescanButton = document.querySelector("#rescan-boards");
 let actionBusy = false;
 let latestData = null;
+let selectedBoard = null;
+let selectedLabel = "";
+let selectionVersion = 0;
+let refreshing = null;
+let scanning = false;
+let scanError = null;
 
 function makeCell(className, text) {
   const cell = document.createElement("td");
@@ -213,7 +221,7 @@ function render(data) {
     : "";
   renderChannels(data);
 
-  const message = data.error
+  const message = scanError || data.error
     || (data.metadata_error ? `Board metadata unavailable: ${data.metadata_error}` : null)
     || (data.hardware_error ? `Hardware information unavailable: ${data.hardware_error}` : null)
     || (data.identity_error ? `Device identity unavailable: ${data.identity_error}` : null)
@@ -223,29 +231,103 @@ function render(data) {
     || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
   statusMessage.textContent = message;
   statusMessage.parentElement.dataset.error = Boolean(
-    data.error || data.metadata_error || data.hardware_error || data.identity_error || data.runtime_error
+    scanError || data.error || data.metadata_error || data.hardware_error || data.identity_error || data.runtime_error
       || data.led_error || data.diagnostics_error || !data.connected,
   );
 }
 
 async function refresh() {
+  if (refreshing === selectionVersion) return;
+  const version = selectionVersion;
+  refreshing = version;
   try {
-    const response = await fetch("/api/status", { cache: "no-store" });
-    if (!response.ok) throw new Error(`Status request failed (${response.status})`);
-    render(await response.json());
+    const query = selectedBoard ? `?board=${encodeURIComponent(selectedBoard)}` : "";
+    const response = await fetch(`/api/status${query}`, { cache: "no-store" });
+    const data = await response.json();
+    if (version !== selectionVersion) return;
+    if (!response.ok) throw new Error(data.error || `Status request failed (${response.status})`);
+    render(data);
   } catch (error) {
+    if (version !== selectionVersion) return;
     if (latestData) render({ ...latestData, connected: false, error: error.message });
     statusMessage.textContent = error.message;
     statusMessage.parentElement.dataset.error = "true";
+  } finally {
+    if (refreshing === version) refreshing = null;
+  }
+}
+
+function selectBoard(id, label) {
+  if (selectedBoard === id) return;
+  selectedBoard = id;
+  selectedLabel = label;
+  selectionVersion++;
+  channelHistory.clear();
+  reportSample = null;
+  render({
+    connected: false, updated_at: null, traffic_incomplete: false, traffic_gaps: 0,
+    overflow_counts: Array(6).fill(null),
+    channels: Array.from({ length: 6 }, (_, index) => ({
+      id: index, health: null, health_labels: [], cdc_open: false,
+      totals: Object.fromEntries(directions.map(([, key]) => [key, 0])),
+    })),
+  });
+}
+
+async function rescanBoards() {
+  if (scanning) return;
+  scanning = true;
+  rescanButton.disabled = true;
+  try {
+    const response = await fetch("/api/boards", { cache: "no-store" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Board scan failed (${response.status})`);
+    scanError = null;
+    boardSelect.replaceChildren();
+    for (const board of result.boards) {
+      const option = document.createElement("option");
+      option.value = board.id;
+      option.textContent = `${board.product_name} / ${board.serial_number || board.device_path}`;
+      boardSelect.append(option);
+    }
+    if (selectedBoard && !result.boards.some(board => board.id === selectedBoard)) {
+      const missing = document.createElement("option");
+      missing.value = selectedBoard;
+      missing.textContent = `${selectedLabel} (not found)`;
+      boardSelect.append(missing);
+    }
+    if (!selectedBoard) {
+      const initial = result.boards.find(board => board.id === result.default_board_id);
+      if (initial) selectBoard(initial.id, `${initial.product_name} / ${initial.serial_number || initial.device_path}`);
+      else {
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = result.boards.length ? "Select a board" : "No boards found";
+        boardSelect.append(placeholder);
+      }
+    }
+    boardSelect.value = selectedBoard || "";
+    boardSelect.disabled = actionBusy || !result.boards.length;
+    await refresh();
+  } catch (error) {
+    scanError = `Board scan failed: ${error.message}`;
+    statusMessage.textContent = scanError;
+    statusMessage.parentElement.dataset.error = "true";
+  } finally {
+    scanning = false;
+    rescanButton.disabled = actionBusy;
   }
 }
 
 async function runAction(action) {
+  if (!selectedBoard || actionBusy) return;
   if (action === "reset" && !window.confirm("Reset the PicoUart board?")) return;
+  const board = selectedBoard;
   actionBusy = true;
+  boardSelect.disabled = true;
   actionButtons.forEach((button) => { button.disabled = true; });
   try {
-    const response = await fetch(`/api/actions/${action}`, {
+    const response = await fetch(`/api/actions/${action}?board=${encodeURIComponent(board)}`, {
       method: "POST",
       headers: { "X-CSRF-Token": token },
     });
@@ -259,6 +341,8 @@ async function runAction(action) {
     statusMessage.parentElement.dataset.error = "true";
   } finally {
     actionBusy = false;
+    boardSelect.disabled = !boardSelect.value;
+    rescanButton.disabled = scanning;
     document.querySelector("#toggle-led").disabled = !latestData?.connected || latestData.led?.output_on == null;
     document.querySelector("#reset-board").disabled = !latestData?.connected;
   }
@@ -266,5 +350,11 @@ async function runAction(action) {
 
 document.querySelector("#toggle-led").addEventListener("click", () => runAction("toggle-led"));
 document.querySelector("#reset-board").addEventListener("click", () => runAction("reset"));
-refresh();
+boardSelect.addEventListener("change", () => {
+  if (actionBusy) return;
+  selectBoard(boardSelect.value || null, boardSelect.selectedOptions[0]?.textContent || "");
+  refresh();
+});
+rescanButton.addEventListener("click", rescanBoards);
+rescanBoards();
 window.setInterval(refresh, 1000);

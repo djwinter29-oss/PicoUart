@@ -147,52 +147,50 @@ def _device_path_matches(device_info: dict[str, Any], requested_path: str) -> bo
     return path == requested_path
 
 
+def enumerate_devices() -> list[dict[str, Any]]:
+    """List PicoUart HID interfaces without opening them."""
+    require_hid()
+    # Some hidapi backends omit usage metadata. Constrain these fallbacks to
+    # PicoUart's product string or known vendor HID interface.
+    return [
+        info for info in hid.enumerate(VENDOR_ID, PRODUCT_ID)
+        if (info.get("usage_page") == USAGE_PAGE and info.get("usage") == USAGE)
+        or (
+            not info.get("usage_page") and not info.get("usage")
+            and (info.get("product_string") == PRODUCT_STRING
+                 or (not info.get("product_string") and info.get("interface_number") == HID_INTERFACE_NUMBER))
+            and info.get("interface_number") in (None, -1, HID_INTERFACE_NUMBER)
+        )
+    ]
+
+
 def open_device(serial_number: str | None = None, device_path: str | None = None) -> Any:
     """Open PicoUart's vendor-defined HID collection."""
     require_hid()
     if serial_number is not None and device_path is not None:
         raise RuntimeError("--serial and --device-path cannot be used together")
 
-    devices = hid.enumerate(VENDOR_ID, PRODUCT_ID)
+    devices = enumerate_devices()
+    if serial_number is not None:
+        devices = [info for info in devices if info.get("serial_number") == serial_number]
+    if device_path is not None:
+        devices = [info for info in devices if _device_path_matches(info, device_path)]
     exact_matches = [
         device_info
         for device_info in devices
         if device_info.get("usage_page") == USAGE_PAGE and device_info.get("usage") == USAGE
     ]
-    if serial_number is not None:
-        exact_matches = [
-            device_info for device_info in exact_matches if device_info.get("serial_number") == serial_number
-        ]
-    if device_path is not None:
-        exact_matches = [device_info for device_info in exact_matches if _device_path_matches(device_info, device_path)]
     if len(exact_matches) == 1:
         return open_enumerated_device(exact_matches[0])
     if len(exact_matches) > 1:
         raise RuntimeError("multiple PicoUart HID interfaces matched the expected usage")
 
-    # Some hidapi backends omit usage metadata. Trust PicoUart's exact product
-    # string, or an empty product string only when the interface number is
-    # known to be the vendor HID interface. Keep the interface constraint for
-    # every fallback match.
     fallback_matches = [
         device_info
         for device_info in devices
         if not device_info.get("usage_page")
         and not device_info.get("usage")
-        and (
-            device_info.get("product_string") == PRODUCT_STRING
-            or (not device_info.get("product_string") and device_info.get("interface_number") == HID_INTERFACE_NUMBER)
-        )
-        and device_info.get("interface_number") in (None, -1, HID_INTERFACE_NUMBER)
     ]
-    if serial_number is not None:
-        fallback_matches = [
-            device_info for device_info in fallback_matches if device_info.get("serial_number") == serial_number
-        ]
-    if device_path is not None:
-        fallback_matches = [
-            device_info for device_info in fallback_matches if _device_path_matches(device_info, device_path)
-        ]
     if len(fallback_matches) == 1:
         return open_enumerated_device(fallback_matches[0])
     if len(fallback_matches) > 1:
