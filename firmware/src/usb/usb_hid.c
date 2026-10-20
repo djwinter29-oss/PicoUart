@@ -42,10 +42,10 @@
 /**
  * @brief HID status / board-status report format version.
  *
- * v15 shrinks the status input payload to 63 bytes so Report ID + payload fit
+ * The status input payload is 63 bytes so Report ID + payload fit
  * in one full-speed HID interrupt packet (`CFG_TUD_HID_EP_BUFSIZE`).
  */
-#define USB_HID_REPORT_VERSION 15u
+#define USB_HID_REPORT_VERSION 1u
 /** @brief HID input report ID for the compact status monitor. */
 #define USB_HID_REPORT_ID_STATUS 1u
 /** @brief HID feature report ID for board temperature and firmware version. */
@@ -69,7 +69,7 @@
 /** @brief HID feature report ID for uptime, active CPU time and reserved SRAM. */
 #define USB_HID_REPORT_ID_RUNTIME 8u
 /** @brief Independent runtime feature payload layout version. */
-#define USB_HID_RUNTIME_VERSION 2u
+#define USB_HID_RUNTIME_VERSION 1u
 
 /** @brief Independent LED feature report: version followed by availability/manual/output flags. */
 #define USB_HID_REPORT_ID_LED 9u

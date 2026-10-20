@@ -134,9 +134,9 @@ The runtime cards include total RX overflow across all six channels alongside up
 The
 `/api/status` snapshot carries `identity` (product and serial) and `runtime` (uptime, per-core service-load basis points, reserved
 and total RAM), with independent `identity_error` and `runtime_error` fields. Unsupported or failed feature reads clear
-the affected values without discarding legacy channel/board reports; disconnect clears device identity and runtime.
+the affected values without discarding unrelated valid reports; disconnect clears device identity and runtime.
 Metadata is sampled every two seconds. See the [HID report reference](../design/usb/hid-report-reference.md) for
-the authoritative field definitions, UID source, service-load semantics and legacy compatibility, and RAM accounting.
+the authoritative version-1 field definitions, UID source, service-load semantics, and RAM accounting.
 
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
 The Device identity heading contains one outline **Board LED: On/Off** button with a physical-output indicator dot.
@@ -149,13 +149,13 @@ changed status sample. Age measures browser receipt time so remote host clock of
 
 ### Channel diagnostics and traffic presentation
 
-All three dashboards show applied baud/framing and TX/RX GPIOs from the optional
+All three dashboards show applied baud/framing and TX/RX GPIOs from the
 [channel diagnostic reports](../design/usb/hid-report-reference.md#reports-10-15-channel-diagnostics), never from a
 hard-coded board map or a CDC request that might have been rejected. Snapshots expose `channel_diagnostics` (six records
-in channel order) and an independent `diagnostics_error`; unsupported/failed reads clear those records while legacy
-status reports continue to work. Diagnostics refresh with metadata: every second in WebHID and every two seconds in
-the Python/.NET hosts. Older firmware displays
-unavailable settings and cannot provide counts or detection times.
+in channel order) and an independent `diagnostics_error`; failed reads clear those records and surface an error,
+while unrelated valid reports remain visible. All HID reports use the current version-1 contract; no legacy decoder
+or missing-report compatibility mode is provided. Diagnostics refresh with metadata: every second in WebHID and
+every two seconds in the Python/.NET hosts.
 
 Each channel shows a health badge and simple error flags with short troubleshooting tooltips, without expandable
 history, counts, or detection times. The underlying diagnostic records remain available to host tools.

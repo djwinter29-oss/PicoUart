@@ -39,10 +39,9 @@ command values are board-scoped only.
 | `9`       | Feature | Host reads from device | 2 bytes  | Board LED availability, manual state, and output.   |
 | `10`-`15` | Feature | Host reads from device | 59 bytes | Applied settings, GPIOs and fault history for CDC0-CDC5. |
 
-Report IDs `1`, `3`, and `5` share layout version `15`. Report ID `6` uses an independent layout version, currently `1`.
-Reports `7` and `8` have independent layout versions, currently `1` and `2` respectively.
-Report `9` uses independent layout version `1`.
-Reports `10`-`15` use independent layout version `1`; older firmware does not implement them.
+All versioned report payloads use layout version `1`. Firmware and host tools implement this contract together;
+other layouts are rejected, with no legacy decoding or missing-report compatibility mode.
+The command payload has no version field.
 
 Report ID bytes are managed by the HID transport and are not included in the payload layouts below. Status is 63 bytes
 so Report ID + payload fit in one full-speed interrupt packet (64 bytes). The device attempts to publish report ID `1`
@@ -51,7 +50,7 @@ periodically while its HID IN endpoint is ready. Reports are not queued when the
 ## Reports 10-15: Channel Diagnostics
 
 Report `10 + channel` addresses a single channel without a selector command or any change to UART ownership.
-All integers are little-endian. Existing report layouts and command values are unchanged.
+All integers are little-endian.
 
 | Offset | Size | Field | Meaning |
 | -----: | ---: | ----- | ------- |
@@ -223,7 +222,7 @@ Feature report `8` provides live device counters. All multi-byte fields are litt
 
 | Offset | Size | Field                    | Meaning                                                  |
 | ------ | ---: | ------------------------ | -------------------------------------------------------- |
-| 0      | 1    | `version`                | Runtime layout version, `2`.                             |
+| 0      | 1    | `version`                | Runtime layout version, `1`.                             |
 | 1      | 8    | `uptime_ms`              | SDK monotonic milliseconds since boot.                   |
 | 9      | 2    | `core0_service_load_basis_points` | Core 0 service load; `10000` = 100%, `65535` unknown. |
 | 11     | 2    | `core1_service_load_basis_points` | Core 1 service load; same scale and sentinel.        |
@@ -241,9 +240,7 @@ This is a workload proxy, not instruction-level profiling, total CPU utilization
 remaining throughput. Both cores still busy-poll; no sleep or transport scheduling policy is changed. Monitoring traffic
 and noisy RX/error handling can produce nonzero load without application traffic.
 
-Runtime version `1` has the same byte layout but reports the previous fixed active-CPU values, not service load.
-Updated hosts accept its uptime and RAM fields but show per-core load as unavailable. The shared host JSON retains
-the historical `cpu_usage_basis_points` key for compatibility; only version `2` supplies measured values through it.
+The host JSON exposes measured per-core service load as `cpu_usage_basis_points`.
 
 Hosts reject load values above `10000` except the unavailable sentinel, zero total RAM, and reservations exceeding total.
 Uptime is device uptime, not time since the monitoring page connected. RAM is displayed as reserved / total KiB and a
@@ -269,8 +266,8 @@ Manual On with physical Off is invalid. All LED access occurs on core 0.
 Dashboards distinguish the manual toggle action from physical output state; see
 [dashboard controls](../../development/host-tools.md#pythonnet-web-ui).
 The button tooltip identifies the manual state. Successful toggles reread state instead of predicting the result.
-Older firmware can still accept the toggle command without report `9`; hosts retain the button, show `--` for state,
-and surface the unsupported read. Boards explicitly reporting no LED have the toggle disabled.
+Failed LED reads show unknown output and disable the toggle until a valid state is read.
+Boards explicitly reporting no LED also have the toggle disabled.
 The report sequence remains internal to gap detection and is not displayed.
 
 ## Host Tool
@@ -278,20 +275,13 @@ The report sequence remains internal to gap detection and is not displayed.
 Host command and client behavior are documented in the [Python host guide](../../../host/python/README.md) and
 [.NET host guide](../../../host/dotnet/README.md).
 
-## Compatibility
+## Validation
 
-Hosts must validate `signature0` and `version` before decoding a status report. Treat unknown report IDs, newer
-versions, and unknown reserved bits as unsupported rather than attempting to infer behavior. Board-status `reserved0`
-bit 0 indicates that HID reset is enabled; default firmware sends `0`. Older host tools that
-rejected any nonzero `reserved0` will fail board-status reads only against reset-enabled lab builds.
-
-Report `6` is additive: older hosts can continue reading reports `1`, `3`, and `5` from new firmware. Firmware predating
-report `6` cannot supply hardware information; clients should handle that absence without discarding existing reports.
-See the host guides for client-specific presentation and error behavior.
-
-Reports `7` and `8` are additive too: existing report layouts and the six CDC interfaces are unchanged. Firmware
-predating them cannot supply these values. Hosts retain legacy telemetry, show unavailable fields, and surface the
-failed identity/runtime reads rather than estimating uptime or inventing a serial or utilization.
+Hosts validate `signature0`, layout version `1`, payload size, and reserved bits before decoding.
+All reports listed above are required by this contract. Missing reports and other versions are explicit errors,
+not signals to select another layout or silently substitute values. Independent read errors clear the affected values
+without discarding unrelated valid telemetry. Board-status `reserved0` bit 0 indicates HID reset is enabled;
+default firmware sends `0`.
 
 For a valid report containing an unrecognized MCU ID, hosts preserve the raw ID and system clock and present the MCU as
 unknown. This does not assign meaning to future IDs; firmware must define each mapping when adding MCU support.

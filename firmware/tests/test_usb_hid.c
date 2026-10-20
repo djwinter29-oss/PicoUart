@@ -140,7 +140,7 @@ static void test_runtime_payload(void)
     /* More than 2^32 ms; verify all eight uptime bytes and little-endian encoding. */
     pico_test_time_us = INT64_C(0x010203040506) * 1000 + 999;
     const uint8_t expected[21] = {
-        2, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0, 0,
+        1, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0, 0,
         0xc4, 0x09, 0xff, 0xff, /* Core 0 measured 25%; core 1 has no completed window. */
         0x94, 0x22, 0, 0,       /* Static 0x1234 + scratch 0x60 + stacks 0x1000. */
 #if PICO_RP2350
@@ -169,12 +169,15 @@ static void test_runtime_payload(void)
     TEST_ASSERT_EQUAL_HEX8_ARRAY(zero_uptime, buffer + 1u, sizeof(zero_uptime));
 }
 
-static void test_legacy_report_lengths(void)
+static void test_report_lengths(void)
 {
     uint8_t buffer[64];
     TEST_ASSERT_EQUAL_UINT16(63u, tud_hid_get_report_cb(0, 1, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT8(1u, buffer[1]);
     TEST_ASSERT_EQUAL_UINT16(8u, tud_hid_get_report_cb(0, 3, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT8(1u, buffer[0]);
     TEST_ASSERT_EQUAL_UINT16(25u, tud_hid_get_report_cb(0, 5, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT8(1u, buffer[0]);
     TEST_ASSERT_EQUAL_UINT16(6u, tud_hid_get_report_cb(0, 6, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 16, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
 }
@@ -267,7 +270,7 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_identity_payload);
     RUN_TEST(test_runtime_payload);
-    RUN_TEST(test_legacy_report_lengths);
+    RUN_TEST(test_report_lengths);
     RUN_TEST(test_led_payload);
     RUN_TEST(test_channel_diagnostics_history);
     RUN_TEST(test_channel_diagnostics_sample_without_interrupt_endpoint);

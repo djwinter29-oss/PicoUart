@@ -30,7 +30,7 @@ export function decodeHardwareReport(report) {
 
 export function decodeBoardReport(report) {
   const payload = featurePayload(report, 3, 8);
-  if (payload.getUint8(0) !== 15) throw new Error("Unsupported board-status layout version");
+  if (payload.getUint8(0) !== 1) throw new Error("Unsupported board-status layout version");
   if ((payload.getUint8(1) & ~1) !== 0 || payload.getUint8(7) !== 0) {
     throw new Error("Unknown board-status flags");
   }
@@ -56,7 +56,7 @@ export function decodeIdentityReport(report) {
 export function decodeRuntimeReport(report) {
   const payload = featurePayload(report, 8, 21);
   const version = payload.getUint8(0);
-  if (version !== 1 && version !== 2) throw new Error("Unsupported runtime layout version");
+  if (version !== 1) throw new Error("Unsupported runtime layout version");
   const uptime = payload.getBigUint64(1, true);
   const cpu = [payload.getUint16(9, true), payload.getUint16(11, true)];
   const reserved = payload.getUint32(13, true);
@@ -64,13 +64,13 @@ export function decodeRuntimeReport(report) {
   if (uptime > BigInt(Number.MAX_SAFE_INTEGER) || cpu.some(value => value > 10000 && value !== 65535)
     || !total || reserved > total) throw new Error("Invalid runtime uptime, CPU or RAM values");
   return { uptime_ms: Number(uptime),
-    cpu_usage_basis_points: cpu.map(value => version === 1 || value === 65535 ? null : value),
+    cpu_usage_basis_points: cpu.map(value => value === 65535 ? null : value),
     ram_reserved_bytes: reserved, ram_total_bytes: total };
 }
 
 export function decodeOverflowReport(report) {
   const payload = featurePayload(report, 5, 25);
-  if (payload.getUint8(0) !== 15) throw new Error("Unsupported overflow-count layout version");
+  if (payload.getUint8(0) !== 1) throw new Error("Unsupported overflow-count layout version");
   return Array.from({ length: 6 }, (_, index) => payload.getUint32(1 + index * 4, true));
 }
 
@@ -104,7 +104,7 @@ export function decodeStatusReport(data) {
   if (!(data instanceof DataView) || data.byteLength !== 63 || data.getUint8(0) !== 0x50) {
     throw new Error("Unexpected status report signature or size");
   }
-  if (data.getUint8(1) !== 15) throw new Error("Unsupported status layout version");
+  if (data.getUint8(1) !== 1) throw new Error("Unsupported status layout version");
   return { sequence: data.getUint8(2), channels: Array.from({ length: 6 }, (_, index) => {
     const offset = 3 + index * 10;
     const health = data.getUint8(offset);

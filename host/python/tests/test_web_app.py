@@ -73,7 +73,7 @@ def test_dashboard_serves_shared_assets():
     assert b'id="mcu"' in page.data
     assert b'id="system-clock"' in page.data
     assert b'href="/css/dashboard.css"' in page.data
-    assert b'src="/js/dashboard.js"' in page.data
+    assert b'src="/js/dashboard.js?v=3"' in page.data
     assert b"{{" not in page.data
     for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
         response = client.get(f"/{path}")

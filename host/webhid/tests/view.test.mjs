@@ -305,7 +305,7 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(document.querySelector("#toggle-led").dataset.state, "unknown");
       if (frontend === "web") {
         render({ ...data, led: null });
-        assert.equal(document.querySelector("#toggle-led").disabled, false);
+        assert.equal(document.querySelector("#toggle-led").disabled, true);
         render({ ...data, led: { manual_on: null, output_on: null } });
         assert.equal(document.querySelector("#toggle-led").disabled, true);
         render({ ...data, connected: false });

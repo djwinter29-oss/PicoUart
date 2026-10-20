@@ -198,7 +198,7 @@ function render(data) {
   ledButton.dataset.state = led?.output_on == null ? "unknown" : led.output_on ? "on" : "off";
   ledButton.title = led?.manual_on == null ? "Toggle manual LED state; USB activity may also light the LED"
     : `Toggle manual LED state (currently ${led.manual_on ? "On" : "Off"}); USB activity may also light the LED`;
-  document.querySelector("#toggle-led").disabled = actionBusy || !data.connected || led?.output_on === null;
+  document.querySelector("#toggle-led").disabled = actionBusy || !data.connected || led?.output_on == null;
   document.querySelector("#reset-board").disabled = actionBusy || !data.connected;
   updateReportAge(data);
   document.querySelector("#overflow-total").textContent = data.overflow_counts.every((value) => value !== null)
@@ -259,7 +259,7 @@ async function runAction(action) {
     statusMessage.parentElement.dataset.error = "true";
   } finally {
     actionBusy = false;
-    document.querySelector("#toggle-led").disabled = !latestData?.connected || latestData.led?.output_on === null;
+    document.querySelector("#toggle-led").disabled = !latestData?.connected || latestData.led?.output_on == null;
     document.querySelector("#reset-board").disabled = !latestData?.connected;
   }
 }

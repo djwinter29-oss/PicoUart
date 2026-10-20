@@ -62,7 +62,7 @@ public static class Protocol
     }
 
     public const int ChannelCount = 6;
-    public const byte LayoutVersion = 15;
+    public const byte LayoutVersion = 1;
     public const byte HardwareInfoReportId = 6;
     public const int HardwareInfoSize = 6;
     public const byte HardwareInfoLayoutVersion = 1;
@@ -142,13 +142,13 @@ public static class Protocol
 
     public static RuntimeStatus ParseRuntime(ReadOnlySpan<byte> payload)
     {
-        Require(payload.Length == 21 && payload[0] is 1 or 2, "unsupported runtime report size or version");
+        Require(payload.Length == 21 && payload[0] == 1, "unsupported runtime report size or version");
         ushort?[] cpu = new ushort?[2];
         for (var core = 0; core < cpu.Length; core++)
         {
             var value = BinaryPrimitives.ReadUInt16LittleEndian(payload[(9 + core * 2)..]);
             Require(value <= 10000 || value == ushort.MaxValue, "invalid runtime CPU value");
-            cpu[core] = payload[0] == 1 || value == ushort.MaxValue ? null : value;
+            cpu[core] = value == ushort.MaxValue ? null : value;
         }
         var reserved = BinaryPrimitives.ReadUInt32LittleEndian(payload[13..]);
         var total = BinaryPrimitives.ReadUInt32LittleEndian(payload[17..]);

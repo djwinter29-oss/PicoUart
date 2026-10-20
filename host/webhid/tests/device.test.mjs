@@ -36,7 +36,7 @@ test("channel diagnostics validate settings and expose counts with 64-bit detect
   assert.throws(() => decodeChannelDiagnostics(data, 10), /timestamp/);
 });
 
-test("unavailable channel diagnostics remain explicit and do not remove legacy telemetry", async () => {
+test("channel diagnostic read errors remain explicit and do not remove other telemetry", async () => {
   const hid = new FakeHid();
   const device = hid.devices[0];
   const receive = device.receiveFeatureReport.bind(device);
@@ -60,13 +60,13 @@ function report(mcu = 2, clock = 150000000, size = 7, offset = 0) {
 }
 
 function boardReport() {
-  return new DataView(Uint8Array.from([3, 15, 0, 0xc4, 0x09, 1, 2, 3, 0]).buffer);
+  return new DataView(Uint8Array.from([3, 1, 0, 0xc4, 0x09, 1, 2, 3, 0]).buffer);
 }
 
 function overflowReport() {
   const view = new DataView(new ArrayBuffer(26));
   view.setUint8(0, 5);
-  view.setUint8(1, 15);
+  view.setUint8(1, 1);
   for (let index = 0; index < 6; index++) view.setUint32(2 + index * 4, index, true);
   return view;
 }
@@ -83,7 +83,7 @@ function identityReport() {
 function runtimeReport() {
   const view = new DataView(new ArrayBuffer(22));
   view.setUint8(0, 8);
-  view.setUint8(1, 2);
+  view.setUint8(1, 1);
   view.setBigUint64(2, 4294967296n, true);
   view.setUint16(10, 10000, true);
   view.setUint16(12, 65535, true);
@@ -95,7 +95,7 @@ function runtimeReport() {
 function statusReport(sequence = 255, count = 10) {
   const view = new DataView(new ArrayBuffer(63));
   view.setUint8(0, 0x50);
-  view.setUint8(1, 15);
+  view.setUint8(1, 1);
   view.setUint8(2, sequence);
   for (let index = 0; index < 6; index++) {
     view.setUint8(3 + index * 10, 0x31);
@@ -430,7 +430,7 @@ test("identity and runtime validate version, ranges, padding and unsigned uptime
   assert.throws(() => decodeRuntimeReport(runtime), /RAM/);
 });
 
-test("unsupported new reports retain legacy telemetry and clear stale identity/runtime", async () => {
+test("metadata read errors preserve other telemetry and clear stale identity/runtime", async () => {
   const hid = new FakeHid();
   const client = new PicoUartWebHid(hid);
   await client.connect();
@@ -455,13 +455,23 @@ test("unsupported new reports retain legacy telemetry and clear stale identity/r
   assert.equal(client.state.dashboard.runtime, null);
 });
 
-test("legacy runtime preserves counters without presenting fixed CPU values as service load", () => {
+test("runtime rejects other layout versions", () => {
   const report = runtimeReport();
-  report.setUint8(1, 1);
-  const runtime = decodeRuntimeReport(report);
-  assert.deepEqual(runtime.cpu_usage_basis_points, [null, null]);
-  assert.equal(runtime.uptime_ms, 4294967296);
-  assert.equal(runtime.ram_reserved_bytes, 65536);
+  report.setUint8(1, 2);
+  assert.throws(() => decodeRuntimeReport(report), /version/);
+});
+
+test("status, board and overflow reports accept only version 1", () => {
+  for (const version of [0, 2, 15, 255]) {
+    for (const [make, decode, offset] of [
+      [statusReport, decodeStatusReport, 1], [boardReport, decodeBoardReport, 1],
+      [overflowReport, decodeOverflowReport, 1],
+    ]) {
+      const report = make();
+      report.setUint8(offset, version);
+      assert.throws(() => decode(report), /version/);
+    }
+  }
 });
 
 test("LED decoder distinguishes physical activity from manual state and rejects invalid flags", () => {

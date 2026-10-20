@@ -29,7 +29,8 @@ Click Connect at the top-right of Device identity and select the PicoUart vendor
 becomes Disconnect while connected. Device selection is explicitly user-initiated; the page
 never reconnects automatically or requests a broader USB device filter. Metadata and runtime refresh every second;
 Disconnect closes the browser connection; unplugging clears the last sample.
-Older firmware may supply only some diagnostics; unavailable fields remain `--` with an explicit read error.
+Firmware must implement the current version-1 HID contract. Missing or invalid reports show `--` with an explicit
+read error; no alternate layouts are supported.
 Read failures leave
 the device available for automatic polling or Disconnect, but clear stale metadata rather than inventing a clock or MCU.
 

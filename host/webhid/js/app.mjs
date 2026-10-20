@@ -1,5 +1,5 @@
-import { PicoUartWebHid } from "./device.mjs";
-import { renderDashboard, updateReportAge } from "./view.mjs?v=2";
+import { PicoUartWebHid } from "./device.mjs?v=3";
+import { renderDashboard, updateReportAge } from "./view.mjs?v=3";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");
@@ -17,7 +17,7 @@ function render(state) {
     : state.phase === "disconnecting" ? "Disconnecting..." : connected ? "Disconnect" : "Connect";
   connectButton.className = `button ${connected ? "button-danger" : "button-secondary"}`;
   connectButton.disabled = !["disconnected", "connected", "reading"].includes(state.phase);
-  toggleLedButton.disabled = !connected || busy || state.dashboard.led?.output_on === null;
+  toggleLedButton.disabled = !connected || busy || state.dashboard.led?.output_on == null;
   if (!connected || state.error) {
     statusMessage.textContent = state.error ?? state.message;
     statusMessage.parentElement.dataset.error = String(Boolean(state.error) || state.phase === "unsupported");

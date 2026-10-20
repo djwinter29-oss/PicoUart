@@ -13,7 +13,7 @@ from pico_uart.web.app import DashboardService, _empty_snapshot
 
 def test_identity_and_runtime_read_from_device_reports():
     identity = b"\1" + b"PicoUart".ljust(32, b"\0") + b"0123456789ABCDEF"
-    runtime = struct.pack("<BQHHII", 2, 2**32, 2500, 0xffff, 65536, 270336)
+    runtime = struct.pack("<BQHHII", 1, 2**32, 2500, 0xffff, 65536, 270336)
     assert PicoUartHid(device=FakeHidDevice(identity, 7)).read_identity() == {
         "product_name": "PicoUart", "serial_number": "0123456789ABCDEF",
     }
@@ -36,7 +36,7 @@ def test_identity_rejects_malformed_payloads(payload):
 
 
 @pytest.mark.parametrize("payload", [
-    b"", bytes(21), struct.pack("<BQHHII", 3, 0, 0, 0, 1, 2),
+    b"", bytes(21), struct.pack("<BQHHII", 2, 0, 0, 0, 1, 2),
     struct.pack("<BQHHII", 1, 0, 10001, 0, 1, 2),
     struct.pack("<BQHHII", 1, 0, 0, 65534, 1, 2),
     struct.pack("<BQHHII", 1, 0, 0, 0, 0, 0),
@@ -47,9 +47,9 @@ def test_runtime_rejects_malformed_payloads(payload):
         parse_runtime(payload)
 
 
-def test_legacy_fixed_cpu_values_are_not_presented_as_measured_service_load():
+def test_runtime_reports_measured_service_load():
     runtime = parse_runtime(struct.pack("<BQHHII", 1, 1234, 10000, 10000, 65536, 270336))
-    assert runtime["cpu_usage_basis_points"] == [None, None]
+    assert runtime["cpu_usage_basis_points"] == [10000, 10000]
     assert runtime["uptime_ms"] == 1234
     assert runtime["ram_reserved_bytes"] == 65536
 
@@ -68,7 +68,7 @@ def test_led_report_rejects_invalid_layout_and_state(payload):
         parse_led(payload)
 
 
-def test_old_firmware_errors_do_not_discard_existing_reports_and_recovery_clears_errors():
+def test_metadata_read_errors_are_explicit_and_recovery_clears_errors():
     class Client:
         unsupported = True
 
@@ -95,6 +95,11 @@ def test_old_firmware_errors_do_not_discard_existing_reports_and_recovery_clears
 
         def read_hardware_info(self):
             return {"mcu": "RP2350"}
+
+        def read_channel_diagnostics(self):
+            if self.unsupported:
+                raise OSError("channel diagnostics unavailable")
+            return [{"faults": {}} for _ in range(6)]
 
     service = object.__new__(DashboardService)
     service._lock = threading.RLock()

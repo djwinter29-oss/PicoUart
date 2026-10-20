@@ -26,8 +26,8 @@ COMMAND_ARM_RESET = 3
 STATUS_SIZE = 63
 BOARD_STATUS_SIZE = 8
 OVERFLOW_COUNTS_SIZE = 25
-BOARD_STATUS_LAYOUT_VERSION = 15
-STATUS_LAYOUT_VERSION = 15
+BOARD_STATUS_LAYOUT_VERSION = 1
+STATUS_LAYOUT_VERSION = 1
 STATUS_SIGNATURE = ord("P")
 UART_CHANNEL_COUNT = 6
 REPORT_ID_CHANNEL_BASE = 10
@@ -141,21 +141,21 @@ def parse_identity(payload: bytes) -> dict[str, object]:
 
 def parse_runtime(payload: bytes) -> dict[str, object]:
     """Decode uptime, per-core measured service load, and reserved SRAM."""
-    if len(payload) != RUNTIME_SIZE or payload[0] not in (1, 2):
+    if len(payload) != RUNTIME_SIZE or payload[0] != 1:
         raise RuntimeError("unsupported runtime report size or version")
     _, uptime, core0, core1, reserved, total = struct.unpack("<BQHHII", payload)
     if any(value > 10000 and value != 0xffff for value in (core0, core1)) or not total or reserved > total:
         raise RuntimeError("invalid runtime CPU or RAM values")
     return {
         "uptime_ms": uptime,
-        "cpu_usage_basis_points": [None if payload[0] == 1 or value == 0xffff else value for value in (core0, core1)],
+        "cpu_usage_basis_points": [None if value == 0xffff else value for value in (core0, core1)],
         "ram_reserved_bytes": reserved,
         "ram_total_bytes": total,
     }
 
 
 def parse_status(payload: bytes) -> dict[str, object]:
-    """Decode the 63-byte periodic monitor report (layout v15)."""
+    """Decode the 63-byte periodic monitor report (layout v1)."""
     if len(payload) != STATUS_SIZE:
         raise RuntimeError(f"unexpected status report size {len(payload)}")
 

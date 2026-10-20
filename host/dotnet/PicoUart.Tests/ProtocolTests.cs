@@ -67,7 +67,7 @@ public sealed class ProtocolTests
         Assert.Equal(new BoardIdentity("PicoUart", "0123456789ABCDEF"), Protocol.ParseIdentity(identity));
 
         var runtime = new byte[21];
-        runtime[0] = 2;
+        runtime[0] = 1;
         BinaryPrimitives.WriteUInt64LittleEndian(runtime.AsSpan(1), 4294967296);
         BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 10000);
         BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(11), ushort.MaxValue);
@@ -110,19 +110,19 @@ public sealed class ProtocolTests
         identity[0] = 2;
         Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(identity));
         var runtime = new byte[21];
-        runtime[0] = 3;
+        runtime[0] = 2;
         Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(runtime));
     }
 
     [Fact]
-    public void LegacyRuntimeCpuIsNotDisplayedAsMeasuredServiceLoad()
+    public void RuntimeReportsMeasuredServiceLoad()
     {
         var runtime = new byte[21];
         runtime[0] = 1;
         BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 10000);
         BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(11), 10000);
         BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(17), 270336);
-        Assert.Equal(new ushort?[] { null, null }, Protocol.ParseRuntime(runtime).CpuUsageBasisPoints);
+        Assert.Equal(new ushort?[] { 10000, 10000 }, Protocol.ParseRuntime(runtime).CpuUsageBasisPoints);
     }
 
     [Fact]
@@ -152,7 +152,8 @@ public sealed class ProtocolTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(14)]
+    [InlineData(2)]
+    [InlineData(15)]
     [InlineData(16)]
     [InlineData(255)]
     public void StatusRejectsUnsupportedVersions(byte version)
@@ -208,7 +209,7 @@ public sealed class ProtocolTests
     [InlineData(32767)]
     public void BoardStatusDecodesSignedTemperature(short centidegrees)
     {
-        byte[] payload = [15, 0, 0, 0, 1, 2, 3, 0];
+        byte[] payload = [1, 0, 0, 0, 1, 2, 3, 0];
         BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(2), centidegrees);
 
         var board = Protocol.ParseBoardStatus(payload);
@@ -225,7 +226,7 @@ public sealed class ProtocolTests
     [InlineData(1, true)]
     public void BoardStatusDecodesResetCapability(byte flags, bool enabled)
     {
-        var board = Protocol.ParseBoardStatus([15, flags, 0, 0, 255, 0, 255, 0]);
+        var board = Protocol.ParseBoardStatus([1, flags, 0, 0, 255, 0, 255, 0]);
 
         Assert.Equal(enabled, board.HidResetEnabled);
         Assert.Equal("255.0.255", board.FirmwareVersion);
@@ -242,7 +243,8 @@ public sealed class ProtocolTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(14)]
+    [InlineData(2)]
+    [InlineData(15)]
     [InlineData(16)]
     [InlineData(255)]
     public void BoardStatusRejectsUnsupportedVersions(byte version)
@@ -261,7 +263,7 @@ public sealed class ProtocolTests
     [InlineData(3)]
     public void BoardStatusRejectsUnknownCapabilityFlags(byte flags)
     {
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseBoardStatus([15, flags, 0, 0, 1, 2, 3, 0]));
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseBoardStatus([1, flags, 0, 0, 1, 2, 3, 0]));
     }
 
     [Theory]
@@ -270,7 +272,7 @@ public sealed class ProtocolTests
     [InlineData(255)]
     public void BoardStatusRejectsReservedTrailingByte(byte reserved)
     {
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseBoardStatus([15, 0, 0, 0, 1, 2, 3, reserved]));
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseBoardStatus([1, 0, 0, 0, 1, 2, 3, reserved]));
     }
 
     [Fact]
@@ -278,7 +280,7 @@ public sealed class ProtocolTests
     {
         uint[] expected = [0, 1, 0x12345678, 0x80000000, uint.MaxValue - 1, uint.MaxValue];
         var payload = new byte[25];
-        payload[0] = 15;
+        payload[0] = 1;
         for (var index = 0; index < expected.Length; index++)
             BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(1 + index * 4), expected[index]);
 
@@ -298,7 +300,8 @@ public sealed class ProtocolTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(14)]
+    [InlineData(2)]
+    [InlineData(15)]
     [InlineData(16)]
     [InlineData(255)]
     public void OverflowsRejectUnsupportedVersions(byte version)
@@ -338,7 +341,7 @@ public sealed class ProtocolTests
     [InlineData(2, 17)]
     public void FeatureReportsStripPlatformPrefixesAndTrailingPadding(int prefixSize, int padding)
     {
-        byte[] payload = [15, 0, 0xD4, 0xFE, 1, 2, 3, 0];
+        byte[] payload = [1, 0, 0xD4, 0xFE, 1, 2, 3, 0];
         var report = new byte[prefixSize + payload.Length + padding];
         report.AsSpan(0, prefixSize).Fill(3);
         payload.CopyTo(report, prefixSize);
@@ -347,7 +350,7 @@ public sealed class ProtocolTests
 
         Assert.Equal(payload, decoded);
         report[prefixSize] = 0;
-        Assert.Equal((byte)15, decoded[0]);
+        Assert.Equal((byte)1, decoded[0]);
     }
 
     [Theory]
@@ -380,7 +383,7 @@ public sealed class ProtocolTests
     public void LinuxFeatureReportsRejectWrongSecondaryId()
     {
         Assert.Throws<InvalidOperationException>(() => PicoUartHid.FeaturePayload(
-            [3, 5, 15, 0, 0, 0, 1, 2, 3, 0], 3, 8, 2));
+            [3, 5, 1, 0, 0, 0, 1, 2, 3, 0], 3, 8, 2));
     }
 
     [Theory]
@@ -429,7 +432,7 @@ public sealed class ProtocolTests
     {
         var payload = new byte[63];
         payload[0] = (byte)'P';
-        payload[1] = 15;
+        payload[1] = 1;
         payload[2] = 255;
         for (var index = 0; index < 6; index++)
         {

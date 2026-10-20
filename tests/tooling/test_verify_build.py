@@ -19,7 +19,7 @@ def _load_verifier():
     return module
 
 
-def test_hid_descriptor_parser_recognizes_hardware_info_and_unchanged_legacy_reports():
+def test_hid_descriptor_parser_recognizes_all_current_reports():
     verifier = _load_verifier()
     source = (VERIFY_BUILD.parents[2] / "firmware/src/usb/usb_descriptors.c").read_text()
     body = re.search(r"hid_report_descriptor\[\]\s*=\s*\{(.*?)\};", source, re.DOTALL).group(1)

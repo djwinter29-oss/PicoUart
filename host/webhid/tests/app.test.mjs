@@ -87,6 +87,10 @@ test("connection button reflects lifecycle, routes clicks and recovers after fai
   assert.equal(button.disabled, false);
   assert.equal(button.textContent, "Disconnect");
   assert.match(button.className, /button-danger/);
+  assert.equal(get("toggle-led").disabled, true);
+  client.state.dashboard.led = { manual_on: false, output_on: false };
+  client.phase("connected");
+  assert.equal(get("toggle-led").disabled, false);
   button.click();
   get("toggle-led").click();
   assert.deepEqual(client.calls, ["connect", "disconnect", "toggle-led"]);

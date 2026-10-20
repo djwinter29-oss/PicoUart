@@ -134,8 +134,9 @@ def test_hidraw_feature_write_propagates_short_ioctl_result(monkeypatch):
         send_command(device, COMMAND_TOGGLE_LED)
 
 
-def test_rejects_unsupported_board_status_layout(hid_module):
-    device = FakeHidDevice(board_status_bytes(layout_version=13))
+@pytest.mark.parametrize("version", [0, 2, 15, 255])
+def test_rejects_unsupported_board_status_layout(hid_module, version):
+    device = FakeHidDevice(board_status_bytes(layout_version=version))
     with pytest.raises(RuntimeError, match="unsupported board-status"):
         hid_module.read_board_status(device)
 
@@ -187,9 +188,10 @@ def test_rejects_bad_signature(hid_module):
         hid_module.parse_status(bytes(payload))
 
 
-def test_rejects_wrong_status_layout_version(hid_module):
+@pytest.mark.parametrize("version", [0, 2, 15, 255])
+def test_rejects_wrong_status_layout_version(hid_module, version):
     payload = bytearray(status_report_bytes())
-    payload[1] = 13
+    payload[1] = version
     with pytest.raises(RuntimeError, match="unsupported status report version"):
         hid_module.parse_status(bytes(payload))
 

@@ -93,7 +93,7 @@ def test_hid_led_report_contract(repo_root):
     assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_LED) == protocol.LED_SIZE
 
 
-def test_channel_diagnostic_reports_preserve_legacy_layout(repo_root):
+def test_channel_diagnostic_reports_match_current_layout(repo_root):
     assert firmware_hid_constants(repo_root)["USB_HID_REPORT_ID_CHANNEL_BASE"] == protocol.REPORT_ID_CHANNEL_BASE
     assert protocol.CHANNEL_DIAGNOSTICS_SIZE == 59
     for report_id in range(protocol.REPORT_ID_CHANNEL_BASE, protocol.REPORT_ID_CHANNEL_BASE + 6):
@@ -104,14 +104,14 @@ def test_hid_descriptor_overflow_report_count_matches_host_payload(repo_root):
     assert firmware_hid_report_count(repo_root, hid.REPORT_ID_OVERFLOW_COUNTS) == hid.OVERFLOW_COUNTS_SIZE
 
 
-def test_hardware_info_contract_preserves_existing_report_layouts(repo_root):
+def test_hardware_info_contract_matches_current_layout(repo_root):
     fw = firmware_hid_constants(repo_root)
     assert fw["USB_HID_REPORT_ID_HARDWARE_INFO"] == protocol.REPORT_ID_HARDWARE_INFO == 6
     assert fw["USB_HID_HARDWARE_INFO_VERSION"] == protocol.HARDWARE_INFO_LAYOUT_VERSION == 1
     assert fw["USB_HID_MCU_RP2040"] == protocol.MCU_RP2040
     assert fw["USB_HID_MCU_RP2350"] == protocol.MCU_RP2350
     assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_HARDWARE_INFO) == protocol.HARDWARE_INFO_SIZE == 6
-    assert fw["USB_HID_REPORT_VERSION"] == 15
+    assert fw["USB_HID_REPORT_VERSION"] == 1
 
 
 def test_lab_placeholder_helper_is_independent_of_tree_identity():
