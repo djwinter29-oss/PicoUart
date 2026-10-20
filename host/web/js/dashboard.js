@@ -16,11 +16,18 @@ function makeCell(className, text) {
 const channelHistory = new Map();
 const directions = [["UART TX", "uart_tx"], ["UART RX", "uart_rx"], ["USB TX", "usb_tx"], ["USB RX", "usb_rx"]];
 const faultHelp = {
-  init_failed: "Initialization failure recorded; check firmware resources and configuration.",
-  control_error: "UART configuration failure recorded; check the applied settings.",
+  init_failed: "Initialization failure; check firmware resources and configuration.",
+  control_error: "UART configuration failure; check the applied settings.",
   rx_overrun: "Dropped UART data recorded; check that the host is reading.",
   rx_error: "Receive error recorded; check baud rate, framing and wiring.",
 };
+
+function uptimeLabel(milliseconds) {
+  const seconds = Math.floor(milliseconds / 1000);
+  return [[Math.floor(seconds / 86400), "d"], [Math.floor(seconds % 86400 / 3600), "h"],
+    [Math.floor(seconds % 3600 / 60), "m"], [seconds % 60, "s"]]
+    .filter(([value, unit]) => value || unit === "s").map(([value, unit]) => `${value}${unit}`).join(" ");
+}
 
 function channelPresentation(data, channel, now = Date.now()) {
   const sample = Date.parse(data.updated_at);
@@ -65,7 +72,7 @@ function channelPresentation(data, channel, now = Date.now()) {
     : faults.length ? "attention"
     : !channel.health_labels.includes("ready") ? "initializing"
     : !channel.cdc_open && !traffic ? "idle" : "ready";
-  return { diagnostic, faults, state, rates: fresh ? history.rates : null };
+  return { diagnostic, faults, state, fresh, rates: fresh ? history.rates : null };
 }
 
 function renderChannels(data) {
@@ -104,8 +111,12 @@ function renderChannels(data) {
     health.append(state);
     const flags = document.createElement("small");
     flags.className = "health-flags";
-    flags.textContent = view.faults.join(", ") || (channel.health_labels.includes("control_pending") ? "Applying settings"
-      : view.state === "idle" ? "CDC closed; receiver still active" : "No active flags");
+    flags.textContent = view.faults.map(name => {
+      const current = ["init_failed", "control_error"].includes(name) && channel.health_labels.includes(name);
+      return `${!view.fresh ? "Last reported" : current ? "Current" : "Recorded"}: ${name}`;
+    }).join("; ") || (view.state === "unknown" ? "Waiting for status"
+      : channel.health_labels.includes("control_pending") ? "Applying settings"
+      : view.state === "idle" ? "Host closed; RX active" : "No active flags");
     flags.title = view.faults.map(name => faultHelp[name]).join(" ");
     health.append(flags);
     row.append(health);
@@ -121,12 +132,14 @@ function renderChannels(data) {
     metrics.className = "traffic-metrics";
     directions.forEach(([label, key]) => {
       const metric = document.createElement("span");
+      const direction = document.createElement("span");
       const value = document.createElement("b");
-      metric.textContent = `${label} `;
+      direction.className = "traffic-label";
+      direction.textContent = label;
       value.textContent = view.rates
         ? `${view.rates[key].toLocaleString(undefined, { maximumFractionDigits: 1 })} B/s` : "-- B/s";
       metric.title = `${label}: ${channel.totals[key]} B observed total since monitoring began (lower bound).`;
-      metric.append(value);
+      metric.append(direction, value);
       metrics.append(metric);
     });
     traffic.append(metrics);
@@ -150,10 +163,7 @@ function render(data) {
   document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
   document.querySelector("#serial").textContent = data.identity?.serial_number ?? "--";
   const runtime = data.runtime;
-  const seconds = runtime ? Math.floor(runtime.uptime_ms / 1000) : 0;
-  document.querySelector("#uptime").textContent = runtime
-    ? `${Math.floor(seconds / 86400)}d ${Math.floor(seconds % 86400 / 3600)}h `
-      + `${Math.floor(seconds % 3600 / 60)}m ${seconds % 60}s` : "--";
+  document.querySelector("#uptime").textContent = runtime ? uptimeLabel(runtime.uptime_ms) : "--";
   document.querySelector("#cpu-usage").textContent = runtime
     ? runtime.cpu_usage_basis_points.map(value => value == null ? "--" : `${(value / 100).toFixed(1)}%`).join(" / ")
     : "--";
@@ -166,8 +176,9 @@ function render(data) {
     : "--";
   const led = data.connected ? data.led : null;
   const ledButton = document.querySelector("#toggle-led");
+  ledButton.textContent = "Identify board";
   ledButton.dataset.state = led?.output_on == null ? "unknown" : led.output_on ? "on" : "off";
-  ledButton.textContent = `Board LED: ${led?.output_on == null ? "--" : led.output_on ? "On" : "Off"}`;
+  document.querySelector("#led-state").textContent = `LED ${led?.output_on == null ? "--" : led.output_on ? "on" : "off"}`;
   ledButton.title = led?.manual_on == null ? "Toggle manual LED state; USB activity may also light the LED"
     : `Toggle manual LED state (currently ${led.manual_on ? "On" : "Off"}); USB activity may also light the LED`;
   document.querySelector("#toggle-led").disabled = actionBusy || !data.connected || led?.output_on === null;
@@ -180,10 +191,11 @@ function render(data) {
     : "--";
   document.querySelector("#reset-board").hidden = !data.board?.hid_reset_enabled;
   const trafficNote = document.querySelector("#traffic-note");
+  trafficNote.hidden = !data.traffic_incomplete;
   trafficNote.dataset.incomplete = String(data.traffic_incomplete);
   trafficNote.textContent = data.traffic_incomplete
-    ? "A report gap or saturated delta was detected. Affected rates are unavailable; hover a rate for observed totals."
-    : "Rates use observed bytes over at least one second; -- means warming up or stale. Hover a rate for total bytes.";
+    ? "Incomplete traffic samples detected; totals may undercount."
+    : "";
   renderChannels(data);
 
   const message = data.error

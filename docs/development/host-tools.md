@@ -139,8 +139,10 @@ Metadata is sampled every two seconds. See the [HID report reference](../design/
 the authoritative field definitions, UID source, service-load semantics and legacy compatibility, and RAM accounting.
 
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
-The Runtime status heading contains the physical LED indicator and manual toggle; sequence numbers remain internal
-for report-gap detection rather than appearing in the UI.
+The Device identity heading contains an outline **Identify board** action and separate physical LED state.
+The action toggles the manual LED setting; USB activity may also light the LED. Sequence numbers remain internal
+for report-gap detection rather than appearing in the UI. Compact identity/runtime cards leave more room for UART
+monitoring, and uptime omits zero-valued units except seconds.
 
 ### Channel diagnostics and traffic presentation
 
@@ -153,6 +155,9 @@ unavailable settings and cannot provide counts or detection times.
 
 Each channel shows a health badge and simple error flags with short troubleshooting tooltips, without expandable
 history, counts, or detection times. The underlying diagnostic records remain available to host tools.
+Asserted init/control failures are labelled **Current** when telemetry is fresh; RX latches and past fault observations
+are labelled **Recorded**. Stale flags are labelled **Last reported**, not current. These labels do not infer physical
+disconnection or an RX signal level.
 Channel diagnostics are read-only: dashboards cannot clear or acknowledge faults, and recorded faults keep the channel
 in **Attention** while telemetry is fresh, even if the corresponding live flag is no longer asserted.
 Healthy, closed CDC channels without observed throughput are labelled **Idle**, not disconnected: UART RX remains

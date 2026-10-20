@@ -266,8 +266,8 @@ The physical GPIO output is the OR of the persistent manual state and transient 
 existing LED command changes only the manual state, so USB activity may keep the output lit after toggling manual Off.
 Manual On with physical Off is invalid. All LED access occurs on core 0.
 
-Both dashboards use one button beside the Runtime status heading: `Board LED: On` is teal, `Board LED: Off` is neutral,
-and `Board LED: --` has an unknown-state outline. Its text and colour report physical output; clicking toggles manual state.
+Dashboards distinguish the manual toggle action from physical output state; see
+[dashboard controls](../../development/host-tools.md#pythonnet-web-ui).
 The button tooltip identifies the manual state. Successful toggles reread state instead of predicting the result.
 Older firmware can still accept the toggle command without report `9`; hosts retain the button, show `--` for state,
 and surface the unsupported read. Boards explicitly reporting no LED have the toggle disabled.

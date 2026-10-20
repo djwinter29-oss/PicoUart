@@ -3,7 +3,8 @@
 A browser dashboard with separate device identity and live runtime sections, plus six-channel health and
 traffic. It talks directly to PicoUart through WebHID; there is no Python/.NET application backend. Its HTML, CSS,
 favicon, and renderer live entirely in this folder, independently of the Python/.NET dashboard.
-The Runtime status heading shows the board LED output and provides a manual toggle. Reset and WebSerial are not implemented.
+Device identity provides an **Identify board** action and LED output state; see
+[dashboard controls](../../docs/development/host-tools.md#pythonnet-web-ui). Reset and WebSerial are not implemented.
 
 ## Run
 

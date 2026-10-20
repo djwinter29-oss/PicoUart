@@ -113,7 +113,7 @@ for (const frontend of ["webhid", "web"]) {
       let rows = document.querySelector("#channel-rows");
       assert.equal(rows.children[0].children.length, 6);
       assert.match(rows.textContent, /115200 8N1TX GP0 \/ RX GP1/);
-      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "rx_error");
+      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "Recorded: rx_error");
       assert.ok(descendants(rows).some(node =>
         node.title === "Receive error recorded; check baud rate, framing and wiring."));
       assert.ok(!/last detected|events|expand|rx_error \(/.test(rows.textContent));
@@ -130,7 +130,7 @@ for (const frontend of ["webhid", "web"]) {
       diagnostic.faults.rx_error = { count: 4, last_seen_ms: 6000 };
       render(data);
       assert.match(rows.textContent, /attention/);
-      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "rx_error");
+      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "Recorded: rx_error");
       diagnostic.faults = {};
       render(data);
       assert.match(rows.textContent, /idle/);
@@ -141,11 +141,24 @@ for (const frontend of ["webhid", "web"]) {
       diagnostic.faults.rx_error = { count: 4, last_seen_ms: 6000 };
       render(data);
       assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
-        "control_error, rx_error");
+        "Current: control_error; Recorded: rx_error");
+      diagnostic.faults.control_error = { count: 1, last_seen_ms: 6000 };
+      channel.health_labels = ["ready"];
+      render(data);
+      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
+        "Recorded: control_error; Recorded: rx_error");
+      render({ ...data, updated_at: null });
+      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
+        "Last reported: control_error; Last reported: rx_error");
+      const metrics = descendants(rows).find(node => node.className === "traffic-metrics");
+      assert.deepEqual(metrics.children.map(metric => metric.children[0].textContent),
+        ["UART TX", "UART RX", "USB TX", "USB RX"]);
+      assert.ok(metrics.children.every(metric => metric.children[1].tag === "b"));
+      channel.health_labels = ["ready", "control_error", "rx_error"];
       render({ ...data, channel_diagnostics: null, diagnostics_error: "Firmware upgrade required" });
       assert.match(rows.textContent, /Firmware diagnostics unavailable/);
       assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
-        "control_error, rx_error");
+        "Current: control_error; Recorded: rx_error");
       assert.ok(descendants(rows).some(node => node.title === "Firmware upgrade required"));
       assert.equal(descendants(rows).filter(node => node.textContent === "Clear flags").length, 0);
     } finally {
@@ -156,14 +169,19 @@ for (const frontend of ["webhid", "web"]) {
   test(`${frontend} separates identity/runtime and renders real board fields and unavailable states`, () => {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
+    assert.ok(html.includes(frontend === "webhid"
+      ? "<title>PicoUart Diagnostics | WebHID</title>"
+      : "<title>PicoUart Diagnostics | {{ dashboard_type }}</title>"));
     const runtime = html.match(/<section aria-labelledby="runtime-title">([\s\S]*?)<\/section>/)[1];
     assert.ok(runtime.includes("CPU load (core 0 / core 1)"));
     assert.ok(runtime.includes("RAM (reserved / total)"));
     assert.ok(!html.includes('id="sequence"'));
-    assert.ok(runtime.includes('id="toggle-led"'));
-    assert.ok(!html.includes('id="led-state"'));
+    assert.ok(identity.includes('id="toggle-led"'));
+    assert.ok(identity.includes('id="led-state"'));
+    assert.ok(!runtime.includes('id="toggle-led"'));
+    assert.ok(!html.includes("LIVE REPORT") && !html.includes("LIVE HEALTH AND TRAFFIC"));
     const css = readFileSync(new URL(`../../${frontend}/css/dashboard.css`, import.meta.url), "utf8");
-    assert.match(css, /\.button-led\[data-state="on"\].*background: var\(--teal\)/);
+    assert.match(css, /\.button-led\[data-state="on"\].*border-color: var\(--teal\)/);
     assert.match(css, /\.button-led\[data-state="unknown"\].*border-style: dashed/);
     assert.ok(!html.match(/<section class="channels-section"[\s\S]*?<\/section>/)[0].includes('id="toggle-led"'));
     for (const id of ["product-name", "mcu", "system-clock", "firmware", "serial"]) {
@@ -202,26 +220,43 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(text("product-name"), "PicoUart");
       assert.equal(text("serial"), "0123456789ABCDEF");
       assert.equal(text("uptime"), "1d 1h 1m 1s");
+      for (const [uptime_ms, expected] of [[0, "0s"], [5000, "5s"], [305000, "5m 5s"],
+        [3600000, "1h 0s"], [86400000, "1d 0s"]]) {
+        render({ ...data, runtime: { ...data.runtime, uptime_ms } });
+        assert.equal(text("uptime"), expected);
+      }
+      render(data);
       assert.equal(text("cpu-usage"), "100.0% / --");
       assert.equal(text("ram-usage"), "64.0 / 512 KiB (12.5%)");
       assert.equal(text("temperature"), "22.9 \u00b0C");
       assert.equal(text("overflow-total"), "0 B");
+      assert.equal(document.querySelector("#traffic-note").hidden, true);
+      assert.equal(text("traffic-note"), "");
+      render({ ...data, traffic_incomplete: true });
+      assert.equal(document.querySelector("#traffic-note").hidden, false);
+      assert.equal(text("traffic-note"), "Incomplete traffic samples detected; totals may undercount.");
+      render(data);
+      assert.equal(document.querySelector("#traffic-note").hidden, true);
       render({ ...data, overflow_counts: [1, 2, 3, 4, 5, 6] });
       assert.equal(text("overflow-total"), "21 B");
       render({ ...data, overflow_counts: [null, 0, 0, 0, 0, 0] });
       assert.equal(text("overflow-total"), "--");
       render(data);
-      assert.equal(text("toggle-led"), "Board LED: On");
+      assert.equal(text("toggle-led"), "Identify board");
+      assert.equal(text("led-state"), "LED on");
       assert.equal(document.querySelector("#toggle-led").dataset.state, "on");
       render({ ...data, led: { manual_on: false, output_on: false } });
-      assert.equal(text("toggle-led"), "Board LED: Off");
+      assert.equal(text("toggle-led"), "Identify board");
+      assert.equal(text("led-state"), "LED off");
       assert.equal(document.querySelector("#toggle-led").dataset.state, "off");
       render({ ...data, led: null, led_error: "LED unsupported" });
-      assert.equal(text("toggle-led"), "Board LED: --");
+      assert.equal(text("toggle-led"), "Identify board");
+      assert.equal(text("led-state"), "LED --");
       assert.equal(document.querySelector("#toggle-led").dataset.state, "unknown");
       assert.match(text("status-message"), /LED unsupported/);
       render({ ...data, connected: false });
-      assert.equal(text("toggle-led"), "Board LED: --");
+      assert.equal(text("toggle-led"), "Identify board");
+      assert.equal(text("led-state"), "LED --");
       assert.equal(document.querySelector("#toggle-led").dataset.state, "unknown");
       if (frontend === "web") {
         render({ ...data, led: null });

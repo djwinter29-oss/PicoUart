@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <title>PicoUart Diagnostics</title>
+  <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/dashboard.css">
   <script src="/js/dashboard.js" defer></script>
@@ -24,14 +24,20 @@
   <main>
     <section class="page-heading">
       <div>
-        <p class="eyebrow">SIX-CHANNEL UART BRIDGE</p>
         <h1>Diagnostics</h1>
       </div>
       <p class="sample-time" id="sample-time">Waiting for HID telemetry</p>
     </section>
 
     <section aria-labelledby="identity-title">
-      <div class="section-heading"><h2 id="identity-title">Device identity</h2></div>
+      <div class="section-heading">
+        <h2 id="identity-title">Device identity</h2>
+        <div class="actions" aria-label="Board identification">
+          <button class="button button-led" id="toggle-led" type="button" data-state="unknown"
+            title="Toggle the board LED to identify this device; USB activity may also light it" disabled>Identify board</button>
+          <span class="led-state" id="led-state">LED --</span>
+        </div>
+      </div>
       <div class="summary identity-summary">
         <div class="summary-item"><span>Product</span><strong id="product-name">--</strong></div>
         <div class="summary-item"><span>Microcontroller</span><strong id="mcu">--</strong></div>
@@ -43,10 +49,8 @@
 
     <section aria-labelledby="runtime-title">
       <div class="section-heading">
-        <div><p class="eyebrow">LIVE REPORT</p><h2 id="runtime-title">Runtime status</h2></div>
+        <h2 id="runtime-title">Runtime status</h2>
         <div class="actions" aria-label="Board controls">
-          <button class="button button-led" id="toggle-led" type="button" data-state="unknown"
-            title="Toggle manual LED state; USB activity may also light the LED" disabled>Board LED: --</button>
           <button class="button button-danger" id="reset-board" type="button" hidden>Reset board</button>
         </div>
       </div>
@@ -66,7 +70,6 @@
     <section class="channels-section" aria-labelledby="channels-title">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">LIVE HEALTH AND TRAFFIC</p>
           <h2 id="channels-title">UART channels <span>01–06</span></h2>
         </div>
       </div>
@@ -80,16 +83,13 @@
               <th scope="col">Health</th>
               <th scope="col">Host session</th>
               <th scope="col">Throughput</th>
-              <th scope="col">RX overflow</th>
+              <th scope="col" class="overflow-heading">RX overflow</th>
             </tr>
           </thead>
           <tbody id="channel-rows"></tbody>
         </table>
       </div>
-      <p class="traffic-note" id="traffic-note">Waiting for throughput samples.</p>
-      <p class="traffic-note">RX flags record historical faults, not necessarily live errors. Channel diagnostics are
-        read-only; recorded faults remain visible and cannot be cleared or acknowledged in this dashboard.
-        Diagnostics refresh every two seconds. Idle means CDC closed, not that RX is disconnected.</p>
+      <p class="traffic-note" id="traffic-note" hidden></p>
     </section>
 
     <footer class="status-line" role="status" aria-live="polite">

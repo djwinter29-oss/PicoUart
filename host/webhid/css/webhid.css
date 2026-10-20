@@ -1,4 +1,4 @@
-.actions .button { width: 110px; }
+.actions #connect { min-width: 110px; }
 .device-details { margin: 0; border-top: 1px solid var(--line); }
 .device-details > div {
   display: grid;
@@ -14,6 +14,6 @@
 #status-message { overflow-wrap: anywhere; }
 
 @media (max-width: 720px) {
-  .actions .button { width: auto; min-width: 0; }
+  .actions #connect { min-width: 0; }
   .device-details > div { grid-template-columns: 100px minmax(0, 1fr); gap: 12px; }
 }
