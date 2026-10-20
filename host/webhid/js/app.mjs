@@ -1,5 +1,5 @@
 import { DEVICE_FILTER, PicoUartWebHid } from "./device.mjs";
-import { renderDashboard } from "./view.mjs";
+import { renderDashboard, updateReportAge } from "./view.mjs";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");
@@ -34,3 +34,4 @@ connectButton.addEventListener("click", () =>
   client.state.phase === "disconnected" ? client.connect() : client.disconnect());
 toggleLedButton.addEventListener("click", () => client.toggleLed());
 globalThis.setInterval(() => client.refresh(), 2000);
+globalThis.setInterval(() => updateReportAge(client.state.dashboard), 1000);

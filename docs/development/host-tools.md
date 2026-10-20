@@ -143,6 +143,8 @@ The Device identity heading contains an outline **Identify board** action and se
 The action toggles the manual LED setting; USB activity may also light the LED. Sequence numbers remain internal
 for report-gap detection rather than appearing in the UI. Compact identity/runtime cards leave more room for UART
 monitoring, and uptime omits zero-valued units except seconds.
+The connection indicator includes report age, updated every second and marked stale after three seconds without a
+changed status sample. Age measures browser receipt time so remote host clock offsets do not distort freshness.
 
 ### Channel diagnostics and traffic presentation
 

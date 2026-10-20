@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
-import { renderDashboard, channelPresentation } from "../js/view.mjs";
+import { renderDashboard, channelPresentation, updateReportAge } from "../js/view.mjs";
 
 class Element {
   constructor(tag = "") {
@@ -42,6 +42,48 @@ function descendants(element) {
 }
 
 for (const frontend of ["webhid", "web"]) {
+  test(`${frontend} shows relative report age beside connection and detects stale reports`, () => {
+    const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
+    assert.match(html, /id="connection"[\s\S]*?id="sample-time"[\s\S]*?<\/header>/);
+    const document = fixture(html);
+    let update;
+    if (frontend === "webhid") {
+      globalThis.document = document;
+      update = updateReportAge;
+    } else {
+      const context = vm.createContext({ document, fetch: () => new Promise(() => {}),
+        window: { setInterval() {} } });
+      vm.runInContext(readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8"), context);
+      update = (data, now) => {
+        context.data = data;
+        context.now = now;
+        vm.runInContext("updateReportAge(data, now)", context);
+      };
+    }
+    try {
+      const data = { connected: true, updated_at: "2026-01-01T00:00:00.000Z" };
+      const age = document.querySelector("#sample-time");
+      update({ connected: false }, 10000);
+      assert.equal(age.hidden, true);
+      update(data, 10000);
+      assert.equal(age.textContent, "Report 0 s ago");
+      update(data, 12000);
+      assert.equal(age.textContent, "Report 2 s ago");
+      assert.equal(age.dataset.stale, "false");
+      update(data, 14000);
+      assert.equal(age.textContent, "Report 4 s ago (stale)");
+      assert.equal(age.dataset.stale, "true");
+      update({ ...data, updated_at: "2026-01-01T00:00:01.000Z" }, 14000);
+      assert.equal(age.textContent, "Report 0 s ago");
+      update({ connected: true, updated_at: null }, 14000);
+      assert.equal(age.textContent, "Waiting for report");
+      update({ connected: false }, 14000);
+      assert.equal(age.hidden, true);
+    } finally {
+      delete globalThis.document;
+    }
+  });
+
   function setup(document) {
     if (frontend === "webhid") {
       globalThis.document = document;
@@ -99,6 +141,8 @@ for (const frontend of ["webhid", "web"]) {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     assert.ok(!html.includes("Backend</th>") && !html.includes("Ring peak"));
     assert.ok(html.includes("UART configuration") && html.includes("Throughput"));
+    assert.deepEqual([...html.matchAll(/<th scope="col"(?: class="[^"]+")?>([^<]+)<\/th>/g)].map(match => match[1]),
+      ["Port", "Host session", "UART configuration", "Health", "Throughput", "RX overflow"]);
     const document = fixture(html);
     const { render } = setup(document);
     const diagnostic = { baud_rate: 115200, data_bits: 8, stop_bits: 1, parity: "N", tx_pin: 0, rx_pin: 1,
@@ -112,6 +156,10 @@ for (const frontend of ["webhid", "web"]) {
       render(data);
       let rows = document.querySelector("#channel-rows");
       assert.equal(rows.children[0].children.length, 6);
+      assert.equal(rows.children[0].children[1].textContent, "Closed");
+      assert.equal(rows.children[0].children[2].className, "uart-configuration");
+      assert.equal(rows.children[0].children[4].className, "traffic");
+      assert.equal(rows.children[0].children[5].className, "overflow");
       assert.match(rows.textContent, /115200 8N1TX GP0 \/ RX GP1/);
       assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "Recorded: rx_error");
       assert.ok(descendants(rows).some(node =>
@@ -134,6 +182,7 @@ for (const frontend of ["webhid", "web"]) {
       diagnostic.faults = {};
       render(data);
       assert.match(rows.textContent, /idle/);
+      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "Receiver enabled");
       channel.health_labels.push("control_error");
       render(data);
       assert.match(rows.textContent, /attention/);

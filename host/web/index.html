@@ -18,6 +18,7 @@
     <div class="connection" id="connection" data-state="waiting">
       <span class="connection-light" aria-hidden="true"></span>
       <span id="connection-label">Connecting</span>
+      <span class="sample-time" id="sample-time" hidden></span>
     </div>
   </header>
 
@@ -26,7 +27,6 @@
       <div>
         <h1>Diagnostics</h1>
       </div>
-      <p class="sample-time" id="sample-time">Waiting for HID telemetry</p>
     </section>
 
     <section aria-labelledby="identity-title">
@@ -79,9 +79,9 @@
           <thead>
             <tr>
               <th scope="col">Port</th>
+              <th scope="col">Host session</th>
               <th scope="col">UART configuration</th>
               <th scope="col">Health</th>
-              <th scope="col">Host session</th>
               <th scope="col">Throughput</th>
               <th scope="col" class="overflow-heading">RX overflow</th>
             </tr>

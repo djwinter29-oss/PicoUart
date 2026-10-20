@@ -52,7 +52,7 @@ body {
   font: 700 13px var(--mono);
 }
 
-.connection { display: flex; align-items: center; gap: 9px; font: 600 12px var(--mono); }
+.connection { display: flex; align-items: center; flex-wrap: wrap; justify-content: end; gap: 6px 9px; font: 600 12px var(--mono); }
 .connection-light, .status-mark { width: 9px; height: 9px; border-radius: 50%; background: #e2b04c; }
 .connection[data-state="connected"] .connection-light { background: #b9e86b; box-shadow: 0 0 0 4px #b9e86b24; }
 .connection[data-state="disconnected"] .connection-light { background: #ff927b; }
@@ -63,7 +63,9 @@ h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 0; font-size: 28px; line-height: 1.15; font-weight: 680; letter-spacing: -0.035em; }
 h2 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -0.02em; }
 h2 span { margin-left: 9px; color: var(--muted); font: 500 12px var(--mono); }
-.sample-time { margin: 0 0 4px; color: var(--muted); font: 11px var(--mono); }
+.sample-time { color: #b6d1ca; font: 12px var(--mono); }
+.sample-time::before { content: "\00b7"; margin-right: 9px; }
+.sample-time[data-stale="true"] { color: #ffca80; }
 .page-heading + section { margin-top: 16px; }
 
 .summary {
@@ -124,11 +126,12 @@ tbody tr:hover { background: #f0f7f5; }
 .state-initializing { color: var(--amber); }
 .state-initializing::before { background: var(--amber); }
 .cdc-state, .overflow { font: 12px var(--mono); }
-.overflow-heading, .overflow { width: 104px; padding-inline: 12px; text-align: right; white-space: nowrap; }
+.overflow-heading, .overflow { width: 136px; min-width: 136px; padding-inline: 20px; border-left: 1px solid var(--line); text-align: right; white-space: nowrap; }
 .cdc-open { color: var(--teal-dark); }
 .cdc-closed { color: var(--muted); }
-.traffic-metrics { display: grid; grid-template-columns: repeat(2, 7ch minmax(8ch, 1fr)); gap: 6px 12px; color: #53666a; font: 12px var(--mono); }
+.traffic-metrics { display: grid; grid-template-columns: 7ch minmax(8ch, 1fr) calc(7ch + 16px) minmax(8ch, 1fr); gap: 6px 12px; color: #53666a; font: 12px var(--mono); }
 .traffic-metrics > span { display: contents; }
+.traffic-metrics > span:nth-child(even) .traffic-label { padding-left: 16px; border-left: 1px solid var(--line); }
 .traffic-label { white-space: nowrap; }
 .uart-configuration { font: 13px var(--mono); white-space: nowrap; }
 .uart-configuration small { display: block; margin-top: 6px; color: var(--muted); font: 12px var(--sans); }

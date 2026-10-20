@@ -6,6 +6,25 @@ function makeCell(className, text) {
 }
 
 const channelHistory = new Map();
+let reportSample = null;
+let reportReceivedAt = 0;
+
+export function updateReportAge(data, now = Date.now()) {
+  const sample = Date.parse(data.updated_at);
+  const age = document.querySelector("#sample-time");
+  age.hidden = !data.connected;
+  if (!data.connected) reportSample = null;
+  if (data.connected && Number.isFinite(sample) && sample !== reportSample) {
+    reportSample = sample;
+    reportReceivedAt = now;
+  }
+  const seconds = Math.max(0, Math.floor((now - reportReceivedAt) / 1000));
+  const stale = Number.isFinite(sample) && now - reportReceivedAt > 3000;
+  age.textContent = Number.isFinite(sample)
+    ? `Report ${seconds} s ago${stale ? " (stale)" : ""}` : "Waiting for report";
+  age.dataset.stale = String(stale);
+}
+
 const directions = [["UART TX", "uart_tx"], ["UART RX", "uart_rx"], ["USB TX", "usb_tx"], ["USB RX", "usb_rx"]];
 const faultHelp = {
   init_failed: "Initialization failure; check firmware resources and configuration.",
@@ -82,6 +101,8 @@ function renderChannels(data) {
     portName.append(portIndex, document.createTextNode(`CDC${channel.id}`));
     port.append(portName);
     row.append(port);
+    row.append(makeCell(`cdc-state ${channel.cdc_open ? "cdc-open" : "cdc-closed"}`,
+      channel.cdc_open ? "Open" : "Closed"));
     const configuration = makeCell("uart-configuration", "");
     const settings = document.createElement("strong");
     const diagnostic = view.diagnostic;
@@ -108,12 +129,10 @@ function renderChannels(data) {
       return `${!view.fresh ? "Last reported" : current ? "Current" : "Recorded"}: ${name}`;
     }).join("; ") || (view.state === "unknown" ? "Waiting for status"
       : channel.health_labels.includes("control_pending") ? "Applying settings"
-      : view.state === "idle" ? "Host closed; RX active" : "No active flags");
+      : view.state === "idle" ? "Receiver enabled" : "No active flags");
     flags.title = view.faults.map(name => faultHelp[name]).join(" ");
     health.append(flags);
     row.append(health);
-    row.append(makeCell(`cdc-state ${channel.cdc_open ? "cdc-open" : "cdc-closed"}`,
-      channel.cdc_open ? "Open" : "Closed"));
     const traffic = document.createElement("td");
     traffic.className = "traffic";
     const metrics = document.createElement("div");
@@ -168,8 +187,7 @@ export function renderDashboard(data) {
   document.querySelector("#led-state").textContent = `LED ${led?.output_on == null ? "--" : led.output_on ? "on" : "off"}`;
   ledButton.title = led?.manual_on == null ? "Toggle manual LED state; USB activity may also light the LED"
     : `Toggle manual LED state (currently ${led.manual_on ? "On" : "Off"}); USB activity may also light the LED`;
-  document.querySelector("#sample-time").textContent = data.updated_at
-    ? `Last report ${new Date(data.updated_at).toLocaleTimeString()}` : "Waiting for HID telemetry";
+  updateReportAge(data);
   document.querySelector("#overflow-total").textContent = data.overflow_counts.every(value => value !== null)
     ? `${data.overflow_counts.reduce((sum, count) => sum + count, 0)} B` : "--";
   const resetButton = document.querySelector("#reset-board");

@@ -34,10 +34,16 @@ function fixture(secure = true, hid = {}) {
   const source = readFileSync(new URL("../js/app.mjs", import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "");
   let polling;
+  let agePolling;
   vm.runInNewContext(source, { document, navigator: { hid }, isSecureContext: secure,
-    PicoUartWebHid: FakeClient, renderDashboard() {}, DEVICE_FILTER: { vendorId: 0xcafe, productId: 0x4010 },
-    setInterval(callback, interval) { polling = { callback, interval }; } });
-  return { html, client, polling, get: id => document.querySelector(`#${id}`) };
+    PicoUartWebHid: FakeClient, renderDashboard() {},
+    updateReportAge(data) { assert.equal(data, client.state.dashboard); },
+    DEVICE_FILTER: { vendorId: 0xcafe, productId: 0x4010 },
+    setInterval(callback, interval) {
+      if (interval === 2000) polling = { callback, interval };
+      else agePolling = { callback, interval };
+    } });
+  return { html, client, polling, agePolling, get: id => document.querySelector(`#${id}`) };
 }
 
 test("one connection button belongs to Device identity, with no separate refresh or disconnect", () => {
@@ -52,10 +58,12 @@ test("one connection button belongs to Device identity, with no separate refresh
 });
 
 test("metadata continues refreshing automatically every two seconds", () => {
-  const { client, polling } = fixture();
+  const { client, polling, agePolling } = fixture();
   assert.equal(polling.interval, 2000);
   polling.callback();
   assert.deepEqual(client.calls, ["refresh"]);
+  assert.equal(agePolling.interval, 1000);
+  agePolling.callback();
 });
 
 test("connection button reflects lifecycle, routes clicks and recovers after failure or unplug", () => {
