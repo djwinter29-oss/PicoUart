@@ -6,9 +6,7 @@ BOARD="${PICO_BOARD:-pico}"
 GENERATOR="${GENERATOR:-}"
 PICO_SDK_PATH_VALUE=""
 FIRMWARE_VERSION="${PICO_UART_VERSION:-}"
-SYSTEM_CLOCK_KHZ=""
 ALLOW_HID_RESET="${PICO_UART_ALLOW_HID_RESET:-OFF}"
-ALLOW_UNSAFE_OVERCLOCK="OFF"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -32,16 +30,12 @@ while [ "$#" -gt 0 ]; do
             FIRMWARE_VERSION="$2"
             shift 2
             ;;
-        --system-clock-khz)
-            SYSTEM_CLOCK_KHZ="$2"
-            shift 2
+        --system-clock-khz|--unsafe-overclock)
+            echo "Build-time clocks were removed; use tools/firmware/config.py to select a stored profile." >&2
+            exit 1
             ;;
         --allow-hid-reset)
             ALLOW_HID_RESET="ON"
-            shift
-            ;;
-        --unsafe-overclock)
-            ALLOW_UNSAFE_OVERCLOCK="ON"
             shift
             ;;
         *)
@@ -54,38 +48,6 @@ done
 if [ -n "$BOARD" ]; then
     if [ "$BUILD_DIR" = "build/firmware" ]; then
         BUILD_DIR="build/firmware-$BOARD"
-    fi
-fi
-
-# Only the canonical Raspberry Pi board names have a known target family here;
-# a custom board's family lives in its SDK board header (PICO_PLATFORM), which
-# this wrapper does not parse. Leave the clock unset/unchecked for any other
-# board name and let firmware/CMakeLists.txt apply the real SDK-derived rated
-# default and ceiling instead of guessing from the name.
-if [ -z "$SYSTEM_CLOCK_KHZ" ]; then
-    case "$BOARD" in
-        pico|pico_w) SYSTEM_CLOCK_KHZ=125000 ;;
-        pico2|pico2_w) SYSTEM_CLOCK_KHZ=150000 ;;
-    esac
-fi
-
-if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
-    if ! printf '%s' "$SYSTEM_CLOCK_KHZ" | grep -Eq '^[1-9][0-9]*$'; then
-        echo "System clock must be a positive integer kHz value." >&2
-        exit 1
-    fi
-    if [ "${#SYSTEM_CLOCK_KHZ}" -gt 6 ]; then
-        echo "System clock must be no greater than 999999 kHz." >&2
-        exit 1
-    fi
-    MAX_SYSTEM_CLOCK_KHZ=""
-    case "$BOARD" in
-        pico|pico_w) MAX_SYSTEM_CLOCK_KHZ=400000 ;;
-        pico2|pico2_w) MAX_SYSTEM_CLOCK_KHZ=500000 ;;
-    esac
-    if [ -n "$MAX_SYSTEM_CLOCK_KHZ" ] && [ "$SYSTEM_CLOCK_KHZ" -gt "$MAX_SYSTEM_CLOCK_KHZ" ]; then
-        echo "System clock must be no greater than $MAX_SYSTEM_CLOCK_KHZ kHz for $BOARD." >&2
-        exit 1
     fi
 fi
 
@@ -125,9 +87,10 @@ if [ -f "$BUILD_DIR_PATH/CMakeCache.txt" ] &&
             ! grep -F -q "CMAKE_GENERATOR:INTERNAL=$GENERATOR" "$BUILD_DIR_PATH/CMakeCache.txt" ||
             ! grep -F -q "PICO_BOARD:STRING=$BOARD" "$BUILD_DIR_PATH/CMakeCache.txt" ||
             ! grep -F -q "PICO_UART_VERSION:STRING=${FIRMWARE_VERSION:-0.0.0-dev}" "$BUILD_DIR_PATH/CMakeCache.txt" ||
-            ! grep -F -q "PICO_UART_SYSTEM_CLOCK_KHZ:STRING=$SYSTEM_CLOCK_KHZ" "$BUILD_DIR_PATH/CMakeCache.txt" ||
+            grep -q '^PICO_UART_SYSTEM_CLOCK_KHZ:' "$BUILD_DIR_PATH/CMakeCache.txt" ||
             ! grep -F -q "PICO_UART_ALLOW_HID_RESET:BOOL=$ALLOW_HID_RESET" "$BUILD_DIR_PATH/CMakeCache.txt" ||
-            ! grep -F -q "PICO_UART_ALLOW_UNSAFE_OVERCLOCK:BOOL=$ALLOW_UNSAFE_OVERCLOCK" "$BUILD_DIR_PATH/CMakeCache.txt"; }; then
+            { [ -f "$BUILD_DIR_PATH/picotool/src/picotoolBuild-stamp/picotoolBuild-configure" ] &&
+                [ ! -f "$BUILD_DIR_PATH/_deps/picotool-build/CMakeCache.txt" ]; }; }; then
         echo "Build configuration changed; resetting generated CMake state in $BUILD_DIR_PATH"
     rm -rf "$BUILD_DIR_PATH/CMakeCache.txt" \
            "$BUILD_DIR_PATH/CMakeFiles" \
@@ -136,6 +99,7 @@ if [ -f "$BUILD_DIR_PATH/CMakeCache.txt" ] &&
            "$BUILD_DIR_PATH/Makefile" \
            "$BUILD_DIR_PATH/_deps" \
            "$BUILD_DIR_PATH/pico-sdk" \
+           "$BUILD_DIR_PATH/picotool" \
            "$BUILD_DIR_PATH/pioasm"
 fi
 
@@ -146,9 +110,7 @@ set -- \
     -DPICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
     -DPICO_BOARD="$BOARD" \
     -DPICO_UART_VERSION="${FIRMWARE_VERSION:-0.0.0-dev}" \
-    -DPICO_UART_SYSTEM_CLOCK_KHZ="$SYSTEM_CLOCK_KHZ" \
-    -DPICO_UART_ALLOW_HID_RESET="$ALLOW_HID_RESET" \
-    -DPICO_UART_ALLOW_UNSAFE_OVERCLOCK="$ALLOW_UNSAFE_OVERCLOCK"
+    -DPICO_UART_ALLOW_HID_RESET="$ALLOW_HID_RESET"
 
 cmake "$@"
 cmake --build "$BUILD_DIR_PATH" --parallel

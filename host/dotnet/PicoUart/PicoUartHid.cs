@@ -1,4 +1,5 @@
 using HidSharp;
+using System.Diagnostics;
 
 namespace PicoUart;
 
@@ -57,6 +58,61 @@ public sealed class PicoUartHid : IDisposable
 
     public HardwareInfo ReadHardwareInfo() => Protocol.ParseHardwareInfo(
         ReadFeature(Protocol.HardwareInfoReportId, Protocol.HardwareInfoSize));
+
+    public ConfigurationStatus ReadConfiguration() => Protocol.ParseConfiguration(
+        ReadFeature(Protocol.ConfigurationReportId, Protocol.ConfigurationSize));
+
+    public ConfigurationSaveStatus ReadConfigurationSave() => Protocol.ParseConfigurationSave(
+        ReadFeature(Protocol.ConfigurationSaveReportId, Protocol.ConfigurationSaveSize));
+
+    /// <summary>Save the next-boot clock profile without resetting the board.</summary>
+    public ConfigurationSaveStatus SaveConfiguration(uint profile, bool unsafeOverclock)
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            var payload = Protocol.BuildConfigurationSave(profile, unsafeOverclock, ReadHardwareInfo().McuId);
+            return SaveConfigurationRequest(payload, ReadConfigurationSave, stream.SetFeature);
+        }
+    }
+
+    internal static ConfigurationSaveStatus SaveConfigurationRequest(byte[] payload,
+        Func<ConfigurationSaveStatus> read, Action<byte[]> write)
+    {
+        if (read().Status == 1)
+            throw new InvalidOperationException("a configuration save is already pending");
+        byte[] report = [Protocol.ConfigurationSaveReportId, .. payload];
+        write(report);
+        return WaitForConfigurationSave(
+            System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(4)), read);
+    }
+
+    internal static ConfigurationSaveStatus WaitForConfigurationSave(uint profile,
+        Func<ConfigurationSaveStatus> read, int timeoutMs = 2000)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(timeoutMs);
+        var elapsed = Stopwatch.StartNew();
+        while (true)
+        {
+            var result = read();
+            if (result.Status != 3 && result.Profile != profile)
+                throw new InvalidOperationException("configuration save returned a different profile");
+            switch (result.Status)
+            {
+                case 2: return result;
+                case 3: throw new InvalidOperationException("firmware rejected the configuration save request");
+                case 4:
+                    throw new InvalidOperationException("stop UART traffic and close all CDC ports before saving configuration");
+                case 5: throw new IOException("configuration flash save failed");
+                case 0 or 1: break;
+                default: throw new InvalidOperationException("unexpected configuration save status");
+            }
+            var remaining = timeoutMs - elapsed.ElapsedMilliseconds;
+            if (remaining <= 0)
+                throw new TimeoutException("configuration save did not complete before timeout");
+            Thread.Sleep((int)Math.Min(25, remaining));
+        }
+    }
 
     public BoardIdentity ReadIdentity() => Protocol.ParseIdentity(ReadFeature(7, 49));
 

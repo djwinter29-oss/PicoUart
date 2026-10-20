@@ -20,6 +20,10 @@ the project documentation index; this file only maps the tool categories.
 . tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0
 tools/firmware/build.sh --board pico
 tools/firmware/build.sh --board pico2
+tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> read
+python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <serial> read
+python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <serial> set-clock default
+python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <serial> erase
 
 # Host dashboards (Linux/macOS/WSL; choose one)
 tools/host/run-python.sh

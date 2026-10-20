@@ -7,9 +7,9 @@ GitHub Actions tag filters are glob patterns, not regexes: '+' has no
 and never matches a real tag like v1.2.3. These tests pin the fixed glob
 and the release-tag version policy enforced by tools/release/resolve-release-version.sh.
 
-They also pin the PR and release firmware matrices: rated pico/pico2 plus
-the development overclock images (pico at 250 MHz; pico2 at 280 MHz in both
-PR checks and releases). Release-note text is checked on the workflow only.
+They also pin the PR and release firmware matrices to the rated pico/pico2
+images only; overclock selection now lives in the on-device configuration
+profile, not workflow matrix variants.
 """
 
 from __future__ import annotations
@@ -26,22 +26,19 @@ RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PR_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-check.yml"
 RESOLVE_SCRIPT = REPO_ROOT / "tools" / "release" / "resolve-release-version.sh"
 
-# board, clock_khz, overclock, label. Rated rows stay on the default clock
-# path; overclock rows must pass --unsafe-overclock.
+# board, label.
 PR_FIRMWARE_MATRIX = (
-    ("pico", "125000", "false", "pico"),
-    ("pico2", "150000", "false", "pico2"),
-    ("pico", "250000", "true", "pico-250mhz"),
-    ("pico2", "280000", "true", "pico2-280mhz"),
+    ("pico", "pico"),
+    ("pico2", "pico2"),
 )
 # ponytail: PR and release targets are intentionally identical today; keep
 # separate names to make any future workflow-specific divergence explicit.
 RELEASE_FIRMWARE_MATRIX = PR_FIRMWARE_MATRIX
 
 
-def _firmware_matrix(text: str) -> list[tuple[str, str, str, str]]:
+def _firmware_matrix(text: str) -> list[tuple[str, str]]:
     return re.findall(
-        r"- board: (\w+)\n\s+clock_khz: \"(\d+)\"\n\s+overclock: \"(true|false)\"\n\s+label: ([\w-]+)",
+        r"- board: (\w+)\n\s+label: ([\w-]+)",
         text,
     )
 
@@ -133,14 +130,14 @@ def test_firmware_matrix_builds_rated_and_overclock_images(workflow: Path, expec
     text = workflow.read_text(encoding="utf-8")
 
     assert _firmware_matrix(text) == list(expected)
-    assert 'if [ "$OVERCLOCK" = "true" ]; then' in text
-    assert '--system-clock-khz "$CLOCK_KHZ" --unsafe-overclock' in text
+    assert "--system-clock-khz" not in text
+    assert "--unsafe-overclock" not in text
     assert '--board "$BOARD"' in text
     assert '--board "$LABEL"' not in text
     assert "--board ${{ matrix.label }}" not in text
 
 
-def test_pr_overclock_artifacts_use_distinct_names() -> None:
+def test_pr_artifacts_use_matrix_label_names() -> None:
     text = PR_WORKFLOW.read_text(encoding="utf-8")
 
     assert "name: pico_uart-${{ matrix.label }}" in text
@@ -148,25 +145,16 @@ def test_pr_overclock_artifacts_use_distinct_names() -> None:
     assert "matrix.label == 'pico'" in text
 
 
-def test_release_overclock_packages_use_distinct_names() -> None:
+def test_release_packages_use_distinct_names() -> None:
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
     assert "name: release-${{ matrix.label }}" in text
     assert "pico_uart-v${VERSION}-${LABEL}" in text
     assert "SHA256SUMS-${LABEL}.txt" in text
     assert "pattern: release-*" in text
-    assert "pico-250mhz" in text
-    assert "pico2-280mhz" in text
-    assert "pico2-300mhz" not in text
-    assert "pico2-500mhz" not in text
-
-
-def test_release_notes_match_release_clocks() -> None:
-    """The draft release notes name each workflow image."""
+def test_release_notes_reference_config_profiles() -> None:
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     body = text.split("          body: |", 1)[1].split("        env:", 1)[0]
-    for _board, clock_khz, _overclock, label in RELEASE_FIRMWARE_MATRIX:
-        mhz = int(clock_khz) // 1000
-        assert f"**{label}** ({mhz} MHz)" in body
-    assert "promote HIL gate covers the rated images" in body
+    assert "rated **pico** (125 MHz) and **pico2** (150 MHz)" in body
+    assert "Optional overclock profiles are selected on-device" in body
     assert "Some Pico 2 boards may not support 300 MHz reliably" in body

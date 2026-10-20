@@ -11,7 +11,7 @@ try
     if (options.Command is "help" or "--help" or "-h")
     {
         Console.WriteLine("PicoUart [--serial SERIAL | --device-path PATH] COMMAND [--port N] [--duration SECONDS] [--json]");
-        Console.WriteLine("Commands: status, monitor, overruns, hardware, temperature, version, toggle-led, reset, web");
+        Console.WriteLine("Commands: status, monitor, overruns, hardware, config, temperature, version, toggle-led, reset, web");
         return 0;
     }
     if (options.Command == "web")
@@ -40,6 +40,7 @@ try
             break;
         case "overruns": WriteJson(client.ReadOverflowCounts()); break;
         case "hardware": WriteJson(client.ReadHardwareInfo()); break;
+        case "config": WriteJson(client.ReadConfiguration()); break;
         case "temperature":
             Console.WriteLine(client.ReadBoardStatus().TemperatureCelsius.ToString(CultureInfo.InvariantCulture));
             break;
@@ -144,9 +145,56 @@ static async Task RunWeb(Options options)
         }
         return Results.Json(new { ok = true });
     });
+    app.MapPost("/api/configuration", async (HttpContext context, DashboardBoards dashboard) =>
+    {
+        var token = context.Session.GetString("csrf_token");
+        var supplied = context.Request.Headers["X-CSRF-Token"].ToString();
+        if (token is null || !CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(token), Encoding.UTF8.GetBytes(supplied)))
+            return Results.Json(new { error = "request token missing or invalid" }, statusCode: 403);
+        if (!context.Request.HasJsonContentType())
+            return Results.Json(new { error = "configuration request must be JSON" }, statusCode: 415);
+        try
+        {
+            using var body = await JsonDocument.ParseAsync(context.Request.Body,
+                cancellationToken: context.RequestAborted);
+            var request = ConfigurationSaveRequest.Parse(body.RootElement);
+            dashboard.SaveConfiguration(context.Request.Query["board"], request.Profile, request.UnsafeOverclock);
+            return Results.Json(new { ok = true });
+        }
+        catch (Exception error) when (error is JsonException or ArgumentException
+            || DashboardService.IsDeviceError(error))
+        {
+            var status = error switch
+            {
+                JsonException or ArgumentException => 400,
+                TimeoutException => 504,
+                IOException or UnauthorizedAccessException => 503,
+                _ => 409
+            };
+            return Results.Json(new { error = error.Message }, statusCode: status);
+        }
+    });
     app.Lifetime.ApplicationStarted.Register(() =>
         Console.WriteLine($"PicoUart dashboard: http://127.0.0.1:{options.Port}/ (Ctrl+C to stop)"));
     await app.RunAsync();
+}
+
+internal sealed record ConfigurationSaveRequest(uint Profile, bool UnsafeOverclock)
+{
+    public static ConfigurationSaveRequest Parse(JsonElement body)
+    {
+        if (body.ValueKind != JsonValueKind.Object || body.EnumerateObject().Count() != 2
+            || !body.TryGetProperty("profile", out var profile) || profile.ValueKind != JsonValueKind.Number
+            || !profile.TryGetUInt32(out var value) || value > 2
+            || !body.TryGetProperty("unsafe_overclock", out var acknowledgement)
+            || acknowledgement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new ArgumentException("expected profile (integer 0..2) and unsafe_overclock (boolean)");
+        var unsafeOverclock = acknowledgement.GetBoolean();
+        if (value != 0 && !unsafeOverclock)
+            throw new ArgumentException("explicit unsafe overclock acknowledgement is required");
+        return new(value, unsafeOverclock);
+    }
 }
 
 internal sealed record Options(string Command, string? Serial, string? DevicePath, int Port, double? Duration)
@@ -186,7 +234,7 @@ internal sealed record Options(string Command, string? Serial, string? DevicePat
         if (serial is not null && devicePath is not null)
             throw new ArgumentException("--serial and --device-path cannot be used together");
         command ??= "help";
-        if (command is not ("help" or "--help" or "-h" or "status" or "monitor" or "overruns" or "hardware"
+        if (command is not ("help" or "--help" or "-h" or "status" or "monitor" or "overruns" or "hardware" or "config"
             or "temperature" or "version" or "toggle-led" or "reset" or "web"))
             throw new ArgumentException($"unknown command: {command}");
         return new(command, serial, devicePath, port, duration);

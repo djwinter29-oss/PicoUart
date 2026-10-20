@@ -28,6 +28,21 @@ class FakeDashboard:
 
 
 class BoardTelemetry:
+    def read_board_status(self):
+        return {"firmware_version": "1.2.3"}
+
+    def read_overflow_counts(self):
+        return [0] * 6
+
+    def read_hardware_info(self):
+        return {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
+
+    def read_configuration(self):
+        return {"source": "defaults", "reason": "erased", "stored_profile": None, "active_profile": 1}
+
+    def read_configuration_save(self):
+        return {"status": 0, "profile": None}
+
     def read_channel_diagnostics(self):
         return [{"baud_rate": 115200, "data_bits": 8, "parity": "N", "stop_bits": 1,
                  "tx_pin": index * 4, "rx_pin": index * 4 + 1, "faults": {}} for index in range(6)]
@@ -72,8 +87,8 @@ def test_dashboard_serves_shared_assets():
     assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page.data
     assert b'id="mcu"' in page.data
     assert b'id="system-clock"' in page.data
-    assert b'href="/css/dashboard.css"' in page.data
-    assert b'src="/js/dashboard.js?v=4"' in page.data
+    assert b'href="/css/dashboard.css?v=6"' in page.data
+    assert b'src="/js/dashboard.js?v=6"' in page.data
     assert b"{{" not in page.data
     for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
         response = client.get(f"/{path}")
@@ -182,6 +197,8 @@ def test_dashboard_service_polls_status_and_metadata():
     assert snapshot["overflow_counts"] == [0, 1, 2, 3, 4, 5]
     assert snapshot["hardware"] == {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
     assert snapshot["hardware_error"] is None
+    assert snapshot["configuration"] == fake.read_configuration()
+    assert snapshot["configuration_error"] is None
     assert snapshot["identity"] == fake.read_identity()
     assert snapshot["runtime"] == fake.read_runtime()
     assert fake.closed
@@ -240,6 +257,8 @@ def test_metadata_errors_survive_telemetry_and_clear_stale_values():
     assert snapshot["metadata_error"] == "feature read failed"
     assert snapshot["board"] is None
     assert snapshot["overflow_counts"] == [None] * 6
+    assert snapshot["configuration"] == BoardTelemetry().read_configuration()
+    assert snapshot["configuration_error"] is None
 
     class HealthyMetadata(BoardTelemetry):
         def read_board_status(self):
@@ -292,6 +311,27 @@ def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, 
     recovered = service.snapshot()
     assert recovered["hardware_error"] is None
     assert recovered["hardware"] == {"mcu": model, "mcu_id": mcu, "system_clock_hz": 200_000_000}
+
+
+def test_configuration_query_errors_clear_stale_values_and_recover():
+    service = object.__new__(DashboardService)
+    service._lock = threading.RLock()
+    service._snapshot = _empty_snapshot()
+    service._snapshot["configuration"] = {"source": "stored"}
+
+    class ConfigError(BoardTelemetry):
+        def read_configuration(self):
+            raise OSError("configuration report unsupported")
+
+    service._read_metadata(ConfigError())
+    assert service.snapshot()["configuration"] is None
+    assert service.snapshot()["configuration_error"] == "configuration report unsupported"
+
+    service._read_metadata(BoardTelemetry())
+    assert service.snapshot()["configuration"] == {
+        "source": "defaults", "reason": "erased", "stored_profile": None, "active_profile": 1,
+    }
+    assert service.snapshot()["configuration_error"] is None
 
 
 def test_dashboard_service_disconnects_and_closes_after_read_failure():

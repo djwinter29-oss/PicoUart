@@ -83,6 +83,9 @@ public sealed class DashboardBoards : IHostedService, IDisposable
 
     public void Action(string? boardId, string action) => Reader(boardId).Action(action);
 
+    public void SaveConfiguration(string? boardId, uint profile, bool unsafeOverclock) =>
+        Reader(boardId).SaveConfiguration(profile, unsafeOverclock);
+
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public async Task StopAsync(CancellationToken cancellationToken)

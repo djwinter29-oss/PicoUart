@@ -31,8 +31,17 @@ STATUS_LAYOUT_VERSION = 1
 STATUS_SIGNATURE = ord("P")
 UART_CHANNEL_COUNT = 6
 REPORT_ID_CHANNEL_BASE = 10
+REPORT_ID_CONFIGURATION = 16
+REPORT_ID_CONFIGURATION_SAVE = 17
 CHANNEL_DIAGNOSTICS_SIZE = 59
+CONFIGURATION_SIZE = 12
+CONFIGURATION_SAVE_SIZE = 8
 FAULT_LABELS = ("init_failed", "control_error", "rx_overrun", "rx_error")
+CONFIGURATION_SOURCES = ("defaults", "stored", "recovery")
+CONFIGURATION_REASONS = (
+    "none", "erased", "invalid_header", "crc_failed", "unsupported_version",
+    "invalid_profile", "watchdog_recovery", "clock_unavailable",
+)
 STATUS_HEADER_SIZE = 3
 STATUS_CHANNEL_SIZE = 10
 RESET_ARM_WINDOW_S = 2.0
@@ -58,6 +67,39 @@ def parse_channel_diagnostics(payload: bytes) -> dict[str, object]:
     return {"health": health, "baud_rate": baud, "data_bits": data, "stop_bits": stop,
             "parity": "NOE"[parity] if baud else None,
             "tx_pin": None if tx == 255 else tx, "rx_pin": None if rx == 255 else rx, "faults": faults}
+
+
+def parse_configuration(payload: bytes) -> dict[str, object]:
+    """Decode the read-only persistent configuration and profile-selection report."""
+    if len(payload) != CONFIGURATION_SIZE or payload[0] != 1:
+        raise RuntimeError("unsupported configuration report size or version")
+    _, source, reason, reserved, stored_profile, active_profile = struct.unpack("<BBBBII", payload)
+    if source >= len(CONFIGURATION_SOURCES) or reason >= len(CONFIGURATION_REASONS) or reserved != 0:
+        raise RuntimeError("invalid configuration source, reason, or reserved field")
+    if stored_profile not in (0, 1, 2, 0xFFFFFFFF) or active_profile not in (0, 1, 2):
+        raise RuntimeError("invalid configuration profile")
+    if source == 1 and (reason != 0 or stored_profile not in (0, 1, 2) or active_profile != stored_profile):
+        raise RuntimeError("inconsistent stored configuration")
+    if source == 2 and reason == 0:
+        raise RuntimeError("inconsistent recovery configuration")
+    return {
+        "source": CONFIGURATION_SOURCES[source],
+        "reason": CONFIGURATION_REASONS[reason],
+        "stored_profile": None if stored_profile == 0xFFFFFFFF else stored_profile,
+        "active_profile": active_profile,
+    }
+
+
+def parse_configuration_save(payload: bytes) -> dict[str, object]:
+    """Decode the latest requested profile and asynchronous flash verification result."""
+    if len(payload) != CONFIGURATION_SAVE_SIZE or payload[0] != 1:
+        raise RuntimeError("unsupported configuration save report size or version")
+    _, status, reserved, profile = struct.unpack("<BBHI", payload)
+    if status > 5 or reserved != 0 or profile not in (0, 1, 2, 0xFFFFFFFF):
+        raise RuntimeError("invalid configuration save status, reserved field, or profile")
+    if profile == 0xFFFFFFFF and status not in (0, 3):
+        raise RuntimeError("configuration save result has no requested profile")
+    return {"status": status, "profile": None if profile == 0xFFFFFFFF else profile}
 
 
 def parse_led(payload: bytes) -> dict[str, bool | None]:

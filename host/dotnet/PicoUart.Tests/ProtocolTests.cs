@@ -58,6 +58,49 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void ConfigurationDecodesAndRejectsInvalidReportValues()
+    {
+        byte[] payload = new byte[12];
+        payload[0] = 1;
+        payload[2] = 3;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), uint.MaxValue);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8), 1);
+        Assert.Equal(new ConfigurationStatus("defaults", "crc_failed", null, 1),
+            Protocol.ParseConfiguration(payload));
+
+        payload[1] = 1;
+        payload[2] = 0;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 2);
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseConfiguration(payload));
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8), 2);
+        Assert.Equal(new ConfigurationStatus("stored", "none", 2, 2), Protocol.ParseConfiguration(payload));
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8), 1);
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseConfiguration(payload));
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8), 0);
+        Assert.Equal(new ConfigurationStatus("stored", "none", 0, 0), Protocol.ParseConfiguration(payload));
+
+        payload[1] = 2;
+        payload[2] = 6;
+        Assert.Equal("recovery", Protocol.ParseConfiguration(payload).Source);
+
+        foreach (var (offset, value) in new (int, byte)[] { (0, 2), (1, 3), (2, 8), (3, 1), (8, 3) })
+        {
+            var invalid = (byte[])payload.Clone();
+            invalid[offset] = value;
+            Assert.Throws<InvalidOperationException>(() => Protocol.ParseConfiguration(invalid));
+        }
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseConfiguration(payload.AsSpan(1)));
+
+        payload[1] = 1;
+        payload[2] = 1;
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseConfiguration(payload));
+        payload[1] = 2;
+        payload[2] = 0;
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseConfiguration(payload));
+    }
+
+    [Fact]
     public void BoardIdentityAndRuntimeDecodeDeviceValues()
     {
         var identity = new byte[49];

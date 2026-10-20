@@ -10,7 +10,7 @@ function featurePayload(report, reportId, size) {
     throw new Error("Unexpected feature report ID or size");
   }
   for (let index = size + 1; index < report.byteLength; index++) {
-    if (report.getUint8(index) !== 0) throw new Error("Unexpected hardware-info report padding");
+    if (report.getUint8(index) !== 0) throw new Error("Unexpected feature report padding");
   }
   return new DataView(report.buffer, report.byteOffset + 1, size);
 }
@@ -26,6 +26,48 @@ export function decodeHardwareReport(report) {
     mcu_id: mcuId,
     system_clock_hz: clockHz,
   };
+}
+
+export function decodeConfigurationReport(report) {
+  const payload = featurePayload(report, 16, 12);
+  const source = payload.getUint8(1), reason = payload.getUint8(2);
+  const stored = payload.getUint32(4, true), active = payload.getUint32(8, true);
+  const sources = ["defaults", "stored", "recovery"];
+  const reasons = ["none", "erased", "invalid_header", "crc_failed", "unsupported_version",
+    "invalid_profile", "watchdog_recovery", "clock_unavailable"];
+  if (payload.getUint8(0) !== 1) throw new Error("Unsupported configuration layout version");
+  if (source >= sources.length || reason >= reasons.length || payload.getUint8(3) !== 0) {
+    throw new Error("Invalid configuration source, reason, or reserved field");
+  }
+  if (![0, 1, 2, 0xffffffff].includes(stored) || active > 2) {
+    throw new Error("Invalid configuration profile");
+  }
+  if ((source === 1 && (reason !== 0 || ![0, 1, 2].includes(stored) || active !== stored))
+    || (source === 2 && reason === 0)) throw new Error("Inconsistent configuration values");
+  return { source: sources[source], reason: reasons[reason],
+    stored_profile: stored === 0xffffffff ? null : stored, active_profile: active };
+}
+
+export function decodeConfigurationSaveReport(report) {
+  const payload = featurePayload(report, 17, 8);
+  const status = payload.getUint8(1);
+  const profile = payload.getUint32(4, true);
+  if (payload.getUint8(0) !== 1) throw new Error("Unsupported configuration-save layout version");
+  if (status > 5 || payload.getUint8(2) !== 0 || payload.getUint8(3) !== 0) {
+    throw new Error("Invalid configuration-save status or reserved field");
+  }
+  if (status === 0) {
+    if (profile !== 0xffffffff) throw new Error("Invalid idle configuration-save profile");
+    return { status, profile: null };
+  }
+  if (status === 3) {
+    if (profile !== 0xffffffff) throw new Error("Invalid rejected configuration-save profile");
+    return { status, profile: null };
+  }
+  if (![0, 1, 2].includes(profile)) {
+    throw new Error("Invalid configuration-save profile");
+  }
+  return { status, profile };
 }
 
 export function decodeBoardReport(report) {
@@ -131,6 +173,8 @@ export function decodeLedReport(value) {
 
 function emptyDashboard() {
   return { connected: false, error: null, metadata_error: null, hardware_error: null, hardware: null,
+    configuration: null, configuration_error: null,
+    configuration_save: null, configuration_save_error: null,
     identity: null, identity_error: null, runtime: null, runtime_error: null,
     led: null, led_error: null, channel_diagnostics: null, diagnostics_error: null, traffic_gaps: 0,
     board: null, overflow_counts: Array(6).fill(null), sequence: null, updated_at: null, traffic_incomplete: false,
@@ -157,6 +201,7 @@ export class PicoUartWebHid {
       phase: hid ? "disconnected" : "unsupported",
       message: hid ? "No device selected" : "WebHID is unavailable in this browser or context",
       error: null,
+      configurationSaveMessage: "",
       hardware: null,
       deviceName: null,
       updatedAt: null,
@@ -187,7 +232,8 @@ export class PicoUartWebHid {
       this.pendingDevice = null;
       event.device.removeEventListener("inputreport", this.onInputReport);
       this.update({ phase: "disconnected", message: "Device unplugged", hardware: null,
-        deviceName: null, updatedAt: null, error: null, dashboard: emptyDashboard() });
+        deviceName: null, updatedAt: null, error: null, configurationSaveMessage: "",
+        dashboard: emptyDashboard() });
     };
     hid?.addEventListener("disconnect", this.onDisconnect);
   }
@@ -200,7 +246,8 @@ export class PicoUartWebHid {
   async connect() {
     if (!this.hid || this.state.phase !== "disconnected") return;
     const generation = ++this.generation;
-    this.update({ phase: "connecting", message: "Selecting device", error: null });
+    this.update({ phase: "connecting", message: "Selecting device", error: null,
+      configurationSaveMessage: "" });
     let selected;
     try {
       const devices = await this.hid.requestDevice({ filters: [{ ...DEVICE_FILTER }] });
@@ -255,6 +302,25 @@ export class PicoUartWebHid {
         dashboard: { ...this.state.dashboard, hardware: null, hardware_error: error.message } });
     }
     try {
+      const configuration = decodeConfigurationReport(await device.receiveFeatureReport(16));
+      if (generation !== this.generation || device !== this.device) return;
+      this.update({ dashboard: { ...this.state.dashboard, configuration, configuration_error: null } });
+    } catch (error) {
+      if (generation !== this.generation || device !== this.device) return;
+      this.update({ dashboard: { ...this.state.dashboard, configuration: null,
+        configuration_error: error.message } });
+    }
+    try {
+      const configurationSave = decodeConfigurationSaveReport(await device.receiveFeatureReport(17));
+      if (generation !== this.generation || device !== this.device) return;
+      this.update({ dashboard: { ...this.state.dashboard, configuration_save: configurationSave,
+        configuration_save_error: null } });
+    } catch (error) {
+      if (generation !== this.generation || device !== this.device) return;
+      this.update({ dashboard: { ...this.state.dashboard, configuration_save: null,
+        configuration_save_error: error.message } });
+    }
+    try {
       const board = decodeBoardReport(await device.receiveFeatureReport(3));
       if (generation !== this.generation || device !== this.device) return;
       const overflows = decodeOverflowReport(await device.receiveFeatureReport(5));
@@ -291,7 +357,7 @@ export class PicoUartWebHid {
     }
     this.update({ phase: "connected", message: "Diagnostics received",
       error: this.state.dashboard.hardware_error ?? this.state.dashboard.metadata_error
-        ?? this.state.dashboard.identity_error ?? this.state.dashboard.runtime_error ?? this.state.dashboard.led_error });
+        ?? this.state.dashboard.configuration_error ?? this.state.dashboard.identity_error ?? this.state.dashboard.runtime_error ?? this.state.dashboard.led_error });
   }
 
   async toggleLed() {
@@ -311,6 +377,80 @@ export class PicoUartWebHid {
     }
   }
 
+  clearConfigurationSaveMessage() {
+    if (this.state.configurationSaveMessage) this.update({ configurationSaveMessage: "" });
+  }
+
+  async saveConfiguration(profile, unsafeOverclock) {
+    const device = this.device;
+    const hardware = this.state.dashboard.hardware;
+    if (!device || this.state.phase !== "connected") return;
+    if (this.state.dashboard.configuration_save_error || !this.state.dashboard.configuration_save) {
+      this.update({ configurationSaveMessage: "Persistent configuration save is unavailable on this firmware." });
+      return;
+    }
+    if (this.state.dashboard.configuration_save.status === 1) {
+      this.update({ configurationSaveMessage: "A configuration save is already pending." });
+      return;
+    }
+    if (hardware?.mcu_id !== 1 && hardware?.mcu_id !== 2) {
+      this.update({ configurationSaveMessage: "Cannot save a clock profile for an unknown microcontroller." });
+      return;
+    }
+    const expectedProfile = hardware.mcu_id === 1 ? 1 : 2;
+    if (![0, expectedProfile].includes(profile) || typeof unsafeOverclock !== "boolean"
+      || (profile === 0 && unsafeOverclock) || (profile !== 0 && !unsafeOverclock)) {
+      this.update({ configurationSaveMessage: "Select a valid profile and explicitly acknowledge overclocking." });
+      return;
+    }
+    if (this.state.dashboard.channels.length !== 6
+      || this.state.dashboard.channels.some(channel => channel.cdc_open || channel.health === null)) {
+      this.update({ configurationSaveMessage: "Close all CDC ports and stop UART traffic; "
+        + "wait for every channel to report closed." });
+      return;
+    }
+    const generation = this.generation;
+    this.update({ phase: "writing", message: "Saving persistent configuration", error: null,
+      configurationSaveMessage: "Saving configuration..." });
+    try {
+      const request = new Uint8Array(8);
+      const requestView = new DataView(request.buffer);
+      requestView.setUint8(0, 1);
+      requestView.setUint8(1, unsafeOverclock ? 1 : 0);
+      requestView.setUint32(4, profile, true);
+      await device.sendFeatureReport(17, request);
+      if (generation !== this.generation || device !== this.device) return;
+      const deadline = Date.now() + 3000;
+      let result;
+      do {
+        result = decodeConfigurationSaveReport(await device.receiveFeatureReport(17));
+        if (generation !== this.generation || device !== this.device) return;
+        if (result.status !== 1) break;
+        if (Date.now() >= deadline) throw new Error("Timed out waiting for configuration save.");
+        await new Promise(resolve => globalThis.setTimeout(resolve, 50));
+        if (generation !== this.generation || device !== this.device) return;
+      } while (Date.now() < deadline);
+      if (result.status === 1) throw new Error("Timed out waiting for configuration save.");
+      if (result.status !== 2) {
+        const messages = {
+          0: "Configuration save did not start.",
+          3: "Firmware rejected the configuration request.",
+          4: "Close all CDC ports and stop UART traffic before saving.",
+          5: "Firmware could not save configuration to flash.",
+        };
+        throw new Error(messages[result.status] ?? "Unexpected configuration-save status.");
+      }
+      if (result.profile !== profile) throw new Error("Firmware saved a different configuration profile.");
+      this.update({ phase: "connected", message: "Configuration saved",
+        configurationSaveMessage: "Saved. Reboot board to apply." });
+      await this.refresh();
+    } catch (error) {
+      if (generation !== this.generation || device !== this.device) return;
+      this.update({ phase: "connected", message: "Configuration save failed", error: null,
+        configurationSaveMessage: error.message });
+    }
+  }
+
   async disconnect() {
     if (!this.hid) return;
     const device = this.device ?? this.pendingDevice;
@@ -324,7 +464,8 @@ export class PicoUartWebHid {
       if (generation !== this.generation) return;
       this.pendingDevice = null;
       this.update({ phase: "disconnected", message: "Device disconnected", hardware: null,
-        deviceName: null, updatedAt: null, error: null, dashboard: emptyDashboard() });
+        deviceName: null, updatedAt: null, error: null, configurationSaveMessage: "",
+        dashboard: emptyDashboard() });
     } catch (error) {
       if (generation !== this.generation) return;
       this.device = device;

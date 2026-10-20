@@ -87,6 +87,14 @@ def test_metadata_read_errors_are_explicit_and_recovery_clears_errors():
                 raise OSError("runtime unsupported")
             return {"uptime_ms": 42}
 
+        def read_configuration(self):
+            return {"source": "defaults", "reason": "erased", "stored_profile": None, "active_profile": 1}
+
+        def read_configuration_save(self):
+            if self.unsupported:
+                raise OSError("configuration save unsupported")
+            return {"status": 0, "profile": None}
+
         def read_board_status(self):
             return {"firmware_version": "1.2.3"}
 
@@ -114,6 +122,10 @@ def test_metadata_read_errors_are_explicit_and_recovery_clears_errors():
     assert snapshot["led"] is None and snapshot["led_error"] == "LED unsupported"
     assert snapshot["board"]["firmware_version"] == "1.2.3"
     assert snapshot["hardware"]["mcu"] == "RP2350"
+    assert snapshot["configuration"]["reason"] == "erased"
+    assert snapshot["configuration_error"] is None
+    assert snapshot["configuration_save"] is None
+    assert snapshot["configuration_save_error"] == "configuration save unsupported"
     client.unsupported = False
     service._read_metadata(client)
     snapshot = service.snapshot()
@@ -121,3 +133,4 @@ def test_metadata_read_errors_are_explicit_and_recovery_clears_errors():
     assert snapshot["runtime"]["uptime_ms"] == 42
     assert snapshot["led"] == {"manual_on": False, "output_on": True}
     assert snapshot["led_error"] is None
+    assert snapshot["configuration_save_error"] is None

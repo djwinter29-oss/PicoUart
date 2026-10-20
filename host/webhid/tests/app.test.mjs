@@ -7,11 +7,16 @@ function fixture(secure = true, hid = {}) {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [
     `#${id}`, { textContent: "", dataset: {}, parentElement: { dataset: {} },
+      children: [], value: "", checked: false, disabled: false,
+      append(...children) { this.children.push(...children); },
+      replaceChildren(...children) { this.children = children; },
       addEventListener(event, handler) { this[event] = handler; } },
   ]));
   const document = { querySelector(selector) {
     assert.ok(elements.has(selector), `Missing element ${selector}`);
     return elements.get(selector);
+  }, createElement() {
+    return { textContent: "", value: "", children: [] };
   } };
   let client;
   class FakeClient {
@@ -20,12 +25,15 @@ function fixture(secure = true, hid = {}) {
       this.render = render;
       this.calls = [];
       this.state = { phase: hid ? "disconnected" : "unsupported", dashboard: {},
-        message: "No device selected", error: null };
+      configurationSaveMessage: "",
+      message: "No device selected", error: null };
     }
     connect() { this.calls.push("connect"); }
     disconnect() { this.calls.push("disconnect"); }
     refresh() { this.calls.push("refresh"); }
     toggleLed() { this.calls.push("toggle-led"); }
+    saveConfiguration(profile, unsafeOverclock) { this.calls.push(["save-configuration", profile, unsafeOverclock]); }
+    clearConfigurationSaveMessage() { this.state.configurationSaveMessage = ""; }
     phase(phase, error = null) {
       this.state = { ...this.state, phase, error };
       this.render(this.state);
@@ -56,6 +64,56 @@ test("one connection button belongs to Device identity, with no separate refresh
   assert.ok(!html.includes('id="refresh"'));
   assert.ok(!html.includes('id="usb-identity"'));
   assert.ok(!html.includes("USB identity"));
+  const configuration = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
+  assert.match(html, /id="identity-title"[\s\S]*?<section aria-labelledby="configuration-title">[\s\S]*?<section aria-labelledby="runtime-title">/);
+  assert.match(configuration, /id="configuration-profile"/);
+  assert.match(configuration, /id="configuration-unsafe-ack"/);
+  assert.match(configuration, /role="status" aria-live="polite"/);
+  assert.match(configuration, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[\s\S]*?<\/div>\s*<\/div>/);
+  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">System clock profile<\/label>\s*<select/);
+  assert.doesNotMatch(configuration, /configuration-note|configuration-detail|configuration-status/);
+});
+
+test("persistent configuration uses target profiles and gates unsafe saves", () => {
+  const { client, get } = fixture();
+  client.state.dashboard = { connected: true, hardware: { mcu_id: 2 },
+    configuration: { stored_profile: 2 }, configuration_save: { status: 0, profile: null },
+    channels: Array.from({ length: 6 }, () => ({ cdc_open: false })) };
+  client.state.phase = "connected";
+  client.render(client.state);
+  const profile = get("configuration-profile");
+  assert.deepEqual(profile.children.map(option => [option.value, option.textContent]), [
+    ["0", "SDK default (no clock reconfiguration)"], ["2", "280 MHz (RP2350)"],
+  ]);
+  assert.equal(profile.value, "2");
+  assert.equal(profile.disabled, false);
+  assert.equal(get("configuration-acknowledgement").hidden, false);
+  assert.equal(get("save-configuration").disabled, true);
+  get("configuration-unsafe-ack").checked = true;
+  get("configuration-unsafe-ack").change();
+  assert.equal(get("save-configuration").disabled, false);
+  get("save-configuration").click();
+  assert.deepEqual(client.calls.at(-1), ["save-configuration", 2, true]);
+  profile.value = "0";
+  profile.change();
+  assert.equal(get("configuration-acknowledgement").hidden, true);
+  client.state.dashboard.channels[3].cdc_open = true;
+  client.render(client.state);
+  assert.equal(profile.disabled, true);
+  assert.equal(get("configuration-unsafe-ack").disabled, true);
+  assert.equal(get("save-configuration").disabled, true);
+});
+
+test("configuration read failures disable Save and remain visible without the removed summary", () => {
+  const { client, get } = fixture();
+  client.state.dashboard = { connected: true, hardware: { mcu_id: 1 },
+    configuration: { stored_profile: null }, configuration_save: null, configuration_save_error: "Unsupported report",
+    channels: Array.from({ length: 6 }, () => ({ cdc_open: false })) };
+  client.phase("connected");
+  assert.equal(get("save-configuration").disabled, true);
+  assert.equal(get("configuration-acknowledgement").hidden, true);
+  assert.equal(get("configuration-message").textContent, "Unsupported report");
+  assert.equal(get("configuration-message").dataset.error, "true");
 });
 
 test("metadata continues refreshing automatically every second", () => {

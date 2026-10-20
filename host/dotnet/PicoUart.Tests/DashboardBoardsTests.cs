@@ -35,6 +35,8 @@ public sealed class DashboardBoardsTests
         Assert.False(empty.RootElement.GetProperty("connected").GetBoolean());
         Assert.Throws<InvalidOperationException>(() => boards.Reader("unknown"));
         Assert.Throws<InvalidOperationException>(() => boards.Action(null, "toggle-led"));
+        Assert.Throws<InvalidOperationException>(() => boards.SaveConfiguration(null, 0, false));
+        Assert.Throws<InvalidOperationException>(() => boards.SaveConfiguration("unknown", 0, false));
         await boards.StopAsync(CancellationToken.None);
         Assert.Throws<InvalidOperationException>(() => boards.Reader(first));
     }

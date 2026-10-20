@@ -17,6 +17,10 @@ public sealed class DashboardTests
         Assert.Null(snapshot.MetadataError);
         Assert.Null(snapshot.HardwareError);
         Assert.Null(snapshot.Hardware);
+        Assert.Null(snapshot.Configuration);
+        Assert.Null(snapshot.ConfigurationError);
+        Assert.Null(snapshot.ConfigurationSave);
+        Assert.Null(snapshot.ConfigurationSaveError);
         Assert.Null(snapshot.Identity);
         Assert.Null(snapshot.IdentityError);
         Assert.Null(snapshot.Runtime);
@@ -200,12 +204,16 @@ public sealed class DashboardTests
     {
         using var service = new DashboardService(null, null);
         using var initial = JsonDocument.Parse(service.SnapshotJson());
-        Assert.Equal(new[] { "board", "channel_diagnostics", "channels", "connected", "diagnostics_error", "error", "hardware", "hardware_error",
+        Assert.Equal(new[] { "board", "channel_diagnostics", "channels", "configuration", "configuration_error",
+            "configuration_save", "configuration_save_error", "connected",
+            "diagnostics_error", "error", "hardware", "hardware_error",
             "identity", "identity_error", "led", "led_error", "metadata_error", "overflow_counts", "runtime", "runtime_error",
             "sequence", "traffic_gaps", "traffic_incomplete", "updated_at" },
             initial.RootElement.EnumerateObject().Select(property => property.Name).Order());
         Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("board").ValueKind);
         Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("hardware").ValueKind);
+        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("configuration").ValueKind);
+        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("configuration_save").ValueKind);
         Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("led").ValueKind);
         Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("overflow_counts")[0].ValueKind);
 
@@ -213,6 +221,8 @@ public sealed class DashboardTests
         {
             Board = new(25.3, "1.2.3", 1, 2, 3, false),
             Hardware = new("RP2350", 280000000, 2),
+            Configuration = new("defaults", "crc_failed", null, 1),
+            ConfigurationSave = new(2, 0),
             Led = new(false, true),
             OverflowCounts = [0, 1, 2, 3, 4, uint.MaxValue]
         };
@@ -230,6 +240,15 @@ public sealed class DashboardTests
         Assert.Equal("RP2350", hardware.GetProperty("mcu").GetString());
         Assert.Equal(2, hardware.GetProperty("mcu_id").GetByte());
         Assert.Equal(280000000u, hardware.GetProperty("system_clock_hz").GetUInt32());
+        var configuration = populated.RootElement.GetProperty("configuration");
+        Assert.Equal("defaults", configuration.GetProperty("source").GetString());
+        Assert.Equal("crc_failed", configuration.GetProperty("reason").GetString());
+        Assert.Equal(JsonValueKind.Null, configuration.GetProperty("stored_profile").ValueKind);
+        Assert.Equal(1u, configuration.GetProperty("active_profile").GetUInt32());
+        var save = populated.RootElement.GetProperty("configuration_save");
+        Assert.Equal(new[] { "profile", "status" }, save.EnumerateObject().Select(property => property.Name).Order());
+        Assert.Equal(2, save.GetProperty("status").GetInt32());
+        Assert.Equal(0u, save.GetProperty("profile").GetUInt32());
         Assert.Equal(uint.MaxValue, populated.RootElement.GetProperty("overflow_counts")[5].GetUInt32());
         var channel = populated.RootElement.GetProperty("channels")[0];
         Assert.Equal(new[] { "cdc_open", "health", "health_labels", "id", "ring_high_watermark",
@@ -249,6 +268,34 @@ public sealed class DashboardTests
         var error = Assert.Throws<InvalidOperationException>(() => service.Action(action));
 
         Assert.Equal("PicoUart HID interface is not connected", error.Message);
+    }
+
+    [Fact]
+    public void ConfigurationSaveRequiresAnOpenConnection()
+    {
+        using var service = new DashboardService(null, null);
+        var error = Assert.Throws<InvalidOperationException>(() => service.SaveConfiguration(0, false));
+        Assert.Equal("PicoUart HID interface is not connected", error.Message);
+    }
+
+    [Fact]
+    public void ConfigurationSaveReadFailureDoesNotInvalidateOtherMetadataOrTraffic()
+    {
+        var snapshot = new DashboardSnapshot
+        {
+            ConfigurationSaveError = "report unsupported",
+            Configuration = new("stored", "none", 0, 0),
+            Hardware = new("RP2040", 125000000, 1),
+            Identity = new("PicoUart", "0123456789ABCDEF")
+        };
+        snapshot.Apply(CreateStatus(1));
+        Assert.True(snapshot.Connected);
+        Assert.Null(snapshot.Error);
+        Assert.Equal("report unsupported", snapshot.ConfigurationSaveError);
+        Assert.Null(snapshot.ConfigurationSave);
+        Assert.NotNull(snapshot.Configuration);
+        Assert.NotNull(snapshot.Hardware);
+        Assert.NotNull(snapshot.Identity);
     }
 
     [Theory]

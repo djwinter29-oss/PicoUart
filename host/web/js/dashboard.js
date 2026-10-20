@@ -5,7 +5,15 @@ const statusMessage = document.querySelector("#status-message");
 const actionButtons = [...document.querySelectorAll(".actions button")];
 const boardSelect = document.querySelector("#board-select");
 const rescanButton = document.querySelector("#rescan-boards");
+const configurationProfile = document.querySelector("#configuration-profile");
+const configurationUnsafeAck = document.querySelector("#configuration-unsafe-ack");
+const saveConfigurationButton = document.querySelector("#save-configuration");
+const configurationMessage = document.querySelector("#configuration-message");
 let actionBusy = false;
+let configurationDraft = null;
+let configurationMessageValue = "";
+let configurationMessageIsError = false;
+let configurationSaving = false;
 let latestData = null;
 let selectedBoard = null;
 let selectedLabel = "";
@@ -54,6 +62,43 @@ function uptimeLabel(milliseconds) {
   return [[Math.floor(seconds / 86400), "d"], [Math.floor(seconds % 86400 / 3600), "h"],
     [Math.floor(seconds % 3600 / 60), "m"], [seconds % 60, "s"]]
     .filter(([value, unit]) => value || unit === "s").map(([value, unit]) => `${value}${unit}`).join(" ");
+}
+
+function renderConfiguration(data) {
+  const mcuId = data.hardware?.mcu_id;
+  const profiles = mcuId === 1 ? [[0, "SDK default (no clock reconfiguration)"], [1, "250 MHz (RP2040)"]]
+    : mcuId === 2 ? [[0, "SDK default (no clock reconfiguration)"], [2, "280 MHz (RP2350)"]] : [];
+  if (configurationDraft === null && profiles.length) {
+    const saved = data.configuration_save?.status === 2 ? data.configuration_save.profile : null;
+    const stored = data.configuration?.stored_profile;
+    configurationDraft = profiles.some(([value]) => value === saved) ? saved
+      : profiles.some(([value]) => value === stored) ? stored : 0;
+  }
+  const profile = String(configurationDraft ?? 0);
+  if (configurationProfile.children.length !== profiles.length
+    || profiles.some(([value], index) => configurationProfile.children[index]?.value !== String(value))) {
+    configurationProfile.replaceChildren();
+    for (const [value, label] of profiles) {
+      const option = document.createElement("option");
+      option.value = String(value);
+      option.textContent = label;
+      configurationProfile.append(option);
+    }
+  }
+  configurationProfile.value = profile;
+  const capabilityAvailable = data.configuration_save != null && !data.configuration_save_error;
+  const cdcOpen = !Array.isArray(data.channels) || data.channels.length !== 6
+    || data.channels.some(channel => channel.cdc_open !== false);
+  const enabled = Boolean(data.connected && profiles.length && capabilityAvailable && !cdcOpen
+    && !actionBusy && !configurationSaving);
+  configurationProfile.disabled = !enabled;
+  document.querySelector("#configuration-acknowledgement").hidden = !configurationDraft;
+  configurationUnsafeAck.disabled = !enabled || configurationDraft === 0;
+  saveConfigurationButton.disabled = !enabled || (configurationDraft !== 0 && !configurationUnsafeAck.checked);
+  configurationMessage.textContent = configurationMessageValue
+    || (data.connected ? data.configuration_save_error : "") || "";
+  configurationMessage.dataset.error = String(configurationMessageIsError
+    || Boolean(!configurationMessageValue && data.connected && data.configuration_save_error));
 }
 
 function channelPresentation(data, channel, now = Date.now()) {
@@ -178,6 +223,14 @@ function renderChannels(data) {
 }
 
 function render(data) {
+  const reconnected = data.connected && !latestData?.connected;
+  if (reconnected) {
+    configurationDraft = null;
+    configurationUnsafeAck.checked = false;
+    configurationMessageValue = "";
+    configurationMessageIsError = false;
+    configurationMessage.textContent = "";
+  }
   latestData = data;
   connection.dataset.state = data.connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
@@ -185,6 +238,7 @@ function render(data) {
   document.querySelector("#system-clock").textContent = data.hardware
     ? `${(data.hardware.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
     : "--";
+  renderConfiguration(data);
   document.querySelector("#firmware").textContent = data.board?.firmware_version ?? "--";
   document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
   document.querySelector("#serial").textContent = data.identity?.serial_number ?? "--";
@@ -224,6 +278,7 @@ function render(data) {
   const message = scanError || data.error
     || (data.metadata_error ? `Board metadata unavailable: ${data.metadata_error}` : null)
     || (data.hardware_error ? `Hardware information unavailable: ${data.hardware_error}` : null)
+    || (data.configuration_error ? `Configuration diagnostics unavailable: ${data.configuration_error}` : null)
     || (data.identity_error ? `Device identity unavailable: ${data.identity_error}` : null)
     || (data.runtime_error ? `Runtime status unavailable: ${data.runtime_error}` : null)
     || (data.led_error ? `LED state unavailable: ${data.led_error}` : null)
@@ -231,7 +286,8 @@ function render(data) {
     || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
   statusMessage.textContent = message;
   statusMessage.parentElement.dataset.error = Boolean(
-    scanError || data.error || data.metadata_error || data.hardware_error || data.identity_error || data.runtime_error
+    scanError || data.error || data.metadata_error || data.hardware_error || data.configuration_error
+      || data.identity_error || data.runtime_error
       || data.led_error || data.diagnostics_error || !data.connected,
   );
 }
@@ -249,7 +305,8 @@ async function refresh() {
     render(data);
   } catch (error) {
     if (version !== selectionVersion) return;
-    if (latestData) render({ ...latestData, connected: false, error: error.message });
+    if (latestData) render({ ...latestData, connected: false, error: error.message,
+      configuration: null, configuration_error: null });
     statusMessage.textContent = error.message;
     statusMessage.parentElement.dataset.error = "true";
   } finally {
@@ -261,6 +318,11 @@ function selectBoard(id, label) {
   if (selectedBoard === id) return;
   selectedBoard = id;
   selectedLabel = label;
+  configurationDraft = null;
+  configurationUnsafeAck.checked = false;
+  configurationMessageValue = "";
+  configurationMessageIsError = false;
+  configurationMessage.textContent = "";
   selectionVersion++;
   channelHistory.clear();
   reportSample = null;
@@ -326,6 +388,7 @@ async function runAction(action) {
   actionBusy = true;
   boardSelect.disabled = true;
   actionButtons.forEach((button) => { button.disabled = true; });
+  renderConfiguration(latestData ?? {});
   try {
     const response = await fetch(`/api/actions/${action}?board=${encodeURIComponent(board)}`, {
       method: "POST",
@@ -345,9 +408,65 @@ async function runAction(action) {
     rescanButton.disabled = scanning;
     document.querySelector("#toggle-led").disabled = !latestData?.connected || latestData.led?.output_on == null;
     document.querySelector("#reset-board").disabled = !latestData?.connected;
+    renderConfiguration(latestData ?? {});
   }
 }
 
+async function saveConfiguration() {
+  if (!selectedBoard || actionBusy || configurationDraft === null) return;
+  const profile = Number(configurationDraft);
+  const mcuId = latestData?.hardware?.mcu_id;
+  const validProfile = profile === 0 || (mcuId === 1 && profile === 1) || (mcuId === 2 && profile === 2);
+  const channelsClosed = Array.isArray(latestData?.channels) && latestData.channels.length === 6
+    && latestData.channels.every(channel => channel.cdc_open === false);
+  if (!latestData?.connected || !latestData.configuration_save || latestData.configuration_save_error
+    || !validProfile || !channelsClosed) return;
+  if (profile !== 0 && !configurationUnsafeAck.checked) return;
+  const board = selectedBoard;
+  actionBusy = true;
+  configurationSaving = true;
+  boardSelect.disabled = true;
+  actionButtons.forEach((button) => { button.disabled = true; });
+  renderConfiguration(latestData ?? {});
+  try {
+    const response = await fetch(`/api/configuration?board=${encodeURIComponent(board)}`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ profile, unsafe_overclock: profile !== 0 && configurationUnsafeAck.checked }),
+    });
+    const result = await response.json();
+    if (!response.ok || result.ok !== true) {
+      throw new Error(result.error || `Configuration save failed (${response.status})`);
+    }
+    configurationMessageValue = "Saved. Reboot board to apply.";
+    configurationMessageIsError = false;
+  } catch (error) {
+    configurationMessageValue = error.message;
+    configurationMessageIsError = true;
+  } finally {
+    configurationSaving = false;
+    actionBusy = false;
+    boardSelect.disabled = !boardSelect.value;
+    rescanButton.disabled = scanning;
+    document.querySelector("#toggle-led").disabled = !latestData?.connected || latestData.led?.output_on == null;
+    document.querySelector("#reset-board").disabled = !latestData?.connected;
+    renderConfiguration(latestData ?? {});
+  }
+}
+
+configurationProfile.addEventListener("change", () => {
+  configurationDraft = Number(configurationProfile.value);
+  configurationUnsafeAck.checked = false;
+  configurationMessageValue = "";
+  configurationMessageIsError = false;
+  renderConfiguration(latestData ?? {});
+});
+configurationUnsafeAck.addEventListener("change", () => {
+  configurationMessageValue = "";
+  configurationMessageIsError = false;
+  renderConfiguration(latestData ?? {});
+});
+saveConfigurationButton.addEventListener("click", saveConfiguration);
 document.querySelector("#toggle-led").addEventListener("click", () => runAction("toggle-led"));
 document.querySelector("#reset-board").addEventListener("click", () => runAction("reset"));
 boardSelect.addEventListener("change", () => {

@@ -29,6 +29,7 @@ pico-uart status --json
 pico-uart monitor --duration 10
 pico-uart overruns
 pico-uart hardware
+pico-uart config
 pico-uart web
 ```
 
@@ -63,6 +64,12 @@ HID board controls as the CLI.
 `read_hardware_info()` returns `mcu`, the raw `mcu_id`, and `system_clock_hz`; `pico-uart hardware` prints these fields
 as JSON. This requires firmware supporting HID report 6. See the
 [HID Report Reference](../../docs/design/usb/hid-report-reference.md) for report compatibility and unknown MCU behavior.
+`read_configuration()` and `pico-uart config` read the persistent configuration source, fallback reason, and selected
+clock profiles from HID report 16. This is diagnostic-only: it does not expose credentials or raw flash contents.
+`save_configuration(profile, unsafe_overclock=False)` persists a board-compatible profile through HID report 17
+and returns its verified save result; `read_configuration_save()` reads that result separately. The running clock
+does not change until reboot. The dashboard exposes the same operation with an explicit **Save** button; see
+[Persistent configuration](../../docs/development/host-tools.md#persistent-configuration) for precautions and defaults.
 
 ## Important Notes
 

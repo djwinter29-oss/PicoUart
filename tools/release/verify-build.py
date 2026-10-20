@@ -405,6 +405,8 @@ def main() -> int:
         constants["USB_HID_REPORT_ID_IDENTITY"]: (firmware_hid_report_count(args.repo_root, 7), 8, 11),
         constants["USB_HID_REPORT_ID_RUNTIME"]: (firmware_hid_report_count(args.repo_root, 8), 8, 11),
         constants["USB_HID_REPORT_ID_LED"]: (firmware_hid_report_count(args.repo_root, 9), 8, 11),
+        constants["USB_HID_REPORT_ID_CONFIGURATION"]: (firmware_hid_report_count(args.repo_root, 16), 8, 11),
+        constants["USB_HID_REPORT_ID_CONFIGURATION_SAVE"]: (firmware_hid_report_count(args.repo_root, 17), 8, 11),
         **{report_id: (firmware_hid_report_count(args.repo_root, report_id), 8, 11)
            for report_id in range(constants["USB_HID_REPORT_ID_CHANNEL_BASE"],
                                   constants["USB_HID_REPORT_ID_CHANNEL_BASE"] + 6)},

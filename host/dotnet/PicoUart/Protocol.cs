@@ -7,6 +7,10 @@ public sealed record BoardStatus(double TemperatureCelsius, string FirmwareVersi
     byte FirmwareMajor, byte FirmwareMinor, byte FirmwarePatch, bool HidResetEnabled);
 
 public sealed record HardwareInfo(string Mcu, uint SystemClockHz, byte McuId = 0);
+/// <summary>Read-only persistent configuration diagnostics and selected clock profiles.</summary>
+public sealed record ConfigurationStatus(string Source, string Reason, uint? StoredProfile, uint ActiveProfile);
+/// <summary>Latest persistent configuration save request and its firmware completion status.</summary>
+public sealed record ConfigurationSaveStatus(byte Status, uint? Profile);
 
 public sealed record BoardIdentity(string ProductName, string SerialNumber);
 public sealed record LedStatus(bool? ManualOn, bool? OutputOn);
@@ -66,6 +70,10 @@ public static class Protocol
     public const byte HardwareInfoReportId = 6;
     public const int HardwareInfoSize = 6;
     public const byte HardwareInfoLayoutVersion = 1;
+    public const byte ConfigurationReportId = 16;
+    public const int ConfigurationSize = 12;
+    public const byte ConfigurationSaveReportId = 17;
+    public const int ConfigurationSaveSize = 8;
     public static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
@@ -112,6 +120,55 @@ public static class Protocol
         var clockHz = BinaryPrimitives.ReadUInt32LittleEndian(payload[2..]);
         Require(clockHz != 0, "invalid hardware-info system clock");
         return new(mcu, clockHz, payload[1]);
+    }
+
+    public static ConfigurationStatus ParseConfiguration(ReadOnlySpan<byte> payload)
+    {
+        Require(payload.Length == ConfigurationSize && payload[0] == 1,
+            "unsupported configuration report size or version");
+        string[] sources = ["defaults", "stored", "recovery"];
+        string[] reasons = ["none", "erased", "invalid_header", "crc_failed", "unsupported_version",
+            "invalid_profile", "watchdog_recovery", "clock_unavailable"];
+        var source = payload[1];
+        var reason = payload[2];
+        var reserved = payload[3];
+        var stored = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
+        var active = BinaryPrimitives.ReadUInt32LittleEndian(payload[8..]);
+        Require(source < sources.Length && reason < reasons.Length && reserved == 0,
+            "invalid configuration source, reason, or reserved field");
+        Require((stored <= 2 || stored == uint.MaxValue) && active <= 2, "invalid configuration profile");
+        Require(source != 1 || (reason == 0 && stored <= 2 && active == stored), "inconsistent stored configuration");
+        Require(source != 2 || reason != 0, "inconsistent recovery configuration");
+        return new(sources[source], reasons[reason], stored == uint.MaxValue ? null : stored, active);
+    }
+
+    public static ConfigurationSaveStatus ParseConfigurationSave(ReadOnlySpan<byte> payload)
+    {
+        Require(payload.Length == ConfigurationSaveSize && payload[0] == 1,
+            "unsupported configuration save report size or version");
+        Require(payload[1] <= 5 && payload[2] == 0 && payload[3] == 0,
+            "invalid configuration save status or reserved fields");
+        var profile = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
+        Require(profile <= 2 || (payload[1] is 0 or 3 && profile == uint.MaxValue),
+            "invalid configuration save profile");
+        return new(payload[1], profile == uint.MaxValue ? null : profile);
+    }
+
+    public static byte[] BuildConfigurationSave(uint profile, bool unsafeOverclock, byte mcuId)
+    {
+        if (profile > 2)
+            throw new ArgumentOutOfRangeException(nameof(profile), "unknown system clock profile");
+        if (mcuId is not (1 or 2))
+            throw new ArgumentException("configuration save requires a known board MCU", nameof(mcuId));
+        if (profile != 0 && !unsafeOverclock)
+            throw new ArgumentException("explicit unsafe overclock acknowledgement is required", nameof(unsafeOverclock));
+        if (profile != 0 && profile != mcuId)
+            throw new ArgumentException("system clock profile does not match the board MCU", nameof(profile));
+        var payload = new byte[ConfigurationSaveSize];
+        payload[0] = 1;
+        payload[1] = unsafeOverclock ? (byte)1 : (byte)0;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), profile);
+        return payload;
     }
 
     public static uint[] ParseOverflowCounts(ReadOnlySpan<byte> payload)

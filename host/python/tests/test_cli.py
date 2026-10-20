@@ -18,6 +18,7 @@ from pico_uart.protocol import parse_status
         ("version", "1.2.3\n", "version"),
         ("overruns", "cdc0=0 cdc1=1 cdc2=2 cdc3=3 cdc4=4 cdc5=5\n", "overruns"),
         ("hardware", '{"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 250000000}\n', "hardware"),
+        ("config", '{"active_profile": 1, "reason": "none", "source": "defaults", "stored_profile": 0}\n', "config"),
         ("toggle-led", "", "toggle-led"),
         ("reset", "", "reset"),
     ],
@@ -50,6 +51,10 @@ def test_main_dispatches_board_commands(monkeypatch, capsys, command, expected_o
         def read_hardware_info(self):
             calls.append("hardware")
             return {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 250_000_000}
+
+        def read_configuration(self):
+            calls.append("config")
+            return {"source": "defaults", "reason": "none", "stored_profile": 0, "active_profile": 1}
 
         def toggle_led(self):
             calls.append("toggle-led")

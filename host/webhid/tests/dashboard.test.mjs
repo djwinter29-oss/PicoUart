@@ -27,6 +27,8 @@ class Element {
     this.parentElement = { dataset: {} };
     this.text = "";
     this.value = "";
+    this.checked = false;
+    this.disabled = false;
   }
   set textContent(value) { this.text = value; this.children = []; }
   get textContent() { return this.text + this.children.map(child => child.textContent).join(""); }
@@ -36,10 +38,15 @@ class Element {
   addEventListener(event, callback) { this.events[event] = callback; }
 }
 
-function snapshot(serial) {
+function snapshot(serial, mcuId = 2, storedProfile = 2) {
   return { connected: true, identity: { product_name: "PicoUart", serial_number: serial },
     updated_at: "2026-01-01T00:00:00Z", overflow_counts: Array(6).fill(0),
-    channels: [], led: { manual_on: false, output_on: false } };
+    hardware: { mcu: mcuId === 1 ? "RP2040" : "RP2350", mcu_id: mcuId, system_clock_hz: 150000000 },
+    configuration: { source: "stored", reason: "none", stored_profile: storedProfile, active_profile: storedProfile },
+    configuration_save: { status: 0, profile: null },
+    channels: Array.from({ length: 6 }, (_, id) => ({ id, health: null, health_labels: [], cdc_open: false,
+      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } })),
+    led: { manual_on: false, output_on: false } };
 }
 
 function page() {
@@ -73,6 +80,11 @@ function page() {
       select.value = id;
       select.events.change();
     },
+    changeProfile(value) {
+      const select = elements.get("#configuration-profile");
+      select.value = String(value);
+      select.events.change();
+    },
   };
 }
 
@@ -94,9 +106,63 @@ test("hosted pages select independently and render board labels as text", async 
   bob.change("B");
   assert.equal(bob.element("serial").textContent, "--");
   assert.equal(bob.requests[0].url, "/api/status?board=B");
-  await bob.respond(snapshot("second"));
+  await bob.respond(snapshot("second", 1, 1));
   assert.equal(bob.element("serial").textContent, "second");
+  assert.equal(bob.element("configuration-profile").value, "1");
+  assert.equal(bob.element("configuration-unsafe-ack").checked, false);
   assert.equal(alice.element("serial").textContent, "first");
+  assert.equal(alice.element("configuration-profile").value, "2");
+});
+
+test("persistent configuration saves only on explicit POST and preserves the draft across polling", async () => {
+  const view = page();
+  await connect(view);
+  assert.equal(view.element("configuration-profile").disabled, false);
+  assert.equal(view.element("save-configuration").disabled, true);
+  view.changeProfile(0);
+  assert.equal(view.element("configuration-acknowledgement").hidden, true);
+  assert.equal(view.element("save-configuration").disabled, false);
+  view.element("save-configuration").events.click();
+  assert.equal(view.requests[0].url, "/api/configuration?board=A");
+  assert.equal(view.requests[0].options.method, "POST");
+  assert.equal(view.requests[0].options.headers["X-CSRF-Token"], "csrf");
+  assert.deepEqual(JSON.parse(view.requests[0].options.body), { profile: 0, unsafe_overclock: false });
+  await view.respond({ ok: true });
+  assert.equal(view.element("configuration-message").textContent, "Saved. Reboot board to apply.");
+  view.tick();
+  await view.respond(snapshot("first"));
+  assert.equal(view.element("configuration-message").textContent, "Saved. Reboot board to apply.");
+  view.changeProfile(2);
+  assert.equal(view.element("configuration-acknowledgement").hidden, false);
+  assert.equal(view.element("configuration-profile").value, "2");
+  assert.equal(view.element("save-configuration").disabled, true);
+  view.element("configuration-unsafe-ack").checked = true;
+  view.element("configuration-unsafe-ack").events.change();
+  assert.equal(view.element("save-configuration").disabled, false);
+  view.tick();
+  await view.respond(snapshot("first"));
+  assert.equal(view.element("configuration-profile").value, "2");
+  assert.equal(view.element("configuration-unsafe-ack").checked, true);
+});
+
+test("configuration save is disabled for unknown MCU, missing capability, or an open CDC port", async () => {
+  const view = page();
+  await connect(view);
+  const profile = view.element("configuration-profile");
+  const button = view.element("save-configuration");
+  view.tick();
+  await view.respond({ ...snapshot("first"), hardware: { mcu_id: 3 }, configuration_save: null });
+  assert.equal(profile.disabled, true);
+  view.tick();
+  await view.respond({ ...snapshot("first"), configuration_save_error: "unsupported" });
+  assert.equal(profile.disabled, true);
+  assert.equal(view.element("configuration-message").textContent, "unsupported");
+  assert.equal(view.element("configuration-message").dataset.error, "true");
+  view.tick();
+  await view.respond({ ...snapshot("first"), channels: snapshot("first").channels.map(channel =>
+    ({ ...channel, cdc_open: true })) });
+  assert.equal(profile.disabled, true);
+  assert.equal(button.disabled, true);
 });
 
 test("board discovery runs only at startup or on an explicit rescan, never on status ticks", async () => {

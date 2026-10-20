@@ -167,6 +167,11 @@ the affected values without discarding unrelated valid reports; disconnect clear
 Metadata, including uptime, is sampled every second. See the [HID report reference](../design/usb/hid-report-reference.md) for
 the authoritative version-1 field definitions, UID source, service-load semantics, and RAM accounting.
 
+`configuration` reports the source (defaults, stored, or recovery), fallback reason, stored profile, and active profile
+using read-only HID feature report 16; `configuration_error` is independent. The snapshot and both dashboards refresh
+this diagnostic with other metadata once per second and clear it when unavailable or disconnected. No credentials or raw
+flash contents are returned.
+
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
 The Device identity heading contains one outline **Board LED: On/Off** button with a physical-output indicator dot.
 Clicking toggles the manual LED setting; USB activity may also light the LED. Unknown output is shown as `--`.
@@ -175,6 +180,28 @@ for report-gap detection rather than appearing in the UI. Compact identity/runti
 monitoring, and uptime omits zero-valued units except seconds.
 The connection indicator includes report age, updated every second and marked stale after three seconds without a
 changed status sample. Age measures browser receipt time so remote host clock offsets do not distort freshness.
+
+### Persistent configuration
+
+All three dashboards place **Persistent configuration** in its own section directly below **Device identity**.
+The **Sysclk** dropdown defaults to **SDK default (no clock reconfiguration)** and offers only the connected MCU's
+supported overclock profile. Editing the dropdown never writes the device, and telemetry refreshes do not overwrite
+unsaved edits. The compact section uses the same summary-card layout as Device identity, with the dropdown below
+its label and **Save** beside the section heading. Boot source/profile details and always-visible instructions are
+omitted. The unsafe-overclock acknowledgement appears only when a non-default profile is selected.
+
+**Save** persists the choice through [HID report 17](../design/usb/hid-report-reference.md#report-17-save-persistent-clock-profile),
+waits for a matching verified result, and displays failures explicitly. Close all CDC ports and stop external UART
+traffic first; flash programming pauses servicing on both cores. Save does not change the running clock or reboot the
+board. Reboot manually to apply it. The boot diagnostic display remains the previous boot's decision until then.
+Unavailable save reports disable Save without hiding other valid diagnostics.
+
+Python and .NET expose `POST /api/configuration?board=<id>` with the same session CSRF header as board actions.
+The JSON object must contain exactly `profile` (integer `0`, `1`, or `2`) and `unsafe_overclock` (boolean).
+The selected board's client checks MCU compatibility and acknowledgement; firmware validates them independently.
+HTTP success (`{"ok": true}`) means firmware reported a verified save, not just a successful HID transfer.
+Snapshots expose the independent `configuration_save` result (`status`, nullable `profile`) and
+`configuration_save_error`; the existing `configuration` remains read-only boot metadata.
 
 ### Channel diagnostics and traffic presentation
 

@@ -120,6 +120,11 @@ pico_uart_add_unity_test(test_temperature temperature
     test_temperature.c
 )
 
+pico_uart_add_unity_test(test_board_config board_config
+    test_board_config.c
+    ${FIRMWARE_ROOT}/src/driver/board_config.c
+)
+
 pico_uart_add_unity_test(test_service_load service_load
     test_service_load.c
     ${FIRMWARE_ROOT}/src/driver/service_load.c
@@ -129,6 +134,7 @@ foreach(_family IN ITEMS rp2040 rp2350)
     pico_uart_add_unity_test(test_usb_hid_${_family} usb_hid_${_family}
         test_usb_hid.c
         ${FIRMWARE_ROOT}/src/driver/service_load.c
+        ${FIRMWARE_ROOT}/src/driver/board_config.c
     )
     target_include_directories(test_usb_hid_${_family} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
     target_compile_definitions(test_usb_hid_${_family} PRIVATE PICO_RP2350=$<STREQUAL:${_family},rp2350>)

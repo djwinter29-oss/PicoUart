@@ -2,6 +2,7 @@
 
 import threading
 import time
+import struct
 from typing import Any
 
 from .protocol import (
@@ -36,6 +37,12 @@ from .protocol import (
     REPORT_ID_CHANNEL_BASE,
     CHANNEL_DIAGNOSTICS_SIZE,
     parse_channel_diagnostics,
+    REPORT_ID_CONFIGURATION,
+    CONFIGURATION_SIZE,
+    parse_configuration,
+    REPORT_ID_CONFIGURATION_SAVE,
+    CONFIGURATION_SAVE_SIZE,
+    parse_configuration_save,
 )
 from .transport import open_device
 
@@ -74,6 +81,11 @@ def read_overflow_counts(device: Any) -> list[int]:
 def read_hardware_info(device: Any) -> dict[str, object]:
     """Read the MCU model and current system clock from hardware-info report 6."""
     return parse_hardware_info(read_feature(device, REPORT_ID_HARDWARE_INFO, HARDWARE_INFO_SIZE))
+
+
+def read_configuration(device: Any) -> dict[str, object]:
+    """Read persistent configuration diagnostics without exposing stored data."""
+    return parse_configuration(read_feature(device, REPORT_ID_CONFIGURATION, CONFIGURATION_SIZE))
 
 
 def send_command(device: Any, command: int) -> None:
@@ -141,6 +153,53 @@ class PicoUartHid:
     def read_hardware_info(self) -> dict[str, object]:
         with self._lock:
             return read_hardware_info(self._require_open())
+
+    def read_configuration(self) -> dict[str, object]:
+        with self._lock:
+            return read_configuration(self._require_open())
+
+    def read_configuration_save(self) -> dict[str, object]:
+        """Read the most recent persistent profile save result."""
+        with self._lock:
+            return parse_configuration_save(read_feature(
+                self._require_open(), REPORT_ID_CONFIGURATION_SAVE, CONFIGURATION_SAVE_SIZE))
+
+    def save_configuration(self, profile: int, unsafe_overclock: bool = False) -> dict[str, object]:
+        """Persist a supported clock profile; the running clock is unchanged until reboot."""
+        if type(profile) is not int or profile not in (0, 1, 2) or type(unsafe_overclock) is not bool:
+            raise ValueError("invalid clock profile or overclock acknowledgement")
+        if profile != 0 and not unsafe_overclock:
+            raise ValueError("non-default clocks require explicit unsafe overclock acknowledgement")
+        with self._lock:
+            device = self._require_open()
+            hardware = self.read_hardware_info()
+            supported = {1: (0, 1), 2: (0, 2)}.get(hardware["mcu_id"], ())
+            if profile not in supported:
+                raise ValueError("clock profile is not supported on this MCU")
+            if self.read_configuration_save()["status"] == 1:
+                raise RuntimeError("a configuration save is already pending")
+            payload = bytes([REPORT_ID_CONFIGURATION_SAVE]) + struct.pack(
+                "<BBHI", 1, int(unsafe_overclock), 0, profile)
+            written = device.send_feature_report(list(payload))
+            if written != len(payload):
+                raise RuntimeError(f"HID configuration write was incomplete: wrote {written} bytes")
+            deadline = time.monotonic() + 3.0
+            errors = {
+                3: "firmware rejected the configuration request",
+                4: "close all CDC ports and stop UART traffic before saving configuration",
+                5: "configuration flash write or verification failed",
+            }
+            while time.monotonic() < deadline:
+                result = self.read_configuration_save()
+                status = result["status"]
+                if status in errors:
+                    raise RuntimeError(errors[status])
+                if result["profile"] != profile:
+                    raise RuntimeError("configuration save result does not match the requested profile")
+                if status == 2:
+                    return result
+                time.sleep(0.05)
+            raise RuntimeError("configuration save timed out; read back the configuration before retrying")
 
     def read_identity(self) -> dict[str, object]:
         """Read the product and USB serial / board UID."""

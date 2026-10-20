@@ -20,6 +20,7 @@ public sealed class OptionsTests
     [InlineData("monitor")]
     [InlineData("overruns")]
     [InlineData("hardware")]
+    [InlineData("config")]
     [InlineData("temperature")]
     [InlineData("version")]
     [InlineData("toggle-led")]

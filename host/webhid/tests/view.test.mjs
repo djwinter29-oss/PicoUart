@@ -141,6 +141,7 @@ for (const frontend of ["webhid", "web"]) {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     assert.ok(!html.includes("Backend</th>") && !html.includes("Ring peak"));
     assert.ok(html.includes("UART configuration") && html.includes("Throughput"));
+    assert.ok(!html.includes('id="configuration-status"') && !html.includes('id="configuration-detail"'));
     assert.deepEqual([...html.matchAll(/<th scope="col"(?: class="[^"]+")?>([^<]+)<\/th>/g)].map(match => match[1]),
       ["Port", "Host session", "UART configuration", "Health", "Throughput", "RX overflow"]);
     const document = fixture(html);
@@ -151,6 +152,7 @@ for (const frontend of ["webhid", "web"]) {
       totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
     const data = { connected: true, identity: { serial_number: "fault-test" }, updated_at: new Date().toISOString(),
       traffic_gaps: 0, channels: [channel], channel_diagnostics: [diagnostic],
+      configuration: { source: "defaults", reason: "crc_failed", stored_profile: null, active_profile: 1 },
       overflow_counts: [0, 0, 0, 0, 0, 0] };
     try {
       render(data);

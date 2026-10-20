@@ -21,6 +21,7 @@ limits: `CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
 | Applied UART settings, GPIOs, and fault history | HID feature reports 10-15 | Read-only snapshots. These reports cannot change line coding or pin mapping. |
 | Toggle default board LED                                      | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one.                                                                                                                                                                                                          |
 | Reset board                                                   | HID command feature report | Disabled by default; trusted lab builds may enable arm (`3`) then reset (`2`) within 2 seconds with `PICO_UART_ALLOW_HID_RESET=1`. Enabled builds set board-status `reserved0` bit 0; the host `reset` command fails closed when that bit is clear.                          |
+| Save boot-time system clock profile | HID feature report 17 | Validates a board-specific profile, requires overclock acknowledgement, and verifies the reserved flash sector. No runtime clock change or automatic reset. |
 
 HID must not be used to select a UART, set baud rate, change GPIO mapping, or alter ring-buffer behavior. The three
 command values are board-scoped only.
@@ -38,6 +39,8 @@ command values are board-scoped only.
 | `8`       | Feature | Host reads from device | 21 bytes | Uptime, per-core service load, and reserved RAM.     |
 | `9`       | Feature | Host reads from device | 2 bytes  | Board LED availability, manual state, and output.   |
 | `10`-`15` | Feature | Host reads from device | 59 bytes | Applied settings, GPIOs and fault history for CDC0-CDC5. |
+| `16`      | Feature | Host reads from device | 12 bytes | Persistent configuration source/reason and selected clock profiles. |
+| `17`      | Feature | Host reads/writes device | 8 bytes | Save a boot-time clock profile and read its verified result. |
 
 All versioned report payloads use layout version `1`. Firmware and host tools implement this contract together;
 other layouts are rejected, with no legacy decoding or missing-report compatibility mode.
@@ -82,7 +85,55 @@ At counter saturation, the count cannot distinguish further events.
 RX flags in report 1 are historical latches based on nonzero counters, not live signal-level indicators. A closed CDC
 port does not stop the UART receiver. Floating/undriven RX, a break, incorrect baud/framing, or wiring problems are
 possible causes, but this report cannot identify which one occurred. See [UART pinout](../../uart-pinout.md).
+
+## Report 16: Persistent Configuration Status
+
+Report 16 is read-only diagnostic metadata for boot-time configuration selection. It does not expose raw flash bytes,
+credentials, or mutable settings. This snapshot remains unchanged after a report-17 save until the next boot.
+
+| Offset | Size | Field | Meaning |
+| -----: | ---: | ----- | ------- |
+| 0 | 1 | `version` | Independent layout version, currently `1`. |
+| 1 | 1 | `source` | Active source: defaults=`0`, stored=`1`, recovery=`2`. |
+| 2 | 1 | `reason` | Validation/recovery reason: none=`0`, erased=`1`, invalid_header=`2`, crc_failed=`3`, unsupported_version=`4`, invalid_profile=`5`, watchdog_recovery=`6`, clock_unavailable=`7`. |
+| 3 | 1 | `reserved0` | Reserved, zero. |
+| 4 | 4 | `stored_profile` | Stored profile ID (`0` default, `1` 250 MHz, `2` 280 MHz, `0xffffffff` unavailable). |
+| 8 | 4 | `active_profile` | Active profile ID (`0`, `1`, `2`). |
+
+Unknown versions, inconsistent enums, or nonzero reserved bytes are rejected by host tools. Source `stored` requires
+matching stored and active profiles, including profile `0` (SDK default with no clock reconfiguration).
 There is no device-side clear command. Dashboards display fault history read-only, without local acknowledgement.
+
+## Report 17: Save Persistent Clock Profile
+
+Report 17 is a narrowly scoped board setting, not arbitrary flash access. The eight-byte feature payload uses
+little-endian integers and independent layout version `1`.
+
+| Offset | Size | SET_REPORT field | GET_REPORT field |
+| -----: | ---: | ---------------- | ---------------- |
+| 0 | 1 | `version = 1` | `version = 1` |
+| 1 | 1 | `flags`: bit 0 acknowledges unsafe overclocking; other bits zero | `status`: idle=`0`, pending=`1`, saved=`2`, invalid=`3`, CDC busy=`4`, flash failed=`5` |
+| 2 | 2 | Reserved, zero | Reserved, zero |
+| 4 | 4 | Requested `profile`: `0` SDK default, `1` 250 MHz (RP2040 only), `2` 280 MHz (RP2350 only) | Requested profile, or `0xffffffff` when unavailable (idle/invalid only) |
+
+An exact-size, valid request is queued; the USB poll loop performs the write outside the TinyUSB control callback.
+Non-default profiles require flags bit 0. Unknown profiles, wrong-family profiles, missing acknowledgement, and invalid
+versions/lengths/reserved fields produce `invalid` without writing flash. While a request is pending, another SET
+does not replace it. Hosts check readiness first and wait for a matching `saved` profile, not merely USB transfer success.
+Idle reports contain the boot's accepted stored profile, or the unavailable sentinel.
+
+Saving requires every CDC DTR session to be closed, checked both when accepting and executing the request.
+Stop external UART traffic too: receivers remain active and a flash erase pauses CPU servicing, so concurrent
+traffic may be lost even with DTR clear. The SDK flash-safe execution API disables interrupts and locks out core 1
+(registered as a lockout victim during UART worker initialization). Only the reserved final sector is erased; its first
+page contains the CRC-protected record and the rest remains erased. Full-sector validation and page comparison must
+succeed before `saved` is reported. Saving an already valid identical profile does not erase/program again.
+
+The active clock and report 16 remain unchanged. Reboot the board manually to apply the saved profile; the usual
+default validation and watchdog-recovery rules still apply. Interrupted writes fall back to SDK defaults, not a previous
+record: this is a single-sector store, not a redundant journal. Non-default profiles remain experimental and require
+exact-board HIL; Save does not establish stability. Dashboard controls and API behavior are documented in
+[Host Tools Development](../../development/host-tools.md#persistent-configuration).
 
 ## Report ID 1: Status
 

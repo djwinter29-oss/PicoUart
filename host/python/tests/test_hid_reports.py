@@ -9,8 +9,50 @@ import pytest
 from helpers import FakeHidDevice, board_status_bytes, overflow_counts_bytes, status_report_bytes
 from pico_uart import transport
 from pico_uart.client import PicoUartHid, read_board_status, send_command
-from pico_uart.client import read_hardware_info
-from pico_uart.protocol import parse_hardware_info, REPORT_ID_HARDWARE_INFO
+from pico_uart.client import read_configuration, read_hardware_info
+from pico_uart.protocol import (
+    parse_configuration, parse_hardware_info, REPORT_ID_CONFIGURATION, REPORT_ID_HARDWARE_INFO,
+)
+
+
+def test_configuration_report_decodes_and_rejects_invalid_values():
+    import struct
+
+    payload = struct.pack("<BBBBII", 1, 0, 3, 0, 0xFFFFFFFF, 1)
+    expected = {"source": "defaults", "reason": "crc_failed", "stored_profile": None, "active_profile": 1}
+    assert parse_configuration(payload) == expected
+    assert read_configuration(FakeHidDevice(payload, REPORT_ID_CONFIGURATION)) == expected
+
+    stored = struct.pack("<BBBBII", 1, 1, 0, 0, 2, 2)
+    assert parse_configuration(stored) == {
+        "source": "stored", "reason": "none", "stored_profile": 2, "active_profile": 2,
+    }
+    recovery = struct.pack("<BBBBII", 1, 2, 6, 0, 1, 0)
+    assert parse_configuration(recovery)["source"] == "recovery"
+
+    invalid = [
+        payload[:-1], payload + b"\0",
+        struct.pack("<BBBBII", 2, 0, 0, 0, 0, 0),
+        struct.pack("<BBBBII", 1, 3, 0, 0, 0, 0),
+        struct.pack("<BBBBII", 1, 0, 8, 0, 0, 0),
+        struct.pack("<BBBBII", 1, 0, 0, 1, 0, 0),
+        struct.pack("<BBBBII", 1, 0, 0, 0, 3, 0),
+        struct.pack("<BBBBII", 1, 0, 0, 0, 0, 3),
+        struct.pack("<BBBBII", 1, 1, 1, 0, 1, 1),
+        struct.pack("<BBBBII", 1, 1, 0, 0, 0, 1),
+        struct.pack("<BBBBII", 1, 2, 0, 0, 1, 0),
+    ]
+    for item in invalid:
+        with pytest.raises(RuntimeError):
+            parse_configuration(item)
+
+
+def test_configuration_client_reads_report_16():
+    import struct
+
+    payload = struct.pack("<BBBBII", 1, 0, 0, 0, 0, 0)
+    device = FakeHidDevice(payload, REPORT_ID_CONFIGURATION)
+    assert PicoUartHid(device=device).read_configuration()["source"] == "defaults"
 
 
 def test_channel_diagnostics_and_client_read_all_six_channels():

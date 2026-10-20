@@ -16,6 +16,8 @@
 #include "uart/port_api.h"
 #include "hardware/sync.h"
 #include "pico/multicore.h"
+#include "pico/flash.h"
+#include "pico/stdlib.h"
 #include "pico/time.h"
 #include "uart/pio/pio_uart_driver_internal.h"
 #include "uart/runtime.h"
@@ -87,6 +89,7 @@ static const uart_worker_hooks_t uart_driver_worker_hooks = {
 
 static void uart_driver_worker_initialize(void)
 {
+    hard_assert(flash_safe_execute_core_init());
     uart_backend_enable_rx_dma_irq();
 }
 

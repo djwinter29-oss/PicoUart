@@ -54,6 +54,7 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     commands.add_parser("version", help="read the firmware semantic version (MAJOR.MINOR.PATCH)")
     commands.add_parser("overruns", help="read cumulative UART RX dropped-byte counts")
     commands.add_parser("hardware", help="read MCU identity and current system clock as JSON")
+    commands.add_parser("config", help="read persistent configuration diagnostics as JSON")
     commands.add_parser("toggle-led", help="toggle the board's default LED")
     commands.add_parser(
         "reset",
@@ -107,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(" ".join(f"cdc{index}={count}" for index, count in enumerate(client.read_overflow_counts())))
             elif arguments.command == "hardware":
                 print(json.dumps(client.read_hardware_info(), sort_keys=True))
+            elif arguments.command == "config":
+                print(json.dumps(client.read_configuration(), sort_keys=True))
             elif arguments.command == "toggle-led":
                 client.toggle_led()
             elif arguments.command == "reset":

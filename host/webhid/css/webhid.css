@@ -2,7 +2,36 @@
 .status-line { align-items: baseline; }
 .status-line .status-mark { flex-shrink: 0; }
 #status-message { overflow-wrap: anywhere; }
-
+.summary.configuration-summary { grid-template-columns: minmax(0, 1fr); }
+.configuration-summary .summary-item { min-height: 62px; padding-block: 10px; }
+.configuration-summary label { color: var(--muted); font-size: 12px; }
+#configuration-profile {
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid #cbd6d3;
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 12px var(--mono);
+}
+#configuration-profile:focus-visible, #configuration-unsafe-ack:focus-visible {
+  outline: 3px solid var(--lime);
+  outline-offset: 2px;
+}
+.configuration-acknowledgement { display: flex; align-items: center; gap: 8px; }
+.configuration-acknowledgement[hidden] { display: none; }
+.configuration-acknowledgement input { width: 16px; height: 16px; accent-color: var(--teal); }
+.configuration-message {
+  margin: -12px 0 20px;
+  font-size: 12px;
+  min-height: 1.5em;
+  color: var(--teal-dark);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.configuration-message:empty { display: none; }
+.configuration-message[data-error="true"] { color: var(--coral); }
 @media (max-width: 720px) {
   .actions #connect { min-width: 0; }
 }

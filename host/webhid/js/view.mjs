@@ -201,13 +201,15 @@ export function renderDashboard(data) {
   statusMessage.textContent = data.error
     || (data.metadata_error ? `Board metadata unavailable: ${data.metadata_error}` : null)
     || (data.hardware_error ? `Hardware information unavailable: ${data.hardware_error}` : null)
+    || (data.configuration_error ? `Configuration diagnostics unavailable: ${data.configuration_error}` : null)
     || (data.identity_error ? `Device identity unavailable: ${data.identity_error}` : null)
     || (data.runtime_error ? `Runtime status unavailable: ${data.runtime_error}` : null)
     || (data.led_error ? `LED state unavailable: ${data.led_error}` : null)
     || (data.diagnostics_error ? `Channel diagnostics unavailable: ${data.diagnostics_error}` : null)
     || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
   statusMessage.parentElement.dataset.error = Boolean(
-    data.error || data.metadata_error || data.hardware_error || data.identity_error || data.runtime_error
+    data.error || data.metadata_error || data.hardware_error || data.configuration_error
+      || data.identity_error || data.runtime_error
       || data.led_error || data.diagnostics_error || !data.connected,
   );
 }

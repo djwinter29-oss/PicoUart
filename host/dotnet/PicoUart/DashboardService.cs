@@ -29,6 +29,10 @@ public sealed class DashboardSnapshot
     public string? MetadataError { get; set; }
     public string? HardwareError { get; set; }
     public HardwareInfo? Hardware { get; set; }
+    public ConfigurationStatus? Configuration { get; set; }
+    public string? ConfigurationError { get; set; }
+    public ConfigurationSaveStatus? ConfigurationSave { get; set; }
+    public string? ConfigurationSaveError { get; set; }
     public BoardIdentity? Identity { get; set; }
     public string? IdentityError { get; set; }
     public RuntimeStatus? Runtime { get; set; }
@@ -109,6 +113,42 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
         }
     }
 
+    public void SaveConfiguration(uint profile, bool unsafeOverclock)
+    {
+        lock (gate)
+        {
+            if (client is null)
+                throw new InvalidOperationException(snapshot.Error ?? "PicoUart HID interface is not connected");
+            try
+            {
+                snapshot.ConfigurationSave = client.SaveConfiguration(profile, unsafeOverclock);
+                snapshot.ConfigurationSaveError = null;
+            }
+            catch (Exception error) when (IsDeviceError(error) || error is ArgumentException)
+            {
+                snapshot.ConfigurationSaveError = error.Message;
+                throw;
+            }
+        }
+    }
+
+    private void ReadConfigurationSave(PicoUartHid connection)
+    {
+        lock (gate)
+        {
+            try
+            {
+                snapshot.ConfigurationSave = connection.ReadConfigurationSave();
+                snapshot.ConfigurationSaveError = null;
+            }
+            catch (Exception error) when (IsDeviceError(error))
+            {
+                snapshot.ConfigurationSave = null;
+                snapshot.ConfigurationSaveError = error.Message;
+            }
+        }
+    }
+
     private void ReadLed(PicoUartHid connection)
     {
         try
@@ -154,6 +194,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     var now = DateTimeOffset.UtcNow;
                     if (now < nextMetadataRead) continue;
                     ReadLed(connection);
+                    ReadConfigurationSave(connection);
                     try
                     {
                         var diagnostics = connection.ReadChannelDiagnostics();
@@ -204,6 +245,25 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             snapshot.Runtime = null;
                             snapshot.Led = null;
                             snapshot.RuntimeError = error.Message;
+                        }
+                    }
+                    try
+                    {
+                        var configuration = connection.ReadConfiguration();
+                        lock (gate)
+                        {
+                            snapshot.Configuration = configuration;
+                            snapshot.ConfigurationError = null;
+                            snapshot.ConfigurationSave = null;
+                            snapshot.ConfigurationSaveError = null;
+                        }
+                    }
+                    catch (Exception error) when (IsDeviceError(error))
+                    {
+                        lock (gate)
+                        {
+                            snapshot.Configuration = null;
+                            snapshot.ConfigurationError = error.Message;
                         }
                     }
                     try
@@ -259,6 +319,8 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     snapshot.Runtime = null;
                     snapshot.Board = null;
                     snapshot.Hardware = null;
+                    snapshot.Configuration = null;
+                    snapshot.ConfigurationError = null;
                 }
             }
             finally

@@ -35,6 +35,10 @@ def _empty_snapshot() -> dict[str, Any]:
         "metadata_error": None,
         "hardware_error": None,
         "hardware": None,
+        "configuration": None,
+        "configuration_error": None,
+        "configuration_save": None,
+        "configuration_save_error": None,
         "identity": None,
         "identity_error": None,
         "runtime": None,
@@ -97,6 +101,12 @@ class DashboardService:
         with self._lock:
             self._require_client().reset_board()
 
+    def save_configuration(self, profile: int, unsafe_overclock: bool) -> None:
+        with self._lock:
+            result = self._require_client().save_configuration(profile, unsafe_overclock)
+            self._snapshot["configuration_save"] = result
+            self._snapshot["configuration_save_error"] = None
+
     def close(self) -> None:
         self._stop.set()
         self._thread.join(timeout=1.0)
@@ -137,6 +147,10 @@ class DashboardService:
                     self._snapshot["led"] = None
                     self._snapshot["board"] = None
                     self._snapshot["hardware"] = None
+                    self._snapshot["configuration"] = None
+                    self._snapshot["configuration_error"] = None
+                    self._snapshot["configuration_save"] = None
+                    self._snapshot["configuration_save_error"] = None
                     self._snapshot["channel_diagnostics"] = None
             finally:
                 with self._lock:
@@ -198,6 +212,15 @@ class DashboardService:
 
     def _read_metadata(self, client: PicoUartHid) -> None:
         self._read_led(client)
+        with self._lock:
+            try:
+                configuration_save = client.read_configuration_save()
+            except (OSError, RuntimeError) as error:
+                self._snapshot["configuration_save"] = None
+                self._snapshot["configuration_save_error"] = str(error)
+            else:
+                self._snapshot["configuration_save"] = configuration_save
+                self._snapshot["configuration_save_error"] = None
         try:
             diagnostics = client.read_channel_diagnostics()
         except (OSError, RuntimeError) as error:
@@ -219,6 +242,16 @@ class DashboardService:
                 with self._lock:
                     self._snapshot[field] = value
                     self._snapshot[f"{field}_error"] = None
+        try:
+            configuration = client.read_configuration()
+        except (OSError, RuntimeError) as error:
+            with self._lock:
+                self._snapshot["configuration"] = None
+                self._snapshot["configuration_error"] = str(error)
+        else:
+            with self._lock:
+                self._snapshot["configuration"] = configuration
+                self._snapshot["configuration_error"] = None
         try:
             board = client.read_board_status()
             overflows = client.read_overflow_counts()
@@ -313,6 +346,9 @@ class DashboardBoards:
     def reset_board(self, board_id: str | None) -> None:
         self._monitor(board_id).reset_board()
 
+    def save_configuration(self, board_id: str | None, profile: int, unsafe_overclock: bool) -> None:
+        self._monitor(board_id).save_configuration(profile, unsafe_overclock)
+
     def close(self) -> None:
         with self._lock:
             if self._closed:
@@ -376,6 +412,27 @@ def create_app(service: DashboardBoards | None = None) -> Flask:
             return jsonify(error=str(error)), 409
         except OSError as error:
             return jsonify(error=str(error)), 503
+
+    @app.post("/api/configuration")
+    def save_configuration():
+        token = session.get("csrf_token", "")
+        supplied_token = request.headers.get("X-CSRF-Token", "")
+        if not token or not secrets.compare_digest(token, supplied_token):
+            return jsonify(error="request token missing or invalid"), 403
+        body = request.get_json()
+        if (not isinstance(body, dict) or set(body) != {"profile", "unsafe_overclock"}
+                or type(body["profile"]) is not int or body["profile"] not in (0, 1, 2)
+                or type(body["unsafe_overclock"]) is not bool):
+            return jsonify(error="expected a clock profile and boolean unsafe_overclock acknowledgement"), 400
+        try:
+            dashboard.save_configuration(request.args.get("board"), body["profile"], body["unsafe_overclock"])
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        except RuntimeError as error:
+            return jsonify(error=str(error)), 409
+        except OSError as error:
+            return jsonify(error=str(error)), 503
+        return jsonify(ok=True)
 
     @app.post("/api/actions/<action>")
     def action(action: str):

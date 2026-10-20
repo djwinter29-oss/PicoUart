@@ -93,6 +93,14 @@ def test_hid_led_report_contract(repo_root):
     assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_LED) == protocol.LED_SIZE
 
 
+def test_persistent_configuration_report_contracts(repo_root):
+    constants = firmware_hid_constants(repo_root)
+    assert constants["USB_HID_REPORT_ID_CONFIGURATION"] == protocol.REPORT_ID_CONFIGURATION == 16
+    assert constants["USB_HID_REPORT_ID_CONFIGURATION_SAVE"] == protocol.REPORT_ID_CONFIGURATION_SAVE == 17
+    assert firmware_hid_report_count(repo_root, 16) == protocol.CONFIGURATION_SIZE == 12
+    assert firmware_hid_report_count(repo_root, 17) == protocol.CONFIGURATION_SAVE_SIZE == 8
+
+
 def test_channel_diagnostic_reports_match_current_layout(repo_root):
     assert firmware_hid_constants(repo_root)["USB_HID_REPORT_ID_CHANNEL_BASE"] == protocol.REPORT_ID_CHANNEL_BASE
     assert protocol.CHANNEL_DIAGNOSTICS_SIZE == 59

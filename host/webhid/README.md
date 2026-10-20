@@ -31,13 +31,19 @@ never reconnects automatically or requests a broader USB device filter. Metadata
 Disconnect closes the browser connection; unplugging clears the last sample.
 Firmware must implement the current version-1 HID contract. Missing or invalid reports show `--` with an explicit
 read error; no alternate layouts are supported.
-Read failures leave
-the device available for automatic polling or Disconnect, but clear stale metadata rather than inventing a clock or MCU.
+Read failures leave the device available for automatic polling or Disconnect, but clear stale metadata rather than
+inventing a clock or MCU.
+Persistent configuration source, fallback reason, and active/stored clock profiles are read from report 16; this
+diagnostic does not expose credentials or raw flash contents.
+The **Persistent configuration** section can save the selected clock profile. See the
+[persistent configuration procedure](../../docs/development/host-tools.md#persistent-configuration) for the safety
+acknowledgement and reboot steps.
 
 Linux may require [HID permissions setup](../../tools/README.md#linux-hid-permissions) even after browser permission is
 granted. Close competing HID clients when
 diagnosing a busy device. Browser access is to USB devices on the browser's machine, not automatically to devices in a
-remote VS Code workspace. The only write is the user-initiated LED toggle command; there is no firmware flashing or reset.
+remote VS Code workspace. Writes are limited to user-initiated LED toggle and persistent configuration save commands;
+there is no firmware flashing or reset.
 
 ### No Compatible Device Found
 
@@ -51,7 +57,8 @@ Installing an OS access rule may require administrator approval in the OS; do no
 
 ## Contract And Tests
 
-The client opens the PicoUart HID interface, displays diagnostics, and can toggle the board LED. The
+The client opens the PicoUart HID interface, displays diagnostics, toggles the board LED, and saves persistent
+configuration. The
 [HID Report Reference](../../docs/design/usb/hid-report-reference.md) is the source for report layouts, versions, and
 MCU compatibility. Keep browser-specific feature-report framing validation covered by the tests.
 The same reference defines the board-derived Serial / UID, per-core service-load semantics, and RAM reservation

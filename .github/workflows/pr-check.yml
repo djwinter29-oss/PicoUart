@@ -24,26 +24,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Rated clocks stay the default build path (no clock override).
           - board: pico
-            clock_khz: "125000"
-            overclock: "false"
             label: pico
           - board: pico2
-            clock_khz: "150000"
-            overclock: "false"
             label: pico2
-          # Development overclock images. CMake rejects these clocks unless
-          # --unsafe-overclock is passed. Artifact names use label so they
-          # do not collide with the rated pico / pico2 uploads.
-          - board: pico
-            clock_khz: "250000"
-            overclock: "true"
-            label: pico-250mhz
-          - board: pico2
-            clock_khz: "280000"
-            overclock: "true"
-            label: pico2-280mhz
 
     steps:
       - name: Checkout
@@ -81,15 +65,9 @@ jobs:
         env:
           BOARD: ${{ matrix.board }}
           LABEL: ${{ matrix.label }}
-          CLOCK_KHZ: ${{ matrix.clock_khz }}
-          OVERCLOCK: ${{ matrix.overclock }}
         run: |
           set -eu
-          set -- --board "$BOARD" --build-dir "build/firmware-${LABEL}"
-          if [ "$OVERCLOCK" = "true" ]; then
-            set -- "$@" --system-clock-khz "$CLOCK_KHZ" --unsafe-overclock
-          fi
-          tools/firmware/build.sh "$@"
+          tools/firmware/build.sh --board "$BOARD" --build-dir "build/firmware-${LABEL}"
 
       - name: Verify build contract
         env:

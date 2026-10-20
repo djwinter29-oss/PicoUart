@@ -6,19 +6,7 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
-/** @brief SDK-standard system-clock target in kHz for RP2040 boards. */
-#define PICO_UART_RP2040_SYSTEM_CLOCK_KHZ 125000u
-/** @brief SDK-standard system-clock target in kHz for RP2350 boards. */
-#define PICO_UART_RP2350_SYSTEM_CLOCK_KHZ 150000u
-
-/** @brief Configured system-clock target in kHz. */
-#ifndef PICO_UART_SYSTEM_CLOCK_KHZ
-#if defined(PICO_RP2350A) || defined(PICO_RP2350B)
-#define PICO_UART_SYSTEM_CLOCK_KHZ PICO_UART_RP2350_SYSTEM_CLOCK_KHZ
-#else
-#define PICO_UART_SYSTEM_CLOCK_KHZ PICO_UART_RP2040_SYSTEM_CLOCK_KHZ
-#endif
-#endif
+#include "driver/board_config.h"
 
 /** @brief Watchdog timeout that covers USB poll plus a 1 s line-coding apply. */
 #ifndef PICO_UART_WATCHDOG_TIMEOUT_MS
@@ -28,14 +16,26 @@
 /**
  * @brief Configure the system clock before initializing timing-sensitive hardware.
  *
- * Calls `set_sys_clock_khz` only; the core voltage is never written, preserving
- * the regulator setting on entry rather than restoring a specific voltage. Above
- * the chip's rated clock (125 MHz on RP2040, 150 MHz on RP2350) this is an
- * unqualified overclock at stock voltage: the RP2040 250 MHz and RP2350
- * 280 MHz development images require exact-board HIL across the intended
- * operating conditions before any stability claim.
+ * Load the CRC-protected configuration. Default, rejected settings and watchdog
+ * recovery leave SDK/board clocks untouched. Only a valid non-default profile
+ * calls `set_sys_clock_khz`; core voltage is never written. Non-default profiles
+ * require exact-board HIL before any stability claim.
  */
 void system_init_clock(void);
+
+/**
+ * @brief Read the immutable boot configuration decision.
+ * @return Static RAM snapshot valid after system_init_clock.
+ */
+const board_config_status_t *system_config_status(void);
+
+/**
+ * @brief Save and verify a supported clock profile without changing the running clock.
+ * @param profile Target-compatible permanent profile ID.
+ * @return True only after full-sector readback verification (or an identical valid record).
+ * @note Call on core 0 with UART traffic stopped and the core-1 flash lockout victim initialized.
+ */
+bool system_save_clock_profile(uint32_t profile);
 
 /**
  * @brief Arm the watchdog so a wedged USB poll loop recovers without a power cycle.

@@ -1,6 +1,6 @@
 """Compile and run the real firmware `system_init_clock` against mock SDK
-headers to pin the no-voltage-write policy: both boards must only call
-`set_sys_clock_khz` at the requested clock, with no `hardware/vreg.h` include
+headers to pin the no-voltage-write policy: defaults never override SDK
+startup and valid profiles request an exact clock, with no `hardware/vreg.h` include
 and no vreg symbol anywhere in the link (any voltage write or bypass fails
 the build or the recorded-clock check below).
 """
@@ -25,6 +25,8 @@ _MOCK_STDLIB_H = """
 #include <stdbool.h>
 #include <stdlib.h>
 #define hard_assert(x) do { if (!(x)) { abort(); } } while (0)
+#define __not_in_flash_func(x) x
+#define PICO_OK 0
 static inline void tight_loop_contents(void) {}
 #endif
 """
@@ -40,19 +42,41 @@ bool set_sys_clock_khz(uint32_t clock_khz, bool required);
 #endif
 """
 
+_MOCK_ADDRESSMAP_H = """
+#include <stdint.h>
+extern uint8_t g_sector[4096];
+#define XIP_BASE ((uintptr_t)g_sector)
+"""
+
 _MOCK_WATCHDOG_H = """
 #ifndef MOCK_HARDWARE_WATCHDOG_H
 #define MOCK_HARDWARE_WATCHDOG_H
 #include <stdbool.h>
 #include <stdint.h>
+extern bool g_watchdog_recovery;
+static inline bool watchdog_enable_caused_reboot(void) { return g_watchdog_recovery; }
 static inline void watchdog_enable(uint32_t timeout_ms, bool pause_on_debug) {
     (void)timeout_ms; (void)pause_on_debug;
+    g_watchdog_recovery = false;
 }
 static inline void watchdog_update(void) {}
 static inline void watchdog_reboot(uint32_t pc, uint32_t sp, uint32_t delay_ms) {
     (void)pc; (void)sp; (void)delay_ms;
 }
 #endif
+"""
+
+_MOCK_FLASH_H = """
+#include <stddef.h>
+#include <stdint.h>
+#define FLASH_PAGE_SIZE 256u
+void flash_range_erase(uint32_t offset, size_t count);
+void flash_range_program(uint32_t offset, const uint8_t *data, size_t count);
+"""
+
+_MOCK_SAFE_FLASH_H = """
+#include <stdint.h>
+int flash_safe_execute(void (*func)(void *), void *param, uint32_t timeout_ms);
 """
 
 # NOTE: no hardware/vreg.h mock is provided. If system.c (re)gains a
@@ -62,24 +86,96 @@ static inline void watchdog_reboot(uint32_t pc, uint32_t sp, uint32_t delay_ms) 
 _MOCK_RUNTIME_C = """
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
+#include <assert.h>
+uint8_t g_sector[4096];
+bool g_watchdog_recovery = WATCHDOG_RECOVERY;
 uint32_t g_requested_clock_khz;
 int g_set_sys_clock_khz_calls;
+int g_flash_calls;
+int g_flash_result;
+bool g_flash_corrupt;
+void flash_range_erase(uint32_t offset, size_t count) {
+    assert(offset == 0 && count == sizeof(g_sector));
+    memset(g_sector, 255, count);
+    g_flash_calls++;
+}
+void flash_range_program(uint32_t offset, const uint8_t *data, size_t count) {
+    assert(offset == 0 && count == 256);
+    memcpy(g_sector, data, count);
+    if (g_flash_corrupt) g_sector[4095] = 0;
+}
+int flash_safe_execute(void (*func)(void *), void *param, uint32_t timeout_ms) {
+    assert(timeout_ms == 1000);
+    if (!g_flash_result) func(param);
+    return g_flash_result;
+}
 bool set_sys_clock_khz(uint32_t clock_khz, bool required) {
-    (void)required;
+    if (required) __builtin_abort();
     g_requested_clock_khz = clock_khz;
     g_set_sys_clock_khz_calls++;
-    return true;
+    return CLOCK_AVAILABLE;
 }
 """
 
 _MAIN_C = """
 #include <stdio.h>
+#include <string.h>
+#include <assert.h>
 #include "driver/system.h"
+extern uint8_t g_sector[4096];
 extern unsigned int g_requested_clock_khz;
 extern int g_set_sys_clock_khz_calls;
+extern int g_flash_calls, g_flash_result;
+extern bool g_flash_corrupt;
+static void put_u32(unsigned offset, uint32_t value) {
+    for (unsigned i=0; i<4; i++) g_sector[offset+i] = value >> (8*i);
+}
 int main(void) {
+    memset(g_sector, 255, sizeof(g_sector));
+    if (PROFILE >= 0) {
+        memset(g_sector, 0, 36);
+        memcpy(g_sector, "PUCF", 4);
+        g_sector[4] = 1;
+        g_sector[6] = 32;
+        put_u32(8, 36);
+        put_u32(32, PROFILE);
+        uint8_t protected[32];
+        memcpy(protected, g_sector, 12);
+        memcpy(protected+12, g_sector+16, 20);
+        put_u32(12, board_config_crc32(protected, 32) ^ CORRUPT);
+    }
+    system_watchdog_enable();
     system_init_clock();
-    printf("%u %d\\n", g_requested_clock_khz, g_set_sys_clock_khz_calls);
+    const board_config_status_t *config = system_config_status();
+    printf("%u %d %u %u\\n", g_requested_clock_khz, g_set_sys_clock_khz_calls,
+           (unsigned)config->reason, (unsigned)config->active_profile);
+    board_config_status_t boot = *config;
+    int boot_clock_calls = g_set_sys_clock_khz_calls;
+    unsigned boot_clock_khz = g_requested_clock_khz;
+    assert(!system_save_clock_profile(0xffffffffu));
+    unsigned profile = PICO_RP2350 ? 2 : 1;
+    assert(!system_save_clock_profile(PICO_RP2350 ? 1 : 2));
+    memset(g_sector, 255, sizeof(g_sector));
+    g_flash_result = -1;
+    assert(!system_save_clock_profile(profile));
+    assert(g_flash_calls == 0 && g_sector[0] == 255);
+    g_flash_result = 0;
+    g_flash_corrupt = true;
+    assert(!system_save_clock_profile(profile));
+    assert(g_flash_calls == 1);
+    g_flash_corrupt = false;
+    assert(system_save_clock_profile(profile));
+    assert(g_flash_calls == 2);
+    assert(system_save_clock_profile(profile));
+    assert(g_flash_calls == 2);
+    board_config_status_t stored = board_config_decode(g_sector, sizeof(g_sector), PICO_RP2350, false);
+    assert(stored.reason == BOARD_CONFIG_OK && stored.stored_profile == profile);
+    assert(system_save_clock_profile(0));
+    stored = board_config_decode(g_sector, sizeof(g_sector), PICO_RP2350, false);
+    assert(stored.reason == BOARD_CONFIG_OK && stored.active_profile == BOARD_CLOCK_DEFAULT);
+    assert(memcmp(config, &boot, sizeof(boot)) == 0);
+    assert(g_set_sys_clock_khz_calls == boot_clock_calls && g_requested_clock_khz == boot_clock_khz);
     return 0;
 }
 """
@@ -110,20 +206,32 @@ def _read_nm_symbols(nm, artifact):
     reason="native C compiler required to exercise real system.c",
 )
 @pytest.mark.parametrize(
-    ("board_defines", "clock_khz"),
+    ("rp2350", "profile", "corrupt", "recovery", "available", "clock_khz", "reason", "active"),
     [
-        ([], 125000),  # RP2040 rated
-        ([], 250000),  # RP2040 development overclock
-        (["PICO_RP2350B"], 150000),  # RP2350 rated
-        (["PICO_RP2350B"], 300000),  # RP2350 development overclock
+        (0, -1, 0, 0, 1, 0, 1, 0),
+        (1, -1, 0, 0, 1, 0, 1, 0),
+        (0, 0, 0, 0, 1, 0, 0, 0),
+        (1, 0, 0, 0, 1, 0, 0, 0),
+        (0, 1, 0, 0, 1, 250000, 0, 1),
+        (1, 2, 0, 0, 1, 280000, 0, 2),
+        (0, 2, 0, 0, 1, 0, 5, 0),
+        (1, 1, 0, 0, 1, 0, 5, 0),
+        (0, 1, 1, 0, 1, 0, 3, 0),
+        (0, 1, 0, 1, 1, 0, 6, 0),
+        (1, 2, 0, 1, 1, 0, 6, 0),
+        (0, 1, 0, 0, 0, 250000, 7, 0),
     ],
-    ids=["rp2040-rated", "rp2040-250mhz", "rp2350-rated", "rp2350-300mhz"],
 )
-def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defines, clock_khz):
+def test_system_init_clock_never_writes_voltage(
+    repo_root, tmp_path, rp2350, profile, corrupt, recovery, available, clock_khz, reason, active
+):
     mock_sdk = tmp_path / "mock_sdk"
     _write(mock_sdk / "pico" / "stdlib.h", _MOCK_STDLIB_H)
     _write(mock_sdk / "hardware" / "clocks.h", _MOCK_CLOCKS_H)
     _write(mock_sdk / "hardware" / "watchdog.h", _MOCK_WATCHDOG_H)
+    _write(mock_sdk / "hardware" / "regs" / "addressmap.h", _MOCK_ADDRESSMAP_H)
+    _write(mock_sdk / "hardware" / "flash.h", _MOCK_FLASH_H)
+    _write(mock_sdk / "pico" / "flash.h", _MOCK_SAFE_FLASH_H)
 
     (tmp_path / "mock_runtime.c").write_text(_MOCK_RUNTIME_C)
     (tmp_path / "main.c").write_text(_MAIN_C)
@@ -143,11 +251,18 @@ def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defin
         "-Wall",
         "-Wextra",
         "-Werror",
-        f"-DPICO_UART_SYSTEM_CLOCK_KHZ={clock_khz}u",
-        *(f"-D{define}" for define in board_defines),
+        f"-DPICO_RP2350={rp2350}",
+        f"-DPROFILE={profile}",
+        f"-DCORRUPT={corrupt}",
+        f"-DWATCHDOG_RECOVERY={recovery}",
+        f"-DCLOCK_AVAILABLE={available}",
+        "-DPICO_FLASH_SIZE_BYTES=4096",
+        "-DPICO_UART_CONFIG_FLASH_SIZE=4096",
+        "-DPICO_UART_CONFIG_FLASH_OFFSET=0",
         f"-I{mock_sdk}",
         f"-I{repo_root / 'firmware' / 'src'}",
         str(system_c),
+        str(repo_root / "firmware/src/driver/board_config.c"),
         str(tmp_path / "mock_runtime.c"),
         str(tmp_path / "main.c"),
         "-o",
@@ -165,9 +280,11 @@ def test_system_init_clock_never_writes_voltage(repo_root, tmp_path, board_defin
 
     run = subprocess.run([str(exe)], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
-    recorded_khz, call_count = run.stdout.split()
+    recorded_khz, call_count, recorded_reason, recorded_active = run.stdout.split()
     assert int(recorded_khz) == clock_khz
-    assert int(call_count) == 1
+    assert int(call_count) == (1 if clock_khz else 0)
+    assert int(recorded_reason) == reason
+    assert int(recorded_active) == active
 
 
 @pytest.mark.parametrize("build_dir", os.environ.get("PICO_UART_VOLTAGE_BUILD_DIRS", "").split(os.pathsep))

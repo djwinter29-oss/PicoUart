@@ -75,6 +75,37 @@
 #define USB_HID_REPORT_ID_LED 9u
 /** @brief First of six independent read-only per-channel diagnostic feature reports. */
 #define USB_HID_REPORT_ID_CHANNEL_BASE 10u
+/** @brief Read-only persistent configuration boot decision. */
+#define USB_HID_REPORT_ID_CONFIGURATION 16u
+/** @brief Persistent profile request and verified save result. */
+#define USB_HID_REPORT_ID_CONFIGURATION_SAVE 17u
+
+/** @brief USB-core-owned state of the most recent persistent configuration request. */
+typedef enum {
+    USB_HID_CONFIG_IDLE = 0,    /**< No request since boot. */
+    USB_HID_CONFIG_PENDING = 1, /**< Validated request awaiting the main poll loop. */
+    USB_HID_CONFIG_SAVED = 2,   /**< Reserved sector verified; reboot needed to apply. */
+    USB_HID_CONFIG_INVALID = 3, /**< Malformed, incompatible, or unacknowledged request. */
+    USB_HID_CONFIG_BUSY = 4,    /**< A CDC host session is open; no flash write attempted. */
+    USB_HID_CONFIG_FAILED = 5,  /**< Flash lockout, programming, or verification failed. */
+} usb_hid_config_save_state_t;
+
+/** @brief Last request status; changed only on the USB core. */
+static usb_hid_config_save_state_t usb_hid_config_save_state;
+/** @brief Requested profile, or unavailable when no profile could be decoded. */
+static uint32_t usb_hid_config_save_profile;
+
+/** @brief Require closed CDC sessions before pausing both cores for a flash erase. */
+static bool usb_hid_config_can_save(void)
+{
+    for (uint8_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        usb_cdc_port_stats_t stats;
+        if (!usb_cdc_port_stats(index, &stats) || stats.opened) {
+            return false;
+        }
+    }
+    return true;
+}
 
 /** @brief Sampled fault history; RX counts are controller events or dropped bytes, not individual bad frames. */
 typedef struct {
@@ -448,6 +479,8 @@ static bool usb_hid_publish_status_report(const uart_driver_port_stats_t uart_st
 
 void usb_hid_init(void)
 {
+    usb_hid_config_save_state = USB_HID_CONFIG_IDLE;
+    usb_hid_config_save_profile = system_config_status()->stored_profile;
     usb_hid_sequence = 0u;
     usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time());
     usb_hid_reset_armed_deadline = nil_time;
@@ -461,6 +494,15 @@ void usb_hid_init(void)
 void usb_hid_poll(void)
 {
     uint32_t now_ms;
+
+    if (usb_hid_config_save_state == USB_HID_CONFIG_PENDING) {
+        if (!usb_hid_config_can_save()) {
+            usb_hid_config_save_state = USB_HID_CONFIG_BUSY;
+        } else {
+            usb_hid_config_save_state = system_save_clock_profile(usb_hid_config_save_profile)
+                ? USB_HID_CONFIG_SAVED : USB_HID_CONFIG_FAILED;
+        }
+    }
 
     now_ms = to_ms_since_boot(get_absolute_time());
     if ((int32_t)(now_ms - usb_hid_next_report_ms) < 0) {
@@ -496,6 +538,27 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 
     (void)instance;
 
+    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_CONFIGURATION_SAVE)) {
+        uint8_t payload[8] = {1u, (uint8_t)usb_hid_config_save_state, 0u, 0u};
+        for (unsigned int index = 0; index < 4u; ++index) {
+            payload[4u + index] = (uint8_t)(usb_hid_config_save_profile >> (8u * index));
+        }
+        uint16_t length = reqlen < sizeof(payload) ? reqlen : sizeof(payload);
+        memcpy(buffer, payload, length);
+        return length;
+    }
+
+    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_CONFIGURATION)) {
+        const board_config_status_t *config = system_config_status();
+        uint8_t payload[12] = {1u, (uint8_t)config->source, (uint8_t)config->reason, 0u};
+        for (unsigned int index = 0; index < 4u; ++index) {
+            payload[4u + index] = (uint8_t)(config->stored_profile >> (8u * index));
+            payload[8u + index] = (uint8_t)((uint32_t)config->active_profile >> (8u * index));
+        }
+        uint16_t length = reqlen < sizeof(payload) ? reqlen : sizeof(payload);
+        memcpy(buffer, payload, length);
+        return length;
+    }
     if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id >= USB_HID_REPORT_ID_CHANNEL_BASE) &&
         (report_id < USB_HID_REPORT_ID_CHANNEL_BASE + UART_PORT_COUNT)) {
         size_t index = report_id - USB_HID_REPORT_ID_CHANNEL_BASE;
@@ -589,6 +652,34 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                            uint16_t bufsize)
 {
     (void)instance;
+
+    if (report_id == USB_HID_REPORT_ID_CONFIGURATION_SAVE && report_type == HID_REPORT_TYPE_FEATURE) {
+        if (usb_hid_config_save_state == USB_HID_CONFIG_PENDING) {
+            return;
+        }
+        usb_hid_config_save_state = USB_HID_CONFIG_INVALID;
+        usb_hid_config_save_profile = BOARD_CONFIG_PROFILE_UNAVAILABLE;
+        if (bufsize != 8u || buffer[0] != 1u || (buffer[1] & ~1u) != 0u ||
+            buffer[2] != 0u || buffer[3] != 0u) {
+            return;
+        }
+        uint32_t profile = (uint32_t)buffer[4] | (uint32_t)buffer[5] << 8 |
+                           (uint32_t)buffer[6] << 16 | (uint32_t)buffer[7] << 24;
+        const bool rp2350 =
+#if PICO_RP2350
+            true;
+#else
+            false;
+#endif
+        usb_hid_config_save_profile = profile;
+        if (!board_config_profile_supported(profile, rp2350) ||
+            (profile != BOARD_CLOCK_DEFAULT && (buffer[1] & 1u) == 0u)) {
+            usb_hid_config_save_profile = BOARD_CONFIG_PROFILE_UNAVAILABLE;
+            return;
+        }
+        usb_hid_config_save_state = usb_hid_config_can_save() ? USB_HID_CONFIG_PENDING : USB_HID_CONFIG_BUSY;
+        return;
+    }
 
     if ((report_id != USB_HID_REPORT_ID_COMMAND) || (report_type != HID_REPORT_TYPE_FEATURE) || (bufsize < 1u)) {
         return;
