@@ -67,8 +67,8 @@ as JSON. This requires firmware supporting HID report 6. See the
 `read_configuration()` and `pico-uart config` read the persistent configuration source, fallback reason, and selected
 clock profiles from HID report 16. This is diagnostic-only: it does not expose credentials or raw flash contents.
 `save_configuration(profile, unsafe_overclock=False)` persists a board-compatible profile through HID report 17
-and returns its verified save result; `read_configuration_save()` reads that result separately. The running clock
-does not change until reboot. The dashboard exposes the same operation with an explicit **Save** button; see
+and returns its verified save result before firmware automatically reboots; `read_configuration_save()` reads that
+result separately. The dashboard warns that saving briefly disconnects USB; see
 [Persistent configuration](../../docs/development/host-tools.md#persistent-configuration) for precautions and defaults.
 
 ## Important Notes

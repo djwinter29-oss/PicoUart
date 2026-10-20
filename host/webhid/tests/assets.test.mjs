@@ -21,11 +21,15 @@ for (const frontend of ["web", "webhid"]) {
   test(`${frontend} keeps persistent configuration as a compact summary with a heading action`, () => {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     const section = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
-    assert.match(section, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[^>]*>Save<\/button>[\s\S]*?<\/div>\s*<\/div>/);
+    assert.match(section, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[^>]*>Save &amp; Reboot<\/button>[\s\S]*?<\/div>\s*<\/div>/);
     assert.match(section, /class="summary configuration-summary">\s*<div class="summary-item">\s*<label for="configuration-profile">System clock profile<\/label>\s*<select/);
     assert.match(section, /id="configuration-acknowledgement" hidden/);
     assert.doesNotMatch(section, /configuration-panel|configuration-note|configuration-status|configuration-detail/);
     assert.match(section, /id="configuration-message" role="status" aria-live="polite"/);
+    const styles = readFileSync(new URL(`../../${frontend}/css/${frontend === "web" ? "dashboard" : "webhid"}.css`,
+      import.meta.url), "utf8");
+    assert.match(styles, /#configuration-profile\s*\{\s*width:\s*20%;/);
+    assert.match(styles, /#configuration-profile\s*\{\s*width:\s*100%;\s*\}/);
   });
 }
 

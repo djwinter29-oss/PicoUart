@@ -184,16 +184,19 @@ changed status sample. Age measures browser receipt time so remote host clock of
 ### Persistent configuration
 
 All three dashboards place **Persistent configuration** in its own section directly below **Device identity**.
-The **Sysclk** dropdown defaults to **SDK default (no clock reconfiguration)** and offers only the connected MCU's
-supported overclock profile. Editing the dropdown never writes the device, and telemetry refreshes do not overwrite
-unsaved edits. The compact section uses the same summary-card layout as Device identity, with the dropdown below
-its label and **Save** beside the section heading. Boot source/profile details and always-visible instructions are
-omitted. The unsafe-overclock acknowledgement appears only when a non-default profile is selected.
+The system-clock dropdown displays **Default (125 MHz)** on Pico (RP2040) or **Default (150 MHz)** on Pico 2 (RP2350),
+and offers only the connected MCU's supported overclock profile. Editing the dropdown never writes the device, and
+telemetry refreshes do not overwrite unsaved edits. The compact section uses the same summary-card layout as Device
+identity, with the dropdown below
+its label at one-fifth of the available desktop width (full width on mobile) and **Save & Reboot** beside the section
+heading. Boot source/profile details are omitted. The unsafe-overclock acknowledgement appears only when a non-default
+profile is selected.
 
-**Save** persists the choice through [HID report 17](../design/usb/hid-report-reference.md#report-17-save-persistent-clock-profile),
+**Save & Reboot** persists the choice through [HID report 17](../design/usb/hid-report-reference.md#report-17-save-persistent-clock-profile),
 waits for a matching verified result, and displays failures explicitly. Close all CDC ports and stop external UART
-traffic first; flash programming pauses servicing on both cores. Save does not change the running clock or reboot the
-board. Reboot manually to apply it. The boot diagnostic display remains the previous boot's decision until then.
+traffic first; flash programming pauses servicing on both cores. A successful save automatically reboots the board
+after a short delay so the host can read the verified result. The dashboard warns that USB will disconnect briefly.
+The boot diagnostic display reflects the newly selected profile after the board reconnects.
 Unavailable save reports disable Save without hiding other valid diagnostics.
 
 Python and .NET expose `POST /api/configuration?board=<id>` with the same session CSRF header as board actions.

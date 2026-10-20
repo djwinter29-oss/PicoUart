@@ -129,10 +129,11 @@ traffic may be lost even with DTR clear. The SDK flash-safe execution API disabl
 page contains the CRC-protected record and the rest remains erased. Full-sector validation and page comparison must
 succeed before `saved` is reported. Saving an already valid identical profile does not erase/program again.
 
-The active clock and report 16 remain unchanged. Reboot the board manually to apply the saved profile; the usual
-default validation and watchdog-recovery rules still apply. Interrupted writes fall back to SDK defaults, not a previous
-record: this is a single-sector store, not a redundant journal. Non-default profiles remain experimental and require
-exact-board HIL; Save does not establish stability. Dashboard controls and API behavior are documented in
+The active clock and report 16 remain unchanged until the verified save result has been read; firmware then reboots
+the board automatically after a short delay to apply the saved profile. The usual default validation and watchdog-
+recovery rules still apply. Interrupted writes fall back to SDK defaults, not a previous record: this is a single-sector
+store, not a redundant journal. Non-default profiles remain experimental and require exact-board HIL; Save does not
+establish stability. Dashboard controls and API behavior are documented in
 [Host Tools Development](../../development/host-tools.md#persistent-configuration).
 
 ## Report ID 1: Status

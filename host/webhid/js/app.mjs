@@ -23,8 +23,8 @@ function resetConfigurationDraft(state) {
 function renderConfiguration(state) {
   const dashboard = state.dashboard;
   const hardwareId = dashboard.hardware?.mcu_id;
-  const options = hardwareId === 1 ? [[0, "SDK default (no clock reconfiguration)"], [1, "250 MHz (RP2040)"]]
-    : hardwareId === 2 ? [[0, "SDK default (no clock reconfiguration)"], [2, "280 MHz (RP2350)"]] : [];
+  const options = hardwareId === 1 ? [[0, "Default (125 MHz)"], [1, "250 MHz (RP2040)"]]
+    : hardwareId === 2 ? [[0, "Default (150 MHz)"], [2, "280 MHz (RP2350)"]] : [];
   const configurationReady = dashboard.configuration || dashboard.configuration_error
     || dashboard.configuration_save || dashboard.configuration_save_error;
   if (configurationDraft === null && options.length && configurationReady) {
@@ -58,7 +58,7 @@ function renderConfiguration(state) {
   configurationMessage.dataset.error = String(Boolean(!state.configurationSaveMessage
     && dashboard.connected && dashboard.configuration_save_error) || Boolean(state.configurationSaveMessage
     && state.configurationSaveMessage !== "Saving configuration..."
-    && state.configurationSaveMessage !== "Saved. Reboot board to apply."));
+    && state.configurationSaveMessage !== "Saved. Pico is rebooting; USB will reconnect shortly."));
 }
 
 function render(state) {

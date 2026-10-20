@@ -108,6 +108,7 @@ test("hosted pages select independently and render board labels as text", async 
   assert.equal(bob.requests[0].url, "/api/status?board=B");
   await bob.respond(snapshot("second", 1, 1));
   assert.equal(bob.element("serial").textContent, "second");
+  assert.equal(bob.element("configuration-profile").children[0].textContent, "Default (125 MHz)");
   assert.equal(bob.element("configuration-profile").value, "1");
   assert.equal(bob.element("configuration-unsafe-ack").checked, false);
   assert.equal(alice.element("serial").textContent, "first");
@@ -119,6 +120,7 @@ test("persistent configuration saves only on explicit POST and preserves the dra
   await connect(view);
   assert.equal(view.element("configuration-profile").disabled, false);
   assert.equal(view.element("save-configuration").disabled, true);
+  assert.match(html, /Saving reboots the Pico and briefly disconnects USB/);
   view.changeProfile(0);
   assert.equal(view.element("configuration-acknowledgement").hidden, true);
   assert.equal(view.element("save-configuration").disabled, false);
@@ -128,10 +130,12 @@ test("persistent configuration saves only on explicit POST and preserves the dra
   assert.equal(view.requests[0].options.headers["X-CSRF-Token"], "csrf");
   assert.deepEqual(JSON.parse(view.requests[0].options.body), { profile: 0, unsafe_overclock: false });
   await view.respond({ ok: true });
-  assert.equal(view.element("configuration-message").textContent, "Saved. Reboot board to apply.");
+  assert.equal(view.element("configuration-message").textContent,
+    "Saved. Pico is rebooting; USB will reconnect shortly.");
   view.tick();
   await view.respond(snapshot("first"));
-  assert.equal(view.element("configuration-message").textContent, "Saved. Reboot board to apply.");
+  assert.equal(view.element("configuration-message").textContent,
+    "Saved. Pico is rebooting; USB will reconnect shortly.");
   view.changeProfile(2);
   assert.equal(view.element("configuration-acknowledgement").hidden, false);
   assert.equal(view.element("configuration-profile").value, "2");

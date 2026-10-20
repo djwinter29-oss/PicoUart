@@ -79,6 +79,8 @@
 #define USB_HID_REPORT_ID_CONFIGURATION 16u
 /** @brief Persistent profile request and verified save result. */
 #define USB_HID_REPORT_ID_CONFIGURATION_SAVE 17u
+/** @brief Give the host time to read a verified save result before rebooting. */
+#define USB_HID_CONFIG_REBOOT_DELAY_MS 1000u
 
 /** @brief USB-core-owned state of the most recent persistent configuration request. */
 typedef enum {
@@ -94,6 +96,8 @@ typedef enum {
 static usb_hid_config_save_state_t usb_hid_config_save_state;
 /** @brief Requested profile, or unavailable when no profile could be decoded. */
 static uint32_t usb_hid_config_save_profile;
+/** @brief Reboot deadline after a verified persistent configuration save. */
+static absolute_time_t usb_hid_config_reboot_deadline;
 
 /** @brief Require closed CDC sessions before pausing both cores for a flash erase. */
 static bool usb_hid_config_can_save(void)
@@ -481,6 +485,7 @@ void usb_hid_init(void)
 {
     usb_hid_config_save_state = USB_HID_CONFIG_IDLE;
     usb_hid_config_save_profile = system_config_status()->stored_profile;
+    usb_hid_config_reboot_deadline = nil_time;
     usb_hid_sequence = 0u;
     usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time());
     usb_hid_reset_armed_deadline = nil_time;
@@ -499,9 +504,17 @@ void usb_hid_poll(void)
         if (!usb_hid_config_can_save()) {
             usb_hid_config_save_state = USB_HID_CONFIG_BUSY;
         } else {
-            usb_hid_config_save_state = system_save_clock_profile(usb_hid_config_save_profile)
-                ? USB_HID_CONFIG_SAVED : USB_HID_CONFIG_FAILED;
+            if (system_save_clock_profile(usb_hid_config_save_profile)) {
+                usb_hid_config_save_state = USB_HID_CONFIG_SAVED;
+                usb_hid_config_reboot_deadline = make_timeout_time_ms(USB_HID_CONFIG_REBOOT_DELAY_MS);
+            } else {
+                usb_hid_config_save_state = USB_HID_CONFIG_FAILED;
+            }
         }
+    }
+    if (usb_hid_config_save_state == USB_HID_CONFIG_SAVED &&
+        time_reached(usb_hid_config_reboot_deadline)) {
+        system_reset();
     }
 
     now_ms = to_ms_since_boot(get_absolute_time());

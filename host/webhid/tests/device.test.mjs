@@ -623,7 +623,7 @@ test("configuration save requires an explicit overclock acknowledgement and veri
   assert.match(client.state.configurationSaveMessage, /explicitly acknowledge/);
   await client.saveConfiguration(2, true);
   assert.deepEqual(hid.devices[0].writes, [[17, [1, 1, 0, 0, 2, 0, 0, 0]]]);
-  assert.equal(client.state.configurationSaveMessage, "Saved. Reboot board to apply.");
+  assert.equal(client.state.configurationSaveMessage, "Saved. Pico is rebooting; USB will reconnect shortly.");
   assert.equal(client.state.dashboard.configuration_save.status, 2);
   assert.equal(client.state.dashboard.configuration_save.profile, 2);
   assert.equal(client.state.phase, "connected");
@@ -671,8 +671,8 @@ test("configuration save polls pending completion and ignores unplugged device r
   device.receiveFeatureReport = id => id === 17
     ? Promise.resolve(configurationSaveReport(++polls === 1 ? 1 : 2, 2)) : receive(id);
   await client.saveConfiguration(2, true);
-  assert.equal(polls, 3, "The third read is the post-save snapshot refresh.");
-  assert.equal(client.state.configurationSaveMessage, "Saved. Reboot board to apply.");
+  assert.equal(polls, 2, "Only the pending and verified save states are read before reboot.");
+  assert.equal(client.state.configurationSaveMessage, "Saved. Pico is rebooting; USB will reconnect shortly.");
   await client.disconnect();
 
   const otherHid = new FakeHid();

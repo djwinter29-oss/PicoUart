@@ -52,14 +52,14 @@
       <div class="section-heading">
         <h2 id="configuration-title">Persistent configuration</h2>
         <div class="actions" aria-label="Configuration controls">
-          <button class="button button-led" id="save-configuration" type="button" disabled>Save</button>
+          <button class="button button-led" id="save-configuration" type="button" disabled>Save &amp; Reboot</button>
         </div>
       </div>
       <div class="summary configuration-summary">
         <div class="summary-item">
           <label for="configuration-profile">System clock profile</label>
           <select id="configuration-profile" disabled>
-            <option value="0">SDK default (no clock reconfiguration)</option>
+            <option value="0">Default</option>
           </select>
           <label class="configuration-acknowledgement" id="configuration-acknowledgement" hidden>
             <input id="configuration-unsafe-ack" type="checkbox" disabled>
@@ -67,6 +67,9 @@
           </label>
         </div>
       </div>
+      <p class="configuration-warning" id="configuration-warning" role="note">
+        Saving reboots the Pico and briefly disconnects USB. Close all CDC ports and stop UART traffic first.
+      </p>
       <p class="configuration-message" id="configuration-message" role="status" aria-live="polite"></p>
     </section>
 

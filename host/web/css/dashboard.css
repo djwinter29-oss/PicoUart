@@ -164,6 +164,9 @@ tbody tr:hover { background: #f0f7f5; }
 .configuration-summary .summary-item { min-height: 62px; padding-block: 10px; }
 .configuration-summary label { color: var(--muted); font-size: 12px; }
 #configuration-profile {
+  width: 20%;
+  min-width: 240px;
+  max-width: 100%;
   min-height: 38px;
   min-width: 0;
   padding: 0 10px;
@@ -180,7 +183,8 @@ tbody tr:hover { background: #f0f7f5; }
 .configuration-acknowledgement { display: flex; align-items: center; gap: 8px; }
 .configuration-acknowledgement[hidden] { display: none; }
 .configuration-acknowledgement input { width: 16px; height: 16px; accent-color: var(--teal); }
-.configuration-message { margin: -12px 0 20px; font-size: 12px; }
+.configuration-warning { margin: -12px 0 8px; color: var(--amber); font-size: 12px; }
+.configuration-message { margin: 0 0 20px; font-size: 12px; }
 .configuration-message { min-height: 1.5em; color: var(--teal-dark); font-weight: 600; overflow-wrap: anywhere; }
 .configuration-message:empty { display: none; }
 .configuration-message[data-error="true"] { color: var(--coral); }
@@ -199,6 +203,7 @@ tbody tr:hover { background: #f0f7f5; }
   .section-heading { align-items: start; flex-direction: column; gap: 8px; }
   .actions { width: 100%; }
   .button { flex: 1; padding-inline: 9px; }
+  #configuration-profile { width: 100%; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

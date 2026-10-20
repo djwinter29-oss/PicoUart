@@ -58,7 +58,7 @@ and polls for completion with a bounded timeout, rejecting an already pending sa
 Profile 0 keeps the SDK default (no clock change); profiles 1 and 2
 require explicit unsafe overclock acknowledgement and the matching RP2040 or RP2350 family. All saves require a known
 MCU family. Stop UART traffic and close CDC ports before saving.
-Saving does not reboot: apply the saved setting by manually rebooting the board.
+After firmware verifies a save, it automatically reboots the board; USB disconnects briefly while it restarts.
 
 The dashboard's board-scoped `POST /api/configuration?board=...` accepts exactly
 `{"profile":0,"unsafe_overclock":false}` with the session's `X-CSRF-Token`, and returns `{"ok":true}` only after the

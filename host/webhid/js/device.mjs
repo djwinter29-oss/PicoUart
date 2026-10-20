@@ -442,8 +442,8 @@ export class PicoUartWebHid {
       }
       if (result.profile !== profile) throw new Error("Firmware saved a different configuration profile.");
       this.update({ phase: "connected", message: "Configuration saved",
-        configurationSaveMessage: "Saved. Reboot board to apply." });
-      await this.refresh();
+        configurationSaveMessage: "Saved. Pico is rebooting; USB will reconnect shortly.",
+        dashboard: { ...this.state.dashboard, configuration_save: result } });
     } catch (error) {
       if (generation !== this.generation || device !== this.device) return;
       this.update({ phase: "connected", message: "Configuration save failed", error: null,

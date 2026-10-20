@@ -165,7 +165,7 @@ class PicoUartHid:
                 self._require_open(), REPORT_ID_CONFIGURATION_SAVE, CONFIGURATION_SAVE_SIZE))
 
     def save_configuration(self, profile: int, unsafe_overclock: bool = False) -> dict[str, object]:
-        """Persist a supported clock profile; the running clock is unchanged until reboot."""
+        """Persist a supported clock profile; firmware reboots after confirming the save."""
         if type(profile) is not int or profile not in (0, 1, 2) or type(unsafe_overclock) is not bool:
             raise ValueError("invalid clock profile or overclock acknowledgement")
         if profile != 0 and not unsafe_overclock:

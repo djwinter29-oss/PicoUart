@@ -35,6 +35,7 @@ static board_config_status_t configuration;
 static bool cdc_open;
 static bool save_success;
 static unsigned int save_calls;
+static unsigned int reset_calls;
 static uint32_t saved_profile;
 
 bool system_save_clock_profile(uint32_t profile)
@@ -42,6 +43,11 @@ bool system_save_clock_profile(uint32_t profile)
     ++save_calls;
     saved_profile = profile;
     return save_success;
+}
+
+void system_reset(void)
+{
+    ++reset_calls;
 }
 
 void led_toggle(void)
@@ -87,6 +93,7 @@ void setUp(void)
     cdc_open = false;
     save_success = true;
     save_calls = 0u;
+    reset_calls = 0u;
     configuration = (board_config_status_t){
         .source = BOARD_CONFIG_DEFAULTS, .reason = BOARD_CONFIG_ERASED,
         .stored_profile = BOARD_CONFIG_PROFILE_UNAVAILABLE, .active_profile = BOARD_CLOCK_DEFAULT,
@@ -261,6 +268,13 @@ static void test_configuration_save_validation_and_deferred_result(void)
     TEST_ASSERT_EQUAL_UINT8(2, result[1]);
     TEST_ASSERT_EQUAL_UINT8(request[4], result[4]);
     TEST_ASSERT_EQUAL(BOARD_CLOCK_DEFAULT, configuration.active_profile);
+    TEST_ASSERT_EQUAL_UINT(0u, reset_calls);
+    pico_test_time_us = 999999;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT(0u, reset_calls);
+    pico_test_time_us = 1000000;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT(1u, reset_calls);
 }
 
 static void test_configuration_save_busy_failure_and_default(void)

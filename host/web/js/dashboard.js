@@ -66,8 +66,8 @@ function uptimeLabel(milliseconds) {
 
 function renderConfiguration(data) {
   const mcuId = data.hardware?.mcu_id;
-  const profiles = mcuId === 1 ? [[0, "SDK default (no clock reconfiguration)"], [1, "250 MHz (RP2040)"]]
-    : mcuId === 2 ? [[0, "SDK default (no clock reconfiguration)"], [2, "280 MHz (RP2350)"]] : [];
+  const profiles = mcuId === 1 ? [[0, "Default (125 MHz)"], [1, "250 MHz (RP2040)"]]
+    : mcuId === 2 ? [[0, "Default (150 MHz)"], [2, "280 MHz (RP2350)"]] : [];
   if (configurationDraft === null && profiles.length) {
     const saved = data.configuration_save?.status === 2 ? data.configuration_save.profile : null;
     const stored = data.configuration?.stored_profile;
@@ -438,7 +438,7 @@ async function saveConfiguration() {
     if (!response.ok || result.ok !== true) {
       throw new Error(result.error || `Configuration save failed (${response.status})`);
     }
-    configurationMessageValue = "Saved. Reboot board to apply.";
+    configurationMessageValue = "Saved. Pico is rebooting; USB will reconnect shortly.";
     configurationMessageIsError = false;
   } catch (error) {
     configurationMessageValue = error.message;
