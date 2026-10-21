@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios/fcntl")
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Serial tools require Linux termios2")
 
 
 def load_pair(repo_root, monkeypatch):

@@ -16,6 +16,8 @@
 #include "uart/port_api.h"
 #include "hardware/sync.h"
 #include "pico/multicore.h"
+#include "pico/flash.h"
+#include "pico/stdlib.h"
 #include "pico/time.h"
 #include "uart/pio/pio_uart_driver_internal.h"
 #include "uart/runtime.h"
@@ -87,6 +89,7 @@ static const uart_worker_hooks_t uart_driver_worker_hooks = {
 
 static void uart_driver_worker_initialize(void)
 {
+    hard_assert(flash_safe_execute_core_init());
     uart_backend_enable_rx_dma_irq();
 }
 
@@ -134,6 +137,9 @@ static void uart_driver_load_board_config(void)
         uart_runtime_port_t *port = &uart_driver_state.ports[index];
 
         port->info = board_port->info;
+        port->info.data_bits = 8u;
+        port->info.stop_bits = 1u;
+        port->info.parity = UART_DRIVER_PARITY_NONE;
         port->ops = uart_backend_ops_for_type(board_port->info.backend);
         if (board_port->info.backend == UART_DRIVER_BACKEND_HW) {
             port->backend.hw.config = board_port->backend.hw;

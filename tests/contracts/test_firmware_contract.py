@@ -33,6 +33,17 @@ def test_release_lock_matches_direct_requirement_pins(repo_root):
     assert direct_pins.items() <= locked_pins.items()
 
 
+def test_runtime_lock_matches_runtime_pins_without_test_dependencies(repo_root):
+    requirement_dir = repo_root / "host/python"
+    pin_pattern = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;\\]+)", re.MULTILINE)
+    runtime_pins = dict(pin_pattern.findall((requirement_dir / "requirements.txt").read_text()))
+    locked_pins = dict(pin_pattern.findall((requirement_dir / "requirements-runtime-lock.txt").read_text()))
+    development_pins = dict(pin_pattern.findall((requirement_dir / "requirements-lock.txt").read_text()))
+    assert runtime_pins.items() <= locked_pins.items()
+    assert locked_pins.items() <= development_pins.items()
+    assert not {"pytest", "pytest-cov", "coverage", "pluggy", "iniconfig"}.intersection(locked_pins)
+
+
 def test_usb_ids_parse_from_firmware_defines(repo_root):
     vid, pid = firmware_usb_ids(repo_root)
     assert vid == hid.VENDOR_ID
@@ -77,18 +88,38 @@ def test_hid_descriptor_command_report_count_matches_host_payload(repo_root):
     assert firmware_hid_report_count(repo_root, hid.REPORT_ID_COMMAND) == 1
 
 
+def test_hid_led_report_contract(repo_root):
+    assert firmware_hid_constants(repo_root)["USB_HID_REPORT_ID_LED"] == protocol.REPORT_ID_LED
+    assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_LED) == protocol.LED_SIZE
+
+
+def test_persistent_configuration_report_contracts(repo_root):
+    constants = firmware_hid_constants(repo_root)
+    assert constants["USB_HID_REPORT_ID_CONFIGURATION"] == protocol.REPORT_ID_CONFIGURATION == 16
+    assert constants["USB_HID_REPORT_ID_CONFIGURATION_SAVE"] == protocol.REPORT_ID_CONFIGURATION_SAVE == 17
+    assert firmware_hid_report_count(repo_root, 16) == protocol.CONFIGURATION_SIZE == 12
+    assert firmware_hid_report_count(repo_root, 17) == protocol.CONFIGURATION_SAVE_SIZE == 8
+
+
+def test_channel_diagnostic_reports_match_current_layout(repo_root):
+    assert firmware_hid_constants(repo_root)["USB_HID_REPORT_ID_CHANNEL_BASE"] == protocol.REPORT_ID_CHANNEL_BASE
+    assert protocol.CHANNEL_DIAGNOSTICS_SIZE == 59
+    for report_id in range(protocol.REPORT_ID_CHANNEL_BASE, protocol.REPORT_ID_CHANNEL_BASE + 6):
+        assert firmware_hid_report_count(repo_root, report_id) == protocol.CHANNEL_DIAGNOSTICS_SIZE
+
+
 def test_hid_descriptor_overflow_report_count_matches_host_payload(repo_root):
     assert firmware_hid_report_count(repo_root, hid.REPORT_ID_OVERFLOW_COUNTS) == hid.OVERFLOW_COUNTS_SIZE
 
 
-def test_hardware_info_contract_preserves_existing_report_layouts(repo_root):
+def test_hardware_info_contract_matches_current_layout(repo_root):
     fw = firmware_hid_constants(repo_root)
     assert fw["USB_HID_REPORT_ID_HARDWARE_INFO"] == protocol.REPORT_ID_HARDWARE_INFO == 6
     assert fw["USB_HID_HARDWARE_INFO_VERSION"] == protocol.HARDWARE_INFO_LAYOUT_VERSION == 1
     assert fw["USB_HID_MCU_RP2040"] == protocol.MCU_RP2040
     assert fw["USB_HID_MCU_RP2350"] == protocol.MCU_RP2350
     assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_HARDWARE_INFO) == protocol.HARDWARE_INFO_SIZE == 6
-    assert fw["USB_HID_REPORT_VERSION"] == 15
+    assert fw["USB_HID_REPORT_VERSION"] == 1
 
 
 def test_lab_placeholder_helper_is_independent_of_tree_identity():
@@ -109,9 +140,9 @@ def test_usb_identity_checker_accepts_tree_identity(repo_root):
     assert result.returncode == 0
 
 
-def test_usb_product_string_advertises_pio_8n1(repo_root):
+def test_usb_product_string_uses_short_product_name(repo_root):
     product = firmware_usb_product_string(repo_root)
-    assert product == hid.PRODUCT_STRING
+    assert product == hid.PRODUCT_STRING == "PicoUart"
     assert len(product) <= 32
 
 

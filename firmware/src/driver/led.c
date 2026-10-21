@@ -38,6 +38,18 @@ void led_toggle(void)
     led_apply();
 }
 
+/** @copydoc led_read_state */
+bool led_read_state(bool *manual_on, bool *output_on)
+{
+    *manual_on = led_state.manual_led_state;
+    *output_on = led_policy_output(&led_state);
+#ifdef PICO_DEFAULT_LED_PIN
+    return true;
+#else
+    return false;
+#endif
+}
+
 /** @copydoc led_set_usb_activity */
 void led_set_usb_activity(bool active)
 {

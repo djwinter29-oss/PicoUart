@@ -6,6 +6,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 import secrets
+import hashlib
+import os
 import threading
 import time
 from typing import Any, Callable
@@ -14,6 +16,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory,
 
 from ..client import PicoUartHid
 from ..protocol import UART_CHANNEL_COUNT, decode_health
+from ..transport import enumerate_devices
 
 
 TRAFFIC_FIELDS = {
@@ -32,9 +35,22 @@ def _empty_snapshot() -> dict[str, Any]:
         "metadata_error": None,
         "hardware_error": None,
         "hardware": None,
+        "configuration": None,
+        "configuration_error": None,
+        "configuration_save": None,
+        "configuration_save_error": None,
+        "identity": None,
+        "identity_error": None,
+        "runtime": None,
+        "runtime_error": None,
+        "led": None,
+        "led_error": None,
         "updated_at": None,
         "sequence": None,
         "traffic_incomplete": False,
+        "traffic_gaps": 0,
+        "channel_diagnostics": None,
+        "diagnostics_error": None,
         "board": None,
         "overflow_counts": [None] * UART_CHANNEL_COUNT,
         "channels": [
@@ -43,7 +59,6 @@ def _empty_snapshot() -> dict[str, Any]:
                 "health": None,
                 "health_labels": [],
                 "state": "unknown",
-                "backend": "unknown",
                 "cdc_open": False,
                 "ring_high_watermark": 0,
                 "traffic": {field: 0 for field in TRAFFIC_FIELDS},
@@ -77,10 +92,20 @@ class DashboardService:
             return deepcopy(self._snapshot)
 
     def toggle_led(self) -> None:
-        self._require_client().toggle_led()
+        with self._lock:
+            client = self._require_client()
+            client.toggle_led()
+            self._read_led(client)
 
     def reset_board(self) -> None:
-        self._require_client().reset_board()
+        with self._lock:
+            self._require_client().reset_board()
+
+    def save_configuration(self, profile: int, unsafe_overclock: bool) -> None:
+        with self._lock:
+            result = self._require_client().save_configuration(profile, unsafe_overclock)
+            self._snapshot["configuration_save"] = result
+            self._snapshot["configuration_save_error"] = None
 
     def close(self) -> None:
         self._stop.set()
@@ -112,11 +137,21 @@ class DashboardService:
                     now = time.monotonic()
                     if now >= next_metadata_read:
                         self._read_metadata(client)
-                        next_metadata_read = now + 2.0
+                        next_metadata_read = now + 1.0
             except (OSError, RuntimeError) as error:
                 with self._lock:
                     self._snapshot["connected"] = False
                     self._snapshot["error"] = str(error)
+                    self._snapshot["identity"] = None
+                    self._snapshot["runtime"] = None
+                    self._snapshot["led"] = None
+                    self._snapshot["board"] = None
+                    self._snapshot["hardware"] = None
+                    self._snapshot["configuration"] = None
+                    self._snapshot["configuration_error"] = None
+                    self._snapshot["configuration_save"] = None
+                    self._snapshot["configuration_save_error"] = None
+                    self._snapshot["channel_diagnostics"] = None
             finally:
                 with self._lock:
                     if self._client is client:
@@ -134,10 +169,11 @@ class DashboardService:
             self._snapshot["error"] = None
             self._snapshot["sequence"] = status["sequence"]
             previous_sequence = self._last_sequence
-            if previous_sequence is not None and status["sequence"] != (previous_sequence + 1) % 256:
+            incomplete = previous_sequence is not None and status["sequence"] != (previous_sequence + 1) % 256
+            if incomplete:
                 self._snapshot["traffic_incomplete"] = True
             self._last_sequence = status["sequence"]
-            self._snapshot["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._snapshot["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
             for source in status["channels"]:
                 channel = self._snapshot["channels"][source["id"]]
                 labels = decode_health(source["health"])
@@ -150,17 +186,72 @@ class DashboardService:
                     if "ready" in labels
                     else "initializing"
                 )
-                channel["backend"] = "PIO" if "pio" in labels else "Hardware"
                 channel["cdc_open"] = "cdc_open" in labels
                 channel["ring_high_watermark"] = source["ring_high_watermark"]
                 for field, source_field in TRAFFIC_FIELDS.items():
                     delta = source[source_field]
                     if delta == 65535:
                         self._snapshot["traffic_incomplete"] = True
+                        incomplete = True
                     channel["traffic"][field] = delta
                     channel["totals"][field] += delta
+            if incomplete:
+                self._snapshot["traffic_gaps"] += 1
+
+    def _read_led(self, client: PicoUartHid) -> None:
+        try:
+            led = client.read_led()
+        except (OSError, RuntimeError) as error:
+            with self._lock:
+                self._snapshot["led"] = None
+                self._snapshot["led_error"] = str(error)
+        else:
+            with self._lock:
+                self._snapshot["led"] = led
+                self._snapshot["led_error"] = None
 
     def _read_metadata(self, client: PicoUartHid) -> None:
+        self._read_led(client)
+        with self._lock:
+            try:
+                configuration_save = client.read_configuration_save()
+            except (OSError, RuntimeError) as error:
+                self._snapshot["configuration_save"] = None
+                self._snapshot["configuration_save_error"] = str(error)
+            else:
+                self._snapshot["configuration_save"] = configuration_save
+                self._snapshot["configuration_save_error"] = None
+        try:
+            diagnostics = client.read_channel_diagnostics()
+        except (OSError, RuntimeError) as error:
+            with self._lock:
+                self._snapshot["channel_diagnostics"] = None
+                self._snapshot["diagnostics_error"] = str(error)
+        else:
+            with self._lock:
+                self._snapshot["channel_diagnostics"] = diagnostics
+                self._snapshot["diagnostics_error"] = None
+        for field, reader in (("identity", client.read_identity), ("runtime", client.read_runtime)):
+            try:
+                value = reader()
+            except (OSError, RuntimeError) as error:
+                with self._lock:
+                    self._snapshot[field] = None
+                    self._snapshot[f"{field}_error"] = str(error)
+            else:
+                with self._lock:
+                    self._snapshot[field] = value
+                    self._snapshot[f"{field}_error"] = None
+        try:
+            configuration = client.read_configuration()
+        except (OSError, RuntimeError) as error:
+            with self._lock:
+                self._snapshot["configuration"] = None
+                self._snapshot["configuration_error"] = str(error)
+        else:
+            with self._lock:
+                self._snapshot["configuration"] = configuration
+                self._snapshot["configuration_error"] = None
         try:
             board = client.read_board_status()
             overflows = client.read_overflow_counts()
@@ -188,7 +279,87 @@ class DashboardService:
             self._snapshot["hardware_error"] = None
 
 
-def create_app(service: DashboardService | None = None) -> Flask:
+class DashboardBoards:
+    """Share one reader per board across all requests; selection belongs to the page, not the server."""
+
+    def __init__(
+        self,
+        serial_number: str | None = None,
+        device_path: str | None = None,
+        discover: Callable[[], list[dict[str, Any]]] = enumerate_devices,
+        monitor_factory: Callable[..., DashboardService] = DashboardService,
+    ) -> None:
+        self._serial = serial_number
+        self._path = device_path
+        self._discover = discover
+        self._monitor_factory = monitor_factory
+        self._lock = threading.RLock()
+        self._known: dict[str, dict[str, Any]] = {}
+        self._monitors: dict[str, DashboardService] = {}
+        self._closed = False
+
+    def boards(self) -> dict[str, Any]:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("dashboard is shutting down")
+            devices = self._discover()
+            boards = []
+            seen = set()
+            for device in devices:
+                serial = device.get("serial_number") or None
+                path = os.fsdecode(device["path"])
+                identifier = hashlib.sha256((f"serial:{serial}" if serial else f"path:{path}").encode()).hexdigest()
+                if identifier in seen:
+                    raise RuntimeError("duplicate PicoUart board identity; board serials must be unique")
+                seen.add(identifier)
+                board = {"id": identifier, "product_name": device.get("product_string") or "PicoUart",
+                         "serial_number": serial, "device_path": path}
+                boards.append(board)
+            self._known.update((board["id"], board) for board in boards)
+            preferred = next((board["id"] for board in boards
+                              if (self._serial and board["serial_number"] == self._serial)
+                              or (self._path and board["device_path"] == self._path)), None)
+            return {"boards": boards, "default_board_id": preferred or (
+                None if self._serial or self._path else boards[0]["id"] if boards else None)}
+
+    def _monitor(self, board_id: str | None) -> DashboardService:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("dashboard is shutting down")
+            if not board_id or board_id not in self._known:
+                raise RuntimeError("unknown board; rescan and select a listed board")
+            if board_id not in self._monitors:
+                board = self._known[board_id]
+                self._monitors[board_id] = self._monitor_factory(
+                    serial_number=board["serial_number"],
+                    device_path=None if board["serial_number"] else board["device_path"])
+            return self._monitors[board_id]
+
+    def snapshot(self, board_id: str | None = None) -> dict[str, Any]:
+        if board_id is None:
+            return _empty_snapshot()
+        return self._monitor(board_id).snapshot()
+
+    def toggle_led(self, board_id: str | None) -> None:
+        self._monitor(board_id).toggle_led()
+
+    def reset_board(self, board_id: str | None) -> None:
+        self._monitor(board_id).reset_board()
+
+    def save_configuration(self, board_id: str | None, profile: int, unsafe_overclock: bool) -> None:
+        self._monitor(board_id).save_configuration(profile, unsafe_overclock)
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            monitors = list(self._monitors.values())
+        for monitor in monitors:
+            monitor.close()
+
+
+def create_app(service: DashboardBoards | None = None) -> Flask:
     """Create the web app; an injected service keeps route tests hardware-free."""
     web_root = Path(__file__).parent / "assets"
     if not web_root.is_dir():
@@ -200,7 +371,7 @@ def create_app(service: DashboardService | None = None) -> Flask:
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
     )
-    dashboard = service if service is not None else DashboardService()
+    dashboard = service if service is not None else DashboardBoards()
 
     @app.after_request
     def set_security_headers(response):
@@ -216,7 +387,7 @@ def create_app(service: DashboardService | None = None) -> Flask:
     @app.get("/")
     def index():
         token = session.setdefault("csrf_token", secrets.token_urlsafe(32))
-        return render_template("index.html", csrf_token=token)
+        return render_template("index.html", csrf_token=token, dashboard_type="Python")
 
     @app.get("/favicon.svg")
     def favicon():
@@ -228,7 +399,40 @@ def create_app(service: DashboardService | None = None) -> Flask:
 
     @app.get("/api/status")
     def status():
-        return jsonify(dashboard.snapshot())
+        try:
+            return jsonify(dashboard.snapshot(request.args.get("board")))
+        except RuntimeError:
+            return jsonify(error="request could not be completed"), 409
+
+    @app.get("/api/boards")
+    def boards():
+        try:
+            return jsonify(dashboard.boards())
+        except RuntimeError:
+            return jsonify(error="request could not be completed"), 409
+        except OSError:
+            return jsonify(error="service temporarily unavailable"), 503
+
+    @app.post("/api/configuration")
+    def save_configuration():
+        token = session.get("csrf_token", "")
+        supplied_token = request.headers.get("X-CSRF-Token", "")
+        if not token or not secrets.compare_digest(token, supplied_token):
+            return jsonify(error="request token missing or invalid"), 403
+        body = request.get_json()
+        if (not isinstance(body, dict) or set(body) != {"profile", "unsafe_overclock"}
+                or type(body["profile"]) is not int or body["profile"] not in (0, 1, 2)
+                or type(body["unsafe_overclock"]) is not bool):
+            return jsonify(error="expected a clock profile and boolean unsafe_overclock acknowledgement"), 400
+        try:
+            dashboard.save_configuration(request.args.get("board"), body["profile"], body["unsafe_overclock"])
+        except ValueError:
+            return jsonify(error="invalid request"), 400
+        except RuntimeError:
+            return jsonify(error="request could not be completed"), 409
+        except OSError:
+            return jsonify(error="service temporarily unavailable"), 503
+        return jsonify(ok=True)
 
     @app.post("/api/actions/<action>")
     def action(action: str):
@@ -238,15 +442,15 @@ def create_app(service: DashboardService | None = None) -> Flask:
             return jsonify(error="request token missing or invalid"), 403
         try:
             if action == "toggle-led":
-                dashboard.toggle_led()
+                dashboard.toggle_led(request.args.get("board"))
             elif action == "reset":
-                dashboard.reset_board()
+                dashboard.reset_board(request.args.get("board"))
             else:
                 return jsonify(error="unknown action"), 404
-        except RuntimeError as error:
-            return jsonify(error=str(error)), 409
-        except OSError as error:
-            return jsonify(error=str(error)), 503
+        except RuntimeError:
+            return jsonify(error="request could not be completed"), 409
+        except OSError:
+            return jsonify(error="service temporarily unavailable"), 503
         return jsonify(ok=True)
 
     return app
@@ -258,7 +462,7 @@ def run_server(
     device_path: str | None = None,
 ) -> None:
     """Run the dashboard on loopback only; never expose board controls to a LAN."""
-    dashboard = DashboardService(serial_number, device_path)
+    dashboard = DashboardBoards(serial_number, device_path)
     try:
         create_app(dashboard).run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
     finally:

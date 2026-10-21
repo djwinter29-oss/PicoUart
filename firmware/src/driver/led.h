@@ -20,6 +20,14 @@ void led_init(void);
 void led_toggle(void);
 
 /**
+ * @brief Snapshot the default LED's physical output and manual override.
+ * @param manual_on Receives the host-toggled state.
+ * @param output_on Receives the merged manual/USB-activity output.
+ * @return True if the selected board has a default LED.
+ */
+bool led_read_state(bool *manual_on, bool *output_on);
+
+/**
  * @brief Set the transient USB-activity LED state, independent of the manual state.
  *
  * The physical LED output is the OR of the manual state and this activity state; see @ref led_policy_output.

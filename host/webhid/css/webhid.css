@@ -1,19 +1,42 @@
-.actions .button { width: 110px; }
-.device-details { margin: 0; border-top: 1px solid var(--line); }
-.device-details > div {
-  display: grid;
-  grid-template-columns: 130px minmax(0, 1fr);
-  gap: 16px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line);
-}
-.device-details dt { color: var(--muted); }
-.device-details dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.actions #connect { min-width: 110px; }
 .status-line { align-items: baseline; }
 .status-line .status-mark { flex-shrink: 0; }
 #status-message { overflow-wrap: anywhere; }
-
+.summary.configuration-summary { grid-template-columns: minmax(0, 1fr); }
+.configuration-summary .summary-item { min-height: 62px; padding-block: 10px; }
+.configuration-summary label { color: var(--muted); font-size: 12px; }
+#configuration-profile {
+  width: 20%;
+  min-width: 240px;
+  max-width: 100%;
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid #cbd6d3;
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 12px var(--mono);
+}
+#configuration-profile:focus-visible, #configuration-unsafe-ack:focus-visible {
+  outline: 3px solid var(--lime);
+  outline-offset: 2px;
+}
+.configuration-acknowledgement { display: flex; align-items: center; gap: 8px; }
+.configuration-acknowledgement[hidden] { display: none; }
+.configuration-acknowledgement input { width: 16px; height: 16px; accent-color: var(--teal); }
+.configuration-warning { margin: -12px 0 8px; color: var(--amber); font-size: 12px; }
+.configuration-message {
+  margin: 0 0 20px;
+  font-size: 12px;
+  min-height: 1.5em;
+  color: var(--teal-dark);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.configuration-message:empty { display: none; }
+.configuration-message[data-error="true"] { color: var(--coral); }
 @media (max-width: 720px) {
-  .actions .button { width: auto; min-width: 0; }
-  .device-details > div { grid-template-columns: 100px minmax(0, 1fr); gap: 12px; }
+  #configuration-profile { width: 100%; }
+  .actions #connect { min-width: 0; }
 }

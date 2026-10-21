@@ -17,15 +17,15 @@ def parse_c_u_define(text: str, name: str) -> int:
 
 
 def firmware_usb_product_string(repo_root: Path) -> str:
-    """Parse the USB product string from usb_descriptors.c."""
-    text = (repo_root / "firmware" / "src" / "usb" / "usb_descriptors.c").read_text(encoding="utf-8")
+    """Parse the shared USB/HID product string from usb_identity.h."""
+    text = (repo_root / "firmware" / "src" / "config" / "usb_identity.h").read_text(encoding="utf-8")
     match = re.search(
-        r'^\s*#define\s+USB_STR_PRODUCT\s+"([^"]+)"\s*$',
+        r'^\s*#define\s+PICO_UART_USB_PRODUCT\s+"([^"]+)"\s*$',
         text,
         flags=re.MULTILINE,
     )
     if not match:
-        raise ValueError("USB_STR_PRODUCT not found")
+        raise ValueError("PICO_UART_USB_PRODUCT not found")
     return match.group(1)
 
 
@@ -66,6 +66,14 @@ def firmware_hid_constants(repo_root: Path) -> dict[str, int]:
         "USB_HID_HARDWARE_INFO_VERSION",
         "USB_HID_MCU_RP2040",
         "USB_HID_MCU_RP2350",
+        "USB_HID_REPORT_ID_IDENTITY",
+        "USB_HID_IDENTITY_VERSION",
+        "USB_HID_REPORT_ID_RUNTIME",
+        "USB_HID_RUNTIME_VERSION",
+        "USB_HID_REPORT_ID_LED",
+        "USB_HID_REPORT_ID_CONFIGURATION",
+        "USB_HID_REPORT_ID_CONFIGURATION_SAVE",
+        "USB_HID_REPORT_ID_CHANNEL_BASE",
         "USB_HID_COMMAND_TOGGLE_LED",
         "USB_HID_COMMAND_RESET_BOARD",
         "USB_HID_COMMAND_ARM_RESET",

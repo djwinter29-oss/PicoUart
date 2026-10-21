@@ -11,35 +11,32 @@ On Ubuntu/Linux, install CMake, Ninja, an ARM GCC toolchain, and use the project
 
 ```sh
 . tools/firmware/setup-sdk-env.sh
-tools/firmware/build.sh --board pico
+tools/firmware/build.sh
 tools/firmware/build.sh --board pico2
 ```
+
+With no arguments or `PICO_BOARD` override, the build defaults to `pico` (RP2040), writing to `build/firmware-pico`.
+Use `--board pico2` for RP2350; an explicit `--board` takes precedence over `PICO_BOARD`.
 
 Optional: stamp a release version into the firmware with `--firmware-version` (for example `1.2.3` from tag `v1.2.3`).
 Release version policy is documented in [Releasing](../docs/releasing.md).
 
 All generated output is stored under the repository-root `build/` directory. Use a separate build directory per board.
-The Linux build/load tools accept `--board` values supported by the installed Pico SDK. They also accept
-`--system-clock-khz` to override the system clock for a build. For example:
+The Linux build/load tools accept `--board` values supported by the installed Pico SDK.
 
 The scripts honor an exported `PICO_SDK_PATH`; otherwise they use the pinned repository-local `.pico-sdk` checkout.
 `load.sh` uses the same SDK selection as `build.sh` when it rebuilds an image.
 
-```sh
-tools/firmware/build.sh --board pico --system-clock-khz 250000 --unsafe-overclock
-tools/firmware/build.sh --board pico2 --system-clock-khz 280000 --unsafe-overclock
-```
+Clock profile selection moved to persistent board configuration in the final flash sector. Build-time clock overrides
+are intentionally rejected so the same firmware image can boot with SDK defaults or a stored overclock profile.
+After flashing, use the dashboards' [Persistent configuration](../docs/development/host-tools.md#persistent-configuration)
+section to select and save a profile over HID, then reboot manually. SDK default does not reconfigure the clock.
+The [SWD configuration tool](../tools/firmware/config.py) remains available to read, set, or erase the profile,
+including recovery when USB is unavailable.
+Any invalid configuration record reverts to SDK/board defaults.
 
-Those examples are intentionally unsafe overrides. Normal builds use each board's rated target. Pass
-`--unsafe-overclock` with an override only for board-specific, recorded HIL qualification; CMake otherwise rejects a
-non-rated clock. Current workflow artifacts and release gates are documented in [Releasing](../docs/releasing.md).
-
-Clock limits and rated defaults are defined in [firmware/CMakeLists.txt](CMakeLists.txt). Overclocking is not a
-stability or operating-margin guarantee; qualify the exact board, artifact, workload, and temperature range before use.
-
-Firmware startup requests the configured clock but does not write or restore a core voltage; the regulator setting on
-entry is preserved. The compile/link voltage-policy test checks this behavior against the real SDK startup object and
-ELF:
+Firmware writes no core-voltage registers for default or non-default profiles; the regulator setting on entry is
+preserved. The compile/link voltage-policy test checks this behavior against the real SDK startup object and ELF:
 
 Each firmware matrix leg in PR check CI runs this check automatically, right after `verify-build.py`, against its own
 build directory. After building locally, run the same check yourself to inspect the real SDK startup object, resolved
@@ -54,23 +51,27 @@ PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/pico:$PWD/build/pico2" \
 Use your completed build directories. The check detects SDK automatic voltage adjustment and regulator writes in the
 startup object/ELF; it does not measure physical voltage, thermal margin, or hardware stability.
 
-Changing board, SDK path, generator, firmware version, system clock, HID-reset option, or unsafe-overclock option causes
-the build wrapper to reset stale CMake cache state before reconfiguring.
+Changing board, SDK path, generator, firmware version, or HID-reset option causes the build wrapper to reset stale
+CMake cache state before reconfiguring. Dependency build caches and external-tool stamps are reset together; the
+wrapper also detects a leftover picotool configure stamp whose dependency cache is missing.
 
 ## Load
 
 The Linux load tool programs the ELF remotely through a Raspberry Pi Debug Probe using CMSIS-DAP OpenOCD. Connect the
 probe's SWDIO, SWCLK, and GND signals to PicoUart before loading; UART TX/RX wiring is separate from SWD.
+Like the build wrapper, it defaults to `pico` (RP2040) and `build/firmware-pico` when no board override is supplied.
 
 ```sh
 tools/firmware/load.sh --board pico
 tools/firmware/load.sh --board pico2
 ```
 
-For an explicitly qualified non-rated clock image, pass the unsafe override to both the build and load wrappers:
+To provision or recover a clock profile through SWD, use an explicit probe serial:
 
 ```sh
-tools/firmware/load.sh --board pico --system-clock-khz 250000 --unsafe-overclock
+tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> read
+tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> set-clock 250mhz --unsafe-overclock
+tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> erase
 ```
 
 OpenOCD probe recovery and flash-device compatibility require the physical Debug Probe and target board; automated CI

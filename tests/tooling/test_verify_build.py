@@ -19,13 +19,15 @@ def _load_verifier():
     return module
 
 
-def test_hid_descriptor_parser_recognizes_hardware_info_and_unchanged_legacy_reports():
+def test_hid_descriptor_parser_recognizes_all_current_reports():
     verifier = _load_verifier()
     source = (VERIFY_BUILD.parents[2] / "firmware/src/usb/usb_descriptors.c").read_text()
     body = re.search(r"hid_report_descriptor\[\]\s*=\s*\{(.*?)\};", source, re.DOTALL).group(1)
     descriptor = bytes(int(value, 16) for value in re.findall(r"0x([0-9A-Fa-f]+)", body))
     assert verifier._hid_reports(descriptor, len(descriptor)) == [{
         1: (63, 8, 8), 3: (8, 8, 11), 4: (1, 8, 11), 5: (25, 8, 11), 6: (6, 8, 11),
+        7: (49, 8, 11), 8: (21, 8, 11), 9: (2, 8, 11), 16: (12, 8, 11), 17: (8, 8, 11),
+        **{report_id: (59, 8, 11) for report_id in range(10, 16)},
     }]
 
 

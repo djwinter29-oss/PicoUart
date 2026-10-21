@@ -89,7 +89,8 @@ def session(port):
 def test_published_dotnet_serves_the_canonical_frontend(server):
     token, _, headers, page = session(server)
     template = (ROOT / "host/web/index.html").read_bytes()
-    assert page == template.replace(b"{{ csrf_token }}", token.encode())
+    assert page == template.replace(b"{{ csrf_token }}", token.encode()).replace(b"{{ dashboard_type }}", b".NET")
+    assert b"<title>PicoUart Diagnostics | .NET</title>" in page
     assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page
     assert b'id="mcu"' in page
     assert b'id="system-clock"' in page
@@ -119,6 +120,30 @@ def test_dotnet_status_matches_python_dashboard_shape(server):
     for channel in snapshot["channels"]:
         assert channel.keys() == expected["channels"][0].keys()
         assert channel["totals"].keys() == expected["channels"][0]["totals"].keys()
+
+
+def test_dotnet_startup_prints_dashboard_url_without_framework_info_logs(server, published_host):
+    log = (published_host / "server.log").read_text()
+    assert f"PicoUart dashboard: http://127.0.0.1:{server}/ (Ctrl+C to stop)" in log
+    assert "info: Microsoft." not in log
+
+
+def test_dotnet_board_catalog_and_invalid_selection(server):
+    status, _, payload = request(server, "/api/boards")
+    assert status == 200
+    listing = json.loads(payload)
+    assert listing.keys() == {"boards", "default_board_id"}
+    for board in listing["boards"]:
+        assert board.keys() == {"id", "product_name", "serial_number", "device_path"}
+    assert listing["default_board_id"] is None or listing["default_board_id"] in {
+        board["id"] for board in listing["boards"]
+    }
+    token, cookie, _, _ = session(server)
+    headers = {"Cookie": cookie, "X-CSRF-Token": token}
+    assert request(server, "/api/status?board=unknown")[0] == 409
+    assert request(server, "/api/actions/toggle-led?board=unknown", "POST", headers)[0] == 409
+    assert request(server, "/api/actions/reset", "POST", headers)[0] == 409
+    assert request(server, "/api/status")[0] == 200
 
 
 def test_dotnet_controls_reject_bad_hosts_and_csrf(server):

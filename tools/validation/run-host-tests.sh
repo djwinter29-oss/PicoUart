@@ -185,7 +185,7 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
 
     if ! "$PYTHON_EXE" -m pip --version >/dev/null 2>&1; then
         echo "Python pip is unavailable for '$PYTHON_EXE' and no usable repo virtualenv was found." >&2
-        echo "Install python3-venv or run tools/host/setup-venv.sh, then retry; use --skip-python for C tests only." >&2
+        echo "Create a venv as documented in docs/development/host-tools.md, then retry; use --skip-python for C tests only." >&2
         exit 1
     fi
 

@@ -4,50 +4,101 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <title>PicoUart Diagnostics</title>
+  <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css">
-  <script src="/js/dashboard.js" defer></script>
+  <link rel="stylesheet" href="/css/dashboard.css?v=6">
+  <script src="/js/dashboard.js?v=6" defer></script>
 </head>
 <body>
   <header class="topbar">
     <a class="wordmark" href="/" aria-label="PicoUart diagnostics home">
       <span class="mark">PU</span>
-      <span><small>HOST CONSOLE</small><strong>PicoUart</strong></span>
+      <span><small>{{ dashboard_type }}</small><strong>PicoUart</strong></span>
     </a>
     <div class="connection" id="connection" data-state="waiting">
       <span class="connection-light" aria-hidden="true"></span>
       <span id="connection-label">Connecting</span>
+      <span class="sample-time" id="sample-time" hidden></span>
     </div>
   </header>
 
   <main>
     <section class="page-heading">
       <div>
-        <p class="eyebrow">SIX-CHANNEL UART BRIDGE</p>
         <h1>Diagnostics</h1>
       </div>
-      <p class="sample-time" id="sample-time">Waiting for HID telemetry</p>
     </section>
 
-    <section class="summary" aria-label="Board summary">
-      <div class="summary-item"><span>MCU</span><strong id="mcu">--</strong></div>
-      <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
-      <div class="summary-item"><span>Firmware</span><strong id="firmware">--</strong></div>
-      <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
-      <div class="summary-item"><span>Total RX overflow</span><strong id="overflow-total">--</strong></div>
-      <div class="summary-item"><span>Report sequence</span><strong id="sequence">--</strong></div>
+    <section aria-labelledby="identity-title">
+      <div class="section-heading">
+        <h2 id="identity-title">Device identity</h2>
+        <div class="actions" aria-label="Board identification">
+          <button class="button button-led" id="rescan-boards" type="button">Rescan</button>
+          <select id="board-select" aria-label="Board attached to this server" disabled>
+            <option value="">Scanning boards...</option>
+          </select>
+          <button class="button button-led" id="toggle-led" type="button" data-state="unknown"
+            title="Toggle manual LED state; USB activity may also light the LED" disabled>Board LED: --</button>
+        </div>
+      </div>
+      <div class="summary identity-summary">
+        <div class="summary-item"><span>Product</span><strong id="product-name">--</strong></div>
+        <div class="summary-item"><span>Microcontroller</span><strong id="mcu">--</strong></div>
+        <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
+        <div class="summary-item"><span>Firmware version</span><strong id="firmware">--</strong></div>
+        <div class="summary-item"><span>Serial / UID</span><strong id="serial">--</strong></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="configuration-title">
+      <div class="section-heading">
+        <h2 id="configuration-title">Persistent configuration</h2>
+        <div class="actions" aria-label="Configuration controls">
+          <button class="button button-led" id="save-configuration" type="button" disabled>Save &amp; Reboot</button>
+        </div>
+      </div>
+      <div class="summary configuration-summary">
+        <div class="summary-item">
+          <label for="configuration-profile">System clock profile</label>
+          <select id="configuration-profile" disabled>
+            <option value="0">Default</option>
+          </select>
+          <label class="configuration-acknowledgement" id="configuration-acknowledgement" hidden>
+            <input id="configuration-unsafe-ack" type="checkbox" disabled>
+            <span>I understand this is an unsafe overclock.</span>
+          </label>
+        </div>
+      </div>
+      <p class="configuration-warning" id="configuration-warning" role="note">
+        Saving reboots the Pico and briefly disconnects USB. Close all CDC ports and stop UART traffic first.
+      </p>
+      <p class="configuration-message" id="configuration-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section aria-labelledby="runtime-title">
+      <div class="section-heading">
+        <h2 id="runtime-title">Runtime status</h2>
+        <div class="actions" aria-label="Board controls">
+          <button class="button button-danger" id="reset-board" type="button" hidden>Reset board</button>
+        </div>
+      </div>
+      <div class="summary runtime-summary">
+        <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>
+        <div class="summary-item" title="Wall time of passes handling work over a one-second window; excludes empty polling">
+          <span>CPU load (core 0 / core 1)</span><strong id="cpu-usage">--</strong>
+        </div>
+        <div class="summary-item" title="Linked static SRAM and reserved stacks; excludes live heap/stack occupancy">
+          <span>RAM (reserved / total)</span><strong id="ram-usage">--</strong>
+        </div>
+        <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
+        <div class="summary-item"><span>Total RX overflow</span><strong id="overflow-total">--</strong></div>
+      </div>
     </section>
 
     <section class="channels-section" aria-labelledby="channels-title">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">LIVE HEALTH AND TRAFFIC</p>
           <h2 id="channels-title">UART channels <span>01–06</span></h2>
-        </div>
-        <div class="actions" aria-label="Board controls">
-          <button class="button button-secondary" id="toggle-led" type="button">Toggle board LED</button>
-          <button class="button button-danger" id="reset-board" type="button" hidden>Reset board</button>
         </div>
       </div>
 
@@ -56,18 +107,17 @@
           <thead>
             <tr>
               <th scope="col">Port</th>
+              <th scope="col">Host session</th>
+              <th scope="col">UART configuration</th>
               <th scope="col">Health</th>
-              <th scope="col">Backend</th>
-              <th scope="col">CDC</th>
-              <th scope="col">Observed traffic (>=)</th>
-              <th scope="col">RX overflow</th>
-              <th scope="col">Ring peak</th>
+              <th scope="col">Throughput</th>
+              <th scope="col" class="overflow-heading">RX overflow</th>
             </tr>
           </thead>
           <tbody id="channel-rows"></tbody>
         </table>
       </div>
-      <p class="traffic-note" id="traffic-note">Observed lower bounds since monitoring began; missed reports and saturated deltas can reduce totals.</p>
+      <p class="traffic-note" id="traffic-note" hidden></p>
     </section>
 
     <footer class="status-line" role="status" aria-live="polite">

@@ -17,11 +17,11 @@ Thanks for considering a contribution to PicoUart. This is an embedded firmware 
 - Host tools (Python/.NET/WebHID): [docs/development/host-tools.md](docs/development/host-tools.md).
 - Repository test layout: [docs/development/firmware-testing.md](docs/development/firmware-testing.md).
 
-Run the relevant test suite(s) for the area you changed before opening a pull request:
+Follow the [host developer setup](docs/development/host-tools.md#python-environment-setup), then run the relevant test
+suite(s) for the area you changed before opening a pull request:
 
 ```sh
-tools/host/setup-venv.sh
-tools/validation/run-host-tests.sh
+PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
 tools/validation/validate.sh --skip-build
 ```
 

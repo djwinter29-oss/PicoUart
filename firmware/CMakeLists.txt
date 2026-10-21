@@ -6,9 +6,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(PICO_BOARD pico CACHE STRING "Target board")
 set(PICO_UART_VERSION "0.0.0-dev" CACHE STRING "Firmware semantic version string")
-set(PICO_UART_SYSTEM_CLOCK_KHZ "" CACHE STRING "Optional system clock target override in kHz")
 option(PICO_UART_ALLOW_HID_RESET "Enable the trusted-host HID watchdog reset command" OFF)
-option(PICO_UART_ALLOW_UNSAFE_OVERCLOCK "Allow a system clock above the target's rated default" OFF)
+if((DEFINED PICO_UART_SYSTEM_CLOCK_KHZ AND NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "") OR
+   PICO_UART_ALLOW_UNSAFE_OVERCLOCK)
+    message(FATAL_ERROR "Build-time clock overrides were removed; use tools/firmware/config.py to select a stored profile")
+endif()
 
 # pico_sdk_import.cmake is designed to be include()d prior to project(); doing so
 # here (rather than after the clock-ceiling checks below) also lets the SDK's own
@@ -44,49 +46,18 @@ endif()
 # tests/firmware/test_version_policy.py for standalone `cmake -P` coverage.
 include(${CMAKE_CURRENT_LIST_DIR}/version.cmake)
 
-if(NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
-    if(NOT PICO_UART_SYSTEM_CLOCK_KHZ MATCHES "^[1-9][0-9]*$")
-        message(FATAL_ERROR "PICO_UART_SYSTEM_CLOCK_KHZ must be a positive integer in kHz")
-    endif()
-    if(PICO_UART_TARGET_FAMILY STREQUAL "rp2350")
-        set(_pico_uart_max_clock_khz 500000)
-    else()
-        set(_pico_uart_max_clock_khz 400000)
-    endif()
-    string(LENGTH "${PICO_UART_SYSTEM_CLOCK_KHZ}" _pico_uart_clock_length)
-    if(_pico_uart_clock_length GREATER 6 OR PICO_UART_SYSTEM_CLOCK_KHZ GREATER _pico_uart_max_clock_khz)
-        message(FATAL_ERROR
-            "PICO_UART_SYSTEM_CLOCK_KHZ must be no greater than ${_pico_uart_max_clock_khz} kHz "
-            "(got ${PICO_UART_SYSTEM_CLOCK_KHZ})")
-    endif()
-endif()
-
 project(pico_uart C CXX ASM)
 
 pico_sdk_init()
-
-if(PICO_UART_TARGET_FAMILY STREQUAL "rp2350")
-    set(PICO_UART_RATED_SYSTEM_CLOCK_KHZ 150000)
-else()
-    set(PICO_UART_RATED_SYSTEM_CLOCK_KHZ 125000)
-endif()
-if(PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "")
-    set(PICO_UART_SYSTEM_CLOCK_KHZ "${PICO_UART_RATED_SYSTEM_CLOCK_KHZ}" CACHE STRING
-        "Optional system clock target override in kHz" FORCE)
-endif()
-if(NOT PICO_UART_ALLOW_UNSAFE_OVERCLOCK AND
-   NOT PICO_UART_SYSTEM_CLOCK_KHZ EQUAL PICO_UART_RATED_SYSTEM_CLOCK_KHZ)
-    message(FATAL_ERROR
-        "PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ} exceeds the supported build contract for ${PICO_BOARD}; "
-        "use the rated ${PICO_UART_RATED_SYSTEM_CLOCK_KHZ} kHz clock or explicitly set PICO_UART_ALLOW_UNSAFE_OVERCLOCK=ON")
-endif()
 
 add_executable(pico_uart)
 
 target_sources(pico_uart PRIVATE
     src/board/uart_board.c
     src/board/uart_topology.c
+    src/driver/board_config.c
     src/driver/led.c
+    src/driver/service_load.c
     src/driver/system.c
     src/driver/temperature.c
     src/main.c
@@ -111,6 +82,7 @@ target_sources(pico_uart PRIVATE
 )
 
 pico_generate_pio_header(pico_uart ${CMAKE_CURRENT_LIST_DIR}/src/uart/pio/uart.pio)
+include(${CMAKE_CURRENT_LIST_DIR}/config-storage.cmake)
 
 target_include_directories(pico_uart PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
@@ -120,6 +92,8 @@ target_include_directories(pico_uart PRIVATE
 target_link_libraries(pico_uart
     pico_stdlib
     pico_multicore
+    pico_flash
+    hardware_flash
     hardware_adc
     hardware_clocks
     hardware_dma
@@ -146,7 +120,6 @@ target_compile_definitions(pico_uart PRIVATE
     PICO_UART_VERSION_PATCH=${PICO_UART_VERSION_PATCH}u
     PICO_UART_BCD_DEVICE=${PICO_UART_BCD_DEVICE}u
     PICO_UART_ALLOW_HID_RESET=$<BOOL:${PICO_UART_ALLOW_HID_RESET}>
-    PICO_UART_SYSTEM_CLOCK_KHZ=${PICO_UART_SYSTEM_CLOCK_KHZ}u
 )
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")

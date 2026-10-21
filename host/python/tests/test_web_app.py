@@ -17,14 +17,45 @@ class FakeDashboard:
     def __init__(self):
         self.actions = []
 
-    def snapshot(self):
+    def snapshot(self, board_id=None):
         return {"connected": False, "channels": []}
 
-    def toggle_led(self):
+    def toggle_led(self, board_id=None):
         self.actions.append("toggle-led")
 
-    def reset_board(self):
+    def reset_board(self, board_id=None):
         self.actions.append("reset")
+
+
+class BoardTelemetry:
+    def read_board_status(self):
+        return {"firmware_version": "1.2.3"}
+
+    def read_overflow_counts(self):
+        return [0] * 6
+
+    def read_hardware_info(self):
+        return {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
+
+    def read_configuration(self):
+        return {"source": "defaults", "reason": "erased", "stored_profile": None, "active_profile": 1}
+
+    def read_configuration_save(self):
+        return {"status": 0, "profile": None}
+
+    def read_channel_diagnostics(self):
+        return [{"baud_rate": 115200, "data_bits": 8, "parity": "N", "stop_bits": 1,
+                 "tx_pin": index * 4, "rx_pin": index * 4 + 1, "faults": {}} for index in range(6)]
+
+    def read_led(self):
+        return {"manual_on": False, "output_on": False}
+
+    def read_identity(self):
+        return {"product_name": "PicoUart", "serial_number": "0123456789ABCDEF"}
+
+    def read_runtime(self):
+        return {"uptime_ms": 4294967296, "cpu_usage_basis_points": [10000, 10000],
+                "ram_reserved_bytes": 65536, "ram_total_bytes": 270336}
 
 
 def _csrf_token(client):
@@ -51,11 +82,13 @@ def test_dashboard_routes_require_csrf_and_dispatch_controls():
 def test_dashboard_serves_shared_assets():
     client = create_app(FakeDashboard()).test_client()
     page = client.get("/")
+    assert b"<small>Python</small>" in page.data
+    assert b"<title>PicoUart Diagnostics | Python</title>" in page.data
     assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page.data
     assert b'id="mcu"' in page.data
     assert b'id="system-clock"' in page.data
-    assert b'href="/css/dashboard.css"' in page.data
-    assert b'src="/js/dashboard.js"' in page.data
+    assert b'href="/css/dashboard.css?v=6"' in page.data
+    assert b'src="/js/dashboard.js?v=6"' in page.data
     assert b"{{" not in page.data
     for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
         response = client.get(f"/{path}")
@@ -86,9 +119,9 @@ def test_dashboard_rejects_untrusted_host_before_serving_controls():
     assert service.actions == []
 
 
-def test_dashboard_passes_reset_capability_errors_to_the_host():
+def test_dashboard_sanitizes_reset_capability_errors():
     class ResetDisabledDashboard(FakeDashboard):
-        def reset_board(self):
+        def reset_board(self, board_id=None):
             raise RuntimeError("firmware HID reset is disabled")
 
     client = create_app(ResetDisabledDashboard()).test_client()
@@ -96,12 +129,12 @@ def test_dashboard_passes_reset_capability_errors_to_the_host():
     response = client.post("/api/actions/reset", headers={"X-CSRF-Token": token})
 
     assert response.status_code == 409
-    assert response.json["error"] == "firmware HID reset is disabled"
+    assert response.json == {"error": "request could not be completed"}
 
 
 def test_dashboard_maps_action_io_errors_and_unknown_actions():
     class BrokenDashboard(FakeDashboard):
-        def toggle_led(self):
+        def toggle_led(self, board_id=None):
             raise OSError("HID write failed")
 
     client = create_app(BrokenDashboard()).test_client()
@@ -110,14 +143,14 @@ def test_dashboard_maps_action_io_errors_and_unknown_actions():
 
     response = client.post("/api/actions/toggle-led", headers=headers)
     assert response.status_code == 503
-    assert response.json["error"] == "HID write failed"
+    assert response.json == {"error": "service temporarily unavailable"}
 
     response = client.post("/api/actions/unknown", headers=headers)
     assert response.status_code == 404
 
 
 def test_dashboard_service_polls_status_and_metadata():
-    class FakeClient:
+    class FakeClient(BoardTelemetry):
         def __init__(self):
             self.first_report = True
             self.closed = False
@@ -154,14 +187,50 @@ def test_dashboard_service_polls_status_and_metadata():
 
     assert snapshot["connected"] is True
     assert snapshot["channels"][0]["state"] == "ready"
-    assert snapshot["channels"][0]["backend"] == "PIO"
+    assert "backend" not in snapshot["channels"][0]
     assert snapshot["channels"][0]["cdc_open"] is True
+    assert snapshot["channel_diagnostics"][0]["baud_rate"] == 115200
+    assert snapshot["channel_diagnostics"][5]["tx_pin"] == 20
+    assert snapshot["diagnostics_error"] is None
     assert snapshot["channels"][0]["totals"]["uart_tx"] == 10
     assert snapshot["board"]["firmware_version"] == "1.2.3"
     assert snapshot["overflow_counts"] == [0, 1, 2, 3, 4, 5]
     assert snapshot["hardware"] == {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
     assert snapshot["hardware_error"] is None
+    assert snapshot["configuration"] == fake.read_configuration()
+    assert snapshot["configuration_error"] is None
+    assert snapshot["identity"] == fake.read_identity()
+    assert snapshot["runtime"] == fake.read_runtime()
     assert fake.closed
+
+
+def test_dashboard_metadata_refreshes_every_second(monkeypatch):
+    service = object.__new__(DashboardService)
+    service._lock = threading.RLock()
+    service._stop = threading.Event()
+    service._client = None
+    samples = iter([0.0, 0.99, 1.0, 1.99, 2.0])
+    now = 0.0
+    reads = []
+
+    class FakeClient:
+        def read_status(self, timeout_ms):
+            nonlocal now
+            now = next(samples)
+            if now == 2.0:
+                service._stop.set()
+            return None
+
+        def close(self):
+            pass
+
+    service._client_factory = FakeClient
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    monkeypatch.setattr(service, "_read_metadata", lambda _client: reads.append(now))
+
+    service._poll()
+
+    assert reads == [0.0, 1.0, 2.0]
 
 
 def test_metadata_errors_survive_telemetry_and_clear_stale_values():
@@ -172,7 +241,7 @@ def test_metadata_errors_survive_telemetry_and_clear_stale_values():
     service._snapshot["board"] = {"firmware_version": "stale"}
     service._snapshot["overflow_counts"] = [99] * 6
 
-    class BrokenMetadata:
+    class BrokenMetadata(BoardTelemetry):
         def read_board_status(self):
             raise OSError("feature read failed")
 
@@ -188,8 +257,10 @@ def test_metadata_errors_survive_telemetry_and_clear_stale_values():
     assert snapshot["metadata_error"] == "feature read failed"
     assert snapshot["board"] is None
     assert snapshot["overflow_counts"] == [None] * 6
+    assert snapshot["configuration"] == BoardTelemetry().read_configuration()
+    assert snapshot["configuration_error"] is None
 
-    class HealthyMetadata:
+    class HealthyMetadata(BoardTelemetry):
         def read_board_status(self):
             return {"firmware_version": "1.2.3"}
 
@@ -213,7 +284,7 @@ def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, 
     service._snapshot = _empty_snapshot()
     service._snapshot["hardware"] = {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
 
-    class OlderFirmware:
+    class OlderFirmware(BoardTelemetry):
         unsupported = True
 
         def read_board_status(self):
@@ -240,6 +311,27 @@ def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, 
     recovered = service.snapshot()
     assert recovered["hardware_error"] is None
     assert recovered["hardware"] == {"mcu": model, "mcu_id": mcu, "system_clock_hz": 200_000_000}
+
+
+def test_configuration_query_errors_clear_stale_values_and_recover():
+    service = object.__new__(DashboardService)
+    service._lock = threading.RLock()
+    service._snapshot = _empty_snapshot()
+    service._snapshot["configuration"] = {"source": "stored"}
+
+    class ConfigError(BoardTelemetry):
+        def read_configuration(self):
+            raise OSError("configuration report unsupported")
+
+    service._read_metadata(ConfigError())
+    assert service.snapshot()["configuration"] is None
+    assert service.snapshot()["configuration_error"] == "configuration report unsupported"
+
+    service._read_metadata(BoardTelemetry())
+    assert service.snapshot()["configuration"] == {
+        "source": "defaults", "reason": "erased", "stored_profile": None, "active_profile": 1,
+    }
+    assert service.snapshot()["configuration_error"] is None
 
 
 def test_dashboard_service_disconnects_and_closes_after_read_failure():
@@ -290,7 +382,7 @@ def test_run_server_binds_loopback_and_closes_service(monkeypatch):
 
     service = FakeService()
     server_options = {}
-    monkeypatch.setattr(web_app, "DashboardService", lambda *_args: service)
+    monkeypatch.setattr(web_app, "DashboardBoards", lambda *_args: service)
     monkeypatch.setattr(
         web_app.Flask,
         "run",
@@ -320,7 +412,10 @@ def test_dashboard_marks_traffic_incomplete_on_gaps_and_saturated_deltas():
     assert service.snapshot()["traffic_incomplete"] is True
 
     service._snapshot["traffic_incomplete"] = False
+    assert service.snapshot()["traffic_gaps"] == 1
     service._apply_status(parse_status(status_report_bytes(sequence=0)))
     assert service.snapshot()["traffic_incomplete"] is False
+    assert service.snapshot()["traffic_gaps"] == 1
     service._apply_status(parse_status(status_report_bytes(sequence=2)))
     assert service.snapshot()["traffic_incomplete"] is True
+    assert service.snapshot()["traffic_gaps"] == 2

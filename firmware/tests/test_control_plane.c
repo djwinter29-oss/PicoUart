@@ -249,6 +249,9 @@ void test_control_plane_waits_for_tx_boundary_before_applying(void)
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
     TEST_ASSERT_EQUAL_UINT32(1u, apply_count);
     TEST_ASSERT_EQUAL_UINT32(230400u, test_ports[UART_PORT_0].info.baud_rate);
+    TEST_ASSERT_EQUAL_UINT8(8u, test_ports[UART_PORT_0].info.data_bits);
+    TEST_ASSERT_EQUAL_UINT8(applied_line_coding.stop_bits, test_ports[UART_PORT_0].info.stop_bits);
+    TEST_ASSERT_EQUAL_UINT8(applied_line_coding.parity, test_ports[UART_PORT_0].info.parity);
     TEST_ASSERT_EQUAL_UINT8(0u, test_status_flags[UART_PORT_0]);
     TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_0));
 }
@@ -307,6 +310,10 @@ void test_control_plane_unacceptable_line_coding_releases_provisional_ownership(
     uart_driver_line_coding_t unacceptable = test_line_coding();
     uart_control_mailbox_request_t request;
 
+    test_ports[UART_PORT_0].info.baud_rate = 115200u;
+    test_ports[UART_PORT_0].info.data_bits = 8u;
+    test_ports[UART_PORT_0].info.stop_bits = 1u;
+    test_ports[UART_PORT_0].info.parity = UART_DRIVER_PARITY_NONE;
     unacceptable.data_bits = 7u;
     request = (uart_control_mailbox_request_t){
         .port_id = UART_PORT_0,
@@ -320,6 +327,10 @@ void test_control_plane_unacceptable_line_coding_releases_provisional_ownership(
 
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
+    TEST_ASSERT_EQUAL_UINT32(115200u, test_ports[UART_PORT_0].info.baud_rate);
+    TEST_ASSERT_EQUAL_UINT8(8u, test_ports[UART_PORT_0].info.data_bits);
+    TEST_ASSERT_EQUAL_UINT8(1u, test_ports[UART_PORT_0].info.stop_bits);
+    TEST_ASSERT_EQUAL_UINT8(UART_DRIVER_PARITY_NONE, test_ports[UART_PORT_0].info.parity);
     TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);

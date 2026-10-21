@@ -2,13 +2,11 @@
 set -eu
 
 BUILD_DIR="${BUILD_DIR:-build/firmware}"
-BOARD="${PICO_BOARD:-}"
+BOARD="${PICO_BOARD:-pico}"
 ELF_PATH=""
 GENERATOR="${GENERATOR:-}"
 PICO_SDK_PATH_VALUE=""
 SKIP_BUILD=0
-SYSTEM_CLOCK_KHZ=""
-ALLOW_UNSAFE_OVERCLOCK="OFF"
 OPENOCD_EXE="${OPENOCD_EXE:-openocd}"
 OPENOCD_TARGET="${PICO_OPENOCD_TARGET:-}"
 ADAPTER_SPEED_KHZ="${PICO_DEBUG_PROBE_SPEED_KHZ:-5000}"
@@ -58,13 +56,9 @@ while [ "$#" -gt 0 ]; do
             SKIP_BUILD=1
             shift
             ;;
-        --system-clock-khz)
-            SYSTEM_CLOCK_KHZ="$2"
-            shift 2
-            ;;
-        --unsafe-overclock)
-            ALLOW_UNSAFE_OVERCLOCK="ON"
-            shift
+        --system-clock-khz|--unsafe-overclock)
+            echo "Build-time clocks were removed; use tools/firmware/config.py to select a stored profile." >&2
+            exit 1
             ;;
         *)
             echo "Unknown argument: $1" >&2
@@ -91,17 +85,7 @@ if [ -z "$PICO_SDK_PATH_VALUE" ]; then
 fi
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
-    if [ -n "$SYSTEM_CLOCK_KHZ" ]; then
-        if [ "$ALLOW_UNSAFE_OVERCLOCK" = "ON" ]; then
-            BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
-                "$SCRIPT_DIR/build.sh" --system-clock-khz "$SYSTEM_CLOCK_KHZ" --unsafe-overclock
-        else
-            BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" \
-                "$SCRIPT_DIR/build.sh" --system-clock-khz "$SYSTEM_CLOCK_KHZ"
-        fi
-    else
-        BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" "$SCRIPT_DIR/build.sh"
-    fi
+    BUILD_DIR="$BUILD_DIR" PICO_BOARD="$BOARD" GENERATOR="$GENERATOR" PICO_SDK_PATH="$PICO_SDK_PATH_VALUE" "$SCRIPT_DIR/build.sh"
 fi
 
 if [ -z "$ELF_PATH" ]; then
@@ -171,22 +155,37 @@ run_openocd() {
 
     cat "$OPENOCD_LOG" >&2
 
-    if grep -q 'Access denied (insufficient permissions)' "$OPENOCD_LOG" &&
-       command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    DEBUG_PROBE_BUS_DEVICE=""
+    if command -v lsusb >/dev/null 2>&1; then
+        DEBUG_PROBE_BUS_DEVICE=$(lsusb | awk -v probe_id="${DEBUG_PROBE_VID#0x}:${DEBUG_PROBE_PID#0x}" \
+            '$6 == probe_id { count++; device = $4; sub(/:$/, "", device); path = $2 "/" device }
+             END { if (count == 1) print path }')
+    fi
+    DEBUG_PROBE_USB_NODE="/dev/bus/usb/$DEBUG_PROBE_BUS_DEVICE"
+
+    if grep -q 'Access denied (insufficient permissions)' "$OPENOCD_LOG" ||
+       { grep -q 'unable to find a matching CMSIS-DAP device' "$OPENOCD_LOG" &&
+         [ -n "$DEBUG_PROBE_BUS_DEVICE" ] &&
+         [ -e "$DEBUG_PROBE_USB_NODE" ] && [ ! -w "$DEBUG_PROBE_USB_NODE" ]; }; then
+        if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+            echo "Debug Probe USB access denied. Configure USB permissions or authorize sudo, then retry." >&2
+            rm -f "$OPENOCD_LOG"
+            return 1
+        fi
         echo "Retrying OpenOCD with sudo because the Debug Probe USB device is not writable." >&2
         if sudo -n "$@"; then
             rm -f "$OPENOCD_LOG"
             return 0
         fi
+        rm -f "$OPENOCD_LOG"
+        return 1
     fi
 
-     if [ -z "$DEBUG_PROBE_SERIAL" ] &&
-         grep -Eq 'Operation timed out|unable to find a matching CMSIS-DAP device' "$OPENOCD_LOG" &&
+    if [ -z "$DEBUG_PROBE_SERIAL" ] &&
+       grep -Eq 'Operation timed out|unable to find a matching CMSIS-DAP device' "$OPENOCD_LOG" &&
        command -v usbreset >/dev/null 2>&1 &&
        command -v lsusb >/dev/null 2>&1 &&
        command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-        DEBUG_PROBE_BUS_DEVICE=$(lsusb | awk -v probe_id="${DEBUG_PROBE_VID#0x}:${DEBUG_PROBE_PID#0x}" \
-            '$6 == probe_id { device = $4; sub(/:$/, "", device); print $2 "/" device; exit }')
         if [ -n "$DEBUG_PROBE_BUS_DEVICE" ]; then
             echo "Retrying OpenOCD after resetting stalled Debug Probe USB device $DEBUG_PROBE_BUS_DEVICE." >&2
             if sudo -n usbreset "$DEBUG_PROBE_BUS_DEVICE" && "$@"; then
@@ -194,7 +193,7 @@ run_openocd() {
                 return 0
             fi
         else
-            echo "The Debug Probe disappeared while recovering it. Reconnect its USB cable, then retry." >&2
+            echo "Cannot uniquely identify the Debug Probe for USB reset. Check connections and probe selection." >&2
         fi
     fi
 

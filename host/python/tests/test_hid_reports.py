@@ -9,8 +9,91 @@ import pytest
 from helpers import FakeHidDevice, board_status_bytes, overflow_counts_bytes, status_report_bytes
 from pico_uart import transport
 from pico_uart.client import PicoUartHid, read_board_status, send_command
-from pico_uart.client import read_hardware_info
-from pico_uart.protocol import parse_hardware_info, REPORT_ID_HARDWARE_INFO
+from pico_uart.client import read_configuration, read_hardware_info
+from pico_uart.protocol import (
+    parse_configuration, parse_hardware_info, REPORT_ID_CONFIGURATION, REPORT_ID_HARDWARE_INFO,
+)
+
+
+def test_configuration_report_decodes_and_rejects_invalid_values():
+    import struct
+
+    payload = struct.pack("<BBBBII", 1, 0, 3, 0, 0xFFFFFFFF, 1)
+    expected = {"source": "defaults", "reason": "crc_failed", "stored_profile": None, "active_profile": 1}
+    assert parse_configuration(payload) == expected
+    assert read_configuration(FakeHidDevice(payload, REPORT_ID_CONFIGURATION)) == expected
+
+    stored = struct.pack("<BBBBII", 1, 1, 0, 0, 2, 2)
+    assert parse_configuration(stored) == {
+        "source": "stored", "reason": "none", "stored_profile": 2, "active_profile": 2,
+    }
+    recovery = struct.pack("<BBBBII", 1, 2, 6, 0, 1, 0)
+    assert parse_configuration(recovery)["source"] == "recovery"
+
+    invalid = [
+        payload[:-1], payload + b"\0",
+        struct.pack("<BBBBII", 2, 0, 0, 0, 0, 0),
+        struct.pack("<BBBBII", 1, 3, 0, 0, 0, 0),
+        struct.pack("<BBBBII", 1, 0, 8, 0, 0, 0),
+        struct.pack("<BBBBII", 1, 0, 0, 1, 0, 0),
+        struct.pack("<BBBBII", 1, 0, 0, 0, 3, 0),
+        struct.pack("<BBBBII", 1, 0, 0, 0, 0, 3),
+        struct.pack("<BBBBII", 1, 1, 1, 0, 1, 1),
+        struct.pack("<BBBBII", 1, 1, 0, 0, 0, 1),
+        struct.pack("<BBBBII", 1, 2, 0, 0, 1, 0),
+    ]
+    for item in invalid:
+        with pytest.raises(RuntimeError):
+            parse_configuration(item)
+
+
+def test_configuration_client_reads_report_16():
+    import struct
+
+    payload = struct.pack("<BBBBII", 1, 0, 0, 0, 0, 0)
+    device = FakeHidDevice(payload, REPORT_ID_CONFIGURATION)
+    assert PicoUartHid(device=device).read_configuration()["source"] == "defaults"
+
+
+def test_channel_diagnostics_and_client_read_all_six_channels():
+    import struct
+    from pico_uart.protocol import parse_channel_diagnostics
+
+    payload = bytearray(struct.pack("<BBIBBBBB", 1, 0x81, 115200, 8, 1, 0, 20, 21) + bytes(48))
+    struct.pack_into("<IQ", payload, 47, 3, 4294967296)
+    result = parse_channel_diagnostics(payload)
+    assert (result["baud_rate"], result["parity"], result["tx_pin"], result["rx_pin"]) == (115200, "N", 20, 21)
+    assert result["faults"]["rx_error"] == {"count": 3, "last_seen_ms": 4294967296}
+    assert result["faults"]["control_error"] == {"count": 0, "last_seen_ms": None}
+
+    class DiagnosticDevice:
+        def __init__(self):
+            self.reads = []
+
+        def get_feature_report(self, report_id, size):
+            self.reads.append((report_id, size))
+            return [report_id, *payload]
+
+        def close(self):
+            pass
+
+    device = DiagnosticDevice()
+    with PicoUartHid(device=device) as client:
+        assert client.read_channel_diagnostics() == [result] * 6
+    assert device.reads == [(report_id, 60) for report_id in range(10, 16)]
+
+
+@pytest.mark.parametrize("offset,value", [(0, 2), (6, 4), (7, 3), (8, 3), (9, 48), (10, 254)])
+def test_channel_diagnostics_reject_invalid_settings(offset, value):
+    import struct
+    from pico_uart.protocol import parse_channel_diagnostics
+
+    payload = bytearray(struct.pack("<BBIBBBBB", 1, 1, 115200, 8, 1, 0, 0, 1) + bytes(48))
+    payload[offset] = value
+    with pytest.raises(RuntimeError):
+        parse_channel_diagnostics(payload)
+    with pytest.raises(RuntimeError):
+        parse_channel_diagnostics(payload[:-1])
 
 
 @pytest.mark.parametrize("mcu,clock_hz,model", [
@@ -93,8 +176,9 @@ def test_hidraw_feature_write_propagates_short_ioctl_result(monkeypatch):
         send_command(device, COMMAND_TOGGLE_LED)
 
 
-def test_rejects_unsupported_board_status_layout(hid_module):
-    device = FakeHidDevice(board_status_bytes(layout_version=13))
+@pytest.mark.parametrize("version", [0, 2, 15, 255])
+def test_rejects_unsupported_board_status_layout(hid_module, version):
+    device = FakeHidDevice(board_status_bytes(layout_version=version))
     with pytest.raises(RuntimeError, match="unsupported board-status"):
         hid_module.read_board_status(device)
 
@@ -146,9 +230,10 @@ def test_rejects_bad_signature(hid_module):
         hid_module.parse_status(bytes(payload))
 
 
-def test_rejects_wrong_status_layout_version(hid_module):
+@pytest.mark.parametrize("version", [0, 2, 15, 255])
+def test_rejects_wrong_status_layout_version(hid_module, version):
     payload = bytearray(status_report_bytes())
-    payload[1] = 13
+    payload[1] = version
     with pytest.raises(RuntimeError, match="unsupported status report version"):
         hid_module.parse_status(bytes(payload))
 

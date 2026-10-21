@@ -17,6 +17,14 @@ public sealed class DashboardTests
         Assert.Null(snapshot.MetadataError);
         Assert.Null(snapshot.HardwareError);
         Assert.Null(snapshot.Hardware);
+        Assert.Null(snapshot.Configuration);
+        Assert.Null(snapshot.ConfigurationError);
+        Assert.Null(snapshot.ConfigurationSave);
+        Assert.Null(snapshot.ConfigurationSaveError);
+        Assert.Null(snapshot.Identity);
+        Assert.Null(snapshot.IdentityError);
+        Assert.Null(snapshot.Runtime);
+        Assert.Null(snapshot.RuntimeError);
         Assert.Null(snapshot.UpdatedAt);
         Assert.Null(snapshot.Sequence);
         Assert.Null(snapshot.Board);
@@ -29,7 +37,6 @@ public sealed class DashboardTests
             Assert.Null(channel.Health);
             Assert.Empty(channel.HealthLabels);
             Assert.Equal("unknown", channel.State);
-            Assert.Equal("unknown", channel.Backend);
             Assert.False(channel.CdcOpen);
             Assert.Equal(0, channel.RingHighWatermark);
             AssertTraffic(channel.Traffic, 0, 0, 0, 0);
@@ -37,22 +44,41 @@ public sealed class DashboardTests
         });
     }
 
+    [Fact]
+    public void BoardTelemetryUsesTheSharedDashboardJsonContract()
+    {
+        var snapshot = new DashboardSnapshot
+        {
+            Identity = new("PicoUart", "0123456789ABCDEF"),
+            Runtime = new(4294967296, [10000, null], 65536, 270336),
+            RuntimeError = "previous read failed"
+        };
+        snapshot.Apply(CreateStatus(1));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
+        var root = json.RootElement;
+        Assert.Equal("0123456789ABCDEF", root.GetProperty("identity").GetProperty("serial_number").GetString());
+        Assert.Equal(4294967296ul, root.GetProperty("runtime").GetProperty("uptime_ms").GetUInt64());
+        Assert.Equal(65536u, root.GetProperty("runtime").GetProperty("ram_reserved_bytes").GetUInt32());
+        Assert.Equal(10000, root.GetProperty("runtime").GetProperty("cpu_usage_basis_points")[0].GetInt32());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("runtime").GetProperty("cpu_usage_basis_points")[1].ValueKind);
+        Assert.Equal("previous read failed", snapshot.RuntimeError);
+    }
+
     [Theory]
-    [InlineData(0, "initializing", "Hardware", false)]
-    [InlineData(1, "ready", "Hardware", false)]
-    [InlineData(8, "initializing", "Hardware", false)]
-    [InlineData(9, "ready", "Hardware", false)]
-    [InlineData(17, "ready", "Hardware", true)]
-    [InlineData(33, "ready", "PIO", false)]
-    [InlineData(49, "ready", "PIO", true)]
-    [InlineData(2, "attention", "Hardware", false)]
-    [InlineData(3, "attention", "Hardware", false)]
-    [InlineData(5, "attention", "Hardware", false)]
-    [InlineData(65, "attention", "Hardware", false)]
-    [InlineData(129, "attention", "Hardware", false)]
-    [InlineData(255, "attention", "PIO", true)]
-    public void TelemetryMapsHealthAndBackendForEveryChannel(
-        byte health, string state, string backend, bool cdcOpen)
+    [InlineData(0, "initializing", false)]
+    [InlineData(1, "ready", false)]
+    [InlineData(8, "initializing", false)]
+    [InlineData(9, "ready", false)]
+    [InlineData(17, "ready", true)]
+    [InlineData(33, "ready", false)]
+    [InlineData(49, "ready", true)]
+    [InlineData(2, "attention", false)]
+    [InlineData(3, "attention", false)]
+    [InlineData(5, "attention", false)]
+    [InlineData(65, "attention", false)]
+    [InlineData(129, "attention", false)]
+    [InlineData(255, "attention", true)]
+    public void TelemetryMapsHealthForEveryChannel(byte health, string state, bool cdcOpen)
     {
         var snapshot = new DashboardSnapshot();
         snapshot.Apply(CreateStatus(0, health));
@@ -62,7 +88,6 @@ public sealed class DashboardTests
             Assert.Equal(health, channel.Health);
             Assert.Equal(Protocol.DecodeHealth(health), channel.HealthLabels);
             Assert.Equal(state, channel.State);
-            Assert.Equal(backend, channel.Backend);
             Assert.Equal(cdcOpen, channel.CdcOpen);
             Assert.Equal(32, channel.RingHighWatermark);
         });
@@ -179,23 +204,34 @@ public sealed class DashboardTests
     {
         using var service = new DashboardService(null, null);
         using var initial = JsonDocument.Parse(service.SnapshotJson());
-        Assert.Equal(new[] { "board", "channels", "connected", "error", "hardware", "hardware_error",
-            "metadata_error", "overflow_counts",
-            "sequence", "traffic_incomplete", "updated_at" },
+        Assert.Equal(new[] { "board", "channel_diagnostics", "channels", "configuration", "configuration_error",
+            "configuration_save", "configuration_save_error", "connected",
+            "diagnostics_error", "error", "hardware", "hardware_error",
+            "identity", "identity_error", "led", "led_error", "metadata_error", "overflow_counts", "runtime", "runtime_error",
+            "sequence", "traffic_gaps", "traffic_incomplete", "updated_at" },
             initial.RootElement.EnumerateObject().Select(property => property.Name).Order());
         Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("board").ValueKind);
         Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("hardware").ValueKind);
+        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("configuration").ValueKind);
+        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("configuration_save").ValueKind);
+        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("led").ValueKind);
         Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("overflow_counts")[0].ValueKind);
 
         var snapshot = new DashboardSnapshot
         {
             Board = new(25.3, "1.2.3", 1, 2, 3, false),
             Hardware = new("RP2350", 280000000, 2),
+            Configuration = new("defaults", "crc_failed", null, 1),
+            ConfigurationSave = new(2, 0),
+            Led = new(false, true),
             OverflowCounts = [0, 1, 2, 3, 4, uint.MaxValue]
         };
         snapshot.Apply(CreateStatus(7));
         using var populated = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
         var board = populated.RootElement.GetProperty("board");
+        var led = populated.RootElement.GetProperty("led");
+        Assert.False(led.GetProperty("manual_on").GetBoolean());
+        Assert.True(led.GetProperty("output_on").GetBoolean());
         Assert.Equal(new[] { "firmware_major", "firmware_minor", "firmware_patch", "firmware_version",
             "hid_reset_enabled", "temperature_celsius" }, board.EnumerateObject().Select(property => property.Name).Order());
         Assert.Equal("1.2.3", board.GetProperty("firmware_version").GetString());
@@ -204,9 +240,18 @@ public sealed class DashboardTests
         Assert.Equal("RP2350", hardware.GetProperty("mcu").GetString());
         Assert.Equal(2, hardware.GetProperty("mcu_id").GetByte());
         Assert.Equal(280000000u, hardware.GetProperty("system_clock_hz").GetUInt32());
+        var configuration = populated.RootElement.GetProperty("configuration");
+        Assert.Equal("defaults", configuration.GetProperty("source").GetString());
+        Assert.Equal("crc_failed", configuration.GetProperty("reason").GetString());
+        Assert.Equal(JsonValueKind.Null, configuration.GetProperty("stored_profile").ValueKind);
+        Assert.Equal(1u, configuration.GetProperty("active_profile").GetUInt32());
+        var save = populated.RootElement.GetProperty("configuration_save");
+        Assert.Equal(new[] { "profile", "status" }, save.EnumerateObject().Select(property => property.Name).Order());
+        Assert.Equal(2, save.GetProperty("status").GetInt32());
+        Assert.Equal(0u, save.GetProperty("profile").GetUInt32());
         Assert.Equal(uint.MaxValue, populated.RootElement.GetProperty("overflow_counts")[5].GetUInt32());
         var channel = populated.RootElement.GetProperty("channels")[0];
-        Assert.Equal(new[] { "backend", "cdc_open", "health", "health_labels", "id", "ring_high_watermark",
+        Assert.Equal(new[] { "cdc_open", "health", "health_labels", "id", "ring_high_watermark",
             "state", "totals", "traffic" }, channel.EnumerateObject().Select(property => property.Name).Order());
         Assert.Equal(new[] { "uart_rx", "uart_tx", "usb_rx", "usb_tx" },
             channel.GetProperty("totals").EnumerateObject().Select(property => property.Name).Order());
@@ -223,6 +268,34 @@ public sealed class DashboardTests
         var error = Assert.Throws<InvalidOperationException>(() => service.Action(action));
 
         Assert.Equal("PicoUart HID interface is not connected", error.Message);
+    }
+
+    [Fact]
+    public void ConfigurationSaveRequiresAnOpenConnection()
+    {
+        using var service = new DashboardService(null, null);
+        var error = Assert.Throws<InvalidOperationException>(() => service.SaveConfiguration(0, false));
+        Assert.Equal("PicoUart HID interface is not connected", error.Message);
+    }
+
+    [Fact]
+    public void ConfigurationSaveReadFailureDoesNotInvalidateOtherMetadataOrTraffic()
+    {
+        var snapshot = new DashboardSnapshot
+        {
+            ConfigurationSaveError = "report unsupported",
+            Configuration = new("stored", "none", 0, 0),
+            Hardware = new("RP2040", 125000000, 1),
+            Identity = new("PicoUart", "0123456789ABCDEF")
+        };
+        snapshot.Apply(CreateStatus(1));
+        Assert.True(snapshot.Connected);
+        Assert.Null(snapshot.Error);
+        Assert.Equal("report unsupported", snapshot.ConfigurationSaveError);
+        Assert.Null(snapshot.ConfigurationSave);
+        Assert.NotNull(snapshot.Configuration);
+        Assert.NotNull(snapshot.Hardware);
+        Assert.NotNull(snapshot.Identity);
     }
 
     [Theory]

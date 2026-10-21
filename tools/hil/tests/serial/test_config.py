@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 HARDWARE_SRC = Path(__file__).resolve().parents[2] / "src"
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios/fcntl")
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Serial tools require Linux termios2")
 
 
 def _load_serial_config():

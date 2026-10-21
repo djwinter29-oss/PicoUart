@@ -4,6 +4,7 @@
  */
 
 #include "uart/pio/pio_uart_driver_internal.h"
+#include "driver/service_load.h"
 
 #include "uart.pio.h"
 #include "uart/backend/policy.h"
@@ -489,6 +490,9 @@ static void pio_uart_driver_publish_rx(pio_uart_driver_t *driver)
     progress = pio_uart_driver_rx_progress(driver);
     produced = uart_dma_rx_bytes_produced(progress, driver->rx_dma_last_progress, uart_dma_rx_transfer_count_max());
     driver->controller_rx_bytes += produced;
+    if (produced != 0u) {
+        service_load_note(1u);
+    }
     driver->rx_dma_last_progress = progress;
     ring_buffer_produce_external(&driver->rx_ring, produced);
 }
@@ -519,6 +523,7 @@ static void pio_uart_driver_drain_tx_fifo(pio_uart_driver_t *driver)
 
         (void)ring_buffer_commit_consumed(&driver->tx_ring, chunk);
         driver->tx_polled_bytes += chunk;
+        service_load_note(1u);
         break;
     }
 }
@@ -560,6 +565,7 @@ static bool pio_uart_driver_start_tx_dma(pio_uart_driver_t *driver, size_t max_t
 
     driver->tx_dma_bytes_in_flight = transfer_length;
     driver->tx_dma_active = true;
+    service_load_note(1u);
     return true;
 }
 
@@ -575,6 +581,7 @@ static void pio_uart_driver_poll_tx_dma(pio_uart_driver_t *driver)
 
     (void)ring_buffer_commit_consumed(&driver->tx_ring, driver->tx_dma_bytes_in_flight);
     driver->tx_dma_bytes += driver->tx_dma_bytes_in_flight;
+    service_load_note(1u);
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_dma_active = false;
 }
@@ -624,6 +631,7 @@ static void pio_uart_driver_harvest_framing_errors(pio_uart_driver_t *driver)
     if (pio_interrupt_get(driver->config.pio, driver->config.rx_state_machine)) {
         pio_interrupt_clear(driver->config.pio, driver->config.rx_state_machine);
         driver->rx_error_count += 1u;
+        service_load_note(1u);
     }
 }
 
@@ -756,6 +764,7 @@ void pio_uart_driver_poll(pio_uart_driver_t *driver, bool tx_launch_allowed)
             /* Consume a sticky completion before restart so a delayed ISR cannot rearm twice. */
             dma_irqn_acknowledge_channel(PIO_UART_DRIVER_RX_DMA_IRQ_INDEX, (uint)driver->rx_dma_channel);
             pio_uart_driver_rearm_rx_dma(driver);
+            service_load_note(1u);
         }
         restore_interrupts(interrupt_status);
     }

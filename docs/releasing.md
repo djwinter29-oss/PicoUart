@@ -11,7 +11,7 @@ A `workflow_dispatch` run creates artifacts for preflight HIL; a release tag cre
 
 ```mermaid
 flowchart LR
-   Change["Reviewed change"] --> CI["CI: host tests + rated and overclock builds"]
+   Change["Reviewed change"] --> CI["CI: host tests + rated builds"]
    CI --> DryRun["workflow_dispatch\ndraft artifacts"]
    DryRun --> Hash["Record artifact SHA-256"]
    Hash --> HIL["HIL on exact packaged images"]
@@ -54,8 +54,8 @@ validates builds and host tests; it cannot establish physical qualification.
 
 Release promotion requires a complete `PASS` on every rated board artifact in the release workflow. Run HIL on the exact
 packaged UF2/ELF and verify its SHA-256 against the draft; a local rebuild or a result for another artifact does not
-qualify the release. Overclock results apply only to the matching artifact and do not establish general stability or
-operating margins.
+qualify the release. Optional overclock profiles are board-local configuration settings; any overclock claim still
+requires exact-board HIL evidence and does not establish general stability or operating margins.
 
 Follow the [HIL fixture setup](tests/hil-fixture-setup.md) and [test plan](tests/hil-fixture-test-plan.md) for required
 phases and acceptance criteria. Preserve per-board records using the [HIL record format](tests/records/README.md), with
@@ -71,6 +71,16 @@ tools/firmware/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.
 
 Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached or when USB enumeration tools are
 unavailable.
+
+On Linux, `unable to find a matching CMSIS-DAP device` can mean USB access is denied even when `lsusb` lists the probe.
+The loader checks the USB node permissions for a uniquely enumerated probe and retries OpenOCD with noninteractive
+sudo when available, rather than resetting an inaccessible device. If sudo is not authorized, configure a
+Debug Probe-specific udev rule for your user/group or authorize sudo before retrying. To distinguish permissions from
+probe discovery failures without programming flash, run:
+
+```sh
+openocd -d3 -f interface/cmsis-dap.cfg -c 'transport select swd' -c 'adapter speed 1000' -c 'init; shutdown'
+```
 
 Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash device` after detecting the SWD target, update
 OpenOCD and retry with `--adapter-speed-khz 1000` before treating the HIL attempt as firmware failure. Flash ID

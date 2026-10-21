@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-requires_linux_serial = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios/fcntl")
+requires_linux_serial = pytest.mark.skipif(sys.platform != "linux", reason="Serial tools require Linux termios2")
 
 
 def _load_cli():
