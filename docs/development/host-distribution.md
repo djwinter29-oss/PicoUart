@@ -1,11 +1,11 @@
 # Host Distribution Plan
 
-Status: staged rollout. The release workflow packages firmware, a Python wheel, and self-contained .NET archives.
-Host artifacts and firmware share the resolved release tag version. WebHID Pages
-deployment is implemented, subject to the [repository setup](../releasing.md#webhid-pages) and a successful deployment.
-PyPI Trusted Publishing is implemented, subject to [account and environment setup](../releasing.md#pypi-publication)
-and a successful publication. Python source-distribution release assets, native installers, and a downloadable WebHID
-archive remain planned.
+The release workflow packages firmware, a Python wheel, and self-contained .NET archives. Host artifacts and firmware
+share the resolved release tag version. The [WebHID dashboard](https://djwinter29-oss.github.io/PicoUart/) is hosted on
+GitHub Pages, and the [Python package](https://pypi.org/project/pico-uart/) is available on PyPI. Stable publications remain
+subject to the [release gates](../releasing.md#publication-gates); deployment and publisher setup are documented under
+[WebHID Pages](../releasing.md#webhid-pages) and [PyPI publication](../releasing.md#pypi-publication).
+Python source-distribution release assets, native installers, and a downloadable WebHID archive remain planned.
 
 ## Distribution Channels
 
@@ -30,9 +30,10 @@ rebuilding it. It runs after release publication, not tag creation, and supports
 See the [publication procedure](../releasing.md#pypi-publication) for Trusted Publisher registration, approval, and
 immutable-version behavior. Source-distribution publication is not enabled in this initial workflow.
 
-Once publication is available, recommend
-`pipx install pico-uart` to isolate dependencies and avoid modifying an OS-managed Python environment. Keep Linux-only
-HIL tooling outside this cross-platform package.
+Use `pipx install pico-uart` for stable releases, or `pipx install --pip-args="--pre" pico-uart` to allow development
+releases. These isolate application dependencies without modifying an OS-managed Python environment; see the
+[Python guide](../../host/python/README.md#install) for installation details. Keep Linux-only HIL tooling outside this
+cross-platform package.
 
 Before adding source-distribution publication, build a wheel and source distribution, then rebuild a wheel from the
 source distribution. Install and smoke-test both
@@ -64,7 +65,7 @@ tag alone does not publish the draft or replace the hosted site.
 Test each packaged archive after extraction on its target OS, outside the checkout and without relying on an installed
 .NET runtime. Verify CLI startup, loopback dashboard startup/shutdown, served assets, and the HTTP contract. Record
 native device-access results separately from hardware-free checks. Existing manual publish instructions remain in the
-[.NET host guide](../../host/dotnet/README.md#publish).
+[.NET host guide](../../host/dotnet/README.md#develop-and-publish).
 
 Add installers only after archive deployment and lifecycle behavior are stable:
 

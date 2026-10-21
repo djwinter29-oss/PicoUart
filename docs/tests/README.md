@@ -28,11 +28,11 @@ flowchart TD
 
 ## Automated Validation
 
-From the repository root:
+Follow the [Python environment setup](../development/host-tools.md#python-environment-setup), then run from the repository
+root. The host-test wrapper runs both the native C suite and Python tests; a separate `ctest` invocation is unnecessary.
 
 ```sh
-tools/validation/run-host-tests.sh
-ctest --test-dir build/host-tests --output-on-failure
+PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
 tools/firmware/build.sh --board pico
 tools/firmware/build.sh --board pico2
 git diff --check

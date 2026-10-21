@@ -16,7 +16,7 @@ was accepted by firmware.
 | Vendor HID |     1 | Status, diagnostics, and narrow board controls                                            | Python/.NET; WebHID diagnostics              |
 
 Each CDC port maps to one target-side UART channel. The GPIO pinout is defined in
-[UART Pinout and Wiring](../../uart-pinout.md).
+[Hardware Setup](../../hardware-setup.md).
 
 ## CDC Behavior
 

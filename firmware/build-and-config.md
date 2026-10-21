@@ -95,4 +95,4 @@ Detailed firmware behavior lives in:
 - [Control Plane Design](../docs/design/control-plane-design.md)
 - [Ring Buffer Design](../docs/design/uart/ring-buffer-design.md)
 - [PIO UART Design](../docs/design/uart/pio-uart-design.md)
-- Board pin assignments and safe wiring: [UART Pinout](../docs/uart-pinout.md)
+- Board pin assignments and safe wiring: [Hardware Setup](../docs/hardware-setup.md)

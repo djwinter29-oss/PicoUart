@@ -7,7 +7,7 @@ in the [Test Documentation Index](../tests/README.md) and [Repository Tools](../
 ## Design Boundaries
 
 Keep board pin mapping separate from USB and UART transport logic. See [Architecture](../architecture.md), the
-[UART subsystem design](../design/uart/README.md), [UART Pinout](../uart-pinout.md), and the
+[UART subsystem design](../design/uart/README.md), [Hardware Setup](../hardware-setup.md), and the
 [CDC/HID overview](../design/usb/cdc-hid-overview.md) for their respective responsibilities and constraints.
 
 ## Test Scope

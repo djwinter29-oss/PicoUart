@@ -21,7 +21,7 @@ limits: `CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
 | Applied UART settings, GPIOs, and fault history | HID feature reports 10-15 | Read-only snapshots. These reports cannot change line coding or pin mapping. |
 | Toggle default board LED                                      | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one.                                                                                                                                                                                                          |
 | Reset board                                                   | HID command feature report | Disabled by default; trusted lab builds may enable arm (`3`) then reset (`2`) within 2 seconds with `PICO_UART_ALLOW_HID_RESET=1`. Enabled builds set board-status `reserved0` bit 0; the host `reset` command fails closed when that bit is clear.                          |
-| Save boot-time system clock profile | HID feature report 17 | Validates a board-specific profile, requires overclock acknowledgement, and verifies the reserved flash sector. No runtime clock change or automatic reset. |
+| Save boot-time system clock profile | HID feature report 17 | Validates a board-specific profile, requires overclock acknowledgement, and verifies the reserved flash sector. Automatically reboots after a short grace period to apply the saved profile. |
 
 HID must not be used to select a UART, set baud rate, change GPIO mapping, or alter ring-buffer behavior. The three
 command values are board-scoped only.
@@ -84,7 +84,7 @@ At counter saturation, the count cannot distinguish further events.
 
 RX flags in report 1 are historical latches based on nonzero counters, not live signal-level indicators. A closed CDC
 port does not stop the UART receiver. Floating/undriven RX, a break, incorrect baud/framing, or wiring problems are
-possible causes, but this report cannot identify which one occurred. See [UART pinout](../../uart-pinout.md).
+possible causes, but this report cannot identify which one occurred. See [Hardware Setup](../../hardware-setup.md).
 
 ## Report 16: Persistent Configuration Status
 
@@ -129,9 +129,11 @@ traffic may be lost even with DTR clear. The SDK flash-safe execution API disabl
 page contains the CRC-protected record and the rest remains erased. Full-sector validation and page comparison must
 succeed before `saved` is reported. Saving an already valid identical profile does not erase/program again.
 
-The active clock and report 16 remain unchanged until the verified save result has been read; firmware then reboots
-the board automatically after a short delay to apply the saved profile. The usual default validation and watchdog-
-recovery rules still apply. Interrupted writes fall back to SDK defaults, not a previous record: this is a single-sector
+The active clock and report 16 remain unchanged until the next boot. A verified save starts a short grace period for
+the host to read the result, then firmware automatically reboots to apply the saved profile. Reading the result does
+not trigger, delay, or prevent that reboot. This configuration-save reboot is independent of the optional report-4
+remote-reset capability. The usual default validation and watchdog-recovery rules still apply.
+Interrupted writes fall back to SDK defaults, not a previous record: this is a single-sector
 store, not a redundant journal. Non-default profiles remain experimental and require exact-board HIL; Save does not
 establish stability. Dashboard controls and API behavior are documented in
 [Host Tools Development](../../development/host-tools.md#persistent-configuration).

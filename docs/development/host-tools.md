@@ -143,7 +143,7 @@ host/python/.venv/bin/python -m pytest tests/tooling/test_dotnet_host.py
 ```
 
 These integration checks skip when `dotnet` is not on `PATH`; set `DOTNET_EXE` to another SDK executable if needed.
-See the [.NET host guide](../../host/dotnet/README.md#publish) for publishing and standalone deployment.
+See the [.NET host guide](../../host/dotnet/README.md#develop-and-publish) for publishing and standalone deployment.
 
 ## WebHID Development
 

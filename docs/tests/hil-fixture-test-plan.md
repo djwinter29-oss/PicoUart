@@ -9,7 +9,7 @@ stress checks listed in [Releasing](../releasing.md#required-hil-matrix).
 ## Setup
 
 Follow [HIL Fixture Setup](hil-fixture-setup.md) and install both crossed pairs and both loopbacks before testing. The
-[UART Pinout and Wiring](../uart-pinout.md) document is the GPIO source of truth. Use the manual Debug Probe
+[Hardware Setup](../hardware-setup.md) document is the GPIO source of truth. Use the manual Debug Probe
 external-peer check only when needed; it is not part of HIL pass criteria.
 
 Test both board targets when hardware is available:

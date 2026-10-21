@@ -4,7 +4,7 @@
 
 PicoUart exposes six USB CDC ACM serial ports and one HID status/control interface. Each CDC port maps to one UART
 channel. The current board configuration uses two hardware UARTs and four PIO UARTs; board-specific pin assignments
-are documented in [UART Pinout and Wiring](uart-pinout.md).
+are documented in [Hardware Setup](hardware-setup.md).
 
 ```mermaid
 flowchart LR
