@@ -123,6 +123,8 @@ target_compile_options(test_hw_uart_driver PRIVATE -ffunction-sections -fdata-se
 target_link_options(test_hw_uart_driver PRIVATE -Wl,--gc-sections)
 
 if(MINGW)
+    # COFF unwind tables retain untested SDK paths despite --gc-sections.
+    # These C harnesses need only the driver sections exercised by their mocks.
     target_compile_options(test_pio_tx_driver PRIVATE -fno-asynchronous-unwind-tables -fno-unwind-tables)
     target_compile_options(test_hw_uart_driver PRIVATE -fno-asynchronous-unwind-tables -fno-unwind-tables)
 endif()
