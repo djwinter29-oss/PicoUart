@@ -257,7 +257,7 @@ def test_pypi_publication_reuses_released_artifacts_with_scoped_oidc():
     assert "skip-existing:" not in text
 
 
-def test_manual_python_publication_is_isolated_to_testpypi():
+def test_manual_python_publication_uses_marked_versions_on_production_pypi():
     text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
     production, test = text.split("\n  test-package:\n", 1)
     assert "(github.event_name != 'workflow_dispatch' || !inputs.test_publish)" in production
@@ -266,9 +266,12 @@ def test_manual_python_publication_is_isolated_to_testpypi():
     assert "Run Python package tests" in test
     assert "Verify installed development wheel" in test
     assert "needs: test-package" in test
-    assert "name: testpypi" in test
-    assert "repository-url: https://test.pypi.org/legacy/" in test
-    assert "name: pypi\n" not in test
+    assert "name: pypi\n" in test
+    assert "repository-url: https://upload.pypi.org/legacy/" in test
+    assert "name: pypi-development-distribution" in test
+    assert "public, immutable development version" in production
+    assert "testpypi" not in text.lower()
+    assert "test.pypi.org" not in text
     assert "require_release_checks.py" not in test
 
 

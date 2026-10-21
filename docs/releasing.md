@@ -29,7 +29,7 @@ waits for all targets before creating the draft. Python is packaged independentl
 
 Manual execution is separate from the normal entry points above. Use the marked test modes described in
 [publication gates](#publication-gates), [.NET packaging](#net-packaging),
-[TestPyPI publication](#manual-testpypi-publication), and [Pages test publication](#test-publish-from-a-branch).
+[development PyPI publication](#manual-development-publication), and [Pages test publication](#test-publish-from-a-branch).
 The publish-prefixed filenames organize the actions; they do not all independently publish to a public destination.
 
 ```mermaid
@@ -80,7 +80,7 @@ checks, use visibly non-release versions, and do not create or promote a qualifi
 | Manual Action | Output | Version |
 | --- | --- | --- |
 | Publish .NET Packages | Downloadable run artifacts, not GitHub Release attachments | `VERSION-test.RUN_ID.RUN_ATTEMPT` |
-| Publish Python to PyPI with `test_publish` checked | TestPyPI only, never production PyPI | `0.0.0.devRUN_ID` |
+| Publish Python to PyPI with `test_publish` checked | Public, immutable development release on production PyPI | `0.0.0.devRUN_ID` |
 | Publish WebHID Pages with `test_publish` checked | The normal Pages site, replacing its current deployment | `0.0.0-test.RUN_ID.RUN_ATTEMPT` |
 
 The run identifiers are supplied by GitHub; no release tag is needed for these test modes. Environment approval and
@@ -185,8 +185,8 @@ metadata, and .NET build metadata receive `1.2.3` internally.
 
 For **Release** preflight and independent **Publish .NET Packages** runs, this input is a base version label; it need
 not already exist as a Git tag, does not create a tag, and does not change which branch/commit is checked out.
-Production PyPI and WebHID publication require an existing, published, qualified release tag. WebHID and TestPyPI
-branch test modes leave **tag** empty and generate their marked test versions automatically.
+Stable PyPI releases and release-mode WebHID publication require an existing, published, qualified release tag.
+WebHID and Python development-publish modes leave **tag** empty and generate their marked test versions automatically.
 
 Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release version resolver owns tag bounds; firmware
 build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the
@@ -223,6 +223,9 @@ the package name and tag version, and passes only that verified wheel to the pro
 rebuild packages or publish on tag push, draft creation, or release preflight runs. Source-distribution publication
 remains deferred until its rebuild and installation checks are implemented.
 
+All Python uploads from this repository target production PyPI. The explicit manual development path below uses the
+same `pypi` environment and Trusted Publisher, but uploads a marked development version rather than a stable release.
+
 ### Trusted Publisher Setup
 
 1. Merge the workflow into the default branch so release events and manual dispatch are available.
@@ -243,8 +246,8 @@ remains deferred until its rebuild and installation checks are implemented.
 
 The filename is not the workflow display name or its full path. No PyPI API token or GitHub secret is required.
 If a Trusted Publisher was registered before the workflow rename, update or replace its registration with
-`publish-pypi.yml` on both PyPI and TestPyPI before the next upload. The environment names remain `pypi` and `testpypi`.
-Only the publishing job receives `id-token: write`; verification and downloads run without publication credentials.
+`publish-pypi.yml` on PyPI before the next upload. Both stable and development publication use environment `pypi`.
+Only publishing jobs receive `id-token: write`; verification and downloads run without publication credentials.
 The official PyPA action verifies distribution metadata and creates publication attestations using Trusted Publishing.
 
 ### Publish And Retry
@@ -262,23 +265,25 @@ by another workflow's default `GITHUB_TOKEN` does not trigger the release-event 
 PyPI versions and uploaded filenames are immutable. This workflow intentionally does not skip existing distributions:
 an already-published version fails visibly rather than masking a mismatch. If upload succeeded but a later step
 failed, inspect PyPI before retrying; publish corrections under a new version. A PyPI failure does not roll back the
-GitHub Release or Pages deployment. Production publication never falls back to TestPyPI.
+GitHub Release or Pages deployment.
 
-### Manual TestPyPI Publication
+### Manual Development Publication
 
-Create a separate GitHub environment named **testpypi** and register a Trusted Publisher on
-<https://test.pypi.org/>. Use the same owner, repository, workflow filename, and package name as above, but set the
-publisher environment to **testpypi**. TestPyPI accounts, project ownership, and publisher registration are separate
-from production PyPI; no production credentials are used for this path.
+Use the production PyPI Trusted Publisher and **pypi** GitHub environment configured above. Ensure that environment
+permits the selected branch and approve its deployment if required. No separate package index or publisher is used.
 
 Run **Actions > Publish Python to PyPI > Run workflow**, select the branch, check **test_publish**, and leave **tag**
 empty. The workflow runs Python package tests, builds `0.0.0.devRUN_ID`, checks the installed wheel outside the source
-tree, and publishes it only to TestPyPI after environment approval. The full PR/release/HIL gates are not required.
-The wheel is also available as the run's `testpypi-distribution` artifact.
+tree, and publishes it to **production PyPI** after environment approval. The full PR/release/HIL gates are not required
+for this explicit development mode. The wheel is also available as the run's `pypi-development-distribution` artifact.
 
-Each new workflow run gets a different development version. Rerunning the same run keeps its version; TestPyPI rejects
-an already-uploaded filename, so start a new manual run when a new test upload is needed. TestPyPI is not a production
-distribution channel, and test uploads do not change the normal `pico-uart` version on PyPI.
+These are real public uploads, not private previews. A successful first upload can create the PyPI project and convert
+its pending Trusted Publisher into a regular publisher. Development versions remain distinct from stable tag versions;
+they do not certify that the full cross-project tests or firmware HIL gates passed.
+
+Each new workflow run gets a different development version. Rerunning the same run keeps its version; PyPI rejects
+an already-uploaded filename, so start a new manual run when a new development upload is needed. Uploaded filenames
+cannot be reused, even after deletion. Review the branch contents before starting the run.
 
 ## WebHID Pages
 
