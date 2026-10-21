@@ -122,6 +122,11 @@ target_include_directories(test_hw_uart_driver BEFORE PRIVATE
 target_compile_options(test_hw_uart_driver PRIVATE -ffunction-sections -fdata-sections)
 target_link_options(test_hw_uart_driver PRIVATE -Wl,--gc-sections)
 
+if(MINGW)
+    target_compile_options(test_pio_tx_driver PRIVATE -fno-asynchronous-unwind-tables -fno-unwind-tables)
+    target_compile_options(test_hw_uart_driver PRIVATE -fno-asynchronous-unwind-tables -fno-unwind-tables)
+endif()
+
 pico_uart_add_unity_test(test_cdc_soft_pending cdc_soft_pending
     test_cdc_soft_pending.c
 )
