@@ -18,7 +18,7 @@ Choose the target for the computer running the application, not the Pico:
 | Apple Silicon Mac | `osx-arm64` | `.tar.gz` |
 
 Extract the **whole archive**, keeping its `web` directory and other files beside the executable. No .NET SDK, runtime,
-or Python installation is needed. See [distribution details](../../docs/development/host-distribution.md#net-downloads)
+or Python installation is needed. See [distribution details](../../docs/deployment/host-app-distribution.md#net-downloads)
 for supported downloads and packaging limitations.
 
 Connect a board running compatible [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases) over USB to

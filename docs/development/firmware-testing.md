@@ -21,7 +21,8 @@ suite as a substitute for another.
 
 CI validates host behavior and firmware builds. It has no physical board or wiring fixture and cannot prove UART
 signaling, USB enumeration, DMA timing, or multicore behavior under load. Physical acceptance and exact-artifact release
-gates are defined in the [hardware test documentation](../tests/README.md) and [release guide](../deployment/releasing.md).
+gates are defined in the [hardware test documentation](../tests/README.md) and
+[release guide](../deployment/releasing.md).
 
 ## Cursor Cloud Environment
 
@@ -41,9 +42,9 @@ These packages are installed once and captured in the snapshot. Do not apt-insta
 
 ### Update Script
 
-The update script refreshes the checkout environment; it does not start a service:
+Run this update script in Bash; it refreshes the checkout environment and does not start a service:
 
-```sh
+```bash
 set -euo pipefail
 python3 -m venv host/python/.venv
 host/python/.venv/bin/python -m pip install --require-hashes -r host/python/requirements-lock.txt

@@ -12,7 +12,7 @@ Follow [HIL Fixture Setup](hil-fixture-setup.md) and install both crossed pairs 
 [Hardware Setup](../hardware-setup.md) document is the GPIO source of truth. Use the manual Debug Probe
 external-peer check only when needed; it is not part of HIL pass criteria.
 
-Test both board targets when hardware is available:
+Test both board targets when hardware is available, one board at a time:
 
 - Raspberry Pi Pico (`pico`, RP2040)
 - Raspberry Pi Pico 2 (`pico2`, RP2350)
@@ -27,6 +27,19 @@ Test both board targets when hardware is available:
 All links use 3.3 V UART signaling, 8N1 at the default 115200 baud, and shared ground. RTS/CTS is disconnected unless an
 explicit flow-control variant is under test.
 
+The commands below change serial settings and transmit UART data. Identify the intended board and endpoints before
+running them, and use the dedicated fixture rather than ports connected to unrelated equipment. `--help` displays
+usage; `--no-record` suppresses result recording but still runs hardware tests and is not a dry-run mode.
+
+The runners' HID health queries use automatic discovery, not the supplied CDC paths. Keep only the intended PicoUart
+board available to those queries and verify that all six CDC paths belong to it. `--board` is a record label, not a
+device selector; attaching a second compatible board can make HID discovery ambiguous and invalidate health evidence.
+
+Flash the intended image using the [release flashing procedure](../deployment/releasing.md#flashing-release-artifacts)
+before testing, then verify its HID firmware version and ready state. `--artifact` hashes the supplied file; it does not
+read back flash or prove the board is running that file. Version and commit arguments are record labels, so match them
+to the flashed artifact and retain the flashing evidence rather than relying on matching labels alone.
+
 ## Functional Pass
 
 Run the functional stages in order with all four links installed. The runner tests pairs in both directions and each
@@ -40,18 +53,21 @@ tools/hil/runner/functional.sh \
   --pico-cdc3 /dev/serial/by-id/<pico-cdc3> \
   --pico-cdc4 /dev/serial/by-id/<pico-cdc4> \
   --pico-cdc5 /dev/serial/by-id/<pico-cdc5> \
-  --board pico --firmware-version 1.2.3 --firmware-commit <commit>
+  --board pico --firmware-version 1.2.3 --firmware-commit <commit> \
+  --artifact /path/to/flashed/pico_uart.elf
 ```
 
 Functional pass criteria:
 
 - CDC0 through CDC5 and HID enumerate.
+- All six UART channels are ready, with no initialization failure or unresolved control-pending state.
 - Both crossed pairs pass in both directions; both loopbacks pass.
 - No unexpected reset, disconnect, serial framing error, new HID `rx_error`, or `control_error` occurs.
 - RX overflow counts do not increase.
 
 Use `--stage 1`, `--stage 2`, `--stage 3`, or `--stage 4` to diagnose one fixture link. A single-stage run is `PARTIAL`,
-not a full functional pass. Use `--continue-on-failure` to collect all stage results and `--no-record` for a dry run.
+not a full functional pass. Use `--continue-on-failure` to collect all stage results and `--no-record` only to suppress
+the result log.
 
 ## Performance Pass
 
@@ -79,7 +95,11 @@ emission order without requiring an external `PYTHONUNBUFFERED` setting. Reports
 For an optional concurrent six-port ceiling search, use `--incremental-performance` with the combined runner. It
 starts at 460800 baud, increases by 100000 baud, and stops at the first failed rate (capped at 3000000 baud by default).
 The summary reports the highest rate where all six streams passed and the first failed rate; that boundary failure is
-expected for a ceiling search. Override the start, step, or cap with `--incremental-start-rate`,
+expected for a ceiling search. Incremental mode can exit successfully after at least one rate passes, and a wrapper can
+record `PASS` if its final health check is clean even though boundary rows failed. Inspect every rate and retained HID
+summary; neither that exit code nor the aggregate verdict qualifies the failed rate or the required release matrix.
+The last passing rate describes only that run's achieved load and conditions. Override the start, step, or cap with
+`--incremental-start-rate`,
 `--incremental-rate-step`, or `--incremental-max-rate`. The standalone `pico-uart-hil performance --incremental` mode
 uses the same options.
 
@@ -92,6 +112,9 @@ payload verification remains the end-to-end check that the firmware and UART lin
 | Single direction    | 460800, 600000, 800000, 1000000, 1100000, 1200000                  | 10 s per rate                   |
 | Single pair duplex  | 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000 | 30 s per rate                   |
 | Concurrent six-port | 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, 3000000 | 30 s per rate, fresh port setup |
+
+These are explicit test-plan durations, not runner defaults. Pass `--duration` for the intended test level and record
+the actual duration; a shorter default run does not establish the same coverage.
 
 Before the pair sweeps, set `PICO_DEVICE_BASE` to the PicoUart `/dev/serial/by-id` path before its `-if00`/`-if04`
 interface suffixes.
@@ -131,12 +154,31 @@ tools/hil/runner/performance.sh \
   --cdc5 /dev/serial/by-id/<pico-cdc5> \
   --rates 115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000 \
   --duration 30 --payload-bytes 1024 --timeout 3 \
-  --board pico --firmware-version 1.2.3 --firmware-commit <commit>
+  --board pico --firmware-version 1.2.3 --firmware-commit <commit> \
+  --artifact /path/to/flashed/pico_uart.elf
 ```
 
-For one command that runs both phases, use `tools/hil/runner/full.sh` with the same
-six `--pico-cdcN` arguments. Its performance phase starts only after functional pass. Pass `--skip-functional` or
-`--skip-performance` only when intentionally running one phase.
+For one command that runs both phases and creates a dated record, use the combined runner. It accepts `--pico-cdcN`,
+not the standalone performance runner's `--cdcN`, and names the performance payload option explicitly:
+
+```sh
+tools/hil/runner/full.sh \
+  --pico-cdc0 /dev/serial/by-id/<pico-cdc0> \
+  --pico-cdc1 /dev/serial/by-id/<pico-cdc1> \
+  --pico-cdc2 /dev/serial/by-id/<pico-cdc2> \
+  --pico-cdc3 /dev/serial/by-id/<pico-cdc3> \
+  --pico-cdc4 /dev/serial/by-id/<pico-cdc4> \
+  --pico-cdc5 /dev/serial/by-id/<pico-cdc5> \
+  --rates 115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000 \
+  --duration 30 --performance-payload-bytes 1024 --timeout 3 \
+  --board pico --firmware-version 1.2.3 --firmware-commit <commit> \
+  --artifact /path/to/flashed/pico_uart.elf
+```
+
+Its performance phase starts only after functional success. Use `--skip-functional` or `--skip-performance` only for
+intentional phase-only checks; the combined record is then `PARTIAL`, even if the executed phase exits successfully.
+Likewise, a single-stage functional success is not a full-fixture pass. Inspect the recorded scope and result, not only
+the process exit code. Continue-after-failure options are diagnostic, not a way to qualify a failed run.
 
 The benchmark prints one `TIME <label>: {...}` line per stream with host thread-start, first-send-attempt, and
 first-nonempty-read UTC and monotonic timestamps. These are not wire-level first-byte times and are not parsed by
@@ -148,9 +190,16 @@ For soak testing, run the concurrent fixture for 60 seconds at 115200 baud, then
 1000000 baud. Capture HID health before and after:
 
 ```sh
-python3 -m pico_uart monitor --duration 5
-python3 -m pico_uart overruns
+host/python/.venv/bin/python -m pico_uart monitor --duration 5
+host/python/.venv/bin/python -m pico_uart overruns
 ```
+
+Take these standalone HID samples outside the benchmark, not with another monitor consuming the same board's reports
+while the runner is collecting its own evidence.
+
+The 60-second run is a short sanity check, not long-duration stability qualification. Choose and record a duration
+appropriate to the intended claim; the [record index](records/README.md#evidence-index) identifies historical longer
+runs.
 
 Record every tested rate, including failures. A rate is stable only if every direction and stream passes repeatedly.
 Full-speed USB bandwidth limits aggregate throughput; a concurrent failure does not by itself establish a single-UART
@@ -159,8 +208,8 @@ baud limit. A data mismatch, unexplained loss, unexpected reset, persistent disc
 ## Measured Six-Port Envelope
 
 The October 9 fixture sweeps establish these observed payload-integrity envelopes under USB-paced traffic for the
-tested boards and images, not universal MCU baud limits or continuous full-rate UART capacity. Use the passing
-range for comparable workloads; higher rates are ceiling-search tests.
+tested boards and images, not universal MCU baud limits or continuous full-rate UART capacity. They are historical
+evidence, not recommended limits for later firmware; rerun qualification on the intended image and workload.
 
 | Image | Highest tested rate with all six payload streams passing | First failed tested rate | Evidence |
 | --- | ---: | ---: | --- |
@@ -169,9 +218,9 @@ range for comparable workloads; higher rates are ceiling-search tests.
 | Pico 2, 150 MHz | 3000000 baud | None within sweep | [Rated Pico 2](records/2026-10-09-072834Z-pico2-hil.md) |
 | Pico 2, 280 MHz | 3000000 baud | None within sweep | [Local 280 MHz build](records/2026-10-09-074700Z-pico2-280mhz-hil.md) |
 
-For the rated Pico, 256000 baud is the documented conservative six-port operating envelope from this matrix,
-not an exact maximum: intermediate rates between 256000 and 460800 were not tested. To verify that envelope,
-use `--rates 115200,128000,153600,230400,256000`; the default wider sweep intentionally probes unsupported rates.
+For the tested rated Pico image, 256000 baud was the highest all-stream payload pass in this matrix,
+not an exact maximum: intermediate rates between 256000 and 460800 were not tested. To rerun that historical range,
+use `--rates 115200,128000,153600,230400,256000`; the default wider sweep probes beyond those passing observations.
 The clock-dependent improvement at 250 MHz is consistent with limited service capacity in the dual-core
 USB/UART path at 125 MHz. No core profiling was collected, so a specific multicore defect or CPU bottleneck is
 not established. The recorded failures outside this envelope remain failures, not valid payload transfers.
@@ -211,8 +260,13 @@ when interpreting losses; separate UART/backend capacity from end-to-end USB bri
 
 ## Results and Release Evidence
 
-`pico-uart-hil` creates a fixed-format, dated record in [records](records/README.md). Functional or
-performance runs append to the ignored local log at `build/hil-results.md`; preserve separate transcripts when
+The combined runner creates a fixed-format, dated record in [records](records/README.md). Standalone functional or
+performance runs write to the ignored local log at `build/hil-results.md` by default; preserve separate transcripts when
 diagnosing failures. A local log alone does not qualify a release. Release HIL evidence must identify each rated board,
 the exact artifact and SHA-256, firmware version and commit, test commands, per-link results, and HID health. Attach or
-link the generated record and transcript with the release evidence as described in [Releasing](../deployment/releasing.md).
+link the generated record and transcript with the release evidence as described in
+[Releasing](../deployment/releasing.md).
+
+`NOT RUN` means the configured rate was not attempted; `NOT REPORTED` means expected per-stream results were absent.
+Neither establishes a pass. Preserve incomplete and failed rows, and assess the declared test scope alongside payload
+verification and retained health evidence before making a qualification claim.

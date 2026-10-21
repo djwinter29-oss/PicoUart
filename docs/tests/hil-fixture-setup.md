@@ -42,8 +42,13 @@ are running an explicit flow-control variant.
 - Jumper wires
 - Host computer with the PicoUart host tools installed
 
+The runner wrappers require the separate HIL environment. From the repository root, follow the
+[HIL tool setup](../../tools/README.md) and run `tools/hil/setup.sh` before using them. This needs uv and
+network access for dependencies; creating the environment does not flash a board or transmit UART data.
+
 ## Electrical Safety
 
+- Disconnect power before installing jumpers or checking continuity; reconnect only after verifying the wiring.
 - Use 3.3 V UART logic only.
 - Connect a shared ground for every link.
 - Never connect UART TX to TX or RX to RX.
@@ -93,11 +98,12 @@ Connect UART5/CDC5 TX to its own RX:
 
 ## Bring-Up Checklist
 
-1. Flash the intended firmware artifact and record its version and SHA-256.
-2. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate. Prefer stable paths under
+1. With the board unpowered, install and check the four link tables above: TX crosses to RX, RX crosses to TX, and each
+   link shares the board's ground. Perform continuity checks only while unpowered.
+2. [Flash the intended firmware artifact](../deployment/releasing.md#flashing-release-artifacts) and record its version
+   and SHA-256.
+3. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate. Prefer stable paths under
    `/dev/serial/by-id` instead of `/dev/ttyACM*`.
-3. Run a continuity check against the four link tables below: TX crosses to RX, RX crosses to TX, and every link has a
-   common ground.
 4. Confirm all four links are installed before starting the full test.
 5. Run the functional and performance plans without changing wiring.
 6. Remove all test jumpers before connecting external UART equipment.
@@ -123,7 +129,9 @@ and the board-testing procedure in the repository skill documentation.
 ## Optional Manual External-Peer Check
 
 A Debug Probe UART connection may be tested manually as an external peer, but it is not part of this HIL fixture or its
-pass criteria. Connect one PicoUart port to the probe and run:
+pass criteria. Disconnect power and remove the baseline fixture jumpers before connecting an external peer, so two TX
+outputs cannot drive the same RX line. Wire one PicoUart port to the probe using crossed TX/RX and shared ground, then
+reconnect power and run:
 
 ```sh
 tools/hil/runner/bridge.sh \
@@ -131,3 +139,5 @@ tools/hil/runner/bridge.sh \
    --peer-port /dev/serial/by-id/<debug-probe-uart> \
    --label manual-debug-probe --baud 115200
 ```
+
+Disconnect power before restoring all four fixture links for a subsequent baseline HIL run.

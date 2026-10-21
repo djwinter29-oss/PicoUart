@@ -20,7 +20,7 @@ flowchart TD
 
 | Level           | Environment                     | Primary purpose                                                         | Result authority           |
 | --------------- | ------------------------------- | ----------------------------------------------------------------------- | -------------------------- |
-| Host tests      | Native host                     | Pure policies, rings, claims, controls, adapter contract, facade guards | `ctest` result             |
+| Host tests      | Native host                     | Firmware policies plus host applications and cross-project contracts | Relevant CTest, pytest, .NET, or Node result |
 | Firmware build  | Pico SDK/toolchain              | Compile/link both RP2040 and RP2350 targets                             | Build artifacts            |
 | Functional HIL  | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health           | Functional result entry    |
 | Performance HIL | Same fixture                    | Throughput, integrity, concurrency, soak, overflow behavior             | Performance result entry   |
@@ -28,8 +28,9 @@ flowchart TD
 
 ## Automated Validation
 
-Follow the [Python environment setup](../development/host-tools.md#python-environment-setup), then run from the repository
-root. The host-test wrapper runs both the native C suite and Python tests; a separate `ctest` invocation is unnecessary.
+Follow the [Python environment setup](../development/host-tools.md#python-environment-setup), then run from the
+repository root. The host-test wrapper runs both the native C suite and Python tests; a separate `ctest` invocation is
+unnecessary.
 
 ```sh
 PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
@@ -40,6 +41,10 @@ git diff --check
 
 The host suite is not a hardware test. It does not prove DMA timing, USB enumeration, multicore scheduling under load,
 physical UART signaling, or RTS/CTS behavior.
+
+The wrapper covers native C and repository Python tests, not every host application suite. Run the relevant .NET and
+browser checks from the [host development guide](../development/host-tools.md) when those applications or their shared
+contracts change; report skipped checks rather than treating the wrapper as a universal pass.
 
 ## Hardware Test Sequence
 

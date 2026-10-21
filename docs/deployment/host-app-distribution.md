@@ -1,10 +1,10 @@
-# Host Distribution Plan
+# Host App Distribution
 
 The release workflow packages firmware, a Python wheel, and self-contained .NET archives. Host artifacts and firmware
 share the resolved release tag version. The [WebHID dashboard](https://djwinter29-oss.github.io/PicoUart/) is hosted on
 GitHub Pages, and the [Python package](https://pypi.org/project/pico-uart/) is available on PyPI. Stable publications remain
-subject to the [release gates](../deployment/releasing.md#publication-gates); deployment and publisher setup are documented under
-[WebHID Pages](../deployment/releasing.md#webhid-pages) and [PyPI publication](../deployment/releasing.md#pypi-publication).
+subject to the [release gates](releasing.md#publication-gates); deployment and publisher setup are documented under
+[WebHID Pages](releasing.md#webhid-pages) and [PyPI publication](releasing.md#pypi-publication).
 Python source-distribution release assets, native installers, and a downloadable WebHID archive remain planned.
 
 ## Distribution Channels
@@ -27,7 +27,7 @@ dashboard identify the release version through installed package metadata, witho
 
 The [PyPI workflow](../../.github/workflows/publish-pypi.yml) publishes the verified GitHub Release wheel without
 rebuilding it. It runs after release publication, not tag creation, and supports manual retries for published tags.
-See the [publication procedure](../deployment/releasing.md#pypi-publication) for Trusted Publisher registration, approval, and
+See the [publication procedure](releasing.md#pypi-publication) for Trusted Publisher registration, approval, and
 immutable-version behavior. Source-distribution publication is not enabled in this initial workflow.
 
 Use `pipx install pico-uart` for stable releases, or `pipx install --pip-args="--pre" pico-uart` to allow development
@@ -39,7 +39,7 @@ Before adding source-distribution publication, build a wheel and source distribu
 source distribution. Install and smoke-test both
 wheel paths in clean environments outside the checkout. Verify the CLI, bundled dashboard assets, and runtime
 dependencies on Linux, Windows, and macOS. Do not rely on editable installs or source-tree asset fallbacks as release
-evidence. See [host development](host-tools.md#python-distribution) for the existing package build entry point.
+evidence. See [host development](../development/host-tools.md#python-distribution) for the existing package build entry point.
 
 ## .NET Downloads
 
@@ -53,7 +53,7 @@ per-target checksums. The [release workflow](../../.github/workflows/release.yml
 attaches its artifacts alongside the separately built Python package and firmware. The .NET workflow does not build
 Python packages or publish independently to an existing GitHub Release.
 
-The [.NET packaging procedure](../deployment/releasing.md#net-packaging) owns release invocation, manual test-run inputs,
+The [.NET packaging procedure](releasing.md#net-packaging) owns release invocation, manual test-run inputs,
 artifact retrieval, and version-marker behavior. Independent manual runs produce marked test artifacts, not public
 release attachments; normal release packaging remains subject to the shared publication gates.
 
@@ -84,9 +84,9 @@ for the later phase, not part of the initial archive rollout.
 The [WebHID Pages workflow](../../.github/workflows/publish-webhid.yml) deploys `host/webhid` as-is over HTTPS when a
 non-prerelease GitHub Release is published. Draft creation and tag pushes alone do not deploy. Manual deployment
 accepts an already-published release tag for redeployment or rollback. See the
-[Pages release procedure](../deployment/releasing.md#webhid-pages) for repository setup and operational steps.
+[Pages release procedure](releasing.md#webhid-pages) for repository setup and operational steps.
 
-An explicit [test-publish option](../deployment/releasing.md#test-publish-from-a-branch) can deploy a selected branch commit without
+An explicit [test-publish option](releasing.md#test-publish-from-a-branch) can deploy a selected branch commit without
 a release or completed cross-project checks. It runs the WebHID checks, displays a test-version marker, and replaces
 the live Pages site, rather than creating a separate preview.
 
@@ -103,11 +103,11 @@ and browser/device compatibility. Mocked tests do not prove native WebHID access
 
 ## Release Order And Gates
 
-The [release workflow overview](../deployment/releasing.md#workflow-overview) owns entry points, dependencies, draft promotion,
-and downstream publication order. The [publication gates](../deployment/releasing.md#publication-gates) define required check
+The [release workflow overview](releasing.md#workflow-overview) owns entry points, dependencies, draft promotion,
+and downstream publication order. The [publication gates](releasing.md#publication-gates) define required check
 results and explicit manual test exceptions. Publisher registration, environment setup, retry, and rollback procedures
 also live in that guide; this document owns distribution choices, supported downloads, and deferred installer work.
 
-Host artifact checks do not replace [firmware release qualification](../deployment/releasing.md#release-hil-gates). Firmware
+Host artifact checks do not replace [firmware release qualification](releasing.md#release-hil-gates). Firmware
 promotion still requires exact-artifact HIL evidence. For host releases, record the firmware used for device checks,
 supported HID contract, tested platforms, and any unverified compatibility claims in release notes.

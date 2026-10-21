@@ -156,7 +156,7 @@ With the [pico-uart](https://pypi.org/project/pico-uart/) package installed as a
 | Connect UART devices | [Hardware setup](docs/hardware-setup.md) |
 | Understand USB and UART behavior | [CDC/HID overview](docs/design/usb/cdc-hid-overview.md), [architecture](docs/design/architecture.md) |
 | Build or modify firmware | [Firmware build guide](firmware/build-and-config.md), [development and testing](docs/development/firmware-testing.md) |
-| Develop host applications | [Host development](docs/development/host-tools.md), [distribution plan](docs/development/host-distribution.md) |
+| Develop host applications | [Host development](docs/development/host-tools.md), [host app distribution](docs/deployment/host-app-distribution.md) |
 | Publish or test a release | [Release workflows and qualification](docs/deployment/releasing.md) |
 | Contribute | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md) |
 

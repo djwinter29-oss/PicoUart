@@ -4,8 +4,11 @@ This guide covers the Python and .NET host tools and their shared dashboard fron
 the [Python package guide](../../host/python/README.md) and [.NET host guide](../../host/dotnet/README.md). The Python
 package guide is also included as the PyPI project description.
 
-The independent [WebHID prototype](../../host/webhid/README.md) runs directly in a supported desktop browser with its
+The independent [WebHID dashboard](../../host/webhid/README.md) runs directly in a supported desktop browser with its
 own assets and renderer. Its hardware-free checks use Node rather than the Python/.NET test runners.
+
+Run commands from the repository root unless a linked guide explicitly says otherwise. These setup, build, and test
+steps do not require a board; physical device checks require an identified board and separate hardware validation.
 
 ## Prerequisites
 
@@ -13,8 +16,12 @@ own assets and renderer. Its hardware-free checks use Node rather than the Pytho
 - .NET 10 SDK for the C# host
 - Desktop Chrome or Edge with WebHID support for the browser-only host
 - Node 22 or newer for WebHID unit tests; no Node runtime is required to use a hosted page
+- uv for the Python build and lock-generation commands below; ordinary package installation uses pip or pipx
 - Bash on Linux/macOS, or PowerShell on Windows
 - Network access to install hash-locked Python dependencies and restore .NET packages
+
+Install only the tools needed for the application or checks you are changing. Source checkouts need Git and full tag
+history for Git-derived Python versions; standalone source archives preserve their resolved version without Git.
 
 ## Python Environment Setup
 
@@ -28,7 +35,8 @@ host/python/.venv/bin/python -m pip install --require-hashes -r host/python/requ
 host/python/.venv/bin/python -m pip install --no-deps --no-build-isolation -e host/python
 ```
 
-On native Windows, use `python` for the first command and `host/python/.venv/Scripts/python.exe` for subsequent commands.
+On native Windows, use `python` to create the environment and replace `host/python/.venv/bin/python` with
+`host/python/.venv/Scripts/python.exe` throughout this guide.
 Repeat both install commands when dependency manifests or locks change. The launchers are POSIX shell scripts for
 Linux/macOS/WSL; native Windows application commands remain in the package guides.
 If hidapi has no wheel for your Python/platform, installation needs its native build prerequisites. Installation errors
@@ -47,20 +55,27 @@ and the shared assets backend-neutral.
 
 ## Python Tests
 
-Run package tests from `host/python`:
+Run only the Python package tests:
 
 ```bash
-.venv/bin/python -m pytest -c pyproject.toml
+host/python/.venv/bin/python -m pytest -c host/python/pyproject.toml host/python/tests
 ```
 
-For the full cross-project suite, Windows paths, and hardware-test boundaries, see the
-[Test Documentation Index](../tests/README.md).
-
-Measure package coverage from `host/python` with:
+For repository Python checks, including tooling and cross-project contracts:
 
 ```bash
-.venv/bin/python -m pytest --cov=pico_uart --cov-report=term-missing
+host/python/.venv/bin/python -m pytest -c pyproject.toml
 ```
+
+Measure package coverage with:
+
+```bash
+host/python/.venv/bin/python -m pytest -c host/python/pyproject.toml host/python/tests \
+  --cov=pico_uart --cov-report=term-missing
+```
+
+These Python checks do not replace the separate .NET and Node suites or physical UART validation. See the
+[test index](../tests/README.md) for validation levels and hardware boundaries.
 
 ## Python Dependencies and Locking
 
@@ -94,14 +109,16 @@ uv pip compile --group host/python/pyproject.toml:test --constraint host/python/
 
 The [dependency contract tests](../../tests/contracts/test_firmware_contract.py) check direct pins, runtime/development
 alignment, and that the runtime lock contains no test packages. The
-[firmware CI contracts](../../tests/contracts/test_voltage_ci_contract.py) verify the minimal lock's exact pytest subset.
+[firmware CI contracts](../../tests/contracts/test_voltage_ci_contract.py) verify the minimal lock's exact pytest
+subset.
 hidapi `0.14.0.post4` supplies a Python 3.13 Linux ARM64 wheel,
 avoiding the original `0.14.0` source-build failure on that platform.
 
 ## Python Distribution
 
 The publication channels and artifact qualification gates are in the
-[host distribution plan](host-distribution.md). The commands below build locally; they do not publish to PyPI.
+[host app distribution guide](../deployment/host-app-distribution.md).
+The commands below build locally; they do not publish to PyPI.
 
 Build the wheel from the repository root:
 
@@ -114,10 +131,12 @@ The nested package searches parent directories for the repository; fetch full hi
 Source distributions preserve the resolved version without Git. With neither Git metadata nor a source-distribution
 version, the fallback is `0.0.0.dev0`. Use `SETUPTOOLS_SCM_PRETEND_VERSION` for an explicit test-build version.
 
-`hatch_build.py` bundles the canonical `host/web` assets so source distributions build without the rest of the repository.
+`hatch_build.py` bundles the canonical `host/web` assets so source distributions build without the rest of the
+repository.
 Package tests require the repository checkout and are not included in source distributions or wheels.
 Hatchling, its VCS plugin, and the editable-install helper are included in the locked development environment.
-Builds fail if required dashboard assets are missing from both the checkout and the bundled source tree.
+Builds validate the selected dashboard asset tree and fail on missing required files instead of emitting an incomplete
+host package.
 Keep `build-system.requires` pins aligned with the TOML `dev` group and regenerate the development lock when
 updating them. Tag-push releases use Git versions; manual release preflights override the version with their input tag,
 and manual PyPI test publications override it with a marked development version.
@@ -151,6 +170,17 @@ WebHID is a standalone browser app in `host/webhid`, independent of the Python/.
 `host/web` frontend. Keep its assets and device code local to that app; user setup, deployment, architecture, and tests
 are documented in the [WebHID guide](../../host/webhid/README.md).
 
+Run the hardware-free browser checks used by CI:
+
+```sh
+node --check host/webhid/js/view.mjs
+node --check host/webhid/js/app.mjs
+node --test host/webhid/tests/*.test.mjs
+```
+
+The test suite also checks the independent and shared renderers' presentation contracts; it does not open native USB
+devices or qualify browser/OS device access.
+
 WebHID accesses USB devices local to the browser; use the Python/.NET dashboard for remote boards. The
 [HID Report Reference](../design/usb/hid-report-reference.md) owns the wire contract. Mocked Node tests do not prove
 native browser/OS USB compatibility; see the [hardware test index](../tests/README.md) for physical validation.
@@ -162,7 +192,8 @@ host application, not the board's firmware. Python obtains its installed version
 uses its assembly informational version. The backends pass these values into the shared HTML template; `host/web`
 contains no application version metadata. Tagged Python builds derive their package version from Git through
 `hatch-vcs`; .NET builds use `dotnet publish -p:Version=...`.
-`PICO_UART_HOST_VERSION` is only an optional runtime display override; an unset or empty value uses native build metadata.
+`PICO_UART_HOST_VERSION` is only an optional runtime display override; an unset or empty value uses native build
+metadata.
 Python Git checkouts produce VCS-derived versions; the no-Git fallback `0.0.0.dev0` displays as `0.0.0-debug`.
 .NET uses `0.0.0-debug` for development. Reinstall an editable Python package after commits or tags change its version.
 None of these settings changes the board's firmware version.
@@ -202,13 +233,19 @@ to network exposure or access control. WebHID retains its native browser chooser
 ### Status presentation
 
 Both dashboards separate device identity from live runtime status, retaining the six UART channel table.
-The runtime cards include total RX overflow across all six channels alongside uptime, service load, RAM and temperature.
-The
-`/api/status` snapshot carries `identity` (product and serial) and `runtime` (uptime, per-core service-load basis points, reserved
-and total RAM), with independent `identity_error` and `runtime_error` fields. Unsupported or failed feature reads clear
+`/api/status` carries `identity` (product and serial) and `runtime` (uptime, per-core service-load basis points,
+reserved and total RAM), with independent `identity_error` and `runtime_error` fields. Unsupported or failed reads clear
 the affected values without discarding unrelated valid reports; disconnect clears device identity and runtime.
-Metadata, including uptime, is sampled every second. See the [HID report reference](../design/usb/hid-report-reference.md) for
-the authoritative version-1 field definitions, UID source, service-load semantics, and RAM accounting.
+Metadata, including uptime, is sampled every second. See the
+[HID report reference](../design/usb/hid-report-reference.md) for the authoritative version-1 field definitions, UID
+source, service-load semantics, and RAM accounting.
+
+Snapshots can be partially available. `metadata_error` covers the grouped board-status and overflow-count reads; a
+failure clears `board` and `hardware` and marks each overflow count unknown, while independent identity/runtime data
+can remain valid.
+If only the later hardware-info read fails, `hardware_error` is set without discarding board status or overflow counts.
+Clients must inspect the relevant error fields rather than treating missing metadata as zero or the whole board as
+disconnected.
 
 `configuration` reports the source (defaults, stored, or recovery), fallback reason, stored profile, and active profile
 using read-only HID feature report 16; `configuration_error` is independent. The snapshot and both dashboards refresh
@@ -216,30 +253,26 @@ this diagnostic with other metadata once per second and clear it when unavailabl
 flash contents are returned.
 
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
-The Device identity heading contains one outline **Board LED: On/Off** button with a physical-output indicator dot.
-Clicking toggles the manual LED setting; USB activity may also light the LED. Unknown output is shown as `--`.
-Sequence numbers remain internal
-for report-gap detection rather than appearing in the UI. Compact identity/runtime cards leave more room for UART
-monitoring, and uptime omits zero-valued units except seconds.
+The **Board LED: On/Off** action toggles the manual LED setting; its output indicator reports physical state, which USB
+activity may also affect. Unknown output is shown as `--`. Sequence numbers remain internal for report-gap detection
+rather than appearing in the UI.
 The connection indicator includes report age, updated every second and marked stale after three seconds without a
 changed status sample. Age measures browser receipt time so remote host clock offsets do not distort freshness.
 
 ### Persistent configuration
 
-All three dashboards place **Persistent configuration** in its own section directly below **Device identity**.
-The system-clock dropdown displays **Default (125 MHz)** on Pico (RP2040) or **Default (150 MHz)** on Pico 2 (RP2350),
-and offers only the connected MCU's supported overclock profile. Editing the dropdown never writes the device, and
-telemetry refreshes do not overwrite unsaved edits. The compact section uses the same summary-card layout as Device
-identity, with the dropdown below
-its label at one-fifth of the available desktop width (full width on mobile) and **Save & Reboot** beside the section
-heading. Boot source/profile details are omitted. The unsafe-overclock acknowledgement appears only when a non-default
-profile is selected.
+All three dashboards expose **Persistent configuration** separately from live telemetry. The system-clock selector
+offers the connected MCU's supported profiles and identifies its SDK default. Editing the selection never writes the
+device, and telemetry refreshes do not overwrite unsaved edits. A non-default profile requires explicit unsafe-overclock
+acknowledgement before **Save & Reboot**.
 
-**Save & Reboot** persists the choice through [HID report 17](../design/usb/hid-report-reference.md#report-17-save-persistent-clock-profile),
-waits for a matching verified result, and displays failures explicitly. Close all CDC ports and stop external UART
-traffic first; flash programming pauses servicing on both cores. A successful save automatically reboots the board
-after a short delay so the host can read the verified result. The dashboard warns that USB will disconnect briefly.
-The boot diagnostic display reflects the newly selected profile after the board reconnects.
+**Save & Reboot** persists the choice through
+[HID report 17](../design/usb/hid-report-reference.md#report-17-save-persistent-clock-profile), waits for a matching
+verified result, and displays failures explicitly. Close all CDC ports and stop external UART
+traffic first; flash programming pauses servicing on both cores. A successful save starts the firmware's automatic
+reboot grace period; the reboot does not wait for browser acknowledgement. The dashboard warns that USB will disconnect
+briefly. After reconnecting, inspect the actual boot-selected profile and any fallback reason rather than assuming the
+requested profile became active. A verified save does not establish overclock stability.
 Unavailable save reports disable Save without hiding other valid diagnostics.
 
 Python and .NET expose `POST /api/configuration?board=<id>` with the same session CSRF header as board actions.
@@ -255,8 +288,9 @@ All three dashboards show applied baud/framing and TX/RX GPIOs from the
 [channel diagnostic reports](../design/usb/hid-report-reference.md#reports-10-15-channel-diagnostics), never from a
 hard-coded board map or a CDC request that might have been rejected. Snapshots expose `channel_diagnostics` (six records
 in channel order) and an independent `diagnostics_error`; failed reads clear those records and surface an error,
-while unrelated valid reports remain visible. All HID reports use the current version-1 contract; no legacy decoder
-or missing-report compatibility mode is provided. Diagnostics refresh with metadata every second in all three dashboards.
+while unrelated valid reports remain visible. Versioned HID payloads require their current version-1 layouts; no
+legacy decoder or missing-report compatibility mode is provided. Diagnostics refresh with metadata every second in
+all three dashboards.
 
 Each channel shows a health badge and simple error flags with short troubleshooting tooltips, without expandable
 history, counts, or detection times. The underlying diagnostic records remain available to host tools.
