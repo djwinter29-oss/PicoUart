@@ -15,8 +15,11 @@ profile, not workflow matrix variants.
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
+import shutil
 import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -171,6 +174,29 @@ def test_release_packages_use_distinct_names() -> None:
     assert "pattern: release-*" in text
 
 
+def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -> None:
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    job = text.split("\n  host-packages:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    for rid in ("linux-x64", "win-x64", "osx-arm64"):
+        assert f"rid: {rid}" in job
+    assert "version.txt" not in job
+    assert "PicoUart.deps.json" in job
+    assert "PICO_UART_HOST_VERSION: ${{ steps.version.outputs.version }}" in job
+    assert "--self-contained true" in job
+    assert '-p:Version="$VERSION"' in job
+    assert "Verify installed Python release" in job
+    assert "name: release-host-${{ matrix.rid }}" in job
+    assert "needs: [build, host-validation, host-packages]" in text
+
+
+@pytest.mark.parametrize("step_name", ["Verify installed Python release", "Check and archive standalone host"])
+def test_host_release_embedded_python_compiles(step_name):
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    step = text.split(f"- name: {step_name}\n", 1)[1].split("\n      - name:", 1)[0]
+    script = textwrap.dedent(step.split("<<'PY'\n", 1)[1].rsplit("\n          PY", 1)[0])
+    compile(script, step_name, "exec")
+
+
 def test_webhid_pages_requires_a_published_release_and_checks_the_tag() -> None:
     text = (REPO_ROOT / ".github/workflows/webhid-pages.yml").read_text(encoding="utf-8")
 
@@ -193,8 +219,29 @@ def test_webhid_pages_test_publish_is_explicit_and_uses_the_dispatched_commit() 
     assert "default: false" in inputs
     assert "type: boolean" in inputs
     for step in ("Checkout release tooling", "Validate published release"):
-        assert f"- name: {step}\n        if: github.event_name != 'workflow_dispatch' || !inputs.test_publish" in text
+        section = text.split(f"- name: {step}\n", 1)[1].split("\n      - name:", 1)[0]
+        assert "if: github.event_name != 'workflow_dispatch' || !inputs.test_publish" in section
     assert "inputs.test_publish && github.sha" in text
+
+
+@pytest.mark.parametrize("version,success", [("0.0.0-debug", True), ("1.2.3", True), ("<script>", False)])
+def test_webhid_pages_stamps_only_valid_host_versions(tmp_path, version, success):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node unavailable")
+    text = (REPO_ROOT / ".github/workflows/webhid-pages.yml").read_text(encoding="utf-8")
+    step = text.split("- name: Stamp WebHID version\n", 1)[1].split("\n      - name:", 1)[0]
+    script = textwrap.dedent(step.split("<<'JS'\n", 1)[1].rsplit("\n          JS", 1)[0])
+    target = tmp_path / "host/webhid/index.html"
+    target.parent.mkdir(parents=True)
+    original = (REPO_ROOT / "host/webhid/index.html").read_text(encoding="utf-8")
+    target.write_text(original, encoding="utf-8")
+    result = subprocess.run([node, "--input-type=module", "-"], input=script, text=True,
+                            capture_output=True, cwd=tmp_path, env={**os.environ, "HOST_VERSION": version})
+    assert (result.returncode == 0) == success, result.stderr
+    expected = original.replace(">0.0.0-debug</span>", f">{version}</span>") if success else original
+    assert target.read_text(encoding="utf-8") == expected
+    assert "inputs.test_publish && '0.0.0-debug' || steps.release.outputs.version" in step
 
 
 def test_webhid_pages_deploys_only_the_independent_site_with_scoped_permissions() -> None:

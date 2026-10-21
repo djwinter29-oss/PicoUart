@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PicoUart Diagnostics | WebHID</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/dashboard.css?v=5">
+  <link rel="stylesheet" href="css/dashboard.css?v=9">
   <link rel="stylesheet" href="css/webhid.css?v=5">
   <script type="module" src="js/app.mjs?v=5"></script>
 </head>
@@ -14,7 +14,11 @@
   <header class="topbar">
     <a class="wordmark" href="./" aria-label="PicoUart WebHID home">
       <span class="mark">PU</span>
-      <span><small>WEBHID</small><strong>PicoUart</strong></span>
+      <span><strong>PicoUart</strong>
+        <span class="brand-meta"><small>WebHID</small>
+          <span class="host-version" id="host-version" aria-label="Host application version">0.0.0-debug</span>
+        </span>
+      </span>
     </a>
     <div class="connection" id="connection" data-state="disconnected">
       <span class="connection-light" aria-hidden="true"></span>

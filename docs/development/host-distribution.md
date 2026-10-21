@@ -1,9 +1,10 @@
 # Host Distribution Plan
 
-Status: staged rollout. The firmware release workflow packages firmware and runs host validation. WebHID Pages
+Status: staged rollout. The release workflow packages firmware, a Python wheel, and self-contained .NET archives.
+Host artifacts and firmware share the resolved release tag version. WebHID Pages
 deployment is implemented, subject to the [repository setup](../releasing.md#webhid-pages) and a successful deployment.
-PyPI publication, .NET downloads/installers, and a downloadable WebHID archive remain planned, not available through
-the current release workflow.
+PyPI publication, Python source-distribution release assets, native installers, and a downloadable WebHID archive
+remain planned, not available through the current release workflow.
 
 ## Distribution Channels
 
@@ -17,6 +18,11 @@ Keep Python/.NET assets in their existing shared frontend. WebHID remains indepe
 `host/webhid`; do not introduce a shared asset-generation or preparation step.
 
 ## Python Publication
+
+The release workflow attaches a versioned Python wheel to the draft GitHub Release and verifies an installation
+outside the checkout. Download the wheel from a published release and install it with `pipx install /path/to/file.whl`
+or with `python -m pip install /path/to/file.whl` inside a virtual environment. Both package metadata and the bundled
+dashboard identify the release version through installed package metadata, without runtime configuration.
 
 Publish the existing `pico-uart` host package to PyPI. Once publication is available, recommend
 `pipx install pico-uart` to isolate dependencies and avoid modifying an OS-managed Python environment. Keep Linux-only
@@ -33,10 +39,17 @@ evidence. See [host development](host-tools.md#python-distribution) for the exis
 
 ## .NET Downloads
 
-Start with runtime-specific self-contained archives: `.tar.gz` on Linux/macOS and `.zip` on Windows. Select and
-document supported OS/architecture combinations before publishing; cross-platform source tests alone do not establish
-that every runtime identifier works. Include the shared dashboard assets and required native HID dependencies.
-Self-contained does not necessarily mean a single executable or the absence of OS library requirements.
+The release workflow attaches runtime-specific self-contained archives: `.tar.gz` on Linux/macOS and `.zip` on Windows,
+initially targeting Linux x64, Windows x64, and macOS arm64. Other architectures are not supplied by this matrix.
+Archives include the shared dashboard; the application passes its assembly's tag version to that dashboard, with no
+installed .NET runtime required.
+Self-contained does not mean a single executable or the absence of OS library/device-permission requirements.
+The [release workflow](../../.github/workflows/release.yml) owns artifact names and the target matrix.
+
+Each host packaging job extracts its archive and checks native CLI startup and the bundled version before checksumming.
+The release draft waits for all host packages, host validation, and firmware builds. Publishing the qualified draft
+makes the host downloads available and triggers the separate WebHID deployment with the same tag version. Creating a
+tag alone does not publish the draft or replace the hosted site.
 
 Test each packaged archive after extraction on its target OS, outside the checkout and without relying on an installed
 .NET runtime. Verify CLI startup, loopback dashboard startup/shutdown, served assets, and the HTTP contract. Record
@@ -85,8 +98,9 @@ and browser/device compatibility. Mocked tests do not prove native WebHID access
    sanitizers and Windows native C tests alongside cross-platform Python/.NET validation and independent WebHID checks.
 3. Configure PyPI Trusted Publishing and GitHub Pages permissions/environments. Build immutable artifacts once, record
    checksums, and publish those tested artifacts after approval rather than rebuilding during publication.
-4. Ship PyPI packages, .NET archives, and the Pages site as the first phase. Document actual installation/download URLs
-   in the application guides only when available. Test upgrades and retain earlier archives and deployment references.
+4. Enable PyPI publication after its remaining artifact and account checks. GitHub release wheels, .NET archives, and
+   Pages deployment are implemented; live availability still requires successful release runs and Pages setup.
+   Test upgrades and retain earlier archives and deployment references.
 5. Add native installers when user demand justifies their signing, installation, upgrade, and removal obligations.
 
 Host artifact checks do not replace [firmware release qualification](../releasing.md#release-hil-gates). Firmware

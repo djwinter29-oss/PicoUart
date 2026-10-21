@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -100,6 +101,8 @@ static async Task RunWeb(Options options)
         });
     }
     var template = await File.ReadAllTextAsync(Path.Combine(webRoot, "index.html"));
+    var packagedVersion = Assembly.GetExecutingAssembly()
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0-debug";
     app.MapGet("/favicon.svg", () => Results.File(Path.Combine(webRoot, "favicon.svg"), "image/svg+xml"));
     app.MapGet("/", (HttpContext context) =>
     {
@@ -109,7 +112,10 @@ static async Task RunWeb(Options options)
             token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             context.Session.SetString("csrf_token", token);
         }
-        return Results.Content(template.Replace("{{ csrf_token }}", token).Replace("{{ dashboard_type }}", ".NET"),
+        var hostVersion = Environment.GetEnvironmentVariable("PICO_UART_HOST_VERSION");
+        if (string.IsNullOrEmpty(hostVersion)) hostVersion = packagedVersion;
+        return Results.Content(template.Replace("{{ csrf_token }}", token).Replace("{{ dashboard_type }}", ".NET")
+            .Replace("{{ host_version }}", System.Net.WebUtility.HtmlEncode(hostVersion)),
             "text/html");
     });
     app.MapGet("/api/boards", (DashboardBoards dashboard) =>

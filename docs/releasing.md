@@ -1,7 +1,7 @@
 # Releasing PicoUart
 
-Release tags run [`.github/workflows/release.yml`](../.github/workflows/release.yml), which builds and packages firmware,
-runs host validation, and opens a **draft** GitHub Release. The workflow and
+Release tags run [`.github/workflows/release.yml`](../.github/workflows/release.yml), which packages firmware, a Python
+wheel, and standalone .NET archives, runs host validation, and opens a **draft** GitHub Release. The workflow and
 [firmware build guide](../firmware/build-and-config.md) define the current board matrix, clocks, and artifact names.
 The promote HIL gate covers the rated images.
 
@@ -10,7 +10,8 @@ Do not publish the draft until exact-artifact hardware-in-the-loop (HIL) evidenc
 A `workflow_dispatch` run creates artifacts for preflight HIL; a release tag creates the draft to promote.
 
 Host application publication follows the [host distribution plan](development/host-distribution.md).
-[WebHID Pages](#webhid-pages) deploys separately after release publication; PyPI and .NET distribution remain planned.
+[WebHID Pages](#webhid-pages) deploys separately after release publication. The Python wheel and .NET archives embed
+the same tag version in their dashboards and have per-target checksums. PyPI and native installers remain planned.
 
 ```mermaid
 flowchart LR
@@ -162,6 +163,8 @@ or the repository name change. This setup does not claim the site is already liv
 Publish the qualified firmware draft through GitHub's release UI to trigger deployment. The Pages workflow validates
 the release tag and published/non-prerelease status, checks out that tag, runs the WebHID tests, and uploads only
 `host/webhid`. Deployment runs are serialized and retain the selected tag in their workflow inputs/event record.
+Before upload, the workflow stamps the visible host version from the validated release tag, without the leading `v`.
+Local WebHID and test publishes display `0.0.0-debug`; this label is separate from the connected board's firmware.
 Publishing through another workflow's default `GITHUB_TOKEN` does not trigger a new release-event workflow; use the
 manual deployment below in that case.
 

@@ -83,7 +83,7 @@ avoiding the original `0.14.0` source-build failure on that platform.
 
 ## Python Distribution
 
-The proposed publication channels and artifact qualification gates are in the
+The publication channels and artifact qualification gates are in the
 [host distribution plan](host-distribution.md). The commands below build locally; they do not publish to PyPI.
 
 Build the wheel from the repository root:
@@ -126,6 +126,15 @@ WebHID accesses USB devices local to the browser; use the Python/.NET dashboard 
 native browser/OS USB compatibility; see the [hardware test index](../tests/README.md) for physical validation.
 
 ## Python/.NET Web UI
+
+The backend label and **App v** version share a secondary line beneath **PicoUart** in the top bar. This identifies the
+host application, not the board's firmware. Python obtains its installed version through `importlib.metadata`; .NET
+uses its assembly informational version. The backends pass these values into the shared HTML template; `host/web`
+contains no application version metadata. Tagged release builds set Python package metadata through
+`PICO_UART_HOST_VERSION` and .NET metadata through `dotnet publish -p:Version=...`.
+`PICO_UART_HOST_VERSION` remains an optional runtime override; an unset or empty value uses native build metadata.
+Python development packages use `0.0.0.dev0`, displayed as `0.0.0-debug`; .NET uses `0.0.0-debug` directly. Reinstall an
+editable Python package after changing its metadata. None of these settings changes the board's firmware version.
 
 Python and .NET serve the same frontend from `host/web`. Keep templates backend-neutral and preserve the shared JSON
 contract; do not add a second frontend. The [.NET integration tests](../../tests/tooling/test_dotnet_host.py) guard

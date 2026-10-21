@@ -133,9 +133,124 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  host-packages:
+    name: Package host (${{ matrix.rid }})
+    needs: host-validation
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve host version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -eu
+          VERSION=$(tools/release/resolve-release-version.sh "$EVENT_NAME" "$INPUT_VERSION" "$REF_NAME")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish standalone host
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RID: ${{ matrix.rid }}
+        run: |
+          dotnet publish host/dotnet/PicoUart -c Release -r "$RID" --self-contained true \
+            -p:Version="$VERSION" -o build/host-release
+
+      - name: Build Python wheel
+        if: runner.os == 'Linux'
+        env:
+          PICO_UART_HOST_VERSION: ${{ steps.version.outputs.version }}
+        run: python -m pip wheel --no-deps host/python --wheel-dir dist
+
+      - name: Verify installed Python release
+        if: runner.os == 'Linux'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          python -m venv build/host-wheel-check
+          build/host-wheel-check/bin/python -m pip install --require-hashes -r host/python/requirements-runtime-lock.txt
+          build/host-wheel-check/bin/python -m pip install --no-deps dist/*.whl
+          cd build
+          host-wheel-check/bin/python - <<'PY'
+          from importlib.metadata import version
+          import os
+          from pico_uart.web.app import create_app
+          expected = os.environ['VERSION']
+          assert version('pico-uart') == expected
+          page = create_app(object()).test_client().get('/')
+          assert page.status_code == 200
+          assert f'aria-label="Host application version">{expected}</span>'.encode() in page.data
+          PY
+
+      - name: Check and archive standalone host
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RID: ${{ matrix.rid }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import tempfile
+          version, rid = os.environ['VERSION'], os.environ['RID']
+          root = Path('build/host-release').resolve()
+          assert f'PicoUart/{version}' in json.loads((root / 'PicoUart.deps.json').read_text())['libraries']
+          dist = Path('dist')
+          dist.mkdir(exist_ok=True)
+          archive_format = 'zip' if rid.startswith('win-') else 'gztar'
+          archive = shutil.make_archive(str(dist / f'pico_uart-host-v{version}-{rid}'), archive_format, root_dir=root)
+          with tempfile.TemporaryDirectory() as directory:
+              extracted = Path(directory)
+              shutil.unpack_archive(archive, extracted)
+              assert f'PicoUart/{version}' in json.loads((extracted / 'PicoUart.deps.json').read_text())['libraries']
+              executable = extracted / ('PicoUart.exe' if rid.startswith('win-') else 'PicoUart')
+              subprocess.run([str(executable), '--help'], cwd=extracted, check=True)
+          files = sorted(path for path in dist.iterdir() if path.is_file())
+          checksums = ''.join(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n' for path in files)
+          (dist / f'SHA256SUMS-host-{rid}.txt').write_text(checksums, encoding='utf-8')
+          PY
+
+      - name: Upload host packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-host-${{ matrix.rid }}
+          path: dist/*
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub Release
-    needs: [build, host-validation]
+    needs: [build, host-validation, host-packages]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -143,7 +258,7 @@ jobs:
     if: github.event_name == 'push'
 
     steps:
-      - name: Download all board artifacts
+      - name: Download all release artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: release-*

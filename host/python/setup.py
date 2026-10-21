@@ -1,5 +1,7 @@
 """Bundle the shared dashboard in wheels and standalone source distributions."""
 
+from email.parser import Parser
+import os
 from pathlib import Path
 from shutil import copytree, ignore_patterns, rmtree
 
@@ -31,4 +33,7 @@ class SourceWithWeb(sdist):
                      ignore=ignore_patterns("__pycache__", "*.pyc"))
 
 
-setup(cmdclass={"build_py": BuildWithWeb, "sdist": SourceWithWeb})
+version = os.environ.get("PICO_UART_HOST_VERSION")
+if not version and (ROOT / "PKG-INFO").is_file():
+    version = Parser().parsestr((ROOT / "PKG-INFO").read_text(encoding="utf-8"))["Version"]
+setup(version=version or "0.0.0.dev0", cmdclass={"build_py": BuildWithWeb, "sdist": SourceWithWeb})

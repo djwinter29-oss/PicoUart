@@ -38,13 +38,15 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Validate published release
+        id: release
         if: github.event_name != 'workflow_dispatch' || !inputs.test_publish
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          tools/release/resolve-release-version.sh push '' "$RELEASE_TAG"
+          VERSION=$(tools/release/resolve-release-version.sh push '' "$RELEASE_TAG")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --json isDraft,isPrerelease --jq '.isDraft == false and .isPrerelease == false')" = true
 
@@ -64,6 +66,21 @@ jobs:
           node --check host/webhid/js/view.mjs
           node --check host/webhid/js/app.mjs
           node --test host/webhid/tests/*.test.mjs
+
+      - name: Stamp WebHID version
+        env:
+          HOST_VERSION: ${{ inputs.test_publish && '0.0.0-debug' || steps.release.outputs.version }}
+        run: |
+          node --input-type=module - <<'JS'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const version = process.env.HOST_VERSION;
+          if (!/^\d+\.\d+\.\d+(?:-debug)?$/.test(version ?? '')) throw new Error('Invalid host version');
+          const path = 'host/webhid/index.html';
+          const html = readFileSync(path, 'utf8');
+          const marker = 'aria-label="Host application version">0.0.0-debug</span>';
+          if (!html.includes(marker)) throw new Error('Host version marker missing');
+          writeFileSync(path, html.replace(marker, marker.replace('0.0.0-debug', version)));
+          JS
 
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
