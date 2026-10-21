@@ -111,9 +111,12 @@ def test_configuration_endpoint_requires_csrf_and_validated_json():
     assert dashboard.calls == [("chosen", 0, False)]
 
 
-@pytest.mark.parametrize("error,status", [(ValueError("bad profile"), 400), (RuntimeError("busy"), 409),
-                                          (OSError("disconnected"), 503)])
-def test_configuration_endpoint_surfaces_errors(error, status):
+@pytest.mark.parametrize("error,status,message", [
+    (ValueError("bad profile"), 400, "invalid request"),
+    (RuntimeError("busy"), 409, "request could not be completed"),
+    (OSError("disconnected"), 503, "service temporarily unavailable"),
+])
+def test_configuration_endpoint_sanitizes_errors(error, status, message):
     class Dashboard:
         def save_configuration(self, *args):
             raise error
@@ -124,4 +127,5 @@ def test_configuration_endpoint_surfaces_errors(error, status):
         token = session["csrf_token"]
     response = client.post("/api/configuration", json={"profile": 0, "unsafe_overclock": False},
                            headers={"X-CSRF-Token": token})
-    assert response.status_code == status and response.json["error"] == str(error)
+    assert response.status_code == status
+    assert response.json == {"error": message}

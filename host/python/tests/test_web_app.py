@@ -119,7 +119,7 @@ def test_dashboard_rejects_untrusted_host_before_serving_controls():
     assert service.actions == []
 
 
-def test_dashboard_passes_reset_capability_errors_to_the_host():
+def test_dashboard_sanitizes_reset_capability_errors():
     class ResetDisabledDashboard(FakeDashboard):
         def reset_board(self, board_id=None):
             raise RuntimeError("firmware HID reset is disabled")
@@ -129,7 +129,7 @@ def test_dashboard_passes_reset_capability_errors_to_the_host():
     response = client.post("/api/actions/reset", headers={"X-CSRF-Token": token})
 
     assert response.status_code == 409
-    assert response.json["error"] == "firmware HID reset is disabled"
+    assert response.json == {"error": "request could not be completed"}
 
 
 def test_dashboard_maps_action_io_errors_and_unknown_actions():
@@ -143,7 +143,7 @@ def test_dashboard_maps_action_io_errors_and_unknown_actions():
 
     response = client.post("/api/actions/toggle-led", headers=headers)
     assert response.status_code == 503
-    assert response.json["error"] == "HID write failed"
+    assert response.json == {"error": "service temporarily unavailable"}
 
     response = client.post("/api/actions/unknown", headers=headers)
     assert response.status_code == 404

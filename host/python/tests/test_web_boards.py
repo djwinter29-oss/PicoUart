@@ -120,5 +120,5 @@ def test_discovery_failure_is_explicit_without_opening_a_reader():
     registry = DashboardBoards(discover=fail, monitor_factory=Monitor)
     response = create_app(registry).test_client().get("/api/boards")
     assert response.status_code == 503
-    assert response.json == {"error": "USB enumeration failed"}
+    assert response.json == {"error": "service temporarily unavailable"}
     assert not registry._monitors

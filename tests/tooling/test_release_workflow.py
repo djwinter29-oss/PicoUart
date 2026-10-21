@@ -145,6 +145,23 @@ def test_pr_artifacts_use_matrix_label_names() -> None:
     assert "matrix.label == 'pico'" in text
 
 
+def test_host_apps_validate_python_and_dotnet_on_all_platforms() -> None:
+    text = (REPO_ROOT / ".github" / "workflows" / "host-validation.yml").read_text(encoding="utf-8")
+    job = text.split("\n  host-apps:\n", 1)[1].split("\n  host-tools:\n", 1)[0]
+
+    assert "os: [ubuntu-latest, macos-latest, windows-latest]" in job
+    assert "fail-fast: false" in job
+    assert 'dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"' in job
+    assert "python -m pytest -c pyproject.toml" in job
+    assert "if: runner.os == 'Windows'" in job
+    assert "tools/validation/run-host-tests.sh --skip-python" in job
+    linux_job = text.split("\n  host-tools:\n", 1)[1].split("\n  host-python-minimum:\n", 1)[0]
+    assert "runs-on: ubuntu-latest" in linux_job
+    assert "tools/validation/run-host-tests.sh --sanitize --skip-python" in linux_job
+    assert "\n  host-tools-windows:" not in text
+    assert "ubuntu-24.04" not in text
+
+
 def test_release_packages_use_distinct_names() -> None:
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
