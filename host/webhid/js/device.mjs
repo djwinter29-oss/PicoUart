@@ -57,8 +57,8 @@ export function decodeConfigurationSaveReport(report) {
     throw new Error("Invalid configuration-save status or reserved field");
   }
   if (status === 0) {
-    if (profile !== 0xffffffff) throw new Error("Invalid idle configuration-save profile");
-    return { status, profile: null };
+    if (![0, 1, 2, 3, 4, 0xffffffff].includes(profile)) throw new Error("Invalid idle configuration-save profile");
+    return { status, profile: profile === 0xffffffff ? null : profile };
   }
   if (status === 3) {
     if (profile !== 0xffffffff) throw new Error("Invalid rejected configuration-save profile");

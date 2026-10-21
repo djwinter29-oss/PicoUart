@@ -165,10 +165,15 @@ idle. RX DMA settling and the critical FIFO/quiescence recheck remain unchanged.
 changing the divider mid-frame for boards that can guarantee idle-high RX through pull-up.
 
 Host tests cover the fresh-evidence probe state transitions, including delayed reassertion and invalidation by new TX.
-Driver-level TX regressions compile the real PIO driver with mocked SDK register calls and real ring-buffer code.
+Driver-level regressions compile the real PIO driver with mocked SDK register calls and real ring-buffer code.
 They exercise FIFO/DMA launches, probe invalidation before hardware writes, busy-transfer ownership, completion,
 relaunch without repeated channel configuration, and source-address changes across ring wrap. TXSTALL write-one-clear
 and reassertion are explicitly modeled by the test; physical register timing is not simulated or qualified.
+RX/baud-change regressions exercise the actual apply path with production baud validation: unstable RX settling must
+resume without abort or final publication; successful settling must publish before abort and restart at the live ring
+index, including across wrap. Late RX FIFO, TX FIFO, RX program-counter, or idle-pin changes must fail the critical
+recheck and restore service without changing baud or clearing unread data. Successful changes check both dividers and
+state-machine restart ordering. These mocks validate software sequencing, not physical sampling or DMA/IRQ timing.
 Reduced per-launch setup and removal of the baud-dependent busy-wait do not establish measured throughput or latency
 improvements. Requalify low-baud changes with simultaneous sibling-port traffic and DMA completion/relaunch on hardware.
 

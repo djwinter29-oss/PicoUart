@@ -98,6 +98,7 @@ foreach(_header IN ITEMS
 endforeach()
 pico_uart_add_unity_test(test_pio_tx_driver pio_tx_driver
     test_pio_tx_driver.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
     ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
 )
 target_include_directories(test_pio_tx_driver BEFORE PRIVATE "${_pio_tx_stubs}")

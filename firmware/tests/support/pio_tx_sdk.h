@@ -2,8 +2,8 @@
  * @file pio_tx_sdk.h
  * @brief Isolated SDK declarations for host tests including the real PIO driver.
  *
- * Only TX calls have implementations in the test. Unused hardware paths are
- * discarded by section garbage collection, not simulated or executed.
+ * TX and RX/baud-change calls are implemented by the driver harness. Unused
+ * startup paths are discarded by section garbage collection, not simulated or executed.
  */
 #ifndef PIO_TX_TEST_SDK_H
 #define PIO_TX_TEST_SDK_H
@@ -18,7 +18,7 @@ typedef int64_t absolute_time_t;
 /** @brief Register fields accessed while compiling the real PIO driver for host TX tests. */
 typedef struct {
     volatile uint32_t txf[4]; /**< TX FIFO register identities used to check the DMA destination. */
-    volatile uint32_t rxf[4]; /**< RX register declarations for unused driver paths. */
+    volatile uint32_t rxf[4]; /**< RX FIFO register identities used to check the DMA source. */
     volatile uint32_t fdebug; /**< TXSTALL observations; hardware W1C/reassertion is modeled explicitly by tests. */
 } pio_hw_t;
 typedef pio_hw_t *PIO;
@@ -34,7 +34,7 @@ typedef struct {
     uint data_size; /**< Transfer width setting. */
     uint dreq; /**< Peripheral pacing selection. */
 } dma_channel_config;
-/** @brief DMA register declarations for unused RX/abort paths. */
+/** @brief DMA register fields observed by the RX pause/restart and HW driver harnesses. */
 typedef struct {
     struct {
         volatile uint32_t al1_ctrl; /**< Non-triggering control alias. */
