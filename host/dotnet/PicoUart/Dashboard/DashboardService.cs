@@ -41,7 +41,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 snapshot.ConfigurationSave = client.SaveConfiguration(profile, unsafeOverclock);
                 snapshot.ConfigurationSaveError = null;
             }
-            catch (Exception error) when (IsDeviceError(error) || error is ArgumentException)
+            catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
             {
                 snapshot.ConfigurationSaveError = error.Message;
                 throw;
@@ -58,7 +58,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 snapshot.ConfigurationSave = connection.ReadConfigurationSave();
                 snapshot.ConfigurationSaveError = null;
             }
-            catch (Exception error) when (IsDeviceError(error))
+            catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
                 snapshot.ConfigurationSave = null;
                 snapshot.ConfigurationSaveError = error.Message;
@@ -77,7 +77,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 snapshot.LedError = null;
             }
         }
-        catch (Exception error) when (IsDeviceError(error))
+        catch (Exception error) when (HidErrors.IsDeviceError(error))
         {
             lock (gate)
             {
@@ -121,7 +121,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             snapshot.DiagnosticsError = null;
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
@@ -138,7 +138,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             snapshot.IdentityError = null;
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
@@ -154,7 +154,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             snapshot.SetRuntimeReadResult(runtime, null);
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
@@ -172,7 +172,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             snapshot.ConfigurationSaveError = null;
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
@@ -199,7 +199,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                                 snapshot.HardwareError = null;
                             }
                         }
-                        catch (Exception error) when (IsDeviceError(error))
+                        catch (Exception error) when (HidErrors.IsDeviceError(error))
                         {
                             lock (gate)
                             {
@@ -208,7 +208,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             }
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
@@ -222,7 +222,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     nextMetadataRead = now.AddSeconds(1);
                 }
             }
-            catch (Exception error) when (IsDeviceError(error))
+            catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
                 lock (gate)
                 {
@@ -247,6 +247,4 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }, stoppingToken);
-
-    public static bool IsDeviceError(Exception error) => HidErrors.IsDeviceError(error);
 }
