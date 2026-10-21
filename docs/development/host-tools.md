@@ -92,6 +92,11 @@ Build the wheel from the repository root:
 uv build --wheel --directory host/python
 ```
 
+Hatchling builds the package from `pyproject.toml`; `hatch_build.py` selects the version from
+`PICO_UART_HOST_VERSION`, preserves it when rebuilding a source distribution, and defaults to `0.0.0.dev0` in a checkout.
+The hook also bundles the canonical `host/web` assets so source distributions build without the rest of the repository.
+Hatchling is included in the locked development environment for editable installs without build isolation.
+
 The project metadata points PyPI at `host/python/README.md` for its long description. Keep that file focused on package
 users; contributor setup and maintenance instructions belong in this guide.
 

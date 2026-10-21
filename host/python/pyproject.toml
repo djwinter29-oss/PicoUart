@@ -1,29 +1,46 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
 
 [project]
 name = "pico-uart"
 dynamic = ["version"]
 description = "Host HID API, CLI, and Flask diagnostics dashboard for PicoUart"
 readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{name = "Ji Dong"}]
+keywords = ["uart", "raspberry-pi-pico", "hid", "diagnostics", "test-automation"]
+classifiers = [
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3 :: Only",
+	"Topic :: Software Development :: Testing",
+]
 requires-python = ">=3.10"
 dependencies = ["flask==3.1.2", "hidapi==0.14.0.post4"]
+
+[project.urls]
+Homepage = "https://github.com/djwinter29-oss/PicoUart"
+Documentation = "https://github.com/djwinter29-oss/PicoUart/blob/main/host/python/README.md"
+Source = "https://github.com/djwinter29-oss/PicoUart"
+Issues = "https://github.com/djwinter29-oss/PicoUart/issues"
+Releases = "https://github.com/djwinter29-oss/PicoUart/releases"
 
 [project.scripts]
 pico-uart = "pico_uart.cli:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-include-package-data = false
+[tool.hatch.version]
+source = "code"
+path = "hatch_build.py"
+expression = "get_version()"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["pico_uart*"]
-namespaces = false
+[tool.hatch.build.hooks.custom]
 
-[tool.setuptools.package-data]
-"pico_uart.web" = ["assets/index.html", "assets/*.svg", "assets/css/*.css", "assets/js/*.js"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/pico_uart"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/hatch_build.py", "/requirements*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

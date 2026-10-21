@@ -8,9 +8,13 @@ Device identity provides a **Board LED** toggle with an output-state indicator; 
 
 ## Run
 
-Use desktop Chrome or Edge and an HTTPS site or localhost. Browser support and USB permissions vary by platform;
-Firefox, Safari, and mobile browsers generally do not support WebHID. The page reports unavailable WebHID and keeps
-Connect disabled when the API or secure context is missing.
+Open the [hosted WebHID dashboard](https://djwinter29-oss.github.io/PicoUart/) in **desktop Google Chrome or Microsoft
+Edge**. No local installation or server is needed to use the GitHub Pages site.
+
+Firefox and Safari are not supported, and mobile browsers generally do not support WebHID. Browser support and USB
+permissions vary by platform. The page reports unavailable WebHID and keeps Connect disabled when the API or secure
+context is missing. Self-hosted deployments require HTTPS or localhost; use the Python/.NET local dashboard if your
+browser does not provide WebHID.
 
 For local development, serve `host/webhid` from the repository root:
 

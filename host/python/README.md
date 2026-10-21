@@ -1,56 +1,79 @@
 # PicoUart
 
-PicoUart provides a Python client and command-line tool for monitoring and controlling the HID diagnostics interface on
-the PicoUart six-channel USB-to- UART bridge. UART data and line settings remain on the six USB CDC interfaces.
+**Monitor six UARTs from your terminal, test runner, or browser.** The `pico-uart` package provides a Python API, CLI,
+and local diagnostics dashboard for the PicoUart USB-to-UART bridge on Raspberry Pi Pico and Pico 2.
+
+Inspect per-channel health, traffic statistics, and RX dropped-byte counts alongside your test results. Diagnostics use
+a separate USB HID interface, so your existing serial tools can keep using the six USB CDC ports. This package does
+not capture UART payloads or set serial baud rates and framing; use your serial tools for those tasks.
 
 ## Requirements
 
 - Python 3.10 or newer
-- A PicoUart-compatible RP2040 or RP2350 board
-- Host access to its HID interface; Linux users can use the [permission helpers](../../tools/README.md#linux-hid-permissions)
+- A Raspberry Pi Pico or Pico 2 running compatible
+	[PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to this computer over USB
+- Access to the board's HID interface; Linux may need
+	[device permissions](https://github.com/djwinter29-oss/PicoUart/blob/main/tools/README.md#linux-hid-permissions)
 
 ## Install
 
-For a tagged release, download its Python wheel from GitHub Releases and install it with
-`pipx install /path/to/pico_uart-VERSION-py3-none-any.whl`, replacing the path with the downloaded file. The bundled
-dashboard displays that release version automatically. See the [distribution status](../../docs/development/host-distribution.md)
-for PyPI activation and other downloads. After the first successful PyPI publication, prefer an isolated application
-install with `pipx install pico-uart`. Alternatively, install inside a virtual environment:
+Create a virtual environment with `python -m venv .venv`. Activate it with `. .venv/bin/activate` on Linux/macOS, or
+`.venv\Scripts\Activate.ps1` in Windows PowerShell, then install:
 
 ```sh
-python -m pip install pico-uart
+python -m pip install --pre pico-uart
 ```
 
-## CLI
+`--pre` allows development releases; omit it to select stable releases when available. For an isolated CLI/dashboard
+installation instead, use `pipx install --pip-args="--pre" pico-uart` (requires pipx).
 
-From a source checkout on Linux/macOS/WSL, `tools/host/run-python.sh` prepares its Python environment and starts the
-dashboard. Pass commands such as `tools/host/run-python.sh status` to use the CLI instead. See
-[Repository Tools](../../tools/README.md) for launcher options.
+## Quick Start
 
-Read a status sample, watch live health reports, or launch the local dashboard:
+Connect the flashed board, then read a status sample or start the dashboard:
 
 ```sh
 pico-uart status
-pico-uart status --json
-pico-uart monitor --duration 10
-pico-uart overruns
-pico-uart hardware
-pico-uart config
 pico-uart web
 ```
 
-The dashboard listens on `http://127.0.0.1:5000` and is bound to loopback. It shows all six channels' health and
-traffic, RX overflow counts, MCU model, system clock, firmware version, and board temperature. It also offers an LED
-toggle and shows Reset only when the firmware advertises reset support. Use `pico-uart web --port N` to select another
-local port.
+Open <http://127.0.0.1:5000/>. The server binds to loopback and works with a normal browser; WebHID support and .NET
+are not required. The dashboard shows channel health and traffic, RX dropped-byte counts, firmware and hardware
+identity, clock, and temperature. Use `pico-uart web --port 5001` if the default port is occupied.
 
-Its frontend is shared with the [.NET host](../dotnet/README.md). The Python package includes the frontend; .NET is not
-required to use it. Use **Board** and **Rescan** to choose among attached boards independently in each page.
-See [board selection and shared monitoring](../../docs/development/host-tools.md#board-selection-and-shared-monitoring)
-for multi-user behavior and how CLI selectors set the initial selection.
+For browser-only diagnostics without installing Python, use the separate
+[WebHID dashboard on GitHub Pages](https://djwinter29-oss.github.io/PicoUart/) in desktop Chrome or Edge, with the board
+connected to the computer running that browser.
 
-Other commands include `temperature`, `version`, `toggle-led`, and `reset`. For a specific board, use the global
-`--serial SERIAL` or `--device-path PATH` selector before the command, for example `pico-uart --serial ABC123 status`.
+For multiple boards, put `--serial SERIAL` or `--device-path PATH` before the command:
+
+```sh
+pico-uart --serial ABC123 status
+```
+
+Use **Board** and **Rescan** in the dashboard to choose an attached board. See
+[board selection and monitoring](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#board-selection-and-shared-monitoring)
+for selection and multi-user behavior.
+
+## Test Automation
+
+Have your test runner save a JSON status sample, run a timed monitor alongside the serial test, or record cumulative
+RX dropped-byte counts before and after it. These commands can be used independently:
+
+```sh
+pico-uart status --json > uart-status.json
+pico-uart monitor --duration 60 > uart-traffic.log
+pico-uart overruns > uart-dropped-bytes.txt
+```
+
+Monitor output includes all six channels' health flags, UART/CDC byte deltas, and ring-buffer peaks. Byte deltas cover
+the interval since the preceding successfully published status report and saturate at 65535. Dropped-byte counts from
+`overruns` and buffer peaks are cumulative since boot, not per-test totals; account for resets and saturation.
+
+`status` exits non-zero if its timeout expires without a valid report. `monitor` exits non-zero if it receives no valid
+reports during its duration; it can succeed after one report even if later reads time out. Both exit non-zero on device
+errors. Success does not prove continuous reporting or healthy channels: your runner must evaluate report availability,
+flags, and values. Only `status` supports `--json`; `monitor` produces text. Missing reports or saturated values prevent
+exact traffic accounting.
 
 ## Python API
 
@@ -58,39 +81,39 @@ Other commands include `temperature`, `version`, `toggle-led`, and `reset`. For 
 from pico_uart import PicoUartHid
 
 with PicoUartHid() as board:
-		status = board.read_status(timeout_ms=1000)
-		if status is not None:
-				print(status["channels"])
+    status = board.read_status(timeout_ms=1000)
+if status is None:
+    raise RuntimeError("no PicoUart status report received")
+print(status["channels"])
 ```
 
-`read_status()` returns `None` when no report arrives before its timeout. `read_board_status()` and
-`read_overflow_counts()` return decoded metadata. The API's `toggle_led()` and `reset_board()` methods perform the same
-HID board controls as the CLI.
+`read_status()` returns `None` on timeout; device access failures may raise `OSError` or `RuntimeError`. Use
+`PicoUartHid(serial_number="ABC123")` to select a board. Other read methods include `read_board_status()`,
+`read_overflow_counts()`, `read_hardware_info()`, and `read_configuration()`.
 
-`read_hardware_info()` returns `mcu`, the raw `mcu_id`, and `system_clock_hz`; `pico-uart hardware` prints these fields
-as JSON. This requires firmware supporting HID report 6. See the
-[HID Report Reference](../../docs/design/usb/hid-report-reference.md) for report compatibility and unknown MCU behavior.
-`read_configuration()` and `pico-uart config` read the persistent configuration source, fallback reason, and selected
-clock profiles from HID report 16. This is diagnostic-only: it does not expose credentials or raw flash contents.
-`save_configuration(profile, unsafe_overclock=False)` persists a board-compatible profile through HID report 17
-and returns its verified save result before firmware automatically reboots; `read_configuration_save()` reads that
-result separately. The dashboard warns that saving briefly disconnects USB; see
-[Persistent configuration](../../docs/development/host-tools.md#persistent-configuration) for precautions and defaults.
+## Other Commands And Controls
 
-## Important Notes
+Read-only commands include `hardware`, `config`, `temperature`, and `version`. Run `pico-uart --help` or
+`pico-uart COMMAND --help` for options.
 
-- Remote reset is disabled by default in firmware. The CLI and API refuse to reset unless firmware advertises that
-  capability.
-- The HID interface is for diagnostics and narrow board controls. It does not carry UART data or configure UART line
-  coding.
-- The published USB identity is for lab/project use, not commercial derivatives; see the
-	[security policy](../../SECURITY.md).
-- Linux users may need to grant access to the HID device node before running the tool.
+`toggle-led` changes the board LED. `reset` reboots the board and is refused unless firmware advertises reset support,
+which is disabled by default. The API exposes equivalent `toggle_led()` and `reset_board()` methods.
+
+The API's `save_configuration(profile, unsafe_overclock=False)` writes a supported boot-time clock profile;
+`read_configuration_save()` reads the save result. See the
+[HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
+for compatibility, save semantics, and overclock precautions before changing configuration.
+
+## Troubleshooting
+
+- **Board not found:** confirm compatible PicoUart firmware is flashed, USB is connected to the machine running Python,
+	and the selected serial number or device path is correct. With no board attached, a HID command failing is expected.
+- **Access denied:** check OS device permissions; see the Linux permission guide linked above. Do not run the dashboard
+	as root to bypass permissions.
+- **No valid reports:** check firmware compatibility and the USB connection. Do not interpret a timeout as zero traffic.
 
 ## Documentation
 
-- [CDC/HID behavior](../../docs/design/usb/cdc-hid-overview.md)
-- [HID report reference](../../docs/design/usb/hid-report-reference.md)
-- [UART pinout and wiring](../../docs/uart-pinout.md)
-- [Security and USB identity policy](../../SECURITY.md)
-- [Host tools development guide](../../docs/development/host-tools.md)
+- [Project, firmware, and wiring](https://github.com/djwinter29-oss/PicoUart)
+- [Host development and source-checkout setup](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md)
+- [Security and lab-only USB identity](https://github.com/djwinter29-oss/PicoUart/blob/main/SECURITY.md)
