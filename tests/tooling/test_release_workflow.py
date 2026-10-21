@@ -270,6 +270,12 @@ def test_manual_python_publication_is_isolated_to_testpypi():
     assert "require_release_checks.py" not in test
 
 
+def test_pypi_publishers_pin_the_commit_not_the_annotated_release_tag():
+    text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    refs = re.findall(r"uses: pypa/gh-action-pypi-publish@([0-9a-f]{40})", text)
+    assert refs == ["7245906fb61fa33a13554f9d5fb856fe61758086"] * 2
+
+
 @pytest.mark.parametrize("event,test_publish,reference,expected", [
     ("workflow_dispatch", "true", "main", "1.2.3-test.123.2"),
     ("workflow_dispatch", "false", "main", "1.2.3"),
