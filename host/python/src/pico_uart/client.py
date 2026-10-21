@@ -173,7 +173,7 @@ class PicoUartHid:
         with self._lock:
             device = self._require_open()
             hardware = self.read_hardware_info()
-            supported = {1: (0, 1, 3, 4), 2: (0, 2, 3, 4)}.get(hardware["mcu_id"], ())
+            supported = {1: (0, 1, 2, 3), 2: (0, 1, 2, 3, 4)}.get(hardware["mcu_id"], ())
             if profile not in supported:
                 raise ValueError("clock profile is not supported on this MCU")
             if self.read_configuration_save()["status"] == 1:

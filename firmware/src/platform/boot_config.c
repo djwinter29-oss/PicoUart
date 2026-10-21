@@ -32,20 +32,20 @@ static const bool boot_config_rp2350 =
     false;
 #endif
 
-/** @brief Frequency and supported targets for one stable clock-profile ID. */
+/** @brief Frequency and supported targets for one clock-profile ID. */
 typedef struct {
     uint32_t clock_khz; /**< Exact frequency request, or zero to retain the SDK clock. */
     bool rp2040;       /**< Profile is permitted on RP2040 targets. */
     bool rp2350;       /**< Profile is permitted on RP2350 targets. */
 } boot_clock_definition_t;
 
-/** @brief Profile definitions indexed by the permanent storage/HID IDs. */
+/** @brief Profile definitions indexed by the settings/storage/HID enum. */
 static const boot_clock_definition_t boot_clock_definitions[] = {
     [BOOT_CLOCK_DEFAULT] = {.clock_khz = 0u, .rp2040 = true, .rp2350 = true},
-    [BOOT_CLOCK_250_MHZ] = {.clock_khz = 250000u, .rp2040 = true, .rp2350 = false},
-    [BOOT_CLOCK_280_MHZ] = {.clock_khz = 280000u, .rp2040 = false, .rp2350 = true},
-    [BOOT_CLOCK_200_MHZ] = {.clock_khz = 200000u, .rp2040 = true, .rp2350 = true},
     [BOOT_CLOCK_150_MHZ] = {.clock_khz = 150000u, .rp2040 = true, .rp2350 = true},
+    [BOOT_CLOCK_200_MHZ] = {.clock_khz = 200000u, .rp2040 = true, .rp2350 = true},
+    [BOOT_CLOCK_250_MHZ] = {.clock_khz = 250000u, .rp2040 = true, .rp2350 = true},
+    [BOOT_CLOCK_280_MHZ] = {.clock_khz = 280000u, .rp2040 = false, .rp2350 = true},
 };
 
 /** @brief Boot decision cached for startup and read-only diagnostics. */
@@ -98,7 +98,7 @@ bool boot_config_profile_supported(uint32_t profile)
     return boot_config_rp2350 ? boot_clock_definitions[profile].rp2350 : boot_clock_definitions[profile].rp2040;
 }
 
-/** @brief Encode a legacy version-1 profile record without exposing its layout to callers. */
+/** @brief Encode a version-1 profile record without exposing its layout to callers. */
 static void boot_config_encode(uint8_t record[BOOT_CONFIG_RECORD_SIZE], boot_clock_profile_t profile)
 {
     memset(record, 0, BOOT_CONFIG_RECORD_SIZE);

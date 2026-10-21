@@ -397,8 +397,8 @@ export class PicoUartWebHid {
       this.update({ configurationSaveMessage: "Cannot save a clock profile for an unknown microcontroller." });
       return;
     }
-    const expectedProfile = hardware.mcu_id === 1 ? 1 : 2;
-    if (![0, expectedProfile, 3, 4].includes(profile) || typeof unsafeOverclock !== "boolean"
+    const supportedProfiles = hardware.mcu_id === 1 ? [0, 1, 2, 3] : [0, 1, 2, 3, 4];
+    if (!supportedProfiles.includes(profile) || typeof unsafeOverclock !== "boolean"
       || (profile === 0 && unsafeOverclock) || (profile !== 0 && !unsafeOverclock)) {
       this.update({ configurationSaveMessage: "Select a valid profile and explicitly acknowledge overclocking." });
       return;

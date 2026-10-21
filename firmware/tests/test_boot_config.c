@@ -110,7 +110,7 @@ static void test_load_save_and_private_status_cache(void)
 
     TEST_ASSERT_TRUE(boot_config_save());
     TEST_ASSERT_EQUAL_UINT32(1u, erase_calls);
-    boot_config_t unsupported = {.clock_profile = PICO_RP2350 ? BOOT_CLOCK_250_MHZ : BOOT_CLOCK_280_MHZ};
+    boot_config_t unsupported = {.clock_profile = (boot_clock_profile_t)UINT32_MAX};
     TEST_ASSERT_FALSE(boot_config_set(&unsupported));
     TEST_ASSERT_FALSE(boot_config_set(NULL));
     TEST_ASSERT_EQUAL(config.clock_profile, boot_config_get()->clock_profile);
@@ -136,7 +136,7 @@ static void test_load_save_and_private_status_cache(void)
 
 static void test_additional_profiles_save_and_load(void)
 {
-    const boot_clock_profile_t profiles[] = {BOOT_CLOCK_200_MHZ, BOOT_CLOCK_150_MHZ};
+    const boot_clock_profile_t profiles[] = {BOOT_CLOCK_150_MHZ, BOOT_CLOCK_200_MHZ, BOOT_CLOCK_250_MHZ};
     for (size_t index = 0u; index < sizeof(profiles) / sizeof(profiles[0]); ++index) {
         boot_config_t config = {.clock_profile = profiles[index]};
         TEST_ASSERT_TRUE(boot_config_set(&config));
@@ -177,7 +177,7 @@ static void test_profiles_are_exact_and_target_checked(void)
     for (uint32_t profile = 0; profile < 6; ++profile) {
         record(profile);
         boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false);
-        bool supported = profile == 0 || profile == 3u || profile == 4u || profile == (PICO_RP2350 ? 2u : 1u);
+        bool supported = profile <= 3u || (PICO_RP2350 && profile == 4u);
         TEST_ASSERT_EQUAL(supported ? BOOT_CONFIG_OK : BOOT_CONFIG_INVALID_PROFILE, status.reason);
         TEST_ASSERT_EQUAL(supported ? BOOT_CONFIG_STORED : BOOT_CONFIG_DEFAULTS, status.source);
         TEST_ASSERT_EQUAL(supported ? profile : 0, status.active_profile);

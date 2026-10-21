@@ -83,7 +83,7 @@ test("persistent configuration uses target profiles and gates unsafe saves", () 
   client.render(client.state);
   const profile = get("configuration-profile");
   assert.deepEqual(profile.children.map(option => [option.value, option.textContent]), [
-    ["0", "Default (150 MHz)"], ["4", "150 MHz"], ["3", "200 MHz"], ["2", "280 MHz (RP2350)"],
+    ["0", "SDK default (150 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["4", "280 MHz (RP2350)"],
   ]);
   assert.equal(profile.value, "2");
   assert.equal(profile.disabled, false);

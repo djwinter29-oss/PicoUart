@@ -31,8 +31,8 @@ class ConfigDevice:
         return self.written
 
 
-@pytest.mark.parametrize("mcu,profile,ack", [(1, 0, False), (1, 1, True), (2, 0, False), (2, 2, True),
-                                          (1, 3, True), (1, 4, True), (2, 3, True), (2, 4, True)])
+@pytest.mark.parametrize("mcu,profile,ack", [(1, 0, False), (1, 3, True), (2, 0, False), (2, 4, True),
+                                          (1, 1, True), (1, 2, True), (2, 1, True), (2, 2, True), (2, 3, True)])
 def test_save_supported_profile_has_explicit_payload(mcu, profile, ack):
     device = ConfigDevice(mcu=mcu)
     result = PicoUartHid(device=device).save_configuration(profile, ack)
@@ -42,7 +42,7 @@ def test_save_supported_profile_has_explicit_payload(mcu, profile, ack):
 
 
 @pytest.mark.parametrize("mcu,profile,ack", [
-    (1, 1, False), (2, 2, False), (1, 2, True), (2, 1, True),
+    (1, 1, False), (2, 2, False), (1, 4, True),
     (99, 0, False), (1, True, True), (1, 5, True), (1, 0, 1), (1, 3, False), (2, 4, False),
 ])
 def test_invalid_request_never_writes(mcu, profile, ack):

@@ -162,7 +162,7 @@ public static class Protocol
             throw new ArgumentException("configuration save requires a known board MCU", nameof(mcuId));
         if (profile != 0 && !unsafeOverclock)
             throw new ArgumentException("explicit unsafe overclock acknowledgement is required", nameof(unsafeOverclock));
-        if (profile is 1 or 2 && profile != mcuId)
+        if (profile == 4 && mcuId != 2)
             throw new ArgumentException("system clock profile does not match the board MCU", nameof(profile));
         var payload = new byte[ConfigurationSaveSize];
         payload[0] = 1;

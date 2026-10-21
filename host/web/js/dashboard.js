@@ -66,8 +66,8 @@ function uptimeLabel(milliseconds) {
 
 function renderConfiguration(data) {
   const mcuId = data.hardware?.mcu_id;
-  const profiles = mcuId === 1 ? [[0, "Default (125 MHz)"], [4, "150 MHz"], [3, "200 MHz"], [1, "250 MHz (RP2040)"]]
-    : mcuId === 2 ? [[0, "Default (150 MHz)"], [4, "150 MHz"], [3, "200 MHz"], [2, "280 MHz (RP2350)"]] : [];
+  const profiles = mcuId === 1 ? [[0, "SDK default (125 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"]]
+    : mcuId === 2 ? [[0, "SDK default (150 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"], [4, "280 MHz (RP2350)"]] : [];
   if (configurationDraft === null && profiles.length) {
     const saved = data.configuration_save?.status === 2 ? data.configuration_save.profile : null;
     const stored = data.configuration?.stored_profile;
@@ -416,8 +416,8 @@ async function saveConfiguration() {
   if (!selectedBoard || actionBusy || configurationDraft === null) return;
   const profile = Number(configurationDraft);
   const mcuId = latestData?.hardware?.mcu_id;
-  const validProfile = profile === 0 || profile === 3 || profile === 4
-    || (mcuId === 1 && profile === 1) || (mcuId === 2 && profile === 2);
+  const validProfile = profile === 0 || profile === 1 || profile === 2 || profile === 3
+    || (mcuId === 2 && profile === 4);
   const channelsClosed = Array.isArray(latestData?.channels) && latestData.channels.length === 6
     && latestData.channels.every(channel => channel.cdc_open === false);
   if (!latestData?.connected || !latestData.configuration_save || latestData.configuration_save_error

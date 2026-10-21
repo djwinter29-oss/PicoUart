@@ -11,13 +11,13 @@
 /** @brief Diagnostic sentinel when no valid stored profile is available. */
 #define BOOT_CONFIG_PROFILE_UNAVAILABLE UINT32_MAX
 
-/** @brief Predefined clock profiles with stable IDs shared by settings, storage, and HID. */
+/** @brief Predefined clock profiles ordered by frequency and shared by settings, storage, and HID. */
 typedef enum {
     BOOT_CLOCK_DEFAULT = 0, /**< Leave the SDK-selected startup clock unchanged. */
-    BOOT_CLOCK_250_MHZ = 1, /**< Exactly 250 MHz; initially supported on RP2040 only. */
-    BOOT_CLOCK_280_MHZ = 2, /**< Exactly 280 MHz; initially supported on RP2350 only. */
-    BOOT_CLOCK_200_MHZ = 3, /**< Exactly 200 MHz on RP2040 or RP2350. */
-    BOOT_CLOCK_150_MHZ = 4, /**< Exactly 150 MHz on RP2040 or RP2350. */
+    BOOT_CLOCK_150_MHZ = 1, /**< Exactly 150 MHz on RP2040 or RP2350. */
+    BOOT_CLOCK_200_MHZ = 2, /**< Exactly 200 MHz on RP2040 or RP2350. */
+    BOOT_CLOCK_250_MHZ = 3, /**< Exactly 250 MHz on RP2040 or RP2350. */
+    BOOT_CLOCK_280_MHZ = 4, /**< Exactly 280 MHz on RP2350 only. */
 } boot_clock_profile_t;
 
 /** @brief Requested settings, independent of storage format and boot diagnostics. */
@@ -49,7 +49,7 @@ typedef struct {
     boot_config_source_t source; /**< Stored settings, defaults, or watchdog recovery. */
     boot_config_reason_t reason; /**< Validation or recovery outcome. */
     uint32_t stored_profile;      /**< Accepted stored profile, or unavailable sentinel. */
-    boot_clock_profile_t active_profile; /**< Legacy HID identifier for the applied boot override; zero means SDK default. */
+    boot_clock_profile_t active_profile; /**< Applied boot override; default means the SDK-selected clock. */
 } boot_config_status_t;
 
 /**
@@ -80,13 +80,13 @@ void boot_config_clock_unavailable(void);
 
 /**
  * @brief Map a supported profile to its exact clock request.
- * @param profile Permanent profile ID.
+ * @param profile Predefined profile ID.
  * @return kHz, or zero for the no-override default/unknown profile.
  */
 uint32_t boot_config_clock_khz(boot_clock_profile_t profile);
 
 /**
- * @brief Check a permanent profile ID against the target family.
+ * @brief Check a predefined profile ID against the target family.
  * @param profile Untrusted profile ID.
  * @return True for SDK default or the family's supported overclock profile.
  */
