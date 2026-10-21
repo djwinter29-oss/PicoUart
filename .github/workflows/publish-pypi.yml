@@ -109,6 +109,7 @@ jobs:
       - name: Publish to PyPI using Trusted Publishing
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
+          repository-url: https://upload.pypi.org/legacy/
           packages-dir: dist
 
   test-package:

@@ -249,6 +249,8 @@ def test_pypi_publication_reuses_released_artifacts_with_scoped_oidc():
     assert "needs: verify" in publish
     assert "id-token: write" in publish
     assert "name: pypi" in publish
+    assert "repository-url: https://upload.pypi.org/legacy/" in publish
+    assert "test.pypi.org" not in publish
     assert "pypa/gh-action-pypi-publish@" in publish
     assert "password:" not in text
     assert "pip wheel" not in verify + publish
