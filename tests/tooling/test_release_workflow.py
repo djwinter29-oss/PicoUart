@@ -169,6 +169,50 @@ def test_release_packages_use_distinct_names() -> None:
     assert "pico_uart-v${VERSION}-${LABEL}" in text
     assert "SHA256SUMS-${LABEL}.txt" in text
     assert "pattern: release-*" in text
+
+
+def test_webhid_pages_requires_a_published_release_and_checks_the_tag() -> None:
+    text = (REPO_ROOT / ".github/workflows/webhid-pages.yml").read_text(encoding="utf-8")
+
+    assert "types: [published]" in text
+    assert "workflow_dispatch:" in text
+    assert "tools/release/resolve-release-version.sh push '' \"$RELEASE_TAG\"" in text
+    assert "gh release view" in text
+    assert ".isDraft == false and .isPrerelease == false" in text
+    assert "ref: ${{ inputs.test_publish && github.sha || github.event.release.tag_name || inputs.tag }}" in text
+    assert "node --test host/webhid/tests/*.test.mjs" in text
+    assert text.index("Validate published release") < text.index("Checkout WebHID")
+    assert text.index("Check WebHID") < text.index("Upload WebHID site")
+
+
+def test_webhid_pages_test_publish_is_explicit_and_uses_the_dispatched_commit() -> None:
+    text = (REPO_ROOT / ".github/workflows/webhid-pages.yml").read_text(encoding="utf-8")
+    inputs = text.split("    inputs:\n", 1)[1].split("\npermissions:", 1)[0]
+
+    assert "test_publish:" in inputs
+    assert "default: false" in inputs
+    assert "type: boolean" in inputs
+    for step in ("Checkout release tooling", "Validate published release"):
+        assert f"- name: {step}\n        if: github.event_name != 'workflow_dispatch' || !inputs.test_publish" in text
+    assert "inputs.test_publish && github.sha" in text
+
+
+def test_webhid_pages_deploys_only_the_independent_site_with_scoped_permissions() -> None:
+    text = (REPO_ROOT / ".github/workflows/webhid-pages.yml").read_text(encoding="utf-8")
+    build, deploy = text.split("\n  deploy:\n", 1)
+
+    assert "path: host/webhid" in build
+    assert "path: host/web\n" not in text
+    assert "needs: build" in deploy
+    assert "pages: write" not in build
+    assert "id-token: write" not in build
+    assert "pages: write" in deploy
+    assert "id-token: write" in deploy
+    assert "name: github-pages" in deploy
+    assert "group: webhid-pages" in text
+    assert "cancel-in-progress: false" in text
+
+
 def test_release_notes_reference_config_profiles() -> None:
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     body = text.split("          body: |", 1)[1].split("        env:", 1)[0]

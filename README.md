@@ -231,6 +231,7 @@ The linked design documents describe implementation and ownership details.
 - [Release policy and qualification](docs/releasing.md)
 - [Firmware development and repository testing](docs/development/firmware-testing.md)
 - [Host tools development](docs/development/host-tools.md)
+- [Host distribution plan](docs/development/host-distribution.md)
 - [Firmware architecture](docs/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)

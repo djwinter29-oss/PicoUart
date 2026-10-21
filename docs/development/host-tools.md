@@ -83,6 +83,9 @@ avoiding the original `0.14.0` source-build failure on that platform.
 
 ## Python Distribution
 
+The proposed publication channels and artifact qualification gates are in the
+[host distribution plan](host-distribution.md). The commands below build locally; they do not publish to PyPI.
+
 Build the wheel from the repository root:
 
 ```bash

@@ -9,6 +9,9 @@ Do not publish the draft until exact-artifact hardware-in-the-loop (HIL) evidenc
 
 A `workflow_dispatch` run creates artifacts for preflight HIL; a release tag creates the draft to promote.
 
+Host application publication follows the [host distribution plan](development/host-distribution.md).
+[WebHID Pages](#webhid-pages) deploys separately after release publication; PyPI and .NET distribution remain planned.
+
 ```mermaid
 flowchart LR
    Change["Reviewed change"] --> CI["CI: host tests + rated builds"]
@@ -133,3 +136,55 @@ Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release vers
 build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the
 [HID Report Reference](design/usb/hid-report-reference.md) for encoding details. Release workflows own the SDK and
 toolchain pins and install the reviewed, hash-locked Python requirements.
+
+## WebHID Pages
+
+The [WebHID Pages workflow](../.github/workflows/webhid-pages.yml) publishes the standalone browser app from
+`host/webhid`, without modifying or deploying the Python/.NET frontend. It runs when a non-prerelease GitHub Release
+is published, after the firmware draft has passed its promotion gates. Pushing a tag, creating a draft, and release
+preflight runs do not change the live site.
+
+### Repository Setup
+
+1. Merge the Pages workflow into the repository's default branch so GitHub can receive release events.
+2. In **Settings > Pages > Build and deployment**, set **Source** to **GitHub Actions**. No deployment branch, custom
+   domain, or personal access token is required.
+3. Review the **github-pages** environment under **Settings > Environments**. Permit the release tags used for
+   deployment and configure required reviewers if desired. Manual redeployment must also be allowed from the branch
+   containing the workflow. Only the deployment job receives `pages: write` and `id-token: write` permissions.
+
+After the first successful deployment, the default project URL is
+<https://djwinter29-oss.github.io/PicoUart/>. The deployment job's environment URL is authoritative if Pages settings
+or the repository name change. This setup does not claim the site is already live.
+
+### Publish Or Roll Back
+
+Publish the qualified firmware draft through GitHub's release UI to trigger deployment. The Pages workflow validates
+the release tag and published/non-prerelease status, checks out that tag, runs the WebHID tests, and uploads only
+`host/webhid`. Deployment runs are serialized and retain the selected tag in their workflow inputs/event record.
+Publishing through another workflow's default `GITHUB_TOKEN` does not trigger a new release-event workflow; use the
+manual deployment below in that case.
+
+For redeployment or rollback, run **Actions > WebHID Pages > Run workflow** with the desired already-published release
+tag and leave **test_publish** unchecked. Drafts, prereleases, and tags outside the normal release version policy are
+rejected. The selected tag must contain the standalone WebHID app and its tests. Rolling back the site does not modify
+firmware releases or boards.
+
+### Test Publish From A Branch
+
+To publish current WebHID without creating a firmware release:
+
+1. Commit and push the WebHID and workflow changes. The workflow must exist on the default branch for manual dispatch
+   to be available; the branch selected for the run must include the test-publish option.
+2. Open **Actions > WebHID Pages > Run workflow** and select the desired branch under **Use workflow from**.
+3. Check **test_publish**, leave **tag** empty, and run the workflow. Ensure the `github-pages` environment permits
+   deployment from that branch and approve the deployment if required.
+4. Open the deployment's environment URL after the run succeeds.
+
+Test publication deploys the selected branch's exact commit, runs the WebHID checks, and skips only the published-release
+lookup. It replaces the site at the normal Pages URL; it is not an isolated preview. Local uncommitted changes are not
+included. Restore a release by rerunning with **test_publish** unchecked and the desired published **tag**.
+
+A Pages failure does not unpublish the GitHub Release. Fix or rerun the deployment separately, and inspect the Pages
+environment for the currently successful deployment. After deployment, check asset loading at the project URL and
+native device access in a supported browser; automated tests do not prove physical USB compatibility.
