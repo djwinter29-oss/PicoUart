@@ -14,7 +14,7 @@ import time
 
 import pytest
 
-from pico_uart.web.app import _empty_snapshot
+from pico_uart.web.monitor import empty_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -129,7 +129,7 @@ def test_dotnet_status_matches_python_dashboard_shape(server):
     assert status == 200
     assert headers["Cache-Control"] == "no-store"
     snapshot = json.loads(payload)
-    expected = _empty_snapshot()
+    expected = empty_snapshot()
     assert snapshot.keys() == expected.keys()
     assert len(snapshot["channels"]) == len(snapshot["overflow_counts"]) == 6
     for channel in snapshot["channels"]:

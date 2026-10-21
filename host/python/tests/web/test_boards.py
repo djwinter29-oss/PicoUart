@@ -5,7 +5,8 @@ import re
 
 import pytest
 
-from pico_uart.web.app import DashboardBoards, create_app
+from pico_uart.web.app import create_app
+from pico_uart.web.boards import BoardRegistry
 
 
 def device(serial, path):
@@ -40,7 +41,7 @@ def test_multiple_viewers_share_one_reader_per_board_and_actions_target_only_tha
         created.append(monitor)
         return monitor
 
-    registry = DashboardBoards(discover=lambda: [device("A", "/a"), device("B", "/b")],
+    registry = BoardRegistry(discover=lambda: [device("A", "/a"), device("B", "/b")],
                                monitor_factory=factory)
     boards = registry.boards()["boards"]
     first, second = (board["id"] for board in boards)
@@ -78,7 +79,7 @@ def test_multiple_viewers_share_one_reader_per_board_and_actions_target_only_tha
 
 def test_rescan_preserves_reader_identity_and_never_retargets_a_missing_board():
     attached = [device("A", "/a"), device("B", "/b")]
-    registry = DashboardBoards(discover=lambda: attached, monitor_factory=Monitor)
+    registry = BoardRegistry(discover=lambda: attached, monitor_factory=Monitor)
     initial = registry.boards()
     first, second = (board["id"] for board in initial["boards"])
     assert initial["default_board_id"] == first
@@ -95,7 +96,7 @@ def test_rescan_preserves_reader_identity_and_never_retargets_a_missing_board():
 
 def test_discovery_defaults_cli_preference_errors_and_missing_serials():
     attached = [device("A", "/a"), device("B", "/b")]
-    registry = DashboardBoards(serial_number="B", discover=lambda: attached, monitor_factory=Monitor)
+    registry = BoardRegistry(serial_number="B", discover=lambda: attached, monitor_factory=Monitor)
     listing = registry.boards()
     assert listing["default_board_id"] == listing["boards"][1]["id"]
     attached[:] = [device("A", "/a")]
@@ -117,7 +118,7 @@ def test_discovery_failure_is_explicit_without_opening_a_reader():
     def fail():
         raise OSError("USB enumeration failed")
 
-    registry = DashboardBoards(discover=fail, monitor_factory=Monitor)
+    registry = BoardRegistry(discover=fail, monitor_factory=Monitor)
     response = create_app(registry).test_client().get("/api/boards")
     assert response.status_code == 503
     assert response.json == {"error": "service temporarily unavailable"}

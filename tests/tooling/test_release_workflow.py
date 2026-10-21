@@ -79,7 +79,7 @@ def test_release_tag_glob_rejects_non_v_prefixed_or_non_numeric_tags(tag: str) -
     assert not fnmatch.fnmatch(tag, _tag_glob())
 
 
-def _resolve(event_name: str, input_version: str, ref_name: str) -> subprocess.CompletedProcess:
+def _resolve(event_name: str, input_tag: str, ref_name: str) -> subprocess.CompletedProcess:
     # Invoke via "sh" explicitly rather than executing the script path
     # directly: Windows has no shebang support, so running the POSIX
     # script as a bare executable fails with WinError 193 ("%1 is not a
@@ -87,7 +87,7 @@ def _resolve(event_name: str, input_version: str, ref_name: str) -> subprocess.C
     # GitHub-hosted windows-latest runners) and every POSIX sh both honor
     # this invocation the same way.
     return subprocess.run(
-        ["sh", str(RESOLVE_SCRIPT), event_name, input_version, ref_name],
+        ["sh", str(RESOLVE_SCRIPT), event_name, input_tag, ref_name],
         capture_output=True,
         text=True,
     )
@@ -119,10 +119,28 @@ def test_resolve_release_version_rejects_outside_policy(ref_name: str) -> None:
 
 
 def test_resolve_release_version_uses_workflow_dispatch_input() -> None:
-    result = _resolve("workflow_dispatch", "1.2.3", "refs/heads/main")
+    result = _resolve("workflow_dispatch", "v1.2.3", "refs/heads/main")
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "1.2.3"
+
+
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
+@pytest.mark.parametrize("tag", ["", "1.2.3", "vv1.2.3", "v01.2.3", "v1.2.3-rc1", "v1.2"])
+def test_release_versions_require_consistent_v_prefixed_tags(event, tag):
+    result = _resolve(event, tag, tag)
+    assert result.returncode != 0
+    assert "expected tag vMAJOR.MINOR.PATCH" in result.stderr
+
+
+@pytest.mark.parametrize("filename", ["release.yml", "publish-dotnet.yml", "publish-pypi.yml", "publish-webhid.yml"])
+def test_manual_release_inputs_use_the_same_tag_contract(filename):
+    text = (REPO_ROOT / ".github/workflows" / filename).read_text(encoding="utf-8")
+    inputs = text.split("  workflow_dispatch:\n    inputs:\n", 1)[1].split("\npermissions:", 1)[0]
+    assert "      tag:\n" in inputs
+    assert "vMAJOR.MINOR.PATCH" in inputs
+    assert "      version:\n" not in inputs
+    assert "inputs.version" not in text
 
 
 @pytest.mark.parametrize(
@@ -188,7 +206,11 @@ def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -
     assert "workflow_dispatch:" in job
     assert "contents: write" not in job
     assert "pip wheel" not in job
-    assert "PICO_UART_HOST_VERSION: ${{ steps.version.outputs.version }}" in text
+    python_job = text.split("\n  python-package:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    assert "fetch-depth: 0" in python_job
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION:" in python_job
+    assert "${{ github.event_name == 'workflow_dispatch' && steps.version.outputs.version || '' }}" in python_job
+    assert "PICO_UART_HOST_VERSION:" not in python_job
     assert "--self-contained true" in job
     assert '-p:Version="$VERSION"' in job
     assert "Verify installed Python release" in text
@@ -196,11 +218,17 @@ def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -
     assert "name: release-python" in text
     assert "name: release-host-${{ matrix.rid }}" in job
     assert "uses: ./.github/workflows/publish-dotnet.yml" in text
-    assert "version: ${{ inputs.version || '' }}" in text
+    assert "tag: ${{ inputs.tag || '' }}" in text
     assert "needs: [build, host-validation, python-package, dotnet-packages]" in text
     publish = text.split("\n  publish:\n", 1)[1]
     assert 'require_release_checks.py --sha "$SOURCE_SHA"' in publish
     assert publish.index("Require successful PR checks") < publish.index("Create draft GitHub Release")
+
+
+def test_python_test_publication_overrides_git_version():
+    text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION: 0.0.0.dev${{ github.run_id }}" in text
+    assert "PICO_UART_HOST_VERSION:" not in text
 
 
 @pytest.mark.parametrize("workflow,step_name", [
@@ -231,13 +259,15 @@ def test_pypi_publication_reuses_released_artifacts_with_scoped_oidc():
     assert "needs: verify" in publish
     assert "id-token: write" in publish
     assert "name: pypi" in publish
+    assert "repository-url: https://upload.pypi.org/legacy/" in publish
+    assert "test.pypi.org" not in publish
     assert "pypa/gh-action-pypi-publish@" in publish
     assert "password:" not in text
     assert "pip wheel" not in verify + publish
     assert "skip-existing:" not in text
 
 
-def test_manual_python_publication_is_isolated_to_testpypi():
+def test_manual_python_publication_uses_marked_versions_on_production_pypi():
     text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
     production, test = text.split("\n  test-package:\n", 1)
     assert "(github.event_name != 'workflow_dispatch' || !inputs.test_publish)" in production
@@ -246,10 +276,19 @@ def test_manual_python_publication_is_isolated_to_testpypi():
     assert "Run Python package tests" in test
     assert "Verify installed development wheel" in test
     assert "needs: test-package" in test
-    assert "name: testpypi" in test
-    assert "repository-url: https://test.pypi.org/legacy/" in test
-    assert "name: pypi\n" not in test
+    assert "name: pypi\n" in test
+    assert "repository-url: https://upload.pypi.org/legacy/" in test
+    assert "name: pypi-development-distribution" in test
+    assert "public, immutable development version" in production
+    assert "testpypi" not in text.lower()
+    assert "test.pypi.org" not in text
     assert "require_release_checks.py" not in test
+
+
+def test_pypi_publishers_pin_the_commit_not_the_annotated_release_tag():
+    text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    refs = re.findall(r"uses: pypa/gh-action-pypi-publish@([0-9a-f]{40})", text)
+    assert refs == ["7245906fb61fa33a13554f9d5fb856fe61758086"] * 2
 
 
 @pytest.mark.parametrize("event,test_publish,reference,expected", [
@@ -264,7 +303,7 @@ def test_dotnet_manual_versions_are_marked_without_changing_release_versions(
     script = textwrap.dedent(step.split("run: |\n", 1)[1])
     output = tmp_path / "output"
     result = subprocess.run(["sh"], input=script, text=True, capture_output=True, cwd=REPO_ROOT,
-                            env={**os.environ, "EVENT_NAME": event, "INPUT_VERSION": "1.2.3", "REF_NAME": reference,
+                            env={**os.environ, "EVENT_NAME": event, "INPUT_TAG": "v1.2.3", "REF_NAME": reference,
                                  "TEST_PUBLISH": test_publish, "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2",
                                  "GITHUB_OUTPUT": str(output)})
     assert result.returncode == 0, result.stdout + result.stderr

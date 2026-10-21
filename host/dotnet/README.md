@@ -1,106 +1,106 @@
 # PicoUart .NET Host
 
-The .NET 10 host provides a C# HID client, diagnostics CLI, and an ASP.NET Core dashboard. It uses the exact same
-HTML, CSS, and JavaScript as the Python dashboard, sourced from `host/web`. UART data and line settings still belong
-to the six CDC interfaces; this application only uses the diagnostics HID interface.
+**Monitor six UARTs from your terminal, test runner, or browser.** The .NET host provides a diagnostics CLI, local
+dashboard, and C# HID client for PicoUart on Raspberry Pi Pico and Pico 2.
 
-## Run
+Diagnostics use a separate USB HID interface, so your existing serial tools can keep using the six USB CDC ports.
+This application does not capture UART payloads or set baud rates and framing; use your serial tools for those tasks.
 
-Install the .NET 10 SDK, then run from the repository root:
+## Requirements
 
-```sh
-tools/host/run-dotnet.sh                 # Dashboard (Linux/macOS/WSL)
-tools/host/run-dotnet.sh status          # CLI
-```
+- A computer matching one of the release targets below; no .NET or Python installation is needed
+- A Raspberry Pi Pico or Pico 2 running compatible
+	[PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to this computer over USB
+- Access to the board's HID interface; Linux may need
+	[device permissions](../../tools/README.md#linux-hid-permissions)
 
-The launcher defaults to `web` on port 5000. Application arguments pass through unchanged. Native Windows users,
-or anyone preferring the SDK directly, can use:
+## Install
 
-```sh
-dotnet run --project host/dotnet/PicoUart -- status
-dotnet run --project host/dotnet/PicoUart -- hardware
-dotnet run --project host/dotnet/PicoUart -- config
-dotnet run --project host/dotnet/PicoUart -- monitor --duration 10
-dotnet run --project host/dotnet/PicoUart -- web --port 5001
-```
+Download a self-contained host archive from [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases).
+Choose the target for the computer running the application, not the Pico:
 
-Web startup prints one dashboard URL; framework warnings and errors remain visible. For framework diagnostic logs, set
-`Logging__LogLevel__Microsoft=Information` before launching.
+| Computer | Release Target | Archive |
+| --- | --- | --- |
+| Linux x64 | `linux-x64` | `.tar.gz` |
+| Windows x64 | `win-x64` | `.zip` |
+| Apple Silicon Mac | `osx-arm64` | `.tar.gz` |
 
-If the page loads but reports no HID interface, check the error in the page or `/api/status`, then follow
-[Linux HID permissions](../../tools/README.md#linux-hid-permissions). After using older Python builds backed by libusb,
-Linux's HID driver may remain detached: close the other client and reconnect the board's USB data cable to restore it.
+Extract the **whole archive**, keeping its `web` directory and other files beside the executable. No .NET SDK, runtime,
+or Python installation is needed. See
+[distribution details](../../docs/deployment/host-app-distribution.md#net-downloads)
+for supported downloads and packaging limitations.
 
-The dashboard binds only to `http://127.0.0.1:5001` in this example. Use **Board** and **Rescan** to select among attached
-boards independently in each page; viewers of the same board share one reader.
-The [shared dashboard guide](../../docs/development/host-tools.md#board-selection-and-shared-monitoring) owns selection,
-reader lifetime, CLI defaults, and the board-scoped API contract.
-Both servers use the same JSON field names. The HTML's `{{ csrf_token }}` placeholder is filled
-by each server, and control requests require that session's token in `X-CSRF-Token`. Keep shared frontend changes
-backend-neutral; do not add Flask-only template expressions or a second frontend under the C# project.
+## Quick Start
 
-Other commands are `overruns`, `hardware`, `config`, `temperature`, `version`, `toggle-led`, and `reset`. Status, monitor samples,
-hardware info, and overflow counts are emitted as JSON; `--json` is also accepted. Temperature and version are plain
-values. Select a board with
-`--serial SERIAL` or `--device-path PATH`, but not both. The client rejects ambiguous matches. Linux HID access may
-require [HID permissions setup](../../tools/README.md#linux-hid-permissions).
-Reset remains capability-gated and sends the arm command before the reset command.
-
-The public `PicoUartHid` class owns the connection and implements `IDisposable`. `Protocol` exposes the pure report
-decoders and typed results. HidSharp supplies cross-platform USB HID discovery and transport.
-
-`ReadHardwareInfo()` and the `hardware` command query feature report 6 for MCU identity and system clock. See the
-[HID Report Reference](../../docs/design/usb/hid-report-reference.md) for payload and compatibility details.
-`ReadConfiguration()` and the `config` command read the persistent configuration source, fallback reason, and selected
-clock profiles from HID report 16. The report is read-only and does not expose credentials or raw flash contents.
-`ReadConfigurationSave()` reads report 17; `SaveConfiguration(profile, unsafeOverclock)` saves a next-boot profile
-and polls for completion with a bounded timeout, rejecting an already pending save before writing.
-Profile 0 keeps the SDK default (no clock change); profiles 1 and 2
-require explicit unsafe overclock acknowledgement and the matching RP2040 or RP2350 family. All saves require a known
-MCU family. Stop UART traffic and close CDC ports before saving.
-After firmware verifies a save, it automatically reboots the board; USB disconnects briefly while it restarts.
-
-The dashboard's board-scoped `POST /api/configuration?board=...` accepts exactly
-`{"profile":0,"unsafe_overclock":false}` with the session's `X-CSRF-Token`, and returns `{"ok":true}` only after the
-save completes. `/api/status` exposes `configuration_save` and optional `configuration_save_error` independently of
-the immutable boot decision in `configuration`.
-
-Numbered HID feature reports have platform-specific framing. Preserve the client's framing validation and tests when
-changing the HID transport dependency.
-
-## Publish
-
-Tagged GitHub Releases provide self-contained host archives with the release version already embedded in the dashboard.
-Choose a [supported release target](../../docs/development/host-distribution.md#net-downloads), extract the whole archive,
-and run `./PicoUart web --port 5001` on Linux/macOS or `.\PicoUart.exe web --port 5001` on Windows.
-Keep the bundled `web` directory beside the executable; no .NET installation or version environment variable is needed.
-These commands start a local server, not a system service. To build your own deployment instead:
+Connect the flashed board, then run from the extracted directory on Linux/macOS:
 
 ```sh
-dotnet publish host/dotnet/PicoUart -c Release -o build/host-dotnet
-dotnet build/host-dotnet/PicoUart.dll web --port 5001
+./PicoUart status
+./PicoUart web
 ```
 
-The published directory includes the shared frontend, so it runs without the source checkout or Python. For a machine
-without .NET installed, publish for its runtime identifier with `--self-contained true -r linux-x64` (or the appropriate
-Windows/macOS identifier). Distribute the whole output directory, including its `web` folder.
+On Windows PowerShell, use `.\PicoUart.exe status` or `.\PicoUart.exe web` instead. The remaining CLI examples use the
+Linux/macOS executable spelling; substitute `.\PicoUart.exe` on Windows.
 
-CI packaging lives in the separate [.NET packaging workflow](../../.github/workflows/publish-dotnet.yml), called by the
-release pipeline. For a packaging-only test run, see the [.NET release procedure](../../docs/releasing.md#net-packaging).
+Open <http://127.0.0.1:5000/>. The dashboard binds to loopback, works without browser WebHID support, and shows channel
+health and traffic, dropped-byte counts, firmware and hardware identity, clock, and temperature. Use
+`./PicoUart web --port 5001` if the default port is occupied. This starts a local server, not a system service.
 
-## Checks
+For browser-only diagnostics without installing a host application, use the separate
+[WebHID dashboard on GitHub Pages](https://djwinter29-oss.github.io/PicoUart/) in desktop Chrome or Edge, with the board
+connected to the computer running that browser.
+
+For multiple boards, use `./PicoUart --serial ABC123 status` or `--device-path PATH`, but not both. Ambiguous matches
+are rejected. Use **Board** and **Rescan** in the dashboard; see
+[board selection and shared monitoring](../../docs/development/host-tools.md#board-selection-and-shared-monitoring).
+Use one HID monitor/server per physical board; separate processes do not share its input reports or traffic totals.
+
+## Test Automation
+
+Status and monitor samples are JSON by default; `--json` is accepted but unnecessary. Have your test runner save a
+snapshot, launch a timed monitor alongside a serial test, or collect cumulative RX dropped-byte counts independently:
 
 ```sh
-dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"
-host/python/.venv/bin/python -m pytest tests/tooling/test_dotnet_host.py
+./PicoUart status > uart-status.json
+./PicoUart monitor --duration 60 > uart-traffic.jsonl
+./PicoUart overruns > uart-dropped-bytes.json
 ```
 
-The xUnit unit suite is hardware-free and tagged `Category=Unit`. To run only protocol tests, use
-`--filter "FullyQualifiedName~ProtocolTests"`; add `--logger trx --results-directory build/host-dotnet-tests` to retain
-a test report.
+Each monitor line contains one JSON report. Byte counts are deltas since the preceding successfully published report,
+saturating at 65535. Dropped-byte counts and buffer peaks are cumulative since boot; account for resets and saturation
+when interpreting a test run. These are traffic statistics, not device messages or exact accounting if reports are lost.
 
-The Python integration checks publish the app and validate the shared frontend/API contract. They skip when `dotnet` is
-not on `PATH`; set `DOTNET_EXE` to use another SDK executable. CI runs both suites on Linux and Windows.
+`status` exits non-zero when no report arrives before its timeout. **Unlike the Python CLI, .NET `monitor` can finish
+successfully with no reports.** Your runner must check sample availability and channel health, not just the exit code.
+Without `--duration`, monitoring continues until interrupted. Device errors are printed to stderr and return non-zero.
 
-Physical device discovery, telemetry, LED, reset, unplug/reconnect, and platform-specific HID behavior still require
-board validation. Do not treat these host checks as HIL qualification; use the [test index](../../docs/tests/README.md).
+## Other Commands And Controls
+
+Read-only commands include `hardware`, `config`, `temperature`, and `version`. Hardware, configuration, and overrun
+results are JSON; temperature and firmware version are plain values. Use `./PicoUart --help` for command options.
+
+`toggle-led` changes the board LED. `reset` reboots the board and is refused unless firmware advertises reset support,
+which is disabled by default. The dashboard can also save a persistent boot-time clock profile; a verified save
+automatically reboots the board, independently of the optional reset command. Stop UART traffic, close CDC ports, and
+read the [configuration precautions](../../docs/development/host-tools.md#persistent-configuration) before changing it.
+After reconnecting, check the actual active profile and any fallback reason rather than assuming the requested clock
+became active. A verified save does not establish overclock stability.
+
+## Troubleshooting
+
+- **Board not found:** check compatible firmware, the USB data cable, and any board selector. USB must be accessible to
+	the computer running the host. Without a compatible board, HID commands failing is expected.
+- **Access denied:** follow the Linux HID permission guide above. After using an older Python/libusb client, a detached
+	HID driver may need the other client closed and the board's USB cable reconnected.
+- **No valid reports:** check firmware compatibility and the USB connection. Missing reports are not zero traffic;
+  verify that monitor output contains samples even when the command exits successfully.
+- **Missing web files:** re-extract the complete archive; do not move only the executable.
+- **Need framework logs:** set `Logging__LogLevel__Microsoft=Information` before launching. Startup normally prints one
+	dashboard URL while retaining warnings and errors.
+
+## Documentation
+
+- [Project, firmware, and wiring](../../README.md)
+- [Host development and source-checkout setup](../../docs/development/host-tools.md#net-development)
+- [HID report reference and compatibility](../../docs/design/usb/hid-report-reference.md)
+- [Security and lab-only USB identity](../../SECURITY.md)

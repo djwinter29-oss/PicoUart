@@ -8,8 +8,9 @@ For shared ring semantics, see [Ring Buffer Design](ring-buffer-design.md). For 
 
 ## Ownership Model
 
-- Core 0 owns TinyUSB and moves bytes between CDC endpoints and per-port rings.
-- Core 1 owns PIO state machines, DMA channels, TX/RX service, and backend control changes.
+- Startup initializes the backends before the UART worker starts.
+- During steady-state operation, core 0 owns TinyUSB and moves bytes between CDC endpoints and per-port rings.
+- Core 1 services PIO state machines, DMA channels, TX/RX, and deferred backend changes.
 - RX and TX rings are the only data-plane contract between USB code and the PIO backend.
 
 This keeps TinyUSB isolated from hardware service details and preserves one producer and one consumer for each ring
@@ -20,9 +21,9 @@ flowchart LR
   USB["TinyUSB / core 0"] --> TXRing["TX ring"]
   TXRing --> Worker["PIO worker / core 1"]
   Worker --> TXFIFO["Joined PIO TX FIFO"]
-  Worker --> TXDMA["Optional TX DMA"]
+  Worker --> TXDMA["Claimed TX DMA channel"]
   TXFIFO --> TXSM["PIO TX state machine"]
-  TXDMA --> TXSM
+  TXDMA --> TXFIFO
   RXSM["PIO RX state machine"] --> RXFIFO["PIO RX FIFO"]
   RXFIFO --> RXDMA["Persistent RX DMA"]
   RXDMA --> RXRing["RX ring"]
@@ -41,17 +42,16 @@ Important details:
   clocks/bit ratio, independent of TX's 8 clocks/bit divider. The samples are four PIO clocks apart, at centre-4,
   centre, and centre+4, so the vote still covers a quarter of the bit. The clean stop path arms `wait 0 pin` 9 PIO
   cycles before the next start bit. RX and TX run on separate state machines with separate clock dividers, so this does
-  not change TX bit timing. See the cycle derivation in `uart.pio`.
+  not change TX bit timing. When the first two samples agree, the bit is resolved without taking the third sample.
 - The RX pin keeps the PIO input synchronizer. Two `clk_sys` cycles are 16 ns at 125 MHz, about 1.5 RX clocks at 3 Mbaud
-  on this 32-clock grid, inside the centre±4 sample offset. The synchronizer, not the 2-of-3 vote, absorbs a metastable
-  sample.
-- PIO and hardware UART TX pins are driven at fast slew and 12 mA. The reset pad (slow slew, 4 mA) makes an edge wider
-  than that vote window around 1.5 Mbaud.
+  on this 32-clock grid, inside the centre±4 sample offset. The synchronizer handles asynchronous input sampling;
+  majority voting rejects isolated sample errors. Neither establishes immunity to arbitrary noise or invalid timing.
+- PIO and hardware UART TX pins use fast slew and 12 mA drive. Actual edge quality depends on the board, wiring, and
+  load; majority voting does not compensate for inadequate signal integrity. Validate the intended setup in hardware.
 - TX uses an 8-clock-per-bit side-set program. Back-to-back 8N1 frames take 10 bit-times, and the stop bit is the
-  `pull side 1 [7]` at the next frame boundary. A 16-clock OUT-only alternative produced lower rates in fixture tests;
-  see the [HIL record archive](../../tests/records/README.md) for measured results. The 32-clock RX vote arms its
-  next-start wait 9 PIO cycles before a 1-stop peer's next start; divider limits and sampling timing are specific to
-  the current PIO program.
+  initial idle-high hold at the next frame boundary. The 32-clock RX vote arms its next-start wait 9 PIO cycles before
+  a 1-stop peer's next start; divider limits and sampling timing are specific to this design. These cycle counts do not
+  establish sustained throughput; measured results belong in the [HIL record archive](../../tests/records/README.md).
 - The IN shift is configured so LSB-first UART samples form a natural byte in FIFO bits `[31:24]`; RX DMA reads one byte
   from `rxf+3`.
 - RX DMA transfer counts use the SDK encoder so RP2350 does not enter ENDLESS mode.
@@ -82,31 +82,38 @@ sequenceDiagram
 
 ## TX Path
 
-PIO TX is hybrid. Core 1 chooses one action per port during each worker poll:
+PIO TX is hybrid. During each per-port service pass, core 1:
 
-1. If TX DMA is active, poll for completion and commit the owned ring span.
-2. If TX DMA is idle and backlog is large enough, launch a bounded DMA transfer.
-3. Otherwise, drain bytes directly into the joined PIO TX FIFO from the poll loop.
+1. Polls any active TX DMA and commits its owned span when complete; if DMA remains active, returns.
+2. Waits for previously queued TX FIFO data to drain before adding another transfer budget.
+3. Attempts bounded DMA for a sufficiently large backlog; otherwise drains a bounded span into the joined TX FIFO.
+  If DMA cannot be launched, the same pass falls back to FIFO writes.
 
-Small backlogs are drained through the FIFO; larger backlogs use bounded DMA. The threshold and transfer limit are
-tuning values maintained in the [PIO driver](../../../firmware/src/uart/pio/pio_uart_driver.c) and
-[capacity configuration](../../../firmware/src/config/capacity_config.h).
+Both polling and DMA feed the same TX FIFO; the state machine serializes its bytes onto the pin. The backlog threshold
+and transfer budget are tuning policy, not part of the host-visible protocol or a throughput guarantee.
 
 Each initialized PIO port claims its TX DMA channel once during init and holds that channel until deinit. A launch
 reuses the claimed channel; it does not claim or release a channel per transfer. If that launch does not start, the same
-sweep drains the FIFO instead. While TX DMA is active, it owns exactly `tx_dma_bytes_in_flight` bytes from the TX ring;
-those bytes are committed only after DMA completion. The channel stays claimed.
+sweep drains the FIFO instead. While TX DMA is active, it owns its reserved TX-ring span; that span is committed only
+after DMA completion. The channel stays claimed. DMA completion frees ring storage but does not prove the FIFO and
+output shifter are idle; baud changes require those additional checks.
 
 ```mermaid
 flowchart TD
   Sweep["Worker poll"] --> Active{"TX DMA active?"}
-  Active -->|yes| Complete["Poll DMA completion\ncommit owned span"]
-  Active -->|no| Backlog{"Backlog above threshold?"}
+  Active -->|yes| Complete["Poll completion; commit if complete"]
+  Complete --> Busy{"DMA still active?"}
+  Busy -->|yes| Next["Next worker sweep"]
+  Busy -->|no| Empty{"TX FIFO empty?"}
+  Active -->|no| Empty
+  Empty -->|no| Next
+  Empty -->|yes| Backlog{"Backlog above threshold?"}
   Backlog -->|yes| Launch["Launch bounded TX DMA"]
   Backlog -->|no| FIFO["Drain joined TX FIFO"]
-  Launch --> Next["Next worker sweep"]
+  Launch --> Started{"DMA started?"}
+  Started -->|yes| Next
+  Started -->|no| FIFO
   FIFO --> Next
-  Complete --> Next
 ```
 
 ## Why TX Is Hybrid
@@ -120,8 +127,8 @@ and uses DMA only when queued work is large enough to amortize setup.
 PIO RTS/CTS support is opt-in through board pin flags:
 
 - `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL`: drives active-low RTS from RX-ring occupancy.
-- `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL`: gates TX frame starts on active-low CTS; the stop-bit hold preserves
-  frame timing while CTS is asserted.
+- `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL`: gates TX frame starts on active-low CTS. Asserted (low) permits a new
+  frame; deasserted (high) extends idle-high between frames without truncating a frame already in progress.
 - `PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP`: enables a pull-up on RX during backend initialization.
 - `PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH`: requires idle-high RX before a deferred baud change.
 
@@ -133,16 +140,17 @@ relevant flow-control variant.
 PIO UART ports remain 8N1-only. Unsupported parity, data-bit, or stop-bit requests are rejected and reported through HID
 `control_error`. Supported baud changes are deferred until the worker core can reach a safe boundary.
 
-Before applying a PIO baud change, core 1:
+The [control plane](../control-plane-design.md) blocks new USB-to-UART admission while the request is pending and waits
+for the captured old-format TX boundary to drain. Before applying a PIO baud change, core 1:
 
-1. Pauses new USB-to-UART writes for that port through shared control-pending state.
-2. Publishes pending RX DMA progress into the RX ring.
-3. Pauses RX DMA and waits for a stable transfer count. A count that is still moving after the settle timeout resumes
-   the channel and retries the baud change without publishing that sample. A stable count is published, then the channel
-   is aborted and acknowledged inside a short critical section.
-4. Waits for TX DMA completion, an empty TX ring, an empty TX FIFO, and TXSTALL re-assertion after write-clear.
-5. Requires an empty RX FIFO, and for shipped ports also requires idle-high RX.
-6. Applies the baud change and restarts RX DMA. If the port is not yet safe, the worker retries on a later sweep.
+1. Publishes observed RX progress and polls TX DMA completion.
+2. Requires TX DMA to be inactive, TX FIFO to be empty, and fresh TXSTALL evidence that the shifter is idle. RX must
+  also be at its next-start wait with an empty FIFO; ports configured for the idle-high gate must have RX high.
+3. Pauses RX DMA and waits for a stable transfer count. If settling fails, resumes DMA and defers the change.
+4. In a short critical section, publishes the stable RX position, stops and acknowledges DMA, pauses the state machines,
+  and rechecks FIFO and RX-idle conditions. A failed recheck restores service and defers the change.
+5. Applies the new TX/RX dividers, restarts the state machines, and resumes RX DMA from the live producer position,
+  preserving unread ring data. The control plane bounds retries with its per-port deadline.
 
 The TXSTALL wait is based on a few PIO cycles at the current baud, with a small microsecond floor, rather than a fixed
 CPU-iteration loop. The RX idle-high gate prevents changing the divider mid-frame for boards that can guarantee
@@ -152,16 +160,18 @@ idle-high RX through pull-up.
 stateDiagram-v2
   [*] --> Running
   Running --> Pending: supported baud request
-  Pending --> PauseRX: TX boundary reached
-  PauseRX --> Quiesce: RX DMA progress stable
+  Pending --> CheckIdle: TX boundary reached
+  CheckIdle --> PauseRX: DMA, FIFOs, and shifter safe
+  CheckIdle --> Pending: not yet safe
+  PauseRX --> Recheck: RX DMA progress stable
   PauseRX --> Pending: transfer count still moving
-  Quiesce --> Apply: TX/RX FIFO and TXSTALL safe
-  Quiesce --> Pending: not yet safe
+  Recheck --> Apply: paused state remains safe
+  Recheck --> Pending: restore service and defer
   Apply --> RestartRX: divider updated
   RestartRX --> Running: RX DMA armed
   Pending --> Error: timeout
   Apply --> Error: backend reject
-  Error --> Running
+  Error --> Running: existing backend remains usable
 ```
 
 ## Observability
@@ -175,9 +185,9 @@ Relevant host-visible signals:
 - HID health bit 3: control request is pending.
 - HID health bit 5: backend is PIO.
 - HID health bit 6: RX data has been overwritten.
-- HID health bit 7: PIO stop-bit framing error. Startup calls `clear_rx_error_baseline` after every backend is up and
-  before core 1 polls. That hook clears a sticky RX stop-bit interrupt without counting it, so pin bring-up noise does
-  not stick as a false framing fault.
+- HID health bit 7: PIO stop-bit framing error. After all backends initialize and before the worker starts, startup
+  clears the bring-up error baseline without counting it as a runtime fault. Subsequent framing-error observations
+  remain visible through diagnostics.
 - HID overflow-count feature report: cumulative UART-to-USB RX dropped bytes.
 
 ## Current Limits
@@ -190,8 +200,9 @@ Relevant host-visible signals:
   configuration that exceeds the available space.
 - Each worker step services every port. Deferred control and backend polling start on the same port in that step. The
   shared start index advances once, after the I/O sweep. There is no separate TX priority scheduler.
-- Sustained multi-port throughput depends on USB full-speed bandwidth and host drain rate; see the
-  [HIL fixture plan](../../tests/hil-fixture-test-plan.md) for measured results and limits.
+- Sustained multi-port throughput depends on USB full-speed bandwidth and host drain rate. See the
+  [HIL records](../../tests/records/README.md) for measured conditions and results, and the
+  [HIL fixture plan](../../tests/hil-fixture-test-plan.md) for qualification procedures.
 
 Flow-control behavior and sustained transport rates require board-specific HIL; do not infer those capabilities from
 the configured baud or backend support alone.

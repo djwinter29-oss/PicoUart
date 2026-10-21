@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from tomlkit import parse
+
 from contract import (
     firmware_cdc_interface_strings,
     firmware_hid_constants,
@@ -24,19 +26,22 @@ from pico_uart import protocol
 def test_release_lock_matches_direct_requirement_pins(repo_root):
     requirement_dir = repo_root / "host" / "python"
     pin_pattern = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;\\]+)", re.MULTILINE)
-    direct_pins = {}
-
-    for name in ("requirements.txt", "requirements-dev.txt"):
-        direct_pins.update(pin_pattern.findall((requirement_dir / name).read_text()))
-
+    project = parse((requirement_dir / "pyproject.toml").read_text())
+    requirements = project["project"]["dependencies"] + project["dependency-groups"]["test"]
+    requirements += [requirement for requirement in project["dependency-groups"]["dev"] if isinstance(requirement, str)]
+    requirements += project["build-system"]["requires"]
+    direct_pins = dict(pin_pattern.findall("\n".join(requirements)))
     locked_pins = dict(pin_pattern.findall((requirement_dir / "requirements-lock.txt").read_text()))
     assert direct_pins.items() <= locked_pins.items()
+    assert not (requirement_dir / "requirements.txt").exists()
+    assert not (requirement_dir / "requirements-dev.txt").exists()
 
 
 def test_runtime_lock_matches_runtime_pins_without_test_dependencies(repo_root):
     requirement_dir = repo_root / "host/python"
     pin_pattern = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;\\]+)", re.MULTILINE)
-    runtime_pins = dict(pin_pattern.findall((requirement_dir / "requirements.txt").read_text()))
+    project = parse((requirement_dir / "pyproject.toml").read_text())
+    runtime_pins = dict(pin_pattern.findall("\n".join(project["project"]["dependencies"])))
     locked_pins = dict(pin_pattern.findall((requirement_dir / "requirements-runtime-lock.txt").read_text()))
     development_pins = dict(pin_pattern.findall((requirement_dir / "requirements-lock.txt").read_text()))
     assert runtime_pins.items() <= locked_pins.items()

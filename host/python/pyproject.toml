@@ -1,29 +1,59 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling==1.32.4", "hatch-vcs==0.5.0"]
+build-backend = "hatchling.build"
 
 [project]
 name = "pico-uart"
 dynamic = ["version"]
 description = "Host HID API, CLI, and Flask diagnostics dashboard for PicoUart"
 readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{name = "Ji Dong"}]
+keywords = ["uart", "raspberry-pi-pico", "hid", "diagnostics", "test-automation"]
+classifiers = [
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3 :: Only",
+	"Topic :: Software Development :: Testing",
+]
 requires-python = ">=3.10"
 dependencies = ["flask==3.1.2", "hidapi==0.14.0.post4"]
+
+[project.urls]
+Homepage = "https://github.com/djwinter29-oss/PicoUart"
+Documentation = "https://github.com/djwinter29-oss/PicoUart/blob/main/host/python/README.md"
+Source = "https://github.com/djwinter29-oss/PicoUart"
+Issues = "https://github.com/djwinter29-oss/PicoUart/issues"
+Releases = "https://github.com/djwinter29-oss/PicoUart/releases"
 
 [project.scripts]
 pico-uart = "pico_uart.cli:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-include-package-data = false
+[dependency-groups]
+test = ["pytest==8.3.5"]
+dev = [
+	{include-group = "test"},
+	"pytest-cov==6.2.1",
+	"hatchling==1.32.4",
+	"hatch-vcs==0.5.0",
+	"editables==0.5",
+]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["pico_uart*"]
-namespaces = false
+[tool.hatch.version]
+source = "vcs"
+tag-pattern = '^v(?P<version>\d+\.\d+\.\d+)$'
+fallback-version = "0.0.0.dev0"
 
-[tool.setuptools.package-data]
-"pico_uart.web" = ["assets/index.html", "assets/*.svg", "assets/css/*.css", "assets/js/*.js"]
+[tool.hatch.version.raw-options]
+search_parent_directories = true
+
+[tool.hatch.build.hooks.custom]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pico_uart"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/hatch_build.py", "/requirements*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

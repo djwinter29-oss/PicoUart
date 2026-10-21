@@ -21,7 +21,7 @@ limits: `CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
 | Applied UART settings, GPIOs, and fault history | HID feature reports 10-15 | Read-only snapshots. These reports cannot change line coding or pin mapping. |
 | Toggle default board LED                                      | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one.                                                                                                                                                                                                          |
 | Reset board                                                   | HID command feature report | Disabled by default; trusted lab builds may enable arm (`3`) then reset (`2`) within 2 seconds with `PICO_UART_ALLOW_HID_RESET=1`. Enabled builds set board-status `reserved0` bit 0; the host `reset` command fails closed when that bit is clear.                          |
-| Save boot-time system clock profile | HID feature report 17 | Validates a board-specific profile, requires overclock acknowledgement, and verifies the reserved flash sector. No runtime clock change or automatic reset. |
+| Save boot-time system clock profile | HID feature report 17 | Validates a board-specific profile, requires overclock acknowledgement, and verifies the reserved flash sector. Automatically reboots after a short grace period to apply the saved profile. |
 
 HID must not be used to select a UART, set baud rate, change GPIO mapping, or alter ring-buffer behavior. The three
 command values are board-scoped only.
@@ -82,9 +82,12 @@ multiple bad frames before a hardware/PIO error flag is harvested can also coale
 `rx_overrun` includes both retired and still-pending overwritten bytes without counting retirement twice.
 At counter saturation, the count cannot distinguish further events.
 
+There is no device-side fault-history clear command. Dashboards display fault history read-only, without local
+acknowledgement.
+
 RX flags in report 1 are historical latches based on nonzero counters, not live signal-level indicators. A closed CDC
 port does not stop the UART receiver. Floating/undriven RX, a break, incorrect baud/framing, or wiring problems are
-possible causes, but this report cannot identify which one occurred. See [UART pinout](../../uart-pinout.md).
+possible causes, but this report cannot identify which one occurred. See [Hardware Setup](../../hardware-setup.md).
 
 ## Report 16: Persistent Configuration Status
 
@@ -102,7 +105,6 @@ credentials, or mutable settings. This snapshot remains unchanged after a report
 
 Unknown versions, inconsistent enums, or nonzero reserved bytes are rejected by host tools. Source `stored` requires
 matching stored and active profiles, including profile `0` (SDK default with no clock reconfiguration).
-There is no device-side clear command. Dashboards display fault history read-only, without local acknowledgement.
 
 ## Report 17: Save Persistent Clock Profile
 
@@ -129,9 +131,11 @@ traffic may be lost even with DTR clear. The SDK flash-safe execution API disabl
 page contains the CRC-protected record and the rest remains erased. Full-sector validation and page comparison must
 succeed before `saved` is reported. Saving an already valid identical profile does not erase/program again.
 
-The active clock and report 16 remain unchanged until the verified save result has been read; firmware then reboots
-the board automatically after a short delay to apply the saved profile. The usual default validation and watchdog-
-recovery rules still apply. Interrupted writes fall back to SDK defaults, not a previous record: this is a single-sector
+The active clock and report 16 remain unchanged until the next boot. A verified save starts a short grace period for
+the host to read the result, then firmware automatically reboots to apply the saved profile. Reading the result does
+not trigger, delay, or prevent that reboot. This configuration-save reboot is independent of the optional report-4
+remote-reset capability. The usual default validation and watchdog-recovery rules still apply.
+Interrupted writes fall back to SDK defaults, not a previous record: this is a single-sector
 store, not a redundant journal. Non-default profiles remain experimental and require exact-board HIL; Save does not
 establish stability. Dashboard controls and API behavior are documented in
 [Host Tools Development](../../development/host-tools.md#persistent-configuration).
@@ -163,10 +167,12 @@ The byte counters are changes since the preceding successfully published status 
 saturated value means the actual delta was at least that large. The ring peak is cumulative from boot and saturates at
 `4080` bytes.
 
-Those deltas and `sequence` advance only after a successful interrupt IN publish. A control-pipe `GET_REPORT` of input
-report 1 returns the same uncommitted snapshot and does not advance `sequence` or the delta baseline. Use the interrupt
-stream (`pico-uart monitor`) when the delta must be committed. `SET_LINE_CODING` can still complete on the bus when
-firmware rejects it; watch health bit 2 on that interrupt stream.
+The committed delta baseline and `sequence` advance only after a successful interrupt IN publish. A control-pipe
+`GET_REPORT` of input report 1 samples current values without advancing either. If no interrupt publish intervenes,
+successive reads can return changing byte counts with the same `sequence`, measured against the same baseline.
+Do not sum those overlapping reads as independent traffic deltas. Use the interrupt stream (`pico-uart monitor`) for
+committed deltas. `SET_LINE_CODING` can still complete on the bus when firmware rejects it; watch health bit 2 on that
+interrupt stream.
 
 ### `health` Bits
 
@@ -329,7 +335,9 @@ Host command and client behavior are documented in the [Python host guide](../..
 
 ## Validation
 
-Hosts validate `signature0`, layout version `1`, payload size, and reserved bits before decoding.
+Hosts validate the report type, ID, and payload size. Only report 1 includes `signature0`, which must be validated.
+Versioned payloads require layout version `1`; report 4 is an unversioned command byte with no signature field.
+Validate reserved fields and bits according to each report's layout, permitting explicitly defined capability flags.
 All reports listed above are required by this contract. Missing reports and other versions are explicit errors,
 not signals to select another layout or silently substitute values. Independent read errors clear the affected values
 without discarding unrelated valid telemetry. Board-status `reserved0` bit 0 indicates HID reset is enabled;
@@ -338,5 +346,5 @@ default firmware sends `0`.
 For a valid report containing an unrecognized MCU ID, hosts preserve the raw ID and system clock and present the MCU as
 unknown. This does not assign meaning to future IDs; firmware must define each mapping when adding MCU support.
 
-The source of truth for the implementation is [usb_hid.c](../../../firmware/src/usb/usb_hid.c) and the report descriptor in
-[usb_descriptors.c](../../../firmware/src/usb/usb_descriptors.c).
+This reference owns the wire layouts and field meanings. The [CDC/HID Overview](cdc-hid-overview.md) defines interface
+roles; [Control Plane Design](../control-plane-design.md) defines deferred UART reconfiguration and ownership.

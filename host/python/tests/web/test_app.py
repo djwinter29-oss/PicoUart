@@ -9,7 +9,8 @@ import time
 import pytest
 
 from pico_uart.protocol import parse_hardware_info, parse_status
-from pico_uart.web.app import DashboardService, _empty_snapshot, create_app
+from pico_uart.web.app import create_app
+from pico_uart.web.monitor import BoardMonitor, empty_snapshot
 from helpers import board_status_bytes, overflow_counts_bytes, status_report_bytes
 
 
@@ -202,7 +203,7 @@ def test_dashboard_service_polls_status_and_metadata():
             self.closed = True
 
     fake = FakeClient()
-    service = DashboardService(client_factory=lambda: fake)
+    service = BoardMonitor(client_factory=lambda: fake)
     try:
         deadline = time.monotonic() + 2
         snapshot = service.snapshot()
@@ -232,7 +233,7 @@ def test_dashboard_service_polls_status_and_metadata():
 
 
 def test_dashboard_metadata_refreshes_every_second(monkeypatch):
-    service = object.__new__(DashboardService)
+    service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
     service._stop = threading.Event()
     service._client = None
@@ -261,9 +262,9 @@ def test_dashboard_metadata_refreshes_every_second(monkeypatch):
 
 
 def test_metadata_errors_survive_telemetry_and_clear_stale_values():
-    service = object.__new__(DashboardService)
+    service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
-    service._snapshot = _empty_snapshot()
+    service._snapshot = empty_snapshot()
     service._last_sequence = None
     service._snapshot["board"] = {"firmware_version": "stale"}
     service._snapshot["overflow_counts"] = [99] * 6
@@ -306,9 +307,9 @@ def test_metadata_errors_survive_telemetry_and_clear_stale_values():
 
 @pytest.mark.parametrize("mcu,model", [(2, "RP2350"), (3, "Unknown MCU (3)")])
 def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, model):
-    service = object.__new__(DashboardService)
+    service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
-    service._snapshot = _empty_snapshot()
+    service._snapshot = empty_snapshot()
     service._snapshot["hardware"] = {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
 
     class OlderFirmware(BoardTelemetry):
@@ -341,9 +342,9 @@ def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, 
 
 
 def test_configuration_query_errors_clear_stale_values_and_recover():
-    service = object.__new__(DashboardService)
+    service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
-    service._snapshot = _empty_snapshot()
+    service._snapshot = empty_snapshot()
     service._snapshot["configuration"] = {"source": "stored"}
 
     class ConfigError(BoardTelemetry):
@@ -372,7 +373,7 @@ def test_dashboard_service_disconnects_and_closes_after_read_failure():
             closed.set()
             raise OSError("already closed")
 
-    service = DashboardService(client_factory=BrokenClient)
+    service = BoardMonitor(client_factory=BrokenClient)
     try:
         assert closed.wait(1.0)
         snapshot = service.snapshot()
@@ -384,10 +385,10 @@ def test_dashboard_service_disconnects_and_closes_after_read_failure():
 
 
 def test_dashboard_controls_fail_clearly_without_a_connected_client():
-    service = object.__new__(DashboardService)
+    service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
     service._client = None
-    service._snapshot = _empty_snapshot()
+    service._snapshot = empty_snapshot()
 
     for action in (service.toggle_led, service.reset_board):
         try:
@@ -409,7 +410,7 @@ def test_run_server_binds_loopback_and_closes_service(monkeypatch):
 
     service = FakeService()
     server_options = {}
-    monkeypatch.setattr(web_app, "DashboardBoards", lambda *_args: service)
+    monkeypatch.setattr(web_app, "BoardRegistry", lambda *_args: service)
     monkeypatch.setattr(
         web_app.Flask,
         "run",
@@ -428,9 +429,9 @@ def test_run_server_binds_loopback_and_closes_service(monkeypatch):
 
 
 def test_dashboard_marks_traffic_incomplete_on_gaps_and_saturated_deltas():
-    service = object.__new__(DashboardService)
+    service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
-    service._snapshot = _empty_snapshot()
+    service._snapshot = empty_snapshot()
     service._last_sequence = None
 
     first = parse_status(status_report_bytes(sequence=255))

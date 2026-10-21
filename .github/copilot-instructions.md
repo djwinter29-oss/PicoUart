@@ -7,7 +7,7 @@
 - Keep board pin mapping separate from USB and UART transport logic.
 - Prefer clear, explicit code over heavy abstraction.
 - Do not duplicate runbook details here. Use [README.md](../README.md) as the docs index. Use
-  [docs/releasing.md](../docs/releasing.md) for physical flashing, OpenOCD recovery, and release HIL gates.
+  [docs/deployment/releasing.md](../docs/deployment/releasing.md) for physical flashing, OpenOCD recovery, and release HIL gates.
 - For an unknown QSPI ID, use the documented `FLASHSIZE` auto-detection override only after confirming flash
   capacity from the chip marking/datasheet; never guess capacity or use the override to hide failed SWD access.
 

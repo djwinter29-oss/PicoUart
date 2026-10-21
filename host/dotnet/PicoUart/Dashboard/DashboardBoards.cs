@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using PicoUart.Hid;
+using PicoUart.Wire;
 
-namespace PicoUart;
+namespace PicoUart.Dashboard;
 
 public sealed record DashboardBoard(string Id, string ProductName, string? SerialNumber, string DevicePath);
 public sealed record DashboardBoardList(DashboardBoard[] Boards, string? DefaultBoardId);

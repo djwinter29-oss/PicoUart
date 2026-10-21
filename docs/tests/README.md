@@ -3,6 +3,9 @@
 This directory separates automated validation from physical hardware qualification. Use the smallest applicable level
 first and do not treat a partial hardware run as a full pass.
 
+For CI ordering, parallel jobs, tool dependencies, and the PR-to-release gates, see
+[GitHub Actions: Validation and Releases](../development/github-actions.md).
+
 ## Test Levels
 
 ```mermaid
@@ -20,7 +23,7 @@ flowchart TD
 
 | Level           | Environment                     | Primary purpose                                                         | Result authority           |
 | --------------- | ------------------------------- | ----------------------------------------------------------------------- | -------------------------- |
-| Host tests      | Native host                     | Pure policies, rings, claims, controls, adapter contract, facade guards | `ctest` result             |
+| Host tests      | Native host                     | Firmware policies plus host applications and cross-project contracts | Relevant CTest, pytest, .NET, or Node result |
 | Firmware build  | Pico SDK/toolchain              | Compile/link both RP2040 and RP2350 targets                             | Build artifacts            |
 | Functional HIL  | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health           | Functional result entry    |
 | Performance HIL | Same fixture                    | Throughput, integrity, concurrency, soak, overflow behavior             | Performance result entry   |
@@ -28,11 +31,12 @@ flowchart TD
 
 ## Automated Validation
 
-From the repository root:
+Follow the [Python environment setup](../development/host-tools.md#python-environment-setup), then run from the
+repository root. The host-test wrapper runs both the native C suite and Python tests; a separate `ctest` invocation is
+unnecessary.
 
 ```sh
-tools/validation/run-host-tests.sh
-ctest --test-dir build/host-tests --output-on-failure
+PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
 tools/firmware/build.sh --board pico
 tools/firmware/build.sh --board pico2
 git diff --check
@@ -41,13 +45,17 @@ git diff --check
 The host suite is not a hardware test. It does not prove DMA timing, USB enumeration, multicore scheduling under load,
 physical UART signaling, or RTS/CTS behavior.
 
+The wrapper covers native C and repository Python tests, not every host application suite. Run the relevant .NET and
+browser checks from the [host development guide](../development/host-tools.md) when those applications or their shared
+contracts change; report skipped checks rather than treating the wrapper as a universal pass.
+
 ## Hardware Test Sequence
 
 1. Follow [HIL Fixture Setup](hil-fixture-setup.md) and install both crossed pairs and both loopbacks before testing.
 2. Follow the [HIL Fixture Test Plan](hil-fixture-test-plan.md), which runs functional checks before performance.
 3. The combined runner creates a dated record in [records](records/README.md); standalone phase runners log locally to
    `build/hil-results.md`.
-4. For releases, use the exact packaged artifacts and follow [Releasing](../releasing.md).
+4. For releases, use the exact packaged artifacts and follow [Releasing](../deployment/releasing.md).
 
 From the repository root, run the combined functional and concurrent-performance checks and generate a dated result:
 

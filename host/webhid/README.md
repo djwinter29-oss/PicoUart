@@ -1,78 +1,89 @@
-# PicoUart WebHID Prototype
+# PicoUart WebHID Dashboard
 
-A browser dashboard with separate device identity and live runtime sections, plus six-channel health and
-traffic. It talks directly to PicoUart through WebHID; there is no Python/.NET application backend. Its HTML, CSS,
-favicon, and renderer live entirely in this folder, independently of the Python/.NET dashboard.
-Device identity provides a **Board LED** toggle with an output-state indicator; see
-[dashboard controls](../../docs/development/host-tools.md#pythonnet-web-ui). Reset and WebSerial are not implemented.
+**Monitor six UARTs directly from your browser.** The WebHID dashboard shows PicoUart identity, runtime health,
+per-channel traffic statistics, and RX dropped-byte counts on Raspberry Pi Pico and Pico 2.
 
-## Run
+Diagnostics use a separate USB HID interface, without a Python/.NET application backend. UART payloads and baud/framing
+settings still use the six USB CDC serial ports, not this page.
 
-Use desktop Chrome or Edge and an HTTPS site or localhost. Browser support and USB permissions vary by platform;
-Firefox, Safari, and mobile browsers generally do not support WebHID. The page reports unavailable WebHID and keeps
-Connect disabled when the API or secure context is missing.
+## Requirements
 
-For local development, serve `host/webhid` from the repository root:
+- Desktop Google Chrome or Microsoft Edge with WebHID enabled; Firefox and Safari are not supported, and mobile
+	browsers generally do not support WebHID
+- A Raspberry Pi Pico or Pico 2 running compatible
+	[PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to the computer running the browser
+- Browser permission and OS access to the board's HID interface; Linux may need
+	[device permissions](../../tools/README.md#linux-hid-permissions)
 
-```sh
-tools/host/run-webhid.sh
-```
+## Install
 
-Open `http://127.0.0.1:8000/`. The static server only delivers files; a hosted HTTPS deployment needs no local server
-installation. Do not open the HTML directly from disk. To deploy, publish this folder as-is. No preparation step,
-parent directory, or files from `host/web` are needed.
+Open the [hosted WebHID dashboard](https://djwinter29-oss.github.io/PicoUart/). No local installation, Python, .NET,
+or server is required. The GitHub Pages site uses HTTPS; self-hosted pages also require HTTPS or localhost.
+If your browser does not support WebHID, use the local [Python](../python/README.md) or [.NET](../dotnet/README.md)
+dashboard instead.
 
-Release-driven GitHub Pages deployment, repository setup, the hosted URL, and rollback are documented in the
-[Pages release procedure](../../docs/releasing.md#webhid-pages).
+## Quick Start
 
-Use `--port N` to change the local port. Without a POSIX shell (for example native Windows), run
-`python -m http.server 8000 --bind 127.0.0.1 --directory host/webhid` from the repository root instead.
+1. Connect the flashed board to this computer over a USB data cable.
+2. Open the hosted page, click **Connect**, and choose the PicoUart vendor HID interface.
+3. Inspect board identity, runtime values, and UART health/traffic alongside your serial tools.
 
-Click Connect at the top-right of Device identity and select the PicoUart vendor HID interface. The same button
-becomes Disconnect while connected. Device selection is explicitly user-initiated; the page
-never reconnects automatically or requests a broader USB device filter. Metadata and runtime refresh every second;
-Disconnect closes the browser connection; unplugging clears the last sample.
+The button becomes **Disconnect** while connected. Metadata/runtime refresh every second. Disconnect closes the HID
+connection; unplugging clears the last sample. After unplug/replug or a configuration-save reboot, use **Connect**
+again; the app does not automatically select or reopen a device.
+
 Firmware must implement the current version-1 HID contract. Missing or invalid reports show `--` with an explicit
 read error; no alternate layouts are supported.
 Read failures leave the device available for automatic polling or Disconnect, but clear stale metadata rather than
 inventing a clock or MCU.
+
+Use one HID monitor per physical board; competing native clients can contend for input reports or device access.
+
+## Test Automation
+
+This page is an interactive diagnostic view, not a headless test runner. It has no CLI, JSON/log export, or UART
+payload capture. For scripted status samples and traffic logs, use the [Python CLI](../python/README.md#test-automation)
+or [.NET CLI](../dotnet/README.md#test-automation). Disconnect the browser before another client monitors the same
+board.
+
+Traffic statistics are not raw UART messages. Missing reports or saturated byte deltas make observed totals incomplete;
+a quiet or healthy-looking page alone is not evidence that an automated test passed.
+
+## Other Commands And Controls
+
+**Board LED** toggles the manual LED state; its indicator shows physical output, which USB activity can also affect.
+The **Persistent configuration** section saves the selected boot-time clock profile. A verified save automatically
+reboots the board and briefly disconnects USB, even though there is no standalone reset command. Close all CDC ports
+and stop external UART traffic first; non-default clocks require explicit unsafe-overclock acknowledgement.
+
 Persistent configuration source, fallback reason, and active/stored clock profiles are read from report 16; this
 diagnostic does not expose credentials or raw flash contents.
-The **Persistent configuration** section can save the selected clock profile. See the
-[persistent configuration procedure](../../docs/development/host-tools.md#persistent-configuration) for the safety
-acknowledgement and reboot steps.
+After reconnecting, inspect the actual active profile and any fallback reason rather than assuming the requested clock
+became active. A verified save does not establish overclock stability. See the
+[configuration procedure](../../docs/development/host-tools.md#persistent-configuration).
 
-Linux may require [HID permissions setup](../../tools/README.md#linux-hid-permissions) even after browser permission is
-granted. Close competing HID clients when
-diagnosing a busy device. Browser access is to USB devices on the browser's machine, not automatically to devices in a
-remote VS Code workspace. Writes are limited to user-initiated LED toggle and persistent configuration save commands;
-there is no firmware flashing or reset.
+Writes are limited to user-initiated LED toggle and configuration save. Firmware flashing and WebSerial payload access
+are not implemented.
 
-### No Compatible Device Found
+## Troubleshooting
+
+- **Connect disabled:** use desktop Chrome/Edge in a secure context and check whether browser policy disables WebHID.
+- **Board not found:** check compatible firmware, the USB data cable, device enumeration, and browser site permissions.
+- **Access denied:** browser permission does not replace OS permissions; follow the Linux permission guide above and
+	close competing HID clients.
+- **No valid reports:** check firmware compatibility and USB connectivity. Missing values are not zero traffic.
 
 WebHID does not request a password. Chrome's chooser lists eligible USB devices connected to the computer running
 Chrome. Forwarding a page from a remote Linux/WSL/SSH workspace does not forward its USB devices.
 
-If the Pico is attached to the remote machine, use the [Python/.NET dashboard](../dotnet/README.md) on forwarded port
-5001 (or the server's configured port), or connect the Pico's USB data cable to the machine running Chrome. If it is
+If the Pico is attached to the remote machine, use the [Python](../python/README.md) or [.NET](../dotnet/README.md)
+dashboard on its forwarded, configured local port, or connect the USB data cable to the browser's computer. If it is
 already local, check the USB data cable, device enumeration, browser site permissions, and OS device permissions.
 Installing an OS access rule may require administrator approval in the OS; do not enter that password into the page.
 
-## Contract And Tests
+## Documentation
 
-The client opens the PicoUart HID interface, displays diagnostics, toggles the board LED, and saves persistent
-configuration. The
-[HID Report Reference](../../docs/design/usb/hid-report-reference.md) is the source for report layouts, versions, and
-MCU compatibility. Keep browser-specific feature-report framing validation covered by the tests.
-The same reference defines the board-derived Serial / UID, per-core service-load semantics, and RAM reservation
-accounting; these are device values, not browser-session estimates.
-
-Run the hardware-free Node tests with Node 22 or newer:
-
-```sh
-node --test host/webhid/tests/*.test.mjs
-node --check host/webhid/js/app.mjs
-```
-
-Tests use mocked HID devices and do not qualify real browser/OS USB behavior. Validate device selection and
-unplug/reconnect on the browser's machine before claiming hardware compatibility.
+- [Project, firmware, and wiring](../../README.md)
+- [Host development and source-checkout setup](../../docs/development/host-tools.md#webhid-development)
+- [HID report reference and compatibility](../../docs/design/usb/hid-report-reference.md)
+- [Security and lab-only USB identity](../../SECURITY.md)

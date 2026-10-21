@@ -1,4 +1,4 @@
-# UART Pinout and Wiring
+# Hardware Setup
 
 This document describes the PicoUart target-side UART pinout for Pico-class RP2040/RP2350 boards. It is for board wiring
 and connector planning; the fixed hardware-in-the-loop test fixture is documented separately in

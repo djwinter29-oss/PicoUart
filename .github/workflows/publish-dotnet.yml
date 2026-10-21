@@ -8,15 +8,15 @@ on:
         required: false
         default: true
         type: boolean
-      version:
-        description: "Version for manual release preflight; tag builds resolve their tag"
+      tag:
+        description: "Base tag in vMAJOR.MINOR.PATCH form for preflight; tag builds resolve their tag"
         required: false
         default: ""
         type: string
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version without leading v for packaging tests"
+      tag:
+        description: "Base tag in vMAJOR.MINOR.PATCH form, for example v1.2.3 (does not create a tag)"
         required: true
         type: string
 
@@ -48,12 +48,12 @@ jobs:
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_TAG: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
           TEST_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && !inputs.release_build }}
         run: |
           set -eu
-          VERSION=$(tools/release/resolve-release-version.sh "$EVENT_NAME" "$INPUT_VERSION" "$REF_NAME")
+          VERSION=$(tools/release/resolve-release-version.sh "$EVENT_NAME" "$INPUT_TAG" "$REF_NAME")
           if [ "$TEST_PUBLISH" = true ]; then
             VERSION="${VERSION}-test.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           fi

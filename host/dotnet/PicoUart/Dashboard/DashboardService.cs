@@ -1,91 +1,8 @@
 using System.Text.Json;
+using PicoUart.Hid;
+using PicoUart.Wire;
 
-namespace PicoUart;
-
-public sealed class Traffic
-{
-    public long UartTx { get; set; }
-    public long UartRx { get; set; }
-    public long UsbTx { get; set; }
-    public long UsbRx { get; set; }
-}
-
-public sealed class DashboardChannel(int id)
-{
-    public int Id { get; } = id;
-    public byte? Health { get; set; }
-    public string[] HealthLabels { get; set; } = [];
-    public string State { get; set; } = "unknown";
-    public bool CdcOpen { get; set; }
-    public int RingHighWatermark { get; set; }
-    public Traffic Traffic { get; set; } = new();
-    public Traffic Totals { get; } = new();
-}
-
-public sealed class DashboardSnapshot
-{
-    public bool Connected { get; set; }
-    public string? Error { get; set; }
-    public string? MetadataError { get; set; }
-    public string? HardwareError { get; set; }
-    public HardwareInfo? Hardware { get; set; }
-    public ConfigurationStatus? Configuration { get; set; }
-    public string? ConfigurationError { get; set; }
-    public ConfigurationSaveStatus? ConfigurationSave { get; set; }
-    public string? ConfigurationSaveError { get; set; }
-    public BoardIdentity? Identity { get; set; }
-    public string? IdentityError { get; set; }
-    public RuntimeStatus? Runtime { get; set; }
-    public string? RuntimeError { get; set; }
-    public LedStatus? Led { get; set; }
-    public string? LedError { get; set; }
-    public DateTimeOffset? UpdatedAt { get; set; }
-    public byte? Sequence { get; set; }
-    public bool TrafficIncomplete { get; set; }
-    public long TrafficGaps { get; set; }
-    public ChannelDiagnostics[]? ChannelDiagnostics { get; set; }
-    public string? DiagnosticsError { get; set; }
-    public BoardStatus? Board { get; set; }
-    public uint?[] OverflowCounts { get; set; } = new uint?[Protocol.ChannelCount];
-    public DashboardChannel[] Channels { get; } = Enumerable.Range(0, Protocol.ChannelCount)
-        .Select(index => new DashboardChannel(index)).ToArray();
-
-    public void Apply(Status status)
-    {
-        Connected = true;
-        Error = null;
-        var incomplete = Sequence is not null && status.Sequence != (Sequence + 1) % 256;
-        Sequence = status.Sequence;
-        UpdatedAt = DateTimeOffset.UtcNow;
-        foreach (var source in status.Channels)
-        {
-            var channel = Channels[source.Id];
-            channel.Health = source.Health;
-            channel.HealthLabels = Protocol.DecodeHealth(source.Health);
-            channel.State = (source.Health & 0xC6) != 0 ? "attention"
-                : (source.Health & 1) != 0 ? "ready" : "initializing";
-            channel.CdcOpen = (source.Health & 0x10) != 0;
-            channel.RingHighWatermark = source.RingHighWatermark;
-            channel.Traffic = new()
-            {
-                UartTx = source.ControllerTxBytes, UartRx = source.ControllerRxBytes,
-                UsbTx = source.CdcTxBytes, UsbRx = source.CdcRxBytes
-            };
-            channel.Totals.UartTx += source.ControllerTxBytes;
-            channel.Totals.UartRx += source.ControllerRxBytes;
-            channel.Totals.UsbTx += source.CdcTxBytes;
-            channel.Totals.UsbRx += source.CdcRxBytes;
-            if (source.ControllerTxBytes == ushort.MaxValue || source.ControllerRxBytes == ushort.MaxValue
-                || source.CdcTxBytes == ushort.MaxValue || source.CdcRxBytes == ushort.MaxValue)
-                incomplete = true;
-        }
-        if (incomplete)
-        {
-            TrafficIncomplete = true;
-            TrafficGaps++;
-        }
-    }
-}
+namespace PicoUart.Dashboard;
 
 public sealed class DashboardService(string? serialNumber, string? devicePath) : BackgroundService
 {
@@ -124,7 +41,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 snapshot.ConfigurationSave = client.SaveConfiguration(profile, unsafeOverclock);
                 snapshot.ConfigurationSaveError = null;
             }
-            catch (Exception error) when (IsDeviceError(error) || error is ArgumentException)
+            catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
             {
                 snapshot.ConfigurationSaveError = error.Message;
                 throw;
@@ -141,7 +58,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 snapshot.ConfigurationSave = connection.ReadConfigurationSave();
                 snapshot.ConfigurationSaveError = null;
             }
-            catch (Exception error) when (IsDeviceError(error))
+            catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
                 snapshot.ConfigurationSave = null;
                 snapshot.ConfigurationSaveError = error.Message;
@@ -160,7 +77,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 snapshot.LedError = null;
             }
         }
-        catch (Exception error) when (IsDeviceError(error))
+        catch (Exception error) when (HidErrors.IsDeviceError(error))
         {
             lock (gate)
             {
@@ -204,7 +121,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             snapshot.DiagnosticsError = null;
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
@@ -221,7 +138,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             snapshot.IdentityError = null;
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
@@ -234,17 +151,14 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                         var runtime = connection.ReadRuntime();
                         lock (gate)
                         {
-                            snapshot.Runtime = runtime;
-                            snapshot.RuntimeError = null;
+                            snapshot.SetRuntimeReadResult(runtime, null);
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
-                            snapshot.Runtime = null;
-                            snapshot.Led = null;
-                            snapshot.RuntimeError = error.Message;
+                            snapshot.SetRuntimeReadResult(null, error.Message);
                         }
                     }
                     try
@@ -258,7 +172,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             snapshot.ConfigurationSaveError = null;
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
@@ -285,7 +199,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                                 snapshot.HardwareError = null;
                             }
                         }
-                        catch (Exception error) when (IsDeviceError(error))
+                        catch (Exception error) when (HidErrors.IsDeviceError(error))
                         {
                             lock (gate)
                             {
@@ -294,7 +208,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             }
                         }
                     }
-                    catch (Exception error) when (IsDeviceError(error))
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
                     {
                         lock (gate)
                         {
@@ -308,7 +222,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     nextMetadataRead = now.AddSeconds(1);
                 }
             }
-            catch (Exception error) when (IsDeviceError(error))
+            catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
                 lock (gate)
                 {
@@ -333,7 +247,4 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }, stoppingToken);
-
-    public static bool IsDeviceError(Exception error) => error is IOException or InvalidOperationException
-        or UnauthorizedAccessException or NotSupportedException or TimeoutException;
 }

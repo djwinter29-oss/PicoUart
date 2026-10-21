@@ -1,39 +1,55 @@
 # Contributing
 
-Thanks for considering a contribution to PicoUart. This is an embedded firmware project (RP2040/RP2350) with Python,
-.NET, and browser-based host tools; most end-to-end validation needs physical hardware.
+Contributions to firmware, host tools, tests, and documentation are welcome. You do not need a board for many changes;
+physical UART validation and release qualification require hardware.
 
 ## Before You Start
 
-- Read [README.md](README.md) for project scope, architecture, and documentation index.
-- Read [AGENTS.md](AGENTS.md) for environment setup and what can be verified without hardware.
+- Read [README.md](README.md) for project scope and the documentation index.
 - Check open issues and pull requests to avoid duplicate work.
-- For anything beyond a small fix, open an issue first to discuss the approach.
+- For new features, design changes, or substantial fixes, open an issue to agree on scope before starting.
+- When reporting a bug, include reproduction steps, expected and actual behavior, and relevant versions and logs.
+  For hardware issues, also include the board target, firmware artifact, and wiring. Remove sensitive information.
 
 ## Development Setup
 
 - Firmware builds: [firmware/build-and-config.md](firmware/build-and-config.md) and
   [tools/README.md](tools/README.md).
 - Host tools (Python/.NET/WebHID): [docs/development/host-tools.md](docs/development/host-tools.md).
-- Repository test layout: [docs/development/firmware-testing.md](docs/development/firmware-testing.md).
+- Agent-assisted work: [AGENTS.md](AGENTS.md) for repository guidance and hardware safety boundaries.
 
-Follow the [host developer setup](docs/development/host-tools.md#python-environment-setup), then run the relevant test
-suite(s) for the area you changed before opening a pull request:
+Use Linux or WSL2 Ubuntu for firmware development and HIL wrappers. Follow the linked guides for host-platform support
+and dependencies rather than installing every tool for every contribution.
 
-```sh
-PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
-tools/validation/validate.sh --skip-build
-```
+## Validate Your Change
+
+Run the smallest relevant checks first, then broaden validation for shared behavior or cross-project contracts.
+Use [Repository Tools](tools/README.md) for commands:
+
+| Change | Validation |
+| --- | --- |
+| Firmware | Relevant native host tests, firmware and repository contract tests, and builds for both `pico` and `pico2`; see the [test index](docs/tests/README.md) and [test scope](docs/development/firmware-testing.md#test-scope). |
+| Python, .NET, or browser tools | Tests for the affected host application and any shared assets or contracts; see [host development](docs/development/host-tools.md). |
+| Documentation only | Check links, examples, and rendered formatting; run `git diff --check`. |
+
+For Python tests, use the virtual environment from the
+[host setup guide](docs/development/host-tools.md#python-environment-setup). When using the host-test wrapper, set
+`PYTHON_EXE=host/python/.venv/bin/python` so it does not try to install into the system interpreter.
+
+Hardware HIL is not required for every pull request. If hardware is unavailable, report that limitation rather than
+claiming hardware validation. Exact-artifact HIL is required for release qualification; see the
+[release gates](docs/deployment/releasing.md#release-hil-gates).
 
 ## Pull Requests
 
-- Keep changes small and focused; match the existing C, Python, and Markdown style.
+- Keep changes small and focused; follow the [shared coding conventions](.github/copilot-instructions.md), including
+  C, Python, Markdown, and Doxygen requirements.
 - Preserve the 6 CDC to 6 UART design unless the change is explicitly about that design.
 - Keep board pin mapping separate from USB and UART transport logic.
+- Add a focused regression check for non-trivial fixes or new behavior.
 - Update matching docs when behavior changes; do not duplicate content across docs.
-- Note which checks you ran (host tests, firmware build, HIL) and which you could not run.
-- Physical hardware-in-the-loop (HIL) results are required for release qualification but not for every pull request;
-  see [docs/releasing.md](docs/releasing.md#release-hil-gates) for what gates a release.
+- Explain the problem, the change, and any compatibility impact; link the related issue when applicable.
+- List checks run and their results, and identify skipped checks and why they were skipped.
 
 ## Reporting Security Issues
 

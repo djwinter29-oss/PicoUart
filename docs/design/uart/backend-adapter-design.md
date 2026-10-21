@@ -16,9 +16,9 @@ ownership rules remain intact.
 ## Shared Contract
 
 The adapter exposes backend lifecycle and readiness, worker I/O, per-port rings, line-coding support/application, RX
-snapshot validation, and telemetry. The exact operation table is declared in
-[adapter.h](../../../firmware/src/uart/backend/adapter.h); keep callback signatures there rather than duplicating them
-in this overview.
+snapshot validation, and telemetry. This contract describes operation semantics rather than callback signatures;
+ring ownership belongs to [Ring Buffer Design](ring-buffer-design.md), and reconfiguration ordering belongs to
+[Control Plane Design](../control-plane-design.md).
 
 An incomplete operation table or unknown backend selection fails safely. The adapter dispatches and translates types;
 concrete backends own hardware resources and backend-specific behavior.

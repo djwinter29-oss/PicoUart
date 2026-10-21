@@ -30,7 +30,7 @@ HID_INTERFACE_NUMBER = 12
 def require_hid() -> None:
     """Raise a clear error if hidapi is unavailable, only when opening a device."""
     if hid is None:
-        raise RuntimeError("Missing dependency: install host/python/requirements.txt") from _HID_IMPORT_ERROR
+        raise RuntimeError("Missing dependency: install pico-uart with its runtime dependencies") from _HID_IMPORT_ERROR
 
 
 class _LinuxHidrawDevice:

@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using System.Text.Json;
+using PicoUart.Dashboard;
+using PicoUart.Wire;
 using Xunit;
 
 namespace PicoUart.Tests;
@@ -62,6 +64,23 @@ public sealed class DashboardTests
         Assert.Equal(10000, root.GetProperty("runtime").GetProperty("cpu_usage_basis_points")[0].GetInt32());
         Assert.Equal(JsonValueKind.Null, root.GetProperty("runtime").GetProperty("cpu_usage_basis_points")[1].ValueKind);
         Assert.Equal("previous read failed", snapshot.RuntimeError);
+    }
+
+    [Fact]
+    public void RuntimeReadFailurePreservesIndependentLedState()
+    {
+        var led = new LedStatus(false, true);
+        var snapshot = new DashboardSnapshot
+        {
+            Runtime = new(42, [1000, 2000], 65536, 270336),
+            Led = led
+        };
+
+        snapshot.SetRuntimeReadResult(null, "runtime report unsupported");
+
+        Assert.Null(snapshot.Runtime);
+        Assert.Equal("runtime report unsupported", snapshot.RuntimeError);
+        Assert.Equal(led, snapshot.Led);
     }
 
     [Theory]

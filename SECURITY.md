@@ -11,7 +11,7 @@ include technical details until one is provided.
 ## Device Security Notes
 
 - The USB identity `cafe:4010` is an unallocated development/lab identity. Do not use it for commercial products;
-  collisions and driver-association conflicts are possible. See the [release guide](docs/releasing.md) before
+  collisions and driver-association conflicts are possible. See the [release guide](docs/deployment/releasing.md) before
   distributing derivative devices.
 - Remote HID reset is disabled by default. In builds that enable it, any local process with permission to open the HID
   device can reset the board. Restrict operating-system access to the HID device node to trusted users. Serial-port

@@ -8,7 +8,7 @@ import pytest
 from helpers import FakeHidDevice
 from pico_uart.client import PicoUartHid
 from pico_uart.protocol import parse_identity, parse_runtime, parse_led
-from pico_uart.web.app import DashboardService, _empty_snapshot
+from pico_uart.web.monitor import BoardMonitor, empty_snapshot
 
 
 def test_identity_and_runtime_read_from_device_reports():
@@ -109,9 +109,9 @@ def test_metadata_read_errors_are_explicit_and_recovery_clears_errors():
                 raise OSError("channel diagnostics unavailable")
             return [{"faults": {}} for _ in range(6)]
 
-    service = object.__new__(DashboardService)
+    service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
-    service._snapshot = _empty_snapshot()
+    service._snapshot = empty_snapshot()
     service._snapshot.update(identity={"stale": True}, runtime={"stale": True})
     client = Client()
     service._read_metadata(client)

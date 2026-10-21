@@ -1,81 +1,51 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
+## Repository Guidance
 
-PicoUart is embedded firmware. The "application" is the RP2040/RP2350 firmware, not a server or database. Use
+PicoUart is embedded firmware with companion host tools, not a server or database application. Use
 [README.md](README.md) as the documentation index; do not duplicate build, test, wiring, release, or USB-interface
-details here.
+details here. Follow the shared coding and documentation conventions in
+[.github/copilot-instructions.md](.github/copilot-instructions.md).
 
-End-to-end validation requires physical hardware (Pico/Pico 2, Raspberry Pi Debug Probe, USB cable, and jumper-wire
-fixture) that is not present in the cloud VM. In this environment, verify firmware builds, host tooling, host tests, and
-binary USB contracts only; see [Hardware-in-the-loop testing](#hardware-in-the-loop-testing) for what to defer to a
-local run.
+## Environment And Validation
 
-### Environment provisioned in the VM snapshot (do not re-add to the update script)
+Check the current environment before assuming tools or hardware are available. Choose validation scope accordingly:
 
-These are installed once and captured in the snapshot. Do not apt-install them from the update script:
+- No board: verify firmware builds, host tooling, host tests, and binary USB contracts.
+- Board only: also check USB enumeration and read-only HID status on the identified PicoUart board. These checks do not
+  require a UART fixture and do not establish physical UART behavior.
+- Board with the required fixture: run the applicable HIL procedures within the user's authorized scope. Hardware
+  qualification applies only to the tested artifacts and recorded conditions.
 
-- `ninja-build`, `gcc-arm-none-eabi`, `libstdc++-arm-none-eabi-newlib`, `libnewlib-arm-none-eabi`, `gcovr`, and
-  `cppcheck` (apt)
-- `libstdc++-14-dev` (apt) — **required gotcha**: the default `/usr/bin/c++` is clang, which selects the gcc-14
-  toolchain dir. Without `libstdc++-14-dev` the **native host-tool build (picotool) fails with `cannot find -lstdc++`**
-  even though `libstdc++-13-dev` is present.
-- `python3-venv`, `python3-dev`, `libusb-1.0-0-dev`, `libhidapi-dev`, and `libhidapi-hidraw0` (apt), so the host venv
-  and HID library can be created.
+An attached board is not authorization to modify it or exercise connected devices. Require explicit user authorization
+before flashing, resetting, changing board or UART configuration, sending board-control commands, or transmitting UART
+data. Identify the target and stay within the authorized scope; do not perform these actions merely to validate docs or
+UI changes.
 
-### Update script
+With no compatible board attached, a HID command may exit non-zero with `PicoUart HID interface not found`; this is
+expected, not a setup failure. Unrelated serial devices may still be present, so do not assume any `/dev/ttyACM*`
+belongs to PicoUart.
 
-The update script refreshes the host checkout. It does not start a service:
+Use the [host developer setup](docs/development/host-tools.md#python-environment-setup) for Python dependencies and
+[firmware development guide](docs/development/firmware-testing.md#cursor-cloud-environment) for Cursor Cloud snapshot
+provisioning and its update script. Those snapshot assumptions do not apply to every checkout.
 
-```sh
-set -euo pipefail
-python3 -m venv host/python/.venv
-host/python/.venv/bin/python -m pip install --require-hashes -r host/python/requirements-lock.txt
-host/python/.venv/bin/python -m pip install --no-deps --no-build-isolation -e host/python
-. tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0 --sdk-revision 98a542c1a62fb549ffb5d66a3e5892b06276b670
-```
+## Build, Test, And Run
 
-The Python commands install locked development dependencies and `pico-uart` editable; see
-[host developer setup](docs/development/host-tools.md#python-environment-setup).
-`setup-sdk-env.sh` is idempotent: it clones Pico SDK 2.3.0
-(`98a542c1a62fb549ffb5d66a3e5892b06276b670`) into gitignored `.pico-sdk/` when that checkout is missing, and otherwise
-confirms the pin. Keep the SDK line in the update script. A fresh checkout does not carry `.pico-sdk/`.
-
-Ubuntu's `/usr/bin/python3` is PEP 668 externally managed. `tools/validation/run-host-tests.sh` defaults to that
-interpreter and then fails its pip install. Point it at the venv:
-
-```sh
-PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
-host/python/.venv/bin/python -m pico_uart --help
-```
-
-### Build / test / run
-
-Canonical commands live in [README.md](README.md); tool categories and command mappings live in
-[tools/README.md](tools/README.md). There is no boot `start` command — the diagnostics dashboard is `pico-uart web` and
-is started only when someone is using it.
-
-### Expected without hardware
-
-The host tools import and run, but with no board attached the HID tool exits non-zero with
-`PicoUart HID interface not found`, and the serial tests have no `/dev/ttyACM*` to target. This is expected in the cloud
-VM, not a setup failure. Verifying the firmware builds and that the built binary contains the `cafe:4010` USB identity +
-the 6×CDC/HID descriptor is the best available end-to-end check here.
-
-### Hardware-in-the-loop testing
-
-Physical HIL validation needs hardware this VM does not have. Do not re-derive fixture, dated-record, or local-log
-conventions here; see [docs/tests/README.md](docs/tests/README.md) for the HIL plan and record layout and
-[docs/releasing.md](docs/releasing.md#release-hil-gates) for release qualification gates.
+Use [tools/README.md](tools/README.md) for command mappings and [docs/tests/README.md](docs/tests/README.md) to choose
+validation scope. There is no boot `start` command; the diagnostics dashboard is `pico-uart web` and is started only
+when someone is using it.
 
 Firmware development, flashing, and HIL use the Linux wrappers documented in [tools/README.md](tools/README.md). Native
 Windows firmware-development wrappers are not supported; Windows users should use WSL2 Ubuntu. The Python host tools
 remain usable from Windows for CDC/HID operation.
 
-### Non-obvious firmware caveats
+## Hardware And Firmware Contracts
 
 - CDC/HID ownership and report contracts: [docs/design/usb/cdc-hid-overview.md](docs/design/usb/cdc-hid-overview.md) and
   [docs/design/usb/hid-report-reference.md](docs/design/usb/hid-report-reference.md).
 - Control-plane lifecycle and `CONTROL_ERROR` / `CONTROL_PENDING` behavior:
   [docs/design/control-plane-design.md](docs/design/control-plane-design.md).
-- Release and OpenOCD/HIL gates: [docs/releasing.md](docs/releasing.md).
+- Fixture, dated-record, and local-log conventions: [docs/tests/README.md](docs/tests/README.md).
+- Release qualification and OpenOCD/HIL gates:
+  [docs/deployment/releasing.md](docs/deployment/releasing.md#release-hil-gates).

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
-using System.Text.Json;
+using PicoUart.Hid;
+using PicoUart.Wire;
 using Xunit;
 
 namespace PicoUart.Tests;
@@ -159,36 +160,4 @@ public sealed class ConfigurationSaveTests
     public void SurfacesFlashFailures() =>
         Assert.Throws<IOException>(() => PicoUartHid.WaitForConfigurationSave(1, () => new(5, 1)));
 
-    [Theory]
-    [InlineData("{\"profile\":0,\"unsafe_overclock\":false}", 0u, false)]
-    [InlineData("{\"profile\":1,\"unsafe_overclock\":true}", 1u, true)]
-    [InlineData("{\"unsafe_overclock\":true,\"profile\":2}", 2u, true)]
-    public void AcceptsStrictDashboardRequest(string json, uint profile, bool acknowledgement)
-    {
-        using var body = JsonDocument.Parse(json);
-        Assert.Equal(new ConfigurationSaveRequest(profile, acknowledgement), ConfigurationSaveRequest.Parse(body.RootElement));
-    }
-
-    [Theory]
-    [InlineData("null")]
-    [InlineData("[]")]
-    [InlineData("{}")]
-    [InlineData("{\"profile\":0}")]
-    [InlineData("{\"profile\":0,\"unsafe_overclock\":false,\"extra\":true}")]
-    [InlineData("{\"profile\":0,\"profile\":1,\"unsafe_overclock\":true}")]
-    [InlineData("{\"profile\":true,\"unsafe_overclock\":true}")]
-    [InlineData("{\"profile\":\"0\",\"unsafe_overclock\":false}")]
-    [InlineData("{\"profile\":0.5,\"unsafe_overclock\":false}")]
-    [InlineData("{\"profile\":-1,\"unsafe_overclock\":false}")]
-    [InlineData("{\"profile\":3,\"unsafe_overclock\":true}")]
-    [InlineData("{\"profile\":4294967296,\"unsafe_overclock\":true}")]
-    [InlineData("{\"profile\":0,\"unsafe_overclock\":1}")]
-    [InlineData("{\"profile\":0,\"unsafe_overclock\":null}")]
-    [InlineData("{\"profile\":1,\"unsafe_overclock\":false}")]
-    [InlineData("{\"profile\":2,\"unsafe_overclock\":false}")]
-    public void RejectsInvalidDashboardRequests(string json)
-    {
-        using var body = JsonDocument.Parse(json);
-        Assert.Throws<ArgumentException>(() => ConfigurationSaveRequest.Parse(body.RootElement));
-    }
 }

@@ -6,8 +6,10 @@ ownership is covered by [Ring Buffer Design](ring-buffer-design.md).
 
 ## Ownership
 
-Core 0 owns TinyUSB and the CDC-side bridge. Core 1 owns PL011 registers, RX/TX DMA, flow-control GPIO, and deferred
-line-coding application. The backend never calls TinyUSB; per-port rings are its data-plane boundary.
+Startup initializes the configured backends before the UART worker is launched. During steady-state operation, core 0
+owns TinyUSB and the CDC-side bridge; core 1 services PL011 registers, RX/TX DMA, flow-control GPIO, and deferred
+line-coding application. The backend never calls TinyUSB; per-port rings are its data-plane boundary. Shared ownership
+and synchronization rules are defined in [Architecture](../architecture.md#inter-core-coordination).
 
 ## Lifecycle and Resources
 
@@ -15,7 +17,7 @@ Initialization validates the peripheral and pin configuration, claims RX and TX 
 starts circular RX DMA. The backend holds its channels until deinitialization. Other DMA users must account for
 resources reserved across all configured backends.
 
-acquisition or initialization failure releases resources already claimed. The top-level driver rolls back initialized
+Acquisition or initialization failure releases resources already claimed. The top-level driver rolls back initialized
 ports and does not start the worker unless all configured ports are ready. If a runtime line-format change cannot be
 restored safely, the backend is marked unavailable and reports `INIT_FAILED` rather than continuing on a stopped
 UART.
@@ -29,8 +31,11 @@ against live DMA progress and rejects overwritten snapshots so loss can be accou
 ## TX Path
 
 The worker sends bounded contiguous TX-ring spans by DMA when the UART is idle and no control transition blocks TX. It
-commits bytes only after transfer completion. Span length is limited by ring contiguity, the configured maximum, and a
-wire-time budget so one busy port cannot monopolize the worker.
+commits bytes only after transfer completion. Span length is limited by ring contiguity and a configured wire-time
+budget so one busy port cannot monopolize the worker.
+
+DMA completion means the reserved bytes have been handed to the UART peripheral, not that the final stop bit has left
+the TX pin. Safe line-coding application also requires UART idle; an empty ring or completed DMA alone is insufficient.
 
 ## Hardware Flow Control
 

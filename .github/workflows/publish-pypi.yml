@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Published release tag to publish to PyPI (for example v1.0.1)"
+        description: "Published release tag in vMAJOR.MINOR.PATCH form, for example v1.2.3"
         required: false
         type: string
       test_publish:
-        description: "Build the selected commit and publish a development version to TestPyPI only"
+        description: "Publish a public, immutable development version to production PyPI from the selected commit"
         required: false
         default: false
         type: boolean
@@ -107,12 +107,13 @@ jobs:
           path: dist
 
       - name: Publish to PyPI using Trusted Publishing
-        uses: pypa/gh-action-pypi-publish@aef6c9b6e301dc803e1bc9133e9ce67ae9b0906b # v1.14.3
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
+          repository-url: https://upload.pypi.org/legacy/
           packages-dir: dist
 
   test-package:
-    name: Build marked TestPyPI wheel
+    name: Build marked development wheel
     if: github.event_name == 'workflow_dispatch' && inputs.test_publish
     runs-on: ubuntu-latest
     steps:
@@ -135,7 +136,7 @@ jobs:
 
       - name: Build development wheel
         env:
-          PICO_UART_HOST_VERSION: 0.0.0.dev${{ github.run_id }}
+          SETUPTOOLS_SCM_PRETEND_VERSION: 0.0.0.dev${{ github.run_id }}
         run: python -m pip wheel --no-deps host/python --wheel-dir dist
 
       - name: Verify installed development wheel
@@ -143,11 +144,11 @@ jobs:
           VERSION: 0.0.0.dev${{ github.run_id }}
         run: |
           set -eu
-          python -m venv build/testpypi-check
-          build/testpypi-check/bin/python -m pip install --require-hashes -r host/python/requirements-runtime-lock.txt
-          build/testpypi-check/bin/python -m pip install --no-deps dist/*.whl
+          python -m venv build/development-check
+          build/development-check/bin/python -m pip install --require-hashes -r host/python/requirements-runtime-lock.txt
+          build/development-check/bin/python -m pip install --no-deps dist/*.whl
           cd build
-          testpypi-check/bin/python - <<'PY'
+          development-check/bin/python - <<'PY'
           from importlib.metadata import version
           import os
           from pico_uart.web.app import create_app
@@ -158,31 +159,31 @@ jobs:
           assert f'aria-label="Host application version">{expected}</span>'.encode() in page.data
           PY
 
-      - name: Upload TestPyPI wheel
+      - name: Upload development wheel
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: testpypi-distribution
+          name: pypi-development-distribution
           path: dist/*.whl
           if-no-files-found: error
 
   publish-test:
-    name: Publish development wheel to TestPyPI
+    name: Publish development wheel to PyPI
     needs: test-package
     runs-on: ubuntu-latest
     permissions:
       id-token: write
     environment:
-      name: testpypi
-      url: https://test.pypi.org/project/pico-uart/
+      name: pypi
+      url: https://pypi.org/project/pico-uart/
     steps:
-      - name: Download TestPyPI wheel
+      - name: Download development wheel
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: testpypi-distribution
+          name: pypi-development-distribution
           path: dist
 
-      - name: Publish to TestPyPI using Trusted Publishing
-        uses: pypa/gh-action-pypi-publish@aef6c9b6e301dc803e1bc9133e9ce67ae9b0906b # v1.14.3
+      - name: Publish development version to PyPI using Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
-          repository-url: https://test.pypi.org/legacy/
+          repository-url: https://upload.pypi.org/legacy/
           packages-dir: dist
