@@ -9,7 +9,7 @@ import pytest
 
 HARDWARE_SRC = Path(__file__).resolve().parents[2] / "src"
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Linux serial tools import termios")
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Serial tools require Linux termios2")
 
 
 def _load_bridge():

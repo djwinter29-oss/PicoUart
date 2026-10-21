@@ -6,6 +6,7 @@
 #include "unity.h"
 
 #include "board/uart_board.h"
+#include "pico/flash.h"
 #include "pico/time.h"
 #include "uart/backend/adapter.h"
 #include "uart/control/plane.h"
@@ -17,6 +18,11 @@ absolute_time_t pico_test_time_us;
 static uint32_t test_stats_call_count;
 
 const uart_board_port_config_t uart_board_ports[UART_PORT_COUNT] = {0};
+
+bool flash_safe_execute_core_init(void)
+{
+    return true;
+}
 
 const uart_backend_ops_t *uart_backend_ops_for_type(uart_driver_backend_t backend)
 {
