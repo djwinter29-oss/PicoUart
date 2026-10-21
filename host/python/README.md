@@ -53,6 +53,7 @@ pico-uart --serial ABC123 status
 Use **Board** and **Rescan** in the dashboard to choose an attached board. See
 [board selection and monitoring](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#board-selection-and-shared-monitoring)
 for selection and multi-user behavior.
+Use one HID monitor/server per physical board; separate processes do not share its input reports or traffic totals.
 
 ## Test Automation
 
@@ -100,7 +101,10 @@ Read-only commands include `hardware`, `config`, `temperature`, and `version`. R
 which is disabled by default. The API exposes equivalent `toggle_led()` and `reset_board()` methods.
 
 The API's `save_configuration(profile, unsafe_overclock=False)` writes a supported boot-time clock profile;
-`read_configuration_save()` reads the save result. See the
+`read_configuration_save()` reads the save result. A verified save automatically reboots the board, independently of
+the optional reset command. Close all CDC ports and stop external UART traffic first; non-default profiles require
+explicit unsafe-overclock acknowledgement. After reconnecting, inspect the active profile and fallback reason rather
+than assuming the requested clock became active. A verified save does not establish overclock stability. See the
 [HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
 for compatibility, save semantics, and overclock precautions before changing configuration.
 
@@ -116,4 +120,5 @@ for compatibility, save semantics, and overclock precautions before changing con
 
 - [Project, firmware, and wiring](https://github.com/djwinter29-oss/PicoUart)
 - [Host development and source-checkout setup](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md)
+- [HID report reference and compatibility](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
 - [Security and lab-only USB identity](https://github.com/djwinter29-oss/PicoUart/blob/main/SECURITY.md)

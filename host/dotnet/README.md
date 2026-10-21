@@ -6,7 +6,15 @@ dashboard, and C# HID client for PicoUart on Raspberry Pi Pico and Pico 2.
 Diagnostics use a separate USB HID interface, so your existing serial tools can keep using the six USB CDC ports.
 This application does not capture UART payloads or set baud rates and framing; use your serial tools for those tasks.
 
-## Install From A Release
+## Requirements
+
+- A computer matching one of the release targets below; no .NET or Python installation is needed
+- A Raspberry Pi Pico or Pico 2 running compatible
+	[PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to this computer over USB
+- Access to the board's HID interface; Linux may need
+	[device permissions](../../tools/README.md#linux-hid-permissions)
+
+## Install
 
 Download a self-contained host archive from [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases).
 Choose the target for the computer running the application, not the Pico:
@@ -18,15 +26,13 @@ Choose the target for the computer running the application, not the Pico:
 | Apple Silicon Mac | `osx-arm64` | `.tar.gz` |
 
 Extract the **whole archive**, keeping its `web` directory and other files beside the executable. No .NET SDK, runtime,
-or Python installation is needed. See [distribution details](../../docs/deployment/host-app-distribution.md#net-downloads)
+or Python installation is needed. See
+[distribution details](../../docs/deployment/host-app-distribution.md#net-downloads)
 for supported downloads and packaging limitations.
-
-Connect a board running compatible [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases) over USB to
-the computer running the application. Linux may need [HID permissions](../../tools/README.md#linux-hid-permissions).
 
 ## Quick Start
 
-From the extracted directory on Linux/macOS:
+Connect the flashed board, then run from the extracted directory on Linux/macOS:
 
 ```sh
 ./PicoUart status
@@ -47,6 +53,7 @@ connected to the computer running that browser.
 For multiple boards, use `./PicoUart --serial ABC123 status` or `--device-path PATH`, but not both. Ambiguous matches
 are rejected. Use **Board** and **Rescan** in the dashboard; see
 [board selection and shared monitoring](../../docs/development/host-tools.md#board-selection-and-shared-monitoring).
+Use one HID monitor/server per physical board; separate processes do not share its input reports or traffic totals.
 
 ## Test Automation
 
@@ -73,37 +80,11 @@ Read-only commands include `hardware`, `config`, `temperature`, and `version`. H
 results are JSON; temperature and firmware version are plain values. Use `./PicoUart --help` for command options.
 
 `toggle-led` changes the board LED. `reset` reboots the board and is refused unless firmware advertises reset support,
-which is disabled by default. The dashboard and C# API can also save a persistent boot-time clock profile. Stop UART
-traffic, close CDC ports, and read the [configuration precautions](../../docs/development/host-tools.md#persistent-configuration)
-before changing it.
-
-## Develop And Publish
-
-Install the .NET 10 SDK to build from a checkout. From the repository root:
-
-```sh
-dotnet run --project host/dotnet/PicoUart -- status
-dotnet run --project host/dotnet/PicoUart -- web --port 5001
-```
-
-On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
-The C# `PicoUartHid` class owns a connection and implements `IDisposable`; `Protocol` provides typed report decoders.
-Python and .NET share `host/web`; keep frontend changes backend-neutral, not in a second C# frontend directory.
-
-To publish a framework-dependent build (requires the .NET 10 ASP.NET Core Runtime on its target):
-
-```sh
-dotnet publish host/dotnet/PicoUart -c Release --self-contained false -o build/host-dotnet
-dotnet build/host-dotnet/PicoUart.dll web --port 5001
-```
-
-For self-contained publishing, add `--self-contained true -r linux-x64` instead, or the appropriate target identifier.
-Keep the whole output directory, including `web`. Use `-p:Version=1.2.3` to embed an explicit application version.
-For release archives and packaging-only test runs, follow the
-[.NET publishing procedure](../../docs/deployment/host-app-publishing.md#net-packaging).
-
-Unit and cross-backend integration commands are in the [.NET development guide](../../docs/development/host-tools.md#net-development).
-Host tests do not establish physical UART behavior or qualify a release; see the [test index](../../docs/tests/README.md).
+which is disabled by default. The dashboard can also save a persistent boot-time clock profile; a verified save
+automatically reboots the board, independently of the optional reset command. Stop UART traffic, close CDC ports, and
+read the [configuration precautions](../../docs/development/host-tools.md#persistent-configuration) before changing it.
+After reconnecting, check the actual active profile and any fallback reason rather than assuming the requested clock
+became active. A verified save does not establish overclock stability.
 
 ## Troubleshooting
 
@@ -111,9 +92,15 @@ Host tests do not establish physical UART behavior or qualify a release; see the
 	the computer running the host. Without a compatible board, HID commands failing is expected.
 - **Access denied:** follow the Linux HID permission guide above. After using an older Python/libusb client, a detached
 	HID driver may need the other client closed and the board's USB cable reconnected.
+- **No valid reports:** check firmware compatibility and the USB connection. Missing reports are not zero traffic;
+  verify that monitor output contains samples even when the command exits successfully.
 - **Missing web files:** re-extract the complete archive; do not move only the executable.
 - **Need framework logs:** set `Logging__LogLevel__Microsoft=Information` before launching. Startup normally prints one
 	dashboard URL while retaining warnings and errors.
 
-See the [HID report reference](../../docs/design/usb/hid-report-reference.md) for compatibility and platform-specific
-feature-report framing. The [security policy](../../SECURITY.md) covers the lab-only USB identity.
+## Documentation
+
+- [Project, firmware, and wiring](../../README.md)
+- [Host development and source-checkout setup](../../docs/development/host-tools.md#net-development)
+- [HID report reference and compatibility](../../docs/design/usb/hid-report-reference.md)
+- [Security and lab-only USB identity](../../SECURITY.md)

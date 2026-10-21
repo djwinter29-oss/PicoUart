@@ -150,6 +150,18 @@ The solution in `host/dotnet/PicoUart.sln` contains the host application and its
 root:
 
 ```sh
+dotnet run --project host/dotnet/PicoUart -- status
+dotnet run --project host/dotnet/PicoUart -- web --port 5001
+```
+
+`status` is a read-only device check and can fail normally with no compatible board attached; it is not a setup test.
+On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
+The C# `PicoUartHid` class owns a connection and implements `IDisposable`; `Protocol` provides typed report decoders.
+Python and .NET share `host/web`; keep frontend changes backend-neutral rather than adding a separate C# frontend.
+
+Build and run the hardware-free unit suite:
+
+```sh
 dotnet build host/dotnet/PicoUart.sln
 dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"
 ```
@@ -162,13 +174,50 @@ host/python/.venv/bin/python -m pytest tests/tooling/test_dotnet_host.py
 ```
 
 These integration checks skip when `dotnet` is not on `PATH`; set `DOTNET_EXE` to another SDK executable if needed.
-See the [.NET host guide](../../host/dotnet/README.md#develop-and-publish) for publishing and standalone deployment.
+
+### Local .NET Publishing
+
+Publish a framework-dependent build when the target has the .NET 10 ASP.NET Core Runtime installed:
+
+```sh
+dotnet publish host/dotnet/PicoUart -c Release --self-contained false -o build/host-dotnet
+dotnet build/host-dotnet/PicoUart.dll web --port 5001
+```
+
+For a self-contained build, replace `--self-contained false` with `--self-contained true -r linux-x64`, or the matching
+target identifier. Distribute the whole output directory, including `web`; the executable alone is insufficient.
+Use `-p:Version=1.2.3` to embed an explicit application version. Release archive qualification and marked packaging
+tests belong in the [publishing runbook](../deployment/host-app-publishing.md#net-packaging); user installation belongs
+in the [.NET host guide](../../host/dotnet/README.md#install).
 
 ## WebHID Development
 
 WebHID is a standalone browser app in `host/webhid`, independent of the Python/.NET server and shared
-`host/web` frontend. Keep its assets and device code local to that app; user setup, deployment, architecture, and tests
-are documented in the [WebHID guide](../../host/webhid/README.md).
+`host/web` frontend. Its HTML, CSS, favicon, and renderer are owned by that directory; no shared asset-generation step
+or files from `host/web` are required. Browser connection and troubleshooting belong in the
+[WebHID user guide](../../host/webhid/README.md).
+
+### Run WebHID From A Checkout
+
+Serve the static app from the repository root:
+
+```sh
+tools/host/run-webhid.sh
+```
+
+Open <http://127.0.0.1:8000/>. Use `--port N` to choose another port. Without a POSIX shell, serve the same directory
+with Python 3:
+
+```sh
+python -m http.server 8000 --bind 127.0.0.1 --directory host/webhid
+```
+
+The server only delivers files; native HID access is still to the browser computer's USB devices. Do not open the HTML
+directly from disk. Self-hosted deployments need HTTPS or localhost. Local files display the debug app version; the
+Pages workflow stamps it during packaging. Release gates and deployment/rollback steps belong in the
+[Pages publishing runbook](../deployment/host-app-publishing.md#webhid-pages).
+
+### WebHID Checks
 
 Run the hardware-free browser checks used by CI:
 
@@ -180,6 +229,10 @@ node --test host/webhid/tests/*.test.mjs
 
 The test suite also checks the independent and shared renderers' presentation contracts; it does not open native USB
 devices or qualify browser/OS device access.
+
+Keep browser-specific feature-report framing and version validation covered by these tests. The HID reference owns
+board-derived Serial / UID, service-load, and RAM-reservation semantics; do not replace them with browser-session
+estimates.
 
 WebHID accesses USB devices local to the browser; use the Python/.NET dashboard for remote boards. The
 [HID Report Reference](../design/usb/hid-report-reference.md) owns the wire contract. Mocked Node tests do not prove

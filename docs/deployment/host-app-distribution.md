@@ -39,7 +39,7 @@ The [.NET packaging workflow](../../.github/workflows/publish-dotnet.yml) owns a
 Its extracted-artifact checks establish native CLI startup and version metadata, not physical HID/UART compatibility.
 Check the actual release assets: a workflow target does not mean every historical release supplied that archive.
 
-The [.NET host guide](../../host/dotnet/README.md#install-from-a-release) owns user installation. The
+The [.NET host guide](../../host/dotnet/README.md#install) owns user installation. The
 [packaging runbook](host-app-publishing.md#net-packaging) owns manual tests and artifact retrieval. Archive
 qualification must cover the extracted app, dashboard assets, startup/shutdown, and applicable device access on its
 target OS, outside the checkout and without relying on an installed .NET runtime.
