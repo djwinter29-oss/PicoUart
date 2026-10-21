@@ -3,7 +3,7 @@
  * @brief Corruption, profile compatibility, and default/recovery boot decisions.
  */
 #include "unity.h"
-#include "driver/board_config.h"
+#include "platform/board_config.h"
 
 #include <string.h>
 

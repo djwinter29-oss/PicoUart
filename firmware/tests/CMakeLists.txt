@@ -50,7 +50,7 @@ target_include_directories(test_bridge PRIVATE
 pico_uart_add_unity_test(test_worker worker
     test_worker.c
     ${FIRMWARE_ROOT}/src/uart/worker.c
-    ${FIRMWARE_ROOT}/src/driver/service_load.c
+    ${FIRMWARE_ROOT}/src/platform/service_load.c
 )
 target_include_directories(test_worker PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
@@ -69,7 +69,7 @@ pico_uart_add_unity_test(test_control_plane plane
     ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
     ${FIRMWARE_ROOT}/src/uart/control/plane.c
     ${FIRMWARE_ROOT}/src/uart/line_coding.c
-    ${FIRMWARE_ROOT}/src/driver/service_load.c
+    ${FIRMWARE_ROOT}/src/platform/service_load.c
 )
 target_include_directories(test_control_plane PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
@@ -136,9 +136,14 @@ pico_uart_add_unity_test(test_hw_baud_rate hw_baud_rate
     test_hw_baud_rate.c
 )
 
-pico_uart_add_unity_test(test_led_policy led_policy
-    test_led_policy.c
-)
+foreach(_led IN ITEMS present absent)
+    pico_uart_add_unity_test(test_led_${_led} led_${_led}
+        test_led.c
+        ${FIRMWARE_ROOT}/src/platform/led.c
+    )
+    target_include_directories(test_led_${_led} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
+endforeach()
+target_compile_definitions(test_led_present PRIVATE PICO_DEFAULT_LED_PIN=25)
 
 pico_uart_add_unity_test(test_temperature temperature
     test_temperature.c
@@ -146,19 +151,19 @@ pico_uart_add_unity_test(test_temperature temperature
 
 pico_uart_add_unity_test(test_board_config board_config
     test_board_config.c
-    ${FIRMWARE_ROOT}/src/driver/board_config.c
+    ${FIRMWARE_ROOT}/src/platform/board_config.c
 )
 
 pico_uart_add_unity_test(test_service_load service_load
     test_service_load.c
-    ${FIRMWARE_ROOT}/src/driver/service_load.c
+    ${FIRMWARE_ROOT}/src/platform/service_load.c
 )
 
 foreach(_family IN ITEMS rp2040 rp2350)
     pico_uart_add_unity_test(test_usb_hid_${_family} usb_hid_${_family}
         test_usb_hid.c
-        ${FIRMWARE_ROOT}/src/driver/service_load.c
-        ${FIRMWARE_ROOT}/src/driver/board_config.c
+        ${FIRMWARE_ROOT}/src/platform/service_load.c
+        ${FIRMWARE_ROOT}/src/platform/board_config.c
     )
     target_include_directories(test_usb_hid_${_family} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
     target_compile_definitions(test_usb_hid_${_family} PRIVATE PICO_RP2350=$<STREQUAL:${_family},rp2350>)

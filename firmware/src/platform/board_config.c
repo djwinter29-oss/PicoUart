@@ -2,7 +2,7 @@
  * @file board_config.c
  * @brief Version-1 record encoding and bounded decoding with complete-default fallback.
  */
-#include "driver/board_config.h"
+#include "platform/board_config.h"
 
 #include <string.h>
 

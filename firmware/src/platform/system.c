@@ -3,7 +3,7 @@
  * @brief Board-level system-clock setup for PicoUart firmware.
  */
 
-#include "driver/system.h"
+#include "platform/system.h"
 
 #include "hardware/clocks.h"
 #include "hardware/flash.h"

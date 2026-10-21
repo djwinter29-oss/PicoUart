@@ -26,8 +26,7 @@ __asm__(
 );
 
 absolute_time_t pico_test_time_us;
-static bool led_manual_on;
-static bool led_output_on;
+static bool led_on;
 static bool led_available;
 static uart_driver_port_stats_t diagnostic_stats;
 static uint8_t diagnostic_health;
@@ -50,9 +49,10 @@ void system_reset(void)
     ++reset_calls;
 }
 
-void led_toggle(void)
+void led_set(bool on)
 {
-    led_manual_on = !led_manual_on;
+    TEST_ASSERT_TRUE(led_available);
+    led_on = on;
 }
 
 const board_config_status_t *system_config_status(void)
@@ -74,10 +74,9 @@ bool tud_hid_report(uint8_t report_id, void const *report, uint16_t len)
     return false;
 }
 
-bool led_read_state(bool *manual_on, bool *output_on)
+bool led_read_state(bool *on)
 {
-    *manual_on = led_manual_on;
-    *output_on = led_output_on;
+    *on = led_on;
     return led_available;
 }
 
@@ -85,8 +84,7 @@ void setUp(void)
 {
     pico_test_time_us = 0;
     service_load_init();
-    led_manual_on = false;
-    led_output_on = false;
+    led_on = false;
     led_available = true;
     memset(&diagnostic_stats, 0, sizeof(diagnostic_stats));
     diagnostic_health = UART_DRIVER_PORT_STATUS_READY;
@@ -371,12 +369,11 @@ static void test_channel_diagnostics_sample_without_interrupt_endpoint(void)
 static void test_led_payload(void)
 {
     uint8_t buffer[3] = {0, 0, 0xa5};
-    for (unsigned int flags = 0; flags < 4u; ++flags) {
-        led_manual_on = (flags & 1u) != 0u;
-        led_output_on = (flags & 2u) != 0u;
+    for (unsigned int state = 0; state < 2u; ++state) {
+        led_on = state != 0u;
         TEST_ASSERT_EQUAL_UINT16(2u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
         TEST_ASSERT_EQUAL_UINT8(1u, buffer[0]);
-        TEST_ASSERT_EQUAL_UINT8(1u | (flags << 1u), buffer[1]);
+        TEST_ASSERT_EQUAL_UINT8(state ? 7u : 1u, buffer[1]);
         TEST_ASSERT_EQUAL_UINT8(0xa5, buffer[2]);
     }
     led_available = false;
@@ -384,6 +381,20 @@ static void test_led_payload(void)
     TEST_ASSERT_EQUAL_UINT8(0u, buffer[1]);
     TEST_ASSERT_EQUAL_UINT16(1u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_FEATURE, buffer, 1u));
     TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
+}
+
+static void test_identification_toggle_and_usb_reset(void)
+{
+    const uint8_t command[] = {USB_HID_COMMAND_TOGGLE_LED};
+    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, command, sizeof(command));
+    TEST_ASSERT_TRUE(led_on);
+    usb_hid_reset_host_state();
+    TEST_ASSERT_TRUE(led_on);
+    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, command, sizeof(command));
+    TEST_ASSERT_FALSE(led_on);
+    led_available = false;
+    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, command, sizeof(command));
+    TEST_ASSERT_FALSE(led_on);
 }
 
 int main(void)
@@ -395,6 +406,7 @@ int main(void)
     RUN_TEST(test_configuration_save_validation_and_deferred_result);
     RUN_TEST(test_configuration_save_busy_failure_and_default);
     RUN_TEST(test_led_payload);
+    RUN_TEST(test_identification_toggle_and_usb_reset);
     RUN_TEST(test_channel_diagnostics_history);
     RUN_TEST(test_channel_diagnostics_sample_without_interrupt_endpoint);
     return UNITY_END();

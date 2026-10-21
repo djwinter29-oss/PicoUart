@@ -7,10 +7,10 @@
 
 #include "config/capacity_config.h"
 #include "config/usb_identity.h"
-#include "driver/led.h"
-#include "driver/service_load.h"
-#include "driver/system.h"
-#include "driver/temperature.h"
+#include "platform/led.h"
+#include "platform/service_load.h"
+#include "platform/system.h"
+#include "platform/temperature.h"
 #include "uart/uart_driver.h"
 #include "uart/saturating.h"
 #include "usb/usb_cdc.h"
@@ -582,10 +582,9 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
         return length;
     }
     if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_LED)) {
-        bool manual_on, output_on;
-        bool available = led_read_state(&manual_on, &output_on);
-        const uint8_t led_report[2] = {1u, available ? (uint8_t)(1u | (manual_on ? 2u : 0u) |
-                                                               (output_on ? 4u : 0u)) : 0u};
+        bool on = false;
+        bool available = led_read_state(&on);
+        const uint8_t led_report[2] = {1u, available ? (uint8_t)(1u | (on ? 6u : 0u)) : 0u};
         if (reqlen > sizeof(led_report)) {
             reqlen = sizeof(led_report);
         }
@@ -699,9 +698,13 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
     }
 
     switch (buffer[0]) {
-    case USB_HID_COMMAND_TOGGLE_LED:
-        led_toggle();
+    case USB_HID_COMMAND_TOGGLE_LED: {
+        bool on = false;
+        if (led_read_state(&on)) {
+            led_set(!on);
+        }
         break;
+    }
 
     case USB_HID_COMMAND_ARM_RESET:
 #if PICO_UART_ALLOW_HID_RESET

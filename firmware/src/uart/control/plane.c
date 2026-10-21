@@ -4,7 +4,7 @@
  */
 
 #include "uart/control/plane.h"
-#include "driver/service_load.h"
+#include "platform/service_load.h"
 
 #include "uart/control/ownership.h"
 #include "uart/line_coding.h"

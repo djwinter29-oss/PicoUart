@@ -122,7 +122,7 @@ _MAIN_C = """
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include "driver/system.h"
+#include "platform/system.h"
 extern uint8_t g_sector[4096];
 extern unsigned int g_requested_clock_khz;
 extern int g_set_sys_clock_khz_calls;
@@ -236,7 +236,7 @@ def test_system_init_clock_never_writes_voltage(
     (tmp_path / "mock_runtime.c").write_text(_MOCK_RUNTIME_C)
     (tmp_path / "main.c").write_text(_MAIN_C)
 
-    system_c = repo_root / "firmware" / "src" / "driver" / "system.c"
+    system_c = repo_root / "firmware" / "src" / "platform" / "system.c"
     source_text = system_c.read_text(encoding="utf-8")
     # Defense in depth alongside the missing-header compile failure: the real
     # source must not reference vreg at all.
@@ -262,7 +262,7 @@ def test_system_init_clock_never_writes_voltage(
         f"-I{mock_sdk}",
         f"-I{repo_root / 'firmware' / 'src'}",
         str(system_c),
-        str(repo_root / "firmware/src/driver/board_config.c"),
+        str(repo_root / "firmware/src/platform/board_config.c"),
         str(tmp_path / "mock_runtime.c"),
         str(tmp_path / "main.c"),
         "-o",

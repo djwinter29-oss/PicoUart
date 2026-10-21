@@ -4,7 +4,7 @@
  */
 
 #include "uart/pio/pio_uart_driver_internal.h"
-#include "driver/service_load.h"
+#include "platform/service_load.h"
 
 #include "uart.pio.h"
 #include "uart/backend/policy.h"

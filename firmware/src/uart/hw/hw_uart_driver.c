@@ -4,7 +4,7 @@
  */
 
 #include "uart/hw/hw_uart_driver.h"
-#include "driver/service_load.h"
+#include "platform/service_load.h"
 
 #include "uart/backend/policy.h"
 #include "uart/dma/progress.h"

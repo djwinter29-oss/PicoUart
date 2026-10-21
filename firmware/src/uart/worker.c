@@ -4,7 +4,7 @@
  */
 
 #include "uart/worker.h"
-#include "driver/service_load.h"
+#include "platform/service_load.h"
 
 #include "hardware/sync.h"
 #include "pico/stdlib.h"

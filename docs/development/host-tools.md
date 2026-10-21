@@ -306,8 +306,8 @@ this diagnostic with other metadata once per second and clear it when unavailabl
 flash contents are returned.
 
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
-The **Board LED: On/Off** action toggles the manual LED setting; its output indicator reports physical state, which USB
-activity may also affect. Unknown output is shown as `--`. Sequence numbers remain internal for report-gap detection
+The **Board LED: On/Off** action toggles board identification; its indicator reports physical output. Older firmware
+may also use that output for USB activity. Unknown output is shown as `--`. Sequence numbers remain internal for gap detection
 rather than appearing in the UI.
 The connection indicator includes report age, updated every second and marked stale after three seconds without a
 changed status sample. Age measures browser receipt time so remote host clock offsets do not distort freshness.

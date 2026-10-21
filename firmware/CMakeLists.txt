@@ -54,11 +54,11 @@ add_executable(pico_uart)
 
 target_sources(pico_uart PRIVATE
     src/config/uart_config.c
-    src/driver/board_config.c
-    src/driver/led.c
-    src/driver/service_load.c
-    src/driver/system.c
-    src/driver/temperature.c
+    src/platform/board_config.c
+    src/platform/led.c
+    src/platform/service_load.c
+    src/platform/system.c
+    src/platform/temperature.c
     src/main.c
     src/uart/bridge.c
     src/uart/control/mailbox.c

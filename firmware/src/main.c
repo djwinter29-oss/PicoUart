@@ -5,10 +5,10 @@
 
 #include "pico/stdlib.h"
 
-#include "driver/led.h"
-#include "driver/service_load.h"
-#include "driver/system.h"
-#include "driver/temperature.h"
+#include "platform/led.h"
+#include "platform/service_load.h"
+#include "platform/system.h"
+#include "platform/temperature.h"
 #include "uart/ring_buffer/ring_buffer.h"
 #include "uart/uart_driver.h"
 #include "usb/usb_cdc.h"

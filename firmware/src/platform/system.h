@@ -6,7 +6,7 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
-#include "driver/board_config.h"
+#include "platform/board_config.h"
 
 /** @brief Watchdog timeout that covers USB poll plus a 1 s line-coding apply. */
 #ifndef PICO_UART_WATCHDOG_TIMEOUT_MS

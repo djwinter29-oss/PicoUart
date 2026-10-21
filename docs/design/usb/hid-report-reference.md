@@ -317,11 +317,13 @@ not a board-name lookup in the host.
 | 1      | 1    | `flags`   | Bit 0: LED available; bit 1: manual on; bit 2: physical output on. |
 
 Other flag bits are reserved and zero. An unavailable LED reports zero flags; hosts show unknown states, not Off.
-The physical GPIO output is the OR of the persistent manual state and transient CDC activity. Toggling report `4`'s
-existing LED command changes only the manual state, so USB activity may keep the output lit after toggling manual Off.
-Manual On with physical Off is invalid. All LED access occurs on core 0.
+The LED is an on/off board-identification output. Report `4`'s existing toggle command inverts that state; CDC traffic
+and USB enumeration do not change it. The identification state starts Off after firmware initialization. Bits 1 and 2
+are retained for wire compatibility and both reflect identification on/off in this firmware. Older firmware may drive
+output independently for CDC activity; hosts may still accept manual Off with physical On. Manual On with physical Off
+is invalid. All LED access occurs on core 0.
 
-Dashboards distinguish the manual toggle action from physical output state; see
+Dashboards use the existing manual/output fields to control and display identification; see
 [dashboard controls](../../development/host-tools.md#pythonnet-web-ui).
 The button tooltip identifies the manual state. Successful toggles reread state instead of predicting the result.
 Failed LED reads show unknown output and disable the toggle until a valid state is read.
