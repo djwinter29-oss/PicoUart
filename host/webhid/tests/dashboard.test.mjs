@@ -118,10 +118,10 @@ test("hosted pages select independently and render board labels as text", async 
   await bob.respond(snapshot("second", 1, 1));
   assert.equal(bob.element("serial").textContent, "second");
   assert.deepEqual(bob.element("configuration-profile").children.map(option => [option.value, option.textContent]), [
-    ["0", "SDK default (125 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz (RP2040)"],
+    ["0", "SDK default (125 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz"],
   ]);
   assert.deepEqual(alice.element("configuration-profile").children.map(option => [option.value, option.textContent]), [
-    ["0", "SDK default (150 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["4", "280 MHz (RP2350)"],
+    ["0", "SDK default (150 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz"], ["4", "280 MHz (RP2350)"],
   ]);
   assert.equal(bob.element("configuration-profile").value, "1");
   assert.equal(bob.element("configuration-unsafe-ack").checked, false);

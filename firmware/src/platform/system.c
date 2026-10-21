@@ -1,9 +1,10 @@
 /**
  * @file system.c
- * @brief Board-level system-clock setup for PicoUart firmware.
+ * @brief System clock, watchdog, and reset services for PicoUart firmware.
  */
 
 #include "platform/system.h"
+#include "platform/boot_config.h"
 
 #include "hardware/clocks.h"
 #include "hardware/watchdog.h"
@@ -16,26 +17,10 @@ static bool watchdog_recovery;
 void system_init_clock(void)
 {
     boot_config_load(watchdog_recovery);
-    uint32_t khz = watchdog_recovery ? 0u : boot_config_clock_khz(boot_config_get()->clock_profile);
+    uint32_t khz = boot_config_clock_khz(boot_config_get_status()->active_profile);
     if (khz != 0u && !set_sys_clock_khz(khz, false)) {
         boot_config_clock_unavailable();
     }
-}
-
-/** @copydoc system_boot_config_status */
-const boot_config_status_t *system_boot_config_status(void)
-{
-    return boot_config_get_status();
-}
-
-/** @copydoc system_save_clock_profile */
-bool system_save_clock_profile(uint32_t profile)
-{
-    if (!boot_config_profile_supported(profile)) {
-        return false;
-    }
-    const boot_config_t config = {.clock_profile = (boot_clock_profile_t)profile};
-    return boot_config_set(&config) && boot_config_save();
 }
 
 /** @copydoc system_watchdog_enable */

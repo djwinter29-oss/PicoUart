@@ -138,7 +138,10 @@ public sealed class ProtocolTests
 
     [Theory]
     [InlineData(3u, (byte)1)]
-    [InlineData(4u, (byte)1)]
+    [InlineData(1u, (byte)1)]
+    [InlineData(2u, (byte)1)]
+    [InlineData(1u, (byte)2)]
+    [InlineData(2u, (byte)2)]
     [InlineData(3u, (byte)2)]
     [InlineData(4u, (byte)2)]
     public void AdditionalClockProfilesRoundTrip(uint profile, byte mcuId)

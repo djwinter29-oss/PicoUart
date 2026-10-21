@@ -1,12 +1,10 @@
 /**
  * @file system.h
- * @brief Board-level system-clock setup for PicoUart firmware.
+ * @brief System clock, watchdog, and reset services for PicoUart firmware.
  */
 
 #ifndef SYSTEM_H
 #define SYSTEM_H
-
-#include "platform/boot_config.h"
 
 /** @brief Watchdog timeout that covers USB poll plus a 1 s line-coding apply. */
 #ifndef PICO_UART_WATCHDOG_TIMEOUT_MS
@@ -22,20 +20,6 @@
  * require exact-board HIL before any stability claim.
  */
 void system_init_clock(void);
-
-/**
- * @brief Read the immutable boot configuration decision.
- * @return Static RAM snapshot valid after system_init_clock.
- */
-const boot_config_status_t *system_boot_config_status(void);
-
-/**
- * @brief Save and verify a supported clock profile without changing the running clock.
- * @param profile Target-compatible permanent profile ID.
- * @return True only after full-sector readback verification (or an identical valid record).
- * @note Call on core 0 with UART traffic stopped and the core-1 flash lockout victim initialized.
- */
-bool system_save_clock_profile(uint32_t profile);
 
 /**
  * @brief Arm the watchdog so a wedged USB poll loop recovers without a power cycle.

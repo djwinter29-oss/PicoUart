@@ -33,14 +33,30 @@ static uint8_t diagnostic_health;
 static boot_config_status_t configuration;
 static bool cdc_open;
 static bool save_success;
+static bool set_success;
+static boot_config_t staged_configuration;
 static unsigned int save_calls;
 static unsigned int reset_calls;
 static uint32_t saved_profile;
 
-bool system_save_clock_profile(uint32_t profile)
+bool boot_config_profile_supported(uint32_t profile)
+{
+    return profile <= BOOT_CLOCK_250_MHZ || (PICO_RP2350 && profile == BOOT_CLOCK_280_MHZ);
+}
+
+bool boot_config_set(const boot_config_t *config)
+{
+    if (!set_success || config == NULL || !boot_config_profile_supported((uint32_t)config->clock_profile)) {
+        return false;
+    }
+    staged_configuration = *config;
+    return true;
+}
+
+bool boot_config_save(void)
 {
     ++save_calls;
-    saved_profile = profile;
+    saved_profile = (uint32_t)staged_configuration.clock_profile;
     return save_success;
 }
 
@@ -55,7 +71,7 @@ void led_set(bool on)
     led_on = on;
 }
 
-const boot_config_status_t *system_boot_config_status(void)
+const boot_config_status_t *boot_config_get_status(void)
 {
     return &configuration;
 }
@@ -90,6 +106,8 @@ void setUp(void)
     diagnostic_health = UART_DRIVER_PORT_STATUS_READY;
     cdc_open = false;
     save_success = true;
+    set_success = true;
+    staged_configuration = (boot_config_t){.clock_profile = BOOT_CLOCK_DEFAULT};
     save_calls = 0u;
     reset_calls = 0u;
     configuration = (boot_config_status_t){
@@ -226,7 +244,7 @@ static void test_report_lengths(void)
 
 static void test_configuration_save_validation_and_deferred_result(void)
 {
-    uint8_t request[9] = {1, 1, 0, 0, PICO_RP2350 ? 2 : 1, 0, 0, 0, 0};
+    uint8_t request[9] = {1, 1, 0, 0, BOOT_CLOCK_250_MHZ, 0, 0, 0, 0};
     uint8_t result[8];
     for (uint16_t size = 0u; size <= 9u; ++size) {
         if (size == 8u) continue;
@@ -248,10 +266,10 @@ static void test_configuration_save_validation_and_deferred_result(void)
     tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, 8);
     TEST_ASSERT_EQUAL(USB_HID_CONFIG_INVALID, usb_hid_config_save_state);
     request[1] = 1;
-    request[4] = PICO_RP2350 ? 1 : 2;
+    request[4] = PICO_RP2350 ? 5u : BOOT_CLOCK_280_MHZ;
     tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, 8);
     TEST_ASSERT_EQUAL(USB_HID_CONFIG_INVALID, usb_hid_config_save_state);
-    request[4] = PICO_RP2350 ? 2 : 1;
+    request[4] = BOOT_CLOCK_250_MHZ;
     tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, 8);
     TEST_ASSERT_EQUAL_UINT(0u, save_calls);
     TEST_ASSERT_EQUAL(USB_HID_CONFIG_PENDING, usb_hid_config_save_state);
@@ -290,6 +308,12 @@ static void test_configuration_save_busy_failure_and_default(void)
     TEST_ASSERT_EQUAL(USB_HID_CONFIG_BUSY, usb_hid_config_save_state);
     TEST_ASSERT_EQUAL_UINT(0u, save_calls);
     cdc_open = false;
+    set_success = false;
+    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL(USB_HID_CONFIG_FAILED, usb_hid_config_save_state);
+    TEST_ASSERT_EQUAL_UINT(0u, save_calls);
+    set_success = true;
     save_success = false;
     tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
     usb_hid_poll();

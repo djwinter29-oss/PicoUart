@@ -634,7 +634,7 @@ test("configuration save requires an explicit overclock acknowledgement and veri
   await client.disconnect();
 });
 
-for (const profile of [1, 2]) {
+for (const profile of [1, 2, 3]) {
   test(`predefined clock profile ${profile} saves with explicit acknowledgement`, async () => {
     const hid = new FakeHid();
     const client = new PicoUartWebHid(hid);
@@ -654,7 +654,7 @@ test("SDK-default save uses no unsafe flag, rejects open CDC ports, and only acc
   hid.devices[0].input(closedStatusReport());
   await client.saveConfiguration(0, true);
   assert.deepEqual(hid.devices[0].writes, []);
-  await client.saveConfiguration(3, true);
+  await client.saveConfiguration(5, true);
   assert.deepEqual(hid.devices[0].writes, []);
   hid.devices[0].input(statusReport(1));
   await client.saveConfiguration(0, false);

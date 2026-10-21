@@ -68,7 +68,8 @@ public sealed class ConfigurationSaveTests
     [InlineData(1u, true, 1)]
     [InlineData(2u, true, 2)]
     [InlineData(3u, true, 1)]
-    [InlineData(4u, true, 1)]
+    [InlineData(1u, true, 2)]
+    [InlineData(2u, true, 1)]
     [InlineData(3u, true, 2)]
     [InlineData(4u, true, 2)]
     public void BuildsExactRequestPayload(uint profile, bool acknowledgement, byte mcuId)
@@ -86,8 +87,8 @@ public sealed class ConfigurationSaveTests
     [InlineData(0u, false, 255)]
     [InlineData(1u, false, 1)]
     [InlineData(2u, false, 2)]
-    [InlineData(1u, true, 2)]
-    [InlineData(2u, true, 1)]
+    [InlineData(4u, true, 1)]
+    [InlineData(3u, false, 2)]
     [InlineData(1u, true, 0)]
     [InlineData(2u, true, 255)]
     public void RejectsUnsafeOrWrongFamilyRequests(uint profile, bool acknowledgement, byte mcuId) =>

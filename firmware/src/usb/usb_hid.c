@@ -7,6 +7,7 @@
 
 #include "config/capacity_config.h"
 #include "config/usb_identity.h"
+#include "platform/boot_config.h"
 #include "platform/led.h"
 #include "platform/service_load.h"
 #include "platform/system.h"
@@ -484,7 +485,7 @@ static bool usb_hid_publish_status_report(const uart_driver_port_stats_t uart_st
 void usb_hid_init(void)
 {
     usb_hid_config_save_state = USB_HID_CONFIG_IDLE;
-    usb_hid_config_save_profile = system_boot_config_status()->stored_profile;
+    usb_hid_config_save_profile = boot_config_get_status()->stored_profile;
     usb_hid_config_reboot_deadline = nil_time;
     usb_hid_sequence = 0u;
     usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time());
@@ -504,7 +505,8 @@ void usb_hid_poll(void)
         if (!usb_hid_config_can_save()) {
             usb_hid_config_save_state = USB_HID_CONFIG_BUSY;
         } else {
-            if (system_save_clock_profile(usb_hid_config_save_profile)) {
+            const boot_config_t config = {.clock_profile = (boot_clock_profile_t)usb_hid_config_save_profile};
+            if (boot_config_set(&config) && boot_config_save()) {
                 usb_hid_config_save_state = USB_HID_CONFIG_SAVED;
                 usb_hid_config_reboot_deadline = make_timeout_time_ms(USB_HID_CONFIG_REBOOT_DELAY_MS);
             } else {
@@ -562,7 +564,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
     }
 
     if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_CONFIGURATION)) {
-        const boot_config_status_t *config = system_boot_config_status();
+        const boot_config_status_t *config = boot_config_get_status();
         uint8_t payload[12] = {1u, (uint8_t)config->source, (uint8_t)config->reason, 0u};
         for (unsigned int index = 0; index < 4u; ++index) {
             payload[4u + index] = (uint8_t)(config->stored_profile >> (8u * index));
