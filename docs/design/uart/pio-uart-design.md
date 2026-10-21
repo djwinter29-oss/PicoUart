@@ -9,6 +9,8 @@ For shared ring semantics, see [Ring Buffer Design](ring-buffer-design.md). For 
 ## Ownership Model
 
 - Startup initializes the backends before the UART worker starts.
+- Initializing an already-active PIO instance is rejected before any resource or ring state changes; deinitialize it
+  before starting it again. This preserves existing DMA channels and state-machine ownership on accidental retries.
 - During steady-state operation, core 0 owns TinyUSB and moves bytes between CDC endpoints and per-port rings.
 - Core 1 services PIO state machines, DMA channels, TX/RX, and deferred backend changes.
 - RX and TX rings are the only data-plane contract between USB code and the PIO backend.
@@ -93,7 +95,10 @@ Both polling and DMA feed the same TX FIFO; the state machine serializes its byt
 and transfer budget are tuning policy, not part of the host-visible protocol or a throughput guarantee.
 
 Each initialized PIO port claims its TX DMA channel once during init and holds that channel until deinit. A launch
-reuses the claimed channel; it does not claim or release a channel per transfer. If that launch does not start, the same
+reuses the claimed channel; it does not claim or release a channel per transfer. Fixed DREQ, transfer size, increment
+settings, and FIFO destination are programmed once at startup. Launches update only the source address and transfer
+count; ordinary completion keeps the channel enabled. Deinit aborts and releases it, and a later startup configures it
+again. If a launch does not start, the same
 sweep drains the FIFO instead. While TX DMA is active, it owns its reserved TX-ring span; that span is committed only
 after DMA completion. The channel stays claimed. DMA completion frees ring storage but does not prove the FIFO and
 output shifter are idle; baud changes require those additional checks.
@@ -144,17 +149,28 @@ The [control plane](../control-plane-design.md) blocks new USB-to-UART admission
 for the captured old-format TX boundary to drain. Before applying a PIO baud change, core 1:
 
 1. Publishes observed RX progress and polls TX DMA completion.
-2. Requires TX DMA to be inactive, TX FIFO to be empty, and fresh TXSTALL evidence that the shifter is idle. RX must
-  also be at its next-start wait with an empty FIFO; ports configured for the idle-high gate must have RX high.
+2. Requires TX DMA to be inactive and TX FIFO to be empty. A nonblocking probe clears an observed sticky TXSTALL flag
+  once, defers to another worker sweep, and accepts idle only when the flag reasserts. RX must also be at its next-start
+  wait with an empty FIFO; ports configured for the idle-high gate must have RX high.
 3. Pauses RX DMA and waits for a stable transfer count. If settling fails, resumes DMA and defers the change.
 4. In a short critical section, publishes the stable RX position, stops and acknowledges DMA, pauses the state machines,
   and rechecks FIFO and RX-idle conditions. A failed recheck restores service and defers the change.
 5. Applies the new TX/RX dividers, restarts the state machines, and resumes RX DMA from the live producer position,
   preserving unread ring data. The control plane bounds retries with its per-port deadline.
 
-The TXSTALL wait is based on a few PIO cycles at the current baud, with a small microsecond floor, rather than a fixed
-CPU-iteration loop. The RX idle-high gate prevents changing the divider mid-frame for boards that can guarantee
-idle-high RX through pull-up.
+The TXSTALL probe never spins waiting for the PIO clock. Slow-baud reassertion is observed across worker sweeps, so
+sibling ports remain serviceable while the control-plane deadline still bounds the request. New FIFO or DMA TX work
+invalidates the probe; startup, deinit, and baud application reset it. No stale pre-transmission flag can establish
+idle. RX DMA settling and the critical FIFO/quiescence recheck remain unchanged. The RX idle-high gate prevents
+changing the divider mid-frame for boards that can guarantee idle-high RX through pull-up.
+
+Host tests cover the fresh-evidence probe state transitions, including delayed reassertion and invalidation by new TX.
+Driver-level TX regressions compile the real PIO driver with mocked SDK register calls and real ring-buffer code.
+They exercise FIFO/DMA launches, probe invalidation before hardware writes, busy-transfer ownership, completion,
+relaunch without repeated channel configuration, and source-address changes across ring wrap. TXSTALL write-one-clear
+and reassertion are explicitly modeled by the test; physical register timing is not simulated or qualified.
+Reduced per-launch setup and removal of the baud-dependent busy-wait do not establish measured throughput or latency
+improvements. Requalify low-baud changes with simultaneous sibling-port traffic and DMA completion/relaunch on hardware.
 
 ```mermaid
 stateDiagram-v2

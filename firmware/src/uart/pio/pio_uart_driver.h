@@ -54,7 +54,7 @@ bool pio_uart_driver_load_port_config(void *context, const uart_driver_port_info
 /**
  * @brief Initialize one PIO UART backend.
  * @param context Driver instance to initialize.
- * @return `true` when the UART was configured, otherwise `false`.
+ * @return `true` when configured; `false` for null or already-initialized instances without modifying their state.
  */
 bool pio_uart_driver_init(void *context);
 

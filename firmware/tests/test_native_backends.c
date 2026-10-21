@@ -55,14 +55,14 @@ bool pio_uart_driver_apply_baud_rate(void *context, uint32_t baud_rate)
     return apply_result;
 }
 
-bool hw_uart_driver_init(void *context)
+bool hw_uart_driver_start(void *context)
 {
     (void)context;
     TEST_FAIL_MESSAGE("unexpected HW initialization");
     return false;
 }
 
-bool pio_uart_driver_init(void *context)
+bool pio_uart_driver_start(void *context)
 {
     (void)context;
     TEST_FAIL_MESSAGE("unexpected PIO initialization");
@@ -147,6 +147,66 @@ void test_real_tables_are_complete_and_selected(void)
     TEST_ASSERT_TRUE(uart_backend_ops_is_complete(&uart_backend_pio_ops));
     TEST_ASSERT_EQUAL_PTR(&uart_backend_hw_ops, uart_backend_ops_for_type(UART_DRIVER_BACKEND_HW));
     TEST_ASSERT_EQUAL_PTR(&uart_backend_pio_ops, uart_backend_ops_for_type(UART_DRIVER_BACKEND_PIO));
+}
+
+void test_pio_reinitialization_preserves_resource_ownership_and_state(void)
+{
+    TEST_ASSERT_TRUE(uart_backend_pio_ops.load_config(&pio, &uart_board_ports[UART_PORT_2]));
+    pio.initialized = true;
+    pio.rx_dma_channel = 6;
+    pio.tx_dma_channel = 7;
+    pio.tx_sm_claimed = true;
+    pio.rx_sm_claimed = true;
+    pio.tx_dma_active = true;
+    pio.tx_dma_bytes_in_flight = 32u;
+    pio.rx_dma_last_progress = 45u;
+    pio.baud_rate = 230400u;
+    pio.tx_polled_bytes = 11u;
+    pio.tx_dma_bytes = 23u;
+    pio.controller_rx_bytes = 45u;
+    pio.rx_error_count = 2u;
+    pio.rx_ring.producer = 45u;
+    pio.rx_ring.consumer = 12u;
+    pio.tx_ring.producer = 64u;
+    pio.tx_ring.consumer = 8u;
+    pio_uart_driver_t before;
+    memcpy(&before, &pio, sizeof(before));
+
+    TEST_ASSERT_FALSE(uart_backend_pio_ops.init(&pio));
+    TEST_ASSERT_EQUAL_MEMORY(&before, &pio, sizeof(pio));
+    TEST_ASSERT_EQUAL_UINT(0u, clock_queries);
+    TEST_ASSERT_EQUAL_UINT(0u, apply_calls);
+    TEST_ASSERT_FALSE(uart_backend_pio_ops.init(NULL));
+}
+
+void test_hw_reinitialization_preserves_resource_ownership_and_state(void)
+{
+    TEST_ASSERT_TRUE(uart_backend_hw_ops.load_config(&hardware, &uart_board_ports[UART_PORT_0]));
+    hardware.initialized = true;
+    hardware.rx_dma_channel = 2;
+    hardware.tx_dma_channel = 3;
+    hardware.tx_active = true;
+    hardware.tx_dma_bytes_in_flight = 64u;
+    hardware.rx_dma_last_progress = 17u;
+    hardware.baud_rate = 230400u;
+    hardware.data_bits = 7u;
+    hardware.stop_bits = 2u;
+    hardware.parity = UART_PARITY_EVEN;
+    hardware.controller_tx_bytes = 32u;
+    hardware.controller_rx_bytes = 17u;
+    hardware.rx_error_count = 1u;
+    hardware.rx_ring.producer = 17u;
+    hardware.rx_ring.consumer = 4u;
+    hardware.tx_ring.producer = 128u;
+    hardware.tx_ring.consumer = 16u;
+    hw_uart_driver_t before;
+    memcpy(&before, &hardware, sizeof(before));
+
+    TEST_ASSERT_FALSE(uart_backend_hw_ops.init(&hardware));
+    TEST_ASSERT_EQUAL_MEMORY(&before, &hardware, sizeof(hardware));
+    TEST_ASSERT_FALSE(uart_backend_hw_ops.init(NULL));
+    TEST_ASSERT_EQUAL_UINT(0u, clock_queries);
+    TEST_ASSERT_EQUAL_UINT(0u, apply_calls);
 }
 
 void test_invalid_requests_never_reach_hardware_application(void)
@@ -398,6 +458,8 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_real_tables_are_complete_and_selected);
+    RUN_TEST(test_pio_reinitialization_preserves_resource_ownership_and_state);
+    RUN_TEST(test_hw_reinitialization_preserves_resource_ownership_and_state);
     RUN_TEST(test_invalid_requests_never_reach_hardware_application);
     RUN_TEST(test_hardware_setter_translates_all_supported_parities_and_propagates_failure);
     RUN_TEST(test_hardware_matching_uses_applied_divider_rate_and_peripheral_clock);

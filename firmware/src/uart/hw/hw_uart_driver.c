@@ -422,7 +422,7 @@ void hw_uart_driver_poll(void *context, bool tx_launch_allowed)
     }
 }
 
-bool hw_uart_driver_init(void *context)
+bool hw_uart_driver_start(void *context)
 {
     hw_uart_driver_t *driver = context;
     if ((driver == NULL) || (driver->config == NULL) || (driver->config->port == NULL) ||

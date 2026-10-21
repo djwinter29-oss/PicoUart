@@ -8,6 +8,15 @@
 #include "uart/line_coding.h"
 #include "hardware/clocks.h"
 
+bool pio_uart_driver_init(void *context)
+{
+    const pio_uart_driver_t *driver = context;
+    if ((driver == NULL) || driver->initialized) {
+        return false;
+    }
+    return pio_uart_driver_start(context);
+}
+
 bool pio_uart_driver_load_port_config(void *context, const uart_driver_port_info_t *port_info)
 {
     pio_uart_driver_t *driver = context;

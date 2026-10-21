@@ -64,9 +64,17 @@ bool hw_uart_driver_load_port_config(void *context, const uart_driver_port_info_
 /**
  * @brief Initialize one hardware UART backend.
  * @param context Driver instance to initialize.
- * @return `true` when the UART was configured, otherwise `false`.
+ * @return `true` when configured; `false` for null or active instances without modifying their state.
  */
 bool hw_uart_driver_init(void *context);
+
+/**
+ * @brief Claim resources and configure hardware for an inactive UART instance.
+ * @param context Inactive HW UART instance checked by the native init entry point.
+ * @return `true` on successful hardware startup, otherwise `false`.
+ * @internal Only the native init entry point may call this routine.
+ */
+bool hw_uart_driver_start(void *context);
 
 /**
  * @brief Activate hardware-UART RX DMA interrupts on the UART worker core.

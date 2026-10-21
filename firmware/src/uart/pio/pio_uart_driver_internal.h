@@ -24,6 +24,7 @@ struct pio_uart_driver {
     int rx_dma_channel;              /**< Persistent DMA channel writing PIO RX FIFO bytes into @ref rx_ring. */
     int tx_dma_channel;              /**< Persistent DMA channel used for high-backlog TX draining. */
     bool tx_dma_active;              /**< True while the active TX DMA channel owns a ring span. */
+    bool txstall_waiting;            /**< TXSTALL cleared for a fresh-idle probe; invalidated by any TX launch. */
     bool rx_rts_asserted;            /**< True while manual RTS permits the peer to transmit. */
     bool tx_cts_enabled;             /**< True when the TX state machine waits for active-low CTS between frames. */
     size_t tx_dma_bytes_in_flight;   /**< Bytes currently owned by the active TX DMA transfer. */
@@ -42,6 +43,14 @@ struct pio_uart_driver {
         __attribute__((aligned(PICO_UART_PIO_UART_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
     uint8_t tx_storage[PICO_UART_PIO_UART_TX_BUFFER_SIZE];           /**< TX ring storage. */
 };
+
+/**
+ * @brief Allocate and start hardware for an inactive PIO UART instance.
+ * @param context Inactive PIO UART runtime instance checked by the native init entry point.
+ * @return `true` when hardware startup succeeds, otherwise `false`.
+ * @internal Only the native init entry point may call this routine.
+ */
+bool pio_uart_driver_start(void *context);
 
 void pio_uart_driver_poll(void *context, bool tx_launch_allowed);
 

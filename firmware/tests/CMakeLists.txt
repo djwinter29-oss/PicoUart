@@ -88,6 +88,40 @@ pico_uart_add_unity_test(test_txstall_wait txstall_wait
     test_txstall_wait.c
 )
 
+set(_pio_tx_stubs "${CMAKE_CURRENT_BINARY_DIR}/pio_tx_stubs")
+foreach(_header IN ITEMS
+    hardware/pio.h hardware/clocks.h hardware/dma.h hardware/gpio.h hardware/irq.h
+    hardware/regs/pio.h hardware/structs/dma.h hardware/sync.h
+    pico/platform.h pico/stdlib.h pico/time.h uart.pio.h
+)
+    configure_file(support/pio_tx_sdk.h "${_pio_tx_stubs}/${_header}" COPYONLY)
+endforeach()
+pico_uart_add_unity_test(test_pio_tx_driver pio_tx_driver
+    test_pio_tx_driver.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
+)
+target_include_directories(test_pio_tx_driver BEFORE PRIVATE "${_pio_tx_stubs}")
+target_compile_options(test_pio_tx_driver PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(test_pio_tx_driver PRIVATE -Wl,--gc-sections)
+
+set(_hw_uart_stubs "${CMAKE_CURRENT_BINARY_DIR}/hw_uart_stubs")
+foreach(_header IN ITEMS
+    hardware/uart.h hardware/clocks.h hardware/dma.h hardware/gpio.h hardware/irq.h
+    hardware/regs/uart.h hardware/structs/dma.h hardware/sync.h pico/stdlib.h pico/time.h
+)
+    configure_file(support/hw_uart_sdk.h "${_hw_uart_stubs}/${_header}" COPYONLY)
+endforeach()
+pico_uart_add_unity_test(test_hw_uart_driver hw_uart_driver
+    test_hw_uart_driver.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
+    ${FIRMWARE_ROOT}/src/uart/hw/dma_claim.c
+)
+target_include_directories(test_hw_uart_driver BEFORE PRIVATE
+    "${_hw_uart_stubs}" "${CMAKE_CURRENT_SOURCE_DIR}/support"
+)
+target_compile_options(test_hw_uart_driver PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(test_hw_uart_driver PRIVATE -Wl,--gc-sections)
+
 pico_uart_add_unity_test(test_cdc_soft_pending cdc_soft_pending
     test_cdc_soft_pending.c
 )

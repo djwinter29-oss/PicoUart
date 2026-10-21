@@ -9,6 +9,15 @@
 #include "uart/line_coding.h"
 #include "hardware/clocks.h"
 
+bool hw_uart_driver_init(void *context)
+{
+    const hw_uart_driver_t *driver = context;
+    if ((driver == NULL) || driver->initialized) {
+        return false;
+    }
+    return hw_uart_driver_start(context);
+}
+
 /** @brief Translate validated common parity into the SDK encoding. */
 static uart_parity_t hw_uart_backend_parity(uart_driver_parity_t parity)
 {
