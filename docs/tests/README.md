@@ -3,6 +3,9 @@
 This directory separates automated validation from physical hardware qualification. Use the smallest applicable level
 first and do not treat a partial hardware run as a full pass.
 
+For CI ordering, parallel jobs, tool dependencies, and the PR-to-release gates, see
+[GitHub Actions: Validation and Releases](../development/github-actions.md).
+
 ## Test Levels
 
 ```mermaid

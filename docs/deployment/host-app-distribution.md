@@ -1,15 +1,12 @@
 # Host App Distribution
 
-The release workflow packages firmware, a Python wheel, and self-contained .NET archives. Host artifacts and firmware
-share the resolved release tag version. The [WebHID dashboard](https://djwinter29-oss.github.io/PicoUart/) is hosted on
-GitHub Pages, and the [Python package](https://pypi.org/project/pico-uart/) is available on PyPI. Stable publications remain
-subject to the [release gates](releasing.md#publication-gates); deployment and publisher setup are documented under
-[WebHID Pages](releasing.md#webhid-pages) and [PyPI publication](releasing.md#pypi-publication).
-Python source-distribution release assets, native installers, and a downloadable WebHID archive remain planned.
+This guide owns distribution channels, artifact boundaries, and deferred installer work. Use
+[Releasing PicoUart](releasing.md) for qualification and shared gates, or [Host App Publishing](host-app-publishing.md)
+for publisher setup, manual tests, retries, and rollback. Published host artifacts share the firmware release version.
 
 ## Distribution Channels
 
-| Application | First phase | Later phase |
+| Application | Current Channel And Workflow Output | Planned, Not Currently Published |
 | --- | --- | --- |
 | Python | Release wheel on GitHub and PyPI; recommend `pipx` for application installation | Source distribution after rebuild qualification; no native installer planned |
 | .NET | Self-contained archives on GitHub Releases, with no installed .NET runtime required | Linux `.deb`, signed Windows `.msi`, signed and notarized macOS `.app` |
@@ -20,26 +17,16 @@ Keep Python/.NET assets in their existing shared frontend. WebHID remains indepe
 
 ## Python Publication
 
-The release workflow attaches a versioned Python wheel to the draft GitHub Release and verifies an installation
-outside the checkout. Download the wheel from a published release and install it with `pipx install /path/to/file.whl`
-or with `python -m pip install /path/to/file.whl` inside a virtual environment. Both package metadata and the bundled
-dashboard identify the release version through installed package metadata, without runtime configuration.
+The [Python package](https://pypi.org/project/pico-uart/) is available on PyPI. Stable publication reuses the verified
+GitHub Release wheel; explicit development publication uploads a marked version to the same public index.
+Prefer pipx for isolated application use, or a virtual environment for Python API use. Installation and pre-release
+selection belong in the [Python guide](../../host/python/README.md#install); Linux-only HIL tooling is separate.
 
-The [PyPI workflow](../../.github/workflows/publish-pypi.yml) publishes the verified GitHub Release wheel without
-rebuilding it. It runs after release publication, not tag creation, and supports manual retries for published tags.
-See the [publication procedure](releasing.md#pypi-publication) for Trusted Publisher registration, approval, and
-immutable-version behavior. Source-distribution publication is not enabled in this initial workflow.
-
-Use `pipx install pico-uart` for stable releases, or `pipx install --pip-args="--pre" pico-uart` to allow development
-releases. These isolate application dependencies without modifying an OS-managed Python environment; see the
-[Python guide](../../host/python/README.md#install) for installation details. Keep Linux-only HIL tooling outside this
-cross-platform package.
-
-Before adding source-distribution publication, build a wheel and source distribution, then rebuild a wheel from the
-source distribution. Install and smoke-test both
-wheel paths in clean environments outside the checkout. Verify the CLI, bundled dashboard assets, and runtime
-dependencies on Linux, Windows, and macOS. Do not rely on editable installs or source-tree asset fallbacks as release
-evidence. See [host development](../development/host-tools.md#python-distribution) for the existing package build entry point.
+The wheel includes the shared dashboard, with its installed package version exposed to the UI. Source archives have
+standalone rebuild regression coverage but are not current release assets. Publishing them still requires explicit
+workflow support and cross-platform installed-artifact qualification, not just an editable-install test.
+See [Python publication](host-app-publishing.md#pypi-publication) for operational steps and
+[host development](../development/host-tools.md#python-distribution) for local builds.
 
 ## .NET Downloads
 
@@ -48,24 +35,14 @@ initially targeting Linux x64, Windows x64, and macOS arm64. Other architectures
 Archives include the shared dashboard; the application passes its assembly's tag version to that dashboard, with no
 installed .NET runtime required.
 Self-contained does not mean a single executable or the absence of OS library/device-permission requirements.
-The [.NET packaging workflow](../../.github/workflows/publish-dotnet.yml) owns archive names, the target matrix, and
-per-target checksums. The [release workflow](../../.github/workflows/release.yml) calls it after host validation and
-attaches its artifacts alongside the separately built Python package and firmware. The .NET workflow does not build
-Python packages or publish independently to an existing GitHub Release.
+The [.NET packaging workflow](../../.github/workflows/publish-dotnet.yml) owns archive names, targets, and checksums.
+Its extracted-artifact checks establish native CLI startup and version metadata, not physical HID/UART compatibility.
+Check the actual release assets: a workflow target does not mean every historical release supplied that archive.
 
-The [.NET packaging procedure](releasing.md#net-packaging) owns release invocation, manual test-run inputs,
-artifact retrieval, and version-marker behavior. Independent manual runs produce marked test artifacts, not public
-release attachments; normal release packaging remains subject to the shared publication gates.
-
-Each host packaging job extracts its archive and checks native CLI startup and the bundled version before checksumming.
-The release draft waits for all host packages, host validation, and firmware builds. Publishing the qualified draft
-makes the host downloads available and triggers the separate WebHID deployment with the same tag version. Creating a
-tag alone does not publish the draft or replace the hosted site.
-
-Test each packaged archive after extraction on its target OS, outside the checkout and without relying on an installed
-.NET runtime. Verify CLI startup, loopback dashboard startup/shutdown, served assets, and the HTTP contract. Record
-native device-access results separately from hardware-free checks. Existing manual publish instructions remain in the
-[.NET host guide](../../host/dotnet/README.md#develop-and-publish).
+The [.NET host guide](../../host/dotnet/README.md#install-from-a-release) owns user installation. The
+[packaging runbook](host-app-publishing.md#net-packaging) owns manual tests and artifact retrieval. Archive
+qualification must cover the extracted app, dashboard assets, startup/shutdown, and applicable device access on its
+target OS, outside the checkout and without relying on an installed .NET runtime.
 
 Add installers only after archive deployment and lifecycle behavior are stable:
 
@@ -81,14 +58,9 @@ for the later phase, not part of the initial archive rollout.
 
 ## WebHID Hosting
 
-The [WebHID Pages workflow](../../.github/workflows/publish-webhid.yml) deploys `host/webhid` as-is over HTTPS when a
-non-prerelease GitHub Release is published. Draft creation and tag pushes alone do not deploy. Manual deployment
-accepts an already-published release tag for redeployment or rollback. See the
-[Pages release procedure](releasing.md#webhid-pages) for repository setup and operational steps.
-
-An explicit [test-publish option](releasing.md#test-publish-from-a-branch) can deploy a selected branch commit without
-a release or completed cross-project checks. It runs the WebHID checks, displays a test-version marker, and replaces
-the live Pages site, rather than creating a separate preview.
+The [hosted dashboard](https://djwinter29-oss.github.io/PicoUart/) uses the standalone `host/webhid` assets over HTTPS.
+Packaging stamps its visible version without introducing shared frontend generation. Normal release deployment and
+explicit live-site test deployment are separate modes; see the [Pages runbook](host-app-publishing.md#webhid-pages).
 
 A versioned static release archive for self-hosting remains planned. It will require HTTPS or localhost when served;
 opening HTML directly from disk is not a supported deployment.
@@ -98,16 +70,11 @@ USB access stays local to the browser's computer and requires user-granted brows
 Hosting the page does not proxy remote USB devices or require a Python/.NET server. See the
 [WebHID guide](../../host/webhid/README.md) for setup, permissions, and browser behavior.
 
-Before deployment, run WebHID tests and check the deployed project-site path, asset loading, secure-context behavior,
-and browser/device compatibility. Mocked tests do not prove native WebHID access.
+Qualification includes the deployed project-site path, asset loading, secure-context behavior, and supported
+browser/device access. Mocked checks do not prove native WebHID compatibility.
 
 ## Release Order And Gates
 
-The [release workflow overview](releasing.md#workflow-overview) owns entry points, dependencies, draft promotion,
-and downstream publication order. The [publication gates](releasing.md#publication-gates) define required check
-results and explicit manual test exceptions. Publisher registration, environment setup, retry, and rollback procedures
-also live in that guide; this document owns distribution choices, supported downloads, and deferred installer work.
-
-Host artifact checks do not replace [firmware release qualification](releasing.md#release-hil-gates). Firmware
-promotion still requires exact-artifact HIL evidence. For host releases, record the firmware used for device checks,
-supported HID contract, tested platforms, and any unverified compatibility claims in release notes.
+The [release guide](releasing.md#workflow-overview) owns ordering, draft promotion, and shared gates. The
+[publishing runbook](host-app-publishing.md) owns channel-specific operations. Host checks do not replace firmware
+HIL: record tested firmware, supported HID contract, platforms, and unverified compatibility claims in release notes.

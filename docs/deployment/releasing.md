@@ -1,12 +1,16 @@
 # Releasing PicoUart
 
-This guide owns release sequencing, shared publication gates, firmware flashing, and exact-artifact qualification.
-Use [Host App Distribution](host-app-distribution.md) for channels and supported downloads, and
-[Host App Publishing](host-app-publishing.md) for .NET packaging tests, PyPI setup/retries, and Pages deployment/rollback.
+Build the release artifacts, test the exact packaged firmware on each rated board, then publish the qualified draft.
+This checklist covers that path; it does not treat a successful CI run as hardware qualification.
 
-The [Release workflow](../../.github/workflows/release.yml) validates and packages firmware, a Python wheel, and
-self-contained .NET archives. A tag push creates a **draft**; manual dispatch creates preflight artifacts only.
-Do not publish a draft until the required HIL evidence passes for its exact packaged firmware artifacts.
+> [!IMPORTANT]
+> Keep the release as a draft until all required HIL evidence passes and artifact hashes match. A local rebuild or a
+> passing result for another image does not qualify the files being published.
+
+For the check graph and tool dependencies, see
+[GitHub Actions: Validation and Releases](../development/github-actions.md).
+For downloads and publisher operations, see [Host App Distribution](host-app-distribution.md) and
+[Host App Publishing](host-app-publishing.md).
 
 ## Release Sequence
 
@@ -20,49 +24,23 @@ Do not publish a draft until the required HIL evidence passes for its exact pack
 
 ## Workflow Overview
 
-| Workflow | Normal Entry Point | Responsibility |
-| --- | --- | --- |
-| [Release](../../.github/workflows/release.yml) | Version-tag push | Run validation, build firmware and host packages, collect checksums, create the gated draft |
-| [Publish .NET Packages](../../.github/workflows/publish-dotnet.yml) | Called by Release | Build and check native archives; return artifacts to the caller, not a separate public release |
-| [Publish Python to PyPI](../../.github/workflows/publish-pypi.yml) | Published GitHub Release | Verify the released wheel and required checks, then publish through the protected PyPI environment |
-| [Publish WebHID Pages](../../.github/workflows/publish-webhid.yml) | Published GitHub Release | Verify required checks, test and stamp the selected WebHID commit, then deploy Pages |
-
-Manual execution is separate from the normal entry points above. Use the marked test modes described in
-[publication gates](#publication-gates), [.NET packaging](host-app-publishing.md#net-packaging),
-[development PyPI publication](host-app-publishing.md#manual-development-publication), and
-[Pages test publication](host-app-publishing.md#test-publish-from-a-branch).
-The publish-prefixed filenames organize the actions; they do not all independently publish to a public destination.
-
-```mermaid
-flowchart LR
-   Tag["Version tag"] --> Release["Release: validation + firmware builds"]
-   Release --> Python["Build and verify Python wheel"]
-   Release --> Dotnet["Publish .NET Packages: verify archives"]
-   Release --> Checks["Required tests pass for exact commit"]
-   Python --> Draft["Draft release: artifacts + checksums"]
-   Dotnet --> Draft
-   Checks --> Draft
-   Draft --> HIL["HIL on exact packaged firmware"]
-   HIL --> Match{"PASS and artifact hashes match?"}
-   Match -->|no| Stop["Keep draft; fix or rerun"]
-   Match -->|yes| Published["Manually publish qualified release"]
-   Published --> PyPI["Verify checks + wheel; approve PyPI upload"]
-   Published --> Pages["Verify checks + WebHID; deploy Pages"]
-```
-
-The release unit is the exact packaged artifact, not a source revision or a local rebuild. HIL evidence is valid only
-when its image hash matches the artifact attached to the draft release.
+The [Release workflow](../../.github/workflows/release.yml) builds firmware and host packages with checksums.
+A tag push creates the gated draft; manual dispatch creates preflight artifacts only. The
+[GitHub Actions guide](../development/github-actions.md#release-and-publication) shows the parallel jobs and
+dependencies.
+After manual promotion, PyPI and Pages publish independently; use the [publishing runbook](host-app-publishing.md)
+for setup, retries, or rollback rather than treating a tag push as publication.
 
 ## Release Preflight
 
 Before requesting HIL, confirm:
 
-1. The change is reviewed and the working tree contains no unintended files.
-2. The version follows the [release tag policy](#versioning).
-3. The exact commit passes PR Check, host validation, required target builds, and host package checks, as specified in
-   [publication gates](#publication-gates).
-4. `git diff --check` passes.
-5. Release notes identify USB/HID compatibility or behavior changes.
+- [ ] The change is reviewed and the working tree contains no unintended files.
+- [ ] The version follows the [release tag policy](#versioning).
+- [ ] The exact commit passes PR Check, host validation, required target builds, and host package checks, as specified
+   in [publication gates](#publication-gates).
+- [ ] `git diff --check` passes.
+- [ ] Release notes identify USB/HID compatibility or behavior changes.
 
 Do not begin physical testing from an uncommitted or locally modified image.
 
@@ -84,8 +62,10 @@ checks, use visibly non-release versions, and do not create or promote a qualifi
 | Publish Python to PyPI with `test_publish` checked | Public, immutable development release on production PyPI | `0.0.0.devRUN_ID` |
 | Publish WebHID Pages with `test_publish` checked | The normal Pages site, replacing its current deployment | `0.0.0-test.RUN_ID.RUN_ATTEMPT` |
 
-The run identifiers are supplied by GitHub; no release tag is needed for these test modes. Environment approval and
-branch restrictions still apply. Test versions are not HIL qualification or proof that the full test suite passed.
+The run identifiers are supplied by GitHub. No Git tag needs to exist for these test modes, but independent .NET
+packaging still requires its base **tag** version label. Environment approval and branch restrictions still apply.
+Test versions are not HIL qualification or proof that the full test suite passed. Follow the
+[manual publishing procedures](host-app-publishing.md) for each channel.
 
 ## Security Reporting Setup
 
@@ -95,8 +75,8 @@ instructions and device-security notes are in [`SECURITY.md`](../../SECURITY.md)
 ## USB identity
 
 PicoUart artifacts use `cafe:4010`, an unallocated lab identity. Do not reuse it commercially; derivatives need an
-allocated VID/PID and must treat the identity change as a breaking USB change. See [`SECURITY.md`](../../SECURITY.md) and
-the USB identity contract tests before publishing.
+allocated VID/PID and must treat the identity change as a breaking USB change. See [`SECURITY.md`](../../SECURITY.md)
+and the USB identity contract tests before publishing.
 
 ## Release HIL Gates
 
@@ -108,9 +88,14 @@ packaged UF2/ELF and verify its SHA-256 against the draft; a local rebuild or a 
 qualify the release. Optional overclock profiles are board-local configuration settings; any overclock claim still
 requires exact-board HIL evidence and does not establish general stability or operating margins.
 
-Follow the [HIL fixture setup](../tests/hil-fixture-setup.md) and [test plan](../tests/hil-fixture-test-plan.md) for required
-phases and acceptance criteria. Preserve per-board records using the [HIL record format](../tests/records/README.md), with
-artifact hashes and any failures or partial conditions. Without matching recorded evidence, the release remains lab-only.
+Record the active clock profile and reported system clock as well as the image hash. Persistent board configuration is
+separate from the firmware artifact; matching its hash does not prove rated-clock operation. Check the boot selection
+and any fallback reason before attributing results to a rated image or an overclock profile.
+
+Follow the [HIL fixture setup](../tests/hil-fixture-setup.md) and [test plan](../tests/hil-fixture-test-plan.md) for
+required phases and acceptance criteria. Preserve per-board records using the
+[HIL record format](../tests/records/README.md), with artifact hashes and any failures or partial conditions.
+Without matching evidence, the release remains lab-only.
 
 ## Flashing Release Artifacts
 
@@ -119,11 +104,16 @@ Identify the board and probe and obtain authorization before flashing or using r
 placeholders with the selected target and artifact; do not pass a UF2 file to an `--elf` option.
 
 ```sh
-tools/firmware/load.sh --board <pico|pico2> --skip-build --elf <path-to-release.elf>
+tools/firmware/load.sh --board pico --skip-build --elf /path/to/release-pico.elf
 ```
+
+For Pico 2, use `--board pico2` with its matching packaged ELF, not a Pico image.
 
 Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached or when USB enumeration tools are
 unavailable.
+
+<details>
+<summary>Probe permissions and unknown flash-device troubleshooting</summary>
 
 On Linux, `unable to find a matching CMSIS-DAP device` can mean USB access is denied even when `lsusb` lists the probe.
 The loader checks the USB node permissions for a uniquely enumerated probe and retries OpenOCD with noninteractive
@@ -139,27 +129,34 @@ Use a current OpenOCD CMSIS-DAP build. If OpenOCD reports `Unknown flash device`
 OpenOCD and retry with `--adapter-speed-khz 1000` before treating the HIL attempt as firmware failure. Flash ID
 `0x00154068` is a Boya BY25Q16ES device; older OpenOCD builds may need an upstream binary selected with `--openocd-exe`.
 
+</details>
+
 ### Override QSPI Auto-Detection (Advanced)
+
+<details>
+<summary>Use only with stable SWD access and independently confirmed flash capacity</summary>
 
 Only use this recovery when SWD communication is stable and the exact QSPI flash capacity has been confirmed from the
 chip marking and its datasheet. Do not guess the capacity: OpenOCD uses it to define erase bounds, so a wrong value can
 make flash operations unsafe. Prefer a current OpenOCD build and normal JEDEC/SFDP detection whenever possible.
 
 The OpenOCD RP2040/RP2350 target scripts accept a nonzero `FLASHSIZE` in bytes to skip QSPI JEDEC/SFDP auto-detection.
-Create a temporary target config that sets the verified capacity before sourcing the board target:
+Set `FLASH_SIZE_BYTES` to that confirmed capacity, then create a temporary target config before sourcing the target:
 
 ```sh
-FLASH_SIZE_BYTES=<confirmed-capacity-in-bytes>
+: "${FLASH_SIZE_BYTES:?Set the flash capacity in bytes from the verified chip marking and datasheet}"
 OPENOCD_TARGET_CFG="$(mktemp)"
 trap 'rm -f "$OPENOCD_TARGET_CFG"' EXIT
 printf 'set FLASHSIZE %s\nsource [find target/rp2040.cfg]\n' "$FLASH_SIZE_BYTES" > "$OPENOCD_TARGET_CFG"
-tools/firmware/load.sh --board pico --skip-build --elf <path-to-pico.elf> \
-   --openocd-target "$OPENOCD_TARGET_CFG" --probe-serial <probe-serial> --adapter-speed-khz 1000
+tools/firmware/load.sh --board pico --skip-build --elf /path/to/pico.elf \
+   --openocd-target "$OPENOCD_TARGET_CFG" --probe-serial "<probe-serial>" --adapter-speed-khz 1000
 ```
 
 For Pico 2, use `--board pico2`, a Pico 2 ELF, and replace the target in the temporary config with
 `target/rp2350.cfg`. Continue only if OpenOCD reports **Verified OK**. This override skips flash identification; it does
 not recover failed SWD access, repair reset/wiring, or prove the selected capacity is correct.
+
+</details>
 
 ## Required HIL Matrix
 
@@ -189,17 +186,20 @@ Run optional tests only when the release notes claim the behavior:
 
 ## Promotion Checklist
 
-- All required build and check gates passed for the exact release commit.
-- Every rated firmware artifact has complete, passing evidence for the required scope, with matching hashes.
-- Records and necessary transcripts are accessible; local cache paths alone are not a shared evidence archive.
-- Release notes disclose compatibility changes, tested conditions, and any unqualified optional claims.
-- Only then promote the draft. Diagnose PyPI or Pages failures separately; never overwrite a published PyPI version.
+- [ ] All required build and check gates passed for the exact release commit.
+- [ ] Every rated firmware artifact has complete, passing evidence for the required scope, with matching hashes.
+- [ ] Records and necessary transcripts are accessible; local cache paths alone are not a shared evidence archive.
+- [ ] Release notes disclose compatibility changes, tested conditions, and any unqualified optional claims.
+
+Once every item is satisfied, promote the draft. Diagnose PyPI or Pages failures separately; never overwrite a
+published PyPI version.
 
 ## Versioning
 
 Every user-facing release-version input is named **tag** and accepts `vMAJOR.MINOR.PATCH`, for example `v1.2.3`.
-Unprefixed `1.2.3` is rejected. Firmware and .NET use the validated resolver value; Python tag builds derive their version
-through `hatch-vcs`. All three identify the same unprefixed version, `1.2.3`, and packaging checks verify that match.
+Unprefixed `1.2.3` is rejected. Firmware and .NET use the validated resolver value; Python tag builds derive their
+version through `hatch-vcs`. All three identify the same unprefixed version, `1.2.3`, and packaging checks verify that
+match.
 
 For **Release** preflight and independent **Publish .NET Packages** runs, this input is a base version label; it need
 not already exist as a Git tag, does not create a tag, and does not change which branch/commit is checked out.
@@ -210,151 +210,3 @@ Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release vers
 build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the
 [HID Report Reference](../design/usb/hid-report-reference.md) for encoding details. Release workflows own the SDK and
 toolchain pins and install the reviewed, hash-locked Python requirements.
-
-## .NET Packaging
-
-The [Publish .NET Packages workflow](../../.github/workflows/publish-dotnet.yml) is called by **Release** after host
-validation. It uses the resolved release version, builds self-contained applications, extracts and checks each
-archive, and uploads archives and checksum manifests for the caller to attach to the draft. It does not create its
-own GitHub Release. Supported download targets and installation boundaries belong in the
-[host app distribution guide](host-app-distribution.md#net-downloads).
-
-For an independent manual packaging test:
-
-1. Commit and push the desired source and workflow changes. The workflow must exist on the default branch for manual
-   dispatch to be available, and the selected branch must contain it.
-2. Open **Actions > Publish .NET Packages > Run workflow** and select the desired branch.
-3. Enter the base **tag**, for example `v1.2.3`, following the [version policy](#versioning), and start the run.
-4. After the matrix succeeds, download the `release-host-*` artifacts from that workflow run. Extract the downloaded
-   artifact bundle to obtain the platform archive and its checksum manifest; verify the checksum before using it.
-
-Direct manual runs add the [test-version suffix](#publication-gates) to the app metadata and archive name. They run
-native archive checks without waiting for the full cross-project release gate. They do not create a tag, attach files
-to a GitHub Release, publish a qualified release, or change PyPI or Pages. No publishing credentials or protected
-publishing environment are needed for these downloadable test artifacts.
-
-## PyPI Publication
-
-The [PyPI workflow](../../.github/workflows/publish-pypi.yml) runs when a non-prerelease GitHub Release is published. It
-downloads the existing release wheel, checks its SHA-256 against `SHA256SUMS-python.txt` from the release, validates
-the package name and tag version, and passes only that verified wheel to the protected publishing job. It does not
-rebuild packages or publish on tag push, draft creation, or release preflight runs. Source-distribution publication
-remains deferred until its rebuild and installation checks are implemented.
-
-All Python uploads from this repository target production PyPI. The explicit manual development path below uses the
-same `pypi` environment and Trusted Publisher, but uploads a marked development version rather than a stable release.
-
-### Trusted Publisher Setup
-
-1. Merge the workflow into the default branch so release events and manual dispatch are available.
-2. Create a GitHub environment named **pypi** under **Settings > Environments**, with required reviewers. Restrict its
-   deployment branches/tags to the release tags and approved branch used for manual retries.
-3. Sign in to PyPI with a verified account and two-factor authentication. For an existing project you own, open its
-   **Publishing** settings. For the first release, use **Your account > Publishing > Add a new pending publisher**.
-   Confirm that the package name is available to your account; a missing public project does not guarantee availability.
-4. Select GitHub and register these exact values:
-
-| PyPI Field | Value |
-| --- | --- |
-| Project name (pending publisher) | `pico-uart` |
-| Owner | `djwinter29-oss` |
-| Repository | `PicoUart` |
-| Workflow filename | `publish-pypi.yml` |
-| Environment | `pypi` |
-
-The filename is not the workflow display name or its full path. No PyPI API token or GitHub secret is required.
-If a Trusted Publisher was registered before the workflow rename, update or replace its registration with
-`publish-pypi.yml` on PyPI before the next upload. Both stable and development publication use environment `pypi`.
-Only publishing jobs receive `id-token: write`; verification and downloads run without publication credentials.
-The official PyPA action verifies distribution metadata and creates publication attestations using Trusted Publishing.
-
-### Publish And Retry
-
-Create a normal release tag and let the release workflow attach the wheel and checksum manifest to its draft. Complete
-the existing HIL promotion gates, publish the draft, and approve the **pypi** environment deployment. Verify the
-result at <https://pypi.org/project/pico-uart/> before advertising the package as available.
-
-To retry a failed publication or publish an older qualified release, run **Actions > Publish Python to PyPI > Run
-workflow** with its already-published **tag**, leaving **test_publish** unchecked. The release must include the expected
-wheel and checksum manifest and pass the [publication gates](#publication-gates).
-Drafts, prereleases, checksum mismatches, and package/version mismatches fail before uploading. Publication initiated
-by another workflow's default `GITHUB_TOKEN` does not trigger the release-event workflow; use manual dispatch then.
-
-PyPI versions and uploaded filenames are immutable. This workflow intentionally does not skip existing distributions:
-an already-published version fails visibly rather than masking a mismatch. If upload succeeded but a later step
-failed, inspect PyPI before retrying; publish corrections under a new version. A PyPI failure does not roll back the
-GitHub Release or Pages deployment.
-
-### Manual Development Publication
-
-Use the production PyPI Trusted Publisher and **pypi** GitHub environment configured above. Ensure that environment
-permits the selected branch and approve its deployment if required. No separate package index or publisher is used.
-
-Run **Actions > Publish Python to PyPI > Run workflow**, select the branch, check **test_publish**, and leave **tag**
-empty. The workflow runs Python package tests, builds `0.0.0.devRUN_ID`, checks the installed wheel outside the source
-tree, and publishes it to **production PyPI** after environment approval. The full PR/release/HIL gates are not required
-for this explicit development mode. The wheel is also available as the run's `pypi-development-distribution` artifact.
-
-These are real public uploads, not private previews. A successful first upload can create the PyPI project and convert
-its pending Trusted Publisher into a regular publisher. Development versions remain distinct from stable tag versions;
-they do not certify that the full cross-project tests or firmware HIL gates passed.
-
-Each new workflow run gets a different development version. Rerunning the same run keeps its version; PyPI rejects
-an already-uploaded filename, so start a new manual run when a new development upload is needed. Uploaded filenames
-cannot be reused, even after deletion. Review the branch contents before starting the run.
-
-## WebHID Pages
-
-The [WebHID Pages workflow](../../.github/workflows/publish-webhid.yml) publishes the standalone browser app from
-`host/webhid`, without modifying or deploying the Python/.NET frontend. It runs when a non-prerelease GitHub Release
-is published, after the firmware draft has passed its promotion gates. Pushing a tag, creating a draft, and release
-preflight runs do not change the live site.
-
-### Repository Setup
-
-1. Merge the Pages workflow into the repository's default branch so GitHub can receive release events.
-2. In **Settings > Pages > Build and deployment**, set **Source** to **GitHub Actions**. No deployment branch, custom
-   domain, or personal access token is required.
-3. Review the **github-pages** environment under **Settings > Environments**. Permit the release tags used for
-   deployment and configure required reviewers if desired. Manual redeployment must also be allowed from the branch
-   containing the workflow. Only the deployment job receives `pages: write` and `id-token: write` permissions.
-
-After the first successful deployment, the default project URL is
-<https://djwinter29-oss.github.io/PicoUart/>. The deployment job's environment URL is authoritative if Pages settings
-or the repository name change. This setup does not claim the site is already live.
-
-### Publish Or Roll Back
-
-Publish the qualified firmware draft through GitHub's release UI to trigger deployment. The Pages workflow validates
-the release tag and published/non-prerelease status, checks out that tag, runs the WebHID tests, and uploads only
-`host/webhid`. Deployment runs are serialized and retain the selected tag in their workflow inputs/event record.
-Before upload, the workflow stamps the visible host version from the validated release tag, without the leading `v`.
-Local WebHID displays `0.0.0-debug`; explicit test publishes show `0.0.0-test.RUN_ID.RUN_ATTEMPT`. Both labels are
-separate from the connected board's firmware version.
-Publishing through another workflow's default `GITHUB_TOKEN` does not trigger a new release-event workflow; use the
-manual deployment below in that case.
-
-For redeployment or rollback, run **Actions > Publish WebHID Pages > Run workflow** with the desired already-published release
-tag and leave **test_publish** unchecked. Drafts, prereleases, and tags outside the normal release version policy are
-rejected. The selected tag must contain the standalone WebHID app and its tests. Rolling back the site does not modify
-firmware releases or boards.
-
-### Test Publish From A Branch
-
-To publish current WebHID without creating a firmware release:
-
-1. Commit and push the WebHID and workflow changes. The workflow must exist on the default branch for manual dispatch
-   to be available; the branch selected for the run must include the test-publish option.
-2. Open **Actions > Publish WebHID Pages > Run workflow** and select the desired branch under **Use workflow from**.
-3. Check **test_publish**, leave **tag** empty, and run the workflow. Ensure the `github-pages` environment permits
-   deployment from that branch and approve the deployment if required.
-4. Open the deployment's environment URL after the run succeeds.
-
-Test publication deploys the selected branch's exact commit, runs the WebHID checks, and skips the published-release
-lookup and full cross-project gate. It replaces the site at the normal Pages URL; it is not an isolated preview.
-The visible **App v** label includes the test run and attempt. Local uncommitted changes are not
-included. Restore a release by rerunning with **test_publish** unchecked and the desired published **tag**.
-
-A Pages failure does not unpublish the GitHub Release. Fix or rerun the deployment separately, and inspect the Pages
-environment for the currently successful deployment. After deployment, check asset loading at the project URL and
-native device access in a supported browser; automated tests do not prove physical USB compatibility.

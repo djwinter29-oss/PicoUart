@@ -27,7 +27,7 @@ installation. Do not open the HTML directly from disk. To deploy, publish this f
 parent directory, or files from `host/web` are needed.
 
 Release-driven GitHub Pages deployment, repository setup, the hosted URL, and rollback are documented in the
-[Pages release procedure](../../docs/deployment/releasing.md#webhid-pages).
+[Pages publishing procedure](../../docs/deployment/host-app-publishing.md#webhid-pages).
 
 Use `--port N` to change the local port. Without a POSIX shell (for example native Windows), run
 `python -m http.server 8000 --bind 127.0.0.1 --directory host/webhid` from the repository root instead.

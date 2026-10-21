@@ -12,10 +12,28 @@ multi-device bring-up, test automation, and diagnosing failed test runs.
 [Hardware setup](docs/hardware-setup.md) ·
 [Test automation](#test-automation)
 
-| Raspberry Pi Pico | Raspberry Pi Pico 2 |
-| :---: | :---: |
-| <img src="docs/assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico reference board" width="240" /> | <img src="docs/assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2 reference board" width="240" /> |
-| RP2040 · firmware: **`pico`** | RP2350 · firmware: **`pico2`** |
+<table align="center">
+    <thead>
+        <tr>
+            <th scope="col" align="center">Raspberry Pi Pico</th>
+            <th scope="col" align="center">Raspberry Pi Pico 2</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td align="center">
+                <img src="docs/assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico reference board" width="240" />
+            </td>
+            <td align="center">
+                <img src="docs/assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2 reference board" width="240" />
+            </td>
+        </tr>
+        <tr>
+            <td align="center">RP2040 · firmware: <strong><code>pico</code></strong></td>
+            <td align="center">RP2350 · firmware: <strong><code>pico2</code></strong></td>
+        </tr>
+    </tbody>
+</table>
 
 <details>
 <summary>Board photo credits</summary>
@@ -157,7 +175,8 @@ With the [pico-uart](https://pypi.org/project/pico-uart/) package installed as a
 | Understand USB and UART behavior | [CDC/HID overview](docs/design/usb/cdc-hid-overview.md), [architecture](docs/design/architecture.md) |
 | Build or modify firmware | [Firmware build guide](firmware/build-and-config.md), [development and testing](docs/development/firmware-testing.md) |
 | Develop host applications | [Host development](docs/development/host-tools.md), [host app distribution](docs/deployment/host-app-distribution.md) |
-| Publish or test a release | [Release workflows and qualification](docs/deployment/releasing.md) |
+| Understand PR and release checks | [GitHub Actions: validation and releases](docs/development/github-actions.md) |
+| Publish or test a release | [Release qualification](docs/deployment/releasing.md), [host publishing](docs/deployment/host-app-publishing.md) |
 | Contribute | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md) |
 
 Firmware is checked on a physical fixture ([test records](docs/tests/README.md)). Host tests do not replace hardware
