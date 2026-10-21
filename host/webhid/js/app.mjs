@@ -23,8 +23,8 @@ function resetConfigurationDraft(state) {
 function renderConfiguration(state) {
   const dashboard = state.dashboard;
   const hardwareId = dashboard.hardware?.mcu_id;
-  const options = hardwareId === 1 ? [[0, "Default (125 MHz)"], [1, "250 MHz (RP2040)"]]
-    : hardwareId === 2 ? [[0, "Default (150 MHz)"], [2, "280 MHz (RP2350)"]] : [];
+  const options = hardwareId === 1 ? [[0, "Default (125 MHz)"], [4, "150 MHz"], [3, "200 MHz"], [1, "250 MHz (RP2040)"]]
+    : hardwareId === 2 ? [[0, "Default (150 MHz)"], [4, "150 MHz"], [3, "200 MHz"], [2, "280 MHz (RP2350)"]] : [];
   const configurationReady = dashboard.configuration || dashboard.configuration_error
     || dashboard.configuration_save || dashboard.configuration_save_error;
   if (configurationDraft === null && options.length && configurationReady) {

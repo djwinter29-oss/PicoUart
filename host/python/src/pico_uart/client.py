@@ -166,14 +166,14 @@ class PicoUartHid:
 
     def save_configuration(self, profile: int, unsafe_overclock: bool = False) -> dict[str, object]:
         """Persist a supported clock profile; firmware reboots after confirming the save."""
-        if type(profile) is not int or profile not in (0, 1, 2) or type(unsafe_overclock) is not bool:
+        if type(profile) is not int or profile not in (0, 1, 2, 3, 4) or type(unsafe_overclock) is not bool:
             raise ValueError("invalid clock profile or overclock acknowledgement")
         if profile != 0 and not unsafe_overclock:
             raise ValueError("non-default clocks require explicit unsafe overclock acknowledgement")
         with self._lock:
             device = self._require_open()
             hardware = self.read_hardware_info()
-            supported = {1: (0, 1), 2: (0, 2)}.get(hardware["mcu_id"], ())
+            supported = {1: (0, 1, 3, 4), 2: (0, 2, 3, 4)}.get(hardware["mcu_id"], ())
             if profile not in supported:
                 raise ValueError("clock profile is not supported on this MCU")
             if self.read_configuration_save()["status"] == 1:

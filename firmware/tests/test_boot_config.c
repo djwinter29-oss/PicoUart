@@ -50,7 +50,7 @@ void setUp(void)
     erase_calls = program_calls = 0u;
     flash_result = PICO_OK;
     corrupt_flash_tail = false;
-    boot_config_load(false, false);
+    boot_config_load(false);
 }
 
 void tearDown(void) {}
@@ -83,7 +83,7 @@ static void record(uint32_t profile)
 
 static void assert_default(boot_config_reason_t reason)
 {
-    boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false, false);
+    boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false);
     TEST_ASSERT_EQUAL(BOOT_CONFIG_DEFAULTS, status.source);
     TEST_ASSERT_EQUAL(reason, status.reason);
     TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, status.active_profile);
@@ -92,34 +92,62 @@ static void assert_default(boot_config_reason_t reason)
 
 static void test_load_save_and_private_status_cache(void)
 {
-    TEST_ASSERT_EQUAL(BOOT_CONFIG_ERASED, boot_config_get()->reason);
-    TEST_ASSERT_TRUE(boot_config_save(BOOT_CLOCK_250_MHZ, false));
+    uint32_t profile = PICO_RP2350 ? BOOT_CLOCK_280_MHZ : BOOT_CLOCK_250_MHZ;
+    boot_config_t config = {.clock_profile = (boot_clock_profile_t)profile};
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_ERASED, boot_config_get_status()->reason);
+    TEST_ASSERT_TRUE(boot_config_set(&config));
+    TEST_ASSERT_TRUE(boot_config_save());
     TEST_ASSERT_EQUAL_UINT32(1u, erase_calls);
     TEST_ASSERT_EQUAL_UINT32(1u, program_calls);
-    TEST_ASSERT_EQUAL(BOOT_CONFIG_ERASED, boot_config_get()->reason);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_ERASED, boot_config_get_status()->reason);
 
-    boot_config_load(false, false);
-    TEST_ASSERT_EQUAL(BOOT_CONFIG_STORED, boot_config_get()->source);
-    TEST_ASSERT_EQUAL(BOOT_CONFIG_OK, boot_config_get()->reason);
-    TEST_ASSERT_EQUAL(BOOT_CLOCK_250_MHZ, boot_config_get()->active_profile);
-    TEST_ASSERT_EQUAL_UINT32(BOOT_CLOCK_250_MHZ, boot_config_get()->stored_profile);
+    boot_config_load(false);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_STORED, boot_config_get_status()->source);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_OK, boot_config_get_status()->reason);
+    TEST_ASSERT_EQUAL(profile, boot_config_get_status()->active_profile);
+    TEST_ASSERT_EQUAL_UINT32(profile, boot_config_get_status()->stored_profile);
+    TEST_ASSERT_EQUAL(config.clock_profile, boot_config_get()->clock_profile);
 
-    TEST_ASSERT_TRUE(boot_config_save(BOOT_CLOCK_250_MHZ, false));
+    TEST_ASSERT_TRUE(boot_config_save());
     TEST_ASSERT_EQUAL_UINT32(1u, erase_calls);
-    TEST_ASSERT_FALSE(boot_config_save(BOOT_CLOCK_280_MHZ, false));
+    boot_config_t unsupported = {.clock_profile = PICO_RP2350 ? BOOT_CLOCK_250_MHZ : BOOT_CLOCK_280_MHZ};
+    TEST_ASSERT_FALSE(boot_config_set(&unsupported));
+    TEST_ASSERT_FALSE(boot_config_set(NULL));
+    TEST_ASSERT_EQUAL(config.clock_profile, boot_config_get()->clock_profile);
     TEST_ASSERT_EQUAL_UINT32(1u, erase_calls);
 
+    config.clock_profile = BOOT_CLOCK_DEFAULT;
+    TEST_ASSERT_TRUE(boot_config_set(&config));
+    TEST_ASSERT_EQUAL(profile, boot_config_get_status()->active_profile);
     flash_result = -1;
-    TEST_ASSERT_FALSE(boot_config_save(BOOT_CLOCK_DEFAULT, false));
+    TEST_ASSERT_FALSE(boot_config_save());
     TEST_ASSERT_EQUAL_UINT32(1u, erase_calls);
 
     flash_result = PICO_OK;
     corrupt_flash_tail = true;
-    TEST_ASSERT_FALSE(boot_config_save(BOOT_CLOCK_DEFAULT, false));
+    TEST_ASSERT_FALSE(boot_config_save());
     TEST_ASSERT_EQUAL_UINT32(2u, erase_calls);
-    boot_config_load(false, false);
-    TEST_ASSERT_EQUAL(BOOT_CONFIG_DEFAULTS, boot_config_get()->source);
-    TEST_ASSERT_EQUAL(BOOT_CONFIG_INVALID_HEADER, boot_config_get()->reason);
+    boot_config_load(false);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_DEFAULTS, boot_config_get_status()->source);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_INVALID_HEADER, boot_config_get_status()->reason);
+    TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, boot_config_get()->clock_profile);
+    TEST_ASSERT_EQUAL_UINT32(2u, erase_calls);
+}
+
+static void test_additional_profiles_save_and_load(void)
+{
+    const boot_clock_profile_t profiles[] = {BOOT_CLOCK_200_MHZ, BOOT_CLOCK_150_MHZ};
+    for (size_t index = 0u; index < sizeof(profiles) / sizeof(profiles[0]); ++index) {
+        boot_config_t config = {.clock_profile = profiles[index]};
+        TEST_ASSERT_TRUE(boot_config_set(&config));
+        TEST_ASSERT_TRUE(boot_config_save());
+        TEST_ASSERT_EQUAL_UINT32(index + 1u, erase_calls);
+        TEST_ASSERT_EQUAL_UINT32(index + 1u, program_calls);
+        boot_config_load(false);
+        TEST_ASSERT_EQUAL(profiles[index], boot_config_get()->clock_profile);
+        TEST_ASSERT_EQUAL(profiles[index], boot_config_get_status()->stored_profile);
+        TEST_ASSERT_EQUAL(profiles[index], boot_config_get_status()->active_profile);
+    }
 }
 
 static void test_crc_and_blank_defaults(void)
@@ -127,8 +155,8 @@ static void test_crc_and_blank_defaults(void)
     TEST_ASSERT_EQUAL_HEX32(0xcbf43926u, boot_config_crc32((const uint8_t *)"123456789", 9));
     TEST_ASSERT_EQUAL_HEX32(0, boot_config_crc32((const uint8_t *)"", 0));
     assert_default(BOOT_CONFIG_ERASED);
-    TEST_ASSERT_EQUAL(BOOT_CONFIG_INVALID_HEADER, boot_config_decode(NULL, 0, false, false).reason);
-    TEST_ASSERT_EQUAL(BOOT_CONFIG_INVALID_HEADER, boot_config_decode(sector, 35, false, false).reason);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_INVALID_HEADER, boot_config_decode(NULL, 0, false).reason);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_INVALID_HEADER, boot_config_decode(sector, 35, false).reason);
 }
 
 static void test_profiles_are_exact_and_target_checked(void)
@@ -136,24 +164,32 @@ static void test_profiles_are_exact_and_target_checked(void)
     TEST_ASSERT_EQUAL_UINT32(0, boot_config_clock_khz(BOOT_CLOCK_DEFAULT));
     TEST_ASSERT_EQUAL_UINT32(250000, boot_config_clock_khz(BOOT_CLOCK_250_MHZ));
     TEST_ASSERT_EQUAL_UINT32(280000, boot_config_clock_khz(BOOT_CLOCK_280_MHZ));
-    for (unsigned int family = 0; family < 2; ++family) {
-        for (uint32_t profile = 0; profile < 4; ++profile) {
-            record(profile);
-            boot_config_status_t status = boot_config_decode(sector, sizeof(sector), family != 0, false);
-            bool supported = profile == 0 || profile == (family ? 2u : 1u);
-            TEST_ASSERT_EQUAL(supported ? BOOT_CONFIG_OK : BOOT_CONFIG_INVALID_PROFILE, status.reason);
-            TEST_ASSERT_EQUAL(supported ? BOOT_CONFIG_STORED : BOOT_CONFIG_DEFAULTS, status.source);
-            TEST_ASSERT_EQUAL(supported ? profile : 0, status.active_profile);
-        }
+    TEST_ASSERT_EQUAL_UINT32(200000, boot_config_clock_khz(BOOT_CLOCK_200_MHZ));
+    TEST_ASSERT_EQUAL_UINT32(150000, boot_config_clock_khz(BOOT_CLOCK_150_MHZ));
+    const uint32_t invalid_profiles[] = {5u, 255u, UINT32_MAX};
+    for (size_t index = 0u; index < sizeof(invalid_profiles) / sizeof(invalid_profiles[0]); ++index) {
+        boot_config_t invalid = {.clock_profile = (boot_clock_profile_t)invalid_profiles[index]};
+        TEST_ASSERT_FALSE(boot_config_profile_supported(invalid_profiles[index]));
+        TEST_ASSERT_EQUAL_UINT32(0u, boot_config_clock_khz(invalid.clock_profile));
+        TEST_ASSERT_FALSE(boot_config_set(&invalid));
+        TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, boot_config_get()->clock_profile);
+    }
+    for (uint32_t profile = 0; profile < 6; ++profile) {
+        record(profile);
+        boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false);
+        bool supported = profile == 0 || profile == 3u || profile == 4u || profile == (PICO_RP2350 ? 2u : 1u);
+        TEST_ASSERT_EQUAL(supported ? BOOT_CONFIG_OK : BOOT_CONFIG_INVALID_PROFILE, status.reason);
+        TEST_ASSERT_EQUAL(supported ? BOOT_CONFIG_STORED : BOOT_CONFIG_DEFAULTS, status.source);
+        TEST_ASSERT_EQUAL(supported ? profile : 0, status.active_profile);
     }
 }
 
 static void test_all_record_corruption_reverts_to_defaults(void)
 {
     for (size_t offset = 0; offset < BOOT_CONFIG_RECORD_SIZE; ++offset) {
-        record(BOOT_CLOCK_250_MHZ);
+        record(PICO_RP2350 ? BOOT_CLOCK_280_MHZ : BOOT_CLOCK_250_MHZ);
         sector[offset] ^= 0x80;
-        boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false, false);
+        boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false);
         TEST_ASSERT_NOT_EQUAL(BOOT_CONFIG_OK, status.reason);
         TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, status.active_profile);
     }
@@ -175,22 +211,29 @@ static void test_all_record_corruption_reverts_to_defaults(void)
 static void test_interrupted_programming_and_recovery(void)
 {
     uint8_t valid[BOOT_CONFIG_RECORD_SIZE];
-    record(1);
+    uint32_t profile = PICO_RP2350 ? BOOT_CLOCK_280_MHZ : BOOT_CLOCK_250_MHZ;
+    record(profile);
     memcpy(valid, sector, sizeof(valid));
     for (size_t count = 0; count < sizeof(valid); ++count) {
         memset(sector, 0xff, sizeof(sector));
         memcpy(sector, valid, count);
-        boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false, false);
+        boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false);
         TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, status.active_profile);
     }
-    record(1);
-    boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false, true);
+    record(profile);
+    boot_config_status_t status = boot_config_decode(sector, sizeof(sector), true);
     TEST_ASSERT_EQUAL(BOOT_CONFIG_RECOVERY, status.source);
     TEST_ASSERT_EQUAL(BOOT_CONFIG_WATCHDOG_RECOVERY, status.reason);
-    TEST_ASSERT_EQUAL(1, status.stored_profile);
+    TEST_ASSERT_EQUAL(profile, status.stored_profile);
     TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, status.active_profile);
+    boot_config_load(true);
+    TEST_ASSERT_EQUAL(profile, boot_config_get()->clock_profile);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_RECOVERY, boot_config_get_status()->source);
+    TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, boot_config_get_status()->active_profile);
+    TEST_ASSERT_EQUAL_UINT32(0u, erase_calls);
+    TEST_ASSERT_EQUAL_UINT32(0u, program_calls);
     record(0);
-    status = boot_config_decode(sector, sizeof(sector), false, true);
+    status = boot_config_decode(sector, sizeof(sector), true);
     TEST_ASSERT_EQUAL(BOOT_CONFIG_STORED, status.source);
     TEST_ASSERT_EQUAL(BOOT_CONFIG_OK, status.reason);
 }
@@ -198,24 +241,44 @@ static void test_interrupted_programming_and_recovery(void)
 static void test_encoder_matches_provisioned_records_and_checks_tail(void)
 {
     uint8_t expected[BOOT_CONFIG_RECORD_SIZE];
-    for (uint32_t profile = 0u; profile < 3u; ++profile) {
+    for (uint32_t profile = 0u; profile < 5u; ++profile) {
         record(profile);
         memcpy(expected, sector, sizeof(expected));
         memset(sector, 0xff, sizeof(sector));
         boot_config_encode(sector, (boot_clock_profile_t)profile);
         TEST_ASSERT_EQUAL_MEMORY(expected, sector, sizeof(expected));
-        boot_config_status_t status = boot_config_decode(sector, sizeof(sector), profile == 2u, false);
-        TEST_ASSERT_EQUAL(BOOT_CONFIG_OK, status.reason);
-        TEST_ASSERT_EQUAL_UINT32(profile, status.stored_profile);
+        boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false);
+        if (boot_config_profile_supported(profile)) {
+            TEST_ASSERT_EQUAL(BOOT_CONFIG_OK, status.reason);
+            TEST_ASSERT_EQUAL_UINT32(profile, status.stored_profile);
+        } else {
+            TEST_ASSERT_EQUAL(BOOT_CONFIG_INVALID_PROFILE, status.reason);
+        }
     }
     sector[sizeof(sector) - 1u] = 0;
-    TEST_ASSERT_EQUAL(BOOT_CONFIG_INVALID_HEADER, boot_config_decode(sector, sizeof(sector), true, false).reason);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_INVALID_HEADER, boot_config_decode(sector, sizeof(sector), false).reason);
+}
+
+static void test_crc_failure_uses_defaults_without_writing_flash(void)
+{
+    record(0u);
+    sector[32] ^= 0x80u;
+    uint8_t original[BOOT_CONFIG_RECORD_SIZE];
+    memcpy(original, sector, sizeof(original));
+    boot_config_load(false);
+    TEST_ASSERT_EQUAL(BOOT_CONFIG_CRC_FAILED, boot_config_get_status()->reason);
+    TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, boot_config_get()->clock_profile);
+    TEST_ASSERT_EQUAL_UINT32(0u, erase_calls);
+    TEST_ASSERT_EQUAL_UINT32(0u, program_calls);
+    TEST_ASSERT_EQUAL_MEMORY(original, sector, sizeof(original));
 }
 
 int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_load_save_and_private_status_cache);
+    RUN_TEST(test_additional_profiles_save_and_load);
+    RUN_TEST(test_crc_failure_uses_defaults_without_writing_flash);
     RUN_TEST(test_crc_and_blank_defaults);
     RUN_TEST(test_profiles_are_exact_and_target_checked);
     RUN_TEST(test_all_record_corruption_reverts_to_defaults);

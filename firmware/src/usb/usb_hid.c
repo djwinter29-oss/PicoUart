@@ -677,14 +677,8 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
         }
         uint32_t profile = (uint32_t)buffer[4] | (uint32_t)buffer[5] << 8 |
                            (uint32_t)buffer[6] << 16 | (uint32_t)buffer[7] << 24;
-        const bool rp2350 =
-#if PICO_RP2350
-            true;
-#else
-            false;
-#endif
         usb_hid_config_save_profile = profile;
-        if (!boot_config_profile_supported(profile, rp2350) ||
+        if (!boot_config_profile_supported(profile) ||
             (profile != BOOT_CLOCK_DEFAULT && (buffer[1] & 1u) == 0u)) {
             usb_hid_config_save_profile = BOOT_CONFIG_PROFILE_UNAVAILABLE;
             return;

@@ -76,9 +76,9 @@ def parse_configuration(payload: bytes) -> dict[str, object]:
     _, source, reason, reserved, stored_profile, active_profile = struct.unpack("<BBBBII", payload)
     if source >= len(CONFIGURATION_SOURCES) or reason >= len(CONFIGURATION_REASONS) or reserved != 0:
         raise RuntimeError("invalid configuration source, reason, or reserved field")
-    if stored_profile not in (0, 1, 2, 0xFFFFFFFF) or active_profile not in (0, 1, 2):
+    if stored_profile not in (0, 1, 2, 3, 4, 0xFFFFFFFF) or active_profile not in (0, 1, 2, 3, 4):
         raise RuntimeError("invalid configuration profile")
-    if source == 1 and (reason != 0 or stored_profile not in (0, 1, 2) or active_profile != stored_profile):
+    if source == 1 and (reason != 0 or stored_profile not in (0, 1, 2, 3, 4) or active_profile != stored_profile):
         raise RuntimeError("inconsistent stored configuration")
     if source == 2 and reason == 0:
         raise RuntimeError("inconsistent recovery configuration")
@@ -95,7 +95,7 @@ def parse_configuration_save(payload: bytes) -> dict[str, object]:
     if len(payload) != CONFIGURATION_SAVE_SIZE or payload[0] != 1:
         raise RuntimeError("unsupported configuration save report size or version")
     _, status, reserved, profile = struct.unpack("<BBHI", payload)
-    if status > 5 or reserved != 0 or profile not in (0, 1, 2, 0xFFFFFFFF):
+    if status > 5 or reserved != 0 or profile not in (0, 1, 2, 3, 4, 0xFFFFFFFF):
         raise RuntimeError("invalid configuration save status, reserved field, or profile")
     if profile == 0xFFFFFFFF and status not in (0, 3):
         raise RuntimeError("configuration save result has no requested profile")

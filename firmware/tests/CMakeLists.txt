@@ -183,15 +183,16 @@ pico_uart_add_unity_test(test_temperature temperature
     test_temperature.c
 )
 
-pico_uart_add_unity_test(test_boot_config boot_config
-    test_boot_config.c
-)
-target_include_directories(test_boot_config PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
-target_compile_definitions(test_boot_config PRIVATE
-    PICO_FLASH_SIZE_BYTES=4096
-    PICO_UART_CONFIG_FLASH_SIZE=4096
-    PICO_UART_CONFIG_FLASH_OFFSET=0
-)
+foreach(_family IN ITEMS rp2040 rp2350)
+    pico_uart_add_unity_test(test_boot_config_${_family} boot_config_${_family} test_boot_config.c)
+    target_include_directories(test_boot_config_${_family} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
+    target_compile_definitions(test_boot_config_${_family} PRIVATE
+        PICO_RP2350=$<STREQUAL:${_family},rp2350>
+        PICO_FLASH_SIZE_BYTES=4096
+        PICO_UART_CONFIG_FLASH_SIZE=4096
+        PICO_UART_CONFIG_FLASH_OFFSET=0
+    )
+endforeach()
 
 pico_uart_add_unity_test(test_service_load service_load
     test_service_load.c

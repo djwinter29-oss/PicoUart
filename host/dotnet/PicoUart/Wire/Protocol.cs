@@ -136,8 +136,8 @@ public static class Protocol
         var active = BinaryPrimitives.ReadUInt32LittleEndian(payload[8..]);
         Require(source < sources.Length && reason < reasons.Length && reserved == 0,
             "invalid configuration source, reason, or reserved field");
-        Require((stored <= 2 || stored == uint.MaxValue) && active <= 2, "invalid configuration profile");
-        Require(source != 1 || (reason == 0 && stored <= 2 && active == stored), "inconsistent stored configuration");
+        Require((stored <= 4 || stored == uint.MaxValue) && active <= 4, "invalid configuration profile");
+        Require(source != 1 || (reason == 0 && stored <= 4 && active == stored), "inconsistent stored configuration");
         Require(source != 2 || reason != 0, "inconsistent recovery configuration");
         return new(sources[source], reasons[reason], stored == uint.MaxValue ? null : stored, active);
     }
@@ -149,20 +149,20 @@ public static class Protocol
         Require(payload[1] <= 5 && payload[2] == 0 && payload[3] == 0,
             "invalid configuration save status or reserved fields");
         var profile = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
-        Require(profile <= 2 || (payload[1] is 0 or 3 && profile == uint.MaxValue),
+        Require(profile <= 4 || (payload[1] is 0 or 3 && profile == uint.MaxValue),
             "invalid configuration save profile");
         return new(payload[1], profile == uint.MaxValue ? null : profile);
     }
 
     public static byte[] BuildConfigurationSave(uint profile, bool unsafeOverclock, byte mcuId)
     {
-        if (profile > 2)
+        if (profile > 4)
             throw new ArgumentOutOfRangeException(nameof(profile), "unknown system clock profile");
         if (mcuId is not (1 or 2))
             throw new ArgumentException("configuration save requires a known board MCU", nameof(mcuId));
         if (profile != 0 && !unsafeOverclock)
             throw new ArgumentException("explicit unsafe overclock acknowledgement is required", nameof(unsafeOverclock));
-        if (profile != 0 && profile != mcuId)
+        if (profile is 1 or 2 && profile != mcuId)
             throw new ArgumentException("system clock profile does not match the board MCU", nameof(profile));
         var payload = new byte[ConfigurationSaveSize];
         payload[0] = 1;

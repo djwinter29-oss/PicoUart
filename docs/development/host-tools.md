@@ -329,7 +329,8 @@ requested profile became active. A verified save does not establish overclock st
 Unavailable save reports disable Save without hiding other valid diagnostics.
 
 Python and .NET expose `POST /api/configuration?board=<id>` with the same session CSRF header as board actions.
-The JSON object must contain exactly `profile` (integer `0`, `1`, or `2`) and `unsafe_overclock` (boolean).
+The JSON object must contain exactly `profile` (integer `0` through `4`, using the IDs in the linked HID report) and
+`unsafe_overclock` (boolean).
 The selected board's client checks MCU compatibility and acknowledgement; firmware validates them independently.
 HTTP success (`{"ok": true}`) means firmware reported a verified save, not just a successful HID transfer.
 Snapshots expose the independent `configuration_save` result (`status`, nullable `profile`) and

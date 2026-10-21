@@ -86,7 +86,7 @@ public sealed class ProtocolTests
         payload[2] = 6;
         Assert.Equal("recovery", Protocol.ParseConfiguration(payload).Source);
 
-        foreach (var (offset, value) in new (int, byte)[] { (0, 2), (1, 3), (2, 8), (3, 1), (8, 3) })
+        foreach (var (offset, value) in new (int, byte)[] { (0, 2), (1, 3), (2, 8), (3, 1), (8, 5) })
         {
             var invalid = (byte[])payload.Clone();
             invalid[offset] = value;
@@ -134,6 +134,28 @@ public sealed class ProtocolTests
         BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 0);
         BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(17), 65535);
         Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(runtime));
+    }
+
+    [Theory]
+    [InlineData(3u, (byte)1)]
+    [InlineData(4u, (byte)1)]
+    [InlineData(3u, (byte)2)]
+    [InlineData(4u, (byte)2)]
+    public void AdditionalClockProfilesRoundTrip(uint profile, byte mcuId)
+    {
+        var configuration = new byte[12];
+        configuration[0] = 1;
+        configuration[1] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(configuration.AsSpan(4), profile);
+        BinaryPrimitives.WriteUInt32LittleEndian(configuration.AsSpan(8), profile);
+        Assert.Equal(new ConfigurationStatus("stored", "none", profile, profile),
+            Protocol.ParseConfiguration(configuration));
+
+        var request = Protocol.BuildConfigurationSave(profile, true, mcuId);
+        Assert.Equal(profile, BinaryPrimitives.ReadUInt32LittleEndian(request.AsSpan(4)));
+        request[1] = 2;
+        Assert.Equal(new ConfigurationSaveStatus(2, profile), Protocol.ParseConfigurationSave(request));
+        Assert.Throws<ArgumentException>(() => Protocol.BuildConfigurationSave(profile, false, mcuId));
     }
 
     [Theory]

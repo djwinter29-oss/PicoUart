@@ -12,39 +12,30 @@
 /** @brief Capture the SDK watchdog distinction before watchdog_enable replaces its scratch marker. */
 static bool watchdog_recovery;
 
-/** @brief SDK-selected target family used for both boot validation and writes. */
-static const bool system_rp2350 =
-#if defined(PICO_RP2350A) || defined(PICO_RP2350B) || (defined(PICO_RP2350) && PICO_RP2350)
-        true;
-#else
-        false;
-#endif
-
 /** @copydoc system_init_clock */
 void system_init_clock(void)
 {
-    boot_config_load(system_rp2350, watchdog_recovery);
-    const boot_config_status_t *config_status = boot_config_get();
-    uint32_t khz = boot_config_clock_khz(config_status->active_profile);
+    boot_config_load(watchdog_recovery);
+    uint32_t khz = watchdog_recovery ? 0u : boot_config_clock_khz(boot_config_get()->clock_profile);
     if (khz != 0u && !set_sys_clock_khz(khz, false)) {
-        boot_config_status_t failed = *config_status;
-        failed.active_profile = BOOT_CLOCK_DEFAULT;
-        failed.source = BOOT_CONFIG_DEFAULTS;
-        failed.reason = BOOT_CONFIG_CLOCK_UNAVAILABLE;
-        boot_config_set(&failed);
+        boot_config_clock_unavailable();
     }
 }
 
 /** @copydoc system_boot_config_status */
 const boot_config_status_t *system_boot_config_status(void)
 {
-    return boot_config_get();
+    return boot_config_get_status();
 }
 
 /** @copydoc system_save_clock_profile */
 bool system_save_clock_profile(uint32_t profile)
 {
-    return boot_config_save(profile, system_rp2350);
+    if (!boot_config_profile_supported(profile)) {
+        return false;
+    }
+    const boot_config_t config = {.clock_profile = (boot_clock_profile_t)profile};
+    return boot_config_set(&config) && boot_config_save();
 }
 
 /** @copydoc system_watchdog_enable */

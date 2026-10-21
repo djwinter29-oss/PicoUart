@@ -18,7 +18,7 @@ FLASH_BASE = 0x10000000
 SECTOR_SIZE = 4096
 PAGE_SIZE = 256
 RECORD_SIZE = 36
-PROFILES = {"default": 0, "250mhz": 1, "280mhz": 2}
+PROFILES = {"default": 0, "250mhz": 1, "280mhz": 2, "200mhz": 3, "150mhz": 4}
 
 
 def load_layout(build_dir: Path) -> dict:
@@ -42,7 +42,7 @@ def load_layout(build_dir: Path) -> dict:
 
 def check_profile(profile: str, family: str, unsafe: bool) -> None:
     if profile != "default":
-        if profile != {"rp2040": "250mhz", "rp2350": "280mhz"}[family]:
+        if profile not in ("200mhz", "150mhz", {"rp2040": "250mhz", "rp2350": "280mhz"}[family]):
             raise ValueError(f"{profile} is not supported on {family}")
         if not unsafe:
             raise ValueError("non-default clocks require --unsafe-overclock")

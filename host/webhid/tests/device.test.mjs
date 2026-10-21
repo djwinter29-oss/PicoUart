@@ -258,8 +258,12 @@ test("configuration diagnostics decode profiles and reject malformed reports", (
   });
   assert.equal(decodeConfigurationReport(configurationReport(1, 0, 0, 0)).stored_profile, 0);
   assert.equal(decodeConfigurationReport(configurationReport(2, 6, 1, 0)).source, "recovery");
+  for (const profile of [3, 4]) {
+    assert.equal(decodeConfigurationReport(configurationReport(1, 0, profile, profile)).active_profile, profile);
+    assert.deepEqual(decodeConfigurationSaveReport(configurationSaveReport(2, profile)), { status: 2, profile });
+  }
   for (const invalid of [
-    configurationReport(3), configurationReport(0, 8), configurationReport(0, 0, 0, 3),
+    configurationReport(3), configurationReport(0, 8), configurationReport(0, 0, 0, 5),
     configurationReport(1, 1, 1), configurationReport(1, 0, 0, 1),
     configurationReport(2, 0, 1), new DataView(new ArrayBuffer(12)),
   ]) assert.throws(() => decodeConfigurationReport(invalid));
@@ -629,6 +633,19 @@ test("configuration save requires an explicit overclock acknowledgement and veri
   assert.equal(client.state.phase, "connected");
   await client.disconnect();
 });
+
+for (const profile of [3, 4]) {
+  test(`predefined clock profile ${profile} saves with explicit acknowledgement`, async () => {
+    const hid = new FakeHid();
+    const client = new PicoUartWebHid(hid);
+    await client.connect();
+    hid.devices[0].input(closedStatusReport());
+    await client.saveConfiguration(profile, true);
+    assert.deepEqual(hid.devices[0].writes, [[17, [1, 1, 0, 0, profile, 0, 0, 0]]]);
+    assert.equal(client.state.dashboard.configuration_save.profile, profile);
+    await client.disconnect();
+  });
+}
 
 test("SDK-default save uses no unsafe flag, rejects open CDC ports, and only accepts target profiles", async () => {
   const hid = new FakeHid();

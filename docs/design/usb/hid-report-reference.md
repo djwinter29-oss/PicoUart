@@ -94,14 +94,22 @@ possible causes, but this report cannot identify which one occurred. See [Hardwa
 Report 16 is read-only diagnostic metadata for boot-time configuration selection. It does not expose raw flash bytes,
 credentials, or mutable settings. This snapshot remains unchanged after a report-17 save until the next boot.
 
+Firmware settings are a separate private cache accessed through `boot_config_get`, `boot_config_set`, and
+`boot_config_save`. Its `clock_profile` field selects a predefined clock; the default profile preserves the SDK clock.
+A private table maps stable profile IDs to exact frequencies and supported targets. Target-family detection and profile
+validation are internal to the module. The same IDs are used in settings, storage, and HID. Watchdog recovery or
+clock-application failure can bypass a
+stored request without changing that request. Invalid or corrupt storage selects defaults in RAM and never triggers an
+automatic flash rewrite.
+
 | Offset | Size | Field | Meaning |
 | -----: | ---: | ----- | ------- |
 | 0 | 1 | `version` | Independent layout version, currently `1`. |
 | 1 | 1 | `source` | Active source: defaults=`0`, stored=`1`, recovery=`2`. |
 | 2 | 1 | `reason` | Validation/recovery reason: none=`0`, erased=`1`, invalid_header=`2`, crc_failed=`3`, unsupported_version=`4`, invalid_profile=`5`, watchdog_recovery=`6`, clock_unavailable=`7`. |
 | 3 | 1 | `reserved0` | Reserved, zero. |
-| 4 | 4 | `stored_profile` | Stored profile ID (`0` default, `1` 250 MHz, `2` 280 MHz, `0xffffffff` unavailable). |
-| 8 | 4 | `active_profile` | Active profile ID (`0`, `1`, `2`). |
+| 4 | 4 | `stored_profile` | Stored profile ID (`0` default, `1` 250 MHz, `2` 280 MHz, `3` 200 MHz, `4` 150 MHz, `0xffffffff` unavailable). |
+| 8 | 4 | `active_profile` | Active profile ID (`0` through `4`). |
 
 Unknown versions, inconsistent enums, or nonzero reserved bytes are rejected by host tools. Source `stored` requires
 matching stored and active profiles, including profile `0` (SDK default with no clock reconfiguration).
@@ -116,7 +124,7 @@ little-endian integers and independent layout version `1`.
 | 0 | 1 | `version = 1` | `version = 1` |
 | 1 | 1 | `flags`: bit 0 acknowledges unsafe overclocking; other bits zero | `status`: idle=`0`, pending=`1`, saved=`2`, invalid=`3`, CDC busy=`4`, flash failed=`5` |
 | 2 | 2 | Reserved, zero | Reserved, zero |
-| 4 | 4 | Requested `profile`: `0` SDK default, `1` 250 MHz (RP2040 only), `2` 280 MHz (RP2350 only) | Requested profile, or `0xffffffff` when unavailable (idle/invalid only) |
+| 4 | 4 | Requested `profile`: `0` SDK default, `1` 250 MHz (RP2040 only), `2` 280 MHz (RP2350 only), `3` 200 MHz (both), `4` 150 MHz (both) | Requested profile, or `0xffffffff` when unavailable (idle/invalid only) |
 
 An exact-size, valid request is queued; the USB poll loop performs the write outside the TinyUSB control callback.
 Non-default profiles require flags bit 0. Unknown profiles, wrong-family profiles, missing acknowledgement, and invalid
