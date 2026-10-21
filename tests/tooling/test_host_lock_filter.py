@@ -28,18 +28,18 @@ def test_python_filter_is_used_by_host_test_runner(repo_root):
     assert "filter_lock_exclude.py" in script
 
 
-def test_hidapi_filter_drops_hidapi_and_its_only_dependent_setuptools(repo_root):
+def test_hidapi_filter_retains_setuptools_needed_by_vcs_builds(repo_root):
     lock = (repo_root / "host/python/requirements-lock.txt").read_text()
     filtered = _run_filter(repo_root, lock, "hidapi")
 
     assert "\nhidapi==" not in ("\n" + filtered)
-    assert "\nsetuptools==" not in ("\n" + filtered)
+    assert "\nsetuptools==" in ("\n" + filtered)
     # via-hidapi comment must not survive as a dangling reference either.
     assert "# via hidapi" not in filtered
 
     original_count = lock.count("# via")
     filtered_count = filtered.count("# via")
-    assert filtered_count == original_count - 2  # hidapi + setuptools removed
+    assert filtered_count == original_count - 1
 
     # Every other locked package (and its hashes) must be preserved verbatim.
     for package in (
@@ -152,7 +152,7 @@ sys.exit(0)
     assert all("--require-hashes" in call["args"] for call in installs)
     filtered = installs[1]
     assert "hidapi==" not in filtered["text"]
-    assert "setuptools==" not in filtered["text"]
+    assert "setuptools==" in filtered["text"]
     assert not os.path.exists(filtered["path"])
     assert result.returncode == int(fallback_fails)
     assert any("pytest" in call["args"] for call in calls) is not fallback_fails

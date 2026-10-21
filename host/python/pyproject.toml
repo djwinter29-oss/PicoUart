@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling==1.32.4", "hatch-vcs==0.5.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -29,10 +29,23 @@ Releases = "https://github.com/djwinter29-oss/PicoUart/releases"
 [project.scripts]
 pico-uart = "pico_uart.cli:main"
 
+[dependency-groups]
+test = ["pytest==8.3.5"]
+dev = [
+	{include-group = "test"},
+	"pytest-cov==6.2.1",
+	"hatchling==1.32.4",
+	"hatch-vcs==0.5.0",
+	"editables==0.5",
+]
+
 [tool.hatch.version]
-source = "code"
-path = "hatch_build.py"
-expression = "get_version()"
+source = "vcs"
+tag-pattern = '^v(?P<version>\d+\.\d+\.\d+)$'
+fallback-version = "0.0.0.dev0"
+
+[tool.hatch.version.raw-options]
+search_parent_directories = true
 
 [tool.hatch.build.hooks.custom]
 
@@ -40,7 +53,7 @@ expression = "get_version()"
 packages = ["src/pico_uart"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/hatch_build.py", "/requirements*.txt"]
+include = ["/src", "/hatch_build.py", "/requirements*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

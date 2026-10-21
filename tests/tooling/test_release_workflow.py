@@ -206,7 +206,11 @@ def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -
     assert "workflow_dispatch:" in job
     assert "contents: write" not in job
     assert "pip wheel" not in job
-    assert "PICO_UART_HOST_VERSION: ${{ steps.version.outputs.version }}" in text
+    python_job = text.split("\n  python-package:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    assert "fetch-depth: 0" in python_job
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION:" in python_job
+    assert "${{ github.event_name == 'workflow_dispatch' && steps.version.outputs.version || '' }}" in python_job
+    assert "PICO_UART_HOST_VERSION:" not in python_job
     assert "--self-contained true" in job
     assert '-p:Version="$VERSION"' in job
     assert "Verify installed Python release" in text
@@ -219,6 +223,12 @@ def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -
     publish = text.split("\n  publish:\n", 1)[1]
     assert 'require_release_checks.py --sha "$SOURCE_SHA"' in publish
     assert publish.index("Require successful PR checks") < publish.index("Create draft GitHub Release")
+
+
+def test_python_test_publication_overrides_git_version():
+    text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION: 0.0.0.dev${{ github.run_id }}" in text
+    assert "PICO_UART_HOST_VERSION:" not in text
 
 
 @pytest.mark.parametrize("workflow,step_name", [

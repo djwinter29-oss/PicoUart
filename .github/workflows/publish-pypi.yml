@@ -136,7 +136,7 @@ jobs:
 
       - name: Build development wheel
         env:
-          PICO_UART_HOST_VERSION: 0.0.0.dev${{ github.run_id }}
+          SETUPTOOLS_SCM_PRETEND_VERSION: 0.0.0.dev${{ github.run_id }}
         run: python -m pip wheel --no-deps host/python --wheel-dir dist
 
       - name: Verify installed development wheel

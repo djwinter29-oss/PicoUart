@@ -64,21 +64,38 @@ Measure package coverage from `host/python` with:
 
 ## Python Dependencies and Locking
 
-`requirements.txt` lists runtime dependencies. `requirements-dev.txt` adds the test runner. The Python launcher installs
-`requirements-runtime-lock.txt` from public PyPI, without inheriting private pip index configuration. CI and release
-qualification install `requirements-lock.txt` with hash verification. After changing direct dependencies, regenerate both
-locks from
-the repository root with:
+Edit dependency declarations only in [pyproject.toml](../../host/python/pyproject.toml): `project.dependencies` contains
+runtime packages, the `test` dependency group contains pytest, and `dev` adds coverage and build tools.
+`build-system.requires` declares the isolated build backend and plugin. TOML contains version requirements, not hashes.
+
+The lock files are generated installation inputs; do not edit their versions or hashes by hand:
+
+| Generated File | Used For |
+| --- | --- |
+| [requirements-runtime-lock.txt](../../host/python/requirements-runtime-lock.txt) | Runtime-only launcher and installed-release checks |
+| [requirements-lock.txt](../../host/python/requirements-lock.txt) | Development and host CI, including test and build tools |
+| [requirements-voltage-lock.txt](../../host/python/requirements-voltage-lock.txt) | Minimal Linux/Python 3.12 pytest environment for firmware-artifact checks |
+
+These describe dependency environments, not PicoUart release versions. Installers retain `--require-hashes`; the Python
+launcher uses public PyPI without inheriting private index configuration. Regenerate all three locks from the repository
+root in this order, constraining the smaller environments to the development lock's versions:
 
 ```bash
-uv pip compile host/python/requirements-dev.txt --universal --python-version 3.10 \
+uv pip compile host/python/pyproject.toml --group host/python/pyproject.toml:dev \
+  --universal --python-version 3.10 \
   --generate-hashes --no-emit-index-url --output-file host/python/requirements-lock.txt
-uv pip compile host/python/requirements.txt --universal --python-version 3.10 \
+uv pip compile host/python/pyproject.toml --constraint host/python/requirements-lock.txt \
+  --universal --python-version 3.10 \
   --generate-hashes --no-emit-index-url --output-file host/python/requirements-runtime-lock.txt
+uv pip compile --group host/python/pyproject.toml:test --constraint host/python/requirements-lock.txt \
+  --python-version 3.12 --python-platform x86_64-unknown-linux-gnu \
+  --generate-hashes --no-emit-index-url --output-file host/python/requirements-voltage-lock.txt
 ```
 
-The [dependency contract tests](../../tests/contracts/test_firmware_contract.py) check direct pins, alignment between both
-locks, and that the runtime lock contains no test packages. hidapi `0.14.0.post4` supplies a Python 3.13 Linux ARM64 wheel,
+The [dependency contract tests](../../tests/contracts/test_firmware_contract.py) check direct pins, runtime/development
+alignment, and that the runtime lock contains no test packages. The
+[firmware CI contracts](../../tests/contracts/test_voltage_ci_contract.py) verify the minimal lock's exact pytest subset.
+hidapi `0.14.0.post4` supplies a Python 3.13 Linux ARM64 wheel,
 avoiding the original `0.14.0` source-build failure on that platform.
 
 ## Python Distribution
@@ -92,10 +109,18 @@ Build the wheel from the repository root:
 uv build --wheel --directory host/python
 ```
 
-Hatchling builds the package from `pyproject.toml`; `hatch_build.py` selects the version from
-`PICO_UART_HOST_VERSION`, preserves it when rebuilding a source distribution, and defaults to `0.0.0.dev0` in a checkout.
-The hook also bundles the canonical `host/web` assets so source distributions build without the rest of the repository.
-Hatchling is included in the locked development environment for editable installs without build isolation.
+Hatchling uses `hatch-vcs` to derive version `1.2.3` from Git tag `v1.2.3` and development versions from later commits.
+The nested package searches parent directories for the repository; fetch full history and tags for release builds.
+Source distributions preserve the resolved version without Git. With neither Git metadata nor a source-distribution
+version, the fallback is `0.0.0.dev0`. Use `SETUPTOOLS_SCM_PRETEND_VERSION` for an explicit test-build version.
+
+`hatch_build.py` bundles the canonical `host/web` assets so source distributions build without the rest of the repository.
+Package tests require the repository checkout and are not included in source distributions or wheels.
+Hatchling, its VCS plugin, and the editable-install helper are included in the locked development environment.
+Builds fail if required dashboard assets are missing from both the checkout and the bundled source tree.
+Keep `build-system.requires` pins aligned with the TOML `dev` group and regenerate the development lock when
+updating them. Tag-push releases use Git versions; manual release preflights override the version with their input tag,
+and manual PyPI test publications override it with a marked development version.
 
 The project metadata points PyPI at `host/python/README.md` for its long description. Keep that file focused on package
 users; contributor setup and maintenance instructions belong in this guide.
@@ -135,11 +160,12 @@ native browser/OS USB compatibility; see the [hardware test index](../tests/READ
 The backend label and **App v** version share a secondary line beneath **PicoUart** in the top bar. This identifies the
 host application, not the board's firmware. Python obtains its installed version through `importlib.metadata`; .NET
 uses its assembly informational version. The backends pass these values into the shared HTML template; `host/web`
-contains no application version metadata. Tagged release builds set Python package metadata through
-`PICO_UART_HOST_VERSION` and .NET metadata through `dotnet publish -p:Version=...`.
-`PICO_UART_HOST_VERSION` remains an optional runtime override; an unset or empty value uses native build metadata.
-Python development packages use `0.0.0.dev0`, displayed as `0.0.0-debug`; .NET uses `0.0.0-debug` directly. Reinstall an
-editable Python package after changing its metadata. None of these settings changes the board's firmware version.
+contains no application version metadata. Tagged Python builds derive their package version from Git through
+`hatch-vcs`; .NET builds use `dotnet publish -p:Version=...`.
+`PICO_UART_HOST_VERSION` is only an optional runtime display override; an unset or empty value uses native build metadata.
+Python Git checkouts produce VCS-derived versions; the no-Git fallback `0.0.0.dev0` displays as `0.0.0-debug`.
+.NET uses `0.0.0-debug` for development. Reinstall an editable Python package after commits or tags change its version.
+None of these settings changes the board's firmware version.
 
 Python and .NET serve the same frontend from `host/web`. Keep templates backend-neutral and preserve the shared JSON
 contract; do not add a second frontend. The [.NET integration tests](../../tests/tooling/test_dotnet_host.py) guard
