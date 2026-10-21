@@ -65,7 +65,7 @@ detection.
 
 1. **Get the firmware.** Download the rated **`pico`** or **`pico2`** firmware for your board from
    [Releases](https://github.com/djwinter29-oss/PicoUart/releases).
-2. **Connect the hardware.** [Flash the firmware](docs/releasing.md#flashing-release-artifacts) and connect the board
+2. **Connect the hardware.** [Flash the firmware](docs/deployment/releasing.md#flashing-release-artifacts) and connect the board
     over USB. Check the [hardware setup](docs/hardware-setup.md) before connecting UART devices.
 3. **Use the serial ports.** Open the port for the wired UART in your terminal or test script and set the baud rate and
    framing for the connected device.
@@ -154,10 +154,10 @@ With the [pico-uart](https://pypi.org/project/pico-uart/) package installed as a
 | Need | Guide |
 | --- | --- |
 | Connect UART devices | [Hardware setup](docs/hardware-setup.md) |
-| Understand USB and UART behavior | [CDC/HID overview](docs/design/usb/cdc-hid-overview.md), [architecture](docs/architecture.md) |
+| Understand USB and UART behavior | [CDC/HID overview](docs/design/usb/cdc-hid-overview.md), [architecture](docs/design/architecture.md) |
 | Build or modify firmware | [Firmware build guide](firmware/build-and-config.md), [development and testing](docs/development/firmware-testing.md) |
 | Develop host applications | [Host development](docs/development/host-tools.md), [distribution plan](docs/development/host-distribution.md) |
-| Publish or test a release | [Release workflows and qualification](docs/releasing.md) |
+| Publish or test a release | [Release workflows and qualification](docs/deployment/releasing.md) |
 | Contribute | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md) |
 
 Firmware is checked on a physical fixture ([test records](docs/tests/README.md)). Host tests do not replace hardware

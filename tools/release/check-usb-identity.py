@@ -32,7 +32,7 @@ def main() -> int:
     print(
         "Using cafe:4010, this repository's unallocated lab USB identity. "
         "It is permitted for published PicoUart project artifacts but must not be reused "
-        "for commercial devices. See docs/releasing.md and SECURITY.md."
+        "for commercial devices. See docs/deployment/releasing.md and SECURITY.md."
     )
     return 0
 

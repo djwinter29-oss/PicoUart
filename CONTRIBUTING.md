@@ -38,7 +38,7 @@ For Python tests, use the virtual environment from the
 
 Hardware HIL is not required for every pull request. If hardware is unavailable, report that limitation rather than
 claiming hardware validation. Exact-artifact HIL is required for release qualification; see the
-[release gates](docs/releasing.md#release-hil-gates).
+[release gates](docs/deployment/releasing.md#release-hil-gates).
 
 ## Pull Requests
 

@@ -22,6 +22,8 @@ Mailbox acknowledgement and worker-ownership changes must be atomic under the sh
 reject or timeout could clear `CONTROL_PENDING` after mailbox acknowledgement but before worker ownership is visible,
 allowing TX during an active format change. The worker also checks its deadline immediately before touching the backend,
 so a late apply cannot report success after timeout.
+Memory ordering and cross-core synchronization are defined in
+[Architecture: Inter-Core Coordination](architecture.md#inter-core-coordination).
 
 ```mermaid
 sequenceDiagram
@@ -30,13 +32,16 @@ sequenceDiagram
   participant Mailbox as "Per-port mailbox"
   participant Worker as "UART worker / core 1"
   participant Backend as "UART backend"
-  participant HID as "HID status"
+  participant HID as "Shared HID-visible status"
 
   Host->>USB: SET_LINE_CODING
   USB->>USB: Validate and mark soft-pending
-  USB->>Mailbox: Publish request + generation + TX boundary
   USB->>HID: CONTROL_PENDING = 1
-  Worker->>Mailbox: Take and acknowledge request
+  USB->>Mailbox: Publish request + generation + TX boundary
+  critical Mailbox-to-worker handoff under status lock
+    Worker->>Mailbox: Copy request and acknowledge slot
+    Worker->>Worker: Retain or register worker ownership
+  end
   Worker->>Worker: Validate backend support
   Worker->>Worker: Wait for TX boundary and backend idle
   Worker->>Backend: Apply line coding
@@ -49,9 +54,13 @@ firmware applies or rejects it. Hosts must watch HID health bit 2 (`control_erro
 
 ## Ownership States
 
-`CONTROL_PENDING` remains set while any of the soft-pending, mailbox, or worker owners remain. It blocks new TX bytes
-until the captured old-format boundary is drained. Clear it only after all owners have completed; a newer reject must
-not unblock TX while an older apply is still active.
+`CONTROL_PENDING` remains set while any of the soft-pending, mailbox, or worker owners remain. It blocks admission of
+new USB-to-UART bytes throughout that interval. Already-queued TX bytes may drain toward the captured old-format
+boundary so reconfiguration can proceed, but draining that boundary alone does not clear pending state or admit new
+bytes. Clear it only after all owners have completed; a newer reject must not unblock TX while an older apply is active.
+
+Mailbox acknowledgement releases the slot, not the worker's deferred apply. Backend reconfiguration can still be
+pending after the mailbox becomes empty.
 
 ## Generations and Stale Completions
 
@@ -77,13 +86,14 @@ state. Canceled requests must not later produce timeout errors.
 ## Host-Visible Rules
 
 - `SET_LINE_CODING` may look successful to the host even when firmware rejects the request later.
-- `CONTROL_PENDING` means the port is waiting for mailbox or backend ownership to settle.
+- `CONTROL_PENDING` means soft-pending, mailbox, or worker ownership has not yet settled.
 - `CONTROL_ERROR` means the most recent host control request failed, timed out, or was unsupported.
 - Data transfer tests should include HID monitoring; clean byte transfer without clean HID health is incomplete
   evidence.
 
 ## Test Coverage
 
-Host tests cover mailbox ownership, deadlines, stale completions, and TX blocking. They do not validate TinyUSB
-lifecycle or backend quiescing; those require physical hardware. See the
+Host tests cover mailbox ownership, deadlines, stale completions, and TX blocking, including modeled cancellation and
+deadline-reset behavior for USB lifecycle events. These checks do not establish real TinyUSB bus lifecycle behavior,
+backend quiescence, or physical timing under load; those require hardware validation. See the
 [HIL fixture plan](../tests/hil-fixture-test-plan.md).

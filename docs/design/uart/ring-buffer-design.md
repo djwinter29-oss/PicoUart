@@ -5,7 +5,7 @@
 Each logical UART port uses a TX ring for USB-to-UART data and an RX ring for UART-to-USB data. This document covers
 their ownership, synchronization, overflow/backpressure policy, and relationship to DMA. The overall bridge is described
 in [UART Subsystem](README.md); cross-core synchronization is detailed in
-[Multicore Ownership Design](../multicore-ownership-design.md).
+[Architecture: Inter-Core Coordination](../architecture.md#inter-core-coordination).
 
 ## Current Design: Split RX And TX Rings Per Port
 
@@ -23,13 +23,13 @@ Each logical port owns two separate ring buffers:
 
 Each ring is single-producer/single-consumer. Core 0 owns USB and bridge-side operations; core 1 owns UART service. The
 core ownership and cursor memory-ordering guarantees are detailed in
-[Multicore Ownership Design](../multicore-ownership-design.md).
+[Architecture: Ring Ownership](../architecture.md#ring-ownership).
 
 ## Capacity
 
-Ring capacities are configured in [capacity_config.h](../../../firmware/src/config/capacity_config.h). Sizes must remain
-powers of two; compile-time checks keep DMA ring selectors consistent. Capacity changes affect RAM use and the rate at
-which overflow or backpressure occurs.
+Each port has fixed RX and TX capacities. Sizes must remain powers of two, and DMA-backed storage must meet the
+backend's alignment requirements. Capacity changes affect reserved RAM and the rate at which overflow or backpressure
+occurs; they do not change the ownership or loss policy.
 
 ## Overflow and Backpressure Policy
 
@@ -42,14 +42,17 @@ available. This preserves host-byte ordering and lets USB apply backpressure ins
 
 ## Ring API and DMA
 
-The backend-agnostic API is declared in
-[ring_buffer.h](../../../firmware/src/uart/ring_buffer/ring_buffer.h). It exposes contiguous spans with explicit commit
-operations; commits must stay within the most recently reserved span. A copied RX
-snapshot must be validated before the consumer cursor advances because live DMA can overwrite the source span.
+The ring contract exposes contiguous spans with explicit commit operations. Each side has at most one current span
+reservation; requesting another replaces that side's previous reservation. A commit must stay within the current
+reservation and satisfy its cursor-validity checks.
 
-RX DMA publishes progress into the RX ring without an intermediate queue. TX DMA consumes a reserved contiguous span
-and commits it only after transfer completion. Backend-specific DMA behavior belongs in the
-[Hardware UART](hardware-uart-design.md) and [PIO UART](pio-uart-design.md) designs.
+RX DMA writes ring storage directly, and the backend publishes observed progress into the producer cursor. Before
+forwarding a copied RX span to USB, the bridge validates the reservation against live DMA progress and a coherent
+backend snapshot. It retires only bytes accepted by the USB writer; overwritten data is handled by the loss policy.
+
+TX DMA holds a reserved contiguous span until DMA completion, then commits consumption. That frees ring storage but
+does not establish wire-level TX idle; the peripheral can still be shifting bytes. Backend-specific DMA behavior belongs
+in the [Hardware UART](hardware-uart-design.md) and [PIO UART](pio-uart-design.md) designs.
 
 ## Observability
 

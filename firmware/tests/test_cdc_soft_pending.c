@@ -112,8 +112,8 @@ void test_rejected_follow_up_invalidates_prior_soft_pending_completion(void)
  * full TinyUSB device-stack + UART-driver mock rather than a small seam (unlike
  * test_dma_claim.c/test_resource_claim.c, which fault-inject a narrow ops
  * table around an otherwise self-contained algorithm). That integration is
- * covered on-target by the board-testing skill / docs/releasing.md HIL gate
- * instead (rapid line-coding changes with a queued TX backlog, per docs/releasing.md step 5).
+ * covered on-target by the board-testing skill / docs/deployment/releasing.md HIL gate
+ * instead (rapid line-coding changes with a queued TX backlog, per docs/deployment/releasing.md step 5).
  *
  * This test instead walks the exact sequence usb_cdc.c performs around a host
  * reset (tud_mount_cb/tud_umount_cb -> usb_cdc_reset_host_state), using the

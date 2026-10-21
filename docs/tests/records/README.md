@@ -32,4 +32,4 @@ Reports intentionally omit child command lines and verbose monitor transcripts. 
 while a run is in progress. Standalone phase entries are appended to the ignored local log at `build/hil-results.md`.
 
 A local record is evidence, not automatic release qualification. Release evidence must use the exact packaged artifacts
-and pass the gates in [Releasing](../../releasing.md).
+and pass the gates in [Releasing](../../deployment/releasing.md).

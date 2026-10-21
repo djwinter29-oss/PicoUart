@@ -99,7 +99,7 @@ dotnet build/host-dotnet/PicoUart.dll web --port 5001
 
 For self-contained publishing, add `--self-contained true -r linux-x64` instead, or the appropriate target identifier.
 Keep the whole output directory, including `web`. Use `-p:Version=1.2.3` to embed an explicit application version.
-For release archives and packaging-only test runs, follow the [.NET release procedure](../../docs/releasing.md#net-packaging).
+For release archives and packaging-only test runs, follow the [.NET release procedure](../../docs/deployment/releasing.md#net-packaging).
 
 Unit and cross-backend integration commands are in the [.NET development guide](../../docs/development/host-tools.md#net-development).
 Host tests do not establish physical UART behavior or qualify a release; see the [test index](../../docs/tests/README.md).

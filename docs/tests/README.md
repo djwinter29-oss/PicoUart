@@ -47,7 +47,7 @@ physical UART signaling, or RTS/CTS behavior.
 2. Follow the [HIL Fixture Test Plan](hil-fixture-test-plan.md), which runs functional checks before performance.
 3. The combined runner creates a dated record in [records](records/README.md); standalone phase runners log locally to
    `build/hil-results.md`.
-4. For releases, use the exact packaged artifacts and follow [Releasing](../releasing.md).
+4. For releases, use the exact packaged artifacts and follow [Releasing](../deployment/releasing.md).
 
 From the repository root, run the combined functional and concurrent-performance checks and generate a dated result:
 

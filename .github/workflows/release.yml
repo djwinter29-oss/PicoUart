@@ -251,7 +251,7 @@ jobs:
           files: dist/*
           fail_on_unmatched_files: true
           body: |
-            Draft release — complete `docs/releasing.md` before publishing:
+            Draft release — complete `docs/deployment/releasing.md` before publishing:
             - Confirm packaged artifact SHAs match the recorded HIL images on the rated **pico** (125 MHz) and **pico2** (150 MHz) builds
             - Optional overclock profiles are selected on-device through the persistent configuration sector and require exact-board HIL qualification
             - Some Pico 2 boards may not support 300 MHz reliably; the reduced 280 MHz target still requires exact-board HIL before any stability claim

@@ -83,4 +83,4 @@ For WebHID, run setup on the Linux computer running the browser, not just on a r
 - [Project README](../README.md)
 - [Firmware build and configuration](../firmware/build-and-config.md)
 - [HIL Fixture Test Plan](../docs/tests/hil-fixture-test-plan.md)
-- [Releasing](../docs/releasing.md)
+- [Releasing](../docs/deployment/releasing.md)

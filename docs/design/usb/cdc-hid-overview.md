@@ -5,8 +5,8 @@ PicoUart exposes one composite USB device with two host-facing interface types:
 - six CDC ACM serial ports for UART data and UART line coding
 - one vendor HID interface for status, diagnostics, and narrow board controls
 
-Use CDC for normal serial traffic. Use HID to observe whether the bridge is healthy and whether a CDC control request
-was accepted by firmware.
+Use CDC for normal serial traffic. Use HID to observe bridge health, pending or failed CDC control requests, and the
+UART settings actually applied. USB transfer success alone does not establish successful reconfiguration.
 
 ## Interface Roles
 
@@ -28,12 +28,18 @@ result; request ownership and deferred application are described in [Control Pla
 
 ## HID Behavior
 
-HID carries no UART data and cannot select UART pins or backends. It reports bridge health and board metadata, with
-narrowly scoped board controls. Exact report layouts, health bits, and command semantics are defined in the
+HID carries no UART data and cannot select UART pins or backends. It reports bridge health, board metadata, and applied
+UART settings. Board controls include LED toggling, capability-gated reset, and persistent boot-time clock-profile
+saving.
+A verified configuration save automatically reboots the board, independently of the optional reset-command capability;
+see the [save contract](hid-report-reference.md#report-17-save-persistent-clock-profile) before using it.
+Exact report layouts, health bits, and command semantics are defined in the
 [HID Report Reference](hid-report-reference.md).
 
 ## Typical Host Workflow
 
-During bring-up and testing, check HID health alongside the CDC byte stream. Host commands and hardware acceptance
-criteria are documented in the [Python host guide](../../../host/python/README.md) and
+Set UART baud and framing through CDC. Wait for HID pending state to settle, inspect control errors, and verify the
+reported applied settings; pending state clearing alone is not proof of success. During traffic tests, monitor HID
+health and traffic statistics alongside the CDC byte stream. Host commands and hardware acceptance criteria are
+documented in the [Python host guide](../../../host/python/README.md) and
 [HIL Fixture Test Plan](../../tests/hil-fixture-test-plan.md).

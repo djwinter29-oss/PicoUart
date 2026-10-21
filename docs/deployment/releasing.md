@@ -1,20 +1,20 @@
 # Releasing PicoUart
 
-Release tags run [`.github/workflows/release.yml`](../.github/workflows/release.yml), which packages firmware, a Python
+Release tags run [`.github/workflows/release.yml`](../../.github/workflows/release.yml), which packages firmware, a Python
 wheel, and standalone .NET archives, runs host validation, and opens a **draft** GitHub Release. The workflow and
-[firmware build guide](../firmware/build-and-config.md) define the current board matrix, clocks, and artifact names.
+[firmware build guide](../../firmware/build-and-config.md) define the current board matrix, clocks, and artifact names.
 The promote HIL gate covers the rated images.
 
 Do not publish the draft until exact-artifact hardware-in-the-loop (HIL) evidence passes the gates below.
 
 A `workflow_dispatch` run creates artifacts for preflight HIL; a release tag creates the draft to promote.
 
-Host application publication follows the [host distribution plan](development/host-distribution.md).
+Host application publication follows the [host distribution plan](../development/host-distribution.md).
 [WebHID Pages](#webhid-pages) deploys separately after release publication. The Python wheel and .NET archives embed
 the same tag version in their dashboards and have per-target checksums. [PyPI publication](#pypi-publication) reuses the
 released wheel after its one-time setup; native installers remain planned.
 
-The release orchestrator calls the separate [.NET packaging workflow](../.github/workflows/publish-dotnet.yml) and
+The release orchestrator calls the separate [.NET packaging workflow](../../.github/workflows/publish-dotnet.yml) and
 waits for all targets before creating the draft. Python is packaged independently with `SHA256SUMS-python.txt`;
 .NET archives retain their per-target checksum manifests. See [.NET packaging](#net-packaging) for manual test runs.
 
@@ -22,10 +22,10 @@ waits for all targets before creating the draft. Python is packaged independentl
 
 | Workflow | Normal Entry Point | Responsibility |
 | --- | --- | --- |
-| [Release](../.github/workflows/release.yml) | Version-tag push | Run validation, build firmware and host packages, collect checksums, create the gated draft |
-| [Publish .NET Packages](../.github/workflows/publish-dotnet.yml) | Called by Release | Build and check native archives; return artifacts to the caller, not a separate public release |
-| [Publish Python to PyPI](../.github/workflows/publish-pypi.yml) | Published GitHub Release | Verify the released wheel and required checks, then publish through the protected PyPI environment |
-| [Publish WebHID Pages](../.github/workflows/publish-webhid.yml) | Published GitHub Release | Verify required checks, test and stamp the selected WebHID commit, then deploy Pages |
+| [Release](../../.github/workflows/release.yml) | Version-tag push | Run validation, build firmware and host packages, collect checksums, create the gated draft |
+| [Publish .NET Packages](../../.github/workflows/publish-dotnet.yml) | Called by Release | Build and check native archives; return artifacts to the caller, not a separate public release |
+| [Publish Python to PyPI](../../.github/workflows/publish-pypi.yml) | Published GitHub Release | Verify the released wheel and required checks, then publish through the protected PyPI environment |
+| [Publish WebHID Pages](../../.github/workflows/publish-webhid.yml) | Published GitHub Release | Verify required checks, test and stamp the selected WebHID commit, then deploy Pages |
 
 Manual execution is separate from the normal entry points above. Use the marked test modes described in
 [publication gates](#publication-gates), [.NET packaging](#net-packaging),
@@ -70,7 +70,7 @@ Do not begin physical testing from an uncommitted or locally modified image.
 Normal publication is fail-closed. Draft creation waits for host validation, firmware builds, both host package jobs,
 and a successful **PR Check** run for the exact commit. PyPI publication and release-mode Pages deployment additionally
 require a completed, successful **Release** tag-push run for that commit and tag. The
-[publication gate](../tools/release/require_release_checks.py) checks the latest matching run and attempt; missing,
+[publication gate](../../tools/release/require_release_checks.py) checks the latest matching run and attempt; missing,
 queued, running, failed, skipped, cancelled, or unavailable check results block publication. An older successful run
 does not override a newer failed or pending run. Retry publication after the required checks pass.
 
@@ -89,17 +89,17 @@ branch restrictions still apply. Test versions are not HIL qualification or proo
 ## Security Reporting Setup
 
 Before publishing, enable private vulnerability reporting in repository settings and handle reports privately. User
-instructions and device-security notes are in [`SECURITY.md`](../SECURITY.md).
+instructions and device-security notes are in [`SECURITY.md`](../../SECURITY.md).
 
 ## USB identity
 
 PicoUart artifacts use `cafe:4010`, an unallocated lab identity. Do not reuse it commercially; derivatives need an
-allocated VID/PID and must treat the identity change as a breaking USB change. See [`SECURITY.md`](../SECURITY.md) and
+allocated VID/PID and must treat the identity change as a breaking USB change. See [`SECURITY.md`](../../SECURITY.md) and
 the USB identity contract tests before publishing.
 
 ## Release HIL Gates
 
-Use the [Test Documentation Index](tests/README.md) for automated validation, HIL sequence, and result semantics. CI
+Use the [Test Documentation Index](../tests/README.md) for automated validation, HIL sequence, and result semantics. CI
 validates builds and host tests; it cannot establish physical qualification.
 
 Release promotion requires a complete `PASS` on every rated board artifact in the release workflow. Run HIL on the exact
@@ -107,8 +107,8 @@ packaged UF2/ELF and verify its SHA-256 against the draft; a local rebuild or a 
 qualify the release. Optional overclock profiles are board-local configuration settings; any overclock claim still
 requires exact-board HIL evidence and does not establish general stability or operating margins.
 
-Follow the [HIL fixture setup](tests/hil-fixture-setup.md) and [test plan](tests/hil-fixture-test-plan.md) for required
-phases and acceptance criteria. Preserve per-board records using the [HIL record format](tests/records/README.md), with
+Follow the [HIL fixture setup](../tests/hil-fixture-setup.md) and [test plan](../tests/hil-fixture-test-plan.md) for required
+phases and acceptance criteria. Preserve per-board records using the [HIL record format](../tests/records/README.md), with
 artifact hashes and any failures or partial conditions. Without matching recorded evidence, the release remains lab-only.
 
 ## Flashing Release Artifacts
@@ -160,8 +160,8 @@ not recover failed SWD access, repair reset/wiring, or prove the selected capaci
 
 ## Required HIL Matrix
 
-Follow the [board-testing skill](../.github/skills/pico-uart-board-testing/SKILL.md), [fixture setup](tests/hil-fixture-setup.md),
-and [HIL test plan](tests/hil-fixture-test-plan.md) for the current required test matrix. Promotion requires no
+Follow the [board-testing skill](../../.github/skills/pico-uart-board-testing/SKILL.md), [fixture setup](../tests/hil-fixture-setup.md),
+and [HIL test plan](../tests/hil-fixture-test-plan.md) for the current required test matrix. Promotion requires no
 unexplained data loss, timeout, USB disconnect, or relevant HID error.
 
 ## Optional Claims
@@ -169,7 +169,7 @@ unexplained data loss, timeout, USB disconnect, or relevant HID error.
 Run optional tests only when the release notes claim the behavior:
 
 - Backpressure and hardware/PIO RTS/CTS require the matching board configuration and HIL variants described in the
-   [fixture test plan](tests/hil-fixture-test-plan.md).
+   [fixture test plan](../tests/hil-fixture-test-plan.md).
 
 ## Promote checklist (draft → published)
 
@@ -190,16 +190,16 @@ WebHID and Python development-publish modes leave **tag** empty and generate the
 
 Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release version resolver owns tag bounds; firmware
 build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the
-[HID Report Reference](design/usb/hid-report-reference.md) for encoding details. Release workflows own the SDK and
+[HID Report Reference](../design/usb/hid-report-reference.md) for encoding details. Release workflows own the SDK and
 toolchain pins and install the reviewed, hash-locked Python requirements.
 
 ## .NET Packaging
 
-The [Publish .NET Packages workflow](../.github/workflows/publish-dotnet.yml) is called by **Release** after host
+The [Publish .NET Packages workflow](../../.github/workflows/publish-dotnet.yml) is called by **Release** after host
 validation. It uses the resolved release version, builds self-contained applications, extracts and checks each
 archive, and uploads archives and checksum manifests for the caller to attach to the draft. It does not create its
 own GitHub Release. Supported download targets and installation boundaries belong in the
-[host distribution plan](development/host-distribution.md#net-downloads).
+[host distribution plan](../development/host-distribution.md#net-downloads).
 
 For an independent manual packaging test:
 
@@ -217,7 +217,7 @@ publishing environment are needed for these downloadable test artifacts.
 
 ## PyPI Publication
 
-The [PyPI workflow](../.github/workflows/publish-pypi.yml) runs when a non-prerelease GitHub Release is published. It
+The [PyPI workflow](../../.github/workflows/publish-pypi.yml) runs when a non-prerelease GitHub Release is published. It
 downloads the existing release wheel, checks its SHA-256 against `SHA256SUMS-python.txt` from the release, validates
 the package name and tag version, and passes only that verified wheel to the protected publishing job. It does not
 rebuild packages or publish on tag push, draft creation, or release preflight runs. Source-distribution publication
@@ -287,7 +287,7 @@ cannot be reused, even after deletion. Review the branch contents before startin
 
 ## WebHID Pages
 
-The [WebHID Pages workflow](../.github/workflows/publish-webhid.yml) publishes the standalone browser app from
+The [WebHID Pages workflow](../../.github/workflows/publish-webhid.yml) publishes the standalone browser app from
 `host/webhid`, without modifying or deploying the Python/.NET frontend. It runs when a non-prerelease GitHub Release
 is published, after the firmware draft has passed its promotion gates. Pushing a tag, creating a draft, and release
 preflight runs do not change the live site.

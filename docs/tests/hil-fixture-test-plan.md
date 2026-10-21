@@ -4,7 +4,7 @@ Use this plan to qualify the fixed PicoUart HIL fixture. It covers functional va
 on the same wiring. Physical hardware is required; CI runs host tests and firmware builds only.
 
 This is the baseline fixture plan, not the complete release gate. Release qualification also requires the recovery and
-stress checks listed in [Releasing](../releasing.md#required-hil-matrix).
+stress checks listed in [Releasing](../deployment/releasing.md#required-hil-matrix).
 
 ## Setup
 
@@ -215,4 +215,4 @@ when interpreting losses; separate UART/backend capacity from end-to-end USB bri
 performance runs append to the ignored local log at `build/hil-results.md`; preserve separate transcripts when
 diagnosing failures. A local log alone does not qualify a release. Release HIL evidence must identify each rated board,
 the exact artifact and SHA-256, firmware version and commit, test commands, per-link results, and HID health. Attach or
-link the generated record and transcript with the release evidence as described in [Releasing](../releasing.md).
+link the generated record and transcript with the release evidence as described in [Releasing](../deployment/releasing.md).

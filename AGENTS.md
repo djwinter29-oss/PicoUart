@@ -47,4 +47,5 @@ remain usable from Windows for CDC/HID operation.
 - Control-plane lifecycle and `CONTROL_ERROR` / `CONTROL_PENDING` behavior:
   [docs/design/control-plane-design.md](docs/design/control-plane-design.md).
 - Fixture, dated-record, and local-log conventions: [docs/tests/README.md](docs/tests/README.md).
-- Release qualification and OpenOCD/HIL gates: [docs/releasing.md](docs/releasing.md#release-hil-gates).
+- Release qualification and OpenOCD/HIL gates:
+  [docs/deployment/releasing.md](docs/deployment/releasing.md#release-hil-gates).

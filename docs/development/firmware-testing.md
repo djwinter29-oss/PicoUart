@@ -6,7 +6,7 @@ in the [Test Documentation Index](../tests/README.md) and [Repository Tools](../
 
 ## Design Boundaries
 
-Keep board pin mapping separate from USB and UART transport logic. See [Architecture](../architecture.md), the
+Keep board pin mapping separate from USB and UART transport logic. See [Architecture](../design/architecture.md), the
 [UART subsystem design](../design/uart/README.md), [Hardware Setup](../hardware-setup.md), and the
 [CDC/HID overview](../design/usb/cdc-hid-overview.md) for their respective responsibilities and constraints.
 
@@ -21,7 +21,7 @@ suite as a substitute for another.
 
 CI validates host behavior and firmware builds. It has no physical board or wiring fixture and cannot prove UART
 signaling, USB enumeration, DMA timing, or multicore behavior under load. Physical acceptance and exact-artifact release
-gates are defined in the [hardware test documentation](../tests/README.md) and [release guide](../releasing.md).
+gates are defined in the [hardware test documentation](../tests/README.md) and [release guide](../deployment/releasing.md).
 
 ## Cursor Cloud Environment
 

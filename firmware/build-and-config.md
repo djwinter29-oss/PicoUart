@@ -19,7 +19,7 @@ With no arguments or `PICO_BOARD` override, the build defaults to `pico` (RP2040
 Use `--board pico2` for RP2350; an explicit `--board` takes precedence over `PICO_BOARD`.
 
 Optional: stamp a release version into the firmware with `--firmware-version` (for example `1.2.3` from tag `v1.2.3`).
-Release version policy is documented in [Releasing](../docs/releasing.md).
+Release version policy is documented in [Releasing](../docs/deployment/releasing.md).
 
 All generated output is stored under the repository-root `build/` directory. Use a separate build directory per board.
 The Linux build/load tools accept `--board` values supported by the installed Pico SDK.
@@ -75,7 +75,7 @@ tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-s
 ```
 
 OpenOCD probe recovery and flash-device compatibility require the physical Debug Probe and target board; automated CI
-can validate the command paths but cannot prove USB/SWD recovery behavior. Follow [Releasing](../docs/releasing.md) for
+can validate the command paths but cannot prove USB/SWD recovery behavior. Follow [Releasing](../docs/deployment/releasing.md) for
 the release HIL and OpenOCD recovery gates.
 
 ## Configuration
@@ -89,7 +89,7 @@ ring definitions document where that requirement applies.
 
 Detailed firmware behavior lives in:
 
-- [Architecture](../docs/architecture.md) and the [UART subsystem design](../docs/design/uart/README.md)
+- [Architecture](../docs/design/architecture.md) and the [UART subsystem design](../docs/design/uart/README.md)
 - [CDC/HID Overview](../docs/design/usb/cdc-hid-overview.md)
 - [HID Report Reference](../docs/design/usb/hid-report-reference.md)
 - [Control Plane Design](../docs/design/control-plane-design.md)
