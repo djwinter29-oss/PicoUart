@@ -263,11 +263,11 @@ def test_dotnet_manual_versions_are_marked_without_changing_release_versions(
     step = text.split("- name: Resolve host version\n", 1)[1].split("\n      - name:", 1)[0]
     script = textwrap.dedent(step.split("run: |\n", 1)[1])
     output = tmp_path / "output"
-    result = subprocess.run(["bash"], input=script, text=True, capture_output=True, cwd=REPO_ROOT,
+    result = subprocess.run(["sh"], input=script, text=True, capture_output=True, cwd=REPO_ROOT,
                             env={**os.environ, "EVENT_NAME": event, "INPUT_VERSION": "1.2.3", "REF_NAME": reference,
                                  "TEST_PUBLISH": test_publish, "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2",
                                  "GITHUB_OUTPUT": str(output)})
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
     assert output.read_text().strip() == f"version={expected}"
     assert "github.event_name == 'workflow_dispatch' && !inputs.release_build" in step
 

@@ -16,19 +16,37 @@ released wheel after its one-time setup; native installers remain planned.
 
 The release orchestrator calls the separate [.NET packaging workflow](../.github/workflows/publish-dotnet.yml) and
 waits for all targets before creating the draft. Python is packaged independently with `SHA256SUMS-python.txt`;
-.NET archives retain their per-target checksum manifests. See the
-[.NET distribution procedure](development/host-distribution.md#net-downloads) for packaging-only manual runs.
+.NET archives retain their per-target checksum manifests. See [.NET packaging](#net-packaging) for manual test runs.
+
+## Workflow Overview
+
+| Workflow | Normal Entry Point | Responsibility |
+| --- | --- | --- |
+| [Release](../.github/workflows/release.yml) | Version-tag push | Run validation, build firmware and host packages, collect checksums, create the gated draft |
+| [Publish .NET Packages](../.github/workflows/publish-dotnet.yml) | Called by Release | Build and check native archives; return artifacts to the caller, not a separate public release |
+| [Publish Python to PyPI](../.github/workflows/publish-pypi.yml) | Published GitHub Release | Verify the released wheel and required checks, then publish through the protected PyPI environment |
+| [Publish WebHID Pages](../.github/workflows/publish-webhid.yml) | Published GitHub Release | Verify required checks, test and stamp the selected WebHID commit, then deploy Pages |
+
+Manual execution is separate from the normal entry points above. Use the marked test modes described in
+[publication gates](#publication-gates), [.NET packaging](#net-packaging),
+[TestPyPI publication](#manual-testpypi-publication), and [Pages test publication](#test-publish-from-a-branch).
+The publish-prefixed filenames organize the actions; they do not all independently publish to a public destination.
 
 ```mermaid
 flowchart LR
-   Change["Reviewed change"] --> CI["CI: host tests + rated builds"]
-   CI --> DryRun["workflow_dispatch\ndraft artifacts"]
-   DryRun --> Hash["Record artifact SHA-256"]
-   Hash --> HIL["HIL on exact packaged images"]
-   HIL --> Results["Record commands, hashes, HID health, results"]
-   Results --> Compare{"Artifact hashes match?"}
-   Compare -->|no| Stop["Keep lab-only\nfix or rerun"]
-   Compare -->|yes| Promote["Promote draft release"]
+   Tag["Version tag"] --> Release["Release: validation + firmware builds"]
+   Release --> Python["Build and verify Python wheel"]
+   Release --> Dotnet["Publish .NET Packages: verify archives"]
+   Release --> Checks["Required tests pass for exact commit"]
+   Python --> Draft["Draft release: artifacts + checksums"]
+   Dotnet --> Draft
+   Checks --> Draft
+   Draft --> HIL["HIL on exact packaged firmware"]
+   HIL --> Match{"PASS and artifact hashes match?"}
+   Match -->|no| Stop["Keep draft; fix or rerun"]
+   Match -->|yes| Published["Manually publish qualified release"]
+   Published --> PyPI["Verify checks + wheel; approve PyPI upload"]
+   Published --> Pages["Verify checks + WebHID; deploy Pages"]
 ```
 
 The release unit is the exact packaged artifact, not a source revision or a local rebuild. HIL evidence is valid only
@@ -40,7 +58,8 @@ Before requesting HIL, confirm:
 
 1. The change is reviewed and the working tree contains no unintended files.
 2. The version follows the [release tag policy](#versioning).
-3. Host validation and all required target builds pass in the release workflow.
+3. The exact commit passes PR Check, host validation, required target builds, and host package checks, as specified in
+   [publication gates](#publication-gates).
 4. `git diff --check` passes.
 5. Release notes identify USB/HID compatibility or behavior changes.
 
@@ -164,6 +183,28 @@ Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release vers
 build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the
 [HID Report Reference](design/usb/hid-report-reference.md) for encoding details. Release workflows own the SDK and
 toolchain pins and install the reviewed, hash-locked Python requirements.
+
+## .NET Packaging
+
+The [Publish .NET Packages workflow](../.github/workflows/publish-dotnet.yml) is called by **Release** after host
+validation. It uses the resolved release version, builds self-contained applications, extracts and checks each
+archive, and uploads archives and checksum manifests for the caller to attach to the draft. It does not create its
+own GitHub Release. Supported download targets and installation boundaries belong in the
+[host distribution plan](development/host-distribution.md#net-downloads).
+
+For an independent manual packaging test:
+
+1. Commit and push the desired source and workflow changes. The workflow must exist on the default branch for manual
+   dispatch to be available, and the selected branch must contain it.
+2. Open **Actions > Publish .NET Packages > Run workflow** and select the desired branch.
+3. Enter the base **version** without a leading `v`, following the normal [version policy](#versioning), and start the run.
+4. After the matrix succeeds, download the `release-host-*` artifacts from that workflow run. Extract the downloaded
+   artifact bundle to obtain the platform archive and its checksum manifest; verify the checksum before using it.
+
+Direct manual runs add the [test-version suffix](#publication-gates) to the app metadata and archive name. They run
+native archive checks without waiting for the full cross-project release gate. They do not create a tag, attach files
+to a GitHub Release, publish a qualified release, or change PyPI or Pages. No publishing credentials or protected
+publishing environment are needed for these downloadable test artifacts.
 
 ## PyPI Publication
 

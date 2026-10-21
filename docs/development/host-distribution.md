@@ -11,9 +11,9 @@ archive remain planned.
 
 | Application | First phase | Later phase |
 | --- | --- | --- |
-| Python | Wheel and source distribution on PyPI; recommend `pipx` for application installation | No native installer planned |
+| Python | Release wheel on GitHub and PyPI; recommend `pipx` for application installation | Source distribution after rebuild qualification; no native installer planned |
 | .NET | Self-contained archives on GitHub Releases, with no installed .NET runtime required | Linux `.deb`, signed Windows `.msi`, signed and notarized macOS `.app` |
-| WebHID | Static HTTPS site on GitHub Pages and a downloadable static archive | No application installer or backend planned |
+| WebHID | Static HTTPS site on GitHub Pages | Downloadable static archive; no application installer or backend planned |
 
 Keep Python/.NET assets in their existing shared frontend. WebHID remains independent, with all deployable files in
 `host/webhid`; do not introduce a shared asset-generation or preparation step.
@@ -52,11 +52,9 @@ per-target checksums. The [release workflow](../../.github/workflows/release.yml
 attaches its artifacts alongside the separately built Python package and firmware. The .NET workflow does not build
 Python packages or publish independently to an existing GitHub Release.
 
-For packaging-only preflight, run **Actions > Publish .NET Packages > Run workflow**, select the branch, and enter a version
-without the leading `v`. Download the `release-host-*` artifacts from that run; manual execution does not create a
-tag, create a release, or change published downloads. Direct manual runs append `-test.RUN_ID.RUN_ATTEMPT` to the
-entered version in both the archive name and the app metadata. Normal tagged releases still invoke this workflow
-automatically, without that suffix. See [publication gates and test exceptions](../releasing.md#publication-gates).
+The [.NET packaging procedure](../releasing.md#net-packaging) owns release invocation, manual test-run inputs,
+artifact retrieval, and version-marker behavior. Independent manual runs produce marked test artifacts, not public
+release attachments; normal release packaging remains subject to the shared publication gates.
 
 Each host packaging job extracts its archive and checks native CLI startup and the bundled version before checksumming.
 The release draft waits for all host packages, host validation, and firmware builds. Publishing the qualified draft
@@ -104,17 +102,10 @@ and browser/device compatibility. Mocked tests do not prove native WebHID access
 
 ## Release Order And Gates
 
-1. Agree supported OS/architecture targets, host version policy, and documented firmware/HID compatibility. Ensure
-   package metadata, archive names, and release notes identify the intended host version; do not silently publish the
-   package's current development version for every firmware tag.
-2. Add artifact build and installation checks to CI before enabling external publication. Keep Linux native C
-   sanitizers and Windows native C tests alongside cross-platform Python/.NET validation and independent WebHID checks.
-3. Configure PyPI Trusted Publishing and GitHub Pages permissions/environments. Build immutable artifacts once, record
-   checksums, and publish those tested artifacts after approval rather than rebuilding during publication.
-4. Activate PyPI after Trusted Publisher and environment setup. GitHub release wheels, .NET archives, PyPI publishing,
-   and Pages deployment are implemented; live availability still requires successful runs and external setup.
-   Test upgrades and retain earlier archives and deployment references.
-5. Add native installers when user demand justifies their signing, installation, upgrade, and removal obligations.
+The [release workflow overview](../releasing.md#workflow-overview) owns entry points, dependencies, draft promotion,
+and downstream publication order. The [publication gates](../releasing.md#publication-gates) define required check
+results and explicit manual test exceptions. Publisher registration, environment setup, retry, and rollback procedures
+also live in that guide; this document owns distribution choices, supported downloads, and deferred installer work.
 
 Host artifact checks do not replace [firmware release qualification](../releasing.md#release-hil-gates). Firmware
 promotion still requires exact-artifact HIL evidence. For host releases, record the firmware used for device checks,

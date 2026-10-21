@@ -86,7 +86,7 @@ without .NET installed, publish for its runtime identifier with `--self-containe
 Windows/macOS identifier). Distribute the whole output directory, including its `web` folder.
 
 CI packaging lives in the separate [.NET packaging workflow](../../.github/workflows/publish-dotnet.yml), called by the
-release pipeline. For a packaging-only test run, see the [distribution procedure](../../docs/development/host-distribution.md#net-downloads).
+release pipeline. For a packaging-only test run, see the [.NET release procedure](../../docs/releasing.md#net-packaging).
 
 ## Checks
 

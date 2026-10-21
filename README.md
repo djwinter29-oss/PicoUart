@@ -228,7 +228,7 @@ The linked design documents describe implementation and ownership details.
 - [CDC/HID behavior](docs/design/usb/cdc-hid-overview.md)
 - [HID report reference](docs/design/usb/hid-report-reference.md)
 - [Hardware test index](docs/tests/README.md)
-- [Release policy and qualification](docs/releasing.md)
+- [Release workflows, publication, and qualification](docs/releasing.md)
 - [Firmware development and repository testing](docs/development/firmware-testing.md)
 - [Host tools development](docs/development/host-tools.md)
 - [Host distribution plan](docs/development/host-distribution.md)
