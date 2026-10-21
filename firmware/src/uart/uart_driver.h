@@ -27,7 +27,7 @@
 /**
  * @brief Backend-neutral startup configuration and runtime view of one logical UART port.
  *
- * The board table supplies startup values. Runtime copies reflect the last
+ * The static configuration table supplies startup values. Runtime copies reflect the last
  * successfully applied host line coding while retaining the static pin map.
  */
 typedef struct {
@@ -42,6 +42,9 @@ typedef struct {
     uint8_t stop_bits;             /**< Initial value; updated after a successful line-coding apply. */
     uart_driver_parity_t parity;   /**< Initial value; updated after a successful line-coding apply. */
 } uart_driver_port_info_t;
+
+/** @brief Immutable startup records defined by the firmware UART configuration. */
+extern const uart_driver_port_info_t uart_board_ports[UART_PORT_COUNT];
 
 /**
  * @brief Transport counters for one logical UART port.

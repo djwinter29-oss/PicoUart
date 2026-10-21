@@ -5,10 +5,9 @@
 
 #include "unity.h"
 
-#include "board/uart_board.h"
 #include "pico/flash.h"
 #include "pico/time.h"
-#include "uart/backend/adapter.h"
+#include "uart/backend/backend.h"
 #include "uart/control/plane.h"
 #include "uart/port_api.h"
 #include "uart/uart_driver.h"
@@ -24,18 +23,19 @@ bool flash_safe_execute_core_init(void)
     return true;
 }
 
-const uart_backend_ops_t *uart_backend_ops_for_type(uart_driver_backend_t backend)
-{
-    (void)backend;
-    return NULL;
-}
+const uart_backend_ops_t uart_backend_hw_ops = {0};
+const uart_backend_ops_t uart_backend_pio_ops = {0};
 
 void uart_worker_run(const uart_worker_hooks_t *hooks)
 {
     (void)hooks;
 }
 
-void uart_backend_enable_rx_dma_irq(void)
+void hw_uart_driver_enable_rx_dma_irq(void)
+{
+}
+
+void pio_uart_driver_enable_rx_dma_irq(void)
 {
 }
 
@@ -51,18 +51,18 @@ bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_pl
     return false;
 }
 
-static bool test_backend_is_initialized(const uart_backend_instance_t *instance)
+static bool test_backend_is_initialized(const void *instance)
 {
     (void)instance;
     return false;
 }
 
-static ring_buffer_t *test_backend_ring(uart_backend_instance_t *instance)
+static ring_buffer_t *test_backend_ring(void *instance)
 {
     return (ring_buffer_t *)instance;
 }
 
-static uart_backend_stats_t test_backend_stats(const uart_backend_instance_t *instance)
+static uart_backend_stats_t test_backend_stats(const void *instance)
 {
     (void)instance;
     test_stats_call_count += 1u;

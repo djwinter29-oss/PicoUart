@@ -99,7 +99,6 @@ run_gcovr() {
         --filter 'firmware/src/uart/dma/progress_math.h' \
         --filter 'firmware/src/uart/control/ownership.h' \
         --filter 'firmware/src/uart/backend/policy.h' \
-        --filter 'firmware/src/board/uart_topology.c' \
         --filter 'firmware/src/uart/pio/txstall_wait.h' \
         --filter 'firmware/src/usb/cdc_soft_pending.h' \
         --exclude '.*CMakeFiles/.*' \

@@ -1,11 +1,11 @@
 /**
  * @file test_uart_board_config.c
- * @brief Host tests for the actual common board table and backend-owned resources.
+ * @brief Host tests for compile-time board references and backend-owned resources.
  */
 
 #include "unity.h"
 
-#include "board/uart_board.h"
+#include "uart/uart_driver.h"
 #include "board/uart_topology.h"
 #include "hardware/pio.h"
 #include "hardware/uart.h"
@@ -63,36 +63,36 @@ void test_actual_board_table_resolves_to_unique_backend_resources(void)
         };
 
         if (port->backend == UART_DRIVER_BACKEND_HW) {
-            hw_uart_driver_config_t config;
-            TEST_ASSERT_TRUE(hw_uart_driver_build_port_config(port, &config));
+            const hw_uart_driver_config_t config = hw_uart_driver_configs[index];
+            TEST_ASSERT_EQUAL_PTR(port, config.port);
             topology[index].backend_instance = (uintptr_t)config.instance;
-            topology[index].rts_pin = config.rts_pin;
-            topology[index].cts_pin = config.cts_pin;
+            topology[index].rts_pin = config.port->rts_pin;
+            topology[index].cts_pin = config.port->cts_pin;
             topology[index].rts_enabled = config.hardware_flow_control;
             topology[index].cts_enabled = config.hardware_flow_control;
             TEST_ASSERT_EQUAL_PTR(expected_hw[index], config.instance);
-            TEST_ASSERT_EQUAL_UINT32(expected_rts_pins[index], config.rts_pin);
-            TEST_ASSERT_EQUAL_UINT32(expected_cts_pins[index], config.cts_pin);
+            TEST_ASSERT_EQUAL_UINT32(expected_rts_pins[index], config.port->rts_pin);
+            TEST_ASSERT_EQUAL_UINT32(expected_cts_pins[index], config.port->cts_pin);
             TEST_ASSERT_FALSE(config.hardware_flow_control);
-            TEST_ASSERT_EQUAL_UINT8(8u, config.data_bits);
-            TEST_ASSERT_EQUAL_UINT8(1u, config.stop_bits);
-            TEST_ASSERT_EQUAL(UART_PARITY_NONE, config.parity);
+            TEST_ASSERT_EQUAL_UINT8(8u, config.port->data_bits);
+            TEST_ASSERT_EQUAL_UINT8(1u, config.port->stop_bits);
+            TEST_ASSERT_EQUAL(UART_DRIVER_PARITY_NONE, config.port->parity);
         } else {
-            pio_uart_driver_config_t config;
+            const pio_uart_driver_config_t config = pio_uart_driver_configs[index];
             TEST_ASSERT_EQUAL_UINT(UART_DRIVER_BACKEND_PIO, port->backend);
-            TEST_ASSERT_TRUE(pio_uart_driver_build_port_config(port, &config));
+            TEST_ASSERT_EQUAL_PTR(port, config.port);
             topology[index].backend_instance = (uintptr_t)config.pio;
             topology[index].tx_state_machine = config.tx_state_machine;
             topology[index].rx_state_machine = config.rx_state_machine;
-            topology[index].rts_pin = config.rts_pin;
-            topology[index].cts_pin = config.cts_pin;
+            topology[index].rts_pin = config.port->rts_pin;
+            topology[index].cts_pin = config.port->cts_pin;
             topology[index].rts_enabled = (config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) != 0u;
             topology[index].cts_enabled = (config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL) != 0u;
             TEST_ASSERT_EQUAL_PTR(expected_pio[index], config.pio);
             TEST_ASSERT_EQUAL_UINT32(expected_tx_state_machines[index], config.tx_state_machine);
             TEST_ASSERT_EQUAL_UINT32(expected_rx_state_machines[index], config.rx_state_machine);
-            TEST_ASSERT_EQUAL_UINT32(expected_rts_pins[index], config.rts_pin);
-            TEST_ASSERT_EQUAL_UINT32(expected_cts_pins[index], config.cts_pin);
+            TEST_ASSERT_EQUAL_UINT32(expected_rts_pins[index], config.port->rts_pin);
+            TEST_ASSERT_EQUAL_UINT32(expected_cts_pins[index], config.port->cts_pin);
             TEST_ASSERT_EQUAL_UINT32(PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP |
                                          PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH,
                                      config.pin_flags);

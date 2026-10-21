@@ -6,8 +6,16 @@
 #ifndef UART_RUNTIME_H
 #define UART_RUNTIME_H
 
-#include "uart/backend/adapter.h"
+#include "uart/backend/backend.h"
+#include "uart/hw/hw_uart_driver.h"
+#include "uart/pio/pio_uart_driver_internal.h"
 #include "uart/uart_driver.h"
+
+/** @brief Storage for the selected concrete driver, owned by one logical port. */
+typedef union {
+    hw_uart_driver_t hw; /**< Hardware UART runtime state. */
+    pio_uart_driver_t pio; /**< PIO UART runtime state. */
+} uart_backend_instance_t;
 
 /**
  * @brief Runtime storage for one logical UART port.

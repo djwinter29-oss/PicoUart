@@ -5,7 +5,6 @@
 
 #include "pico/stdlib.h"
 
-#include "board/uart_board.h"
 #include "driver/led.h"
 #include "driver/service_load.h"
 #include "driver/system.h"

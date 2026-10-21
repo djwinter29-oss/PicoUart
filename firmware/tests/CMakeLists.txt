@@ -100,7 +100,7 @@ target_include_directories(test_topology PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/sup
 
 pico_uart_add_unity_test(test_uart_board_config uart_board_config
     test_uart_board_config.c
-    ${FIRMWARE_ROOT}/src/board/uart_board.c
+    ${FIRMWARE_ROOT}/src/config/uart_config.c
     ${FIRMWARE_ROOT}/src/uart/hw/hw_uart_board_config.c
     ${FIRMWARE_ROOT}/src/uart/pio/pio_uart_board_config.c
     ${CMAKE_CURRENT_SOURCE_DIR}/support/board/uart_topology.c
@@ -120,6 +120,17 @@ pico_uart_add_unity_test(test_backend_contract backend_contract
 target_include_directories(test_backend_contract PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
 )
+
+pico_uart_add_unity_test(test_native_backends native_backends
+    test_native_backends.c
+    ${FIRMWARE_ROOT}/src/config/uart_config.c
+    ${FIRMWARE_ROOT}/src/uart/hw/hw_uart_board_config.c
+    ${FIRMWARE_ROOT}/src/uart/pio/pio_uart_board_config.c
+    ${FIRMWARE_ROOT}/src/uart/hw/hw_uart_backend.c
+    ${FIRMWARE_ROOT}/src/uart/pio/pio_uart_backend.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+)
+target_include_directories(test_native_backends PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
 
 pico_uart_add_unity_test(test_hw_baud_rate hw_baud_rate
     test_hw_baud_rate.c
