@@ -668,7 +668,8 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
     (void)instance;
 
     if (report_id == USB_HID_REPORT_ID_CONFIGURATION_SAVE && report_type == HID_REPORT_TYPE_FEATURE) {
-        if (usb_hid_config_save_state == USB_HID_CONFIG_PENDING) {
+        if (usb_hid_config_save_state == USB_HID_CONFIG_PENDING ||
+            usb_hid_config_save_state == USB_HID_CONFIG_SAVED) {
             return;
         }
         usb_hid_config_save_state = USB_HID_CONFIG_INVALID;

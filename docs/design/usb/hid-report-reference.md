@@ -128,8 +128,10 @@ little-endian integers and independent layout version `1`.
 
 An exact-size, valid request is queued; the USB poll loop performs the write outside the TinyUSB control callback.
 Non-default profiles require flags bit 0. Unknown profiles, wrong-family profiles, missing acknowledgement, and invalid
-versions/lengths/reserved fields produce `invalid` without writing flash. While a request is pending, another SET
-does not replace it. Hosts check readiness first and wait for a matching `saved` profile, not merely USB transfer success.
+versions/lengths/reserved fields produce `invalid` without writing flash. While a request is pending or saved awaiting
+reboot, further SET requests are ignored, including malformed requests. They cannot replace the verified result,
+rewrite flash, or cancel or postpone its scheduled reboot. Hosts check readiness first and wait for a matching `saved`
+profile, not merely USB transfer success.
 Idle reports contain the boot's accepted stored profile, or the unavailable sentinel.
 
 Saving requires every CDC DTR session to be closed, checked both when accepting and executing the request.

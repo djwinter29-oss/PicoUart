@@ -285,6 +285,25 @@ static void test_configuration_save_validation_and_deferred_result(void)
     TEST_ASSERT_EQUAL_UINT8(request[4], result[4]);
     TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, configuration.active_profile);
     TEST_ASSERT_EQUAL_UINT(0u, reset_calls);
+    absolute_time_t reboot_deadline = usb_hid_config_reboot_deadline;
+    pico_test_time_us = 500000;
+    for (uint16_t size = 0u; size <= sizeof(request); ++size) {
+        tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, size);
+        TEST_ASSERT_EQUAL(USB_HID_CONFIG_SAVED, usb_hid_config_save_state);
+    }
+    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, replacement, sizeof(replacement));
+    cdc_open = true;
+    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, 8u);
+    cdc_open = false;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL(USB_HID_CONFIG_SAVED, usb_hid_config_save_state);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_CLOCK_250_MHZ, usb_hid_config_save_profile);
+    TEST_ASSERT_EQUAL_UINT(1u, save_calls);
+    TEST_ASSERT_EQUAL_MEMORY(&reboot_deadline, &usb_hid_config_reboot_deadline, sizeof(reboot_deadline));
+    uint8_t unchanged_result[8];
+    TEST_ASSERT_EQUAL_UINT16(8u,
+        tud_hid_get_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, unchanged_result, sizeof(unchanged_result)));
+    TEST_ASSERT_EQUAL_MEMORY(result, unchanged_result, sizeof(result));
     pico_test_time_us = 999999;
     usb_hid_poll();
     TEST_ASSERT_EQUAL_UINT(0u, reset_calls);
