@@ -13,8 +13,8 @@ on:
       - "v[0-9]*.[0-9]*.[0-9]*"
   workflow_dispatch:
     inputs:
-      version:
-        description: "Release version without leading v (for dry-run artifact naming)"
+      tag:
+        description: "Base tag in vMAJOR.MINOR.PATCH form, for example v1.2.3 (preflight does not create a tag)"
         required: true
         type: string
 
@@ -50,11 +50,11 @@ jobs:
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_TAG: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -eu
-          VERSION=$(tools/release/resolve-release-version.sh "$EVENT_NAME" "$INPUT_VERSION" "$REF_NAME")
+          VERSION=$(tools/release/resolve-release-version.sh "$EVENT_NAME" "$INPUT_TAG" "$REF_NAME")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved firmware version: $VERSION"
 
@@ -138,7 +138,7 @@ jobs:
     needs: host-validation
     uses: ./.github/workflows/publish-dotnet.yml
     with:
-      version: ${{ inputs.version || '' }}
+      tag: ${{ inputs.tag || '' }}
 
   python-package:
     name: Package Python
@@ -152,11 +152,11 @@ jobs:
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_TAG: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -eu
-          VERSION=$(tools/release/resolve-release-version.sh "$EVENT_NAME" "$INPUT_VERSION" "$REF_NAME")
+          VERSION=$(tools/release/resolve-release-version.sh "$EVENT_NAME" "$INPUT_TAG" "$REF_NAME")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Setup Python

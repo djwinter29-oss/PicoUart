@@ -4,26 +4,27 @@
 # release-tag policy (plain MAJOR.MINOR.PATCH, major/minor 0-99, patch 0-255)
 # can be exercised by host tests without running the workflow itself.
 #
-# Usage: resolve-release-version.sh <event_name> <input_version> <ref_name>
+# Usage: resolve-release-version.sh <event_name> <input_tag> <ref_name>
 # Prints the resolved "MAJOR.MINOR.PATCH" version to stdout on success.
 # Exits non-zero with a message on stderr for any policy violation.
 set -eu
 
 EVENT_NAME="${1:?event name required}"
-INPUT_VERSION="${2:-}"
+INPUT_TAG="${2:-}"
 REF_NAME="${3:-}"
 
 if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-    VERSION="$INPUT_VERSION"
+    TAG="$INPUT_TAG"
 else
-    VERSION="${REF_NAME#v}"
+    TAG="$REF_NAME"
 fi
 
-if ! printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
-    echo "Refusing version '$VERSION' (expected plain MAJOR.MINOR.PATCH like 1.2.3)" >&2
+if ! printf '%s' "$TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+    echo "Refusing version '$TAG' (expected tag vMAJOR.MINOR.PATCH like v1.2.3)" >&2
     exit 1
 fi
 
+VERSION="${TAG#v}"
 OLD_IFS=$IFS
 IFS=.
 set -- $VERSION

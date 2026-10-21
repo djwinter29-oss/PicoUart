@@ -179,6 +179,15 @@ lock and build gates.
 
 ## Versioning
 
+Every user-facing release-version input is named **tag** and accepts `vMAJOR.MINOR.PATCH`, for example `v1.2.3`.
+Unprefixed `1.2.3` is rejected. The shared resolver strips `v` only after validation, so firmware, Python package
+metadata, and .NET build metadata receive `1.2.3` internally.
+
+For **Release** preflight and independent **Publish .NET Packages** runs, this input is a base version label; it need
+not already exist as a Git tag, does not create a tag, and does not change which branch/commit is checked out.
+Production PyPI and WebHID publication require an existing, published, qualified release tag. WebHID and TestPyPI
+branch test modes leave **tag** empty and generate their marked test versions automatically.
+
 Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release version resolver owns tag bounds; firmware
 build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the
 [HID Report Reference](design/usb/hid-report-reference.md) for encoding details. Release workflows own the SDK and
@@ -197,7 +206,7 @@ For an independent manual packaging test:
 1. Commit and push the desired source and workflow changes. The workflow must exist on the default branch for manual
    dispatch to be available, and the selected branch must contain it.
 2. Open **Actions > Publish .NET Packages > Run workflow** and select the desired branch.
-3. Enter the base **version** without a leading `v`, following the normal [version policy](#versioning), and start the run.
+3. Enter the base **tag**, for example `v1.2.3`, following the [version policy](#versioning), and start the run.
 4. After the matrix succeeds, download the `release-host-*` artifacts from that workflow run. Extract the downloaded
    artifact bundle to obtain the platform archive and its checksum manifest; verify the checksum before using it.
 

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Published release tag to publish to PyPI (for example v1.0.1)"
+        description: "Published release tag in vMAJOR.MINOR.PATCH form, for example v1.2.3"
         required: false
         type: string
       test_publish:
