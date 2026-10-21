@@ -11,7 +11,13 @@ A `workflow_dispatch` run creates artifacts for preflight HIL; a release tag cre
 
 Host application publication follows the [host distribution plan](development/host-distribution.md).
 [WebHID Pages](#webhid-pages) deploys separately after release publication. The Python wheel and .NET archives embed
-the same tag version in their dashboards and have per-target checksums. PyPI and native installers remain planned.
+the same tag version in their dashboards and have per-target checksums. [PyPI publication](#pypi-publication) reuses the
+released wheel after its one-time setup; native installers remain planned.
+
+The release orchestrator calls the separate [.NET packaging workflow](../.github/workflows/publish-dotnet.yml) and
+waits for all targets before creating the draft. Python is packaged independently with `SHA256SUMS-python.txt`;
+.NET archives retain their per-target checksum manifests. See the
+[.NET distribution procedure](development/host-distribution.md#net-downloads) for packaging-only manual runs.
 
 ```mermaid
 flowchart LR
@@ -39,6 +45,27 @@ Before requesting HIL, confirm:
 5. Release notes identify USB/HID compatibility or behavior changes.
 
 Do not begin physical testing from an uncommitted or locally modified image.
+
+## Publication Gates
+
+Normal publication is fail-closed. Draft creation waits for host validation, firmware builds, both host package jobs,
+and a successful **PR Check** run for the exact commit. PyPI publication and release-mode Pages deployment additionally
+require a completed, successful **Release** tag-push run for that commit and tag. The
+[publication gate](../tools/release/require_release_checks.py) checks the latest matching run and attempt; missing,
+queued, running, failed, skipped, cancelled, or unavailable check results block publication. An older successful run
+does not override a newer failed or pending run. Retry publication after the required checks pass.
+
+Explicit manual test modes are the only exception to the full cross-project gate. They still run their own scoped
+checks, use visibly non-release versions, and do not create or promote a qualified firmware release:
+
+| Manual Action | Output | Version |
+| --- | --- | --- |
+| Publish .NET Packages | Downloadable run artifacts, not GitHub Release attachments | `VERSION-test.RUN_ID.RUN_ATTEMPT` |
+| Publish Python to PyPI with `test_publish` checked | TestPyPI only, never production PyPI | `0.0.0.devRUN_ID` |
+| Publish WebHID Pages with `test_publish` checked | The normal Pages site, replacing its current deployment | `0.0.0-test.RUN_ID.RUN_ATTEMPT` |
+
+The run identifiers are supplied by GitHub; no release tag is needed for these test modes. Environment approval and
+branch restrictions still apply. Test versions are not HIL qualification or proof that the full test suite passed.
 
 ## Security Reporting Setup
 
@@ -138,9 +165,74 @@ build limits may differ. Firmware reports the semantic version over HID and majo
 [HID Report Reference](design/usb/hid-report-reference.md) for encoding details. Release workflows own the SDK and
 toolchain pins and install the reviewed, hash-locked Python requirements.
 
+## PyPI Publication
+
+The [PyPI workflow](../.github/workflows/publish-pypi.yml) runs when a non-prerelease GitHub Release is published. It
+downloads the existing release wheel, checks its SHA-256 against `SHA256SUMS-python.txt` from the release, validates
+the package name and tag version, and passes only that verified wheel to the protected publishing job. It does not
+rebuild packages or publish on tag push, draft creation, or release preflight runs. Source-distribution publication
+remains deferred until its rebuild and installation checks are implemented.
+
+### Trusted Publisher Setup
+
+1. Merge the workflow into the default branch so release events and manual dispatch are available.
+2. Create a GitHub environment named **pypi** under **Settings > Environments**, with required reviewers. Restrict its
+   deployment branches/tags to the release tags and approved branch used for manual retries.
+3. Sign in to PyPI with a verified account and two-factor authentication. For an existing project you own, open its
+   **Publishing** settings. For the first release, use **Your account > Publishing > Add a new pending publisher**.
+   Confirm that the package name is available to your account; a missing public project does not guarantee availability.
+4. Select GitHub and register these exact values:
+
+| PyPI Field | Value |
+| --- | --- |
+| Project name (pending publisher) | `pico-uart` |
+| Owner | `djwinter29-oss` |
+| Repository | `PicoUart` |
+| Workflow filename | `publish-pypi.yml` |
+| Environment | `pypi` |
+
+The filename is not the workflow display name or its full path. No PyPI API token or GitHub secret is required.
+If a Trusted Publisher was registered before the workflow rename, update or replace its registration with
+`publish-pypi.yml` on both PyPI and TestPyPI before the next upload. The environment names remain `pypi` and `testpypi`.
+Only the publishing job receives `id-token: write`; verification and downloads run without publication credentials.
+The official PyPA action verifies distribution metadata and creates publication attestations using Trusted Publishing.
+
+### Publish And Retry
+
+Create a normal release tag and let the release workflow attach the wheel and checksum manifest to its draft. Complete
+the existing HIL promotion gates, publish the draft, and approve the **pypi** environment deployment. Verify the
+result at <https://pypi.org/project/pico-uart/> before advertising the package as available.
+
+To retry a failed publication or publish an older qualified release, run **Actions > Publish Python to PyPI > Run
+workflow** with its already-published **tag**, leaving **test_publish** unchecked. The release must include the expected
+wheel and checksum manifest and pass the [publication gates](#publication-gates).
+Drafts, prereleases, checksum mismatches, and package/version mismatches fail before uploading. Publication initiated
+by another workflow's default `GITHUB_TOKEN` does not trigger the release-event workflow; use manual dispatch then.
+
+PyPI versions and uploaded filenames are immutable. This workflow intentionally does not skip existing distributions:
+an already-published version fails visibly rather than masking a mismatch. If upload succeeded but a later step
+failed, inspect PyPI before retrying; publish corrections under a new version. A PyPI failure does not roll back the
+GitHub Release or Pages deployment. Production publication never falls back to TestPyPI.
+
+### Manual TestPyPI Publication
+
+Create a separate GitHub environment named **testpypi** and register a Trusted Publisher on
+<https://test.pypi.org/>. Use the same owner, repository, workflow filename, and package name as above, but set the
+publisher environment to **testpypi**. TestPyPI accounts, project ownership, and publisher registration are separate
+from production PyPI; no production credentials are used for this path.
+
+Run **Actions > Publish Python to PyPI > Run workflow**, select the branch, check **test_publish**, and leave **tag**
+empty. The workflow runs Python package tests, builds `0.0.0.devRUN_ID`, checks the installed wheel outside the source
+tree, and publishes it only to TestPyPI after environment approval. The full PR/release/HIL gates are not required.
+The wheel is also available as the run's `testpypi-distribution` artifact.
+
+Each new workflow run gets a different development version. Rerunning the same run keeps its version; TestPyPI rejects
+an already-uploaded filename, so start a new manual run when a new test upload is needed. TestPyPI is not a production
+distribution channel, and test uploads do not change the normal `pico-uart` version on PyPI.
+
 ## WebHID Pages
 
-The [WebHID Pages workflow](../.github/workflows/webhid-pages.yml) publishes the standalone browser app from
+The [WebHID Pages workflow](../.github/workflows/publish-webhid.yml) publishes the standalone browser app from
 `host/webhid`, without modifying or deploying the Python/.NET frontend. It runs when a non-prerelease GitHub Release
 is published, after the firmware draft has passed its promotion gates. Pushing a tag, creating a draft, and release
 preflight runs do not change the live site.
@@ -164,11 +256,12 @@ Publish the qualified firmware draft through GitHub's release UI to trigger depl
 the release tag and published/non-prerelease status, checks out that tag, runs the WebHID tests, and uploads only
 `host/webhid`. Deployment runs are serialized and retain the selected tag in their workflow inputs/event record.
 Before upload, the workflow stamps the visible host version from the validated release tag, without the leading `v`.
-Local WebHID and test publishes display `0.0.0-debug`; this label is separate from the connected board's firmware.
+Local WebHID displays `0.0.0-debug`; explicit test publishes show `0.0.0-test.RUN_ID.RUN_ATTEMPT`. Both labels are
+separate from the connected board's firmware version.
 Publishing through another workflow's default `GITHUB_TOKEN` does not trigger a new release-event workflow; use the
 manual deployment below in that case.
 
-For redeployment or rollback, run **Actions > WebHID Pages > Run workflow** with the desired already-published release
+For redeployment or rollback, run **Actions > Publish WebHID Pages > Run workflow** with the desired already-published release
 tag and leave **test_publish** unchecked. Drafts, prereleases, and tags outside the normal release version policy are
 rejected. The selected tag must contain the standalone WebHID app and its tests. Rolling back the site does not modify
 firmware releases or boards.
@@ -179,13 +272,14 @@ To publish current WebHID without creating a firmware release:
 
 1. Commit and push the WebHID and workflow changes. The workflow must exist on the default branch for manual dispatch
    to be available; the branch selected for the run must include the test-publish option.
-2. Open **Actions > WebHID Pages > Run workflow** and select the desired branch under **Use workflow from**.
+2. Open **Actions > Publish WebHID Pages > Run workflow** and select the desired branch under **Use workflow from**.
 3. Check **test_publish**, leave **tag** empty, and run the workflow. Ensure the `github-pages` environment permits
    deployment from that branch and approve the deployment if required.
 4. Open the deployment's environment URL after the run succeeds.
 
-Test publication deploys the selected branch's exact commit, runs the WebHID checks, and skips only the published-release
-lookup. It replaces the site at the normal Pages URL; it is not an isolated preview. Local uncommitted changes are not
+Test publication deploys the selected branch's exact commit, runs the WebHID checks, and skips the published-release
+lookup and full cross-project gate. It replaces the site at the normal Pages URL; it is not an isolated preview.
+The visible **App v** label includes the test run and attempt. Local uncommitted changes are not
 included. Restore a release by rerunning with **test_publish** unchecked and the desired published **tag**.
 
 A Pages failure does not unpublish the GitHub Release. Fix or rerun the deployment separately, and inspect the Pages

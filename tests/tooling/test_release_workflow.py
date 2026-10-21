@@ -15,14 +15,17 @@ profile, not workflow matrix variants.
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import re
 import shutil
 import subprocess
 import textwrap
+from zipfile import ZipFile
 from pathlib import Path
 
 import pytest
+import require_release_checks
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
@@ -176,60 +179,167 @@ def test_release_packages_use_distinct_names() -> None:
 
 def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -> None:
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
-    job = text.split("\n  host-packages:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    job = (REPO_ROOT / ".github/workflows/publish-dotnet.yml").read_text(encoding="utf-8")
     for rid in ("linux-x64", "win-x64", "osx-arm64"):
         assert f"rid: {rid}" in job
     assert "version.txt" not in job
     assert "PicoUart.deps.json" in job
-    assert "PICO_UART_HOST_VERSION: ${{ steps.version.outputs.version }}" in job
+    assert "workflow_call:" in job
+    assert "workflow_dispatch:" in job
+    assert "contents: write" not in job
+    assert "pip wheel" not in job
+    assert "PICO_UART_HOST_VERSION: ${{ steps.version.outputs.version }}" in text
     assert "--self-contained true" in job
     assert '-p:Version="$VERSION"' in job
-    assert "Verify installed Python release" in job
+    assert "Verify installed Python release" in text
+    assert "SHA256SUMS-python.txt" in text
+    assert "name: release-python" in text
     assert "name: release-host-${{ matrix.rid }}" in job
-    assert "needs: [build, host-validation, host-packages]" in text
+    assert "uses: ./.github/workflows/publish-dotnet.yml" in text
+    assert "version: ${{ inputs.version || '' }}" in text
+    assert "needs: [build, host-validation, python-package, dotnet-packages]" in text
+    publish = text.split("\n  publish:\n", 1)[1]
+    assert 'require_release_checks.py --sha "$SOURCE_SHA"' in publish
+    assert publish.index("Require successful PR checks") < publish.index("Create draft GitHub Release")
 
 
-@pytest.mark.parametrize("step_name", ["Verify installed Python release", "Check and archive standalone host"])
-def test_host_release_embedded_python_compiles(step_name):
-    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+@pytest.mark.parametrize("workflow,step_name", [
+    ("release.yml", "Verify installed Python release"),
+    ("release.yml", "Checksum Python wheel"),
+    ("publish-dotnet.yml", "Check and archive standalone host"),
+    ("publish-pypi.yml", "Verify installed development wheel"),
+])
+def test_host_release_embedded_python_compiles(workflow, step_name):
+    text = (REPO_ROOT / ".github/workflows" / workflow).read_text(encoding="utf-8")
     step = text.split(f"- name: {step_name}\n", 1)[1].split("\n      - name:", 1)[0]
     script = textwrap.dedent(step.split("<<'PY'\n", 1)[1].rsplit("\n          PY", 1)[0])
     compile(script, step_name, "exec")
 
 
+def test_pypi_publication_reuses_released_artifacts_with_scoped_oidc():
+    text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    verify, publish = text.split("\n  publish:\n", 1)
+    publish = publish.split("\n  test-package:\n", 1)[0]
+    assert "types: [published]" in verify
+    assert ".isDraft == false and .isPrerelease == false" in verify
+    assert "gh release download" in verify
+    assert 'require_release_checks.py --tag "$RELEASE_TAG"' in verify
+    assert verify.index("require_release_checks.py") < verify.index("gh release download")
+    assert "actions: read" in verify
+    assert "SHA256SUMS-python.txt" in verify
+    assert "id-token: write" not in verify
+    assert "needs: verify" in publish
+    assert "id-token: write" in publish
+    assert "name: pypi" in publish
+    assert "pypa/gh-action-pypi-publish@" in publish
+    assert "password:" not in text
+    assert "pip wheel" not in verify + publish
+    assert "skip-existing:" not in text
+
+
+def test_manual_python_publication_is_isolated_to_testpypi():
+    text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    production, test = text.split("\n  test-package:\n", 1)
+    assert "(github.event_name != 'workflow_dispatch' || !inputs.test_publish)" in production
+    assert "if: github.event_name == 'workflow_dispatch' && inputs.test_publish" in test
+    assert "0.0.0.dev${{ github.run_id }}" in test
+    assert "Run Python package tests" in test
+    assert "Verify installed development wheel" in test
+    assert "needs: test-package" in test
+    assert "name: testpypi" in test
+    assert "repository-url: https://test.pypi.org/legacy/" in test
+    assert "name: pypi\n" not in test
+    assert "require_release_checks.py" not in test
+
+
+@pytest.mark.parametrize("event,test_publish,reference,expected", [
+    ("workflow_dispatch", "true", "main", "1.2.3-test.123.2"),
+    ("workflow_dispatch", "false", "main", "1.2.3"),
+    ("push", "false", "v1.2.3", "1.2.3"),
+])
+def test_dotnet_manual_versions_are_marked_without_changing_release_versions(
+        tmp_path, event, test_publish, reference, expected):
+    text = (REPO_ROOT / ".github/workflows/publish-dotnet.yml").read_text(encoding="utf-8")
+    step = text.split("- name: Resolve host version\n", 1)[1].split("\n      - name:", 1)[0]
+    script = textwrap.dedent(step.split("run: |\n", 1)[1])
+    output = tmp_path / "output"
+    result = subprocess.run(["bash"], input=script, text=True, capture_output=True, cwd=REPO_ROOT,
+                            env={**os.environ, "EVENT_NAME": event, "INPUT_VERSION": "1.2.3", "REF_NAME": reference,
+                                 "TEST_PUBLISH": test_publish, "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2",
+                                 "GITHUB_OUTPUT": str(output)})
+    assert result.returncode == 0, result.stderr
+    assert output.read_text().strip() == f"version={expected}"
+    assert "github.event_name == 'workflow_dispatch' && !inputs.release_build" in step
+
+
+@pytest.mark.parametrize("case", ["valid", "checksum", "version", "name", "missing", "extra"])
+def test_pypi_wheel_verification_rejects_invalid_release_artifacts(tmp_path, case):
+    import hashlib
+    import sys
+
+    text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    step = text.split("- name: Verify wheel checksum and metadata\n", 1)[1].split("\n      - name:", 1)[0]
+    script = textwrap.dedent(step.split("<<'PY'\n", 1)[1].rsplit("\n          PY", 1)[0])
+    incoming = tmp_path / "incoming"
+    incoming.mkdir()
+    wheel = incoming / "pico_uart-1.2.3-py3-none-any.whl"
+    name = "other-package" if case == "name" else "pico-uart"
+    version = "9.9.9" if case == "version" else "1.2.3"
+    with ZipFile(wheel, "w") as archive:
+        archive.writestr("pico_uart-1.2.3.dist-info/METADATA", f"Name: {name}\nVersion: {version}\n")
+    digest = "0" * 64 if case == "checksum" else hashlib.sha256(wheel.read_bytes()).hexdigest()
+    (incoming / "SHA256SUMS-python.txt").write_text(f"{digest}  {wheel.name}\n", encoding="utf-8")
+    if case == "missing":
+        wheel.unlink()
+    elif case == "extra":
+        (incoming / "extra.whl").write_bytes(wheel.read_bytes())
+    result = subprocess.run([sys.executable, "-"], input=script, text=True, capture_output=True,
+                            cwd=tmp_path, env={**os.environ, "VERSION": "1.2.3"})
+    assert (result.returncode == 0) == (case == "valid"), result.stderr
+    if case == "valid":
+        assert (tmp_path / "dist" / wheel.name).read_bytes() == wheel.read_bytes()
+    else:
+        assert not (tmp_path / "dist").exists()
+
+
 def test_webhid_pages_requires_a_published_release_and_checks_the_tag() -> None:
-    text = (REPO_ROOT / ".github/workflows/webhid-pages.yml").read_text(encoding="utf-8")
+    text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
 
     assert "types: [published]" in text
     assert "workflow_dispatch:" in text
     assert "tools/release/resolve-release-version.sh push '' \"$RELEASE_TAG\"" in text
     assert "gh release view" in text
     assert ".isDraft == false and .isPrerelease == false" in text
-    assert "ref: ${{ inputs.test_publish && github.sha || github.event.release.tag_name || inputs.tag }}" in text
+    assert "ref: ${{ steps.checks.outputs.sha || github.sha }}" in text
     assert "node --test host/webhid/tests/*.test.mjs" in text
     assert text.index("Validate published release") < text.index("Checkout WebHID")
     assert text.index("Check WebHID") < text.index("Upload WebHID site")
 
 
 def test_webhid_pages_test_publish_is_explicit_and_uses_the_dispatched_commit() -> None:
-    text = (REPO_ROOT / ".github/workflows/webhid-pages.yml").read_text(encoding="utf-8")
+    text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
     inputs = text.split("    inputs:\n", 1)[1].split("\npermissions:", 1)[0]
 
     assert "test_publish:" in inputs
     assert "default: false" in inputs
     assert "type: boolean" in inputs
-    for step in ("Checkout release tooling", "Validate published release"):
-        section = text.split(f"- name: {step}\n", 1)[1].split("\n      - name:", 1)[0]
-        assert "if: github.event_name != 'workflow_dispatch' || !inputs.test_publish" in section
-    assert "inputs.test_publish && github.sha" in text
+    section = text.split("- name: Validate published release\n", 1)[1].split("\n      - name:", 1)[0]
+    assert "if: github.event_name != 'workflow_dispatch' || !inputs.test_publish" in section
+    assert 'require_release_checks.py --tag "$RELEASE_TAG"' in text
+    assert text.index("Require successful tests") < text.index("Checkout WebHID")
+    gate = text.split("- name: Require successful tests\n", 1)[1].split("\n      - name:", 1)[0]
+    assert "if: github.event_name != 'workflow_dispatch' || !inputs.test_publish" in gate
+    assert "ref: ${{ steps.checks.outputs.sha || github.sha }}" in text
 
 
-@pytest.mark.parametrize("version,success", [("0.0.0-debug", True), ("1.2.3", True), ("<script>", False)])
+@pytest.mark.parametrize("version,success", [
+    ("0.0.0-debug", True), ("1.2.3", True), ("0.0.0-test.123.1", True), ("<script>", False),
+])
 def test_webhid_pages_stamps_only_valid_host_versions(tmp_path, version, success):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node unavailable")
-    text = (REPO_ROOT / ".github/workflows/webhid-pages.yml").read_text(encoding="utf-8")
+    text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
     step = text.split("- name: Stamp WebHID version\n", 1)[1].split("\n      - name:", 1)[0]
     script = textwrap.dedent(step.split("<<'JS'\n", 1)[1].rsplit("\n          JS", 1)[0])
     target = tmp_path / "host/webhid/index.html"
@@ -241,11 +351,11 @@ def test_webhid_pages_stamps_only_valid_host_versions(tmp_path, version, success
     assert (result.returncode == 0) == success, result.stderr
     expected = original.replace(">0.0.0-debug</span>", f">{version}</span>") if success else original
     assert target.read_text(encoding="utf-8") == expected
-    assert "inputs.test_publish && '0.0.0-debug' || steps.release.outputs.version" in step
+    assert "format('0.0.0-test.{0}.{1}', github.run_id, github.run_attempt)" in step
 
 
 def test_webhid_pages_deploys_only_the_independent_site_with_scoped_permissions() -> None:
-    text = (REPO_ROOT / ".github/workflows/webhid-pages.yml").read_text(encoding="utf-8")
+    text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
     build, deploy = text.split("\n  deploy:\n", 1)
 
     assert "path: host/webhid" in build
@@ -258,6 +368,89 @@ def test_webhid_pages_deploys_only_the_independent_site_with_scoped_permissions(
     assert "name: github-pages" in deploy
     assert "group: webhid-pages" in text
     assert "cancel-in-progress: false" in text
+
+
+@pytest.mark.parametrize("status,conclusion", [
+    ("completed", "failure"), ("completed", "cancelled"), ("completed", "skipped"),
+    ("in_progress", None), ("queued", None),
+])
+def test_publication_does_not_accept_an_older_success(monkeypatch, status, conclusion):
+    runs = [
+        {"head_sha": "abc", "event": "push", "head_branch": "v1.2.3", "run_number": 1, "run_attempt": 1,
+         "status": "completed", "conclusion": "success", "html_url": "https://example.test/1"},
+        {"head_sha": "abc", "event": "push", "head_branch": "v1.2.3", "run_number": 2, "run_attempt": 1,
+         "status": status, "conclusion": conclusion, "html_url": "https://example.test/2"},
+    ]
+    monkeypatch.setattr(require_release_checks.subprocess, "run", lambda *args, **kwargs:
+                        subprocess.CompletedProcess(args, 0, stdout=json.dumps([{"workflow_runs": runs}])))
+    with pytest.raises(RuntimeError, match="publication blocked"):
+        require_release_checks.require_successful_run("owner/repo", "release.yml", "abc", "v1.2.3")
+
+
+@pytest.mark.parametrize("sha,tag,success", [
+    ("abc", "v1.2.3", True), ("other", "v1.2.3", False), ("abc", "v2.0.0", False),
+])
+def test_publication_requires_tests_for_the_exact_commit_and_tag(monkeypatch, sha, tag, success):
+    import json
+
+    run = {"head_sha": "abc", "event": "push", "head_branch": "v1.2.3", "run_number": 1, "run_attempt": 1,
+           "status": "completed", "conclusion": "success", "html_url": "https://example.test/1"}
+    monkeypatch.setattr(require_release_checks.subprocess, "run", lambda *args, **kwargs:
+                        subprocess.CompletedProcess(args, 0, stdout=json.dumps([{"workflow_runs": [run]}])))
+    if success:
+        require_release_checks.require_successful_run("owner/repo", "release.yml", sha, tag)
+    else:
+        with pytest.raises(RuntimeError, match="no required test run"):
+            require_release_checks.require_successful_run("owner/repo", "release.yml", sha, tag)
+
+
+@pytest.mark.parametrize("mode,failed_workflow", [
+    ("--tag", None), ("--sha", None), ("--tag", "pr-check.yml"), ("--tag", "release.yml"),
+])
+def test_publication_gate_requires_all_applicable_workflows(monkeypatch, tmp_path, mode, failed_workflow):
+    import sys
+
+    calls = []
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr(sys, "argv", ["require_release_checks.py", mode, "v1.2.3" if mode == "--tag" else "abc"])
+
+    def gh_api(command, **kwargs):
+        endpoint = command[-1]
+        calls.append(endpoint)
+        if "/commits/" in endpoint:
+            payload = {"sha": "abc"}
+        else:
+            run = {"head_sha": "abc", "event": "push", "head_branch": "v1.2.3", "run_number": 1,
+                   "run_attempt": 1, "status": "completed", "conclusion": "success",
+                   "html_url": "https://example.test/1"}
+            if failed_workflow and failed_workflow in endpoint:
+                run["conclusion"] = "failure"
+            payload = [{"workflow_runs": [run]}]
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload))
+
+    monkeypatch.setattr(require_release_checks.subprocess, "run", gh_api)
+    assert require_release_checks.main() == (1 if failed_workflow else 0)
+    if failed_workflow:
+        assert not output.exists()
+    else:
+        assert output.read_text() == "sha=abc\n"
+        assert any("pr-check.yml" in call for call in calls)
+        assert any("release.yml" in call for call in calls) == (mode == "--tag")
+
+
+def test_publication_gate_blocks_when_github_api_is_unavailable(monkeypatch):
+    import sys
+
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setattr(sys, "argv", ["require_release_checks.py", "--tag", "v1.2.3"])
+
+    def unavailable(command, **kwargs):
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(require_release_checks.subprocess, "run", unavailable)
+    assert require_release_checks.main() == 1
 
 
 def test_release_notes_reference_config_profiles() -> None:

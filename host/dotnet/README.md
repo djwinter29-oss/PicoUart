@@ -85,6 +85,9 @@ The published directory includes the shared frontend, so it runs without the sou
 without .NET installed, publish for its runtime identifier with `--self-contained true -r linux-x64` (or the appropriate
 Windows/macOS identifier). Distribute the whole output directory, including its `web` folder.
 
+CI packaging lives in the separate [.NET packaging workflow](../../.github/workflows/publish-dotnet.yml), called by the
+release pipeline. For a packaging-only test run, see the [distribution procedure](../../docs/development/host-distribution.md#net-downloads).
+
 ## Checks
 
 ```sh

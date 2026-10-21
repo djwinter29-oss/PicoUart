@@ -1,0 +1,188 @@
+name: Publish Python to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag to publish to PyPI (for example v1.0.1)"
+        required: false
+        type: string
+      test_publish:
+        description: "Build the selected commit and publish a development version to TestPyPI only"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pypi-${{ inputs.test_publish && github.ref || github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify released Python wheel
+    if: (github.event_name != 'workflow_dispatch' || !inputs.test_publish) && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Validate published release and download wheel
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          VERSION=$(tools/release/resolve-release-version.sh push '' "$RELEASE_TAG")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease --jq '.isDraft == false and .isPrerelease == false')" = true
+          python3 tools/release/require_release_checks.py --tag "$RELEASE_TAG"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'pico_uart-*-py3-none-any.whl' --pattern SHA256SUMS-python.txt --dir incoming
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify wheel checksum and metadata
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          python - <<'PY'
+          from email.parser import BytesParser
+          import hashlib
+          import os
+          from pathlib import Path
+          import shutil
+          from zipfile import ZipFile
+          version = os.environ['VERSION']
+          incoming = Path('incoming')
+          wheels = list(incoming.glob('*.whl'))
+          assert len(wheels) == 1, 'Expected exactly one released wheel'
+          wheel = wheels[0]
+          assert wheel.name == f'pico_uart-{version}-py3-none-any.whl', 'Wheel filename does not match release'
+          checksums = dict(line.split(maxsplit=1)[::-1]
+                           for line in (incoming / 'SHA256SUMS-python.txt').read_text().splitlines())
+          assert hashlib.sha256(wheel.read_bytes()).hexdigest() == checksums.get(wheel.name), 'Wheel checksum mismatch'
+          with ZipFile(wheel) as archive:
+              metadata = BytesParser().parsebytes(archive.read(f'pico_uart-{version}.dist-info/METADATA'))
+          assert metadata['Name'] == 'pico-uart', 'Unexpected package name'
+          assert metadata['Version'] == version, 'Package version does not match release'
+          Path('dist').mkdir()
+          shutil.copyfile(wheel, Path('dist') / wheel.name)
+          PY
+
+      - name: Upload verified distribution
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pypi-distribution
+          path: dist/*.whl
+          if-no-files-found: error
+
+  publish:
+    name: Publish verified wheel
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/project/pico-uart/
+    steps:
+      - name: Download verified distribution
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pypi-distribution
+          path: dist
+
+      - name: Publish to PyPI using Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@aef6c9b6e301dc803e1bc9133e9ce67ae9b0906b # v1.14.3
+        with:
+          packages-dir: dist
+
+  test-package:
+    name: Build marked TestPyPI wheel
+    if: github.event_name == 'workflow_dispatch' && inputs.test_publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: python -m pip install --require-hashes -r host/python/requirements-lock.txt
+
+      - name: Run Python package tests
+        run: python -m pytest host/python/tests
+
+      - name: Build development wheel
+        env:
+          PICO_UART_HOST_VERSION: 0.0.0.dev${{ github.run_id }}
+        run: python -m pip wheel --no-deps host/python --wheel-dir dist
+
+      - name: Verify installed development wheel
+        env:
+          VERSION: 0.0.0.dev${{ github.run_id }}
+        run: |
+          set -eu
+          python -m venv build/testpypi-check
+          build/testpypi-check/bin/python -m pip install --require-hashes -r host/python/requirements-runtime-lock.txt
+          build/testpypi-check/bin/python -m pip install --no-deps dist/*.whl
+          cd build
+          testpypi-check/bin/python - <<'PY'
+          from importlib.metadata import version
+          import os
+          from pico_uart.web.app import create_app
+          expected = os.environ['VERSION']
+          assert version('pico-uart') == expected
+          page = create_app(object()).test_client().get('/')
+          assert page.status_code == 200
+          assert f'aria-label="Host application version">{expected}</span>'.encode() in page.data
+          PY
+
+      - name: Upload TestPyPI wheel
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: testpypi-distribution
+          path: dist/*.whl
+          if-no-files-found: error
+
+  publish-test:
+    name: Publish development wheel to TestPyPI
+    needs: test-package
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/pico-uart/
+    steps:
+      - name: Download TestPyPI wheel
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: testpypi-distribution
+          path: dist
+
+      - name: Publish to TestPyPI using Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@aef6c9b6e301dc803e1bc9133e9ce67ae9b0906b # v1.14.3
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist

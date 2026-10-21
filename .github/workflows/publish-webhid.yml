@@ -1,4 +1,4 @@
-name: WebHID Pages
+name: Publish WebHID Pages
 
 on:
   release:
@@ -29,10 +29,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
       pages: read
     steps:
       - name: Checkout release tooling
-        if: github.event_name != 'workflow_dispatch' || !inputs.test_publish
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -50,10 +50,18 @@ jobs:
           test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --json isDraft,isPrerelease --jq '.isDraft == false and .isPrerelease == false')" = true
 
+      - name: Require successful tests
+        id: checks
+        if: github.event_name != 'workflow_dispatch' || !inputs.test_publish
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/release/require_release_checks.py --tag "$RELEASE_TAG"
+
       - name: Checkout WebHID
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.test_publish && github.sha || github.event.release.tag_name || inputs.tag }}
+          ref: ${{ steps.checks.outputs.sha || github.sha }}
           persist-credentials: false
 
       - name: Setup Node
@@ -69,12 +77,12 @@ jobs:
 
       - name: Stamp WebHID version
         env:
-          HOST_VERSION: ${{ inputs.test_publish && '0.0.0-debug' || steps.release.outputs.version }}
+          HOST_VERSION: ${{ inputs.test_publish && format('0.0.0-test.{0}.{1}', github.run_id, github.run_attempt) || steps.release.outputs.version }}
         run: |
           node --input-type=module - <<'JS'
           import { readFileSync, writeFileSync } from 'node:fs';
           const version = process.env.HOST_VERSION;
-          if (!/^\d+\.\d+\.\d+(?:-debug)?$/.test(version ?? '')) throw new Error('Invalid host version');
+          if (!/^\d+\.\d+\.\d+(?:-debug|-test\.\d+\.\d+)?$/.test(version ?? '')) throw new Error('Invalid host version');
           const path = 'host/webhid/index.html';
           const html = readFileSync(path, 'utf8');
           const marker = 'aria-label="Host application version">0.0.0-debug</span>';
