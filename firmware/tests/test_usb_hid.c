@@ -30,7 +30,7 @@ static bool led_on;
 static bool led_available;
 static uart_driver_port_stats_t diagnostic_stats;
 static uint8_t diagnostic_health;
-static board_config_status_t configuration;
+static boot_config_status_t configuration;
 static bool cdc_open;
 static bool save_success;
 static unsigned int save_calls;
@@ -55,7 +55,7 @@ void led_set(bool on)
     led_on = on;
 }
 
-const board_config_status_t *system_config_status(void)
+const boot_config_status_t *system_boot_config_status(void)
 {
     return &configuration;
 }
@@ -92,9 +92,9 @@ void setUp(void)
     save_success = true;
     save_calls = 0u;
     reset_calls = 0u;
-    configuration = (board_config_status_t){
-        .source = BOARD_CONFIG_DEFAULTS, .reason = BOARD_CONFIG_ERASED,
-        .stored_profile = BOARD_CONFIG_PROFILE_UNAVAILABLE, .active_profile = BOARD_CLOCK_DEFAULT,
+    configuration = (boot_config_status_t){
+        .source = BOOT_CONFIG_DEFAULTS, .reason = BOOT_CONFIG_ERASED,
+        .stored_profile = BOOT_CONFIG_PROFILE_UNAVAILABLE, .active_profile = BOOT_CLOCK_DEFAULT,
     };
     usb_hid_init();
 }
@@ -265,7 +265,7 @@ static void test_configuration_save_validation_and_deferred_result(void)
     TEST_ASSERT_EQUAL_UINT16(8, tud_hid_get_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, result, sizeof(result)));
     TEST_ASSERT_EQUAL_UINT8(2, result[1]);
     TEST_ASSERT_EQUAL_UINT8(request[4], result[4]);
-    TEST_ASSERT_EQUAL(BOARD_CLOCK_DEFAULT, configuration.active_profile);
+    TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, configuration.active_profile);
     TEST_ASSERT_EQUAL_UINT(0u, reset_calls);
     pico_test_time_us = 999999;
     usb_hid_poll();
@@ -298,7 +298,7 @@ static void test_configuration_save_busy_failure_and_default(void)
     tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
     usb_hid_poll();
     TEST_ASSERT_EQUAL(USB_HID_CONFIG_SAVED, usb_hid_config_save_state);
-    TEST_ASSERT_EQUAL_UINT32(BOARD_CLOCK_DEFAULT, saved_profile);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_CLOCK_DEFAULT, saved_profile);
 }
 
 static void test_channel_diagnostics_history(void)

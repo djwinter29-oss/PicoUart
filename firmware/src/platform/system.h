@@ -6,7 +6,7 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
-#include "platform/board_config.h"
+#include "platform/boot_config.h"
 
 /** @brief Watchdog timeout that covers USB poll plus a 1 s line-coding apply. */
 #ifndef PICO_UART_WATCHDOG_TIMEOUT_MS
@@ -27,7 +27,7 @@ void system_init_clock(void);
  * @brief Read the immutable boot configuration decision.
  * @return Static RAM snapshot valid after system_init_clock.
  */
-const board_config_status_t *system_config_status(void);
+const boot_config_status_t *system_boot_config_status(void);
 
 /**
  * @brief Save and verify a supported clock profile without changing the running clock.

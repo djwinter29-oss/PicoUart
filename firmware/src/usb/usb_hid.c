@@ -484,7 +484,7 @@ static bool usb_hid_publish_status_report(const uart_driver_port_stats_t uart_st
 void usb_hid_init(void)
 {
     usb_hid_config_save_state = USB_HID_CONFIG_IDLE;
-    usb_hid_config_save_profile = system_config_status()->stored_profile;
+    usb_hid_config_save_profile = system_boot_config_status()->stored_profile;
     usb_hid_config_reboot_deadline = nil_time;
     usb_hid_sequence = 0u;
     usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time());
@@ -562,7 +562,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
     }
 
     if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_CONFIGURATION)) {
-        const board_config_status_t *config = system_config_status();
+        const boot_config_status_t *config = system_boot_config_status();
         uint8_t payload[12] = {1u, (uint8_t)config->source, (uint8_t)config->reason, 0u};
         for (unsigned int index = 0; index < 4u; ++index) {
             payload[4u + index] = (uint8_t)(config->stored_profile >> (8u * index));
@@ -670,7 +670,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
             return;
         }
         usb_hid_config_save_state = USB_HID_CONFIG_INVALID;
-        usb_hid_config_save_profile = BOARD_CONFIG_PROFILE_UNAVAILABLE;
+        usb_hid_config_save_profile = BOOT_CONFIG_PROFILE_UNAVAILABLE;
         if (bufsize != 8u || buffer[0] != 1u || (buffer[1] & ~1u) != 0u ||
             buffer[2] != 0u || buffer[3] != 0u) {
             return;
@@ -684,9 +684,9 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
             false;
 #endif
         usb_hid_config_save_profile = profile;
-        if (!board_config_profile_supported(profile, rp2350) ||
-            (profile != BOARD_CLOCK_DEFAULT && (buffer[1] & 1u) == 0u)) {
-            usb_hid_config_save_profile = BOARD_CONFIG_PROFILE_UNAVAILABLE;
+        if (!boot_config_profile_supported(profile, rp2350) ||
+            (profile != BOOT_CLOCK_DEFAULT && (buffer[1] & 1u) == 0u)) {
+            usb_hid_config_save_profile = BOOT_CONFIG_PROFILE_UNAVAILABLE;
             return;
         }
         usb_hid_config_save_state = usb_hid_config_can_save() ? USB_HID_CONFIG_PENDING : USB_HID_CONFIG_BUSY;

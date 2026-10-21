@@ -150,9 +150,7 @@ static bool uart_driver_init_backends(void)
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
         uart_runtime_port_t *port = &uart_driver_state.ports[index];
-        bool port_ok = false;
-
-        port_ok = (port->ops != NULL) && (port->ops->is_initialized(&port->backend) || port->ops->init(&port->backend));
+        bool port_ok = (port->ops != NULL) && port->ops->init(&port->backend);
 
         if (!port_ok) {
             init_ok = false;

@@ -54,7 +54,7 @@ add_executable(pico_uart)
 
 target_sources(pico_uart PRIVATE
     src/config/uart_config.c
-    src/platform/board_config.c
+    src/platform/boot_config.c
     src/platform/led.c
     src/platform/service_load.c
     src/platform/system.c

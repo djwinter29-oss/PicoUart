@@ -71,23 +71,17 @@ static void hw_uart_driver_configure_rts(hw_uart_driver_t *driver)
 static void hw_uart_driver_update_rts(hw_uart_driver_t *driver)
 {
     size_t occupancy;
-    size_t high_watermark;
-    size_t low_watermark;
+    bool should_assert;
 
     if (!driver->config->hardware_flow_control) {
         return;
     }
 
     occupancy = ring_buffer_occupancy(&driver->rx_ring);
-    high_watermark = ((size_t)driver->rx_ring.size * 3u) / 4u;
-    low_watermark = (size_t)driver->rx_ring.size / 2u;
-
-    if (driver->rx_rts_asserted && (occupancy >= high_watermark)) {
-        gpio_put(driver->config->port->rts_pin, 1u);
-        driver->rx_rts_asserted = false;
-    } else if (!driver->rx_rts_asserted && (occupancy <= low_watermark)) {
-        gpio_put(driver->config->port->rts_pin, 0u);
-        driver->rx_rts_asserted = true;
+    should_assert = uart_rx_rts_should_assert(driver->rx_rts_asserted, occupancy, driver->rx_ring.size);
+    if (should_assert != driver->rx_rts_asserted) {
+        gpio_put(driver->config->port->rts_pin, should_assert ? 0u : 1u);
+        driver->rx_rts_asserted = should_assert;
     }
 }
 
@@ -290,20 +284,35 @@ bool hw_uart_driver_rx_snapshot_is_current(const void *context, uint32_t consume
     return (live_producer - consumer_sequence) <= driver->rx_ring.size;
 }
 
-static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
+/** @brief Configure fixed TX DMA settings once per channel claim. */
+static void hw_uart_driver_configure_tx_dma(hw_uart_driver_t *driver)
 {
     dma_channel_config tx_dma_config;
+
+    tx_dma_config = dma_channel_get_default_config((uint)driver->tx_dma_channel);
+    channel_config_set_transfer_data_size(&tx_dma_config, DMA_SIZE_8);
+    channel_config_set_read_increment(&tx_dma_config, true);
+    channel_config_set_write_increment(&tx_dma_config, false);
+    channel_config_set_dreq(&tx_dma_config, uart_get_dreq(driver->config->instance, true));
+    dma_channel_configure((uint)driver->tx_dma_channel, &tx_dma_config, &uart_get_hw(driver->config->instance)->dr,
+                          NULL, 0u, false);
+}
+
+static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
+{
     ring_buffer_span_t span;
     uint32_t bits_per_frame;
     size_t transfer_length;
 
-    if ((driver == NULL) || driver->tx_active ||
-        ((uart_get_hw(driver->config->instance)->fr & UART_UARTFR_BUSY_BITS) != 0u)) {
+    if ((driver == NULL) || driver->tx_active) {
         return false;
     }
 
     span = ring_buffer_read_span(&driver->tx_ring);
     if (span.length == 0u) {
+        return false;
+    }
+    if ((uart_get_hw(driver->config->instance)->fr & UART_UARTFR_BUSY_BITS) != 0u) {
         return false;
     }
 
@@ -316,21 +325,16 @@ static bool hw_uart_driver_start_tx_dma(hw_uart_driver_t *driver)
         return false;
     }
 
-    tx_dma_config = dma_channel_get_default_config((uint)driver->tx_dma_channel);
-    channel_config_set_transfer_data_size(&tx_dma_config, DMA_SIZE_8);
-    channel_config_set_read_increment(&tx_dma_config, true);
-    channel_config_set_write_increment(&tx_dma_config, false);
-    channel_config_set_dreq(&tx_dma_config, uart_get_dreq(driver->config->instance, true));
-    dma_channel_configure((uint)driver->tx_dma_channel, &tx_dma_config, &uart_get_hw(driver->config->instance)->dr,
-                          span.data, (uint32_t)transfer_length, true);
-
     driver->tx_dma_bytes_in_flight = transfer_length;
     driver->tx_active = true;
+    dma_channel_set_read_addr((uint)driver->tx_dma_channel, span.data, false);
+    hw_set_bits(&dma_hw->ch[driver->tx_dma_channel].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+    dma_channel_set_trans_count((uint)driver->tx_dma_channel, (uint32_t)transfer_length, true);
     service_load_note(1u);
     return true;
 }
 
-static void hw_uart_driver_poll_tx(hw_uart_driver_t *driver, bool tx_launch_allowed)
+static void hw_uart_driver_poll_tx_completion(hw_uart_driver_t *driver)
 {
     if ((driver == NULL) || !driver->tx_active) {
         return;
@@ -342,9 +346,6 @@ static void hw_uart_driver_poll_tx(hw_uart_driver_t *driver, bool tx_launch_allo
         driver->controller_tx_bytes += (uint32_t)driver->tx_dma_bytes_in_flight;
         driver->tx_active = false;
         driver->tx_dma_bytes_in_flight = 0u;
-        if (tx_launch_allowed) {
-            (void)hw_uart_driver_start_tx_dma(driver);
-        }
     }
 }
 
@@ -416,7 +417,7 @@ void hw_uart_driver_poll(void *context, bool tx_launch_allowed)
         }
         restore_interrupts(interrupt_status);
     }
-    hw_uart_driver_poll_tx(driver, tx_launch_allowed);
+    hw_uart_driver_poll_tx_completion(driver);
     if (tx_launch_allowed && !driver->tx_active) {
         (void)hw_uart_driver_start_tx_dma(driver);
     }
@@ -496,6 +497,7 @@ bool hw_uart_driver_start(void *context)
         }
         return false;
     }
+    hw_uart_driver_configure_tx_dma(driver);
     hw_uart_driver_configure_rts(driver);
     hw_uart_driver_start_rx_dma(driver);
 

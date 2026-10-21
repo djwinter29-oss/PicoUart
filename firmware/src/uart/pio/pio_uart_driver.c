@@ -91,23 +91,17 @@ static void pio_uart_driver_configure_rts(pio_uart_driver_t *driver)
 static void pio_uart_driver_update_rts(pio_uart_driver_t *driver)
 {
     size_t occupancy;
-    size_t high_watermark;
-    size_t low_watermark;
+    bool should_assert;
 
     if ((driver->config->pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) == 0u) {
         return;
     }
 
     occupancy = ring_buffer_occupancy(&driver->rx_ring);
-    high_watermark = ((size_t)driver->rx_ring.size * 3u) / 4u;
-    low_watermark = (size_t)driver->rx_ring.size / 2u;
-
-    if (driver->rx_rts_asserted && (occupancy >= high_watermark)) {
-        gpio_put(driver->config->port->rts_pin, 1u);
-        driver->rx_rts_asserted = false;
-    } else if (!driver->rx_rts_asserted && (occupancy <= low_watermark)) {
-        gpio_put(driver->config->port->rts_pin, 0u);
-        driver->rx_rts_asserted = true;
+    should_assert = uart_rx_rts_should_assert(driver->rx_rts_asserted, occupancy, driver->rx_ring.size);
+    if (should_assert != driver->rx_rts_asserted) {
+        gpio_put(driver->config->port->rts_pin, should_assert ? 0u : 1u);
+        driver->rx_rts_asserted = should_assert;
     }
 }
 

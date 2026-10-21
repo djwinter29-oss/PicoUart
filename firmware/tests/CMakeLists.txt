@@ -183,9 +183,14 @@ pico_uart_add_unity_test(test_temperature temperature
     test_temperature.c
 )
 
-pico_uart_add_unity_test(test_board_config board_config
-    test_board_config.c
-    ${FIRMWARE_ROOT}/src/platform/board_config.c
+pico_uart_add_unity_test(test_boot_config boot_config
+    test_boot_config.c
+)
+target_include_directories(test_boot_config PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
+target_compile_definitions(test_boot_config PRIVATE
+    PICO_FLASH_SIZE_BYTES=4096
+    PICO_UART_CONFIG_FLASH_SIZE=4096
+    PICO_UART_CONFIG_FLASH_OFFSET=0
 )
 
 pico_uart_add_unity_test(test_service_load service_load
@@ -197,10 +202,15 @@ foreach(_family IN ITEMS rp2040 rp2350)
     pico_uart_add_unity_test(test_usb_hid_${_family} usb_hid_${_family}
         test_usb_hid.c
         ${FIRMWARE_ROOT}/src/platform/service_load.c
-        ${FIRMWARE_ROOT}/src/platform/board_config.c
+        ${FIRMWARE_ROOT}/src/platform/boot_config.c
     )
     target_include_directories(test_usb_hid_${_family} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
-    target_compile_definitions(test_usb_hid_${_family} PRIVATE PICO_RP2350=$<STREQUAL:${_family},rp2350>)
+    target_compile_definitions(test_usb_hid_${_family} PRIVATE
+        PICO_RP2350=$<STREQUAL:${_family},rp2350>
+        PICO_FLASH_SIZE_BYTES=4096
+        PICO_UART_CONFIG_FLASH_SIZE=4096
+        PICO_UART_CONFIG_FLASH_OFFSET=0
+    )
     target_compile_options(test_usb_hid_${_family} PRIVATE -ffunction-sections -fdata-sections -fno-pie)
     target_link_options(test_usb_hid_${_family} PRIVATE -Wl,--gc-sections -no-pie)
 endforeach()

@@ -6,6 +6,7 @@
 #include "unity.h"
 
 #include "pico/flash.h"
+#include "pico/multicore.h"
 #include "pico/time.h"
 #include "uart/backend/backend.h"
 #include "uart/control/plane.h"
@@ -13,18 +14,172 @@
 #include "uart/uart_driver.h"
 #include "uart/worker.h"
 
+#include <string.h>
+
 absolute_time_t pico_test_time_us;
 static uint32_t test_stats_call_count;
+static void *test_startup_contexts[UART_PORT_COUNT];
+static bool test_startup_initialized[UART_PORT_COUNT];
+static size_t test_startup_init_calls;
+static size_t test_startup_deinit_calls;
+static size_t test_startup_baseline_calls;
+static size_t test_multicore_launch_calls;
+static size_t test_startup_fail_at;
+static ring_buffer_t test_startup_rings[UART_PORT_COUNT];
 
-const uart_driver_port_info_t uart_board_ports[UART_PORT_COUNT] = {0};
+const uart_driver_port_info_t uart_board_ports[UART_PORT_COUNT] = {
+    [UART_PORT_0] = {.id = UART_PORT_0, .backend = UART_DRIVER_BACKEND_HW, .baud_rate = 115200u},
+    [UART_PORT_1] = {.id = UART_PORT_1, .backend = UART_DRIVER_BACKEND_HW, .baud_rate = 115200u},
+    [UART_PORT_2] = {.id = UART_PORT_2, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u},
+    [UART_PORT_3] = {.id = UART_PORT_3, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u},
+    [UART_PORT_4] = {.id = UART_PORT_4, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u},
+    [UART_PORT_5] = {.id = UART_PORT_5, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u},
+};
 
 bool flash_safe_execute_core_init(void)
 {
     return true;
 }
 
-const uart_backend_ops_t uart_backend_hw_ops = {0};
-const uart_backend_ops_t uart_backend_pio_ops = {0};
+static size_t test_startup_port_index(const void *instance)
+{
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        if (test_startup_contexts[index] == instance) {
+            return index;
+        }
+    }
+    return UART_PORT_COUNT;
+}
+
+static bool test_startup_load_config(void *instance, const uart_driver_port_info_t *port_info)
+{
+    if ((port_info == NULL) || ((unsigned)port_info->id >= UART_PORT_COUNT) ||
+        test_startup_initialized[port_info->id]) {
+        return false;
+    }
+    test_startup_contexts[port_info->id] = instance;
+    return true;
+}
+
+static bool test_startup_is_initialized(const void *instance)
+{
+    size_t index = test_startup_port_index(instance);
+    return (index < UART_PORT_COUNT) && test_startup_initialized[index];
+}
+
+static bool test_startup_init(void *instance)
+{
+    size_t index = test_startup_port_index(instance);
+    if (index >= UART_PORT_COUNT) {
+        return false;
+    }
+    ++test_startup_init_calls;
+    if (test_startup_init_calls == test_startup_fail_at) {
+        return false;
+    }
+    test_startup_initialized[index] = true;
+    return true;
+}
+
+static void test_startup_deinit(void *instance)
+{
+    size_t index = test_startup_port_index(instance);
+    if (index < UART_PORT_COUNT) {
+        test_startup_initialized[index] = false;
+        ++test_startup_deinit_calls;
+    }
+}
+
+static void test_startup_poll(void *instance, bool tx_launch_allowed)
+{
+    (void)instance;
+    (void)tx_launch_allowed;
+}
+
+static ring_buffer_t *test_startup_ring(void *instance)
+{
+    size_t index = test_startup_port_index(instance);
+    return index < UART_PORT_COUNT ? &test_startup_rings[index] : NULL;
+}
+
+static bool test_startup_line_coding_matches(const void *instance, const uart_driver_line_coding_t *line_coding)
+{
+    return (instance != NULL) && (line_coding != NULL);
+}
+
+static bool test_startup_line_coding_acceptable(const uart_driver_line_coding_t *line_coding)
+{
+    return line_coding != NULL;
+}
+
+static bool test_startup_set_line_coding(void *instance, const uart_driver_line_coding_t *line_coding)
+{
+    return (instance != NULL) && (line_coding != NULL);
+}
+
+static bool test_startup_rx_snapshot_is_current(const void *instance, uint32_t consumer_sequence)
+{
+    (void)consumer_sequence;
+    return instance != NULL;
+}
+
+static void test_startup_clear_rx_error_baseline(void *instance)
+{
+    if (instance != NULL) {
+        ++test_startup_baseline_calls;
+    }
+}
+
+static uint32_t test_startup_baud_rate(const void *instance)
+{
+    return instance != NULL ? 115200u : 0u;
+}
+
+static uart_backend_stats_t test_startup_stats(const void *instance)
+{
+    (void)instance;
+    return (uart_backend_stats_t){0};
+}
+
+const uart_backend_ops_t uart_backend_hw_ops = {
+    .load_config = test_startup_load_config,
+    .is_initialized = test_startup_is_initialized,
+    .init = test_startup_init,
+    .deinit = test_startup_deinit,
+    .poll = test_startup_poll,
+    .rx_ring = test_startup_ring,
+    .tx_ring = test_startup_ring,
+    .line_coding_matches = test_startup_line_coding_matches,
+    .line_coding_acceptable = test_startup_line_coding_acceptable,
+    .set_line_coding = test_startup_set_line_coding,
+    .rx_snapshot_is_current = test_startup_rx_snapshot_is_current,
+    .clear_rx_error_baseline = test_startup_clear_rx_error_baseline,
+    .baud_rate = test_startup_baud_rate,
+    .stats = test_startup_stats,
+};
+
+const uart_backend_ops_t uart_backend_pio_ops = {
+    .load_config = test_startup_load_config,
+    .is_initialized = test_startup_is_initialized,
+    .init = test_startup_init,
+    .deinit = test_startup_deinit,
+    .poll = test_startup_poll,
+    .rx_ring = test_startup_ring,
+    .tx_ring = test_startup_ring,
+    .line_coding_matches = test_startup_line_coding_matches,
+    .line_coding_acceptable = test_startup_line_coding_acceptable,
+    .set_line_coding = test_startup_set_line_coding,
+    .rx_snapshot_is_current = test_startup_rx_snapshot_is_current,
+    .clear_rx_error_baseline = test_startup_clear_rx_error_baseline,
+    .baud_rate = test_startup_baud_rate,
+    .stats = test_startup_stats,
+};
+
+static void test_record_multicore_launch(pico_test_core_entry_t entry)
+{
+    TEST_ASSERT_NOT_NULL(entry);
+    ++test_multicore_launch_calls;
+}
 
 void uart_worker_run(const uart_worker_hooks_t *hooks)
 {
@@ -79,6 +234,7 @@ static const uart_backend_ops_t test_uninitialized_backend_ops = {
 void setUp(void)
 {
     test_stats_call_count = 0u;
+    test_multicore_launch_hook = NULL;
 }
 
 void tearDown(void)
@@ -149,6 +305,48 @@ void test_port_api_rejects_stats_from_uninitialized_backend(void)
     TEST_ASSERT_EQUAL_UINT32(0u, test_stats_call_count);
 }
 
+void test_startup_rolls_back_partial_backend_init_and_retries(void)
+{
+    memset(test_startup_contexts, 0, sizeof(test_startup_contexts));
+    memset(test_startup_initialized, 0, sizeof(test_startup_initialized));
+    memset(test_startup_rings, 0, sizeof(test_startup_rings));
+    test_startup_init_calls = 0u;
+    test_startup_deinit_calls = 0u;
+    test_startup_baseline_calls = 0u;
+    test_multicore_launch_calls = 0u;
+    test_startup_fail_at = 3u;
+    test_multicore_launch_hook = test_record_multicore_launch;
+
+    TEST_ASSERT_FALSE(uart_driver_init());
+    TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT, test_startup_init_calls);
+    TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT - 1u, test_startup_deinit_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, test_startup_baseline_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, test_multicore_launch_calls);
+    TEST_ASSERT_FALSE(uart_driver_worker_is_running());
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        TEST_ASSERT_FALSE(test_startup_initialized[index]);
+        TEST_ASSERT_FALSE(uart_driver_port_is_ready((uart_port_id_t)index));
+    }
+
+    test_startup_init_calls = 0u;
+    test_startup_deinit_calls = 0u;
+    test_startup_baseline_calls = 0u;
+    test_startup_fail_at = 0u;
+    TEST_ASSERT_TRUE(uart_driver_init());
+    TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT, test_startup_init_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, test_startup_deinit_calls);
+    TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT, test_startup_baseline_calls);
+    TEST_ASSERT_EQUAL_UINT(1u, test_multicore_launch_calls);
+    TEST_ASSERT_TRUE(uart_driver_worker_is_running());
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        TEST_ASSERT_TRUE(test_startup_initialized[index]);
+        TEST_ASSERT_TRUE(uart_driver_port_is_ready((uart_port_id_t)index));
+    }
+
+    TEST_ASSERT_TRUE(uart_driver_init());
+    TEST_ASSERT_EQUAL_UINT(1u, test_multicore_launch_calls);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -157,5 +355,6 @@ int main(void)
     RUN_TEST(test_uart_driver_rejects_null_public_arguments);
     RUN_TEST(test_uart_driver_handles_valid_ports_before_initialization);
     RUN_TEST(test_port_api_rejects_stats_from_uninitialized_backend);
+    RUN_TEST(test_startup_rolls_back_partial_backend_init_and_retries);
     return UNITY_END();
 }
