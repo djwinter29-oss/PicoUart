@@ -25,11 +25,18 @@ SIGNAL_EXIT_CASES = (
 )
 
 
-def test_host_smoke_uses_selected_python_without_hil_venv(repo_root, tmp_path):
+@pytest.mark.parametrize("system", ["native", "Darwin"])
+def test_host_smoke_uses_selected_python_without_hil_venv(repo_root, tmp_path, system):
     script_path = tmp_path / "tools/validation/smoke-host-tools.sh"
     script_path.parent.mkdir(parents=True)
     shutil.copyfile(repo_root / "tools/validation/smoke-host-tools.sh", script_path)
-    (tmp_path / "sitecustomize.py").write_text("import sys\nsys.modules['serial'] = None\n", encoding="utf-8")
+    sitecustomize = "import sys\nsys.modules['serial'] = None\n"
+    if system == "Darwin":
+        uname = tmp_path / "uname"
+        uname.write_text("#!/bin/sh\nprintf '%s\\n' Darwin\n", encoding="utf-8")
+        uname.chmod(0o700)
+        sitecustomize += "sys.modules['hil_test_suite'] = None\n"
+    (tmp_path / "sitecustomize.py").write_text(sitecustomize, encoding="utf-8")
     for source_path in ("host/python/src", "tools/hil/src"):
         destination = tmp_path / source_path
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -38,7 +45,8 @@ def test_host_smoke_uses_selected_python_without_hil_venv(repo_root, tmp_path):
     completed = subprocess.run(
         ["sh", str(script_path)],
         cwd=tmp_path,
-        env={**os.environ, "PYTHON_EXE": sys.executable, "PYTHONPATH": str(tmp_path)},
+           env={**os.environ, "PYTHON_EXE": sys.executable, "PYTHONPATH": str(tmp_path),
+               "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]},
         capture_output=True,
         text=True,
     )

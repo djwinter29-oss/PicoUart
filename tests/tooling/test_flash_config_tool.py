@@ -223,7 +223,7 @@ def test_tcl_values_round_trip_without_substitution(value):
     tclsh = shutil.which("tclsh")
     if not tclsh:
         pytest.skip("offline Tcl interpreter unavailable")
-    script = f"set value {tool.tcl_quote(value)}\nputs [binary encode hex $value]\n"
+    script = f"set value {tool.tcl_quote(value)}\nbinary scan $value H* encoded\nputs $encoded\n"
     result = subprocess.run([tclsh], input=script, capture_output=True, text=True, check=True)
     assert not result.stderr
     assert bytes.fromhex(result.stdout.strip()).decode() == value
