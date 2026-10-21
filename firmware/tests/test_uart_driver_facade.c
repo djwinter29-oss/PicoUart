@@ -17,7 +17,7 @@
 absolute_time_t pico_test_time_us;
 static uint32_t test_stats_call_count;
 
-const uart_board_port_config_t uart_board_ports[UART_PORT_COUNT] = {0};
+const uart_driver_port_info_t uart_board_ports[UART_PORT_COUNT] = {0};
 
 bool flash_safe_execute_core_init(void)
 {

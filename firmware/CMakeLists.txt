@@ -54,7 +54,6 @@ add_executable(pico_uart)
 
 target_sources(pico_uart PRIVATE
     src/board/uart_board.c
-    src/board/uart_topology.c
     src/driver/board_config.c
     src/driver/led.c
     src/driver/service_load.c
@@ -67,9 +66,11 @@ target_sources(pico_uart PRIVATE
     src/uart/control/plane.c
     src/uart/hw/dma_claim.c
     src/uart/hw/dma_claim_ops.c
+    src/uart/hw/hw_uart_board_config.c
     src/uart/hw/hw_uart_driver.c
     src/uart/line_coding.c
     src/uart/port_api.c
+    src/uart/pio/pio_uart_board_config.c
     src/uart/pio/pio_uart_driver.c
     src/uart/pio/resource_claim.c
     src/uart/pio/resource_claim_ops.c

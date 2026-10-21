@@ -28,6 +28,18 @@
 _Static_assert((offsetof(pio_uart_driver_t, rx_storage) % PICO_UART_PIO_UART_RX_BUFFER_SIZE) == 0u,
                "PIO RX DMA ring storage must be size-aligned for channel_config_set_ring");
 
+bool pio_uart_driver_load_port_config(pio_uart_driver_t *driver, const uart_driver_port_info_t *port_info)
+{
+    pio_uart_driver_config_t config;
+
+    if ((driver == NULL) || !pio_uart_driver_build_port_config(port_info, &config)) {
+        return false;
+    }
+
+    driver->config = config;
+    return true;
+}
+
 /** @brief Joined PIO TX FIFO depth in 32-bit entries. */
 #define PIO_UART_DRIVER_TX_FIFO_DEPTH 8u
 /** @brief Maximum bytes launched in one TX DMA transfer. */
@@ -323,20 +335,20 @@ static void pio_uart_driver_unclaim_state_machines(pio_uart_driver_t *driver)
 
 static void pio_uart_driver_release_gpio(pio_uart_driver_t *driver)
 {
-    if (driver->config.tx_pin != PIO_UART_DRIVER_PIN_UNASSIGNED) {
+    if (driver->config.tx_pin != UART_DRIVER_PIN_UNASSIGNED) {
         gpio_deinit(driver->config.tx_pin);
     }
-    if (driver->config.rx_pin != PIO_UART_DRIVER_PIN_UNASSIGNED) {
+    if (driver->config.rx_pin != UART_DRIVER_PIN_UNASSIGNED) {
         /* Init leaves the synchronizer on. Clear bypass anyway so a partial
          * setup or an older image cannot leave this pin unsynchronized. */
         pio_set_input_sync_bypass_with_mask(driver->config.pio, 0u, 1u << driver->config.rx_pin);
         gpio_deinit(driver->config.rx_pin);
     }
-    if (driver->tx_cts_enabled && (driver->config.cts_pin != PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+    if (driver->tx_cts_enabled && (driver->config.cts_pin != UART_DRIVER_PIN_UNASSIGNED)) {
         gpio_deinit(driver->config.cts_pin);
     }
     if (((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) != 0u) &&
-        (driver->config.rts_pin != PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+        (driver->config.rts_pin != UART_DRIVER_PIN_UNASSIGNED)) {
         gpio_deinit(driver->config.rts_pin);
     }
 }
@@ -654,18 +666,18 @@ bool pio_uart_driver_init(pio_uart_driver_t *driver)
         return false;
     }
 
-    if ((driver->config.tx_pin == PIO_UART_DRIVER_PIN_UNASSIGNED) ||
-        (driver->config.rx_pin == PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+    if ((driver->config.tx_pin == UART_DRIVER_PIN_UNASSIGNED) ||
+        (driver->config.rx_pin == UART_DRIVER_PIN_UNASSIGNED)) {
         return false;
     }
 
     if (((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL) != 0u) &&
-        (driver->config.rts_pin == PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+        (driver->config.rts_pin == UART_DRIVER_PIN_UNASSIGNED)) {
         return false;
     }
 
     if (((driver->config.pin_flags & PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL) != 0u) &&
-        (driver->config.cts_pin == PIO_UART_DRIVER_PIN_UNASSIGNED)) {
+        (driver->config.cts_pin == UART_DRIVER_PIN_UNASSIGNED)) {
         return false;
     }
 

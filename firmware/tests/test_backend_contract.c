@@ -7,6 +7,12 @@
 
 #include "uart/backend/adapter.h"
 
+static bool test_load_config(uart_backend_instance_t *instance, const uart_driver_port_info_t *port_info)
+{
+    (void)instance;
+    return port_info != NULL;
+}
+
 static bool test_initialized(const uart_backend_instance_t *instance)
 {
     (void)instance;
@@ -79,6 +85,7 @@ static uart_backend_stats_t test_stats(const uart_backend_instance_t *instance)
 }
 
 static const uart_backend_ops_t complete_ops = {
+    .load_config = test_load_config,
     .is_initialized = test_initialized,
     .init = test_init,
     .deinit = test_deinit,

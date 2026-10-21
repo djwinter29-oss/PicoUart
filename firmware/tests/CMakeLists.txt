@@ -94,7 +94,20 @@ pico_uart_add_unity_test(test_cdc_soft_pending cdc_soft_pending
 
 pico_uart_add_unity_test(test_topology topology
     test_topology.c
-    ${FIRMWARE_ROOT}/src/board/uart_topology.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/support/board/uart_topology.c
+)
+target_include_directories(test_topology PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
+
+pico_uart_add_unity_test(test_uart_board_config uart_board_config
+    test_uart_board_config.c
+    ${FIRMWARE_ROOT}/src/board/uart_board.c
+    ${FIRMWARE_ROOT}/src/uart/hw/hw_uart_board_config.c
+    ${FIRMWARE_ROOT}/src/uart/pio/pio_uart_board_config.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/support/board/uart_topology.c
+)
+target_include_directories(test_uart_board_config PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+    ${CMAKE_CURRENT_SOURCE_DIR}/support
 )
 
 pico_uart_add_unity_test(test_backend_policy backend_policy

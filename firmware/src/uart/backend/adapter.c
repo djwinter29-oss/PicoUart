@@ -24,6 +24,12 @@ static uart_parity_t uart_backend_hw_parity(uart_driver_parity_t parity)
     return UART_PARITY_NONE;
 }
 
+static bool uart_backend_hw_load_config(uart_backend_instance_t *instance,
+                                        const uart_driver_port_info_t *port_info)
+{
+    return hw_uart_driver_load_port_config(&instance->hw, port_info);
+}
+
 static bool uart_backend_hw_is_initialized(const uart_backend_instance_t *instance)
 {
     return instance->hw.initialized;
@@ -111,6 +117,12 @@ static bool uart_backend_pio_is_initialized(const uart_backend_instance_t *insta
     return instance->pio.initialized;
 }
 
+static bool uart_backend_pio_load_config(uart_backend_instance_t *instance,
+                                         const uart_driver_port_info_t *port_info)
+{
+    return pio_uart_driver_load_port_config(&instance->pio, port_info);
+}
+
 static bool uart_backend_pio_init(uart_backend_instance_t *instance)
 {
     return pio_uart_driver_init(&instance->pio);
@@ -183,6 +195,7 @@ static uart_backend_stats_t uart_backend_pio_stats(const uart_backend_instance_t
 }
 
 static const uart_backend_ops_t uart_backend_hw_ops = {
+    .load_config = uart_backend_hw_load_config,
     .is_initialized = uart_backend_hw_is_initialized,
     .init = uart_backend_hw_init,
     .deinit = uart_backend_hw_deinit,
@@ -199,6 +212,7 @@ static const uart_backend_ops_t uart_backend_hw_ops = {
 };
 
 static const uart_backend_ops_t uart_backend_pio_ops = {
+    .load_config = uart_backend_pio_load_config,
     .is_initialized = uart_backend_pio_is_initialized,
     .init = uart_backend_pio_init,
     .deinit = uart_backend_pio_deinit,

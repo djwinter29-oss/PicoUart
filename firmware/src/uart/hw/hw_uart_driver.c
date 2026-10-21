@@ -35,6 +35,18 @@ static hw_uart_driver_t *hw_uart_driver_rx_irq_owners[NUM_DMA_CHANNELS];
 /** @brief True after the shared DMA IRQ0 handler has been installed once. */
 static bool hw_uart_driver_rx_dma_irq_installed;
 
+bool hw_uart_driver_load_port_config(hw_uart_driver_t *driver, const uart_driver_port_info_t *port_info)
+{
+    hw_uart_driver_config_t config;
+
+    if ((driver == NULL) || !hw_uart_driver_build_port_config(port_info, &config)) {
+        return false;
+    }
+
+    driver->config = config;
+    return true;
+}
+
 static bool hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
 {
     uint32_t actual_rate;

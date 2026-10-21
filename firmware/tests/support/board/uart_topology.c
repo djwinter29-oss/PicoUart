@@ -27,8 +27,7 @@ bool uart_board_topology_validate(const uart_board_topology_port_t *ports, size_
         if ((port->id != (uart_port_id_t)index) ||
             !uart_board_topology_pin_valid(port->tx_pin, port->target_gpio_count) ||
             !uart_board_topology_pin_valid(port->rx_pin, port->target_gpio_count) || (port->tx_pin == port->rx_pin) ||
-            (port->backend_instance == 0u) || (port->backend_tx_pin != port->tx_pin) ||
-            (port->backend_rx_pin != port->rx_pin) || (port->backend_baud_rate != port->baud_rate)) {
+            (port->backend_instance == 0u)) {
             return false;
         }
 

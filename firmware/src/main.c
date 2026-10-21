@@ -20,7 +20,7 @@
  *
  * The watchdog is armed before clock and peripheral setup so initialization
  * stalls recover automatically. Startup then initializes board services,
- * validates the ring-buffer and UART topology contracts, starts the UART
+ * validates the ring-buffer contract, starts the UART
  * worker, and finally initializes the USB CDC/HID services. A failed
  * unrecoverable startup check intentionally halts until the watchdog resets
  * the board. During normal operation, the watchdog is fed only while the UART worker heartbeat remains fresh.
@@ -35,9 +35,8 @@ int main(void)
     temperature_init();
     service_load_init();
 
-    /* Validate shared invariants before starting UART and USB services. */
+    /* Validate ring-buffer invariants before starting UART and USB services. */
     hard_assert(ring_buffer_self_check());
-    hard_assert(uart_board_validate_topology());
     hard_assert(uart_driver_init());
     usb_cdc_init();
     usb_hid_init();

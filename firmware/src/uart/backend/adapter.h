@@ -38,6 +38,8 @@ typedef union {
  * port's tagged backend union. It is private to the UART implementation.
  */
 typedef struct {
+    bool (*load_config)(uart_backend_instance_t *instance,
+                        const uart_driver_port_info_t *port_info);                /**< Resolve backend-owned resources. */
     bool (*is_initialized)(const uart_backend_instance_t *instance);         /**< Return backend ready state. */
     bool (*init)(uart_backend_instance_t *instance);                         /**< Initialize one backend. */
     void (*deinit)(uart_backend_instance_t *instance);                       /**< Deinitialize one backend. */
@@ -63,7 +65,8 @@ typedef struct {
  */
 static inline bool uart_backend_ops_is_complete(const uart_backend_ops_t *ops)
 {
-    return (ops != NULL) && (ops->is_initialized != NULL) && (ops->init != NULL) && (ops->deinit != NULL) &&
+    return (ops != NULL) && (ops->load_config != NULL) && (ops->is_initialized != NULL) &&
+           (ops->init != NULL) && (ops->deinit != NULL) &&
            (ops->poll != NULL) && (ops->rx_ring != NULL) && (ops->tx_ring != NULL) &&
            (ops->line_coding_matches != NULL) && (ops->line_coding_acceptable != NULL) &&
            (ops->set_line_coding != NULL) && (ops->rx_snapshot_is_current != NULL) &&

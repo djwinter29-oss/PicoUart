@@ -9,13 +9,12 @@
 #include "config/capacity_config.h"
 #include "hardware/uart.h"
 #include "uart/ring_buffer/ring_buffer.h"
+#include "uart/uart_driver.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-/** @brief Invalid GPIO marker used while board pin mapping is still open. */
-#define UART_DRIVER_PIN_UNASSIGNED ((uint32_t)UINT32_MAX)
 /**
  * @brief Static configuration for one hardware UART instance.
  */
@@ -53,6 +52,22 @@ typedef struct {
         __attribute__((aligned(PICO_UART_HW_UART_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
     uint8_t tx_storage[PICO_UART_HW_UART_TX_BUFFER_SIZE];           /**< TX ring storage. */
 } hw_uart_driver_t;
+
+/**
+ * @brief Build the HW backend's full configuration from common port settings and private board resources.
+ * @param port_config Backend-neutral startup settings.
+ * @param config Output storage for the resolved HW configuration.
+ * @return `true` when @p port_config selects a configured HW port.
+ */
+bool hw_uart_driver_build_port_config(const uart_driver_port_info_t *port_info, hw_uart_driver_config_t *config);
+
+/**
+ * @brief Load the resolved board configuration into one HW runtime instance.
+ * @param driver Backend instance to configure.
+ * @param port_config Backend-neutral startup settings.
+ * @return `true` when the matching HW resources were found.
+ */
+bool hw_uart_driver_load_port_config(hw_uart_driver_t *driver, const uart_driver_port_info_t *port_info);
 
 /**
  * @brief Initialize one hardware UART backend.

@@ -20,9 +20,6 @@ static void test_topology_make_valid(uart_board_topology_port_t ports[UART_PORT_
             .tx_pin = (uint32_t)(index * 4u),
             .rx_pin = (uint32_t)(index * 4u + 1u),
             .backend_instance = is_hardware ? (uintptr_t)(index + 1u) : (uintptr_t)(index < 4u ? 3u : 4u),
-            .backend_baud_rate = 115200u,
-            .backend_tx_pin = (uint32_t)(index * 4u),
-            .backend_rx_pin = (uint32_t)(index * 4u + 1u),
             .tx_state_machine = state_machine,
             .rx_state_machine = state_machine + 1u,
             .target_gpio_count = 30u,
@@ -105,20 +102,12 @@ void test_optional_flow_control_pins_collide_only_when_enabled(void)
     TEST_ASSERT_FALSE(uart_board_topology_validate(ports, UART_PORT_COUNT));
 }
 
-void test_rejects_backend_metadata_mismatches(void)
+void test_rejects_missing_backend_instance(void)
 {
     uart_board_topology_port_t ports[UART_PORT_COUNT];
 
     test_topology_make_valid(ports);
     ports[0].backend_instance = 0u;
-    TEST_ASSERT_FALSE(uart_board_topology_validate(ports, UART_PORT_COUNT));
-
-    test_topology_make_valid(ports);
-    ports[0].backend_baud_rate = 9600u;
-    TEST_ASSERT_FALSE(uart_board_topology_validate(ports, UART_PORT_COUNT));
-
-    test_topology_make_valid(ports);
-    ports[0].backend_tx_pin = ports[0].rx_pin;
     TEST_ASSERT_FALSE(uart_board_topology_validate(ports, UART_PORT_COUNT));
 }
 
@@ -155,7 +144,7 @@ int main(void)
     RUN_TEST(test_rejects_wrong_port_count_or_identity);
     RUN_TEST(test_rejects_invalid_pin_assignments);
     RUN_TEST(test_optional_flow_control_pins_collide_only_when_enabled);
-    RUN_TEST(test_rejects_backend_metadata_mismatches);
+    RUN_TEST(test_rejects_missing_backend_instance);
     RUN_TEST(test_rejects_duplicate_hardware_or_pio_resources);
     RUN_TEST(test_rejects_invalid_backend_balance);
     return UNITY_END();

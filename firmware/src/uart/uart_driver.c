@@ -133,20 +133,13 @@ static uart_runtime_port_t *uart_driver_port_mutable(uart_port_id_t port_id)
 static void uart_driver_load_board_config(void)
 {
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        const uart_board_port_config_t *board_port = &uart_board_ports[index];
+        const uart_driver_port_info_t *board_port = &uart_board_ports[index];
         uart_runtime_port_t *port = &uart_driver_state.ports[index];
 
-        port->info = board_port->info;
-        port->info.data_bits = 8u;
-        port->info.stop_bits = 1u;
-        port->info.parity = UART_DRIVER_PARITY_NONE;
-        port->ops = uart_backend_ops_for_type(board_port->info.backend);
-        if (board_port->info.backend == UART_DRIVER_BACKEND_HW) {
-            port->backend.hw.config = board_port->backend.hw;
-            port->backend.hw.initialized = false;
-        } else {
-            port->backend.pio.config = board_port->backend.pio;
-            port->backend.pio.initialized = false;
+        port->info = *board_port;
+        port->ops = uart_backend_ops_for_type(board_port->backend);
+        if ((port->ops == NULL) || !port->ops->load_config(&port->backend, board_port)) {
+            port->ops = NULL;
         }
     }
 }

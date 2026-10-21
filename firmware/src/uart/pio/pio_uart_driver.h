@@ -8,12 +8,11 @@
 
 #include "config/capacity_config.h"
 #include "hardware/pio.h"
+#include "uart/uart_driver.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 
-/** @brief Invalid GPIO marker used while board pin mapping is still open. */
-#define PIO_UART_DRIVER_PIN_UNASSIGNED ((uint32_t)UINT32_MAX)
 /** @brief No optional board-level GPIO policy flags are enabled. */
 #define PIO_UART_DRIVER_PIN_FLAG_NONE 0u
 /** @brief Enable a pull-up on the configured RX pin during backend init. */
@@ -32,10 +31,10 @@ typedef struct {
     uint32_t tx_state_machine;       /**< PIO TX state machine index. */
     uint32_t rx_state_machine;       /**< PIO RX state machine index. */
     uint32_t baud_rate;              /**< Target UART baud rate. */
-    uint32_t tx_pin;                 /**< GPIO used for TX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
-    uint32_t rx_pin;                 /**< GPIO used for RX, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
-    uint32_t rts_pin;                /**< GPIO used for active-low RTS, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
-    uint32_t cts_pin;                /**< GPIO used for active-low CTS, or @ref PIO_UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t tx_pin;                 /**< GPIO used for TX, or @ref UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t rx_pin;                 /**< GPIO used for RX, or @ref UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t rts_pin;                /**< GPIO used for active-low RTS, or @ref UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t cts_pin;                /**< GPIO used for active-low CTS, or @ref UART_DRIVER_PIN_UNASSIGNED. */
     uint32_t pin_flags;              /**< Explicit board-level GPIO policy flags. */
     uint32_t tx_dma_start_threshold; /**< TX backlog threshold that triggers a DMA transfer, or 0 for the default. */
 } pio_uart_driver_config_t;
@@ -44,6 +43,22 @@ typedef struct {
  * @brief Opaque runtime state for one PIO UART instance.
  */
 typedef struct pio_uart_driver pio_uart_driver_t;
+
+/**
+ * @brief Build the PIO backend's full configuration from common port settings and private board resources.
+ * @param port_config Backend-neutral startup settings.
+ * @param config Output storage for the resolved PIO configuration.
+ * @return `true` when @p port_config selects a configured PIO port.
+ */
+bool pio_uart_driver_build_port_config(const uart_driver_port_info_t *port_info, pio_uart_driver_config_t *config);
+
+/**
+ * @brief Load the resolved board configuration into one PIO runtime instance.
+ * @param driver Backend instance to configure.
+ * @param port_config Backend-neutral startup settings.
+ * @return `true` when the matching PIO resources were found.
+ */
+bool pio_uart_driver_load_port_config(pio_uart_driver_t *driver, const uart_driver_port_info_t *port_info);
 
 /**
  * @brief Initialize one PIO UART backend.
