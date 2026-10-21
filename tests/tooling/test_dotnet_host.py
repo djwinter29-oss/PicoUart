@@ -1,6 +1,7 @@
 """Published .NET host contract checks; skipped when no SDK is available."""
 
 import http.client
+import html
 import json
 import os
 from pathlib import Path
@@ -22,10 +23,11 @@ pytestmark = pytest.mark.skipif(not DOTNET, reason=".NET SDK not available; set 
 
 
 @pytest.fixture(scope="module")
-def published_host(tmp_path_factory):
+def published_host(tmp_path_factory, packaged_version):
     output = tmp_path_factory.mktemp("dotnet-host")
     result = subprocess.run(
-        [DOTNET, "publish", str(ROOT / "host/dotnet/PicoUart"), "-o", str(output)],
+        [DOTNET, "publish", str(ROOT / "host/dotnet/PicoUart"), "-o", str(output)]
+        + (["-p:Version=" + packaged_version] if packaged_version != "0.0.0-debug" else []),
         capture_output=True,
         text=True,
         timeout=120,
@@ -35,7 +37,7 @@ def published_host(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def server(published_host):
+def server(published_host, host_version):
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
@@ -43,6 +45,7 @@ def server(published_host):
         process = subprocess.Popen(
             [DOTNET, str(published_host / "PicoUart.dll"), "web", "--port", str(port)],
             cwd=published_host,
+            env={**os.environ, "PICO_UART_HOST_VERSION": host_version},
             stdout=log,
             stderr=subprocess.STDOUT,
         )
@@ -86,10 +89,22 @@ def session(port):
     return token, headers["Set-Cookie"].split(";", 1)[0], headers, page
 
 
-def test_published_dotnet_serves_the_canonical_frontend(server):
+@pytest.fixture(scope="module", params=["", "1.2.3", "<script>"])
+def host_version(request):
+    return request.param
+
+
+@pytest.fixture(scope="module", params=["0.0.0-debug", "1.2.3"])
+def packaged_version(request):
+    return request.param
+
+
+def test_published_dotnet_serves_the_canonical_frontend(server, host_version, packaged_version):
     token, _, headers, page = session(server)
     template = (ROOT / "host/web/index.html").read_bytes()
-    assert page == template.replace(b"{{ csrf_token }}", token.encode()).replace(b"{{ dashboard_type }}", b".NET")
+    expected_version = html.escape(host_version or packaged_version).encode()
+    assert page == template.replace(b"{{ csrf_token }}", token.encode()).replace(
+        b"{{ dashboard_type }}", b".NET").replace(b"{{ host_version }}", expected_version)
     assert b"<title>PicoUart Diagnostics | .NET</title>" in page
     assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page
     assert b'id="mcu"' in page

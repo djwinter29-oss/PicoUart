@@ -5,6 +5,15 @@ import vm from "node:vm";
 
 const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
 const script = readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8");
+test("host versions belong to the wordmark rather than the page heading", () => {
+  for (const path of ["../../web/index.html", "../index.html"]) {
+    const page = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.match(page, /class="wordmark"[\s\S]*?id="host-version"[\s\S]*?<\/a>/);
+    assert.match(page, /<strong>PicoUart<\/strong>\s*<span class="brand-meta"><small>[^<]+<\/small>\s*<span class="host-version"/);
+    assert.doesNotMatch(page.split("<main>")[1], /id="host-version"/);
+  }
+});
+
 const catalog = {
   boards: [
     { id: "A", product_name: "PicoUart", serial_number: "first" },

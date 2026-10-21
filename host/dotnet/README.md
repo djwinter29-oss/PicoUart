@@ -70,6 +70,12 @@ changing the HID transport dependency.
 
 ## Publish
 
+Tagged GitHub Releases provide self-contained host archives with the release version already embedded in the dashboard.
+Choose a [supported release target](../../docs/development/host-distribution.md#net-downloads), extract the whole archive,
+and run `./PicoUart web --port 5001` on Linux/macOS or `.\PicoUart.exe web --port 5001` on Windows.
+Keep the bundled `web` directory beside the executable; no .NET installation or version environment variable is needed.
+These commands start a local server, not a system service. To build your own deployment instead:
+
 ```sh
 dotnet publish host/dotnet/PicoUart -c Release -o build/host-dotnet
 dotnet build/host-dotnet/PicoUart.dll web --port 5001

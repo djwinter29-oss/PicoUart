@@ -11,6 +11,11 @@ the PicoUart six-channel USB-to- UART bridge. UART data and line settings remain
 
 ## Install
 
+For a tagged release, download its Python wheel from GitHub Releases and install it with
+`pipx install /path/to/pico_uart-VERSION-py3-none-any.whl`, replacing the path with the downloaded file. The bundled
+dashboard displays that release version automatically. See the [distribution status](../../docs/development/host-distribution.md)
+for PyPI rollout and other downloads.
+
 ```sh
 python -m pip install pico-uart
 ```

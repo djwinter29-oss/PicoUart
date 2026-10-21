@@ -87,7 +87,7 @@ def test_dashboard_serves_shared_assets():
     assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page.data
     assert b'id="mcu"' in page.data
     assert b'id="system-clock"' in page.data
-    assert b'href="/css/dashboard.css?v=6"' in page.data
+    assert b'href="/css/dashboard.css?v=10"' in page.data
     assert b'src="/js/dashboard.js?v=6"' in page.data
     assert b"{{" not in page.data
     for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
@@ -117,6 +117,33 @@ def test_dashboard_rejects_untrusted_host_before_serving_controls():
 
     assert response.status_code == 400
     assert service.actions == []
+
+
+@pytest.mark.parametrize("version,expected", [
+    ("", "0.0.0-debug"), ("1.2.3", "1.2.3"), ("<script>", "&lt;script&gt;"),
+])
+def test_dashboard_shows_host_version_safely(monkeypatch, version, expected):
+    monkeypatch.setattr("pico_uart.web.app.distribution_version", lambda _name: "0.0.0.dev0")
+    monkeypatch.setenv("PICO_UART_HOST_VERSION", version)
+    page = create_app(FakeDashboard()).test_client().get("/").data.decode()
+    assert f'aria-label="Host application version">{expected}</span>' in page
+
+
+@pytest.mark.parametrize("version,expected", [
+    ("1.2.3", "1.2.3"), ("0.0.0.dev0", "0.0.0-debug"), (None, "0.0.0-debug"),
+])
+def test_dashboard_uses_package_metadata_without_environment_override(monkeypatch, version, expected):
+    from importlib.metadata import PackageNotFoundError
+
+    def package_version(_name):
+        if version is None:
+            raise PackageNotFoundError("pico-uart")
+        return version
+
+    monkeypatch.delenv("PICO_UART_HOST_VERSION", raising=False)
+    monkeypatch.setattr("pico_uart.web.app.distribution_version", package_version)
+    page = create_app(FakeDashboard()).test_client().get("/").data.decode()
+    assert f'aria-label="Host application version">{expected}</span>' in page
 
 
 def test_dashboard_sanitizes_reset_capability_errors():

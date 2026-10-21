@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version as distribution_version
 from pathlib import Path
 import secrets
 import hashlib
@@ -364,6 +365,12 @@ def create_app(service: DashboardBoards | None = None) -> Flask:
     web_root = Path(__file__).parent / "assets"
     if not web_root.is_dir():
         web_root = Path(__file__).resolve().parents[4] / "web"
+    try:
+        packaged_version = distribution_version("pico-uart")
+    except PackageNotFoundError:
+        packaged_version = "0.0.0-debug"
+    if packaged_version == "0.0.0.dev0":
+        packaged_version = "0.0.0-debug"
     app = Flask(__name__, template_folder=str(web_root), static_folder=None)
     app.config.update(
         SECRET_KEY=secrets.token_bytes(32),
@@ -387,7 +394,8 @@ def create_app(service: DashboardBoards | None = None) -> Flask:
     @app.get("/")
     def index():
         token = session.setdefault("csrf_token", secrets.token_urlsafe(32))
-        return render_template("index.html", csrf_token=token, dashboard_type="Python")
+        return render_template("index.html", csrf_token=token, dashboard_type="Python",
+                       host_version=os.environ.get("PICO_UART_HOST_VERSION") or packaged_version)
 
     @app.get("/favicon.svg")
     def favicon():

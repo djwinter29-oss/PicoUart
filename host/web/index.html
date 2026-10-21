@@ -6,14 +6,18 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css?v=6">
+  <link rel="stylesheet" href="/css/dashboard.css?v=10">
   <script src="/js/dashboard.js?v=6" defer></script>
 </head>
 <body>
   <header class="topbar">
     <a class="wordmark" href="/" aria-label="PicoUart diagnostics home">
       <span class="mark">PU</span>
-      <span><small>{{ dashboard_type }}</small><strong>PicoUart</strong></span>
+      <span><strong>PicoUart</strong>
+        <span class="brand-meta"><small>{{ dashboard_type }}</small>
+          <span class="host-version" id="host-version" aria-label="Host application version">{{ host_version }}</span>
+        </span>
+      </span>
     </a>
     <div class="connection" id="connection" data-state="waiting">
       <span class="connection-light" aria-hidden="true"></span>
