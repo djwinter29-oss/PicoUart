@@ -1,7 +1,8 @@
 using HidSharp;
 using System.Diagnostics;
+using PicoUart.Wire;
 
-namespace PicoUart;
+namespace PicoUart.Hid;
 
 public sealed record HidBoard(string DevicePath, string? SerialNumber, string ProductName);
 

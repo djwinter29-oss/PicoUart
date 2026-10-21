@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using PicoUart.Hid;
+using PicoUart.Wire;
 using Xunit;
 
 namespace PicoUart.Tests;

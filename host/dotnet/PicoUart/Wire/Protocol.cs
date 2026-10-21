@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Text.Json;
 
-namespace PicoUart;
+namespace PicoUart.Wire;
 
 public sealed record BoardStatus(double TemperatureCelsius, string FirmwareVersion,
     byte FirmwareMajor, byte FirmwareMinor, byte FirmwarePatch, bool HidResetEnabled);

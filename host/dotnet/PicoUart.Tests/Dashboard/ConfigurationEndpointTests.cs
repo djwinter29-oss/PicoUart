@@ -4,6 +4,8 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using PicoUart.Dashboard;
+using PicoUart.Wire;
 using Xunit;
 
 namespace PicoUart.Tests;
@@ -11,6 +13,39 @@ namespace PicoUart.Tests;
 [Trait("Category", "Unit")]
 public sealed class ConfigurationEndpointTests
 {
+    [Theory]
+    [InlineData("{\"profile\":0,\"unsafe_overclock\":false}", 0u, false)]
+    [InlineData("{\"profile\":1,\"unsafe_overclock\":true}", 1u, true)]
+    [InlineData("{\"unsafe_overclock\":true,\"profile\":2}", 2u, true)]
+    public void AcceptsStrictDashboardRequest(string json, uint profile, bool acknowledgement)
+    {
+        using var body = JsonDocument.Parse(json);
+        Assert.Equal(new ConfigurationSaveRequest(profile, acknowledgement), ConfigurationSaveRequest.Parse(body.RootElement));
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("{\"profile\":0}")]
+    [InlineData("{\"profile\":0,\"unsafe_overclock\":false,\"extra\":true}")]
+    [InlineData("{\"profile\":0,\"profile\":1,\"unsafe_overclock\":true}")]
+    [InlineData("{\"profile\":true,\"unsafe_overclock\":true}")]
+    [InlineData("{\"profile\":\"0\",\"unsafe_overclock\":false}")]
+    [InlineData("{\"profile\":0.5,\"unsafe_overclock\":false}")]
+    [InlineData("{\"profile\":-1,\"unsafe_overclock\":false}")]
+    [InlineData("{\"profile\":3,\"unsafe_overclock\":true}")]
+    [InlineData("{\"profile\":4294967296,\"unsafe_overclock\":true}")]
+    [InlineData("{\"profile\":0,\"unsafe_overclock\":1}")]
+    [InlineData("{\"profile\":0,\"unsafe_overclock\":null}")]
+    [InlineData("{\"profile\":1,\"unsafe_overclock\":false}")]
+    [InlineData("{\"profile\":2,\"unsafe_overclock\":false}")]
+    public void RejectsInvalidDashboardRequests(string json)
+    {
+        using var body = JsonDocument.Parse(json);
+        Assert.Throws<ArgumentException>(() => ConfigurationSaveRequest.Parse(body.RootElement));
+    }
+
     [Fact]
     public async Task ConfigurationRouteRequiresSessionCsrfAndStrictJsonAndRejectsUnknownBoards()
     {

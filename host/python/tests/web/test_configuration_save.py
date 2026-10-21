@@ -100,6 +100,12 @@ def test_configuration_endpoint_requires_csrf_and_validated_json():
     with client.session_transaction() as session:
         token = session["csrf_token"]
     headers = {"X-CSRF-Token": token}
+    response = client.post("/api/configuration", data="{", content_type="application/json", headers=headers)
+    assert response.status_code == 400
+    assert response.json == {"error": "malformed JSON body"}
+    response = client.post("/api/configuration", data="{}", content_type="text/plain", headers=headers)
+    assert response.status_code == 415
+    assert response.json == {"error": "configuration request must be JSON"}
     for body in ({}, [], {"profile": True, "unsafe_overclock": False}, {"profile": 0, "unsafe_overclock": 1},
                  {"profile": 3, "unsafe_overclock": True},
                  {"profile": 0, "unsafe_overclock": False, "extra": 1}):

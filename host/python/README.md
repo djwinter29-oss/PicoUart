@@ -92,6 +92,12 @@ print(status["channels"])
 `PicoUartHid(serial_number="ABC123")` to select a board. Other read methods include `read_board_status()`,
 `read_overflow_counts()`, `read_hardware_info()`, and `read_configuration()`.
 
+The supported high-level API is `PicoUartHid` and its methods described here, plus the module-level convenience
+functions `read_board_status`, `read_board_temperature`, `read_firmware_version`, `read_configuration`,
+`read_hardware_info`, `read_overflow_counts`, and `reset_board`. Report parsers, report IDs and sizes, USB identifiers,
+raw HID access, and generic feature-report helpers are low-level exports tied to the firmware report contract; prefer
+their owning `pico_uart.protocol`, `pico_uart.transport`, and `pico_uart.client` modules when using them directly.
+
 ## Other Commands And Controls
 
 Read-only commands include `hardware`, `config`, `temperature`, and `version`. Run `pico-uart --help` or

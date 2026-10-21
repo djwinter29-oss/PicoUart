@@ -43,7 +43,8 @@ Use one HID monitor per physical board; competing native clients can contend for
 
 This page is an interactive diagnostic view, not a headless test runner. It has no CLI, JSON/log export, or UART
 payload capture. For scripted status samples and traffic logs, use the [Python CLI](../python/README.md#test-automation)
-or [.NET CLI](../dotnet/README.md#test-automation). Disconnect the browser before another client monitors the same board.
+or [.NET CLI](../dotnet/README.md#test-automation). Disconnect the browser before another client monitors the same
+board.
 
 Traffic statistics are not raw UART messages. Missing reports or saturated byte deltas make observed totals incomplete;
 a quiet or healthy-looking page alone is not evidence that an automated test passed.

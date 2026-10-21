@@ -1,4 +1,6 @@
 using System.Globalization;
+using PicoUart.Cli;
+using PicoUart.Hid;
 using Xunit;
 
 namespace PicoUart.Tests;

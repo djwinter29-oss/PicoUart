@@ -47,7 +47,7 @@ def test_module_imports_without_hidapi_installed():
 
 def test_open_device_raises_clear_runtime_error_without_hidapi():
     with _hid_unavailable() as module:
-        with pytest.raises(RuntimeError, match="Missing dependency"):
+        with pytest.raises(RuntimeError, match="install pico-uart with its runtime dependencies"):
             module.open_device()
 
 
