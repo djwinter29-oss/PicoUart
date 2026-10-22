@@ -135,10 +135,8 @@ def test_configure_ports_opens_pair_before_applying_line_coding(monkeypatch: pyt
     assert events == [
         ("open", "pico"),
         ("open", "peer"),
-        ("sleep", bridge.PORT_OPEN_SETTLE_SECONDS),
         ("line coding", 1),
         ("line coding", 2),
-        ("sleep", bridge.LINE_CODING_SETTLE_SECONDS),
         ("ready", [("pico", 1), ("peer", 2)], 115200),
         ("flush", 1),
         ("flush", 2),

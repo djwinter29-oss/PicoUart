@@ -21,9 +21,6 @@
 #include "uart/runtime.h"
 #include "uart/worker.h"
 
-/** @brief Debounce each channel's DTR-open transition before enabling RX. */
-#define UART_DRIVER_CHANNEL_START_SETTLE_MS 250u
-
 /** @brief Maximum attempts to acquire a coherent worker-owned telemetry snapshot. */
 #define UART_DRIVER_STATS_SNAPSHOT_ATTEMPTS 3u
 
@@ -40,7 +37,6 @@ typedef struct {
     bool channel_stop_pending[UART_PORT_COUNT];                /**< Core-0 requested a fresh CDC/UART channel. */
     bool channel_stop_usb_quiesced[UART_PORT_COUNT];            /**< Core-0 stopped bridging and cleared CDC FIFOs. */
     bool channel_start_pending[UART_PORT_COUNT];               /**< Core-0 requested a channel start on DTR open. */
-    absolute_time_t channel_start_deadline[UART_PORT_COUNT];    /**< Earliest worker start time after DTR open. */
     uint32_t control_generations[UART_PORT_COUNT];              /**< Latest host generation per port. */
     volatile uint32_t stats_sequence[UART_PORT_COUNT];         /**< Coherent stats snapshot sequence. */
     size_t poll_start_index;                                  /**< First port of the next worker step. */
@@ -165,6 +161,10 @@ static void uart_driver_service_channel_lifecycle(void)
 
         save = spin_lock_blocking(uart_driver_state.status_lock);
         reset_pending = uart_driver_state.channel_stop_pending[index];
+        if (!reset_pending && !uart_driver_state.channel_start_pending[index]) {
+            spin_unlock(uart_driver_state.status_lock, save);
+            continue;
+        }
         if (reset_pending && !uart_driver_state.channel_stop_usb_quiesced[index]) {
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
@@ -195,13 +195,11 @@ static void uart_driver_service_channel_lifecycle(void)
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
         }
-        if (uart_driver_state.channel_stop_pending[index] ||
-            !time_reached(uart_driver_state.channel_start_deadline[index])) {
+        if (uart_driver_state.channel_stop_pending[index]) {
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
         }
         uart_driver_state.channel_start_pending[index] = false;
-        uart_driver_state.channel_start_deadline[index] = nil_time;
         spin_unlock(uart_driver_state.status_lock, save);
 
         if ((port->ops == NULL) || (port->ops->reset_buffers == NULL)) {
@@ -341,7 +339,6 @@ bool uart_driver_init(void)
             uart_driver_state.channel_stop_pending[index] = false;
             uart_driver_state.channel_stop_usb_quiesced[index] = false;
             uart_driver_state.channel_start_pending[index] = false;
-            uart_driver_state.channel_start_deadline[index] = nil_time;
             uart_driver_state.control_generations[index] = 0u;
             uart_driver_state.stats_sequence[index] = 0u;
             uart_driver_state.pending_controls[index] = (uart_control_pending_t){
@@ -431,8 +428,6 @@ bool uart_driver_request_channel_start(uart_port_id_t port_id)
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
     uart_driver_state.channel_start_pending[port_id] = true;
-    uart_driver_state.channel_start_deadline[port_id] =
-        make_timeout_time_ms(UART_DRIVER_CHANNEL_START_SETTLE_MS);
     spin_unlock(uart_driver_state.status_lock, save);
     return true;
 }

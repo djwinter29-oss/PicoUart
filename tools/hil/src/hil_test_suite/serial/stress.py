@@ -13,8 +13,6 @@ import time
 from datetime import datetime, timezone
 from .config import (
     BAUD_RATES,
-    LINE_CODING_SETTLE_SECONDS,
-    PORT_OPEN_SETTLE_SECONDS,
     configure_port,
     deassert_dtr,
     open_port,
@@ -234,10 +232,8 @@ def configure_fixture_ports(arguments: argparse.Namespace, baud_rate: int, ports
         ports.append((descriptor, settings))
         descriptors[channel] = descriptor
 
-    time.sleep(PORT_OPEN_SETTLE_SECONDS)
     for channel in range(6):
         set_port_line_coding(descriptors[channel], baud_rate, allow_arbitrary=True)
-    time.sleep(LINE_CODING_SETTLE_SECONDS)
     wait_ports_ready(
         [(getattr(arguments, f"cdc{channel}"), descriptors[channel]) for channel in range(6)], baud_rate,
         expected_channels={getattr(arguments, f"cdc{channel}"): channel for channel in range(6)},

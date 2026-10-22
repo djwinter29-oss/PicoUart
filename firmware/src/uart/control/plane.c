@@ -272,6 +272,9 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
 
     for (size_t offset = 0u; offset < UART_PORT_COUNT; ++offset) {
         size_t index = (*control_plane->poll_start_index + offset) % UART_PORT_COUNT;
+        if (!control_plane->pending_controls[index].pending) {
+            continue;
+        }
         uint32_t save = spin_lock_blocking(control_plane->status_lock);
         bool ready = (control_plane->status_flags[index] & UART_DRIVER_PORT_STATUS_READY) != 0u;
         spin_unlock(control_plane->status_lock, save);

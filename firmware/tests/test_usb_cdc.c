@@ -77,6 +77,7 @@ bool uart_driver_queue_line_coding(uart_port_id_t port, const uart_driver_line_c
     if (!accept_request) return false;
     applied = *coding;
     ++applied_count;
+    flags[port] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     if (request_generation == generation[port]) flags[port] = 0u;
     return true;
 }
@@ -200,9 +201,26 @@ void test_disconnect_cancels_pending_configuration(void)
     TEST_ASSERT_EQUAL_UINT8(0u, flags[0]);
 }
 
+void test_unsupported_replacement_does_not_erase_prior_valid_request(void)
+{
+    tud_cdc_line_state_cb(0u, true, false);
+    ready[0] = true;
+    accept_request = false;
+    request_baud(115200u);
+    usb_cdc_poll();
+    cdc_line_coding_t rejected = {.bit_rate = 230400u, .data_bits = 7u};
+    tud_cdc_line_coding_cb(0u, &rejected);
+    accept_request = true;
+    usb_cdc_poll();
+    TEST_ASSERT_EQUAL_UINT32(115200u, applied.baud_rate);
+    TEST_ASSERT_BITS_HIGH(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, flags[0]);
+    TEST_ASSERT_BITS_LOW(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, flags[0]);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_unsupported_replacement_does_not_erase_prior_valid_request);
     RUN_TEST(test_closed_configuration_waits_for_open_and_ready);
     RUN_TEST(test_identical_retry_does_not_extend_mailbox_timeout);
     RUN_TEST(test_distinct_replacement_gets_its_own_deadline);

@@ -686,14 +686,12 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     assert streams == expected
     assert opened == [f"cdc{channel}" for channel in range(6)]
     assert events[:6] == [("open", f"cdc{channel}") for channel in range(6)]
-    assert events[6] == ("sleep", stress.PORT_OPEN_SETTLE_SECONDS)
-    assert events[7:13] == [("line coding", fd) for fd in range(1, 7)]
-    assert events[13] == ("sleep", stress.LINE_CODING_SETTLE_SECONDS)
-    assert events[14] == ("ready", [(f"cdc{channel}", channel + 1) for channel in range(6)], 115200)
-    assert events[15:21] == [("flush", fd) for fd in range(1, 7)]
-    assert events[21] == ("sleep", arguments.settle_seconds)
-    assert events[22:28] == [("flush", fd) for fd in range(1, 7)]
-    assert all(event[0] == "transmit" for event in events[28:])
+    assert events[6:12] == [("line coding", fd) for fd in range(1, 7)]
+    assert events[12] == ("ready", [(f"cdc{channel}", channel + 1) for channel in range(6)], 115200)
+    assert events[13:19] == [("flush", fd) for fd in range(1, 7)]
+    assert events[19] == ("sleep", arguments.settle_seconds)
+    assert events[20:26] == [("flush", fd) for fd in range(1, 7)]
+    assert all(event[0] == "transmit" for event in events[26:])
 
 
 def test_hil_fixture_plan_matches_modes_and_timing(repo_root):

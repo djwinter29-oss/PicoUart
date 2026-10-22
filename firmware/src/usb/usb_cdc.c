@@ -22,10 +22,9 @@
  */
 #define USB_CDC_FLUSH_LATENCY_US 1000u
 /**
- * @brief How long a CDC soft-pending line-coding request may wait for the mailbox.
  *
- * Matches the worker-side deferred-apply window so hosts see `control_error`
- * instead of an indefinite soft-pending stall when the mailbox never accepts.
+ * Starts only once DTR is open and the backend is ready. Matches the worker-side
+ * deferred-apply window so an eligible request cannot wait indefinitely.
  */
 #define USB_CDC_SOFT_PENDING_TIMEOUT_MS 1000u
 
@@ -37,7 +36,7 @@ _Static_assert(USB_CDC_PORT_COUNT == UART_PORT_COUNT, "USB CDC port count must m
 typedef struct {
     bool pending;                          /**< True while the host request has not entered the worker mailbox. */
     uint32_t control_generation;           /**< Host request generation retained until mailbox submission. */
-    absolute_time_t deadline;              /**< Soft-pending expiry; ignored when @ref pending is false. */
+    absolute_time_t deadline;              /**< Mailbox expiry, nil until the backend is ready. */
     uart_driver_line_coding_t line_coding; /**< Latest requested UART settings. */
 } usb_cdc_pending_line_coding_t;
 
@@ -100,23 +99,11 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
     if (is_nil_time(pending->deadline)) {
         pending->deadline = make_timeout_time_ms(USB_CDC_SOFT_PENDING_TIMEOUT_MS);
     }
-    /*
-     * A reset (tud_mount_cb/tud_umount_cb) clears both `pending` and
-     * `deadline` together, so this pairing should already hold. Short-circuit
-     * on `is_nil_time` so `time_reached(nil_time)` (trivially true) is never
-     * evaluated for a request that was cancelled rather than timed out; a
-     * future call site that only clears one of the two fields cannot then
-     * manufacture a spurious control_error. See usb_cdc_soft_pending_has_timed_out.
-     */
-    {
-        bool deadline_is_nil = is_nil_time(pending->deadline);
-        bool deadline_reached = !deadline_is_nil && time_reached(pending->deadline);
-        if (usb_cdc_soft_pending_has_timed_out(deadline_is_nil, deadline_reached)) {
-            service_load_note(0u);
-            pending->pending = false;
-            uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
-            return;
-        }
+    if (time_reached(pending->deadline)) {
+        service_load_note(0u);
+        pending->pending = false;
+        uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
+        return;
     }
 
     /* Permanent rejects must not retry forever with soft-pending stuck true. */

@@ -25,8 +25,6 @@ BAUD_RATES = {
 STANDARD_BAUD_BY_SETTING = {setting: rate for rate, setting in BAUD_RATES.items()}
 STANDARD_BAUD_RATES = tuple(BAUD_RATES)
 MAX_BAUD_DEVIATION = 0.5
-PORT_OPEN_SETTLE_SECONDS = 0.25
-LINE_CODING_SETTLE_SECONDS = 0.25
 TCGETS2 = 0x802C542A
 TCSETS2 = 0x402C542B
 BOTHER = 0x1000
@@ -194,12 +192,10 @@ def set_port_line_coding(file_descriptor: int, baud_rate: int, *, allow_arbitrar
 
 
 def configure_port(path: str, baud_rate: int, *, allow_arbitrary: bool = False) -> tuple[int, list]:
-    """Open, settle, configure a raw 8N1 serial port, and return its old settings."""
+    """Open/configure raw 8N1 and await matched PicoUart readiness before returning old settings."""
     file_descriptor, original = open_port(path, baud_rate, allow_arbitrary=allow_arbitrary)
     try:
-        time.sleep(PORT_OPEN_SETTLE_SECONDS)
         set_port_line_coding(file_descriptor, baud_rate, allow_arbitrary=allow_arbitrary)
-        time.sleep(LINE_CODING_SETTLE_SECONDS)
         wait_ports_ready([(path, file_descriptor)], baud_rate, require_pico=False)
         termios.tcflush(file_descriptor, termios.TCIOFLUSH)
         return file_descriptor, original

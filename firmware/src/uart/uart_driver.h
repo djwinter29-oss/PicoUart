@@ -80,9 +80,9 @@ bool uart_driver_init(void);
 bool uart_driver_port_is_ready(uart_port_id_t port_id);
 
 /**
- * @brief Queue a per-port channel reset from the USB core to the UART worker.
+ * @brief Queue a per-port backend stop from the USB core to the UART worker.
  * @param port_id Logical UART port identifier.
- * @return `true` when a reset is queued or already pending.
+ * @return `true` only for a newly queued stop; `false` for an invalid port or an already-pending stop.
  */
 bool uart_driver_request_channel_stop(uart_port_id_t port_id);
 
@@ -101,9 +101,9 @@ bool uart_driver_request_channel_start(uart_port_id_t port_id);
 bool uart_driver_channel_start_pending(uart_port_id_t port_id);
 
 /**
- * @brief Return whether a per-port reset is holding the CDC bridge.
+ * @brief Return whether a per-port stop is holding the CDC bridge.
  * @param port_id Logical UART port identifier.
- * @return `true` while the reset request is pending.
+ * @return `true` while the stop request is pending.
  */
 bool uart_driver_channel_stop_pending(uart_port_id_t port_id);
 

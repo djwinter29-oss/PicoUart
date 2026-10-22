@@ -12,8 +12,6 @@ import time
 
 from .config import (
     BAUD_RATES,
-    LINE_CODING_SETTLE_SECONDS,
-    PORT_OPEN_SETTLE_SECONDS,
     STANDARD_BAUD_RATES,
     configure_port,
     deassert_dtr,
@@ -53,10 +51,8 @@ def configure_ports(paths: list[str], baud_rate: int) -> list[tuple[int, list]]:
     try:
         for path in paths:
             ports.append(open_port(path, baud_rate))
-        time.sleep(PORT_OPEN_SETTLE_SECONDS)
         for file_descriptor, _settings in ports:
             set_port_line_coding(file_descriptor, baud_rate)
-        time.sleep(LINE_CODING_SETTLE_SECONDS)
         wait_ports_ready([(path, descriptor) for path, (descriptor, _settings) in zip(paths, ports, strict=True)],
                  baud_rate)
         for file_descriptor, _settings in ports:

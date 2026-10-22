@@ -38,7 +38,7 @@ def test_configure_port_sets_and_verifies_standard_baud(monkeypatch):
     assert closes == []
 
 
-def test_configure_port_waits_after_open_and_line_coding(monkeypatch):
+def test_configure_port_waits_for_readiness_after_line_coding(monkeypatch):
     serial_port = _load_serial_config()
     events = []
     current = [0, 0, 0, 0, serial_port.termios.B9600, serial_port.termios.B9600, [0] * 32]
@@ -51,6 +51,7 @@ def test_configure_port_waits_after_open_and_line_coding(monkeypatch):
         lambda _fd, _when, settings: (events.append("line coding"), current.__setitem__(slice(None), settings)),
     )
     monkeypatch.setattr(serial_port, "verify_line_speed", lambda *_args: events.append("verify"))
+    monkeypatch.setattr(serial_port, "wait_ports_ready", lambda *_args, **_kwargs: events.append("ready"))
     monkeypatch.setattr(serial_port, "time", type("Clock", (), {"sleep": lambda seconds: events.append(seconds)}))
     monkeypatch.setattr(serial_port.termios, "tcflush", lambda *_args: events.append("flush"))
 
@@ -58,10 +59,9 @@ def test_configure_port_waits_after_open_and_line_coding(monkeypatch):
 
     assert events == [
         "open",
-        serial_port.PORT_OPEN_SETTLE_SECONDS,
         "line coding",
         "verify",
-        serial_port.LINE_CODING_SETTLE_SECONDS,
+        "ready",
         "flush",
     ]
 
