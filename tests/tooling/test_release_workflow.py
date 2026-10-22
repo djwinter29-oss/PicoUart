@@ -209,7 +209,7 @@ def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -
     python_job = text.split("\n  python-package:\n", 1)[1].split("\n  publish:\n", 1)[0]
     assert "fetch-depth: 0" in python_job
     assert "SETUPTOOLS_SCM_PRETEND_VERSION:" in python_job
-    assert "${{ github.event_name == 'workflow_dispatch' && steps.version.outputs.version || '' }}" in python_job
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}" in python_job
     assert "PICO_UART_HOST_VERSION:" not in python_job
     assert "--self-contained true" in job
     assert '-p:Version="$VERSION"' in job
