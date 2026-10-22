@@ -104,8 +104,14 @@ def test_dashboard_serves_shared_assets():
     assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page.data
     assert b'id="mcu"' in page.data
     assert b'id="system-clock"' in page.data
-    assert b'href="/css/dashboard.css?v=10"' in page.data
-    assert b'src="/js/dashboard.js?v=6"' in page.data
+    assert b'href="/css/dashboard.css?v=11"' in page.data
+    assert page.data.count(b'<col class="') == 6
+    assert b'table-layout: fixed' in client.get("/css/dashboard.css").data
+    assert b'src="/js/dashboard.js?v=7"' in page.data
+    assert b'id="save-configuration"' in page.data
+    assert b'id="reset-board" type="button"' in page.data
+    assert b"Reboot only" in page.data
+    assert page.data.index(b'id="save-configuration"') < page.data.index(b'id="reset-board"')
     assert b"{{" not in page.data
     for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
         response = client.get(f"/{path}")

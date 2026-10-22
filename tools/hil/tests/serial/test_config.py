@@ -81,7 +81,12 @@ def test_configure_port_restores_settings_if_setup_fails(monkeypatch):
 
 def test_configure_port_sets_and_verifies_arbitrary_baud(monkeypatch):
     serial_port = _load_serial_config()
-    current = {"input": 9600, "output": 9600, "cflag": 0}
+    current = {"input": 9600, "output": 9600, "cflag": 0, "iflag": 0, "oflag": 0, "lflag": 0, "cc": bytearray(32)}
+    original_termios2 = bytearray(44)
+    original_termios2[8:12] = (serial_port.termios.CS8 | serial_port.termios.CREAD | serial_port.termios.CLOCAL).to_bytes(4, "little")
+    original_termios2[36:40] = (9600).to_bytes(4, "little")
+    original_termios2[40:44] = (9600).to_bytes(4, "little")
+    applied_termios2 = bytearray(original_termios2)
     monkeypatch.setattr(serial_port.os, "open", lambda *_args: 17)
     monkeypatch.setattr(serial_port.os, "close", lambda *_args: None)
     monkeypatch.setattr(
@@ -94,23 +99,35 @@ def test_configure_port_sets_and_verifies_arbitrary_baud(monkeypatch):
 
     def ioctl(_fd, request, raw, *_args):
         if request == serial_port.TCGETS2:
-            raw[8:12] = current["cflag"].to_bytes(4, "little")
-            raw[36:40] = current["input"].to_bytes(4, "little")
-            raw[40:44] = current["output"].to_bytes(4, "little")
+            raw[:] = applied_termios2
         elif request == serial_port.TCSETS2:
+            applied_termios2[:] = raw
+            current["iflag"] = int.from_bytes(raw[0:4], "little")
+            current["oflag"] = int.from_bytes(raw[4:8], "little")
             current["cflag"] = int.from_bytes(raw[8:12], "little")
+            current["lflag"] = int.from_bytes(raw[12:16], "little")
+            current["cc"] = bytearray(raw[17:49])
             current["input"] = int.from_bytes(raw[36:40], "little")
             current["output"] = int.from_bytes(raw[40:44], "little")
+            if current["input"] == current["output"] == 123456:
+                raw[36:40] = (123456).to_bytes(4, "little")
+                raw[40:44] = (123456).to_bytes(4, "little")
+                applied_termios2[:] = raw
         else:
             raise AssertionError(f"unexpected ioctl request: {request:#x}")
         return 0
 
     monkeypatch.setattr(serial_port.fcntl, "ioctl", ioctl)
 
-    serial_port.configure_port("/dev/fake", 123456, allow_arbitrary=True)
+    descriptor, saved = serial_port.configure_port("/dev/fake", 123456, allow_arbitrary=True)
 
+    assert descriptor == 17
+    assert saved[1] == original_termios2
     assert current["input"] == current["output"] == 123456
     assert current["cflag"] & serial_port.BOTHER
+    assert current["iflag"] == current["oflag"] == current["lflag"] == 0
+    assert current["cflag"] & serial_port.termios.CS8
+    assert current["cc"][serial_port.termios.VMIN] == current["cc"][serial_port.termios.VTIME] == 0
 
 
 def test_verify_line_speed_rejects_readback_at_fifty_percent_deviation(monkeypatch):

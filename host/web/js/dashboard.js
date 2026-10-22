@@ -383,7 +383,9 @@ async function rescanBoards() {
 
 async function runAction(action) {
   if (!selectedBoard || actionBusy) return;
-  if (action === "reset" && !window.confirm("Reset the PicoUart board?")) return;
+  if (action === "reset" && !window.confirm(
+    "Reboot PicoUart without saving configuration? USB serial ports will disconnect briefly.",
+  )) return;
   const board = selectedBoard;
   actionBusy = true;
   boardSelect.disabled = true;
@@ -396,7 +398,7 @@ async function runAction(action) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Action failed (${response.status})`);
-    statusMessage.textContent = action === "reset" ? "Reset command sent" : "LED toggle command sent";
+    statusMessage.textContent = action === "reset" ? "Reboot command sent; USB will reconnect shortly." : "LED toggle command sent";
     statusMessage.parentElement.dataset.error = "false";
     await refresh();
   } catch (error) {

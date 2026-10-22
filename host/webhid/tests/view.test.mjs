@@ -156,6 +156,13 @@ for (const frontend of ["webhid", "web"]) {
       overflow_counts: [0, 0, 0, 0, 0, 0] };
     try {
       render(data);
+      if (frontend === "web") {
+        const resetButton = document.querySelector("#reset-board");
+        assert.equal(resetButton.hidden, true);
+        data.board = { hid_reset_enabled: true, temperature_celsius: 25.3 };
+        render(data);
+        assert.equal(resetButton.hidden, false);
+      }
       let rows = document.querySelector("#channel-rows");
       assert.equal(rows.children[0].children.length, 6);
       assert.equal(rows.children[0].children[1].textContent, "Closed");

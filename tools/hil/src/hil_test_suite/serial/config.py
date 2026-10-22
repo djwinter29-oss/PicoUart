@@ -72,34 +72,52 @@ def configure_port(
     original_settings = None
     try:
         original_settings = termios.tcgetattr(file_descriptor)
+        original_termios2 = None
+        if baud_rate not in BAUD_RATES:
+            original_termios2 = bytearray(44)
+            fcntl.ioctl(file_descriptor, TCGETS2, original_termios2, True)
+            # BOTHER speeds cannot be restored via termios.tcsetattr; store a
+            # valid termios view carrying the original settings for the shared closer.
+            original_settings[4] = termios.B9600
+            original_settings[5] = termios.B9600
         settings = termios.tcgetattr(file_descriptor)
-        settings[0] = 0
-        settings[1] = 0
-        settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-        settings[3] = 0
         if baud_rate in BAUD_RATES:
+            settings[0] = 0
+            settings[1] = 0
+            settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+            settings[3] = 0
             settings[4] = BAUD_RATES[baud_rate]
             settings[5] = BAUD_RATES[baud_rate]
-        settings[6][termios.VMIN] = 0
-        settings[6][termios.VTIME] = 0
-        termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
-
-        if baud_rate not in BAUD_RATES:
+            settings[6][termios.VMIN] = 0
+            settings[6][termios.VTIME] = 0
+            termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
+        else:
+            # CDC ACM can reject an intermediate standard-baud tcsetattr; apply
+            # raw mode and BOTHER together through Linux termios2 instead.
             raw = bytearray(44)
             fcntl.ioctl(file_descriptor, TCGETS2, raw, True)
             cflag = int.from_bytes(raw[8:12], "little")
-            raw[8:12] = ((cflag & ~CBAUD) | BOTHER).to_bytes(4, "little")
+            cflag &= ~(CBAUD | termios.CSIZE | termios.PARENB | termios.CSTOPB)
+            cflag |= termios.CS8 | termios.CREAD | termios.CLOCAL | BOTHER
+            raw[0:4] = (0).to_bytes(4, "little")
+            raw[4:8] = (0).to_bytes(4, "little")
+            raw[8:12] = cflag.to_bytes(4, "little")
+            raw[12:16] = (0).to_bytes(4, "little")
+            raw[17 + termios.VMIN] = 0
+            raw[17 + termios.VTIME] = 0
             raw[36:40] = baud_rate.to_bytes(4, "little")
             raw[40:44] = baud_rate.to_bytes(4, "little")
             fcntl.ioctl(file_descriptor, TCSETS2, raw)
 
         verify_line_speed(file_descriptor, baud_rate)
         termios.tcflush(file_descriptor, termios.TCIOFLUSH)
-        return file_descriptor, original_settings
+        return file_descriptor, (original_settings, original_termios2) if original_termios2 is not None else original_settings
     except BaseException:
         try:
             if original_settings is not None:
                 termios.tcsetattr(file_descriptor, termios.TCSANOW, original_settings)
+                if original_termios2 is not None:
+                    fcntl.ioctl(file_descriptor, TCSETS2, original_termios2)
         finally:
             os.close(file_descriptor)
         raise

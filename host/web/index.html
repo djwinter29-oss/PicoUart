@@ -6,8 +6,8 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css?v=10">
-  <script src="/js/dashboard.js?v=6" defer></script>
+  <link rel="stylesheet" href="/css/dashboard.css?v=11">
+  <script src="/js/dashboard.js?v=7" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -57,8 +57,12 @@
     <section aria-labelledby="configuration-title">
       <div class="section-heading">
         <h2 id="configuration-title">Persistent configuration</h2>
-        <div class="actions" aria-label="Configuration controls">
+        <div class="actions" aria-label="Configuration and reboot controls">
           <button class="button button-led" id="save-configuration" type="button" disabled>Save &amp; Reboot</button>
+          <button class="button button-danger" id="reset-board" type="button"
+            title="Reboot without saving configuration; USB serial ports will disconnect briefly" hidden>
+            Reboot only
+          </button>
         </div>
       </div>
       <div class="summary configuration-summary">
@@ -74,7 +78,7 @@
         </div>
       </div>
       <p class="configuration-warning" id="configuration-warning" role="note">
-        Saving reboots the Pico and briefly disconnects USB. Close all CDC ports and stop UART traffic first.
+        Saving or rebooting briefly disconnects USB. Close all CDC ports and stop UART traffic first.
       </p>
       <p class="configuration-message" id="configuration-message" role="status" aria-live="polite"></p>
     </section>
@@ -82,9 +86,6 @@
     <section aria-labelledby="runtime-title">
       <div class="section-heading">
         <h2 id="runtime-title">Runtime status</h2>
-        <div class="actions" aria-label="Board controls">
-          <button class="button button-danger" id="reset-board" type="button" hidden>Reset board</button>
-        </div>
       </div>
       <div class="summary runtime-summary">
         <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>
@@ -108,6 +109,14 @@
 
       <div class="table-scroll">
         <table>
+          <colgroup>
+            <col class="port-column">
+            <col class="session-column">
+            <col class="configuration-column">
+            <col class="health-column">
+            <col class="throughput-column">
+            <col class="overflow-column">
+          </colgroup>
           <thead>
             <tr>
               <th scope="col">Port</th>
