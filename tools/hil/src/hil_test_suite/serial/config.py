@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import os
 import termios
+import time
 
 
 BAUD_RATES = {
@@ -21,6 +22,8 @@ BAUD_RATES = {
 STANDARD_BAUD_BY_SETTING = {setting: rate for rate, setting in BAUD_RATES.items()}
 STANDARD_BAUD_RATES = tuple(BAUD_RATES)
 MAX_BAUD_DEVIATION = 0.5
+PORT_OPEN_SETTLE_SECONDS = 0.25
+LINE_CODING_SETTLE_SECONDS = 0.25
 TCGETS2 = 0x802C542A
 TCSETS2 = 0x402C542B
 BOTHER = 0x1000
@@ -54,22 +57,12 @@ def verify_line_speed(file_descriptor: int, baud_rate: int) -> None:
         )
 
 
-def configure_port(
-    path: str,
-    baud_rate: int,
-    *,
-    allow_arbitrary: bool = False,
-) -> tuple[int, list]:
-    """Open a raw 8N1 serial port, set and verify its baud, and return old settings.
-
-    Arbitrary baud rates use Linux termios2/BOTHER and are opt-in. The caller
-    must restore the returned settings and close the descriptor after testing.
-    """
+def open_port(path: str, baud_rate: int, *, allow_arbitrary: bool = False) -> tuple[int, list]:
+    """Open a serial port and capture settings needed to restore its TTY state."""
     if baud_rate not in BAUD_RATES and not allow_arbitrary:
         raise ValueError(f"unsupported standard baud rate: {baud_rate}")
 
     file_descriptor = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-    original_settings = None
     try:
         original_settings = termios.tcgetattr(file_descriptor)
         original_termios2 = None
@@ -80,44 +73,63 @@ def configure_port(
             # valid termios view carrying the original settings for the shared closer.
             original_settings[4] = termios.B9600
             original_settings[5] = termios.B9600
-        settings = termios.tcgetattr(file_descriptor)
-        if baud_rate in BAUD_RATES:
-            settings[0] = 0
-            settings[1] = 0
-            settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-            settings[3] = 0
-            settings[4] = BAUD_RATES[baud_rate]
-            settings[5] = BAUD_RATES[baud_rate]
-            settings[6][termios.VMIN] = 0
-            settings[6][termios.VTIME] = 0
-            termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
-        else:
-            # CDC ACM can reject an intermediate standard-baud tcsetattr; apply
-            # raw mode and BOTHER together through Linux termios2 instead.
-            raw = bytearray(44)
-            fcntl.ioctl(file_descriptor, TCGETS2, raw, True)
-            cflag = int.from_bytes(raw[8:12], "little")
-            cflag &= ~(CBAUD | termios.CSIZE | termios.PARENB | termios.CSTOPB)
-            cflag |= termios.CS8 | termios.CREAD | termios.CLOCAL | BOTHER
-            raw[0:4] = (0).to_bytes(4, "little")
-            raw[4:8] = (0).to_bytes(4, "little")
-            raw[8:12] = cflag.to_bytes(4, "little")
-            raw[12:16] = (0).to_bytes(4, "little")
-            raw[17 + termios.VMIN] = 0
-            raw[17 + termios.VTIME] = 0
-            raw[36:40] = baud_rate.to_bytes(4, "little")
-            raw[40:44] = baud_rate.to_bytes(4, "little")
-            fcntl.ioctl(file_descriptor, TCSETS2, raw)
-
-        verify_line_speed(file_descriptor, baud_rate)
-        termios.tcflush(file_descriptor, termios.TCIOFLUSH)
         return file_descriptor, (original_settings, original_termios2) if original_termios2 is not None else original_settings
     except BaseException:
+        os.close(file_descriptor)
+        raise
+
+
+def set_port_line_coding(file_descriptor: int, baud_rate: int, *, allow_arbitrary: bool = False) -> None:
+    """Set a raw 8N1 line coding and verify the host TTY readback."""
+    if baud_rate not in BAUD_RATES and not allow_arbitrary:
+        raise ValueError(f"unsupported standard baud rate: {baud_rate}")
+    settings = termios.tcgetattr(file_descriptor)
+    if baud_rate in BAUD_RATES:
+        settings[0] = 0
+        settings[1] = 0
+        settings[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+        settings[3] = 0
+        settings[4] = BAUD_RATES[baud_rate]
+        settings[5] = BAUD_RATES[baud_rate]
+        settings[6][termios.VMIN] = 0
+        settings[6][termios.VTIME] = 0
+        termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
+    else:
+        # CDC ACM can reject an intermediate standard-baud tcsetattr; apply
+        # raw mode and BOTHER together through Linux termios2 instead.
+        raw = bytearray(44)
+        fcntl.ioctl(file_descriptor, TCGETS2, raw, True)
+        cflag = int.from_bytes(raw[8:12], "little")
+        cflag &= ~(CBAUD | termios.CSIZE | termios.PARENB | termios.CSTOPB)
+        cflag |= termios.CS8 | termios.CREAD | termios.CLOCAL | BOTHER
+        raw[0:4] = (0).to_bytes(4, "little")
+        raw[4:8] = (0).to_bytes(4, "little")
+        raw[8:12] = cflag.to_bytes(4, "little")
+        raw[12:16] = (0).to_bytes(4, "little")
+        raw[17 + termios.VMIN] = 0
+        raw[17 + termios.VTIME] = 0
+        raw[36:40] = baud_rate.to_bytes(4, "little")
+        raw[40:44] = baud_rate.to_bytes(4, "little")
+        fcntl.ioctl(file_descriptor, TCSETS2, raw)
+    verify_line_speed(file_descriptor, baud_rate)
+
+
+def configure_port(path: str, baud_rate: int, *, allow_arbitrary: bool = False) -> tuple[int, list]:
+    """Open, settle, configure a raw 8N1 serial port, and return its old settings."""
+    file_descriptor, original = open_port(path, baud_rate, allow_arbitrary=allow_arbitrary)
+    try:
+        time.sleep(PORT_OPEN_SETTLE_SECONDS)
+        set_port_line_coding(file_descriptor, baud_rate, allow_arbitrary=allow_arbitrary)
+        time.sleep(LINE_CODING_SETTLE_SECONDS)
+        termios.tcflush(file_descriptor, termios.TCIOFLUSH)
+        return file_descriptor, original
+    except BaseException:
         try:
-            if original_settings is not None:
-                termios.tcsetattr(file_descriptor, termios.TCSANOW, original_settings)
-                if original_termios2 is not None:
-                    fcntl.ioctl(file_descriptor, TCSETS2, original_termios2)
+            if isinstance(original, tuple):
+                termios.tcsetattr(file_descriptor, termios.TCSANOW, original[0])
+                fcntl.ioctl(file_descriptor, TCSETS2, original[1])
+            else:
+                termios.tcsetattr(file_descriptor, termios.TCSANOW, original)
         finally:
             os.close(file_descriptor)
         raise

@@ -32,7 +32,7 @@ Combined and standalone functional/performance reports use the same concise form
 - A compact final HID health summary
 
 For an incremental six-port ceiling search, the overall result is `PASS` only when the initial health sample is clean,
-at least one rate passes on all six streams, a subsequent boundary rate actually runs all six streams and fails, and the
+every lower attempted rate passes on all six streams, a subsequent boundary rate actually runs all six streams and fails, and the
 final HID sample is available. The first failed rate remains `FAIL` in the table and is explicitly identified as the
 expected search boundary. A health/setup abort before traffic is not a ceiling and remains an overall `FAIL`.
 

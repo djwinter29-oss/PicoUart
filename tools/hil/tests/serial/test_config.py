@@ -37,6 +37,34 @@ def test_configure_port_sets_and_verifies_standard_baud(monkeypatch):
     assert closes == []
 
 
+def test_configure_port_waits_after_open_and_line_coding(monkeypatch):
+    serial_port = _load_serial_config()
+    events = []
+    current = [0, 0, 0, 0, serial_port.termios.B9600, serial_port.termios.B9600, [0] * 32]
+    monkeypatch.setattr(serial_port.os, "open", lambda *_args: events.append("open") or 17)
+    monkeypatch.setattr(serial_port.os, "close", lambda *_args: None)
+    monkeypatch.setattr(serial_port.termios, "tcgetattr", lambda _fd: current.copy())
+    monkeypatch.setattr(
+        serial_port.termios,
+        "tcsetattr",
+        lambda _fd, _when, settings: (events.append("line coding"), current.__setitem__(slice(None), settings)),
+    )
+    monkeypatch.setattr(serial_port, "verify_line_speed", lambda *_args: events.append("verify"))
+    monkeypatch.setattr(serial_port, "time", type("Clock", (), {"sleep": lambda seconds: events.append(seconds)}))
+    monkeypatch.setattr(serial_port.termios, "tcflush", lambda *_args: events.append("flush"))
+
+    serial_port.configure_port("/dev/fake", 115200)
+
+    assert events == [
+        "open",
+        serial_port.PORT_OPEN_SETTLE_SECONDS,
+        "line coding",
+        "verify",
+        serial_port.LINE_CODING_SETTLE_SECONDS,
+        "flush",
+    ]
+
+
 def test_configure_port_closes_if_readback_does_not_match(monkeypatch):
     serial_port = _load_serial_config()
     closes = []

@@ -190,8 +190,8 @@ practical step and maximum for the board/clock, and refine the passing/failing b
 Each rate includes the configured settling period, so keep the duration and sweep size practical.
 
 The runner stops at the first boundary rate where actual traffic fails. The run is an overall `PASS` for ceiling
-measurement only if initial HID health is clean, a lower rate passed on every stream, all six streams were attempted at
-the boundary, and final HID sampling succeeded. The boundary row remains `FAIL` and the record says the failure was
+measurement only if initial HID health is clean, every lower attempted rate passed on every stream, all six streams
+were attempted at the boundary, and final HID sampling succeeded. The boundary row remains `FAIL` and the record says the failure was
 expected for the search; report the highest passing tested rate and first failed tested rate. Do not claim an exact
 hardware limit or label the overall record `FAIL` for that expected boundary. A dirty HID check before traffic,
 serial-setup failure, missing stream outcome, or failure at the first tested rate means no ceiling was measured and
