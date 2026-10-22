@@ -240,6 +240,9 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         ]
 
         time.sleep(getattr(arguments, "settle_seconds", LINE_CODING_SETTLE_SECONDS))
+        # DTR-open recovery can finish during settling and deliver stale bytes after configure_port's initial flush.
+        for file_descriptor, _ in ports:
+            termios.tcflush(file_descriptor, termios.TCIOFLUSH)
         if getattr(arguments, "setup_only", False):
             print(f"SETUP PASS at {stream_baud} baud")
             passed = True
