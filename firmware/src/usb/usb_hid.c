@@ -1,6 +1,6 @@
 /**
  * @file usb_hid.c
- * @brief TinyUSB HID monitor helpers for PicoUart status reporting.
+ * @brief Version-1 HID identity, board control, telemetry, and channel snapshots.
  */
 
 #include "usb/usb_hid.h"
@@ -35,72 +35,152 @@
 #ifndef PICO_UART_VERSION_PATCH
 #define PICO_UART_VERSION_PATCH 0u
 #endif
+#ifndef PICO_UART_ALLOW_HID_RESET
+#define PICO_UART_ALLOW_HID_RESET 1
+#endif
 
-/** @brief HID status report interval in milliseconds. */
-#define USB_HID_STATUS_INTERVAL_MS 100u
-/** @brief HID status report signature byte (`P`). */
-#define USB_HID_SIGNATURE0 'P'
-/**
- * @brief HID status / board-status report format version.
- *
- * The status input payload is 63 bytes so Report ID + payload fit
- * in one full-speed HID interrupt packet (`CFG_TUD_HID_EP_BUFSIZE`).
- */
 #define USB_HID_REPORT_VERSION 1u
-/** @brief HID input report ID for the compact status monitor. */
-#define USB_HID_REPORT_ID_STATUS 1u
-/** @brief HID feature report ID for board temperature and firmware version. */
-#define USB_HID_REPORT_ID_BOARD_STATUS 3u
-/** @brief HID feature report ID for board control commands. */
-#define USB_HID_REPORT_ID_COMMAND 4u
-/** @brief HID feature report ID for the MCU identity and the current system clock. */
-#define USB_HID_REPORT_ID_HARDWARE_INFO 6u
-/** @brief Independent layout version of the hardware-info feature payload. */
-#define USB_HID_HARDWARE_INFO_VERSION 1u
-/** @brief Hardware-info MCU identifier for RP2040. */
-#define USB_HID_MCU_RP2040 1u
-/** @brief Hardware-info MCU identifier for RP2350. */
-#define USB_HID_MCU_RP2350 2u
-/** @brief HID feature report ID for product name and SDK unique board serial. */
-#define USB_HID_REPORT_ID_IDENTITY 7u
-/** @brief Independent identity feature payload layout version. */
-#define USB_HID_IDENTITY_VERSION 1u
-/**
- * @brief HID feature report ID for all values that change at runtime, read together by dashboards.
- *
- * Replaces separate overflow, runtime and LED reads so a dashboard needs one control transfer per refresh.
- */
-#define USB_HID_REPORT_ID_TELEMETRY 18u
-/** @brief Independent telemetry feature payload layout version. */
-#define USB_HID_TELEMETRY_VERSION 1u
-/** @brief First of six independent read-only per-channel diagnostic feature reports. */
+#define USB_HID_REPORT_ID_DEVICE_INFO 1u
+#define USB_HID_REPORT_ID_CONTROL 2u
+#define USB_HID_REPORT_ID_TELEMETRY 3u
 #define USB_HID_REPORT_ID_CHANNEL_BASE 10u
-/** @brief Read-only persistent configuration boot decision. */
-#define USB_HID_REPORT_ID_CONFIGURATION 16u
-/** @brief Persistent profile request and verified save result. */
-#define USB_HID_REPORT_ID_CONFIGURATION_SAVE 17u
-/** @brief Give the host time to read a verified save result before rebooting. */
-#define USB_HID_CONFIG_REBOOT_DELAY_MS 1000u
+#define USB_HID_COMMAND_LED_OFF 1u
+#define USB_HID_COMMAND_LED_ON 2u
+#define USB_HID_COMMAND_ARM_REBOOT 3u
+#define USB_HID_COMMAND_REBOOT 4u
+#define USB_HID_COMMAND_SAVE_CONFIGURATION 5u
+#define USB_HID_CHANNEL_INTERVAL_MS 500u
+#define USB_HID_FAULT_SAMPLE_INTERVAL_MS 100u
+#define USB_HID_RESET_ARM_WINDOW_MS 2000u
+#define USB_HID_REBOOT_DELAY_MS 1000u
 
-/** @brief USB-core-owned state of the most recent persistent configuration request. */
+#define USB_HID_DEVICE_INFO_SIZE 63u
+#define USB_HID_CONTROL_SIZE 24u
+#define USB_HID_TELEMETRY_SIZE 24u
+#define USB_HID_CHANNEL_SIZE 54u
+#define USB_HID_CHANNEL_STATUS_READY (1u << 0)
+#define USB_HID_CHANNEL_STATUS_INIT_FAILED (1u << 1)
+#define USB_HID_CHANNEL_STATUS_CONTROL_ERROR (1u << 2)
+#define USB_HID_CHANNEL_STATUS_CONTROL_PENDING (1u << 3)
+#define USB_HID_CHANNEL_STATUS_CDC_OPEN (1u << 4)
+#define USB_HID_CHANNEL_STATUS_PIO_BACKEND (1u << 5)
+#define USB_HID_CHANNEL_STATUS_RX_OVERRUN (1u << 6)
+#define USB_HID_CHANNEL_STATUS_RX_ERROR (1u << 7)
+
+_Static_assert(UART_PORT_COUNT == 6u, "HID version 1 requires six UART channels");
+_Static_assert(USB_HID_DEVICE_INFO_SIZE + 1u <= PICO_UART_USB_HID_ENDPOINT_BUFFER_SIZE,
+               "Device information report must fit one HID packet");
+_Static_assert(USB_HID_CHANNEL_SIZE + 1u <= PICO_UART_USB_HID_ENDPOINT_BUFFER_SIZE,
+               "Channel report must fit one HID packet");
+
+/** @brief Command result state published in report 2. */
 typedef enum {
-    USB_HID_CONFIG_IDLE = 0,    /**< No request since boot. */
-    USB_HID_CONFIG_PENDING = 1, /**< Validated request awaiting the main poll loop. */
-    USB_HID_CONFIG_SAVED = 2,   /**< Reserved sector verified; reboot needed to apply. */
-    USB_HID_CONFIG_INVALID = 3, /**< Malformed, incompatible, or unacknowledged request. */
-    USB_HID_CONFIG_BUSY = 4,    /**< A CDC host session is open; no flash write attempted. */
-    USB_HID_CONFIG_FAILED = 5,  /**< Flash lockout, programming, or verification failed. */
-} usb_hid_config_save_state_t;
+    USB_HID_STATUS_IDLE = 0,        /**< No command has produced a result. */
+    USB_HID_STATUS_PENDING = 1,     /**< Save accepted and awaiting core-0 execution. */
+    USB_HID_STATUS_COMPLETED = 2,   /**< Action completed or reboot is scheduled. */
+    USB_HID_STATUS_INVALID = 3,     /**< Request rejected with an invalid argument. */
+    USB_HID_STATUS_UNSUPPORTED = 4, /**< Command or required capability is unavailable. */
+    USB_HID_STATUS_BUSY = 5,        /**< Save rejected because a CDC session is open. */
+    USB_HID_STATUS_FAILED = 6,      /**< Save execution or verification failed. */
+} usb_hid_command_status_t;
 
-/** @brief Last request status; changed only on the USB core. */
-static usb_hid_config_save_state_t usb_hid_config_save_state;
-/** @brief Requested profile, or unavailable when no profile could be decoded. */
-static uint32_t usb_hid_config_save_profile;
-/** @brief Reboot deadline after a verified persistent configuration save. */
-static absolute_time_t usb_hid_config_reboot_deadline;
+/** @brief Protocol error reason associated with report 2 status. */
+typedef enum {
+    USB_HID_ERROR_NONE = 0,             /**< No error. */
+    USB_HID_ERROR_MALFORMED = 1,        /**< Framing, flags, or reserved fields are invalid. */
+    USB_HID_ERROR_PROFILE = 2,          /**< Profile is invalid or unsupported by this target. */
+    USB_HID_ERROR_ACKNOWLEDGEMENT = 3,  /**< Required overclock acknowledgement is missing. */
+    USB_HID_ERROR_AUTHORIZATION = 4,    /**< Standalone reboot is not armed. */
+    USB_HID_ERROR_UNSUPPORTED = 5,      /**< Command or capability is unavailable. */
+    USB_HID_ERROR_CDC_OPEN = 6,         /**< A CDC DTR session is open. */
+    USB_HID_ERROR_FLASH = 7,            /**< Flash operation failed. */
+    USB_HID_ERROR_VERIFY = 8,            /**< Flash verification failed. */
+    USB_HID_ERROR_EXECUTION = 9,        /**< Other execution failure. */
+} usb_hid_error_t;
 
-/** @brief Require closed CDC sessions before pausing both cores for a flash erase. */
-static bool usb_hid_config_can_save(void)
+/** @brief One saturating fault category; all categories share a timestamp. */
+typedef struct {
+    uint32_t count; /**< Saturating cumulative observations for the category. */
+} usb_hid_fault_count_t;
+
+/** @brief USB-core-owned sticky history for the four channel fault categories. */
+typedef struct {
+    uint8_t health; /**< Last observed driver and historical RX status flags. */
+    usb_hid_fault_count_t faults[4]; /**< Init, control, RX-overrun, and RX-error counts. */
+    uint32_t last_fault_uptime_s; /**< Shared uptime timestamp, rounded down to seconds. */
+    uint32_t rx_counts[2]; /**< Last sampled backend overrun and error counters. */
+} usb_hid_fault_history_t;
+
+/** @brief Monotonic, wide traffic accumulation harvested from wrapping backend counters. */
+typedef struct {
+    uint32_t previous[4]; /**< Last raw UART-TX, UART-RX, CDC-TX, and CDC-RX counters. */
+    uint64_t total[4]; /**< Saturating totals since this USB session began. */
+    uint64_t published[4]; /**< Accumulator values at the last accepted Input report. */
+    uint64_t last_publication_ms; /**< Measurement boundary for deltas and interval. */
+    uint16_t sequence; /**< Last accepted per-channel Input sequence. */
+    bool initialized; /**< Raw counter baseline has been established. */
+} usb_hid_channel_traffic_t;
+
+/** @brief Last identifiable control request, retained for request-ID deduplication. */
+typedef struct {
+    uint8_t payload[USB_HID_CONTROL_SIZE]; /**< Exact latest identifiable request bytes. */
+    bool valid; /**< True after one identifiable request has been processed. */
+} usb_hid_request_cache_t;
+
+static usb_hid_command_status_t usb_hid_command_status;
+static uint8_t usb_hid_command;
+static uint8_t usb_hid_command_flags;
+static uint32_t usb_hid_request_id;
+static uint32_t usb_hid_requested_profile;
+static uint8_t usb_hid_error_reason;
+static usb_hid_request_cache_t usb_hid_latest_request;
+static absolute_time_t usb_hid_arm_deadline;
+static absolute_time_t usb_hid_reboot_deadline;
+static bool usb_hid_reboot_pending;
+static usb_hid_channel_traffic_t usb_hid_traffic[UART_PORT_COUNT];
+static usb_hid_fault_history_t usb_hid_faults[UART_PORT_COUNT];
+static uart_driver_port_stats_t usb_hid_last_uart_stats[UART_PORT_COUNT];
+static usb_cdc_port_stats_t usb_hid_last_cdc_stats[UART_PORT_COUNT];
+static uint8_t usb_hid_next_channel;
+static uint32_t usb_hid_next_fault_sample_ms;
+
+/** @brief Read a little-endian 32-bit value from a report payload. */
+static uint32_t usb_hid_read_u32(const uint8_t *bytes)
+{
+    return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) |
+           ((uint32_t)bytes[3] << 24);
+}
+
+/** @brief Write a little-endian 16-bit value to a report payload. */
+static void usb_hid_write_u16(uint8_t *bytes, uint16_t value)
+{
+    bytes[0] = (uint8_t)value;
+    bytes[1] = (uint8_t)(value >> 8);
+}
+
+/** @brief Write a little-endian 32-bit value to a report payload. */
+static void usb_hid_write_u32(uint8_t *bytes, uint32_t value)
+{
+    bytes[0] = (uint8_t)value;
+    bytes[1] = (uint8_t)(value >> 8);
+    bytes[2] = (uint8_t)(value >> 16);
+    bytes[3] = (uint8_t)(value >> 24);
+}
+
+/** @brief Saturating 64-bit addition for long-lived traffic accumulators. */
+static uint64_t usb_hid_add_u64(uint64_t left, uint64_t right)
+{
+    return UINT64_MAX - left < right ? UINT64_MAX : left + right;
+}
+
+/** @brief Return a saturated 32-bit wire representation. */
+static uint32_t usb_hid_saturate_u32(uint64_t value)
+{
+    return value > UINT32_MAX ? UINT32_MAX : (uint32_t)value;
+}
+
+/** @brief Require every DTR session to be closed before accepting or executing a save. */
+static bool usb_hid_cdc_sessions_closed(void)
 {
     for (uint8_t index = 0u; index < UART_PORT_COUNT; ++index) {
         usb_cdc_port_stats_t stats;
@@ -111,541 +191,514 @@ static bool usb_hid_config_can_save(void)
     return true;
 }
 
-/** @brief Sampled fault history; RX counts are controller events or dropped bytes, not individual bad frames. */
-typedef struct {
-    uint32_t count;        /**< Saturating cumulative count observed by the monitor. */
-    uint64_t last_seen_ms; /**< Boot uptime when a count increase was detected; zero when never detected. */
-} __attribute__((packed)) usb_hid_fault_history_t;
-
-/** @brief Applied channel settings and fault history, owned and sampled by the USB core. */
-typedef struct {
-    uint8_t version;     /**< Independent diagnostic layout version, currently 1. */
-    uint8_t health;      /**< Latest sampled driver status and RX fault flags. */
-    uint32_t baud_rate;  /**< Applied baud rate; zero if the port information is unavailable. */
-    uint8_t data_bits;   /**< Applied data bits. */
-    uint8_t stop_bits;   /**< Applied stop bits. */
-    uint8_t parity;      /**< Applied parity: none=0, odd=1, even=2. */
-    uint8_t tx_pin;      /**< TX GPIO; 255 means unassigned. */
-    uint8_t rx_pin;      /**< RX GPIO; 255 means unassigned. */
-    usb_hid_fault_history_t faults[4]; /**< Init/control assertion observations, RX dropped bytes, RX error events. */
-} __attribute__((packed)) usb_hid_channel_diagnostics_t;
-
-_Static_assert(sizeof(usb_hid_channel_diagnostics_t) == 59u, "Channel diagnostics must fit the HID control buffer");
-
-/** @brief USB-core-owned fault history, retained independently of status report publication. */
-static usb_hid_channel_diagnostics_t usb_hid_diagnostics[UART_PORT_COUNT];
-/** @brief Previous RX counters used to observe increments without modifying backend-owned counters. */
-static uint32_t usb_hid_diagnostic_rx_counts[UART_PORT_COUNT][2];
-/** @brief Per-channel counter advanced whenever that channel's diagnostics report content changes. */
-static uint8_t usb_hid_diagnostics_generation[UART_PORT_COUNT];
-
-/** @brief HID command value that toggles the board LED. */
-#define USB_HID_COMMAND_TOGGLE_LED 1u
-/**
- * @brief HID command value that resets the board after a prior arm command.
- *
- * Remote reset is **enabled by default** (`PICO_UART_ALLOW_HID_RESET` is 1).
- * Compile with `-DPICO_UART_ALLOW_HID_RESET=0` to remove it.
- * When enabled, @ref USB_HID_COMMAND_ARM_RESET must be sent first and
- * @ref USB_HID_COMMAND_RESET_BOARD must follow within
- * @ref USB_HID_RESET_ARM_WINDOW_MS.
- */
-#define USB_HID_COMMAND_RESET_BOARD 2u
-/** @brief HID command value that arms a subsequent reset command. */
-#define USB_HID_COMMAND_ARM_RESET 3u
-/** @brief Maximum time between arm-reset and reset commands. */
-#define USB_HID_RESET_ARM_WINDOW_MS 2000u
-
-#ifndef PICO_UART_ALLOW_HID_RESET
-#define PICO_UART_ALLOW_HID_RESET 1
-#endif
-
-/** @brief Board-status reserved0 bit 0: HID arm/reset commands are compiled in. */
-#define USB_HID_BOARD_STATUS_FLAG_HID_RESET 1u
-
-/** @brief Per-channel health bit: the host opened the matching CDC interface. */
-#define USB_HID_CHANNEL_STATUS_CDC_OPEN (1u << 4)
-/** @brief Per-channel health bit: the matching UART uses PIO rather than hardware UART. */
-#define USB_HID_CHANNEL_STATUS_PIO_BACKEND (1u << 5)
-/** @brief Per-channel health bit: UART RX data has been overwritten since boot. */
-#define USB_HID_CHANNEL_STATUS_RX_OVERRUN (1u << 6)
-/** @brief Per-channel health bit: the UART observed a receive-status error since boot. */
-#define USB_HID_CHANNEL_STATUS_RX_ERROR (1u << 7)
-
-/**
- * @brief Compact traffic and queue snapshot for one CDC/UART channel.
- */
-typedef struct {
-    uint8_t health;                     /**< UART status flags plus @ref USB_HID_CHANNEL_STATUS_* flags. */
-    uint8_t ring_high_watermark_blocks; /**< Largest UART RX/TX ring occupancy in 16-byte blocks. */
-    uint16_t controller_tx_bytes;       /**< Saturated controller TX byte delta since the preceding report. */
-    uint16_t controller_rx_bytes;       /**< Saturated controller RX byte delta since the preceding report. */
-    uint16_t cdc_tx_bytes;              /**< Saturated CDC-to-host byte delta since the preceding report. */
-    uint16_t cdc_rx_bytes;              /**< Saturated host-to-CDC byte delta since the preceding report. */
-} __attribute__((packed)) usb_hid_channel_status_t;
-
-/**
- * @brief Compact HID monitor report published to the host.
- *
- * Layout is 63 bytes so TinyUSB can prepend Report ID 1 inside a 64-byte FS EP.
- */
-typedef struct {
-    uint8_t signature0;                                /**< Fixed report signature byte (`P`). */
-    uint8_t version;                                   /**< Report layout version. */
-    uint8_t sequence;                                  /**< Monotonic report sequence number. */
-    usb_hid_channel_status_t channel[UART_PORT_COUNT]; /**< Per-CDC/UART bridge snapshots. */
-} __attribute__((packed)) usb_hid_status_report_t;
-
-_Static_assert(sizeof(usb_hid_status_report_t) == 63u,
-               "HID status report must be 63 bytes (Report ID + payload <= 64)");
-_Static_assert(sizeof(usb_hid_status_report_t) + 1u <= PICO_UART_USB_HID_ENDPOINT_BUFFER_SIZE,
-               "HID status Report ID + payload must fit the HID EP buffer");
-
-/**
- * @brief HID feature report containing temperature and firmware version.
- */
-typedef struct {
-    uint8_t version;   /**< Report layout version. */
-    uint8_t reserved0; /**< Board-status flags; bit 0 is @ref USB_HID_BOARD_STATUS_FLAG_HID_RESET. */
-    int16_t temperature_centidegrees_celsius; /**< Internal temperature in hundredths of a degree Celsius. */
-    uint8_t firmware_major;                   /**< Firmware semantic version major component. */
-    uint8_t firmware_minor;                   /**< Firmware semantic version minor component. */
-    uint8_t firmware_patch;                   /**< Firmware semantic version patch component. */
-    uint8_t reserved1;                        /**< Reserved; always zero. */
-} __attribute__((packed)) usb_hid_board_status_report_t;
-
-_Static_assert(sizeof(usb_hid_board_status_report_t) == 8u,
-               "HID board-status report must match the HID report descriptor");
-
-/** @brief Feature report identifying the MCU and reporting its configured system clock. */
-typedef struct {
-    uint8_t version;         /**< Hardware-info layout version. */
-    uint8_t mcu;             /**< MCU identifier: RP2040 or RP2350. */
-    uint32_t system_clock_hz; /**< Current SDK-reported clk_sys frequency in Hz. */
-} __attribute__((packed)) usb_hid_hardware_info_report_t;
-
-_Static_assert(sizeof(usb_hid_hardware_info_report_t) == 6u,
-               "HID hardware-info report must match the HID report descriptor");
-
-/** @brief Product and unique board identity, independent of the MCU type in report 6. */
-typedef struct {
-    uint8_t version;  /**< Identity layout version. */
-    char product[32]; /**< NUL-padded ASCII USB product name. */
-    char serial[16];  /**< SDK board ID as ASCII hex, without a trailing NUL; flash-derived on RP2040. */
-} __attribute__((packed)) usb_hid_identity_report_t;
-
-_Static_assert(sizeof(usb_hid_identity_report_t) == 49u, "HID identity payload must be 49 bytes");
-_Static_assert(offsetof(usb_hid_identity_report_t, serial) == 33u, "HID identity serial offset must be 33");
-_Static_assert(sizeof(PICO_UART_USB_PRODUCT) <= 32u, "HID product name must fit with its trailing NUL");
-_Static_assert(2u * PICO_UNIQUE_BOARD_ID_SIZE_BYTES == 16u, "HID serial must match the SDK board ID size");
-
-/** @brief SDK linker boundaries; addresses represent extents, not readable objects. */
-extern char __end__, __scratch_x_start__, __scratch_x_end__, __scratch_y_start__, __scratch_y_end__;
-/** @brief SDK linker boundaries for core 0 and core 1 stack reservations. */
-extern char __StackBottom, __StackTop, __StackOneBottom, __StackOneTop;
-
-/** @brief Little-endian dynamic snapshot; packed integer fields target the RP2 little-endian ABI. */
-typedef struct {
-    uint8_t version;                       /**< Telemetry layout version. */
-    uint8_t led_flags;                     /**< Bit 0 LED available, bit 1 manual state, bit 2 physical output. */
-    int16_t temperature_centidegrees_celsius; /**< Internal temperature in hundredths of a degree Celsius. */
-    uint64_t uptime_ms;                    /**< SDK monotonic microseconds since boot divided by 1000, without 32-bit wrap. */
-    uint16_t service_load_basis_points[2]; /**< Measured per-core service-pass load; 0xffff until the first window. */
-    uint32_t ram_reserved_bytes;           /**< Linked static SRAM extent, scratch sections and both reserved stacks. */
-    uint32_t ram_total_bytes;              /**< Physical SRAM capacity, excluding XIP cache SRAM. */
-    uint32_t rx_overflow_count[UART_PORT_COUNT]; /**< Per-port dropped RX bytes, including pending recovery. */
-    uint8_t config_save_status;            /**< Same status as report 17 (@ref usb_hid_config_save_state_t). */
-    uint32_t config_save_profile;          /**< Same requested profile as report 17; unavailable is 0xffffffff. */
-    uint8_t diagnostics_generation[UART_PORT_COUNT]; /**< Changes when report 10 + channel content changes. */
-} __attribute__((packed)) usb_hid_telemetry_report_t;
-
-_Static_assert(sizeof(usb_hid_telemetry_report_t) == 59u, "HID telemetry must fit the HID control buffer");
-_Static_assert(offsetof(usb_hid_telemetry_report_t, uptime_ms) == 4u, "HID uptime offset must be 4");
-_Static_assert(offsetof(usb_hid_telemetry_report_t, service_load_basis_points) == 12u, "HID load offset must be 12");
-_Static_assert(offsetof(usb_hid_telemetry_report_t, ram_reserved_bytes) == 16u, "HID reserved RAM offset must be 16");
-_Static_assert(offsetof(usb_hid_telemetry_report_t, rx_overflow_count) == 24u, "HID overflow offset must be 24");
-_Static_assert(offsetof(usb_hid_telemetry_report_t, config_save_status) == 48u, "HID save status offset must be 48");
-_Static_assert(offsetof(usb_hid_telemetry_report_t, diagnostics_generation) == 53u,
-               "HID diagnostics generation offset must be 53");
-
-/** @brief Next absolute time, in milliseconds, when a HID report may be published. */
-static uint32_t usb_hid_next_report_ms;
-/** @brief Sequence number inserted into HID reports. */
-static uint8_t usb_hid_sequence;
-/** @brief UART counters captured when the last periodic HID input report was published. */
-static uart_driver_port_stats_t usb_hid_last_reported_uart_stats[UART_PORT_COUNT];
-/** @brief Most recent coherent UART counter snapshot for each port. */
-static uart_driver_port_stats_t usb_hid_last_sampled_uart_stats[UART_PORT_COUNT];
-/** @brief CDC counters captured when the last periodic HID input report was published. */
-static usb_cdc_port_stats_t usb_hid_last_reported_cdc_stats[UART_PORT_COUNT];
-/** @brief Deadline after which a previously armed HID reset expires. */
-static absolute_time_t usb_hid_reset_armed_deadline;
-
-static uint16_t usb_hid_clamp_u16(uint32_t value)
+/** @brief Total statically-addressed SRAM reserved by the current linked image. */
+static uint32_t usb_hid_ram_reserved_bytes(void)
 {
-    return (value > (uint32_t)UINT16_MAX) ? (uint16_t)UINT16_MAX : (uint16_t)value;
+    extern char __end__, __scratch_x_start__, __scratch_x_end__, __scratch_y_start__, __scratch_y_end__;
+    extern char __StackBottom, __StackTop, __StackOneBottom, __StackOneTop;
+
+    return (uint32_t)(((uintptr_t)&__end__ - SRAM_BASE) +
+                      ((uintptr_t)&__scratch_x_end__ - (uintptr_t)&__scratch_x_start__) +
+                      ((uintptr_t)&__scratch_y_end__ - (uintptr_t)&__scratch_y_start__) +
+                      ((uintptr_t)&__StackTop - (uintptr_t)&__StackBottom) +
+                      ((uintptr_t)&__StackOneTop - (uintptr_t)&__StackOneBottom));
 }
 
-static uint8_t usb_hid_clamp_u8(uint32_t value)
+/** @brief Sample backend/CDC counters and retain zero defaults on transient read failure. */
+static void usb_hid_read_stats(uart_driver_port_stats_t uart[UART_PORT_COUNT],
+                               usb_cdc_port_stats_t cdc[UART_PORT_COUNT])
 {
-    return (value > (uint32_t)UINT8_MAX) ? (uint8_t)UINT8_MAX : (uint8_t)value;
-}
-
-static void usb_hid_sample_stats(uart_driver_port_stats_t uart_stats[UART_PORT_COUNT],
-                                 usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT])
-{
-    memset(cdc_stats, 0, sizeof(usb_cdc_port_stats_t) * UART_PORT_COUNT);
-
-    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        uart_stats[index] = usb_hid_last_sampled_uart_stats[index];
-        if (uart_driver_port_stats((uart_port_id_t)index, &uart_stats[index])) {
-            usb_hid_last_sampled_uart_stats[index] = uart_stats[index];
-        } else {
-            uart_stats[index] = usb_hid_last_sampled_uart_stats[index];
+    for (size_t channel = 0u; channel < UART_PORT_COUNT; ++channel) {
+        uart[channel] = usb_hid_last_uart_stats[channel];
+        if (uart_driver_port_stats((uart_port_id_t)channel, &uart[channel])) {
+            usb_hid_last_uart_stats[channel] = uart[channel];
         }
-        (void)usb_cdc_port_stats((uint8_t)index, &cdc_stats[index]);
+        cdc[channel] = usb_hid_last_cdc_stats[channel];
+        if (usb_cdc_port_stats((uint8_t)channel, &cdc[channel])) {
+            usb_hid_last_cdc_stats[channel] = cdc[channel];
+        }
     }
 }
 
-/**
- * @brief Snapshot the board-scoped status exposed through HID feature report 3.
- * @param report Destination feature-report payload.
- */
-static void usb_hid_build_board_status_report(usb_hid_board_status_report_t *report)
+/** @brief Harvest raw byte counters frequently so their 32-bit wrap cannot erase publication totals. */
+static void usb_hid_harvest_traffic(const uart_driver_port_stats_t uart[UART_PORT_COUNT],
+                                   const usb_cdc_port_stats_t cdc[UART_PORT_COUNT])
 {
-    memset(report, 0, sizeof(*report));
-    report->version = USB_HID_REPORT_VERSION;
-#if PICO_UART_ALLOW_HID_RESET
-    report->reserved0 = USB_HID_BOARD_STATUS_FLAG_HID_RESET;
-#endif
-    report->temperature_centidegrees_celsius = temperature_to_hid_centidegrees(temperature_read_celsius());
-    report->firmware_major = (uint8_t)PICO_UART_VERSION_MAJOR;
-    report->firmware_minor = (uint8_t)PICO_UART_VERSION_MINOR;
-    report->firmware_patch = (uint8_t)PICO_UART_VERSION_PATCH;
-}
-
-/**
- * @brief Build identity from the same product definition and SDK serial API as USB enumeration.
- * @param report Destination feature payload.
- */
-static void usb_hid_build_identity_report(usb_hid_identity_report_t *report)
-{
-    char serial[2u * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1u];
-
-    memset(report, 0, sizeof(*report));
-    report->version = USB_HID_IDENTITY_VERSION;
-    memcpy(report->product, PICO_UART_USB_PRODUCT, sizeof(PICO_UART_USB_PRODUCT));
-    pico_get_unique_board_id_string(serial, sizeof(serial));
-    memcpy(report->serial, serial, sizeof(report->serial));
-}
-
-/**
- * @brief Snapshot the dynamic values a dashboard polls; one read replaces separate LED/runtime/overflow reads.
- * @param report Destination feature payload.
- * @param uart_stats Coherent driver statistics for the overflow counts.
- */
-static void usb_hid_build_telemetry_report(usb_hid_telemetry_report_t *report,
-                                           const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT])
-{
-    bool led_on = false;
-    bool led_available = led_read_state(&led_on);
-
-    memset(report, 0, sizeof(*report));
-    report->version = USB_HID_TELEMETRY_VERSION;
-    report->led_flags = led_available ? (uint8_t)(1u | (led_on ? 6u : 0u)) : 0u;
-    report->temperature_centidegrees_celsius = temperature_to_hid_centidegrees(temperature_read_celsius());
-    report->uptime_ms = time_us_64() / 1000u;
-    report->service_load_basis_points[0] = service_load_read(0u);
-    report->service_load_basis_points[1] = service_load_read(1u);
-    report->ram_reserved_bytes = (uint32_t)(
-        ((uintptr_t)&__end__ - SRAM_BASE) +
-        ((uintptr_t)&__scratch_x_end__ - (uintptr_t)&__scratch_x_start__) +
-        ((uintptr_t)&__scratch_y_end__ - (uintptr_t)&__scratch_y_start__) +
-        ((uintptr_t)&__StackTop - (uintptr_t)&__StackBottom) +
-        ((uintptr_t)&__StackOneTop - (uintptr_t)&__StackOneBottom));
-    report->ram_total_bytes = SRAM_END - SRAM_BASE;
-    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        report->rx_overflow_count[index] = uart_saturating_add_u32(uart_stats[index].rx_ring_overflow_count,
-                                                                   uart_stats[index].rx_ring_pending_overflow_count);
-        report->diagnostics_generation[index] = usb_hid_diagnostics_generation[index];
+    for (size_t channel = 0u; channel < UART_PORT_COUNT; ++channel) {
+        usb_hid_channel_traffic_t *traffic = &usb_hid_traffic[channel];
+        const uint32_t raw[4] = {uart[channel].controller_tx_bytes, uart[channel].controller_rx_bytes,
+                                 cdc[channel].tx_bytes, cdc[channel].rx_bytes};
+        if (!traffic->initialized) {
+            memcpy(traffic->previous, raw, sizeof(raw));
+            traffic->initialized = true;
+            continue;
+        }
+        for (size_t counter = 0u; counter < 4u; ++counter) {
+            /* ponytail: One 32-bit wrap between USB-core polls is impossible at UART line rates; if polling can stall
+             * for hours, move harvesting into a wider backend accumulator. */
+            traffic->total[counter] =
+                usb_hid_add_u64(traffic->total[counter], (uint32_t)(raw[counter] - traffic->previous[counter]));
+            traffic->previous[counter] = raw[counter];
+        }
     }
-    report->config_save_status = (uint8_t)usb_hid_config_save_state;
-    report->config_save_profile = usb_hid_config_save_profile;
 }
 
-/**
- * @brief Observe diagnostic changes on the USB core; timestamps describe detection, not the exact wire event.
- * @param index Logical channel.
- * @param stats Coherent driver statistics, or the last successfully sampled statistics.
- */
-static void usb_hid_sample_diagnostics(size_t index, const uart_driver_port_stats_t *stats)
+/** @brief Observe sticky fault transitions and backend counter increases on the USB core. */
+static void usb_hid_sample_faults(size_t channel, const uart_driver_port_stats_t *stats)
 {
-    usb_hid_channel_diagnostics_t *report = &usb_hid_diagnostics[index];
-    const usb_hid_channel_diagnostics_t previous = *report;
-    uart_driver_port_info_t info;
-    uint8_t health = uart_driver_port_status((uart_port_id_t)index);
-    uint32_t counts[2] = {
+    usb_hid_fault_history_t *history = &usb_hid_faults[channel];
+    const uint8_t health = uart_driver_port_status((uart_port_id_t)channel);
+    const uint32_t counters[2] = {
         uart_saturating_add_u32(stats->rx_ring_overflow_count, stats->rx_ring_pending_overflow_count),
         stats->rx_error_count,
     };
-    uint64_t now = time_us_64() / 1000u;
+    const uint64_t uptime_s = time_us_64() / UINT64_C(1000000);
+    bool changed = false;
 
-    report->version = 1u;
-    if (uart_driver_port_info((uart_port_id_t)index, &info)) {
-        report->baud_rate = info.baud_rate;
-        report->data_bits = info.data_bits;
-        report->stop_bits = info.stop_bits;
-        report->parity = (uint8_t)info.parity;
-        report->tx_pin = info.tx_pin <= UINT8_MAX ? (uint8_t)info.tx_pin : UINT8_MAX;
-        report->rx_pin = info.rx_pin <= UINT8_MAX ? (uint8_t)info.rx_pin : UINT8_MAX;
+    for (size_t fault = 0u; fault < 2u; ++fault) {
+        const uint8_t mask = (uint8_t)(1u << (fault + 1u));
+        if ((health & mask) != 0u && (history->health & mask) == 0u) {
+            history->faults[fault].count = uart_saturating_add_u32(history->faults[fault].count, 1u);
+            changed = true;
+        }
     }
+    for (size_t counter = 0u; counter < 2u; ++counter) {
+        const uint32_t increase = counters[counter] >= history->rx_counts[counter]
+                                      ? counters[counter] - history->rx_counts[counter]
+                                      : counters[counter];
+        if (increase != 0u) {
+            history->faults[counter + 2u].count =
+                uart_saturating_add_u32(history->faults[counter + 2u].count, increase);
+            changed = true;
+        }
+        history->rx_counts[counter] = counters[counter];
+    }
+    history->health = (uint8_t)((health & 0x3fu) |
+                                ((history->faults[2].count != 0u) ? USB_HID_CHANNEL_STATUS_RX_OVERRUN : 0u) |
+                                ((history->faults[3].count != 0u) ? USB_HID_CHANNEL_STATUS_RX_ERROR : 0u));
+    if (changed) {
+        history->last_fault_uptime_s = uptime_s > UINT32_MAX ? UINT32_MAX : (uint32_t)uptime_s;
+    }
+}
+
+/** @brief Start a new USB traffic interval without clearing boot-lifetime fault history. */
+static void usb_hid_start_traffic_session(void)
+{
+    uart_driver_port_stats_t uart[UART_PORT_COUNT] = {0};
+    usb_cdc_port_stats_t cdc[UART_PORT_COUNT] = {0};
+    const uint64_t now_ms = time_us_64() / 1000u;
+
+    usb_hid_read_stats(uart, cdc);
+    for (size_t channel = 0u; channel < UART_PORT_COUNT; ++channel) {
+        usb_hid_channel_traffic_t *traffic = &usb_hid_traffic[channel];
+        memset(traffic, 0, sizeof(*traffic));
+        traffic->previous[0] = uart[channel].controller_tx_bytes;
+        traffic->previous[1] = uart[channel].controller_rx_bytes;
+        traffic->previous[2] = cdc[channel].tx_bytes;
+        traffic->previous[3] = cdc[channel].rx_bytes;
+        traffic->last_publication_ms = now_ms;
+        traffic->initialized = true;
+    }
+    usb_hid_next_channel = 0u;
+}
+
+/** @brief Build the static 63-byte identity/capabilities payload. */
+static void usb_hid_build_device_info(uint8_t payload[USB_HID_DEVICE_INFO_SIZE])
+{
+    bool led_on = false;
+    char serial[2u * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1u];
+    uint16_t capabilities = 0u;
+
+    memset(payload, 0, USB_HID_DEVICE_INFO_SIZE);
+    payload[0] = USB_HID_REPORT_VERSION;
+    memcpy(payload + 1u, PICO_UART_USB_PRODUCT, sizeof(PICO_UART_USB_PRODUCT));
+    pico_get_unique_board_id_string(serial, sizeof(serial));
+    memcpy(payload + 33u, serial, 16u);
+    payload[49] = (uint8_t)PICO_UART_VERSION_MAJOR;
+    payload[50] = (uint8_t)PICO_UART_VERSION_MINOR;
+    payload[51] = (uint8_t)PICO_UART_VERSION_PATCH;
+#if PICO_RP2350
+    payload[52] = 2u;
+    payload[58] = 0x1fu;
+#else
+    payload[52] = 1u;
+    payload[58] = 0x0fu;
+#endif
+    payload[53] = UART_PORT_COUNT;
+    payload[54] = 0x03u;
+    payload[55] = 0x3cu;
+    if (led_read_state(&led_on)) {
+        capabilities |= 1u << 0;
+    }
+#if PICO_UART_ALLOW_HID_RESET
+    capabilities |= 1u << 1;
+#endif
+    capabilities |= 1u << 2;
+    usb_hid_write_u16(payload + 56u, capabilities);
+    usb_hid_write_u32(payload + 59u, SRAM_END - SRAM_BASE);
+}
+
+/** @brief Build the current 24-byte command result and boot-configuration snapshot. */
+static void usb_hid_build_control(uint8_t payload[USB_HID_CONTROL_SIZE])
+{
+    const boot_config_status_t *config = boot_config_get_status();
+
+    memset(payload, 0, USB_HID_CONTROL_SIZE);
+    payload[0] = USB_HID_REPORT_VERSION;
+    payload[1] = usb_hid_command;
+    payload[2] = usb_hid_command_flags;
+    payload[3] = (uint8_t)usb_hid_command_status;
+    usb_hid_write_u32(payload + 4u, usb_hid_request_id);
+    usb_hid_write_u32(payload + 8u, config->stored_profile);
+    usb_hid_write_u32(payload + 12u, (uint32_t)config->active_profile);
+    usb_hid_write_u32(payload + 16u, usb_hid_requested_profile);
+    payload[20] = (uint8_t)config->source;
+    payload[21] = (uint8_t)config->reason;
+    payload[22] = usb_hid_error_reason;
+}
+
+/** @brief Build live board telemetry using the report-3 wire offsets. */
+static void usb_hid_build_telemetry(uint8_t payload[USB_HID_TELEMETRY_SIZE])
+{
+    bool led_on = false;
+    const bool led_available = led_read_state(&led_on);
+    const int16_t temperature = temperature_to_hid_centidegrees(temperature_read_celsius());
+    const uint64_t uptime = time_us_64() / 1000u;
+
+    memset(payload, 0, USB_HID_TELEMETRY_SIZE);
+    payload[0] = USB_HID_REPORT_VERSION;
+    payload[1] = led_available && led_on ? 1u : 0u;
+    usb_hid_write_u16(payload + 2u, (uint16_t)temperature);
+    for (size_t byte = 0u; byte < 8u; ++byte) {
+        payload[4u + byte] = (uint8_t)(uptime >> (8u * byte));
+    }
+    usb_hid_write_u16(payload + 12u, service_load_read(0u));
+    usb_hid_write_u16(payload + 14u, service_load_read(1u));
+    usb_hid_write_u32(payload + 16u, usb_hid_ram_reserved_bytes());
+    usb_hid_write_u32(payload + 20u, clock_get_hz(clk_sys));
+}
+
+/** @brief Capture and encode a coherent per-channel 54-byte snapshot. */
+static void usb_hid_build_channel(uint8_t channel, uint8_t payload[USB_HID_CHANNEL_SIZE], bool candidate,
+                                  const uart_driver_port_stats_t *stats, const usb_cdc_port_stats_t *cdc,
+                                  uint64_t now_ms)
+{
+    usb_hid_channel_traffic_t *traffic = &usb_hid_traffic[channel];
+    usb_hid_fault_history_t *history = &usb_hid_faults[channel];
+    uart_driver_port_info_t info = {.tx_pin = UART_DRIVER_PIN_UNASSIGNED, .rx_pin = UART_DRIVER_PIN_UNASSIGNED};
+    uint8_t driver_status = 0u;
+    const uint32_t ring_high_watermark = stats->tx_ring_high_watermark > stats->rx_ring_high_watermark
+                                             ? stats->tx_ring_high_watermark
+                                             : stats->rx_ring_high_watermark;
+    const uint64_t elapsed = now_ms >= traffic->last_publication_ms ? now_ms - traffic->last_publication_ms : 0u;
+
+    (void)uart_driver_port_snapshot((uart_port_id_t)channel, &info, &driver_status);
+    memset(payload, 0, USB_HID_CHANNEL_SIZE);
+    payload[0] = USB_HID_REPORT_VERSION;
+    usb_hid_write_u16(payload + 1u, candidate ? (uint16_t)(traffic->sequence + 1u) : traffic->sequence);
+    usb_hid_write_u32(payload + 3u, usb_hid_saturate_u32(elapsed));
+    payload[7] = (uint8_t)((driver_status & 0x0fu) | (cdc->opened ? USB_HID_CHANNEL_STATUS_CDC_OPEN : 0u) |
+                           ((info.backend == UART_DRIVER_BACKEND_PIO) ? USB_HID_CHANNEL_STATUS_PIO_BACKEND : 0u) |
+                           (history->health & 0xc0u));
+    payload[8] = (uint8_t)((ring_high_watermark + 15u) / 16u);
+    for (size_t counter = 0u; counter < 4u; ++counter) {
+        const uint64_t delta = traffic->total[counter] >= traffic->published[counter]
+                                   ? traffic->total[counter] - traffic->published[counter]
+                                   : UINT64_MAX;
+        usb_hid_write_u32(payload + 9u + (4u * counter), usb_hid_saturate_u32(delta));
+    }
+    if (info.baud_rate != 0u) {
+        usb_hid_write_u32(payload + 25u, info.baud_rate);
+        payload[29] = info.data_bits;
+        payload[30] = info.stop_bits;
+        payload[31] = (uint8_t)info.parity;
+    }
+    payload[32] = info.tx_pin <= UINT8_MAX ? (uint8_t)info.tx_pin : UINT8_MAX;
+    payload[33] = info.rx_pin <= UINT8_MAX ? (uint8_t)info.rx_pin : UINT8_MAX;
     for (size_t fault = 0u; fault < 4u; ++fault) {
-        uint32_t increment;
-        if (fault < 2u) {
-            uint8_t mask = (uint8_t)(1u << (fault + 1u));
-            increment = ((health & mask) != 0u) && ((report->health & mask) == 0u);
-        } else {
-            size_t counter = fault - 2u;
-            uint32_t previous = usb_hid_diagnostic_rx_counts[index][counter];
-            increment = counts[counter] >= previous ? counts[counter] - previous : counts[counter];
-            usb_hid_diagnostic_rx_counts[index][counter] = counts[counter];
-        }
-        if (increment != 0u) {
-            report->faults[fault].count = uart_saturating_add_u32(report->faults[fault].count, increment);
-            report->faults[fault].last_seen_ms = now;
-        }
+        usb_hid_write_u32(payload + 34u + fault * 4u, history->faults[fault].count);
     }
-    if (counts[0] != 0u) health |= USB_HID_CHANNEL_STATUS_RX_OVERRUN;
-    if (counts[1] != 0u) health |= USB_HID_CHANNEL_STATUS_RX_ERROR;
-    report->health = health;
-    if (memcmp(&previous, report, sizeof(previous)) != 0) {
-        usb_hid_diagnostics_generation[index] = (uint8_t)(usb_hid_diagnostics_generation[index] + 1u);
-    }
+    usb_hid_write_u32(payload + 50u, history->last_fault_uptime_s);
 }
 
-static void usb_hid_build_status_report(usb_hid_status_report_t *report,
-                                        const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT],
-                                        const usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT])
+/** @brief Publish one due channel snapshot and commit its interval only on TinyUSB acceptance. */
+static bool usb_hid_publish_channel(uint8_t channel, const uart_driver_port_stats_t *stats,
+                                    const usb_cdc_port_stats_t *cdc, uint64_t now_ms)
 {
-    memset(report, 0, sizeof(*report));
-    report->signature0 = USB_HID_SIGNATURE0;
-    report->version = USB_HID_REPORT_VERSION;
-    report->sequence = usb_hid_sequence;
+    uint8_t payload[USB_HID_CHANNEL_SIZE];
+    usb_hid_channel_traffic_t *traffic = &usb_hid_traffic[channel];
 
-    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        uart_driver_port_info_t port_info;
-        uint32_t ring_high_watermark;
-
-        if (!uart_driver_port_info((uart_port_id_t)index, &port_info)) {
-            continue;
-        }
-
-        report->channel[index].health = uart_driver_port_status((uart_port_id_t)index);
-        if (cdc_stats[index].opened) {
-            report->channel[index].health |= USB_HID_CHANNEL_STATUS_CDC_OPEN;
-        }
-        if (port_info.backend == UART_DRIVER_BACKEND_PIO) {
-            report->channel[index].health |= USB_HID_CHANNEL_STATUS_PIO_BACKEND;
-        }
-        if ((uart_stats[index].rx_ring_overflow_count != 0u) ||
-            (uart_stats[index].rx_ring_pending_overflow_count != 0u)) {
-            report->channel[index].health |= USB_HID_CHANNEL_STATUS_RX_OVERRUN;
-        }
-        if (uart_stats[index].rx_error_count != 0u) {
-            report->channel[index].health |= USB_HID_CHANNEL_STATUS_RX_ERROR;
-        }
-        ring_high_watermark = uart_stats[index].tx_ring_high_watermark;
-        if (uart_stats[index].rx_ring_high_watermark > ring_high_watermark) {
-            ring_high_watermark = uart_stats[index].rx_ring_high_watermark;
-        }
-        report->channel[index].ring_high_watermark_blocks = usb_hid_clamp_u8((ring_high_watermark + 15u) / 16u);
-        report->channel[index].controller_tx_bytes = usb_hid_clamp_u16(
-            uart_stats[index].controller_tx_bytes - usb_hid_last_reported_uart_stats[index].controller_tx_bytes);
-        report->channel[index].controller_rx_bytes = usb_hid_clamp_u16(
-            uart_stats[index].controller_rx_bytes - usb_hid_last_reported_uart_stats[index].controller_rx_bytes);
-        report->channel[index].cdc_tx_bytes =
-            usb_hid_clamp_u16(cdc_stats[index].tx_bytes - usb_hid_last_reported_cdc_stats[index].tx_bytes);
-        report->channel[index].cdc_rx_bytes =
-            usb_hid_clamp_u16(cdc_stats[index].rx_bytes - usb_hid_last_reported_cdc_stats[index].rx_bytes);
-    }
-}
-
-static bool usb_hid_publish_status_report(const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT],
-                                          const usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT])
-{
-    usb_hid_status_report_t report;
-
-    usb_hid_build_status_report(&report, uart_stats, cdc_stats);
-    if (!tud_hid_report(USB_HID_REPORT_ID_STATUS, &report, sizeof(report))) {
+    usb_hid_build_channel(channel, payload, true, stats, cdc, now_ms);
+    if (!tud_hid_report((uint8_t)(USB_HID_REPORT_ID_CHANNEL_BASE + channel), payload, sizeof(payload))) {
         return false;
     }
     service_load_note(0u);
-
-    memcpy(usb_hid_last_reported_uart_stats, uart_stats, sizeof(usb_hid_last_reported_uart_stats));
-    memcpy(usb_hid_last_reported_cdc_stats, cdc_stats, sizeof(usb_hid_last_reported_cdc_stats));
-    usb_hid_sequence += 1u;
+    memcpy(traffic->published, traffic->total, sizeof(traffic->published));
+    traffic->last_publication_ms = now_ms;
+    traffic->sequence = (uint16_t)(traffic->sequence + 1u);
+    usb_hid_next_channel = (uint8_t)((channel + 1u) % UART_PORT_COUNT);
     return true;
+}
+
+/** @brief Store common result metadata for an identifiable command. */
+static void usb_hid_set_result(uint8_t command, uint8_t flags, uint32_t request_id, uint32_t profile,
+                               usb_hid_command_status_t status, usb_hid_error_t error)
+{
+    usb_hid_command = command;
+    usb_hid_command_flags = flags;
+    usb_hid_request_id = request_id;
+    usb_hid_requested_profile = profile;
+    usb_hid_command_status = status;
+    usb_hid_error_reason = (uint8_t)error;
+}
+
+/** @brief Decode and validate a report-2 SET request in the specified contract order. */
+static void usb_hid_handle_command(const uint8_t *request, uint16_t length)
+{
+    const bool identifiable = length == USB_HID_CONTROL_SIZE && request != NULL &&
+                              request[0] == USB_HID_REPORT_VERSION && usb_hid_read_u32(request + 4u) != 0u;
+    const uint8_t command = identifiable ? request[1] : 0u;
+    const uint8_t flags = identifiable ? request[2] : 0u;
+    const uint32_t request_id = identifiable ? usb_hid_read_u32(request + 4u) : 0u;
+    uint32_t profile = BOOT_CONFIG_PROFILE_UNAVAILABLE;
+
+    if (usb_hid_command_status == USB_HID_STATUS_PENDING || usb_hid_reboot_pending) {
+        return;
+    }
+    if (identifiable && usb_hid_latest_request.valid &&
+        request_id == usb_hid_read_u32(usb_hid_latest_request.payload + 4u)) {
+        return;
+    }
+    if (!identifiable) {
+        usb_hid_latest_request.valid = false;
+        usb_hid_set_result(0u, 0u, 0u, BOOT_CONFIG_PROFILE_UNAVAILABLE, USB_HID_STATUS_INVALID,
+                           USB_HID_ERROR_MALFORMED);
+        return;
+    }
+
+    memcpy(usb_hid_latest_request.payload, request, USB_HID_CONTROL_SIZE);
+    usb_hid_latest_request.valid = true;
+    if ((request[3] != 0u) || (usb_hid_read_u32(request + 8u) != 0u) ||
+        (usb_hid_read_u32(request + 12u) != 0u) || (request[20] != 0u) || (request[21] != 0u) ||
+        (request[22] != 0u) || (request[23] != 0u) || (flags & 0xfeu) != 0u) {
+        usb_hid_set_result(command, flags, request_id, profile, USB_HID_STATUS_INVALID, USB_HID_ERROR_MALFORMED);
+        return;
+    }
+
+    bool led_on = false;
+    const bool led_available = led_read_state(&led_on);
+    switch (command) {
+    case USB_HID_COMMAND_LED_OFF:
+    case USB_HID_COMMAND_LED_ON:
+        if (!led_available) {
+            usb_hid_set_result(command, flags, request_id, profile, USB_HID_STATUS_UNSUPPORTED,
+                               USB_HID_ERROR_UNSUPPORTED);
+            return;
+        }
+        break;
+    case USB_HID_COMMAND_ARM_REBOOT:
+    case USB_HID_COMMAND_REBOOT:
+#if !PICO_UART_ALLOW_HID_RESET
+        usb_hid_set_result(command, flags, request_id, profile, USB_HID_STATUS_UNSUPPORTED,
+                           USB_HID_ERROR_UNSUPPORTED);
+        return;
+#endif
+        break;
+    case USB_HID_COMMAND_SAVE_CONFIGURATION:
+        break;
+    default:
+        usb_hid_set_result(command, flags, request_id, profile, USB_HID_STATUS_UNSUPPORTED,
+                           USB_HID_ERROR_UNSUPPORTED);
+        return;
+    }
+
+    if (command == USB_HID_COMMAND_SAVE_CONFIGURATION) {
+        profile = usb_hid_read_u32(request + 16u);
+        if (!boot_config_profile_supported(profile)) {
+            usb_hid_set_result(command, flags, request_id, BOOT_CONFIG_PROFILE_UNAVAILABLE, USB_HID_STATUS_INVALID,
+                               USB_HID_ERROR_PROFILE);
+            return;
+        }
+    } else if (flags != 0u || usb_hid_read_u32(request + 16u) != 0u) {
+        usb_hid_set_result(command, flags, request_id, BOOT_CONFIG_PROFILE_UNAVAILABLE, USB_HID_STATUS_INVALID,
+                           USB_HID_ERROR_MALFORMED);
+        return;
+    }
+
+    if (command == USB_HID_COMMAND_SAVE_CONFIGURATION && profile != BOOT_CLOCK_DEFAULT && (flags & 1u) == 0u) {
+        usb_hid_set_result(command, flags, request_id, profile, USB_HID_STATUS_INVALID,
+                           USB_HID_ERROR_ACKNOWLEDGEMENT);
+        return;
+    }
+    if (command == USB_HID_COMMAND_REBOOT) {
+#if PICO_UART_ALLOW_HID_RESET
+        if (usb_hid_arm_deadline == nil_time || time_reached(usb_hid_arm_deadline)) {
+            usb_hid_arm_deadline = nil_time;
+            usb_hid_set_result(command, flags, request_id, BOOT_CONFIG_PROFILE_UNAVAILABLE,
+                               USB_HID_STATUS_INVALID, USB_HID_ERROR_AUTHORIZATION);
+            return;
+        }
+#endif
+    }
+    if (command == USB_HID_COMMAND_SAVE_CONFIGURATION && !usb_hid_cdc_sessions_closed()) {
+        usb_hid_set_result(command, flags, request_id, profile, USB_HID_STATUS_BUSY, USB_HID_ERROR_CDC_OPEN);
+        return;
+    }
+
+    usb_hid_set_result(command, flags, request_id, profile, USB_HID_STATUS_COMPLETED, USB_HID_ERROR_NONE);
+    switch (command) {
+    case USB_HID_COMMAND_LED_OFF:
+        led_set(false);
+        break;
+    case USB_HID_COMMAND_LED_ON:
+        led_set(true);
+        break;
+    case USB_HID_COMMAND_ARM_REBOOT:
+#if PICO_UART_ALLOW_HID_RESET
+        usb_hid_arm_deadline = make_timeout_time_ms(USB_HID_RESET_ARM_WINDOW_MS);
+#endif
+        break;
+    case USB_HID_COMMAND_REBOOT:
+#if PICO_UART_ALLOW_HID_RESET
+        usb_hid_arm_deadline = nil_time;
+        usb_hid_reboot_pending = true;
+        usb_hid_reboot_deadline = make_timeout_time_ms(USB_HID_REBOOT_DELAY_MS);
+#endif
+        break;
+    case USB_HID_COMMAND_SAVE_CONFIGURATION:
+        if (!usb_hid_cdc_sessions_closed()) {
+            usb_hid_set_result(command, flags, request_id, profile, USB_HID_STATUS_BUSY, USB_HID_ERROR_CDC_OPEN);
+        } else {
+            usb_hid_set_result(command, flags, request_id, profile, USB_HID_STATUS_PENDING, USB_HID_ERROR_NONE);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+/** @brief Execute the deferred save outside the TinyUSB control callback and schedule reboot on success. */
+static void usb_hid_execute_pending_save(void)
+{
+    const boot_config_t config = {.clock_profile = (boot_clock_profile_t)usb_hid_requested_profile};
+    if (!usb_hid_cdc_sessions_closed()) {
+        usb_hid_command_status = USB_HID_STATUS_BUSY;
+        usb_hid_error_reason = USB_HID_ERROR_CDC_OPEN;
+    } else if (!boot_config_set(&config)) {
+        usb_hid_command_status = USB_HID_STATUS_FAILED;
+        usb_hid_error_reason = USB_HID_ERROR_EXECUTION;
+    } else {
+        const boot_config_save_result_t save_result = boot_config_save_with_result();
+        if (save_result == BOOT_CONFIG_SAVE_FLASH_FAILED) {
+            usb_hid_command_status = USB_HID_STATUS_FAILED;
+            usb_hid_error_reason = USB_HID_ERROR_FLASH;
+        } else if (save_result == BOOT_CONFIG_SAVE_VERIFY_FAILED) {
+            usb_hid_command_status = USB_HID_STATUS_FAILED;
+            usb_hid_error_reason = USB_HID_ERROR_VERIFY;
+        } else {
+            usb_hid_command_status = USB_HID_STATUS_COMPLETED;
+            usb_hid_error_reason = USB_HID_ERROR_NONE;
+            usb_hid_reboot_pending = true;
+            usb_hid_reboot_deadline = make_timeout_time_ms(USB_HID_REBOOT_DELAY_MS);
+        }
+    }
 }
 
 void usb_hid_init(void)
 {
-    usb_hid_config_save_state = USB_HID_CONFIG_IDLE;
-    usb_hid_config_save_profile = boot_config_get_status()->stored_profile;
-    usb_hid_config_reboot_deadline = nil_time;
-    usb_hid_sequence = 0u;
-    usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time());
-    usb_hid_reset_armed_deadline = nil_time;
-    memset(usb_hid_last_reported_uart_stats, 0, sizeof(usb_hid_last_reported_uart_stats));
-    memset(usb_hid_last_sampled_uart_stats, 0, sizeof(usb_hid_last_sampled_uart_stats));
-    memset(usb_hid_last_reported_cdc_stats, 0, sizeof(usb_hid_last_reported_cdc_stats));
-    memset(usb_hid_diagnostics, 0, sizeof(usb_hid_diagnostics));
-    memset(usb_hid_diagnostic_rx_counts, 0, sizeof(usb_hid_diagnostic_rx_counts));
-    memset(usb_hid_diagnostics_generation, 0, sizeof(usb_hid_diagnostics_generation));
+    usb_hid_command_status = USB_HID_STATUS_IDLE;
+    usb_hid_command = 0u;
+    usb_hid_command_flags = 0u;
+    usb_hid_request_id = 0u;
+    usb_hid_requested_profile = BOOT_CONFIG_PROFILE_UNAVAILABLE;
+    usb_hid_error_reason = USB_HID_ERROR_NONE;
+    memset(&usb_hid_latest_request, 0, sizeof(usb_hid_latest_request));
+    memset(usb_hid_faults, 0, sizeof(usb_hid_faults));
+    memset(usb_hid_last_uart_stats, 0, sizeof(usb_hid_last_uart_stats));
+    memset(usb_hid_last_cdc_stats, 0, sizeof(usb_hid_last_cdc_stats));
+    usb_hid_arm_deadline = nil_time;
+    usb_hid_reboot_deadline = nil_time;
+    usb_hid_reboot_pending = false;
+    usb_hid_next_fault_sample_ms = 0u;
+    usb_hid_start_traffic_session();
 }
 
 void usb_hid_poll(void)
 {
-    uint32_t now_ms;
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    uart_driver_port_stats_t uart[UART_PORT_COUNT] = {0};
+    usb_cdc_port_stats_t cdc[UART_PORT_COUNT] = {0};
 
-    if (usb_hid_config_save_state == USB_HID_CONFIG_PENDING) {
-        if (!usb_hid_config_can_save()) {
-            usb_hid_config_save_state = USB_HID_CONFIG_BUSY;
-        } else {
-            const boot_config_t config = {.clock_profile = (boot_clock_profile_t)usb_hid_config_save_profile};
-            if (boot_config_set(&config) && boot_config_save()) {
-                usb_hid_config_save_state = USB_HID_CONFIG_SAVED;
-                usb_hid_config_reboot_deadline = make_timeout_time_ms(USB_HID_CONFIG_REBOOT_DELAY_MS);
-            } else {
-                usb_hid_config_save_state = USB_HID_CONFIG_FAILED;
-            }
-        }
+    if (usb_hid_command_status == USB_HID_STATUS_PENDING) {
+        usb_hid_execute_pending_save();
     }
-    if (usb_hid_config_save_state == USB_HID_CONFIG_SAVED &&
-        time_reached(usb_hid_config_reboot_deadline)) {
+    if (usb_hid_reboot_pending && time_reached(usb_hid_reboot_deadline)) {
         system_reset();
     }
 
-    now_ms = to_ms_since_boot(get_absolute_time());
-    if ((int32_t)(now_ms - usb_hid_next_report_ms) < 0) {
+    usb_hid_read_stats(uart, cdc);
+    usb_hid_harvest_traffic(uart, cdc);
+    if ((int32_t)(now_ms - usb_hid_next_fault_sample_ms) >= 0) {
+        for (size_t channel = 0u; channel < UART_PORT_COUNT; ++channel) {
+            usb_hid_sample_faults(channel, &uart[channel]);
+        }
+        usb_hid_next_fault_sample_ms = now_ms + USB_HID_FAULT_SAMPLE_INTERVAL_MS;
+    }
+
+    if (!tud_hid_ready()) {
         return;
     }
-
-    {
-        uart_driver_port_stats_t uart_stats[UART_PORT_COUNT];
-        usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT];
-        usb_hid_sample_stats(uart_stats, cdc_stats);
-        for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-            usb_hid_sample_diagnostics(index, &uart_stats[index]);
+    const uint64_t now_ms_64 = time_us_64() / 1000u;
+    for (size_t offset = 0u; offset < UART_PORT_COUNT; ++offset) {
+        const uint8_t channel = (uint8_t)((usb_hid_next_channel + offset) % UART_PORT_COUNT);
+        if (now_ms_64 - usb_hid_traffic[channel].last_publication_ms < USB_HID_CHANNEL_INTERVAL_MS) {
+            continue;
         }
-        if (tud_hid_ready() && !usb_hid_publish_status_report(uart_stats, cdc_stats)) {
-            return;
+        if (!usb_hid_publish_channel(channel, &uart[channel], &cdc[channel], now_ms_64)) {
+            usb_hid_next_channel = (uint8_t)((channel + 1u) % UART_PORT_COUNT);
         }
+        return;
     }
-
-    usb_hid_next_report_ms = now_ms + USB_HID_STATUS_INTERVAL_MS;
 }
 
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer,
                                uint16_t reqlen)
 {
-    usb_hid_board_status_report_t board_status_report;
-    usb_hid_hardware_info_report_t hardware_info_report;
-    usb_hid_identity_report_t identity_report;
-    usb_hid_telemetry_report_t telemetry_report;
-    usb_hid_status_report_t report;
-    uart_driver_port_stats_t uart_stats[UART_PORT_COUNT];
-    usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT];
-
+    uint8_t payload[USB_HID_DEVICE_INFO_SIZE];
+    uint16_t length;
     (void)instance;
 
-    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_CONFIGURATION_SAVE)) {
-        uint8_t payload[8] = {1u, (uint8_t)usb_hid_config_save_state, 0u, 0u};
-        for (unsigned int index = 0; index < 4u; ++index) {
-            payload[4u + index] = (uint8_t)(usb_hid_config_save_profile >> (8u * index));
-        }
-        uint16_t length = reqlen < sizeof(payload) ? reqlen : sizeof(payload);
-        memcpy(buffer, payload, length);
-        return length;
+    if (buffer == NULL) {
+        return 0u;
     }
-
-    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_CONFIGURATION)) {
-        const boot_config_status_t *config = boot_config_get_status();
-        uint8_t payload[12] = {1u, (uint8_t)config->source, (uint8_t)config->reason, 0u};
-        for (unsigned int index = 0; index < 4u; ++index) {
-            payload[4u + index] = (uint8_t)(config->stored_profile >> (8u * index));
-            payload[8u + index] = (uint8_t)((uint32_t)config->active_profile >> (8u * index));
-        }
-        uint16_t length = reqlen < sizeof(payload) ? reqlen : sizeof(payload);
-        memcpy(buffer, payload, length);
-        return length;
-    }
-    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id >= USB_HID_REPORT_ID_CHANNEL_BASE) &&
-        (report_id < USB_HID_REPORT_ID_CHANNEL_BASE + UART_PORT_COUNT)) {
-        size_t index = report_id - USB_HID_REPORT_ID_CHANNEL_BASE;
-        usb_hid_sample_stats(uart_stats, cdc_stats);
-        usb_hid_sample_diagnostics(index, &uart_stats[index]);
-        uint16_t length = reqlen < sizeof(usb_hid_diagnostics[index]) ? reqlen : sizeof(usb_hid_diagnostics[index]);
-        memcpy(buffer, &usb_hid_diagnostics[index], length);
-        return length;
-    }
-    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_TELEMETRY)) {
-        usb_hid_sample_stats(uart_stats, cdc_stats);
-        for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-            usb_hid_sample_diagnostics(index, &uart_stats[index]);
-        }
-        usb_hid_build_telemetry_report(&telemetry_report, uart_stats);
-        if (reqlen > sizeof(telemetry_report)) {
-            reqlen = sizeof(telemetry_report);
-        }
-        memcpy(buffer, &telemetry_report, reqlen);
-        return reqlen;
-    }
-
-    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_IDENTITY)) {
-        usb_hid_build_identity_report(&identity_report);
-        if (reqlen > sizeof(identity_report)) {
-            reqlen = sizeof(identity_report);
-        }
-        memcpy(buffer, &identity_report, reqlen);
-        return reqlen;
-    }
-
-        if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_HARDWARE_INFO)) {
-        hardware_info_report.version = USB_HID_HARDWARE_INFO_VERSION;
-    #if PICO_RP2350
-        hardware_info_report.mcu = USB_HID_MCU_RP2350;
-    #else
-        hardware_info_report.mcu = USB_HID_MCU_RP2040;
-    #endif
-        hardware_info_report.system_clock_hz = clock_get_hz(clk_sys);
-        if (reqlen > sizeof(hardware_info_report)) {
-            reqlen = sizeof(hardware_info_report);
-        }
-        memcpy(buffer, &hardware_info_report, reqlen);
-        return reqlen;
-        }
-
-    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_BOARD_STATUS)) {
-        usb_hid_build_board_status_report(&board_status_report);
-        if (reqlen > sizeof(board_status_report)) {
-            reqlen = sizeof(board_status_report);
-        }
-
-        memcpy(buffer, &board_status_report, reqlen);
-        return reqlen;
-    }
-
-    if ((report_type != HID_REPORT_TYPE_INPUT) || (report_id != USB_HID_REPORT_ID_STATUS)) {
+    if (report_type == HID_REPORT_TYPE_FEATURE && report_id == USB_HID_REPORT_ID_DEVICE_INFO) {
+        usb_hid_build_device_info(payload);
+        length = USB_HID_DEVICE_INFO_SIZE;
+    } else if (report_type == HID_REPORT_TYPE_FEATURE && report_id == USB_HID_REPORT_ID_CONTROL) {
+        usb_hid_build_control(payload);
+        length = USB_HID_CONTROL_SIZE;
+    } else if (report_type == HID_REPORT_TYPE_FEATURE && report_id == USB_HID_REPORT_ID_TELEMETRY) {
+        usb_hid_build_telemetry(payload);
+        length = USB_HID_TELEMETRY_SIZE;
+    } else if ((report_type == HID_REPORT_TYPE_FEATURE || report_type == HID_REPORT_TYPE_INPUT) &&
+               report_id >= USB_HID_REPORT_ID_CHANNEL_BASE &&
+               report_id < USB_HID_REPORT_ID_CHANNEL_BASE + UART_PORT_COUNT) {
+        const uint8_t channel = (uint8_t)(report_id - USB_HID_REPORT_ID_CHANNEL_BASE);
+        uart_driver_port_stats_t uart[UART_PORT_COUNT] = {0};
+        usb_cdc_port_stats_t cdc[UART_PORT_COUNT] = {0};
+        usb_hid_read_stats(uart, cdc);
+        usb_hid_harvest_traffic(uart, cdc);
+        usb_hid_sample_faults(channel, &uart[channel]);
+        usb_hid_build_channel(channel, payload, false, &uart[channel], &cdc[channel], time_us_64() / 1000u);
+        length = USB_HID_CHANNEL_SIZE;
+    } else {
         return 0u;
     }
 
-    usb_hid_sample_stats(uart_stats, cdc_stats);
-    usb_hid_build_status_report(&report, uart_stats, cdc_stats);
-    if (reqlen > sizeof(report)) {
-        reqlen = sizeof(report);
+    if (reqlen > length) {
+        reqlen = length;
     }
-
-    memcpy(buffer, &report, reqlen);
+    memcpy(buffer, payload, reqlen);
     return reqlen;
 }
 
@@ -653,65 +706,13 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                            uint16_t bufsize)
 {
     (void)instance;
-
-    if (report_id == USB_HID_REPORT_ID_CONFIGURATION_SAVE && report_type == HID_REPORT_TYPE_FEATURE) {
-        if (usb_hid_config_save_state == USB_HID_CONFIG_PENDING ||
-            usb_hid_config_save_state == USB_HID_CONFIG_SAVED) {
-            return;
-        }
-        usb_hid_config_save_state = USB_HID_CONFIG_INVALID;
-        usb_hid_config_save_profile = BOOT_CONFIG_PROFILE_UNAVAILABLE;
-        if (bufsize != 8u || buffer[0] != 1u || (buffer[1] & ~1u) != 0u ||
-            buffer[2] != 0u || buffer[3] != 0u) {
-            return;
-        }
-        uint32_t profile = (uint32_t)buffer[4] | (uint32_t)buffer[5] << 8 |
-                           (uint32_t)buffer[6] << 16 | (uint32_t)buffer[7] << 24;
-        usb_hid_config_save_profile = profile;
-        if (!boot_config_profile_supported(profile) ||
-            (profile != BOOT_CLOCK_DEFAULT && (buffer[1] & 1u) == 0u)) {
-            usb_hid_config_save_profile = BOOT_CONFIG_PROFILE_UNAVAILABLE;
-            return;
-        }
-        usb_hid_config_save_state = usb_hid_config_can_save() ? USB_HID_CONFIG_PENDING : USB_HID_CONFIG_BUSY;
-        return;
-    }
-
-    if ((report_id != USB_HID_REPORT_ID_COMMAND) || (report_type != HID_REPORT_TYPE_FEATURE) || (bufsize < 1u)) {
-        return;
-    }
-
-    switch (buffer[0]) {
-    case USB_HID_COMMAND_TOGGLE_LED: {
-        bool on = false;
-        if (led_read_state(&on)) {
-            led_set(!on);
-        }
-        break;
-    }
-
-    case USB_HID_COMMAND_ARM_RESET:
-#if PICO_UART_ALLOW_HID_RESET
-        usb_hid_reset_armed_deadline = make_timeout_time_ms(USB_HID_RESET_ARM_WINDOW_MS);
-#endif
-        break;
-
-    case USB_HID_COMMAND_RESET_BOARD:
-#if PICO_UART_ALLOW_HID_RESET
-        if (!time_reached(usb_hid_reset_armed_deadline)) {
-            usb_hid_reset_armed_deadline = nil_time;
-            system_reset();
-        }
-#endif
-        break;
-
-    default:
-        break;
+    if (report_type == HID_REPORT_TYPE_FEATURE && report_id == USB_HID_REPORT_ID_CONTROL) {
+        usb_hid_handle_command(buffer, bufsize);
     }
 }
 
 void usb_hid_reset_host_state(void)
 {
-    usb_hid_reset_armed_deadline = nil_time;
-    usb_hid_next_report_ms = to_ms_since_boot(get_absolute_time());
+    usb_hid_arm_deadline = nil_time;
+    usb_hid_start_traffic_session();
 }

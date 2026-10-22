@@ -1,5 +1,5 @@
-import { PicoUartWebHid } from "./device.mjs?v=5";
-import { renderDashboard, updateReportAge } from "./view.mjs?v=6";
+import { PicoUartWebHid } from "./device.mjs?v=6";
+import { renderDashboard, updateReportAge } from "./view.mjs?v=7";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");
@@ -23,8 +23,9 @@ function resetConfigurationDraft(state) {
 function renderConfiguration(state) {
   const dashboard = state.dashboard;
   const hardwareId = dashboard.hardware?.mcu_id;
-  const options = hardwareId === 1 ? [[0, "SDK default (125 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"]]
-    : hardwareId === 2 ? [[0, "SDK default (150 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"], [4, "280 MHz (RP2350)"]] : [];
+  const options = (hardwareId === 1 ? [[0, "SDK default (125 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"]]
+    : hardwareId === 2 ? [[0, "SDK default (150 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"],
+      [4, "280 MHz (RP2350)"]] : []).filter(([value]) => dashboard.identity?.clock_profile_mask & (1 << value));
   const configurationReady = dashboard.configuration || dashboard.configuration_error
     || dashboard.configuration_save || dashboard.configuration_save_error;
   if (configurationDraft === null && options.length && configurationReady) {
@@ -44,7 +45,8 @@ function renderConfiguration(state) {
     }
   }
   configurationProfile.value = String(configurationDraft ?? 0);
-  const capabilityAvailable = dashboard.configuration_save != null && !dashboard.configuration_save_error;
+  const capabilityAvailable = Boolean(dashboard.identity?.capabilities & 4)
+    && dashboard.configuration_save != null && !dashboard.configuration_save_error;
   const cdcOpen = !Array.isArray(dashboard.channels) || dashboard.channels.length !== 6
     || dashboard.channels.some(channel => channel.cdc_open || channel.health === null);
   const enabled = state.phase === "connected" && options.length > 0 && capabilityAvailable && !cdcOpen;

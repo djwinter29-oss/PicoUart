@@ -66,8 +66,9 @@ function uptimeLabel(milliseconds) {
 
 function renderConfiguration(data) {
   const mcuId = data.hardware?.mcu_id;
-  const profiles = mcuId === 1 ? [[0, "SDK default (125 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"]]
-    : mcuId === 2 ? [[0, "SDK default (150 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"], [4, "280 MHz (RP2350)"]] : [];
+  const profiles = (mcuId === 1 ? [[0, "SDK default (125 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"]]
+    : mcuId === 2 ? [[0, "SDK default (150 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"],
+      [4, "280 MHz (RP2350)"]] : []).filter(([value]) => data.identity?.clock_profile_mask & (1 << value));
   if (configurationDraft === null && profiles.length) {
     const saved = data.configuration_save?.status === 2 ? data.configuration_save.profile : null;
     const stored = data.configuration?.stored_profile;
@@ -86,9 +87,10 @@ function renderConfiguration(data) {
     }
   }
   configurationProfile.value = profile;
-  const capabilityAvailable = data.configuration_save != null && !data.configuration_save_error;
+  const capabilityAvailable = Boolean(data.identity?.capabilities & 4)
+    && data.configuration_save != null && !data.configuration_save_error;
   const cdcOpen = !Array.isArray(data.channels) || data.channels.length !== 6
-    || data.channels.some(channel => channel.cdc_open !== false);
+    || data.channels.some(channel => channel.cdc_open !== false || channel.health === null);
   const enabled = Boolean(data.connected && profiles.length && capabilityAvailable && !cdcOpen
     && !actionBusy && !configurationSaving);
   configurationProfile.disabled = !enabled;
@@ -102,31 +104,34 @@ function renderConfiguration(data) {
 }
 
 function channelPresentation(data, channel, now = Date.now()) {
-  const sample = Date.parse(data.updated_at);
+  const sample = Date.parse(channel.updated_at);
   let history = channelHistory.get(channel.id);
   if (!data.connected || !history || history.serial !== data.identity?.serial_number
     || data.runtime?.uptime_ms < history.uptime
     || directions.some(([, key]) => channel.totals[key] < history.totals[key])) {
     history = { serial: data.identity?.serial_number, uptime: data.runtime?.uptime_ms,
       totals: { ...channel.totals }, sample, observedSample: sample, receivedAt: now,
-      gaps: data.traffic_gaps, rates: null };
+      interval: channel.observed_interval_ms, gaps: channel.traffic_gaps, rates: null };
     channelHistory.set(channel.id, history);
   }
-  const elapsed = sample - history.sample;
-  if (data.traffic_gaps !== history.gaps || elapsed < 0 || elapsed > 3000) {
+  const elapsed = channel.observed_interval_ms - history.interval;
+  if (channel.traffic_gaps !== history.gaps || elapsed < 0 || sample - history.sample > 3000) {
     history.rates = null;
     history.sample = sample;
     history.totals = { ...channel.totals };
-    history.gaps = data.traffic_gaps;
+    history.interval = channel.observed_interval_ms;
+    history.gaps = channel.traffic_gaps;
   } else if (elapsed >= 1000) {
     history.rates = Object.fromEntries(directions.map(([, key]) =>
       [key, (channel.totals[key] - history.totals[key]) * 1000 / elapsed]));
     history.sample = sample;
     history.totals = { ...channel.totals };
+    history.interval = channel.observed_interval_ms;
   }
   if (!Number.isFinite(history.sample) && Number.isFinite(sample)) {
     history.sample = sample;
     history.totals = { ...channel.totals };
+    history.interval = channel.observed_interval_ms;
     history.rates = null;
   }
   if (data.runtime) history.uptime = data.runtime.uptime_ms;
@@ -238,12 +243,12 @@ function render(data) {
   latestData = data;
   connection.dataset.state = data.connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
-  document.querySelector("#mcu").textContent = data.hardware?.mcu ?? "--";
+  document.querySelector("#mcu").textContent = data.identity?.mcu ?? data.hardware?.mcu ?? "--";
   document.querySelector("#system-clock").textContent = data.hardware
     ? `${(data.hardware.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
     : "--";
   renderConfiguration(data);
-  document.querySelector("#firmware").textContent = data.board?.firmware_version ?? "--";
+  document.querySelector("#firmware").textContent = data.identity?.firmware_version ?? data.board?.firmware_version ?? "--";
   document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
   document.querySelector("#serial").textContent = data.identity?.serial_number ?? "--";
   const runtime = data.runtime;
@@ -262,8 +267,8 @@ function render(data) {
   const ledButton = document.querySelector("#toggle-led");
   ledButton.textContent = `Board LED: ${led?.output_on == null ? "--" : led.output_on ? "On" : "Off"}`;
   ledButton.dataset.state = led?.output_on == null ? "unknown" : led.output_on ? "on" : "off";
-  ledButton.title = led?.manual_on == null ? "Toggle manual LED state; USB activity may also light the LED"
-    : `Toggle manual LED state (currently ${led.manual_on ? "On" : "Off"}); USB activity may also light the LED`;
+  ledButton.title = led?.manual_on == null ? "Board identification LED state unavailable"
+    : `Set board identification LED ${led.manual_on ? "Off" : "On"}`;
   document.querySelector("#toggle-led").disabled = actionBusy || !data.connected || led?.output_on == null;
   document.querySelector("#reset-board").disabled = actionBusy || !data.connected;
   updateReportAge(data);

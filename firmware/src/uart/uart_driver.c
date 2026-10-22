@@ -421,6 +421,22 @@ uint8_t uart_driver_port_status(uart_port_id_t port_id)
     return status;
 }
 
+bool uart_driver_port_snapshot(uart_port_id_t port_id, uart_driver_port_info_t *info, uint8_t *status)
+{
+    uint32_t save;
+
+    if ((port_id >= UART_PORT_COUNT) || (info == NULL) || (status == NULL) ||
+        (uart_driver_state.status_lock == NULL)) {
+        return false;
+    }
+
+    save = spin_lock_blocking(uart_driver_state.status_lock);
+    *info = uart_driver_state.ports[port_id].info;
+    *status = uart_driver_state.status_flags[port_id];
+    spin_unlock(uart_driver_state.status_lock, save);
+    return true;
+}
+
 bool uart_driver_worker_is_running(void)
 {
     return uart_driver_state.worker_started;

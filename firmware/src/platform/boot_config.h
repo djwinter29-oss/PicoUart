@@ -52,6 +52,13 @@ typedef struct {
     boot_clock_profile_t active_profile; /**< Applied boot override; default means the SDK-selected clock. */
 } boot_config_status_t;
 
+/** @brief Detailed outcome of a persistent configuration save. */
+typedef enum {
+    BOOT_CONFIG_SAVE_OK = 0, /**< Existing or newly written record passed validation. */
+    BOOT_CONFIG_SAVE_FLASH_FAILED, /**< SDK flash-safe erase/program operation failed. */
+    BOOT_CONFIG_SAVE_VERIFY_FAILED, /**< Programmed bytes or decoded record failed verification. */
+} boot_config_save_result_t;
+
 /**
  * @brief Load and cache the boot decision from persistent storage.
  * @param recovery Whether an unexpected watchdog reset requires a safe boot.
@@ -98,5 +105,11 @@ bool boot_config_profile_supported(uint32_t profile);
  * @note Call on core 0 with UART traffic stopped and the core-1 flash lockout victim initialized.
  */
 bool boot_config_save(void);
+
+/**
+ * @brief Save settings and distinguish flash-operation failure from readback verification failure.
+ * @return Detailed save outcome for HID command reporting.
+ */
+boot_config_save_result_t boot_config_save_with_result(void);
 
 #endif

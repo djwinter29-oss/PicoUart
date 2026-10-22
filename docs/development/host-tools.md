@@ -286,31 +286,35 @@ to network exposure or access control. WebHID retains its native browser chooser
 ### Status presentation
 
 Both dashboards separate device identity from live runtime status, retaining the six UART channel table.
-`/api/status` carries `identity` (product and serial) and `runtime` (uptime, per-core service-load basis points,
+`/api/status` carries `identity` (product, serial, firmware, MCU, capability/profile masks, and total RAM)
+and `runtime` (uptime, per-core service-load basis points,
 reserved and total RAM), with independent `identity_error` and `runtime_error` fields. Unsupported or failed reads clear
 the affected values without discarding unrelated valid reports; disconnect clears device identity and runtime.
-Telemetry, including uptime, is read once per second as one HID report; reports that cannot change while connected are
-read once per connection, and channel diagnostics only when their firmware generation changes (see
-[host polling](../design/usb/hid-report-reference.md#host-polling)). See the
-[HID report reference](../design/usb/hid-report-reference.md) for the authoritative version-1 field definitions, UID
-source, service-load semantics, and RAM accounting.
+Board telemetry, including uptime, is read once per second as one HID report; static device information is
+read once per connection, and combined channel snapshots arrive every 500 ms (see
+[host polling](../design/usb/hid-report-reference.md#host-polling-and-validation)). The
+[HID report reference](../design/usb/hid-report-reference.md) defines the version-1 design, including UID source,
+service-load semantics, and RAM accounting.
 
-Snapshots can be partially available. `metadata_error` covers the telemetry read and the once-per-connection
-board-status read. A telemetry failure clears `board`, `led`, `runtime` and the configuration-save result and marks each
-overflow count unknown (with `led_error`, `runtime_error` and `configuration_save_error` set), while the static
-`identity`, `hardware` and `configuration` remain valid.
-If only the hardware-info read fails, `hardware_error` is set without discarding board status or overflow counts.
+Snapshots can be partially available. Static identity, firmware version, MCU, capabilities, and total RAM come from
+report 1; temperature, LED state, uptime, service load, reserved RAM, and current clock come from report 3.
+Overflow counts come from each channel's `rx_overrun_count`, not board telemetry. A telemetry failure
+clears affected board values without discarding valid channel snapshots, static information,
+boot configuration, or command results. A device-information failure must not substitute invented identity or
+capabilities, and board controls remain disabled until capabilities have been validated.
 Clients must inspect the relevant error fields rather than treating missing metadata as zero or the whole board as
 disconnected.
 
 `configuration` reports the source (defaults, stored, or recovery), fallback reason, stored profile, and active profile
-using read-only HID feature report 16; `configuration_error` is independent. The snapshot and both dashboards read
-this diagnostic once per connection (retrying until it succeeds) and clear it when disconnected. No credentials or raw
+using the GET response of HID feature report 2; `configuration_error` is independent. Dashboards read
+this snapshot on connection and around board commands, and clear it when disconnected. No credentials or raw
 flash contents are returned.
 
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
-The **Board LED: On/Off** action toggles board identification; its indicator reports physical output. Older firmware
-may also use that output for USB activity. Unknown output is shown as `--`. Sequence numbers remain internal for gap detection
+The **Board LED: On/Off** action sends an explicit On or Off command through report 2, then rereads report 3;
+its indicator reports physical output. The API's `toggle-led` action selects the opposite of a valid observed state
+rather than sending a wire-level toggle. Unknown output is shown as `--` and disables the action.
+Sequence numbers remain internal for gap detection
 rather than appearing in the UI.
 The connection indicator includes report age, updated every second and marked stale after three seconds without a
 changed status sample. Age measures browser receipt time so remote host clock offsets do not distort freshness.
@@ -323,46 +327,61 @@ device, and telemetry refreshes do not overwrite unsaved edits. A non-default pr
 acknowledgement before **Save & Reboot**.
 
 **Save & Reboot** persists the choice through
-[HID report 17](../design/usb/hid-report-reference.md#report-17-save-persistent-clock-profile), waits for a matching
+[HID report 2](../design/usb/hid-report-reference.md#report-id-2-board-control-and-boot-configuration), waits for a matching
 verified result, and displays failures explicitly. Close all CDC ports and stop external UART
 traffic first; flash programming pauses servicing on both cores. A successful save starts the firmware's automatic
 reboot grace period; the reboot does not wait for browser acknowledgement. The dashboard warns that USB will disconnect
 briefly. After reconnecting, inspect the actual boot-selected profile and any fallback reason rather than assuming the
 requested profile became active. A verified save does not establish overclock stability.
-Unavailable save reports disable Save without hiding other valid diagnostics.
+An unavailable save capability or failed control-report read disables Save without hiding other valid diagnostics.
+Follow the [save safety contract](../design/usb/hid-report-reference.md#save-and-reboot-safety).
 
 Python and .NET expose `POST /api/configuration?board=<id>` with the same session CSRF header as board actions.
 The JSON object must contain exactly `profile` (integer `0` through `4`, using the IDs in the linked HID report) and
 `unsafe_overclock` (boolean).
 The selected board's client checks MCU compatibility and acknowledgement; firmware validates them independently.
-HTTP success (`{"ok": true}`) means firmware reported a verified save, not just a successful HID transfer.
+HTTP success (`{"ok": true}`) means the matching request ID and save command reported Completed after verification,
+not just a successful HID transfer. The result's requested profile must also match.
 Snapshots expose the independent `configuration_save` result (`status`, nullable `profile`) and
 `configuration_save_error`; the existing `configuration` remains read-only boot metadata.
 
 ### Channel diagnostics and traffic presentation
 
 All three dashboards show applied baud/framing and TX/RX GPIOs from the
-[channel diagnostic reports](../design/usb/hid-report-reference.md#reports-10-15-channel-diagnostics), never from a
+[channel snapshots](../design/usb/hid-report-reference.md#reports-10-15-channel-snapshots), never from a
 hard-coded board map or a CDC request that might have been rejected. Snapshots expose `channel_diagnostics` (six records
 in channel order) and an independent `diagnostics_error`; failed reads clear those records and surface an error,
 while unrelated valid reports remain visible. Versioned HID payloads require their current version-1 layouts; no
-legacy decoder or missing-report compatibility mode is provided. Dashboards read all six diagnostic reports at
-connection and afterwards only the channels whose `diagnostics_generation` in telemetry changed; a failed read clears
-the cache so the next refresh reads every channel again.
+legacy decoder or missing-report compatibility mode is provided. IDs 10-15 each publish a complete 54-byte channel
+snapshot every 500 ms and support the same layout through read-only Feature access. Feature reads can obtain
+initial or on-demand state, but their overlapping traffic deltas never enter rates or totals. No diagnostics-generation
+counters or periodic diagnostic-cache refreshes are needed. Each snapshot carries four fault counters and one
+shared latest-fault uptime in seconds, not a separate timestamp per fault category.
+
+Channel API records carry independent `sequence`, `updated_at`, `traffic_gaps`, `traffic_incomplete`, and
+`observed_interval_ms` alongside byte `totals`. The interval accumulates complete observed Input intervals,
+excluding the first sample; renderers compute rate windows from its change rather than host receipt timing.
+Feature reads supply state only and never advance these traffic-observation fields.
 
 Each channel shows a health badge and simple error flags with short troubleshooting tooltips, without expandable
 history, counts, or detection times. The underlying diagnostic records remain available to host tools.
-Asserted init/control failures are labelled **Current** when telemetry is fresh; RX latches and past fault observations
+Asserted init/control failures are labelled **Current** when that channel's snapshot is fresh; RX latches and past fault observations
 are labelled **Recorded**. Stale flags are labelled **Last reported**, not current. These labels do not infer physical
 disconnection or an RX signal level.
 Channel diagnostics are read-only: dashboards cannot clear or acknowledge faults, and recorded faults keep the channel
-in **Attention** while telemetry is fresh, even if the corresponding live flag is no longer asserted.
+in **Attention** while its snapshot is fresh, even if the corresponding live flag is no longer asserted.
 Healthy, closed CDC channels without observed throughput are labelled **Idle**, not disconnected: UART RX remains
 active and reported faults remain visible even with CDC closed.
 
-The four directions display observed KB/s (1 KB = 1000 bytes) over windows of at least one second, with the exact
-cumulative observed byte count since the monitor connected beside each rate. Initial/stale windows and windows containing
-report gaps or saturated deltas show `--` for the rate; they recover after a clean window. Three seconds without a new status sample makes rates stale. `traffic_gaps`
+The four directions display observed KB/s (1 KB = 1000 bytes) over windows of at least one second, using summed
+32-bit byte deltas divided by summed device measurement intervals, not host arrival timing. Reports 10-15
+arrive nominally every 500 ms; track 16-bit sequence, interval, and freshness separately per channel.
+Use each channel's first Input sample only as a continuity baseline, excluding its deltas from session totals and
+rate windows. Display cumulative observed bytes for subsequent complete intervals beside each rate.
+Initial/stale windows and windows containing report gaps, saturated deltas, or zero/saturated intervals show `--`
+for the affected rate; they recover after a clean window. Three seconds without a new Input sample makes that channel's
+rates stale. After staleness or a host read pause, treat continuity as uncertain even when a 16-bit sequence matches.
+One channel's gap does not invalidate other channels. `traffic_gaps`
 is a monotonic count of incomplete status observations, allowing each page to invalidate its current rate window while
 retaining the sticky `traffic_incomplete` notice. Totals remain lower bounds after missing/saturated reports.
 

@@ -22,12 +22,24 @@ static bool uart_control_plane_mailbox_has_pending_port(const uart_control_plane
            uart_control_mailbox_has_pending_port(&control_plane->mailboxes[port_id], (uint32_t)port_id);
 }
 
+/**
+ * @brief Commit applied line coding and matching control-health state under one lock.
+ * @param applied_line_coding Applied format to publish, or null when the request failed.
+ */
 static void uart_control_plane_finish_worker_control(uart_control_plane_t *control_plane, uart_port_id_t port_id,
-                                                     uint32_t control_generation, bool success)
+                                                     uint32_t control_generation, bool success,
+                                                     const uart_driver_line_coding_t *applied_line_coding)
 {
     service_load_note(1u);
     uint32_t save = spin_lock_blocking(control_plane->status_lock);
 
+    if (success && applied_line_coding != NULL) {
+        uart_runtime_port_t *port = &control_plane->ports[port_id];
+        port->info.baud_rate = port->ops->baud_rate(&port->backend);
+        port->info.data_bits = applied_line_coding->data_bits;
+        port->info.stop_bits = applied_line_coding->stop_bits;
+        port->info.parity = applied_line_coding->parity;
+    }
     control_plane->pending_controls[port_id].pending = false;
     if (uart_control_pending_should_clear(control_plane->soft_pending_controls[port_id],
                                           uart_control_plane_mailbox_has_pending_port(control_plane, port_id), false)) {
@@ -115,13 +127,14 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
     if (!uart_control_plane_tx_boundary_drained(port, pending_control->tx_boundary_sequence)) {
         if (time_reached(pending_control->deadline)) {
             uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation,
-                                                     false);
+                                                     false, NULL);
         }
         return;
     }
 
     if (port->ops == NULL) {
-        uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, false);
+        uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, false,
+                                                 NULL);
         return;
     }
 
@@ -129,7 +142,8 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
      * apply that races past an already-expired deadline must not be able to
      * report success and clear CONTROL_ERROR. */
     if (time_reached(pending_control->deadline)) {
-        uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, false);
+        uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, false,
+                                                 NULL);
         return;
     }
 
@@ -145,26 +159,19 @@ static void uart_control_plane_service_pending(uart_control_plane_t *control_pla
             control_plane->status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_READY;
             spin_unlock(control_plane->status_lock, save);
             uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation,
-                                                     false);
+                                                     false, NULL);
             return;
         }
 
         if (time_reached(pending_control->deadline)) {
             uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation,
-                                                     false);
+                                                     false, NULL);
         }
         return;
     }
 
-    {
-        uint32_t save = spin_lock_blocking(control_plane->status_lock);
-        port->info.baud_rate = port->ops->baud_rate(&port->backend);
-        port->info.data_bits = pending_control->line_coding.data_bits;
-        port->info.stop_bits = pending_control->line_coding.stop_bits;
-        port->info.parity = pending_control->line_coding.parity;
-        spin_unlock(control_plane->status_lock, save);
-    }
-    uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, true);
+    uart_control_plane_finish_worker_control(control_plane, port_id, pending_control->control_generation, true,
+                                             &pending_control->line_coding);
 }
 
 static void uart_control_plane_set_line_coding(uart_control_plane_t *control_plane,

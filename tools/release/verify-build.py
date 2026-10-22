@@ -78,13 +78,13 @@ def _endpoint_contract(descriptors: list[bytes]) -> list[tuple[int, int, int, in
     return contract
 
 
-def _hid_reports(data: bytes, length: int) -> list[dict[int, tuple[int, int, int]]]:
+def _hid_reports(data: bytes, length: int) -> list[dict[tuple[int, int], tuple[int, int]]]:
     candidates = []
     for offset in range(len(data) - length + 1):
         report_id = None
         report_count = None
         report_size = None
-        reports: dict[int, tuple[int, int, int]] = {}
+        reports: dict[tuple[int, int], tuple[int, int]] = {}
         cursor = offset
         end = offset + length
         valid = True
@@ -112,10 +112,11 @@ def _hid_reports(data: bytes, length: int) -> list[dict[int, tuple[int, int, int
                 if report_id is None or report_count is None or report_size is None:
                     valid = False
                     break
-                if report_id in reports:
+                report_key = (report_id, tag)
+                if report_key in reports:
                     valid = False
                     break
-                reports[report_id] = (report_count, report_size, tag)
+                reports[report_key] = (report_count, report_size)
         if valid and cursor == end and data[end - 1] == 0xC0:
             candidates.append(reports)
     return candidates
@@ -397,18 +398,17 @@ def main() -> int:
 
     constants = firmware_hid_constants(args.repo_root)
     expected_reports = {
-        constants["USB_HID_REPORT_ID_STATUS"]: (firmware_hid_report_count(args.repo_root, 1), 8, 8),
-        constants["USB_HID_REPORT_ID_BOARD_STATUS"]: (firmware_hid_report_count(args.repo_root, 3), 8, 11),
-        constants["USB_HID_REPORT_ID_COMMAND"]: (firmware_hid_report_count(args.repo_root, 4), 8, 11),
-        constants["USB_HID_REPORT_ID_HARDWARE_INFO"]: (firmware_hid_report_count(args.repo_root, 6), 8, 11),
-        constants["USB_HID_REPORT_ID_IDENTITY"]: (firmware_hid_report_count(args.repo_root, 7), 8, 11),
-        constants["USB_HID_REPORT_ID_TELEMETRY"]: (
-            firmware_hid_report_count(args.repo_root, constants["USB_HID_REPORT_ID_TELEMETRY"]), 8, 11),
-        constants["USB_HID_REPORT_ID_CONFIGURATION"]: (firmware_hid_report_count(args.repo_root, 16), 8, 11),
-        constants["USB_HID_REPORT_ID_CONFIGURATION_SAVE"]: (firmware_hid_report_count(args.repo_root, 17), 8, 11),
-        **{report_id: (firmware_hid_report_count(args.repo_root, report_id), 8, 11)
-           for report_id in range(constants["USB_HID_REPORT_ID_CHANNEL_BASE"],
-                                  constants["USB_HID_REPORT_ID_CHANNEL_BASE"] + 6)},
+        (constants["USB_HID_REPORT_ID_DEVICE_INFO"], 11): (constants["USB_HID_DEVICE_INFO_SIZE"], 8),
+        (constants["USB_HID_REPORT_ID_CONTROL"], 11): (constants["USB_HID_CONTROL_SIZE"], 8),
+        (constants["USB_HID_REPORT_ID_TELEMETRY"], 11): (constants["USB_HID_TELEMETRY_SIZE"], 8),
+        **{
+            key: (constants["USB_HID_CHANNEL_SIZE"], 8)
+            for report_id in range(
+                constants["USB_HID_REPORT_ID_CHANNEL_BASE"],
+                constants["USB_HID_REPORT_ID_CHANNEL_BASE"] + 6,
+            )
+            for key in ((report_id, 8), (report_id, 11))
+        },
     }
     matching_reports = [reports for reports in _hid_reports(data, hid_report_lengths[0]) if reports == expected_reports]
     if len(matching_reports) != 1:

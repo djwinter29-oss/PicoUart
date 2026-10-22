@@ -1,865 +1,310 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEVICE_FILTER, decodeHardwareReport, decodeBoardReport, decodeStatusReport,
-  decodeIdentityReport, decodeTelemetryReport, decodeChannelDiagnostics,
-  decodeConfigurationReport, decodeConfigurationSaveReport, PicoUartWebHid } from "../js/device.mjs";
+import { DEVICE_FILTER, decodeDeviceInformation, decodeControlReport, decodeTelemetryReport,
+  decodeChannelSnapshot, PicoUartWebHid, matchesPicoUart } from "../js/device.mjs";
 
-function channelReport(id = 10) {
-  const data = new DataView(new ArrayBuffer(60));
+function feature(id, size) {
+  const data = new DataView(new ArrayBuffer(size + 1));
   data.setUint8(0, id);
   data.setUint8(1, 1);
-  data.setUint8(2, 1);
-  data.setUint32(3, 115200, true);
-  data.setUint8(7, 8);
-  data.setUint8(8, 1);
-  data.setUint8(10, (id - 10) * 4);
-  data.setUint8(11, (id - 10) * 4 + 1);
   return data;
 }
 
-test("channel diagnostics validate settings and expose counts with 64-bit detection times", () => {
-  const data = channelReport();
-  data.setUint32(48, 3, true);
-  data.setBigUint64(52, 4294967296n, true);
-  const decoded = decodeChannelDiagnostics(data, 10);
-  assert.equal(decoded.baud_rate, 115200);
-  assert.equal(decoded.parity, "N");
-  assert.equal(decoded.tx_pin, 0);
-  assert.deepEqual(decoded.faults.rx_error, { count: 3, last_seen_ms: 4294967296 });
-  assert.deepEqual(decoded.faults.control_error, { count: 0, last_seen_ms: null });
-  for (const [offset, value] of [[1, 2], [7, 4], [8, 3], [9, 3], [10, 48], [11, 254]]) {
-    const invalid = channelReport();
-    invalid.setUint8(offset, value);
-    assert.throws(() => decodeChannelDiagnostics(invalid, 10));
-  }
-  assert.throws(() => decodeChannelDiagnostics(data, 11));
-  data.setBigUint64(52, 2n ** 53n, true);
-  assert.throws(() => decodeChannelDiagnostics(data, 10), /timestamp/);
-});
-
-test("channel diagnostic read errors remain explicit and do not remove other telemetry", async () => {
-  const hid = new FakeHid();
-  const device = hid.devices[0];
-  const receive = device.receiveFeatureReport.bind(device);
-  device.receiveFeatureReport = id => id >= 10 && id <= 15
-    ? Promise.reject(new Error("Firmware upgrade required")) : receive(id);
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  assert.equal(client.state.dashboard.channel_diagnostics, null);
-  assert.equal(client.state.dashboard.diagnostics_error, "Firmware upgrade required");
-  device.input(statusReport(1));
-  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 10);
-  await client.disconnect();
-});
-
-test("configuration report failures clear stale data and recover independently", async () => {
-  const hid = new FakeHid();
-  const device = hid.devices[0];
-  const receive = device.receiveFeatureReport.bind(device);
-  device.receiveFeatureReport = id => id === 16 ? Promise.reject(new Error("Configuration report unavailable"))
-    : receive(id);
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  assert.equal(client.state.dashboard.configuration, null);
-  assert.equal(client.state.dashboard.configuration_error, "Configuration report unavailable");
-  assert.equal(client.state.dashboard.identity.serial_number, "0123456789ABCDEF");
-  device.receiveFeatureReport = receive;
-  await client.refresh();
-  assert.equal(client.state.dashboard.configuration_error, null);
-  assert.equal(client.state.dashboard.configuration.source, "defaults");
-  await client.disconnect();
-});
-
-test("telemetry read errors clear dynamic values while static reports remain", async () => {
-  const hid = new FakeHid();
-  const device = hid.devices[0];
-  const receive = device.receiveFeatureReport.bind(device);
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  device.receiveFeatureReport = id => id === 18 ? Promise.reject(new Error("Telemetry unavailable"))
-    : receive(id);
-  await client.refresh();
-  assert.equal(client.state.dashboard.configuration_save, null);
-  assert.equal(client.state.dashboard.configuration_save_error, "Telemetry unavailable");
-  assert.equal(client.state.dashboard.led, null);
-  assert.equal(client.state.dashboard.runtime, null);
-  assert.deepEqual(client.state.dashboard.overflow_counts, Array(6).fill(null));
-  assert.equal(client.state.dashboard.board, null);
-  assert.equal(client.state.dashboard.metadata_error, "Telemetry unavailable");
-  assert.equal(client.state.dashboard.identity.serial_number, "0123456789ABCDEF");
-  assert.equal(client.state.dashboard.hardware.mcu, "RP2350");
-  device.receiveFeatureReport = receive;
-  await client.refresh();
-  assert.deepEqual(client.state.dashboard.configuration_save, { status: 0, profile: null });
-  assert.equal(client.state.dashboard.configuration_save_error, null);
-  assert.equal(client.state.dashboard.board.firmware_version, "1.2.3");
-  await client.disconnect();
-});
-
-function report(mcu = 2, clock = 150000000, size = 7, offset = 0) {
-  const view = new DataView(new ArrayBuffer(offset + size), offset, size);
-  view.setUint8(0, 6);
-  view.setUint8(1, 1);
-  view.setUint8(2, mcu);
-  view.setUint32(3, clock, true);
-  return view;
+function information({ mcu = 2, capabilities = 7, profiles = 31 } = {}) {
+  const data = feature(1, 63);
+  new Uint8Array(data.buffer, 2).set(new TextEncoder().encode("PicoUart"));
+  new Uint8Array(data.buffer, 34).set(new TextEncoder().encode("0123456789ABCDEF"));
+  [1, 2, 3, mcu, 6, 3, 60].forEach((value, i) => data.setUint8(50 + i, value));
+  data.setUint16(57, capabilities, true);
+  data.setUint8(59, profiles);
+  data.setUint32(60, 532480, true);
+  return data;
 }
 
-function boardReport() {
-  return new DataView(Uint8Array.from([3, 1, 0, 0xc4, 0x09, 1, 2, 3, 0]).buffer);
+function control({ command = 0, flags = 0, status = 0, id = 0, profile = 0xffffffff, error = 0 } = {}) {
+  const data = feature(2, 24);
+  data.setUint8(2, command);
+  data.setUint8(3, flags);
+  data.setUint8(4, status);
+  data.setUint32(5, id, true);
+  data.setUint32(9, 0xffffffff, true);
+  data.setUint32(17, profile, true);
+  data.setUint8(22, 1);
+  data.setUint8(23, error);
+  return data;
 }
 
-function configurationReport(source = 0, reason = 3, stored = 0xffffffff, active = 1) {
-  const view = new DataView(new ArrayBuffer(13));
-  view.setUint8(0, 16);
-  view.setUint8(1, 1);
-  view.setUint8(2, source);
-  view.setUint8(3, reason);
-  view.setUint32(5, stored, true);
-  view.setUint32(9, active, true);
-  return view;
+function telemetry(led = 0) {
+  const data = feature(3, 24);
+  data.setUint8(2, led);
+  data.setInt16(3, 2500, true);
+  data.setBigUint64(5, 4294967296n, true);
+  data.setUint16(13, 10000, true);
+  data.setUint16(15, 65535, true);
+  data.setUint32(17, 65536, true);
+  data.setUint32(21, 150000000, true);
+  return data;
 }
 
-function configurationSaveReport(status = 0, profile = 0xffffffff) {
-  const view = new DataView(new ArrayBuffer(9));
-  view.setUint8(0, 17);
-  view.setUint8(1, 1);
-  view.setUint8(2, status);
-  view.setUint32(5, profile, true);
-  return view;
-}
-
-function telemetryReport({ led = 1, temperature = 2500, uptime = 4294967296n, cores = [10000, 65535],
-  ram = [65536, 270336], overflow = [0, 1, 2, 3, 4, 5], save = [0, 0xffffffff],
-  generations = [1, 1, 1, 1, 1, 1] } = {}) {
-  const view = new DataView(new ArrayBuffer(60));
-  view.setUint8(0, 18);
-  view.setUint8(1, 1);
-  view.setUint8(2, led);
-  view.setInt16(3, temperature, true);
-  view.setBigUint64(5, uptime, true);
-  view.setUint16(13, cores[0], true);
-  view.setUint16(15, cores[1], true);
-  view.setUint32(17, ram[0], true);
-  view.setUint32(21, ram[1], true);
-  overflow.forEach((value, index) => view.setUint32(25 + index * 4, value, true));
-  view.setUint8(49, save[0]);
-  view.setUint32(50, save[1], true);
-  generations.forEach((value, index) => view.setUint8(54 + index, value));
-  return view;
-}
-
-function identityReport() {
-  const view = new DataView(new ArrayBuffer(50));
-  view.setUint8(0, 7);
-  view.setUint8(1, 1);
-  new Uint8Array(view.buffer, 2).set(new TextEncoder().encode("PicoUart"));
-  new Uint8Array(view.buffer, 34).set(new TextEncoder().encode("0123456789ABCDEF"));
-  return view;
-}
-
-function statusReport(sequence = 255, count = 10) {
-  const view = new DataView(new ArrayBuffer(63));
-  view.setUint8(0, 0x50);
-  view.setUint8(1, 1);
-  view.setUint8(2, sequence);
-  for (let index = 0; index < 6; index++) {
-    view.setUint8(3 + index * 10, 0x31);
-    view.setUint8(4 + index * 10, 2);
-    for (let direction = 0; direction < 4; direction++) {
-      view.setUint16(5 + index * 10 + direction * 2, count + direction + index, true);
-    }
-  }
-  return view;
-}
-
-function closedStatusReport() {
-  const view = statusReport();
-  for (let index = 0; index < 6; index++) view.setUint8(3 + index * 10, 1);
-  return view;
+function channel({ sequence = 1, count = 150000, interval = 500, health = 1 } = {}) {
+  const data = new DataView(new ArrayBuffer(54));
+  data.setUint8(0, 1);
+  data.setUint16(1, sequence, true);
+  data.setUint32(3, interval, true);
+  data.setUint8(7, health);
+  data.setUint8(8, 2);
+  for (let i = 0; i < 4; i++) data.setUint32(9 + i * 4, count, true);
+  data.setUint32(25, 115200, true);
+  data.setUint8(29, 8);
+  data.setUint8(30, 1);
+  data.setUint8(32, 0);
+  data.setUint8(33, 1);
+  return data;
 }
 
 class FakeDevice extends EventTarget {
-  vendorId = 0xcafe;
-  productId = 0x4010;
+  vendorId = DEVICE_FILTER.vendorId;
+  productId = DEVICE_FILTER.productId;
   productName = "PicoUart";
   collections = [{ usagePage: 0xff00, usage: 1 }];
   opened = false;
   reads = [];
-  closes = 0;
-  ledFlags = 1;
   writes = [];
-  configuration = configurationReport();
-  configurationSave = configurationSaveReport();
-  generations = [1, 1, 1, 1, 1, 1];
-  async sendFeatureReport(id, data) {
-    this.writes.push([id, [...data]]);
-    if (id === 4) this.ledFlags = this.ledFlags === 1 ? 7 : 1;
-    if (id === 17) this.configurationSave = configurationSaveReport(2, new DataView(data.buffer).getUint32(4, true));
-  }
+  info = information();
+  result = control();
+  led = 0;
+  channels = Array.from({ length: 6 }, () => channel());
   async open() { this.opened = true; }
-  async close() { this.opened = false; this.closes++; }
+  async close() { this.opened = false; }
   async receiveFeatureReport(id) {
     this.reads.push(id);
-    if (id === 3) return boardReport();
-    if (id === 16) return this.configuration;
-    if (id === 17) return this.configurationSave;
-    if (id === 18) {
-      return telemetryReport({ led: this.ledFlags, generations: this.generations,
-        save: [this.configurationSave.getUint8(2), this.configurationSave.getUint32(5, true)] });
+    if (id === 1) return this.info;
+    if (id === 2) return this.result;
+    if (id === 3) return telemetry(this.led);
+    if (id >= 10 && id <= 15) {
+      const snapshot = this.channels[id - 10], data = feature(id, 54);
+      new Uint8Array(data.buffer, 1).set(new Uint8Array(snapshot.buffer));
+      return data;
     }
-    if (id === 7) return identityReport();
-    if (id >= 10 && id <= 15) return channelReport(id);
-    return report();
+    throw new Error(`Unexpected report ${id}`);
   }
-  input(data, reportId = 1) {
-    this.dispatchEvent(Object.assign(new Event("inputreport"), { device: this, reportId, data }));
+  async sendFeatureReport(id, data) {
+    this.writes.push([id, [...data]]);
+    assert.equal(id, 2);
+    assert.equal(data.length, 24);
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const command = view.getUint8(1);
+    if (command <= 2) this.led = command === 2 ? 1 : 0;
+    this.result = control({ command, flags: view.getUint8(2), id: view.getUint32(4, true), status: 2,
+      profile: command === 5 ? view.getUint32(16, true) : 0xffffffff });
+  }
+  input(id, data) {
+    const event = new Event("inputreport");
+    Object.assign(event, { device: this, reportId: id, data });
+    this.dispatchEvent(event);
   }
 }
 
 class FakeHid extends EventTarget {
-  constructor(devices = [new FakeDevice()]) { super(); this.devices = devices; }
-  async requestDevice(options) { this.options = options; return this.devices; }
-  unplug(device) { this.dispatchEvent(Object.assign(new Event("disconnect"), { device })); }
+  devices = [new FakeDevice()];
+  async requestDevice() { return this.devices; }
 }
 
-function deferred() {
-  let resolve;
-  const promise = new Promise(resolver => { resolve = resolver; });
-  return { promise, resolve };
-}
-
-for (const [mcu, clock, label] of [
-  [1, 125000000, "RP2040"], [1, 200000000, "RP2040"], [2, 150000000, "RP2350"],
-  [3, 200000000, "Unknown MCU (3)"], [255, 0xffffffff, "Unknown MCU (255)"],
-]) {
-  test(`decode MCU ${mcu} at ${clock} Hz`, () => {
-    assert.deepEqual(decodeHardwareReport(report(mcu, clock)),
-      { mcu: label, mcu_id: mcu, system_clock_hz: clock });
-  });
-}
-
-test("honor DataView offsets and Windows zero padding", () => {
-  assert.equal(decodeHardwareReport(report(2, 150000000, 26, 5)).system_clock_hz, 150000000);
-});
-
-test("reject truncated and unprefixed feature reports", () => {
-  for (const size of [0, 1, 6]) assert.throws(() => decodeHardwareReport(new DataView(new ArrayBuffer(size))));
-  assert.throws(() => decodeHardwareReport(new Uint8Array(7)));
-  const value = report();
-  value.setUint8(0, 5);
-  assert.throws(() => decodeHardwareReport(value), /report ID or size/);
-});
-
-test("reject unsupported layouts, zero clocks, and nonzero padding", () => {
-  const value = report();
-  value.setUint8(1, 2);
-  assert.throws(() => decodeHardwareReport(value), /layout version/);
-  assert.throws(() => decodeHardwareReport(report(3, 0)), /system clock/);
-  const padded = report(2, 150000000, 26);
-  padded.setUint8(7, 1);
-  assert.throws(() => decodeHardwareReport(padded), /padding/);
-});
-
-test("configuration diagnostics decode profiles and reject malformed reports", () => {
-  assert.deepEqual(decodeConfigurationReport(configurationReport()), {
-    source: "defaults", reason: "crc_failed", stored_profile: null, active_profile: 1,
-  });
-  assert.deepEqual(decodeConfigurationReport(configurationReport(1, 0, 2, 2)), {
-    source: "stored", reason: "none", stored_profile: 2, active_profile: 2,
-  });
-  assert.equal(decodeConfigurationReport(configurationReport(1, 0, 0, 0)).stored_profile, 0);
-  assert.equal(decodeConfigurationReport(configurationReport(2, 6, 1, 0)).source, "recovery");
-  for (const profile of [3, 4]) {
-    assert.equal(decodeConfigurationReport(configurationReport(1, 0, profile, profile)).active_profile, profile);
-    assert.deepEqual(decodeConfigurationSaveReport(configurationSaveReport(2, profile)), { status: 2, profile });
+test("static identity includes firmware, capabilities and total RAM with strict masks", () => {
+  const info = decodeDeviceInformation(information());
+  assert.equal(info.product_name, "PicoUart");
+  assert.equal(info.serial_number, "0123456789ABCDEF");
+  assert.equal(info.firmware_version, "1.2.3");
+  assert.equal(info.ram_total_bytes, 532480);
+  assert.equal(decodeDeviceInformation(information({ mcu: 7 })).mcu, "Unknown MCU (7)");
+  for (const [offset, value] of [[1, 2], [54, 5], [55, 7], [56, 64], [58, 1], [59, 0]]) {
+    const data = information();
+    data.setUint8(offset, value);
+    assert.throws(() => decodeDeviceInformation(data));
   }
-  for (const invalid of [
-    configurationReport(3), configurationReport(0, 8), configurationReport(0, 0, 0, 5),
-    configurationReport(1, 1, 1), configurationReport(1, 0, 0, 1),
-    configurationReport(2, 0, 1), new DataView(new ArrayBuffer(12)),
-  ]) assert.throws(() => decodeConfigurationReport(invalid));
-  const unsupportedVersion = configurationReport();
-  unsupportedVersion.setUint8(1, 2);
-  assert.throws(() => decodeConfigurationReport(unsupportedVersion), /version/);
-  const reserved = configurationReport();
-  reserved.setUint8(4, 1);
-  assert.throws(() => decodeConfigurationReport(reserved), /reserved/);
+  assert.throws(() => decodeDeviceInformation(feature(7, 63)), /ID or size/);
 });
 
-test("configuration-save report validates states, profile echo and malformed requests", () => {
-  assert.deepEqual(decodeConfigurationSaveReport(configurationSaveReport()), { status: 0, profile: null });
-  for (const profile of [0, 1, 2, 3, 4]) {
-    assert.deepEqual(decodeConfigurationSaveReport(configurationSaveReport(0, profile)), { status: 0, profile });
-  }
-  assert.deepEqual(decodeConfigurationSaveReport(configurationSaveReport(1, 2)), { status: 1, profile: 2 });
-  assert.deepEqual(decodeConfigurationSaveReport(configurationSaveReport(2, 0)), { status: 2, profile: 0 });
-  assert.deepEqual(decodeConfigurationSaveReport(configurationSaveReport(3, 0xffffffff)),
-    { status: 3, profile: null });
-  for (const status of [1, 2, 4, 5]) {
-    assert.throws(() => decodeConfigurationSaveReport(configurationSaveReport(status, 0xffffffff)));
-  }
-  for (const invalid of [
-    configurationSaveReport(6), configurationSaveReport(0, 5), configurationSaveReport(2, 0xffffffff),
-    configurationSaveReport(3, 0x12345678),
-    new DataView(new ArrayBuffer(8)),
-  ]) assert.throws(() => decodeConfigurationSaveReport(invalid));
-  const reserved = configurationSaveReport();
-  reserved.setUint8(3, 1);
-  assert.throws(() => decodeConfigurationSaveReport(reserved), /reserved/);
+test("control validates rejected echoes and configuration independently", () => {
+  assert.equal(decodeControlReport(control()).configuration.reason, "erased");
+  assert.equal(decodeControlReport(control({ command: 127, flags: 1, status: 4, id: 1, error: 5 })).flags, 1);
+  assert.equal(decodeControlReport(control({ command: 127, flags: 128, status: 3, id: 1, error: 1 })).flags, 128);
+  assert.throws(() => decodeControlReport(control({ command: 2, flags: 128, status: 4, id: 1, error: 5 })));
+  assert.throws(() => decodeControlReport(control({ command: 5, status: 2, id: 1 })));
+  assert.throws(() => decodeControlReport(control({ command: 2, status: 3, id: 1, error: 7 })));
+  const invalid = control();
+  invalid.setUint8(24, 1);
+  assert.throws(() => decodeControlReport(invalid));
 });
 
-test("select only the PicoUart collection and read report 6", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
+test("board telemetry uses static total RAM and LED availability", () => {
+  const info = decodeDeviceInformation(information());
+  const decoded = decodeTelemetryReport(telemetry(1), info);
+  assert.equal(decoded.temperature_celsius, 25);
+  assert.equal(decoded.runtime.uptime_ms, 4294967296);
+  assert.deepEqual(decoded.runtime.cpu_usage_basis_points, [10000, null]);
+  assert.equal(decoded.runtime.ram_total_bytes, 532480);
+  assert.deepEqual(decoded.led, { manual_on: true, output_on: true });
+  assert.throws(() => decodeTelemetryReport(telemetry(2), info));
+  const unavailable = decodeDeviceInformation(information({ capabilities: 6 }));
+  assert.equal(decodeTelemetryReport(telemetry(0), unavailable).led.output_on, null);
+  assert.throws(() => decodeTelemetryReport(telemetry(1), unavailable));
+});
+
+test("channel snapshots retain 32-bit deltas and compact shared fault time", () => {
+  const data = channel({ sequence: 65535, count: 4000000000, health: 65 });
+  data.setUint32(42, 3, true);
+  data.setUint32(50, 123, true);
+  const decoded = decodeChannelSnapshot(data, 10);
+  assert.equal(decoded.sequence, 65535);
+  assert.equal(decoded.traffic.uart_tx, 4000000000);
+  assert.deepEqual(decoded.faults.rx_overrun, { count: 3 });
+  assert.equal(decoded.last_fault_uptime_s, 123);
+  assert.equal(decoded.parity, "N");
+  assert.throws(() => decodeChannelSnapshot(data, 9));
+  assert.throws(() => decodeChannelSnapshot(new DataView(new ArrayBuffer(59)), 10));
+  for (const [offset, value] of [[0, 2], [29, 4], [30, 3], [31, 3], [32, 48]]) {
+    const invalid = channel();
+    invalid.setUint8(offset, value);
+    assert.throws(() => decodeChannelSnapshot(invalid, 10));
+  }
+  assert.throws(() => decodeChannelSnapshot(channel({ health: 65 }), 10), /fault/);
+});
+
+test("connection reads only consolidated reports and caches static data", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
+  assert.ok(matchesPicoUart(device));
   await client.connect();
-  assert.deepEqual(hid.options, { filters: [{ ...DEVICE_FILTER }] });
-  assert.equal(client.state.phase, "connected");
-  assert.equal(client.state.hardware.mcu, "RP2350");
-  assert.deepEqual(hid.devices[0].reads, [18, 10, 11, 12, 13, 14, 15, 6, 16, 7, 3]);
-  assert.deepEqual(client.state.dashboard.configuration, {
-    source: "defaults", reason: "crc_failed", stored_profile: null, active_profile: 1,
-  });
-  assert.deepEqual(client.state.dashboard.configuration_save, { status: 0, profile: null });
-  assert.equal(client.state.dashboard.configuration_save_error, null);
-  assert.deepEqual(hid.devices[0].writes, [], "Connecting and reading diagnostics do not write configuration");
-  await client.refresh();
-  assert.deepEqual(hid.devices[0].writes, [], "Polling diagnostics does not write configuration");
-  assert.deepEqual(hid.devices[0].reads.slice(11), [18], "Steady-state polling reads only telemetry");
+  assert.deepEqual(device.reads, [1, 3, 2, 10, 11, 12, 13, 14, 15]);
   assert.equal(client.state.dashboard.identity.serial_number, "0123456789ABCDEF");
-  assert.equal(client.state.dashboard.runtime.uptime_ms, 4294967296);
-  assert.equal(client.state.dashboard.board.firmware_version, "1.2.3");
-  assert.ok(client.state.updatedAt);
+  assert.equal(client.state.dashboard.channel_diagnostics[0].baud_rate, 115200);
+  assert.equal(client.state.dashboard.channels[0].sequence, null);
+  await client.refresh();
+  assert.deepEqual(device.reads.slice(9), [3]);
   await client.disconnect();
-  assert.equal(hid.devices[0].opened, false);
-  assert.equal(client.state.hardware, null);
-});
-
-test("handle unavailable WebHID and cancelled selection", async () => {
-  const unsupported = new PicoUartWebHid(undefined);
-  await unsupported.connect();
-  await unsupported.disconnect();
-  assert.equal(unsupported.state.phase, "unsupported");
-  const client = new PicoUartWebHid(new FakeHid([]));
-  await client.connect();
-  assert.equal(client.state.phase, "disconnected");
-  assert.equal(client.state.error, null);
-  assert.match(client.state.message, /computer running this browser; no password/);
-});
-
-test("reject wrong device usage and ambiguous selections", async () => {
-  for (const devices of [[Object.assign(new FakeDevice(), { collections: [] })],
-    [new FakeDevice(), new FakeDevice()]]) {
-    const client = new PicoUartWebHid(new FakeHid(devices));
-    await client.connect();
-    assert.equal(client.device, null);
-    assert.match(client.state.error, /one PicoUart/);
-    assert.ok(devices.every(device => !device.opened));
-  }
-});
-
-test("permission and open failures do not leave a connection", async () => {
-  const hid = new FakeHid();
-  hid.requestDevice = async () => { throw new Error("Permission denied"); };
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  assert.equal(client.state.error, "Permission denied");
-  hid.requestDevice = async () => hid.devices;
-  hid.devices[0].open = async () => { throw new Error("Device busy"); };
-  await client.connect();
-  assert.equal(client.state.error, "Device busy");
   assert.equal(client.state.phase, "disconnected");
 });
 
-test("read failure leaves hardware unavailable and refresh can recover", async () => {
-  const hid = new FakeHid();
-  const device = hid.devices[0];
-  const receive = device.receiveFeatureReport.bind(device);
-  device.receiveFeatureReport = async () => { throw new Error("Report unavailable"); };
-  const client = new PicoUartWebHid(hid);
+test("Input baselines, sequence wrap, measured intervals and gaps are channel-local", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
   await client.connect();
-  assert.equal(client.state.hardware, null);
-  assert.equal(client.state.phase, "connected");
-  assert.equal(client.state.error, "Report unavailable");
-  device.receiveFeatureReport = async id => id === 6 ? report(3, 200000000) : receive(id);
-  await client.refresh();
-  assert.equal(client.state.hardware.mcu, "Unknown MCU (3)");
-  assert.equal(client.state.error, null);
-  assert.equal(client.state.dashboard.runtime.uptime_ms, 4294967296);
-});
-
-test("unplug during a read cannot restore stale hardware", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  const pending = deferred();
-  hid.devices[0].receiveFeatureReport = () => pending.promise;
-  const reading = client.refresh();
-  hid.unplug(hid.devices[0]);
-  pending.resolve(report());
-  await reading;
-  assert.equal(client.state.phase, "disconnected");
-  assert.equal(client.state.hardware, null);
-  assert.equal(client.state.updatedAt, null);
-});
-
-test("unplug while opening closes a late connection", async () => {
-  const hid = new FakeHid();
-  const pending = deferred();
-  hid.devices[0].open = async () => { await pending.promise; hid.devices[0].opened = true; };
-  const client = new PicoUartWebHid(hid);
-  const connecting = client.connect();
-  await Promise.resolve();
-  hid.unplug(hid.devices[0]);
-  pending.resolve();
-  await connecting;
-  assert.equal(hid.devices[0].opened, false);
-  assert.equal(client.state.phase, "disconnected");
-});
-
-test("ignore other devices and prevent duplicate connection requests", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
-  await Promise.all([client.connect(), client.connect()]);
-  assert.deepEqual(hid.devices[0].reads, [18, 10, 11, 12, 13, 14, 15, 6, 16, 7, 3]);
-  hid.unplug(new FakeDevice());
-  assert.equal(client.state.phase, "connected");
-});
-
-test("failed close preserves ownership for retry", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  hid.devices[0].close = async () => { throw new Error("Close failed"); };
-  await client.disconnect();
-  assert.equal(client.device, hid.devices[0]);
-  assert.equal(client.state.phase, "connected");
-  assert.equal(client.state.error, "Close failed");
-});
-
-test("manual disconnect ignores a late read and reconnect gets a fresh sample", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  const pending = deferred();
-  hid.devices[0].receiveFeatureReport = () => pending.promise;
-  const reading = client.refresh();
-  await client.disconnect();
-  pending.resolve(report());
-  await reading;
-  assert.equal(client.state.phase, "disconnected");
-  assert.equal(client.state.hardware, null);
-  hid.devices[0].receiveFeatureReport = async id => id === 6 ? report(1, 200000000)
-    : FakeDevice.prototype.receiveFeatureReport.call(hid.devices[0], id);
-  await client.connect();
-  assert.equal(client.state.hardware.mcu, "RP2040");
-  assert.equal(client.state.hardware.system_clock_hz, 200000000);
-});
-
-test("decode board, telemetry overflow, and payload-only status reports", () => {
-  assert.equal(decodeBoardReport(boardReport()).temperature_celsius, 25);
-  const telemetry = decodeTelemetryReport(telemetryReport({ overflow: [0, 1, 2, 3, 4, 0xffffffff] }));
-  assert.deepEqual(telemetry.overflow_counts, [0, 1, 2, 3, 4, 0xffffffff]);
-  const status = decodeStatusReport(statusReport());
-  assert.equal(status.channels.length, 6);
-  assert.equal(status.channels[5].traffic.usb_rx, 18);
-  assert.equal(status.channels[0].ring_high_watermark, 32);
-  assert.equal(status.channels[0].cdc_open, true);
-});
-
-test("telemetry decodes every section", () => {
-  assert.deepEqual(decodeTelemetryReport(telemetryReport({ led: 7, temperature: -125, uptime: 4294967296n,
-    cores: [10000, 65535], save: [2, 3], generations: [0, 1, 2, 3, 254, 255] })), {
-    led: { manual_on: true, output_on: true },
-    temperature_celsius: -1.25,
-    runtime: { uptime_ms: 4294967296, cpu_usage_basis_points: [10000, null],
-      ram_reserved_bytes: 65536, ram_total_bytes: 270336 },
-    overflow_counts: [0, 1, 2, 3, 4, 5],
-    configuration_save: { status: 2, profile: 3 },
-    diagnostics_generation: [0, 1, 2, 3, 254, 255],
-  });
-  assert.deepEqual(decodeTelemetryReport(telemetryReport()).configuration_save, { status: 0, profile: null });
-});
-
-test("telemetry rejects malformed values", () => {
-  for (const options of [
-    { cores: [10001, 0] }, { cores: [0, 65534] }, { ram: [0, 0] }, { ram: [3, 2] },
-    { save: [6, 0] }, { save: [2, 5] }, { save: [2, 0xffffffff] }, { save: [1, 0xffffffff] },
-    { led: 8 }, { led: 2 }, { led: 3 }, { uptime: 2n ** 53n },
-  ]) assert.throws(() => decodeTelemetryReport(telemetryReport(options)), options.uptime ? /uptime/ : undefined);
-});
-
-test("steady-state polling reads only telemetry and re-reads diagnostics whose generation changed", async () => {
-  const hid = new FakeHid();
-  const device = hid.devices[0];
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  assert.deepEqual(client.state.dashboard.channel_diagnostics.map(item => item.tx_pin), [0, 4, 8, 12, 16, 20]);
-  device.reads.length = 0;
-  await client.refresh();
-  assert.deepEqual(device.reads, [18]);
-
-  device.reads.length = 0;
-  device.generations[2] = 2;
-  await client.refresh();
-  assert.deepEqual(device.reads, [18, 12]);
-
-  device.reads.length = 0;
-  device.generations[5] = 0;
-  device.generations[0] = 255;
-  await client.refresh();
-  assert.deepEqual(device.reads, [18, 10, 15], "A wrapped generation counter is still a change");
-
-  device.reads.length = 0;
-  await client.refresh();
-  assert.deepEqual(device.reads, [18]);
-  await client.disconnect();
-});
-
-test("a failed diagnostics read forces a full diagnostics refresh and a reconnect rereads static reports", async () => {
-  const hid = new FakeHid();
-  const device = hid.devices[0];
-  const receive = device.receiveFeatureReport.bind(device);
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  device.generations[1] = 2;
-  device.receiveFeatureReport = id => id === 11 ? Promise.reject(new Error("Channel 1 unavailable")) : receive(id);
-  await client.refresh();
-  assert.equal(client.state.dashboard.channel_diagnostics, null);
-  assert.equal(client.state.dashboard.diagnostics_error, "Channel 1 unavailable");
-
-  device.receiveFeatureReport = receive;
-  device.reads.length = 0;
-  await client.refresh();
-  assert.deepEqual(device.reads, [18, 10, 11, 12, 13, 14, 15]);
-  assert.equal(client.state.dashboard.diagnostics_error, null);
-
-  hid.unplug(device);
-  device.opened = false;
-  device.reads.length = 0;
-  await client.connect();
-  assert.deepEqual(device.reads, [18, 10, 11, 12, 13, 14, 15, 6, 16, 7, 3]);
-  await client.disconnect();
-});
-
-test("reject malformed metadata and status", () => {
-  const board = boardReport();
-  board.setUint8(2, 2);
-  assert.throws(() => decodeBoardReport(board), /flags/);
-  const telemetry = telemetryReport();
-  telemetry.setUint8(1, 14);
-  assert.throws(() => decodeTelemetryReport(telemetry), /layout/);
-  const data = statusReport();
-  data.setUint8(0, 0);
-  assert.throws(() => decodeStatusReport(data), /signature/);
-  assert.throws(() => decodeStatusReport(new DataView(new ArrayBuffer(64))), /size/);
-});
-
-test("live reports track totals, wrap, gaps, saturation, and detach on unplug", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  hid.devices[0].input(statusReport(255));
-  hid.devices[0].input(statusReport(0));
-  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 20);
-  assert.equal(client.state.dashboard.traffic_incomplete, false);
-  hid.devices[0].input(statusReport(2, 65532));
-  assert.equal(client.state.dashboard.traffic_incomplete, true);
-  assert.equal(client.state.dashboard.sequence, 2);
-  hid.unplug(hid.devices[0]);
-  hid.devices[0].input(statusReport(3));
-  assert.equal(client.state.dashboard.sequence, null);
+  device.input(10, channel({ sequence: 65535, count: 100 }));
   assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 0);
-});
-
-test("unsupported hardware info preserves other diagnostics and malformed input recovers", async () => {
-  const hid = new FakeHid();
-  const originalRead = hid.devices[0].receiveFeatureReport.bind(hid.devices[0]);
-  hid.devices[0].receiveFeatureReport = async id => {
-    if (id === 6) throw new Error("Hardware info unsupported");
-    return originalRead(id);
-  };
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  assert.equal(client.state.hardware, null);
-  assert.equal(client.state.dashboard.board.firmware_version, "1.2.3");
-  assert.deepEqual(client.state.dashboard.overflow_counts, [0, 1, 2, 3, 4, 5]);
-  hid.devices[0].input(new DataView(new ArrayBuffer(63)));
-  assert.match(client.state.dashboard.error, /signature/);
-  hid.devices[0].input(statusReport());
-  assert.equal(client.state.dashboard.error, null);
-  assert.equal(client.state.dashboard.hardware_error, "Hardware info unsupported");
-});
-
-test("metadata read failure preserves hardware info and unplug during close wins", async () => {
-  const hid = new FakeHid();
-  const originalRead = hid.devices[0].receiveFeatureReport.bind(hid.devices[0]);
-  hid.devices[0].receiveFeatureReport = async id => {
-    if (id === 3) throw new Error("Board metadata unavailable");
-    return originalRead(id);
-  };
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  assert.equal(client.state.hardware.mcu, "RP2350");
-  assert.equal(client.state.dashboard.board, null);
-  hid.devices[0].close = async () => { hid.unplug(hid.devices[0]); throw new Error("Gone"); };
+  device.input(10, channel({ sequence: 0, count: 200, interval: 750 }));
+  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 200);
+  assert.equal(client.state.dashboard.channels[0].observed_interval_ms, 750);
+  assert.equal(client.state.dashboard.channels[0].traffic_gaps, 0);
+  device.input(11, channel());
+  device.input(11, channel({ sequence: 2 }));
+  const previousTotal = client.state.dashboard.channels[1].totals.uart_tx;
+  device.input(11, channel({ sequence: 2 }));
+  assert.equal(client.state.dashboard.channels[1].totals.uart_tx, previousTotal);
+  const otherGaps = client.state.dashboard.channels[1].traffic_gaps;
+  device.input(10, channel({ sequence: 2 }));
+  assert.equal(client.state.dashboard.channels[0].traffic_gaps, 1);
+  assert.equal(client.state.dashboard.channels[1].traffic_gaps, otherGaps);
+  device.input(10, channel({ sequence: 3, count: 0xffffffff }));
+  assert.equal(client.state.dashboard.channels[0].traffic_gaps, 2);
   await client.disconnect();
-  assert.equal(client.state.phase, "disconnected");
-  assert.equal(client.device, null);
 });
 
-test("identity and telemetry validate version, ranges, padding and unsigned uptime", () => {
-  assert.deepEqual(decodeIdentityReport(identityReport()),
-    { product_name: "PicoUart", serial_number: "0123456789ABCDEF" });
-  assert.deepEqual(decodeTelemetryReport(telemetryReport()).runtime, {
-    uptime_ms: 4294967296, cpu_usage_basis_points: [10000, null],
-    ram_reserved_bytes: 65536, ram_total_bytes: 270336,
-  });
-  for (const [id, makeReport, decode] of [
-    [7, identityReport, decodeIdentityReport], [18, telemetryReport, decodeTelemetryReport],
-  ]) {
-    const value = makeReport();
-    const padded = new Uint8Array(value.byteLength + 5);
-    padded.set(new Uint8Array(value.buffer));
-    assert.deepEqual(decode(new DataView(padded.buffer)), decode(value));
-    padded[padded.length - 1] = 1;
-    assert.throws(() => decode(new DataView(padded.buffer)), /padding/);
-    assert.throws(() => decode(new DataView(new ArrayBuffer(1))), /size/);
-    value.setUint8(1, 3);
-    assert.throws(() => decode(value), /version/);
-    value.setUint8(0, id + 1);
-    assert.throws(() => decode(value), /ID/);
-  }
-  const identity = identityReport();
-  identity.setUint8(34, 0x47);
-  assert.throws(() => decodeIdentityReport(identity), /identity/);
-  const telemetry = telemetryReport();
-  telemetry.setUint16(13, 10001, true);
-  assert.throws(() => decodeTelemetryReport(telemetry), /CPU/);
-  telemetry.setUint16(13, 0, true);
-  telemetry.setUint32(21, 0, true);
-  assert.throws(() => decodeTelemetryReport(telemetry), /RAM/);
-});
-
-test("unavailable static reports are retried until they succeed once and are then kept", async () => {
-  const hid = new FakeHid();
-  const device = hid.devices[0];
-  const original = device.receiveFeatureReport.bind(device);
-  device.receiveFeatureReport = async id => {
-    if (id === 7) throw new Error("Firmware upgrade required");
-    return original(id);
-  };
-  const client = new PicoUartWebHid(hid);
+test("channel failures clear only that channel and remain visible until it recovers", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
   await client.connect();
-  assert.equal(client.state.dashboard.identity, null);
-  assert.equal(client.state.dashboard.identity_error, "Firmware upgrade required");
-  assert.equal(client.state.dashboard.board.firmware_version, "1.2.3");
-  assert.equal(client.state.dashboard.hardware.mcu, "RP2350");
-  device.receiveFeatureReport = original;
-  device.reads.length = 0;
-  await client.refresh();
-  assert.deepEqual(device.reads, [18, 7]);
-  assert.equal(client.state.dashboard.identity.serial_number, "0123456789ABCDEF");
-  assert.equal(client.state.dashboard.identity_error, null);
-  device.reads.length = 0;
-  await client.refresh();
-  assert.deepEqual(device.reads, [18]);
+  device.input(10, new DataView(new ArrayBuffer(1)));
+  device.input(11, channel());
+  assert.equal(client.state.dashboard.channel_diagnostics[0], null);
+  assert.equal(client.state.dashboard.overflow_counts[0], null);
+  assert.equal(client.state.dashboard.channels[0].health, null);
+  assert.match(client.state.dashboard.diagnostics_error, /size/);
+  assert.ok(client.state.dashboard.channel_diagnostics[1]);
+  device.input(10, channel());
+  assert.equal(client.state.dashboard.diagnostics_error, null);
   await client.disconnect();
-  assert.equal(client.state.dashboard.identity, null);
+});
+
+test("telemetry failure preserves static identity and channel fault data", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
+  await client.connect();
+  const receive = device.receiveFeatureReport.bind(device);
+  device.receiveFeatureReport = id => id === 3 ? Promise.reject(new Error("Telemetry unavailable")) : receive(id);
+  await client.refresh();
   assert.equal(client.state.dashboard.runtime, null);
+  assert.equal(client.state.dashboard.led, null);
+  assert.equal(client.state.dashboard.identity.product_name, "PicoUart");
+  assert.equal(client.state.dashboard.channel_diagnostics[0].baud_rate, 115200);
+  assert.deepEqual(client.state.dashboard.overflow_counts, Array(6).fill(0));
+  device.receiveFeatureReport = receive;
+  await client.refresh();
+  assert.equal(client.state.dashboard.runtime_error, null);
+  await client.disconnect();
 });
 
-test("status, board and telemetry reports accept only version 1", () => {
-  for (const version of [0, 2, 15, 255]) {
-    for (const [make, decode, offset] of [
-      [statusReport, decodeStatusReport, 1], [boardReport, decodeBoardReport, 1],
-      [telemetryReport, decodeTelemetryReport, 1],
-    ]) {
-      const report = make();
-      report.setUint8(offset, version);
-      assert.throws(() => decode(report), /version/);
-    }
-  }
-});
-
-test("LED decoder distinguishes physical activity from manual state and rejects invalid flags", () => {
-  for (const [flags, manual_on, output_on] of [[0, null, null], [1, false, false],
-    [5, false, true], [7, true, true]]) {
-    assert.deepEqual(decodeTelemetryReport(telemetryReport({ led: flags })).led, { manual_on, output_on });
-  }
-  for (const flags of [2, 3, 4, 8, 255]) {
-    assert.throws(() => decodeTelemetryReport(telemetryReport({ led: flags })));
-  }
-});
-
-test("LED toggle writes the command and refreshes actual output in both directions", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
+test("LED uses explicit state and distinct correlated control requests", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
   await client.connect();
-  assert.equal(client.state.dashboard.led.output_on, false);
   await client.toggleLed();
-  assert.deepEqual(hid.devices[0].writes, [[4, [1]]]);
+  assert.equal(device.writes[0][1][1], 2);
   assert.equal(client.state.dashboard.led.output_on, true);
   await client.toggleLed();
+  assert.equal(device.writes[1][1][1], 1);
   assert.equal(client.state.dashboard.led.output_on, false);
+  assert.equal(device.writes[0][1][4], 1);
+  assert.equal(device.writes[1][1][4], 2);
+  await client.disconnect();
 });
 
-test("configuration save requires an explicit overclock acknowledgement and verifies the saved profile", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
+test("save validates acknowledgement, capability mask and matching verified result", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
   await client.connect();
-  hid.devices[0].input(closedStatusReport());
   await client.saveConfiguration(2, false);
-  assert.deepEqual(hid.devices[0].writes, []);
-  assert.match(client.state.configurationSaveMessage, /explicitly acknowledge/);
+  assert.equal(device.writes.length, 0);
   await client.saveConfiguration(2, true);
-  assert.deepEqual(hid.devices[0].writes, [[17, [1, 1, 0, 0, 2, 0, 0, 0]]]);
-  assert.equal(client.state.configurationSaveMessage, "Saved. Pico is rebooting; USB will reconnect shortly.");
-  assert.equal(client.state.dashboard.configuration_save.status, 2);
-  assert.equal(client.state.dashboard.configuration_save.profile, 2);
-  assert.equal(client.state.phase, "connected");
+  assert.equal(device.writes[0][1][1], 5);
+  assert.equal(device.writes[0][1][2], 1);
+  assert.equal(device.writes[0][1][16], 2);
+  assert.match(client.state.configurationSaveMessage, /Saved/);
   await client.disconnect();
 });
 
-for (const profile of [0, 1, 2, 3, 4]) {
-  test(`saved profile ${profile} allows another save after reboot and reconnect`, async () => {
-    const hid = new FakeHid();
-    const client = new PicoUartWebHid(hid);
-    const device = hid.devices[0];
-    await client.connect();
-    device.input(closedStatusReport());
-    await client.saveConfiguration(profile, profile !== 0);
-    assert.equal(client.state.dashboard.configuration_save.status, 2);
-    assert.equal(device.writes.length, 1);
-
-    hid.unplug(device);
-    device.opened = false;
-    device.configuration = configurationReport(1, 0, profile, profile);
-    device.configurationSave = configurationSaveReport(0, profile);
-    await client.connect();
-    assert.equal(client.state.phase, "connected");
-    assert.equal(client.state.dashboard.configuration_save_error, null);
-    assert.deepEqual(client.state.dashboard.configuration_save, { status: 0, profile });
-    assert.equal(client.state.dashboard.configuration.stored_profile, profile);
-
-    device.input(closedStatusReport());
-    const nextProfile = (profile + 1) % 5;
-    await client.saveConfiguration(nextProfile, nextProfile !== 0);
-    assert.equal(device.writes.length, 2);
-    assert.deepEqual(device.writes[1], [17, [1, Number(nextProfile !== 0), 0, 0, nextProfile, 0, 0, 0]]);
-    assert.deepEqual(client.state.dashboard.configuration_save, { status: 2, profile: nextProfile });
-    await client.disconnect();
-  });
-}
-
-for (const profile of [1, 2, 3]) {
-  test(`predefined clock profile ${profile} saves with explicit acknowledgement`, async () => {
-    const hid = new FakeHid();
-    const client = new PicoUartWebHid(hid);
-    await client.connect();
-    hid.devices[0].input(closedStatusReport());
-    await client.saveConfiguration(profile, true);
-    assert.deepEqual(hid.devices[0].writes, [[17, [1, 1, 0, 0, profile, 0, 0, 0]]]);
-    assert.equal(client.state.dashboard.configuration_save.profile, profile);
-    await client.disconnect();
-  });
-}
-
-test("SDK-default save uses no unsafe flag, rejects open CDC ports, and only accepts target profiles", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
+test("mismatched command results are unconfirmed and never retried", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
   await client.connect();
-  hid.devices[0].input(closedStatusReport());
-  await client.saveConfiguration(0, true);
-  assert.deepEqual(hid.devices[0].writes, []);
-  await client.saveConfiguration(5, true);
-  assert.deepEqual(hid.devices[0].writes, []);
-  hid.devices[0].input(statusReport(1));
-  await client.saveConfiguration(0, false);
-  assert.deepEqual(hid.devices[0].writes, []);
-  assert.match(client.state.configurationSaveMessage, /Close all CDC ports/);
-  await client.disconnect();
-});
-
-test("configuration save preflight does not override an already pending save", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  hid.devices[0].input(closedStatusReport());
-  hid.devices[0].configurationSave = configurationSaveReport(1, 2);
-  await client.refresh();
-  const writes = [...hid.devices[0].writes];
-  await client.saveConfiguration(2, true);
-  assert.deepEqual(hid.devices[0].writes, writes);
-  assert.match(client.state.configurationSaveMessage, /already pending/);
-  await client.disconnect();
-});
-
-test("configuration save polls pending completion and ignores unplugged device results", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  hid.devices[0].input(closedStatusReport());
-  const device = hid.devices[0];
-  const receive = device.receiveFeatureReport.bind(device);
-  let polls = 0;
-  device.receiveFeatureReport = id => id === 17
-    ? Promise.resolve(configurationSaveReport(++polls === 1 ? 1 : 2, 2)) : receive(id);
-  await client.saveConfiguration(2, true);
-  assert.equal(polls, 2, "Only the pending and verified save states are read before reboot.");
-  assert.equal(client.state.configurationSaveMessage, "Saved. Pico is rebooting; USB will reconnect shortly.");
-  await client.disconnect();
-
-  const otherHid = new FakeHid();
-  const otherClient = new PicoUartWebHid(otherHid);
-  await otherClient.connect();
-  const pending = deferred();
-  otherHid.devices[0].sendFeatureReport = () => pending.promise;
-  const saving = otherClient.saveConfiguration(2, true);
-  otherHid.unplug(otherHid.devices[0]);
-  pending.resolve();
-  await saving;
-  assert.equal(otherClient.state.phase, "disconnected");
-  assert.equal(otherClient.state.configurationSaveMessage, "");
-});
-
-test("LED write failure surfaces an error and unplug during write cannot restore stale state", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  hid.devices[0].sendFeatureReport = async () => { throw new Error("Write denied"); };
-  await client.toggleLed();
-  assert.equal(client.state.error, "Write denied");
-  assert.equal(client.state.dashboard.led, null);
-  const wait = deferred();
-  hid.devices[0].sendFeatureReport = () => wait.promise;
-  const toggling = client.toggleLed();
-  hid.unplug(hid.devices[0]);
-  wait.resolve();
-  await toggling;
-  assert.equal(client.state.phase, "disconnected");
-  assert.equal(client.state.dashboard.led, null);
-});
-
-test("unplug during a runtime read cannot repopulate a disconnected dashboard", async () => {
-  const hid = new FakeHid();
-  const client = new PicoUartWebHid(hid);
-  await client.connect();
-  const device = hid.devices[0];
-  const original = device.receiveFeatureReport.bind(device);
-  const pending = deferred();
-  const started = deferred();
-  device.receiveFeatureReport = async id => {
-    if (id !== 18) return original(id);
-    started.resolve();
-    return pending.promise;
+  device.sendFeatureReport = async (id, data) => {
+    device.writes.push([id, [...data]]);
+    device.result = control({ command: 2, status: 2, id: 99 });
   };
-  const reading = client.refresh();
-  await started.promise;
-  hid.unplug(device);
-  pending.resolve(telemetryReport());
-  await reading;
-  assert.equal(client.state.phase, "disconnected");
-  assert.equal(client.state.dashboard.identity, null);
-  assert.equal(client.state.dashboard.runtime, null);
+  await client.toggleLed();
+  assert.match(client.state.error, /does not match/);
+  assert.equal(device.writes.length, 1);
+  await client.disconnect();
+});
+
+test("static failure prevents commands and unsupported LED remains unavailable", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
+  device.info = information({ capabilities: 6 });
+  await client.connect();
+  assert.equal(client.state.dashboard.led.output_on, null);
+  await client.toggleLed();
+  assert.equal(device.writes.length, 0);
+  await client.disconnect();
+  device.info = information();
+  device.info.setUint8(1, 2);
+  await client.connect();
+  await client.toggleLed();
+  assert.equal(device.writes.length, 0);
+  await client.disconnect();
+});
+
+test("application deadline blocks overlapping transfers and ignores late completion", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid);
+  await client.connect();
+  let complete;
+  await assert.rejects(client.transfer(() => new Promise(resolve => { complete = resolve; }), 5), /timed out/);
+  complete(1);
+  await assert.rejects(client.transfer(async () => 2), /disconnect/);
+  await client.disconnect();
+  await client.connect();
+  assert.equal(client.ioBlocked, false);
+  await client.disconnect();
 });

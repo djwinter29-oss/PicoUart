@@ -6,9 +6,7 @@ import runpy
 
 import pytest
 
-from helpers import status_report_bytes
 from pico_uart import cli
-from pico_uart.protocol import parse_status
 
 
 @pytest.mark.parametrize(
@@ -70,7 +68,19 @@ def test_main_dispatches_board_commands(monkeypatch, capsys, command, expected_o
 
 
 def test_main_status_text_retries_empty_reads_and_selects_device_path(monkeypatch, capsys):
-    status = parse_status(status_report_bytes(sequence=17))
+    status = {
+        "channels": [
+            {
+                "id": index, "sequence": 17 if index == 0 else None,
+                "health": 0x11 if index == 0 else None, "health_labels": [],
+                "traffic": {
+                    "uart_tx": 1, "uart_rx": 2, "usb_tx": 3, "usb_rx": 4,
+                },
+                "ring_high_watermark": 32,
+            }
+            for index in range(6)
+        ],
+    }
     read_timeouts = []
 
     class FakeClient:
@@ -92,7 +102,9 @@ def test_main_status_text_retries_empty_reads_and_selects_device_path(monkeypatc
 
     assert cli.main(["--device-path", "/dev/hidraw7", "status", "--timeout", "1"]) == 0
     assert len(read_timeouts) == 2
-    assert capsys.readouterr().out.startswith("seq=17 ")
+    output = capsys.readouterr().out
+    assert output.startswith("cdc0 seq=17 ")
+    assert "cdc1 waiting-for-input" in output
 
 
 def test_main_monitor_dispatches_configured_duration(monkeypatch):

@@ -77,6 +77,7 @@ test("one connection button belongs to Device identity, with no separate refresh
 test("persistent configuration uses target profiles and gates unsafe saves", () => {
   const { client, get } = fixture();
   client.state.dashboard = { connected: true, hardware: { mcu_id: 2 },
+    identity: { capabilities: 7, clock_profile_mask: 31 },
     configuration: { stored_profile: 2 }, configuration_save: { status: 0, profile: 2 },
     channels: Array.from({ length: 6 }, () => ({ cdc_open: false })) };
   client.state.phase = "connected";

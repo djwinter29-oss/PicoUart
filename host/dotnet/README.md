@@ -66,9 +66,13 @@ snapshot, launch a timed monitor alongside a serial test, or collect cumulative 
 ./PicoUart overruns > uart-dropped-bytes.json
 ```
 
-Each monitor line contains one JSON report. Byte counts are deltas since the preceding successfully published report,
-saturating at 65535. Dropped-byte counts and buffer peaks are cumulative since boot; account for resets and saturation
-when interpreting a test run. These are traffic statistics, not device messages or exact accounting if reports are lost.
+Each monitor line contains one channel's combined snapshot, identified by `id` (0-5), with its own 16-bit `sequence`
+and measured `interval_ms`. Four byte deltas saturate at `UINT32_MAX`; use the measured interval rather than host
+arrival time for rates. Discard the first Input per channel from session totals and rate windows. Feature reads
+overlap those intervals and must never be accumulated. Missing/stale reports and saturated values make totals lower
+bounds. Dropped-byte counts and buffer peaks are cumulative since boot.
+The [consolidated HID v1 contract](../../docs/design/usb/hid-report-reference.md) is authoritative for layouts,
+validation, traffic accounting, fault-history interpretation, and command timing; legacy layouts are not supported.
 
 `status` exits non-zero when no report arrives before its timeout. **Unlike the Python CLI, .NET `monitor` can finish
 successfully with no reports.** Your runner must check sample availability and channel health, not just the exit code.
@@ -86,6 +90,27 @@ automatically reboots the board, independently of the optional reset command. St
 read the [configuration precautions](../../docs/development/host-tools.md#persistent-configuration) before changing it.
 After reconnecting, check the actual active profile and any fallback reason rather than assuming the requested clock
 became active. A verified save does not establish overclock stability.
+
+LED toggling reads telemetry and sends an explicit On/Off assignment. All controls first validate cached static
+identity/capabilities, serialize requests, and verify the matching command/request ID and terminal result. Commands
+have 3-second transfer/result deadlines; a timeout is unconfirmed, never an automatic retry. Reconnect after an
+unconfirmed transfer. Reset performs a fresh arm/reboot sequence; save completion means flash verification succeeded
+and automatic reboot was scheduled, not that the next boot succeeded.
+
+### Dashboard JSON
+
+Existing board, hardware, runtime, LED, configuration, and traffic field names are retained. `identity` additionally
+exposes `firmware_major/minor/patch`, `firmware_version`, `mcu_id`, `mcu`, `hardware_channel_mask`, `pio_channel_mask`,
+`capabilities`, `clock_profile_mask`, and `ram_total_bytes`. `led.manual_on` and `led.output_on` both represent the
+explicit identification output (or null when unavailable).
+
+Each `channels[]` item adds `updated_at` (ISO timestamp of its last Input), `sequence`, `observed_interval_ms`,
+`traffic_gaps`, and sticky `traffic_incomplete`. Measurement time sums complete valid Input intervals after the first
+sample; the renderer can divide changes in totals by changes in this time, invalidating a window when that channel's
+gap count changes. There is no board-wide `sequence`. Top-level gap/incomplete fields summarize all channels.
+`channel_diagnostics[]` is indexed by channel and may contain null before state is available. Fault objects retain
+`faults.<name>.count` only; `last_fault_uptime_s` is shared by all four categories, not a per-fault timestamp.
+`configuration_save.status` uses report-2 statuses 0-6; it is null when the latest result is not a save.
 
 ## Troubleshooting
 

@@ -187,6 +187,15 @@ uint32_t uart_driver_mark_control_pending(uart_port_id_t port_id);
 uint8_t uart_driver_port_status(uart_port_id_t port_id);
 
 /**
+ * @brief Capture applied settings and control health under their shared ownership lock.
+ * @param port_id Logical UART port identifier.
+ * @param info Output storage for the applied settings and board pins.
+ * @param status Output storage for driver status flags.
+ * @return `true` when both values were captured coherently.
+ */
+bool uart_driver_port_snapshot(uart_port_id_t port_id, uart_driver_port_info_t *info, uint8_t *status);
+
+/**
  * @brief Return whether the dedicated UART worker core is running.
  * @return `true` after the worker core has been launched.
  */

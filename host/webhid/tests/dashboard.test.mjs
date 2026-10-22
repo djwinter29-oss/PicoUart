@@ -48,12 +48,13 @@ class Element {
 }
 
 function snapshot(serial, mcuId = 2, storedProfile = 2) {
-  return { connected: true, identity: { product_name: "PicoUart", serial_number: serial },
+  return { connected: true, identity: { product_name: "PicoUart", serial_number: serial,
+    capabilities: 7, clock_profile_mask: mcuId === 1 ? 15 : 31 },
     updated_at: "2026-01-01T00:00:00Z", overflow_counts: Array(6).fill(0),
     hardware: { mcu: mcuId === 1 ? "RP2040" : "RP2350", mcu_id: mcuId, system_clock_hz: 150000000 },
     configuration: { source: "stored", reason: "none", stored_profile: storedProfile, active_profile: storedProfile },
     configuration_save: { status: 0, profile: null },
-    channels: Array.from({ length: 6 }, (_, id) => ({ id, health: null, health_labels: [], cdc_open: false,
+    channels: Array.from({ length: 6 }, (_, id) => ({ id, health: 1, health_labels: ["ready"], cdc_open: false,
       totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } })),
     led: { manual_on: false, output_on: false } };
 }

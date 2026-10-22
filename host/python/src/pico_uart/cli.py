@@ -11,16 +11,20 @@ from .protocol import decode_health
 
 
 def print_status(status: dict[str, object]) -> None:
-    """Print one concise status report for monitor and status commands."""
+    """Print one concise per-channel update for monitor and status commands."""
     channels = " ".join(
-        f"cdc{channel['id']} health=0x{channel['health']:02x}"
-        f"[{','.join(decode_health(channel['health'])) or '-'}] "
-        f"uart_tx/rx={channel['controller_tx_bytes']}/{channel['controller_rx_bytes']} "
-        f"cdc_tx/rx={channel['cdc_tx_bytes']}/{channel['cdc_rx_bytes']} "
-        f"ring_peak={channel['ring_high_watermark']}"
+        f"cdc{channel['id']} "
+        + (
+            f"seq={channel['sequence']} health=0x{channel['health']:02x}"
+            f"[{','.join(decode_health(channel['health'])) or '-'}] "
+            f"uart_tx/rx={channel['traffic']['uart_tx']}/{channel['traffic']['uart_rx']} "
+            f"cdc_tx/rx={channel['traffic']['usb_tx']}/{channel['traffic']['usb_rx']} "
+            f"ring_peak={channel['ring_high_watermark']}"
+            if channel["health"] is not None else "waiting-for-input"
+        )
         for channel in status["channels"]
     )
-    print(f"seq={status['sequence']} {channels}")
+    print(channels)
 
 
 def monitor(client: PicoUartHid, duration: float) -> None:
