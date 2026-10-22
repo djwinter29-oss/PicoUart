@@ -81,9 +81,10 @@ For each paired functional test, the bridge runner opens both endpoints before a
 concurrent rate, the stress runner opens all six CDC endpoints first, waits 250 ms for the worker to start the backends,
 applies line coding to all six, waits another 250 ms for firmware to apply it, and flushes the host TTY queues. After
 traffic, closing the endpoints deinitializes each backend while the host is closed; the next rate starts them again
-before applying line coding. The runner waits the configured rate-settle interval (8 seconds by default) and flushes
-once more before health sampling or traffic. Keep these delays enabled for ceiling searches; they are setup time, not
-time removed from the payload duration.
+before applying line coding. The host runner deasserts DTR before restoring saved TTY settings so restoration cannot
+reconfigure a backend during close. The runner waits the configured rate-settle interval (8 seconds by default) and
+flushes once more before health sampling or traffic. Keep these delays enabled for ceiling searches; they are setup
+time, not time removed from the payload duration.
 
 The standalone performance runner and combined runner default to this concurrent six-port sweep, in order:
 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, and 3000000 baud. The default sweep

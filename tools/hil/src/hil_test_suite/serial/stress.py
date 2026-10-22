@@ -16,6 +16,7 @@ from .config import (
     LINE_CODING_SETTLE_SECONDS,
     PORT_OPEN_SETTLE_SECONDS,
     configure_port,
+    deassert_dtr,
     open_port,
     set_port_line_coding,
 )
@@ -195,6 +196,12 @@ def close_port(file_descriptor: int, settings: list | tuple) -> None:
 def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
     """Close configured ports in fixture order and return the first cleanup error."""
     first_error = None
+    for file_descriptor, _settings in ports:
+        try:
+            deassert_dtr(file_descriptor)
+        except OSError as error:
+            if first_error is None:
+                first_error = error
     for file_descriptor, settings in ports:
         try:
             close_port(file_descriptor, settings)

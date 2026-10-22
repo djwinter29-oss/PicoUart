@@ -102,6 +102,7 @@ def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.Monkey
         if file_descriptor == 17:
             raise OSError("restore failed")
 
+    monkeypatch.setattr(bridge, "deassert_dtr", lambda _descriptor: None)
     monkeypatch.setattr(bridge.termios, "tcsetattr", restore)
     monkeypatch.setattr(bridge.os, "close", closes.append)
 
@@ -161,6 +162,45 @@ def test_run_test_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(bridge, "close_ports", lambda *_args: OSError("restore failed"))
 
     assert bridge.run_test(arguments, 115200) == 2
+
+
+def test_run_test_configures_pair_together_and_closes_peer_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+    arguments = type(
+        "Arguments",
+        (),
+        {
+            "pico_port": "/dev/pico",
+            "peer_port": "/dev/peer",
+            "loopback": False,
+            "settle_seconds": 0.0,
+            "label": "pair",
+            "payload_bytes": 64,
+            "timeout": 1.0,
+        },
+    )()
+    events = []
+    settings = object()
+
+    def configure_ports(paths, _baud):
+        events.append(("open-pair", paths))
+        return [(17, settings), (18, settings)]
+
+    def close_ports(ports):
+        events.append(("close", ports))
+        return None
+
+    monkeypatch.setattr(bridge, "configure_ports", configure_ports)
+    monkeypatch.setattr(bridge, "configure_port", lambda *_args: pytest.fail("pair must not open Pico alone"))
+    monkeypatch.setattr(bridge, "time", type("Clock", (), {"sleep": lambda _seconds: None}))
+    monkeypatch.setattr(bridge, "test_direction", lambda *_args: True)
+    monkeypatch.setattr(bridge, "close_ports", close_ports)
+
+    assert bridge.run_test(arguments, 115200) == 0
+    assert events == [
+        ("open-pair", ["/dev/pico", "/dev/peer"]),
+        ("close", [(18, settings), (17, settings)]),
+    ]
 
 
 @pytest.mark.parametrize(("option", "value"), [("--timeout", "nan"), ("--settle-seconds", "inf")])
@@ -424,6 +464,7 @@ def test_flood_loopback_sleeps_settle_seconds(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(bridge.time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(bridge, "configure_port", lambda *_a, **_k: (3, object()))
     monkeypatch.setattr(bridge, "run_flood", lambda *_a, **_k: (100, 100))
+    monkeypatch.setattr(bridge, "deassert_dtr", lambda *_a: None)
     monkeypatch.setattr(bridge.os, "close", lambda *_a, **_k: None)
     monkeypatch.setattr(bridge.termios, "tcsetattr", lambda *_a, **_k: None)
 
@@ -462,6 +503,7 @@ def test_flood_hold_cdc_sleeps_settle_seconds(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(bridge.time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(bridge, "configure_port", lambda *_a, **_k: (3, object()))
     monkeypatch.setattr(bridge, "run_flood", lambda *_a, **_k: (100, 100))
+    monkeypatch.setattr(bridge, "deassert_dtr", lambda *_a: None)
     monkeypatch.setattr(bridge.os, "close", lambda *_a, **_k: None)
     monkeypatch.setattr(bridge.termios, "tcsetattr", lambda *_a, **_k: None)
 

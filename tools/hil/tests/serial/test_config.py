@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import struct
 import sys
 from pathlib import Path
 
@@ -63,6 +64,16 @@ def test_configure_port_waits_after_open_and_line_coding(monkeypatch):
         serial_port.LINE_CODING_SETTLE_SECONDS,
         "flush",
     ]
+
+
+def test_deassert_dtr_clears_modem_bit(monkeypatch):
+    serial_port = _load_serial_config()
+    calls = []
+    monkeypatch.setattr(serial_port.fcntl, "ioctl", lambda *arguments: calls.append(arguments))
+
+    serial_port.deassert_dtr(17)
+
+    assert calls == [(17, serial_port.termios.TIOCMBIC, struct.pack("I", serial_port.termios.TIOCM_DTR))]
 
 
 def test_configure_port_closes_if_readback_does_not_match(monkeypatch):

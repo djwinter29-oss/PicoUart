@@ -80,18 +80,25 @@ def test_configure_port_success_remains_open(monkeypatch: pytest.MonkeyPatch) ->
 def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     stress = _load_stress()
     closes = []
+    events = []
 
     def restore(file_descriptor, *_args):
+        events.append(("restore", file_descriptor))
         if file_descriptor == 19:
             raise OSError("restore failed")
 
+    monkeypatch.setattr(stress, "deassert_dtr", lambda descriptor: events.append(("dtr", descriptor)))
     monkeypatch.setattr(stress.termios, "tcsetattr", restore)
-    monkeypatch.setattr(stress.os, "close", closes.append)
+    monkeypatch.setattr(stress.os, "close", lambda descriptor: (closes.append(descriptor), events.append(("close", descriptor))))
 
     error = stress.close_ports([(19, []), (20, [])])
     assert isinstance(error, OSError)
     assert str(error) == "restore failed"
     assert closes == [19, 20]
+    assert events == [
+        ("dtr", 19), ("dtr", 20),
+        ("restore", 19), ("close", 19), ("restore", 20), ("close", 20),
+    ]
 
 
 def test_run_stream_collects_first_transfer_timing(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -16,6 +16,7 @@ from .config import (
     PORT_OPEN_SETTLE_SECONDS,
     STANDARD_BAUD_RATES,
     configure_port,
+    deassert_dtr,
     open_port,
     set_port_line_coding,
 )
@@ -24,6 +25,12 @@ from .config import (
 def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
     """Restore and close every configured port, returning the first cleanup error."""
     first_error = None
+    for file_descriptor, _settings in ports:
+        try:
+            deassert_dtr(file_descriptor)
+        except OSError as error:
+            if first_error is None:
+                first_error = error
     for file_descriptor, settings in ports:
         try:
             termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
@@ -339,8 +346,8 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
     result = 2
 
     try:
-        pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
         if arguments.loopback:
+            pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
             time.sleep(arguments.settle_seconds)
             print(f"Testing {arguments.label} loopback at {baud_rate} baud")
             passed = test_direction(pico_fd, pico_fd, "pico-loopback", arguments.payload_bytes, arguments.timeout)
@@ -360,10 +367,10 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
         result = 2
     finally:
         ports = []
-        if pico_fd >= 0 and pico_settings is not None:
-            ports.append((pico_fd, pico_settings))
         if peer_fd >= 0 and peer_settings is not None:
             ports.append((peer_fd, peer_settings))
+        if pico_fd >= 0 and pico_settings is not None:
+            ports.append((pico_fd, pico_settings))
         cleanup_error = close_ports(ports)
         if cleanup_error is not None:
             print(f"Serial cleanup failed: {cleanup_error}", file=sys.stderr)

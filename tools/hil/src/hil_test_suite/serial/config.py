@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import struct
 import termios
 import time
 
@@ -28,6 +29,11 @@ TCGETS2 = 0x802C542A
 TCSETS2 = 0x402C542B
 BOTHER = 0x1000
 CBAUD = termios.CBAUD
+
+
+def deassert_dtr(file_descriptor: int) -> None:
+    """Lower CDC DTR before restoring TTY settings during port teardown."""
+    fcntl.ioctl(file_descriptor, termios.TIOCMBIC, struct.pack("I", termios.TIOCM_DTR))
 
 
 def verify_line_speed(file_descriptor: int, baud_rate: int) -> None:
@@ -75,6 +81,10 @@ def open_port(path: str, baud_rate: int, *, allow_arbitrary: bool = False) -> tu
             original_settings[5] = termios.B9600
         return file_descriptor, (original_settings, original_termios2) if original_termios2 is not None else original_settings
     except BaseException:
+        try:
+            deassert_dtr(file_descriptor)
+        except OSError:
+            pass
         os.close(file_descriptor)
         raise
 
@@ -125,6 +135,10 @@ def configure_port(path: str, baud_rate: int, *, allow_arbitrary: bool = False) 
         return file_descriptor, original
     except BaseException:
         try:
+            try:
+                deassert_dtr(file_descriptor)
+            except OSError:
+                pass
             if isinstance(original, tuple):
                 termios.tcsetattr(file_descriptor, termios.TCSANOW, original[0])
                 fcntl.ioctl(file_descriptor, TCSETS2, original[1])

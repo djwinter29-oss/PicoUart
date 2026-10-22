@@ -87,6 +87,11 @@ only that backend. Queued bytes are discarded; applied line coding and cumulativ
 does not reboot. On the next open, the worker starts that backend and applies any deferred line-coding request before
 the bridge resumes.
 
+Close invalidates older control generations. Worker close completion preserves control requests received after reopen,
+and a start completion cannot overwrite a newer close/open request or clear a newer control error. Each open makes one
+backend start attempt; failure publishes `INIT_FAILED` instead of retrying indefinitely and blocking other ports' control
+processing. Close and reopen to retry. Startup still waits for the pending opens' settle deadlines before enabling RX.
+
 ## Host-Visible Rules
 
 - `SET_LINE_CODING` may look successful to the host even when firmware rejects the request later.
