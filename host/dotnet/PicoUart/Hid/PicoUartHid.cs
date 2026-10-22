@@ -55,7 +55,11 @@ public sealed class PicoUartHid : IDisposable
 
     public BoardStatus ReadBoardStatus() => Protocol.ParseBoardStatus(ReadFeature(3, 8));
 
-    public uint[] ReadOverflowCounts() => Protocol.ParseOverflowCounts(ReadFeature(5, 25));
+    /// <summary>Read LED, temperature, runtime, overflow counts, save status and diagnostics generations at once.</summary>
+    public Telemetry ReadTelemetry() => Protocol.ParseTelemetry(
+        ReadFeature(Protocol.TelemetryReportId, Protocol.TelemetrySize));
+
+    public uint[] ReadOverflowCounts() => ReadTelemetry().OverflowCounts;
 
     public HardwareInfo ReadHardwareInfo() => Protocol.ParseHardwareInfo(
         ReadFeature(Protocol.HardwareInfoReportId, Protocol.HardwareInfoSize));
@@ -117,11 +121,20 @@ public sealed class PicoUartHid : IDisposable
 
     public BoardIdentity ReadIdentity() => Protocol.ParseIdentity(ReadFeature(7, 49));
 
-    public RuntimeStatus ReadRuntime() => Protocol.ParseRuntime(ReadFeature(8, 21));
+    public RuntimeStatus ReadRuntime() => ReadTelemetry().Runtime;
+
+    public ChannelDiagnostics ReadChannelDiagnostic(int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Protocol.ChannelCount);
+        return Protocol.ParseChannelDiagnostics(ReadFeature(
+            (byte)(Protocol.ChannelDiagnosticsReportId + index), Protocol.ChannelDiagnosticsSize));
+    }
+
     public ChannelDiagnostics[] ReadChannelDiagnostics() => Enumerable.Range(0, Protocol.ChannelCount)
-        .Select(index => Protocol.ParseChannelDiagnostics(ReadFeature(
-            (byte)(Protocol.ChannelDiagnosticsReportId + index), Protocol.ChannelDiagnosticsSize))).ToArray();
-    public LedStatus ReadLed() => Protocol.ParseLed(ReadFeature(9, 2));
+        .Select(ReadChannelDiagnostic).ToArray();
+
+    public LedStatus ReadLed() => ReadTelemetry().Led;
 
     public void ToggleLed()
     {

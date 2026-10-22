@@ -31,16 +31,14 @@ command values are board-scoped only.
 | Report ID | Type    | Direction              | Payload  | Purpose                                             |
 | --------- | ------- | ---------------------- | -------- | --------------------------------------------------- |
 | `1`       | Input   | Device to host         | 63 bytes | Periodic compact status report.                     |
-| `3`       | Feature | Host reads from device | 8 bytes  | Temperature estimate and firmware semantic version. |
+| `3`       | Feature | Host reads from device | 8 bytes  | Temperature estimate, firmware semantic version and capability flags. |
 | `4`       | Feature | Host writes to device  | 1 byte   | Board-control command.                              |
-| `5`       | Feature | Host reads from device | 25 bytes | Cumulative UART-to-USB RX dropped-byte counts.      |
 | `6`       | Feature | Host reads from device | 6 bytes  | MCU identity and current system clock frequency.    |
 | `7`       | Feature | Host reads from device | 49 bytes | Product and USB serial / board UID.                 |
-| `8`       | Feature | Host reads from device | 21 bytes | Uptime, per-core service load, and reserved RAM.     |
-| `9`       | Feature | Host reads from device | 2 bytes  | Board LED availability, manual state, and output.   |
 | `10`-`15` | Feature | Host reads from device | 59 bytes | Applied settings, GPIOs and fault history for CDC0-CDC5. |
 | `16`      | Feature | Host reads from device | 12 bytes | Persistent configuration source/reason and selected clock profiles. |
 | `17`      | Feature | Host reads/writes device | 8 bytes | Save a boot-time clock profile and read its verified result. |
+| `18`      | Feature | Host reads from device | 59 bytes | Everything that changes while connected: LED, temperature, uptime, service load, RAM, RX drop counts, save status and diagnostics generations. |
 
 All versioned report payloads use layout version `1`. Firmware and host tools implement this contract together;
 other layouts are rejected, with no legacy decoding or missing-report compatibility mode.
@@ -73,7 +71,7 @@ All integers are little-endian.
 Each history record contains a saturating `uint32_t count` and a `uint64_t last_seen_ms` (boot uptime at detection).
 A zero count means no observation; a nonzero count can legitimately have timestamp zero during the first boot millisecond.
 The USB core samples diagnostics approximately every 100 ms, including when the HID IN endpoint is not ready, and on
-diagnostic reads. Timestamps describe **detection**, not the exact instant of a wire error. Counts are retained until
+diagnostic and telemetry reads. Timestamps describe **detection**, not the exact instant of a wire error. Counts are retained until
 firmware initialization; counter resets are treated as a new baseline without subtracting accumulated history.
 
 `init_failed` and `control_error` count observed deasserted-to-asserted transitions, not individual failed requests.
@@ -239,22 +237,10 @@ Unknown command values are ignored. The report has no response payload. Remote r
 advertise that capability in board-status `reserved0` bit 0. The reference host tool's `reset` command reads that flag
 first and refuses to send arm/reset when it is clear.
 
-## Report ID 5: RX Overflow Counts
-
-Request feature report ID `5` to read cumulative dropped UART RX bytes for all six ports. This includes bytes already
-retired by overflow recovery and bytes known to have been overwritten but not yet retired by the CDC drain path. Each
-`uint32_t` counter saturates at `UINT32_MAX`; a saturated value means the actual cumulative drop count is at least that
-large.
-
-| Offset | Size | Field                  | Meaning                                                    |
-| ------ | ---: | ---------------------- | ---------------------------------------------------------- |
-| 0      |    1 | `version`              | Shared report layout version.                              |
-| 1      |   24 | `rx_overflow_count[6]` | Six little-endian `uint32_t` values for CDC0 through CDC5. |
-
 ## Report ID 6: Hardware Info
 
 Request feature report ID `6` to identify the MCU and query the current system clock. Its layout version is independent
-of the shared version used by reports `1`, `3`, and `5`. All multi-byte values are little-endian.
+of the shared version used by reports `1` and `3`. All multi-byte values are little-endian.
 
 | Offset | Size | Field             | Meaning                                           |
 | ------ | ---- | ----------------- | ------------------------------------------------- |
@@ -284,18 +270,44 @@ not report `6`'s numeric MCU-type identifier. On RP2040 the SDK derives this boa
 flash unique ID; do not describe it as an RP2040 silicon serial. The SDK supplies the platform-specific identity on
 RP2350. No host-generated serial or browser-session identifier is substituted.
 
-## Report ID 8: Runtime Status
+## Report ID 18: Telemetry
 
-Feature report `8` provides live device counters. All multi-byte fields are little-endian.
+Feature report `18` carries every value that changes while a host is connected, so a dashboard needs one control
+transfer per refresh instead of separate temperature, uptime, LED, drop-count and save-status reads. Its layout
+version is independent of reports `1` and `3`. All multi-byte fields are little-endian. The payload is 59 bytes, within
+the single 64-byte control-transfer buffer.
 
-| Offset | Size | Field                    | Meaning                                                  |
-| ------ | ---: | ------------------------ | -------------------------------------------------------- |
-| 0      | 1    | `version`                | Runtime layout version, `1`.                             |
-| 1      | 8    | `uptime_ms`              | SDK monotonic milliseconds since boot.                   |
-| 9      | 2    | `core0_service_load_basis_points` | Core 0 service load; `10000` = 100%, `65535` unknown. |
-| 11     | 2    | `core1_service_load_basis_points` | Core 1 service load; same scale and sentinel.        |
-| 13     | 4    | `ram_reserved_bytes`     | Static and reserved SRAM, not live allocation/stack use.  |
-| 17     | 4    | `ram_total_bytes`        | Total SRAM for the target MCU.                           |
+| Offset | Size | Field                              | Meaning                                                                 |
+| ------ | ---: | ---------------------------------- | ----------------------------------------------------------------------- |
+| 0      | 1    | `version`                          | Telemetry layout version, `1`.                                          |
+| 1      | 1    | `led_flags`                        | Bit 0: LED available; bit 1: manual on; bit 2: physical output on.      |
+| 2      | 2    | `temperature_centidegrees_celsius` | Signed temperature in hundredths of a degree Celsius, as in report `3`. |
+| 4      | 8    | `uptime_ms`                        | SDK monotonic milliseconds since boot.                                  |
+| 12     | 2    | `core0_service_load_basis_points`  | Core 0 service load; `10000` = 100%, `65535` unknown.                   |
+| 14     | 2    | `core1_service_load_basis_points`  | Core 1 service load; same scale and sentinel.                           |
+| 16     | 4    | `ram_reserved_bytes`               | Static and reserved SRAM, not live allocation/stack use.                |
+| 20     | 4    | `ram_total_bytes`                  | Total SRAM for the target MCU.                                          |
+| 24     | 24   | `rx_overflow_count[6]`             | Cumulative dropped UART RX bytes for CDC0 through CDC5.                 |
+| 48     | 1    | `config_save_status`               | Same value as report `17`'s `status`.                                   |
+| 49     | 4    | `config_save_profile`              | Same value as report `17`'s requested profile; `0xffffffff` unavailable. |
+| 53     | 6    | `diagnostics_generation[6]`        | Per-channel change counters for reports `10` through `15`.              |
+
+### Diagnostics generation
+
+`diagnostics_generation[n]` is an 8-bit counter that changes whenever the content of channel `n`'s diagnostic report
+(`10 + n`) changes: applied settings, GPIOs, the sampled health bits or any fault-history record. Hosts compare it only
+for equality; it wraps from `255` to `0` and its starting value is unspecified. Firmware advances it at the diagnostics
+sampling cadence and on every telemetry or diagnostics read, so it is never older than the data it describes.
+Hosts keep the generation from before they read a diagnostic report: a change that lands during the read then costs one
+extra read, never a stale cache.
+
+### Overflow counts
+
+The counters include bytes already retired by overflow recovery and bytes known to have been overwritten but not yet
+retired by the CDC drain path. Each `uint32_t` counter saturates at `UINT32_MAX`; a saturated value means the actual
+cumulative drop count is at least that large.
+
+### Runtime
 
 Service load is the elapsed wall time of service passes that handle work, divided by the actual measurement-window
 duration, in basis points (one basis point is 0.01%). Each core publishes after at least one second; before its first
@@ -319,14 +331,9 @@ reservations. It excludes the remaining heap capacity and does not measure live 
 Total SRAM is `SRAM_END - SRAM_BASE`, including scratch banks. These values come from the selected target/linker layout,
 not a board-name lookup in the host.
 
-## Report ID 9: Board LED State
+### Board LED State
 
-| Offset | Size | Field     | Meaning                                                         |
-| ------ | ---: | --------- | --------------------------------------------------------------- |
-| 0      | 1    | `version` | LED layout version, `1`.                                        |
-| 1      | 1    | `flags`   | Bit 0: LED available; bit 1: manual on; bit 2: physical output on. |
-
-Other flag bits are reserved and zero. An unavailable LED reports zero flags; hosts show unknown states, not Off.
+Other `led_flags` bits are reserved and zero. An unavailable LED reports zero flags; hosts show unknown states, not Off.
 The LED is an on/off board-identification output. Report `4`'s existing toggle command inverts that state; CDC traffic
 and USB enumeration do not change it. The identification state starts Off after firmware initialization. Bits 1 and 2
 are retained for wire compatibility and both reflect identification on/off in this firmware. Older firmware may drive
@@ -339,6 +346,18 @@ The button tooltip identifies the manual state. Successful toggles reread state 
 Failed LED reads show unknown output and disable the toggle until a valid state is read.
 Boards explicitly reporting no LED also have the toggle disabled.
 The report sequence remains internal to gap detection and is not displayed.
+
+## Host Polling
+
+Reports `3`, `6`, `7` and `16` cannot change while the board stays connected (a reboot re-enumerates USB). Dashboards
+read each once per connection, retrying only after a failure, and take live temperature from report `18`. They poll
+report `18` about once per second, and read a channel's diagnostic report at connection and whenever that channel's
+`diagnostics_generation` changes. Steady state is therefore one control transfer per second. Report `1` remains the
+periodic interrupt stream.
+
+A failed telemetry read clears the values it carries (LED, temperature, runtime, drop counts, save status), while
+values read once per connection remain. A failed diagnostic read clears the cached diagnostics, so the next refresh
+reads all six channels again.
 
 ## Host Tool
 

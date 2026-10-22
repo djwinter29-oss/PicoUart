@@ -400,11 +400,10 @@ def main() -> int:
         constants["USB_HID_REPORT_ID_STATUS"]: (firmware_hid_report_count(args.repo_root, 1), 8, 8),
         constants["USB_HID_REPORT_ID_BOARD_STATUS"]: (firmware_hid_report_count(args.repo_root, 3), 8, 11),
         constants["USB_HID_REPORT_ID_COMMAND"]: (firmware_hid_report_count(args.repo_root, 4), 8, 11),
-        constants["USB_HID_REPORT_ID_OVERFLOW_COUNTS"]: (firmware_hid_report_count(args.repo_root, 5), 8, 11),
         constants["USB_HID_REPORT_ID_HARDWARE_INFO"]: (firmware_hid_report_count(args.repo_root, 6), 8, 11),
         constants["USB_HID_REPORT_ID_IDENTITY"]: (firmware_hid_report_count(args.repo_root, 7), 8, 11),
-        constants["USB_HID_REPORT_ID_RUNTIME"]: (firmware_hid_report_count(args.repo_root, 8), 8, 11),
-        constants["USB_HID_REPORT_ID_LED"]: (firmware_hid_report_count(args.repo_root, 9), 8, 11),
+        constants["USB_HID_REPORT_ID_TELEMETRY"]: (
+            firmware_hid_report_count(args.repo_root, constants["USB_HID_REPORT_ID_TELEMETRY"]), 8, 11),
         constants["USB_HID_REPORT_ID_CONFIGURATION"]: (firmware_hid_report_count(args.repo_root, 16), 8, 11),
         constants["USB_HID_REPORT_ID_CONFIGURATION_SAVE"]: (firmware_hid_report_count(args.repo_root, 17), 8, 11),
         **{report_id: (firmware_hid_report_count(args.repo_root, report_id), 8, 11)

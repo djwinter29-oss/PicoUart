@@ -22,10 +22,24 @@ def board_status_bytes(
     return struct.pack("<BBhBBBB", layout_version, reserved0, centi, major, minor, patch, reserved1)
 
 
-def overflow_counts_bytes(layout_version: int | None = None) -> bytes:
+def telemetry_bytes(
+    layout_version: int | None = None,
+    led: int = 1,
+    temperature_c: float = 25.30,
+    uptime_ms: int = 1234,
+    cores: tuple[int, int] = (2500, 0xFFFF),
+    ram: tuple[int, int] = (65536, 270336),
+    overflow: tuple[int, ...] = (1, 2, 3, 4, 5, 6),
+    save: tuple[int, int] = (0, 0xFFFFFFFF),
+    generations: tuple[int, ...] = (1, 1, 1, 1, 1, 1),
+) -> bytes:
     if layout_version is None:
-        layout_version = hid.STATUS_LAYOUT_VERSION
-    return struct.pack("<B6I", layout_version, 1, 2, 3, 4, 5, 6)
+        layout_version = hid.TELEMETRY_LAYOUT_VERSION
+    centi = int(round(temperature_c * 100.0))
+    payload = struct.pack("<BBhQHHII6IBI6B", layout_version, led, centi, uptime_ms, *cores, *ram,
+                          *overflow, *save, *generations)
+    assert len(payload) == hid.TELEMETRY_SIZE
+    return payload
 
 
 def status_report_bytes(sequence: int = 7, health0: int = 0x11) -> bytes:

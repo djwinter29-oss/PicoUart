@@ -95,25 +95,34 @@ export function decodeIdentityReport(report) {
   return { product_name: String.fromCharCode(...product.subarray(0, end)), serial_number: serial };
 }
 
-export function decodeRuntimeReport(report) {
-  const payload = featurePayload(report, 8, 21);
-  const version = payload.getUint8(0);
-  if (version !== 1) throw new Error("Unsupported runtime layout version");
-  const uptime = payload.getBigUint64(1, true);
-  const cpu = [payload.getUint16(9, true), payload.getUint16(11, true)];
-  const reserved = payload.getUint32(13, true);
-  const total = payload.getUint32(17, true);
+export function decodeTelemetryReport(report) {
+  const payload = featurePayload(report, 18, 59);
+  if (payload.getUint8(0) !== 1) throw new Error("Unsupported telemetry layout version");
+  const flags = payload.getUint8(1);
+  if (flags & ~7) throw new Error("Unsupported LED flags");
+  if ((!(flags & 1) && flags !== 0) || ((flags & 2) && !(flags & 4))) throw new Error("Inconsistent LED state");
+  const uptime = payload.getBigUint64(4, true);
+  const cpu = [payload.getUint16(12, true), payload.getUint16(14, true)];
+  const reserved = payload.getUint32(16, true);
+  const total = payload.getUint32(20, true);
   if (uptime > BigInt(Number.MAX_SAFE_INTEGER) || cpu.some(value => value > 10000 && value !== 65535)
     || !total || reserved > total) throw new Error("Invalid runtime uptime, CPU or RAM values");
-  return { uptime_ms: Number(uptime),
-    cpu_usage_basis_points: cpu.map(value => value === 65535 ? null : value),
-    ram_reserved_bytes: reserved, ram_total_bytes: total };
-}
-
-export function decodeOverflowReport(report) {
-  const payload = featurePayload(report, 5, 25);
-  if (payload.getUint8(0) !== 1) throw new Error("Unsupported overflow-count layout version");
-  return Array.from({ length: 6 }, (_, index) => payload.getUint32(1 + index * 4, true));
+  const status = payload.getUint8(48);
+  const profile = payload.getUint32(49, true);
+  if (status > 5 || ![0, 1, 2, 3, 4, 0xffffffff].includes(profile)
+    || (profile === 0xffffffff && ![0, 3].includes(status))) {
+    throw new Error("Invalid configuration-save status or profile");
+  }
+  return {
+    led: { manual_on: flags & 1 ? Boolean(flags & 2) : null, output_on: flags & 1 ? Boolean(flags & 4) : null },
+    temperature_celsius: payload.getInt16(2, true) / 100,
+    runtime: { uptime_ms: Number(uptime),
+      cpu_usage_basis_points: cpu.map(value => value === 65535 ? null : value),
+      ram_reserved_bytes: reserved, ram_total_bytes: total },
+    overflow_counts: Array.from({ length: 6 }, (_, index) => payload.getUint32(24 + index * 4, true)),
+    configuration_save: { status, profile: profile === 0xffffffff ? null : profile },
+    diagnostics_generation: Array.from({ length: 6 }, (_, index) => payload.getUint8(53 + index)),
+  };
 }
 
 const TRAFFIC_FIELDS = ["uart_tx", "uart_rx", "usb_tx", "usb_rx"];
@@ -160,17 +169,6 @@ export function decodeStatusReport(data) {
   }) };
 }
 
-export function decodeLedReport(value) {
-  const payload = featurePayload(value, 9, 2);
-  const flags = payload.getUint8(1);
-  if (payload.getUint8(0) !== 1 || (flags & ~7)) throw new Error("Unsupported LED version or flags");
-  if ((!(flags & 1) && flags !== 0) || ((flags & 2) && !(flags & 4))) {
-    throw new Error("Inconsistent LED state");
-  }
-  return { manual_on: flags & 1 ? Boolean(flags & 2) : null,
-    output_on: flags & 1 ? Boolean(flags & 4) : null };
-}
-
 function emptyDashboard() {
   return { connected: false, error: null, metadata_error: null, hardware_error: null, hardware: null,
     configuration: null, configuration_error: null,
@@ -182,6 +180,19 @@ function emptyDashboard() {
       cdc_open: false, ring_high_watermark: 0,
       traffic: Object.fromEntries(TRAFFIC_FIELDS.map(field => [field, 0])),
       totals: Object.fromEntries(TRAFFIC_FIELDS.map(field => [field, 0])) })) };
+}
+
+/** State read from one HID connection; static reports are fetched once and diagnostics cached by generation. */
+function newCache() {
+  return { loaded: new Set(), boardStatic: null, boardError: null, telemetryError: null, temperature: null,
+    diagnostics: Array(6).fill(null), generations: Array(6).fill(null) };
+}
+
+/** Combine static board info with the latest temperature. */
+function withBoard(dashboard, cache) {
+  return { ...dashboard, metadata_error: cache.telemetryError ?? cache.boardError,
+    board: !cache.telemetryError && cache.boardStatic && cache.temperature !== null
+      ? { ...cache.boardStatic, temperature_celsius: cache.temperature } : null };
 }
 
 export function matchesPicoUart(device) {
@@ -197,6 +208,7 @@ export class PicoUartWebHid {
     this.device = null;
     this.pendingDevice = null;
     this.generation = 0;
+    this.cache = newCache();
     this.state = {
       phase: hid ? "disconnected" : "unsupported",
       message: hid ? "No device selected" : "WebHID is unavailable in this browser or context",
@@ -269,6 +281,7 @@ export class PicoUartWebHid {
       }
       this.pendingDevice = null;
       this.device = selected;
+      this.cache = newCache();
       selected.addEventListener("inputreport", this.onInputReport);
       this.update({ phase: "connected", deviceName: selected.productName || "PicoUart",
         message: "Device connected", dashboard: { ...emptyDashboard(), connected: true } });
@@ -290,70 +303,76 @@ export class PicoUartWebHid {
     const device = this.device;
     if (!device || this.state.phase !== "connected") return;
     const generation = this.generation;
+    const cache = this.cache;
+    const stale = () => generation !== this.generation || device !== this.device;
     this.update({ phase: "reading", message: "Reading diagnostics", error: null });
+
+    let generations = null;
     try {
-      const hardware = decodeHardwareReport(await device.receiveFeatureReport(6));
-      if (generation !== this.generation || device !== this.device) return;
-      this.update({ hardware, updatedAt: new Date().toISOString(),
-        dashboard: { ...this.state.dashboard, hardware, hardware_error: null } });
+      const telemetry = decodeTelemetryReport(await device.receiveFeatureReport(18));
+      if (stale()) return;
+      cache.telemetryError = null;
+      cache.temperature = telemetry.temperature_celsius;
+      generations = telemetry.diagnostics_generation;
+      this.update({ dashboard: withBoard({ ...this.state.dashboard,
+        led: telemetry.led, led_error: null, runtime: telemetry.runtime, runtime_error: null,
+        configuration_save: telemetry.configuration_save, configuration_save_error: null,
+        overflow_counts: telemetry.overflow_counts }, cache) });
     } catch (error) {
-      if (generation !== this.generation || device !== this.device) return;
-      this.update({ hardware: null, updatedAt: null,
-        dashboard: { ...this.state.dashboard, hardware: null, hardware_error: error.message } });
+      if (stale()) return;
+      cache.telemetryError = error.message;
+      this.update({ dashboard: withBoard({ ...this.state.dashboard,
+        led: null, led_error: error.message, runtime: null, runtime_error: error.message,
+        configuration_save: null, configuration_save_error: error.message,
+        overflow_counts: Array(6).fill(null) }, cache) });
     }
-    try {
-      const configuration = decodeConfigurationReport(await device.receiveFeatureReport(16));
-      if (generation !== this.generation || device !== this.device) return;
-      this.update({ dashboard: { ...this.state.dashboard, configuration, configuration_error: null } });
-    } catch (error) {
-      if (generation !== this.generation || device !== this.device) return;
-      this.update({ dashboard: { ...this.state.dashboard, configuration: null,
-        configuration_error: error.message } });
+
+    if (generations) {
+      try {
+        for (let index = 0; index < 6; index++) {
+          if (cache.diagnostics[index] && cache.generations[index] === generations[index]) continue;
+          const diagnostics = decodeChannelDiagnostics(await device.receiveFeatureReport(10 + index), 10 + index);
+          if (stale()) return;
+          cache.diagnostics[index] = diagnostics;
+          // The generation from before the read is kept: a newer change only costs one extra read.
+          cache.generations[index] = generations[index];
+        }
+        this.update({ dashboard: { ...this.state.dashboard, channel_diagnostics: [...cache.diagnostics],
+          diagnostics_error: null } });
+      } catch (error) {
+        if (stale()) return;
+        cache.diagnostics.fill(null);
+        cache.generations.fill(null);
+        this.update({ dashboard: { ...this.state.dashboard, channel_diagnostics: null,
+          diagnostics_error: error.message } });
+      }
     }
-    try {
-      const configurationSave = decodeConfigurationSaveReport(await device.receiveFeatureReport(17));
-      if (generation !== this.generation || device !== this.device) return;
-      this.update({ dashboard: { ...this.state.dashboard, configuration_save: configurationSave,
-        configuration_save_error: null } });
-    } catch (error) {
-      if (generation !== this.generation || device !== this.device) return;
-      this.update({ dashboard: { ...this.state.dashboard, configuration_save: null,
-        configuration_save_error: error.message } });
-    }
-    try {
-      const board = decodeBoardReport(await device.receiveFeatureReport(3));
-      if (generation !== this.generation || device !== this.device) return;
-      const overflows = decodeOverflowReport(await device.receiveFeatureReport(5));
-      if (generation !== this.generation || device !== this.device) return;
-      this.update({ dashboard: { ...this.state.dashboard, board, overflow_counts: overflows, metadata_error: null } });
-    } catch (error) {
-      if (generation !== this.generation || device !== this.device) return;
-      this.update({ dashboard: { ...this.state.dashboard, board: null, overflow_counts: Array(6).fill(null),
-        metadata_error: error.message } });
-    }
-    for (const [field, id, decode] of [
-      ["identity", 7, decodeIdentityReport], ["runtime", 8, decodeRuntimeReport],
-      ["led", 9, decodeLedReport],
+
+    // Reports that cannot change while connected are read until each succeeds once.
+    for (const [name, id, decode, publish] of [
+      ["hardware", 6, decodeHardwareReport, (value, error) => this.update({
+        hardware: value, updatedAt: value ? new Date().toISOString() : null,
+        dashboard: { ...this.state.dashboard, hardware: value, hardware_error: error } })],
+      ["configuration", 16, decodeConfigurationReport, (value, error) => this.update({
+        dashboard: { ...this.state.dashboard, configuration: value, configuration_error: error } })],
+      ["identity", 7, decodeIdentityReport, (value, error) => this.update({
+        dashboard: { ...this.state.dashboard, identity: value, identity_error: error } })],
+      ["board", 3, decodeBoardReport, (value, error) => {
+        cache.boardStatic = value && (({ temperature_celsius, ...rest }) => rest)(value);
+        cache.boardError = error;
+        this.update({ dashboard: withBoard(this.state.dashboard, cache) });
+      }],
     ]) {
+      if (cache.loaded.has(name)) continue;
       try {
         const value = decode(await device.receiveFeatureReport(id));
-        if (generation !== this.generation || device !== this.device) return;
-        this.update({ dashboard: { ...this.state.dashboard, [field]: value, [`${field}_error`]: null } });
+        if (stale()) return;
+        cache.loaded.add(name);
+        publish(value, null);
       } catch (error) {
-        if (generation !== this.generation || device !== this.device) return;
-        this.update({ dashboard: { ...this.state.dashboard, [field]: null, [`${field}_error`]: error.message } });
+        if (stale()) return;
+        publish(null, error.message);
       }
-    }
-    try {
-      const diagnostics = [];
-      for (let index = 0; index < 6; index++) {
-        diagnostics.push(decodeChannelDiagnostics(await device.receiveFeatureReport(10 + index), 10 + index));
-        if (generation !== this.generation || device !== this.device) return;
-      }
-      this.update({ dashboard: { ...this.state.dashboard, channel_diagnostics: diagnostics, diagnostics_error: null } });
-    } catch (error) {
-      if (generation !== this.generation || device !== this.device) return;
-      this.update({ dashboard: { ...this.state.dashboard, channel_diagnostics: null, diagnostics_error: error.message } });
     }
     this.update({ phase: "connected", message: "Diagnostics received",
       error: this.state.dashboard.hardware_error ?? this.state.dashboard.metadata_error

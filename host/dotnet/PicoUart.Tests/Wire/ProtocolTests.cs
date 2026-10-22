@@ -43,20 +43,19 @@ public sealed class ProtocolTests
     [InlineData(7, true, true)]
     public void LedReportsActualOutputAndManualState(byte flags, bool? manual, bool? output)
     {
-        Assert.Equal(new LedStatus(manual, output), Protocol.ParseLed([1, flags]));
+        Assert.Equal(new LedStatus(manual, output), Protocol.ParseLedFlags(flags));
+        Assert.Equal(new LedStatus(manual, output), Protocol.ParseTelemetry(CreateTelemetryPayload(led: flags)).Led);
     }
 
     [Theory]
-    [InlineData(2, 1)]
-    [InlineData(1, 8)]
-    [InlineData(1, 2)]
-    [InlineData(1, 3)]
-    [InlineData(1, 4)]
-    public void LedRejectsInvalidState(byte version, byte flags)
+    [InlineData(8)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(128)]
+    public void LedRejectsInvalidState(byte flags)
     {
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseLed([version, flags]));
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseLed([]));
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseLed([1, 1, 0]));
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseLedFlags(flags));
     }
 
     [Fact]
@@ -103,7 +102,7 @@ public sealed class ProtocolTests
     }
 
     [Fact]
-    public void BoardIdentityAndRuntimeDecodeDeviceValues()
+    public void BoardIdentityDecodesDeviceValues()
     {
         var identity = new byte[49];
         identity[0] = 1;
@@ -111,29 +110,68 @@ public sealed class ProtocolTests
         System.Text.Encoding.ASCII.GetBytes("0123456789ABCDEF").CopyTo(identity, 33);
         Assert.Equal(new BoardIdentity("PicoUart", "0123456789ABCDEF"), Protocol.ParseIdentity(identity));
 
-        var runtime = new byte[21];
-        runtime[0] = 1;
-        BinaryPrimitives.WriteUInt64LittleEndian(runtime.AsSpan(1), 4294967296);
-        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 10000);
-        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(11), ushort.MaxValue);
-        BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(13), 65536);
-        BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(17), 270336);
-        var status = Protocol.ParseRuntime(runtime);
-        Assert.Equal(4294967296ul, status.UptimeMs);
-        Assert.Equal(new ushort?[] { 10000, null }, status.CpuUsageBasisPoints);
-        Assert.Equal(65536u, status.RamReservedBytes);
-        Assert.Equal(270336u, status.RamTotalBytes);
-
         identity[33] = (byte)'G';
         Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(identity));
         identity[33] = (byte)'0';
         identity[10] = (byte)'X';
         Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(identity));
-        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 10001);
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(runtime));
-        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 0);
-        BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(17), 65535);
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(runtime));
+    }
+
+    private static byte[] CreateTelemetryPayload(byte led = 1, short centidegrees = 2530, ulong uptime = 1234,
+        ushort core0 = 2500, ushort core1 = ushort.MaxValue, uint reserved = 65536, uint total = 270336,
+        byte saveStatus = 0, uint saveProfile = uint.MaxValue)
+    {
+        var payload = new byte[Protocol.TelemetrySize];
+        payload[0] = 1;
+        payload[1] = led;
+        BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(2), centidegrees);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(4), uptime);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(12), core0);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(14), core1);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(16), reserved);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(20), total);
+        for (var index = 0; index < Protocol.ChannelCount; index++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(24 + index * 4), (uint)(index + 1));
+            payload[53 + index] = (byte)(index * 10);
+        }
+        payload[48] = saveStatus;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(49), saveProfile);
+        return payload;
+    }
+
+    [Fact]
+    public void TelemetryDecodesEverySection()
+    {
+        var decoded = Protocol.ParseTelemetry(CreateTelemetryPayload(led: 7, centidegrees: -125,
+            uptime: 4294967296, core0: 10000, saveStatus: 2, saveProfile: 3));
+        Assert.Equal(new LedStatus(true, true), decoded.Led);
+        Assert.Equal(-1.25, decoded.TemperatureCelsius);
+        Assert.Equal(4294967296ul, decoded.Runtime.UptimeMs);
+        Assert.Equal(new ushort?[] { 10000, null }, decoded.Runtime.CpuUsageBasisPoints);
+        Assert.Equal(65536u, decoded.Runtime.RamReservedBytes);
+        Assert.Equal(270336u, decoded.Runtime.RamTotalBytes);
+        Assert.Equal(new uint[] { 1, 2, 3, 4, 5, 6 }, decoded.OverflowCounts);
+        Assert.Equal(new ConfigurationSaveStatus(2, 3), decoded.ConfigurationSave);
+        Assert.Equal(new byte[] { 0, 10, 20, 30, 40, 50 }, decoded.DiagnosticsGeneration);
+        Assert.Equal(new ConfigurationSaveStatus(0, null), Protocol.ParseTelemetry(CreateTelemetryPayload()).ConfigurationSave);
+    }
+
+    [Fact]
+    public void TelemetryRejectsMalformedValues()
+    {
+        foreach (var payload in new[]
+        {
+            CreateTelemetryPayload(core0: 10001), CreateTelemetryPayload(core1: 65534),
+            CreateTelemetryPayload(reserved: 0, total: 0), CreateTelemetryPayload(reserved: 3, total: 2),
+            CreateTelemetryPayload(saveStatus: 6, saveProfile: 0), CreateTelemetryPayload(saveStatus: 2, saveProfile: 5),
+            CreateTelemetryPayload(saveStatus: 2, saveProfile: uint.MaxValue),
+            CreateTelemetryPayload(saveStatus: 1, saveProfile: uint.MaxValue),
+            CreateTelemetryPayload(led: 8), CreateTelemetryPayload(led: 2), CreateTelemetryPayload(led: 3),
+        })
+        {
+            Assert.Throws<InvalidOperationException>(() => Protocol.ParseTelemetry(payload));
+        }
     }
 
     [Theory]
@@ -167,32 +205,46 @@ public sealed class ProtocolTests
     [InlineData(22)]
     [InlineData(48)]
     [InlineData(50)]
-    public void BoardTelemetryRejectsWrongSizes(int length)
+    public void IdentityRejectsWrongSizes(int length)
     {
         Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(new byte[length]));
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(new byte[length]));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(25)]
+    [InlineData(58)]
+    [InlineData(60)]
+    public void TelemetryRejectsWrongLengths(int length)
+    {
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseTelemetry(new byte[length]));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(15)]
+    [InlineData(255)]
+    public void TelemetryRejectsUnsupportedVersions(byte version)
+    {
+        var payload = CreateTelemetryPayload();
+        payload[0] = version;
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseTelemetry(payload));
     }
 
     [Fact]
-    public void BoardTelemetryRejectsUnknownVersions()
+    public void IdentityRejectsUnknownVersions()
     {
         var identity = new byte[49];
         identity[0] = 2;
         Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(identity));
-        var runtime = new byte[21];
-        runtime[0] = 2;
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseRuntime(runtime));
     }
 
     [Fact]
-    public void RuntimeReportsMeasuredServiceLoad()
+    public void TelemetryReportsMeasuredServiceLoad()
     {
-        var runtime = new byte[21];
-        runtime[0] = 1;
-        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(9), 10000);
-        BinaryPrimitives.WriteUInt16LittleEndian(runtime.AsSpan(11), 10000);
-        BinaryPrimitives.WriteUInt32LittleEndian(runtime.AsSpan(17), 270336);
-        Assert.Equal(new ushort?[] { 10000, 10000 }, Protocol.ParseRuntime(runtime).CpuUsageBasisPoints);
+        var decoded = Protocol.ParseTelemetry(CreateTelemetryPayload(core0: 10000, core1: 10000));
+        Assert.Equal(new ushort?[] { 10000, 10000 }, decoded.Runtime.CpuUsageBasisPoints);
     }
 
     [Fact]
@@ -346,40 +398,18 @@ public sealed class ProtocolTests
     }
 
     [Fact]
-    public void OverflowsDecodeAllUnsignedLittleEndianCounters()
+    public void TelemetryOverflowsDecodeAllUnsignedLittleEndianCounters()
     {
         uint[] expected = [0, 1, 0x12345678, 0x80000000, uint.MaxValue - 1, uint.MaxValue];
-        var payload = new byte[25];
-        payload[0] = 1;
+        var payload = CreateTelemetryPayload();
         for (var index = 0; index < expected.Length; index++)
-            BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(1 + index * 4), expected[index]);
+            BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(24 + index * 4), expected[index]);
 
-        Assert.Equal(expected, Protocol.ParseOverflowCounts(payload));
-        Assert.Equal(expected, Protocol.ParseOverflowCounts(
-            PicoUartHid.FeaturePayload([5, 5, .. payload], 5, 25, 2)));
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(24)]
-    [InlineData(26)]
-    public void OverflowsRejectWrongLengths(int length)
-    {
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseOverflowCounts(new byte[length]));
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(2)]
-    [InlineData(15)]
-    [InlineData(16)]
-    [InlineData(255)]
-    public void OverflowsRejectUnsupportedVersions(byte version)
-    {
-        var payload = new byte[25];
-        payload[0] = version;
-
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseOverflowCounts(payload));
+        Assert.Equal(expected, Protocol.ParseTelemetry(payload).OverflowCounts);
+        Assert.Equal(expected, Protocol.ParseTelemetry(
+            PicoUartHid.FeaturePayload([18, 18, .. payload], 18, 59, 2)).OverflowCounts);
+        Assert.Equal(expected, Protocol.ParseTelemetry(
+            PicoUartHid.FeaturePayload([18, .. payload], 18, 59, 1)).OverflowCounts);
     }
 
     [Theory]

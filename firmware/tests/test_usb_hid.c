@@ -187,13 +187,18 @@ static void test_identity_payload(void)
     TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 7, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
 }
 
-static void test_runtime_payload(void)
+static void test_telemetry_payload(void)
 {
     uint8_t buffer[64];
     /* More than 2^32 ms; verify all eight uptime bytes and little-endian encoding. */
     pico_test_time_us = INT64_C(0x010203040506) * 1000 + 999;
-    const uint8_t expected[21] = {
-        1, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0, 0,
+    diagnostic_stats.rx_ring_overflow_count = 5u;
+    diagnostic_stats.rx_ring_pending_overflow_count = 2u;
+    const uint8_t expected[59] = {
+        1,                      /* version */
+        1,                      /* LED available, manual and output off */
+        0xc4, 0x09,             /* 25.00 C */
+        0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0, 0,
         0xc4, 0x09, 0xff, 0xff, /* Core 0 measured 25%; core 1 has no completed window. */
         0x94, 0x22, 0, 0,       /* Static 0x1234 + scratch 0x60 + stacks 0x1000. */
 #if PICO_RP2350
@@ -201,6 +206,10 @@ static void test_runtime_payload(void)
 #else
         0, 0x20, 0x04, 0,
 #endif
+        7, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, /* overflow + pending */
+        0,                      /* no configuration save yet */
+        0xff, 0xff, 0xff, 0xff, /* no requested profile */
+        1, 1, 1, 1, 1, 1,       /* first diagnostics sample of every channel */
     };
     service_load_begin(0u, 0u);
     service_load_note(0u);
@@ -208,18 +217,53 @@ static void test_runtime_payload(void)
     service_load_begin(0u, 250000u);
     service_load_end(0u, 1000000u);
     memset(buffer, 0xa5, sizeof(buffer));
-    TEST_ASSERT_EQUAL_UINT16(21u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, buffer, sizeof(expected));
-    TEST_ASSERT_EQUAL_HEX8(0xa5, buffer[21]);
-    TEST_ASSERT_EQUAL_UINT16(3u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_FEATURE, buffer, 3u));
+    TEST_ASSERT_EQUAL_HEX8(0xa5, buffer[59]);
+    TEST_ASSERT_EQUAL_UINT16(3u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, 3u));
     TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, buffer, 3u);
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_FEATURE, buffer, 0u));
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, 0u));
+    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
 
     pico_test_time_us = 0;
-    TEST_ASSERT_EQUAL_UINT16(21u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     const uint8_t zero_uptime[8] = {0};
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(zero_uptime, buffer + 1u, sizeof(zero_uptime));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(zero_uptime, buffer + 4u, sizeof(zero_uptime));
+}
+
+static void test_telemetry_mirrors_configuration_save_state(void)
+{
+    uint8_t buffer[64];
+    uint8_t request[8] = {1, 1, 0, 0, BOOT_CLOCK_250_MHZ, 0, 0, 0};
+    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT8(USB_HID_CONFIG_PENDING, buffer[48]);
+    TEST_ASSERT_EQUAL_UINT8(BOOT_CLOCK_250_MHZ, buffer[49]);
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT8(USB_HID_CONFIG_SAVED, buffer[48]);
+}
+
+static void test_diagnostics_generation_changes_only_with_content(void)
+{
+    uint8_t telemetry[64];
+    uint8_t first[6];
+    uint8_t buffer[64];
+
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, telemetry, sizeof(telemetry)));
+    memcpy(first, telemetry + 53u, sizeof(first));
+    pico_test_time_us = 5000000;
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, telemetry, sizeof(telemetry)));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(first, telemetry + 53u, sizeof(first));
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, telemetry, sizeof(telemetry)));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(first, telemetry + 53u, sizeof(first));
+
+    diagnostic_stats.rx_error_count++;
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, telemetry, sizeof(telemetry)));
+    for (size_t index = 0u; index < 6u; ++index) {
+        TEST_ASSERT_EQUAL_UINT8((uint8_t)(first[index] + 1u), telemetry[53u + index]);
+    }
 }
 
 static void test_report_lengths(void)
@@ -229,8 +273,12 @@ static void test_report_lengths(void)
     TEST_ASSERT_EQUAL_UINT8(1u, buffer[1]);
     TEST_ASSERT_EQUAL_UINT16(8u, tud_hid_get_report_cb(0, 3, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     TEST_ASSERT_EQUAL_UINT8(1u, buffer[0]);
-    TEST_ASSERT_EQUAL_UINT16(25u, tud_hid_get_report_cb(0, 5, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     TEST_ASSERT_EQUAL_UINT8(1u, buffer[0]);
+    for (uint8_t retired = 5u; retired <= 9u; ++retired) {
+        if (retired == 6u || retired == 7u) continue;
+        TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, retired, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    }
     TEST_ASSERT_EQUAL_UINT16(6u, tud_hid_get_report_cb(0, 6, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     TEST_ASSERT_EQUAL_UINT16(12u, tud_hid_get_report_cb(0, 16, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     const uint8_t expected_config[] = {1, 0, 1, 0, 255, 255, 255, 255, 0, 0, 0, 0};
@@ -411,19 +459,16 @@ static void test_channel_diagnostics_sample_without_interrupt_endpoint(void)
 
 static void test_led_payload(void)
 {
-    uint8_t buffer[3] = {0, 0, 0xa5};
+    uint8_t buffer[64];
     for (unsigned int state = 0; state < 2u; ++state) {
         led_on = state != 0u;
-        TEST_ASSERT_EQUAL_UINT16(2u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-        TEST_ASSERT_EQUAL_UINT8(1u, buffer[0]);
+        TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
         TEST_ASSERT_EQUAL_UINT8(state ? 7u : 1u, buffer[1]);
-        TEST_ASSERT_EQUAL_UINT8(0xa5, buffer[2]);
     }
     led_available = false;
-    TEST_ASSERT_EQUAL_UINT16(2u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
     TEST_ASSERT_EQUAL_UINT8(0u, buffer[1]);
-    TEST_ASSERT_EQUAL_UINT16(1u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_FEATURE, buffer, 1u));
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_UINT16(2u, tud_hid_get_report_cb(0, 18, HID_REPORT_TYPE_FEATURE, buffer, 2u));
 }
 
 static void test_identification_toggle_and_usb_reset(void)
@@ -467,7 +512,9 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_identity_payload);
-    RUN_TEST(test_runtime_payload);
+    RUN_TEST(test_telemetry_payload);
+    RUN_TEST(test_telemetry_mirrors_configuration_save_state);
+    RUN_TEST(test_diagnostics_generation_changes_only_with_content);
     RUN_TEST(test_report_lengths);
     RUN_TEST(test_configuration_save_validation_and_deferred_result);
     RUN_TEST(test_configuration_save_busy_failure_and_default);

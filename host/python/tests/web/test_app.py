@@ -12,7 +12,7 @@ from flask import session
 from pico_uart.protocol import parse_hardware_info, parse_status
 from pico_uart.web.app import create_app
 from pico_uart.web.monitor import BoardMonitor, empty_snapshot
-from helpers import board_status_bytes, overflow_counts_bytes, status_report_bytes
+from helpers import status_report_bytes
 
 
 class FakeDashboard:
@@ -29,12 +29,34 @@ class FakeDashboard:
         self.actions.append("reset")
 
 
-class BoardTelemetry:
-    def read_board_status(self):
-        return {"firmware_version": "1.2.3"}
+def bare_monitor():
+    service = object.__new__(BoardMonitor)
+    service._lock = threading.RLock()
+    service._snapshot = empty_snapshot()
+    service._last_sequence = None
+    service._reset_connection_cache()
+    return service
 
-    def read_overflow_counts(self):
-        return [0] * 6
+
+class BoardTelemetry:
+    overflow_counts = [0] * 6
+
+    def read_telemetry(self):
+        return {
+            "led": {"manual_on": False, "output_on": False}, "temperature_celsius": 25.3,
+            "runtime": {"uptime_ms": 4294967296, "cpu_usage_basis_points": [10000, 10000],
+                        "ram_reserved_bytes": 65536, "ram_total_bytes": 270336},
+            "overflow_counts": list(self.overflow_counts),
+            "configuration_save": {"status": 0, "profile": None},
+            "diagnostics_generation": [1] * 6,
+        }
+
+    def read_channel_diagnostic(self, index):
+        return {"baud_rate": 115200, "data_bits": 8, "parity": "N", "stop_bits": 1,
+                "tx_pin": index * 4, "rx_pin": index * 4 + 1, "faults": {}}
+
+    def read_board_status(self):
+        return {"firmware_version": "1.2.3", "hid_reset_enabled": False}
 
     def read_hardware_info(self):
         return {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
@@ -42,22 +64,8 @@ class BoardTelemetry:
     def read_configuration(self):
         return {"source": "defaults", "reason": "erased", "stored_profile": None, "active_profile": 1}
 
-    def read_configuration_save(self):
-        return {"status": 0, "profile": None}
-
-    def read_channel_diagnostics(self):
-        return [{"baud_rate": 115200, "data_bits": 8, "parity": "N", "stop_bits": 1,
-                 "tx_pin": index * 4, "rx_pin": index * 4 + 1, "faults": {}} for index in range(6)]
-
-    def read_led(self):
-        return {"manual_on": False, "output_on": False}
-
     def read_identity(self):
         return {"product_name": "PicoUart", "serial_number": "0123456789ABCDEF"}
-
-    def read_runtime(self):
-        return {"uptime_ms": 4294967296, "cpu_usage_basis_points": [10000, 10000],
-                "ram_reserved_bytes": 65536, "ram_total_bytes": 270336}
 
 
 def _csrf_token(client):
@@ -201,6 +209,8 @@ def test_dashboard_maps_action_io_errors_and_unknown_actions():
 
 def test_dashboard_service_polls_status_and_metadata():
     class FakeClient(BoardTelemetry):
+        overflow_counts = [0, 1, 2, 3, 4, 5]
+
         def __init__(self):
             self.first_report = True
             self.closed = False
@@ -211,15 +221,6 @@ def test_dashboard_service_polls_status_and_metadata():
                 return parse_status(status_report_bytes(sequence=4, health0=0x31))
             time.sleep(min(timeout_ms / 1000, 0.01))
             return None
-
-        def read_board_status(self):
-            return {"firmware_version": "1.2.3", "temperature_celsius": 25.3, "hid_reset_enabled": False}
-
-        def read_overflow_counts(self):
-            return [0, 1, 2, 3, 4, 5]
-
-        def read_hardware_info(self):
-            return {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
 
         def close(self):
             self.closed = True
@@ -250,7 +251,9 @@ def test_dashboard_service_polls_status_and_metadata():
     assert snapshot["configuration"] == fake.read_configuration()
     assert snapshot["configuration_error"] is None
     assert snapshot["identity"] == fake.read_identity()
-    assert snapshot["runtime"] == fake.read_runtime()
+    assert snapshot["runtime"] == fake.read_telemetry()["runtime"]
+    assert snapshot["board"]["temperature_celsius"] == 25.3
+    assert snapshot["led"] == {"manual_on": False, "output_on": False}
     assert fake.closed
 
 
@@ -284,19 +287,13 @@ def test_dashboard_metadata_refreshes_every_second(monkeypatch):
 
 
 def test_metadata_errors_survive_telemetry_and_clear_stale_values():
-    service = object.__new__(BoardMonitor)
-    service._lock = threading.RLock()
-    service._snapshot = empty_snapshot()
-    service._last_sequence = None
+    service = bare_monitor()
     service._snapshot["board"] = {"firmware_version": "stale"}
     service._snapshot["overflow_counts"] = [99] * 6
 
     class BrokenMetadata(BoardTelemetry):
         def read_board_status(self):
             raise OSError("feature read failed")
-
-        def read_overflow_counts(self):
-            return [0] * 6
 
     service._read_metadata(BrokenMetadata())
     service._apply_status(parse_status(status_report_bytes(sequence=4)))
@@ -306,17 +303,11 @@ def test_metadata_errors_survive_telemetry_and_clear_stale_values():
     assert snapshot["error"] is None
     assert snapshot["metadata_error"] == "feature read failed"
     assert snapshot["board"] is None
-    assert snapshot["overflow_counts"] == [None] * 6
+    assert snapshot["overflow_counts"] == [0] * 6
     assert snapshot["configuration"] == BoardTelemetry().read_configuration()
     assert snapshot["configuration_error"] is None
 
     class HealthyMetadata(BoardTelemetry):
-        def read_board_status(self):
-            return {"firmware_version": "1.2.3"}
-
-        def read_overflow_counts(self):
-            return [0] * 6
-
         def read_hardware_info(self):
             return {"mcu": "RP2350", "mcu_id": 2, "system_clock_hz": 150_000_000}
 
@@ -329,9 +320,7 @@ def test_metadata_errors_survive_telemetry_and_clear_stale_values():
 
 @pytest.mark.parametrize("mcu,model", [(2, "RP2350"), (3, "Unknown MCU (3)")])
 def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, model):
-    service = object.__new__(BoardMonitor)
-    service._lock = threading.RLock()
-    service._snapshot = empty_snapshot()
+    service = bare_monitor()
     service._snapshot["hardware"] = {"mcu": "RP2040", "mcu_id": 1, "system_clock_hz": 125_000_000}
 
     class OlderFirmware(BoardTelemetry):
@@ -339,9 +328,6 @@ def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, 
 
         def read_board_status(self):
             return {"firmware_version": "0.5.0"}
-
-        def read_overflow_counts(self):
-            return [0] * 6
 
         def read_hardware_info(self):
             if self.unsupported:
@@ -351,7 +337,7 @@ def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, 
     client = OlderFirmware()
     service._read_metadata(client)
     snapshot = service.snapshot()
-    assert snapshot["board"] == {"firmware_version": "0.5.0"}
+    assert snapshot["board"] == {"firmware_version": "0.5.0", "temperature_celsius": 25.3}
     assert snapshot["overflow_counts"] == [0] * 6
     assert snapshot["metadata_error"] is None
     assert snapshot["hardware"] is None
@@ -364,9 +350,7 @@ def test_older_firmware_hardware_query_failure_preserves_existing_metadata(mcu, 
 
 
 def test_configuration_query_errors_clear_stale_values_and_recover():
-    service = object.__new__(BoardMonitor)
-    service._lock = threading.RLock()
-    service._snapshot = empty_snapshot()
+    service = bare_monitor()
     service._snapshot["configuration"] = {"source": "stored"}
 
     class ConfigError(BoardTelemetry):

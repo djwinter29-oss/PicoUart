@@ -6,14 +6,12 @@ import struct
 REPORT_ID_STATUS = 1
 REPORT_ID_BOARD_STATUS = 3
 REPORT_ID_COMMAND = 4
-REPORT_ID_OVERFLOW_COUNTS = 5
 REPORT_ID_HARDWARE_INFO = 6
 REPORT_ID_IDENTITY = 7
-REPORT_ID_RUNTIME = 8
-REPORT_ID_LED = 9
-LED_SIZE = 2
+REPORT_ID_TELEMETRY = 18
+TELEMETRY_SIZE = 59
+TELEMETRY_LAYOUT_VERSION = 1
 IDENTITY_SIZE = 49
-RUNTIME_SIZE = 21
 HARDWARE_INFO_SIZE = 6
 HARDWARE_INFO_LAYOUT_VERSION = 1
 MCU_RP2040 = 1
@@ -25,7 +23,6 @@ COMMAND_ARM_RESET = 3
 
 STATUS_SIZE = 63
 BOARD_STATUS_SIZE = 8
-OVERFLOW_COUNTS_SIZE = 25
 BOARD_STATUS_LAYOUT_VERSION = 1
 STATUS_LAYOUT_VERSION = 1
 STATUS_SIGNATURE = ord("P")
@@ -102,15 +99,44 @@ def parse_configuration_save(payload: bytes) -> dict[str, object]:
     return {"status": status, "profile": None if profile == 0xFFFFFFFF else profile}
 
 
-def parse_led(payload: bytes) -> dict[str, bool | None]:
+def parse_led_flags(flags: int) -> dict[str, bool | None]:
     """Decode the manual state and merged physical LED output."""
-    if len(payload) != LED_SIZE or payload[0] != 1 or payload[1] & ~7:
-        raise RuntimeError("unsupported LED report size, version, or flags")
-    flags = payload[1]
+    if flags & ~7:
+        raise RuntimeError("unsupported LED flags")
     if not flags & 1 and flags != 0 or flags & 2 and not flags & 4:
         raise RuntimeError("inconsistent LED state")
     return {"manual_on": bool(flags & 2) if flags & 1 else None,
             "output_on": bool(flags & 4) if flags & 1 else None}
+
+
+_TELEMETRY = struct.Struct("<BBhQHHII6IBI6B")
+
+
+def parse_telemetry(payload: bytes) -> dict[str, object]:
+    """Decode every value a dashboard polls from one report; diagnostics_generation marks stale cached reports."""
+    if len(payload) != TELEMETRY_SIZE or _TELEMETRY.size != TELEMETRY_SIZE or payload[0] != TELEMETRY_LAYOUT_VERSION:
+        raise RuntimeError("unsupported telemetry report size or version")
+    (_, led, centidegrees, uptime, core0, core1, reserved, total, *rest) = _TELEMETRY.unpack(payload)
+    overflow_counts, save_status, save_profile, generations = rest[:6], rest[6], rest[7], rest[8:]
+    if any(value > 10000 and value != 0xffff for value in (core0, core1)) or not total or reserved > total:
+        raise RuntimeError("invalid runtime CPU or RAM values")
+    if save_status > 5 or save_profile not in (0, 1, 2, 3, 4, 0xFFFFFFFF):
+        raise RuntimeError("invalid configuration save status or profile")
+    if save_profile == 0xFFFFFFFF and save_status not in (0, 3):
+        raise RuntimeError("configuration save result has no requested profile")
+    return {
+        "led": parse_led_flags(led),
+        "temperature_celsius": centidegrees / 100.0,
+        "runtime": {
+            "uptime_ms": uptime,
+            "cpu_usage_basis_points": [None if value == 0xffff else value for value in (core0, core1)],
+            "ram_reserved_bytes": reserved,
+            "ram_total_bytes": total,
+        },
+        "overflow_counts": list(overflow_counts),
+        "configuration_save": {"status": save_status, "profile": None if save_profile == 0xFFFFFFFF else save_profile},
+        "diagnostics_generation": list(generations),
+    }
 
 
 def require_payload(report: list[int], report_id: int, payload_size: int) -> bytes:
@@ -155,16 +181,6 @@ def parse_hardware_info(payload: bytes) -> dict[str, object]:
     return {"mcu": model, "mcu_id": mcu, "system_clock_hz": system_clock_hz}
 
 
-def parse_overflow_counts(payload: bytes) -> list[int]:
-    """Decode cumulative UART-to-USB dropped-byte counts for all channels."""
-    if len(payload) != OVERFLOW_COUNTS_SIZE:
-        raise RuntimeError(f"unexpected overflow-count report size {len(payload)}")
-    version, *overflow_counts = struct.unpack("<B6I", payload)
-    if version != STATUS_LAYOUT_VERSION:
-        raise RuntimeError(f"unsupported overflow-count report version {version}")
-    return overflow_counts
-
-
 def parse_identity(payload: bytes) -> dict[str, object]:
     """Decode the product and SDK board UID used as the USB serial."""
     if len(payload) != IDENTITY_SIZE or payload[0] != 1:
@@ -179,21 +195,6 @@ def parse_identity(payload: bytes) -> dict[str, object]:
     ):
         raise RuntimeError("invalid HID product or serial identity")
     return {"product_name": product.decode("ascii"), "serial_number": serial.decode("ascii")}
-
-
-def parse_runtime(payload: bytes) -> dict[str, object]:
-    """Decode uptime, per-core measured service load, and reserved SRAM."""
-    if len(payload) != RUNTIME_SIZE or payload[0] != 1:
-        raise RuntimeError("unsupported runtime report size or version")
-    _, uptime, core0, core1, reserved, total = struct.unpack("<BQHHII", payload)
-    if any(value > 10000 and value != 0xffff for value in (core0, core1)) or not total or reserved > total:
-        raise RuntimeError("invalid runtime CPU or RAM values")
-    return {
-        "uptime_ms": uptime,
-        "cpu_usage_basis_points": [None if value == 0xffff else value for value in (core0, core1)],
-        "ram_reserved_bytes": reserved,
-        "ram_total_bytes": total,
-    }
 
 
 def parse_status(payload: bytes) -> dict[str, object]:

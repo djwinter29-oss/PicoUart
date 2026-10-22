@@ -18,6 +18,10 @@ public sealed record LedStatus(bool? ManualOn, bool? OutputOn);
 public sealed record RuntimeStatus(ulong UptimeMs, ushort?[] CpuUsageBasisPoints,
     uint RamReservedBytes, uint RamTotalBytes);
 
+/// <summary>Every value a dashboard polls, read together; <paramref name="DiagnosticsGeneration"/> marks stale cached diagnostics.</summary>
+public sealed record Telemetry(LedStatus Led, double TemperatureCelsius, RuntimeStatus Runtime,
+    uint[] OverflowCounts, ConfigurationSaveStatus ConfigurationSave, byte[] DiagnosticsGeneration);
+
 public sealed record ChannelStatus(int Id, byte Health, int RingHighWatermark,
     ushort ControllerTxBytes, ushort ControllerRxBytes, ushort CdcTxBytes, ushort CdcRxBytes);
 
@@ -54,15 +58,44 @@ public static class Protocol
             payload[9] == 255 ? null : payload[9], payload[10] == 255 ? null : payload[10], faults);
     }
 
-    public static LedStatus ParseLed(ReadOnlySpan<byte> payload)
+    public static LedStatus ParseLedFlags(byte flags)
     {
-        Require(payload.Length == 2 && payload[0] == 1 && (payload[1] & ~7) == 0,
-            "unsupported LED report size, version, or flags");
-        var flags = payload[1];
+        Require((flags & ~7) == 0, "unsupported LED flags");
         Require(((flags & 1) != 0 || flags == 0) && ((flags & 2) == 0 || (flags & 4) != 0),
             "inconsistent LED state");
         return new((flags & 1) != 0 ? (flags & 2) != 0 : null,
             (flags & 1) != 0 ? (flags & 4) != 0 : null);
+    }
+
+    public const byte TelemetryReportId = 18;
+    public const int TelemetrySize = 59;
+
+    public static Telemetry ParseTelemetry(ReadOnlySpan<byte> payload)
+    {
+        Require(payload.Length == TelemetrySize && payload[0] == LayoutVersion,
+            "unsupported telemetry report size or version");
+        var led = ParseLedFlags(payload[1]);
+        ushort?[] cpu = new ushort?[2];
+        for (var core = 0; core < cpu.Length; core++)
+        {
+            var value = BinaryPrimitives.ReadUInt16LittleEndian(payload[(12 + core * 2)..]);
+            Require(value <= 10000 || value == ushort.MaxValue, "invalid runtime CPU value");
+            cpu[core] = value == ushort.MaxValue ? null : value;
+        }
+        var reserved = BinaryPrimitives.ReadUInt32LittleEndian(payload[16..]);
+        var total = BinaryPrimitives.ReadUInt32LittleEndian(payload[20..]);
+        Require(total != 0 && reserved <= total, "invalid runtime RAM values");
+        var counts = new uint[ChannelCount];
+        for (var index = 0; index < counts.Length; index++)
+            counts[index] = BinaryPrimitives.ReadUInt32LittleEndian(payload[(24 + index * 4)..]);
+        var saveStatus = payload[48];
+        var saveProfile = BinaryPrimitives.ReadUInt32LittleEndian(payload[49..]);
+        Require(saveStatus <= 5 && (saveProfile <= 4 || (saveStatus is 0 or 3 && saveProfile == uint.MaxValue)),
+            "invalid configuration save status or profile");
+        return new(led, BinaryPrimitives.ReadInt16LittleEndian(payload[2..]) / 100.0,
+            new(BinaryPrimitives.ReadUInt64LittleEndian(payload[4..]), cpu, reserved, total), counts,
+            new(saveStatus, saveProfile == uint.MaxValue ? null : saveProfile),
+            payload.Slice(53, ChannelCount).ToArray());
     }
 
     public const int ChannelCount = 6;
@@ -171,18 +204,6 @@ public static class Protocol
         return payload;
     }
 
-    public static uint[] ParseOverflowCounts(ReadOnlySpan<byte> payload)
-    {
-        Require(payload.Length == 25, "unexpected overflow-count report size");
-        Require(payload[0] == LayoutVersion, "unsupported overflow-count report version");
-        var counts = new uint[ChannelCount];
-        for (var index = 0; index < counts.Length; index++)
-        {
-            counts[index] = BinaryPrimitives.ReadUInt32LittleEndian(payload[(1 + index * 4)..]);
-        }
-        return counts;
-    }
-
     public static BoardIdentity ParseIdentity(ReadOnlySpan<byte> payload)
     {
         Require(payload.Length == 49 && payload[0] == 1, "unsupported identity report size or version");
@@ -195,22 +216,6 @@ public static class Protocol
         var serial = System.Text.Encoding.ASCII.GetString(payload.Slice(33, 16));
         Require(serial.All(char.IsAsciiHexDigit), "invalid HID serial identity");
         return new(System.Text.Encoding.ASCII.GetString(product[..end]), serial);
-    }
-
-    public static RuntimeStatus ParseRuntime(ReadOnlySpan<byte> payload)
-    {
-        Require(payload.Length == 21 && payload[0] == 1, "unsupported runtime report size or version");
-        ushort?[] cpu = new ushort?[2];
-        for (var core = 0; core < cpu.Length; core++)
-        {
-            var value = BinaryPrimitives.ReadUInt16LittleEndian(payload[(9 + core * 2)..]);
-            Require(value <= 10000 || value == ushort.MaxValue, "invalid runtime CPU value");
-            cpu[core] = value == ushort.MaxValue ? null : value;
-        }
-        var reserved = BinaryPrimitives.ReadUInt32LittleEndian(payload[13..]);
-        var total = BinaryPrimitives.ReadUInt32LittleEndian(payload[17..]);
-        Require(total != 0 && reserved <= total, "invalid runtime RAM values");
-        return new(BinaryPrimitives.ReadUInt64LittleEndian(payload[1..]), cpu, reserved, total);
     }
 
     public static string[] DecodeHealth(byte health)

@@ -28,7 +28,8 @@ dashboard instead.
 2. Open the hosted page, click **Connect**, and choose the PicoUart vendor HID interface.
 3. Inspect board identity, runtime values, and UART health/traffic alongside your serial tools.
 
-The button becomes **Disconnect** while connected. Metadata/runtime refresh every second. Disconnect closes the HID
+The button becomes **Disconnect** while connected. Telemetry refreshes every second as a single HID report; reports that
+cannot change while connected are read once, and channel diagnostics only when they change. Disconnect closes the HID
 connection; unplugging clears the last sample. After unplug/replug or a configuration-save reboot, use **Connect**
 again; the app does not automatically select or reopen a device.
 

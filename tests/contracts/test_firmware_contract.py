@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+import struct
 
+import pytest
 from tomlkit import parse
 
 from contract import (
@@ -66,7 +68,6 @@ def test_hid_layout_and_command_constants_match_firmware(repo_root):
     assert fw["USB_HID_REPORT_ID_STATUS"] == hid.REPORT_ID_STATUS
     assert fw["USB_HID_REPORT_ID_BOARD_STATUS"] == hid.REPORT_ID_BOARD_STATUS
     assert fw["USB_HID_REPORT_ID_COMMAND"] == hid.REPORT_ID_COMMAND
-    assert fw["USB_HID_REPORT_ID_OVERFLOW_COUNTS"] == hid.REPORT_ID_OVERFLOW_COUNTS
     assert fw["USB_HID_COMMAND_TOGGLE_LED"] == hid.COMMAND_TOGGLE_LED
     assert fw["USB_HID_COMMAND_RESET_BOARD"] == hid.COMMAND_RESET_BOARD
     assert fw["USB_HID_COMMAND_ARM_RESET"] == hid.COMMAND_ARM_RESET
@@ -77,7 +78,6 @@ def test_hid_layout_and_command_constants_match_firmware(repo_root):
     assert hid.STATUS_SIZE == 63
     assert hid.STATUS_SIZE == hid.STATUS_HEADER_SIZE + (hid.UART_CHANNEL_COUNT * hid.STATUS_CHANNEL_SIZE)
     assert hid.BOARD_STATUS_SIZE == 8
-    assert hid.OVERFLOW_COUNTS_SIZE == 25
     assert hid.STATUS_SIZE + 1 <= 64
 
 
@@ -93,9 +93,41 @@ def test_hid_descriptor_command_report_count_matches_host_payload(repo_root):
     assert firmware_hid_report_count(repo_root, hid.REPORT_ID_COMMAND) == 1
 
 
-def test_hid_led_report_contract(repo_root):
-    assert firmware_hid_constants(repo_root)["USB_HID_REPORT_ID_LED"] == protocol.REPORT_ID_LED
-    assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_LED) == protocol.LED_SIZE
+def test_hid_telemetry_report_contract(repo_root):
+    fw = firmware_hid_constants(repo_root)
+    assert fw["USB_HID_REPORT_ID_TELEMETRY"] == protocol.REPORT_ID_TELEMETRY == 18
+    assert fw["USB_HID_TELEMETRY_VERSION"] == protocol.TELEMETRY_LAYOUT_VERSION == 1
+    assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_TELEMETRY) == protocol.TELEMETRY_SIZE == 59
+    # Control-transfer payloads are limited to one 64-byte endpoint buffer including the report ID.
+    assert protocol.TELEMETRY_SIZE + 1 <= 64
+
+
+@pytest.mark.parametrize("retired_report_id", [5, 8, 9])
+def test_retired_reports_are_absent_from_the_descriptor(repo_root, retired_report_id):
+    with pytest.raises(ValueError):
+        firmware_hid_report_count(repo_root, retired_report_id)
+
+
+def test_telemetry_field_offsets_match_between_firmware_and_host(repo_root):
+    source = (repo_root / "firmware" / "src" / "usb" / "usb_hid.c").read_text(encoding="utf-8")
+    firmware_offsets = {
+        name: int(offset) for name, offset in re.findall(
+            r"offsetof\(usb_hid_telemetry_report_t, (\w+)\) == (\d+)u", source)
+    }
+    assert firmware_offsets.keys() == {
+        "uptime_ms", "service_load_basis_points", "ram_reserved_bytes", "rx_overflow_count",
+        "config_save_status", "diagnostics_generation",
+    }
+    # Field order of the host decoder: version, led, temperature, uptime, load x2, RAM x2, overflow x6, save x2, gens x6.
+    host_offsets = {
+        "uptime_ms": struct.calcsize("<BBh"),
+        "service_load_basis_points": struct.calcsize("<BBhQ"),
+        "ram_reserved_bytes": struct.calcsize("<BBhQHH"),
+        "rx_overflow_count": struct.calcsize("<BBhQHHII"),
+        "config_save_status": struct.calcsize("<BBhQHHII6I"),
+        "diagnostics_generation": struct.calcsize("<BBhQHHII6IBI"),
+    }
+    assert firmware_offsets == host_offsets
 
 
 def test_persistent_configuration_report_contracts(repo_root):
@@ -111,10 +143,6 @@ def test_channel_diagnostic_reports_match_current_layout(repo_root):
     assert protocol.CHANNEL_DIAGNOSTICS_SIZE == 59
     for report_id in range(protocol.REPORT_ID_CHANNEL_BASE, protocol.REPORT_ID_CHANNEL_BASE + 6):
         assert firmware_hid_report_count(repo_root, report_id) == protocol.CHANNEL_DIAGNOSTICS_SIZE
-
-
-def test_hid_descriptor_overflow_report_count_matches_host_payload(repo_root):
-    assert firmware_hid_report_count(repo_root, hid.REPORT_ID_OVERFLOW_COUNTS) == hid.OVERFLOW_COUNTS_SIZE
 
 
 def test_hardware_info_contract_matches_current_layout(repo_root):

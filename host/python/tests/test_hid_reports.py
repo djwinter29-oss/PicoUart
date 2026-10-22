@@ -6,7 +6,7 @@ import json
 import sys
 import pytest
 
-from helpers import FakeHidDevice, board_status_bytes, overflow_counts_bytes, status_report_bytes
+from helpers import FakeHidDevice, board_status_bytes, status_report_bytes, telemetry_bytes
 from pico_uart import transport
 from pico_uart.client import PicoUartHid, read_board_status, send_command
 from pico_uart.client import read_configuration, read_hardware_info
@@ -152,8 +152,32 @@ def test_board_status_reports_hid_reset_capability(hid_module):
 
 
 def test_overflow_counts(hid_module):
-    device = FakeHidDevice(overflow_counts_bytes(), report_id=hid_module.REPORT_ID_OVERFLOW_COUNTS)
+    device = FakeHidDevice(telemetry_bytes(), report_id=hid_module.REPORT_ID_TELEMETRY)
     assert hid_module.read_overflow_counts(device) == [1, 2, 3, 4, 5, 6]
+
+
+def test_channel_diagnostic_reads_one_channel_and_validates_index():
+    import struct
+
+    payload = struct.pack("<BBIBBBBB", 1, 0, 115200, 8, 1, 0, 8, 9) + bytes(48)
+
+    class OneChannelDevice:
+        reads = []
+
+        def get_feature_report(self, report_id, size):
+            self.reads.append((report_id, size))
+            return [report_id, *payload]
+
+        def close(self):
+            pass
+
+    device = OneChannelDevice()
+    with PicoUartHid(device=device) as client:
+        assert client.read_channel_diagnostic(2)["tx_pin"] == 8
+        for index in (-1, 6, "2", True):
+            with pytest.raises(ValueError, match="0 through 5"):
+                client.read_channel_diagnostic(index)
+    assert device.reads == [(12, 60)]
 
 
 def test_hidraw_feature_read_rejects_short_ioctl_result(monkeypatch):
@@ -188,10 +212,10 @@ def test_rejects_unsupported_board_status_layout(hid_module, version):
 def test_rejects_malformed_feature_and_status_payloads(hid_module):
     with pytest.raises(RuntimeError, match="board-status report size"):
         hid_module.parse_board_status(b"short")
-    with pytest.raises(RuntimeError, match="overflow-count report size"):
-        hid_module.parse_overflow_counts(b"short")
-    with pytest.raises(RuntimeError, match="unsupported overflow-count report version"):
-        hid_module.parse_overflow_counts(bytes([0]) + bytes(24))
+    with pytest.raises(RuntimeError, match="telemetry report size or version"):
+        hid_module.parse_telemetry(b"short")
+    with pytest.raises(RuntimeError, match="telemetry report size or version"):
+        hid_module.parse_telemetry(telemetry_bytes(layout_version=0))
     with pytest.raises(RuntimeError, match="status report size"):
         hid_module.parse_status(b"short")
 
@@ -352,7 +376,7 @@ def test_client_owns_connection_and_exposes_decoded_operations(hid_module):
         def get_feature_report(self, report_id, size):
             payload = {
                 hid_module.REPORT_ID_BOARD_STATUS: board_status_bytes(),
-                hid_module.REPORT_ID_OVERFLOW_COUNTS: overflow_counts_bytes(),
+                hid_module.REPORT_ID_TELEMETRY: telemetry_bytes(),
             }[report_id]
             assert size == len(payload) + 1
             return [report_id, *payload]

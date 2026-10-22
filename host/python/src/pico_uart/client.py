@@ -13,25 +13,19 @@ from .protocol import (
     COMMAND_TOGGLE_LED,
     HARDWARE_INFO_SIZE,
     IDENTITY_SIZE,
-    RUNTIME_SIZE,
-    LED_SIZE,
-    REPORT_ID_LED,
-    parse_led,
-    OVERFLOW_COUNTS_SIZE,
+    REPORT_ID_TELEMETRY,
+    TELEMETRY_SIZE,
+    parse_telemetry,
     REPORT_ID_BOARD_STATUS,
     REPORT_ID_COMMAND,
-    REPORT_ID_OVERFLOW_COUNTS,
     REPORT_ID_HARDWARE_INFO,
     REPORT_ID_IDENTITY,
-    REPORT_ID_RUNTIME,
     REPORT_ID_STATUS,
     RESET_ARM_WINDOW_S,
     STATUS_SIZE,
     parse_board_status,
     parse_hardware_info,
     parse_identity,
-    parse_runtime,
-    parse_overflow_counts,
     parse_status,
     require_payload,
     REPORT_ID_CHANNEL_BASE,
@@ -72,10 +66,14 @@ def read_firmware_version(device: Any) -> str:
     return str(read_board_status(device)["firmware_version"])
 
 
+def read_telemetry(device: Any) -> dict[str, object]:
+    """Read LED, temperature, runtime, overflow counts, save status and diagnostics generations at once."""
+    return parse_telemetry(read_feature(device, REPORT_ID_TELEMETRY, TELEMETRY_SIZE))
+
+
 def read_overflow_counts(device: Any) -> list[int]:
     """Read cumulative UART-to-USB dropped-byte counts for every channel."""
-    payload = read_feature(device, REPORT_ID_OVERFLOW_COUNTS, OVERFLOW_COUNTS_SIZE)
-    return parse_overflow_counts(payload)
+    return list(read_telemetry(device)["overflow_counts"])
 
 
 def read_hardware_info(device: Any) -> dict[str, object]:
@@ -150,6 +148,11 @@ class PicoUartHid:
         with self._lock:
             return read_overflow_counts(self._require_open())
 
+    def read_telemetry(self) -> dict[str, object]:
+        """Read all dynamic values in one transfer; dashboards poll this instead of separate reports."""
+        with self._lock:
+            return read_telemetry(self._require_open())
+
     def read_hardware_info(self) -> dict[str, object]:
         with self._lock:
             return read_hardware_info(self._require_open())
@@ -208,15 +211,19 @@ class PicoUartHid:
 
     def read_runtime(self) -> dict[str, object]:
         """Read the device's runtime counters, not host session estimates."""
-        with self._lock:
-            return parse_runtime(read_feature(self._require_open(), REPORT_ID_RUNTIME, RUNTIME_SIZE))
+        return self.read_telemetry()["runtime"]
 
     def read_channel_diagnostics(self) -> list[dict[str, object]]:
         """Read six independently addressed channel diagnostic feature reports."""
+        return [self.read_channel_diagnostic(index) for index in range(6)]
+
+    def read_channel_diagnostic(self, index: int) -> dict[str, object]:
+        """Read one channel's applied settings and fault history."""
+        if type(index) is not int or not 0 <= index < 6:
+            raise ValueError("channel index must be 0 through 5")
         with self._lock:
-            return [parse_channel_diagnostics(read_feature(
+            return parse_channel_diagnostics(read_feature(
                 self._require_open(), REPORT_ID_CHANNEL_BASE + index, CHANNEL_DIAGNOSTICS_SIZE))
-                for index in range(6)]
 
     def toggle_led(self) -> None:
         with self._lock:
@@ -224,8 +231,7 @@ class PicoUartHid:
 
     def read_led(self) -> dict[str, bool | None]:
         """Read the manual override and physical LED output."""
-        with self._lock:
-            return parse_led(read_feature(self._require_open(), REPORT_ID_LED, LED_SIZE))
+        return self.read_telemetry()["led"]
 
     def reset_board(self) -> None:
         with self._lock:

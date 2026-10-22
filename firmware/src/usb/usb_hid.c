@@ -53,9 +53,7 @@
 #define USB_HID_REPORT_ID_BOARD_STATUS 3u
 /** @brief HID feature report ID for board control commands. */
 #define USB_HID_REPORT_ID_COMMAND 4u
-/** @brief HID feature report ID for cumulative per-port RX overflow counts. */
-#define USB_HID_REPORT_ID_OVERFLOW_COUNTS 5u
-/** @brief HID feature report ID for MCU identity and the current system clock. */
+/** @brief HID feature report ID for the MCU identity and the current system clock. */
 #define USB_HID_REPORT_ID_HARDWARE_INFO 6u
 /** @brief Independent layout version of the hardware-info feature payload. */
 #define USB_HID_HARDWARE_INFO_VERSION 1u
@@ -67,13 +65,14 @@
 #define USB_HID_REPORT_ID_IDENTITY 7u
 /** @brief Independent identity feature payload layout version. */
 #define USB_HID_IDENTITY_VERSION 1u
-/** @brief HID feature report ID for uptime, active CPU time and reserved SRAM. */
-#define USB_HID_REPORT_ID_RUNTIME 8u
-/** @brief Independent runtime feature payload layout version. */
-#define USB_HID_RUNTIME_VERSION 1u
-
-/** @brief Independent LED feature report: version followed by availability/manual/output flags. */
-#define USB_HID_REPORT_ID_LED 9u
+/**
+ * @brief HID feature report ID for all values that change at runtime, read together by dashboards.
+ *
+ * Replaces separate overflow, runtime and LED reads so a dashboard needs one control transfer per refresh.
+ */
+#define USB_HID_REPORT_ID_TELEMETRY 18u
+/** @brief Independent telemetry feature payload layout version. */
+#define USB_HID_TELEMETRY_VERSION 1u
 /** @brief First of six independent read-only per-channel diagnostic feature reports. */
 #define USB_HID_REPORT_ID_CHANNEL_BASE 10u
 /** @brief Read-only persistent configuration boot decision. */
@@ -137,6 +136,8 @@ _Static_assert(sizeof(usb_hid_channel_diagnostics_t) == 59u, "Channel diagnostic
 static usb_hid_channel_diagnostics_t usb_hid_diagnostics[UART_PORT_COUNT];
 /** @brief Previous RX counters used to observe increments without modifying backend-owned counters. */
 static uint32_t usb_hid_diagnostic_rx_counts[UART_PORT_COUNT][2];
+/** @brief Per-channel counter advanced whenever that channel's diagnostics report content changes. */
+static uint8_t usb_hid_diagnostics_generation[UART_PORT_COUNT];
 
 /** @brief HID command value that toggles the board LED. */
 #define USB_HID_COMMAND_TOGGLE_LED 1u
@@ -238,36 +239,34 @@ _Static_assert(offsetof(usb_hid_identity_report_t, serial) == 33u, "HID identity
 _Static_assert(sizeof(PICO_UART_USB_PRODUCT) <= 32u, "HID product name must fit with its trailing NUL");
 _Static_assert(2u * PICO_UNIQUE_BOARD_ID_SIZE_BYTES == 16u, "HID serial must match the SDK board ID size");
 
-/** @brief Little-endian runtime snapshot; packed integer fields target the RP2 little-endian ABI. */
-typedef struct {
-    uint8_t version;                  /**< Runtime layout version. */
-    uint64_t uptime_ms;               /**< SDK monotonic microseconds since boot divided by 1000, without 32-bit wrap. */
-    uint16_t service_load_basis_points[2]; /**< Measured per-core service-pass load; 0xffff until the first window. */
-    uint32_t ram_reserved_bytes;      /**< Linked static SRAM extent, scratch sections and both reserved stacks. */
-    uint32_t ram_total_bytes;         /**< Physical SRAM capacity, excluding XIP cache SRAM. */
-} __attribute__((packed)) usb_hid_runtime_report_t;
-
-_Static_assert(sizeof(usb_hid_runtime_report_t) == 21u, "HID runtime payload must be 21 bytes");
-_Static_assert(offsetof(usb_hid_runtime_report_t, uptime_ms) == 1u, "HID uptime offset must be 1");
-_Static_assert(offsetof(usb_hid_runtime_report_t, service_load_basis_points) == 9u, "HID service-load offset must be 9");
-_Static_assert(offsetof(usb_hid_runtime_report_t, ram_reserved_bytes) == 13u, "HID reserved RAM offset must be 13");
-_Static_assert(offsetof(usb_hid_runtime_report_t, ram_total_bytes) == 17u, "HID total RAM offset must be 17");
-
 /** @brief SDK linker boundaries; addresses represent extents, not readable objects. */
 extern char __end__, __scratch_x_start__, __scratch_x_end__, __scratch_y_start__, __scratch_y_end__;
 /** @brief SDK linker boundaries for core 0 and core 1 stack reservations. */
 extern char __StackBottom, __StackTop, __StackOneBottom, __StackOneTop;
 
-/**
- * @brief Feature report containing cumulative UART-to-USB drop counts.
- */
+/** @brief Little-endian dynamic snapshot; packed integer fields target the RP2 little-endian ABI. */
 typedef struct {
-    uint8_t version;                             /**< HID report layout version. */
+    uint8_t version;                       /**< Telemetry layout version. */
+    uint8_t led_flags;                     /**< Bit 0 LED available, bit 1 manual state, bit 2 physical output. */
+    int16_t temperature_centidegrees_celsius; /**< Internal temperature in hundredths of a degree Celsius. */
+    uint64_t uptime_ms;                    /**< SDK monotonic microseconds since boot divided by 1000, without 32-bit wrap. */
+    uint16_t service_load_basis_points[2]; /**< Measured per-core service-pass load; 0xffff until the first window. */
+    uint32_t ram_reserved_bytes;           /**< Linked static SRAM extent, scratch sections and both reserved stacks. */
+    uint32_t ram_total_bytes;              /**< Physical SRAM capacity, excluding XIP cache SRAM. */
     uint32_t rx_overflow_count[UART_PORT_COUNT]; /**< Per-port dropped RX bytes, including pending recovery. */
-} __attribute__((packed)) usb_hid_overflow_counts_report_t;
+    uint8_t config_save_status;            /**< Same status as report 17 (@ref usb_hid_config_save_state_t). */
+    uint32_t config_save_profile;          /**< Same requested profile as report 17; unavailable is 0xffffffff. */
+    uint8_t diagnostics_generation[UART_PORT_COUNT]; /**< Changes when report 10 + channel content changes. */
+} __attribute__((packed)) usb_hid_telemetry_report_t;
 
-_Static_assert(sizeof(usb_hid_overflow_counts_report_t) == 25u,
-               "HID overflow report must match the HID report descriptor");
+_Static_assert(sizeof(usb_hid_telemetry_report_t) == 59u, "HID telemetry must fit the HID control buffer");
+_Static_assert(offsetof(usb_hid_telemetry_report_t, uptime_ms) == 4u, "HID uptime offset must be 4");
+_Static_assert(offsetof(usb_hid_telemetry_report_t, service_load_basis_points) == 12u, "HID load offset must be 12");
+_Static_assert(offsetof(usb_hid_telemetry_report_t, ram_reserved_bytes) == 16u, "HID reserved RAM offset must be 16");
+_Static_assert(offsetof(usb_hid_telemetry_report_t, rx_overflow_count) == 24u, "HID overflow offset must be 24");
+_Static_assert(offsetof(usb_hid_telemetry_report_t, config_save_status) == 48u, "HID save status offset must be 48");
+_Static_assert(offsetof(usb_hid_telemetry_report_t, diagnostics_generation) == 53u,
+               "HID diagnostics generation offset must be 53");
 
 /** @brief Next absolute time, in milliseconds, when a HID report may be published. */
 static uint32_t usb_hid_next_report_ms;
@@ -341,12 +340,20 @@ static void usb_hid_build_identity_report(usb_hid_identity_report_t *report)
 }
 
 /**
- * @brief Snapshot measured service load and link-time SRAM reservations, not live heap/stack use.
+ * @brief Snapshot the dynamic values a dashboard polls; one read replaces separate LED/runtime/overflow reads.
  * @param report Destination feature payload.
+ * @param uart_stats Coherent driver statistics for the overflow counts.
  */
-static void usb_hid_build_runtime_report(usb_hid_runtime_report_t *report)
+static void usb_hid_build_telemetry_report(usb_hid_telemetry_report_t *report,
+                                           const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT])
 {
-    report->version = USB_HID_RUNTIME_VERSION;
+    bool led_on = false;
+    bool led_available = led_read_state(&led_on);
+
+    memset(report, 0, sizeof(*report));
+    report->version = USB_HID_TELEMETRY_VERSION;
+    report->led_flags = led_available ? (uint8_t)(1u | (led_on ? 6u : 0u)) : 0u;
+    report->temperature_centidegrees_celsius = temperature_to_hid_centidegrees(temperature_read_celsius());
     report->uptime_ms = time_us_64() / 1000u;
     report->service_load_basis_points[0] = service_load_read(0u);
     report->service_load_basis_points[1] = service_load_read(1u);
@@ -357,19 +364,13 @@ static void usb_hid_build_runtime_report(usb_hid_runtime_report_t *report)
         ((uintptr_t)&__StackTop - (uintptr_t)&__StackBottom) +
         ((uintptr_t)&__StackOneTop - (uintptr_t)&__StackOneBottom));
     report->ram_total_bytes = SRAM_END - SRAM_BASE;
-}
-
-static void usb_hid_build_overflow_counts_report(usb_hid_overflow_counts_report_t *report,
-                                                 const uart_driver_port_stats_t uart_stats[UART_PORT_COUNT])
-{
-    memset(report, 0, sizeof(*report));
-    report->version = USB_HID_REPORT_VERSION;
-
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
         report->rx_overflow_count[index] = uart_saturating_add_u32(uart_stats[index].rx_ring_overflow_count,
                                                                    uart_stats[index].rx_ring_pending_overflow_count);
+        report->diagnostics_generation[index] = usb_hid_diagnostics_generation[index];
     }
-
+    report->config_save_status = (uint8_t)usb_hid_config_save_state;
+    report->config_save_profile = usb_hid_config_save_profile;
 }
 
 /**
@@ -380,6 +381,7 @@ static void usb_hid_build_overflow_counts_report(usb_hid_overflow_counts_report_
 static void usb_hid_sample_diagnostics(size_t index, const uart_driver_port_stats_t *stats)
 {
     usb_hid_channel_diagnostics_t *report = &usb_hid_diagnostics[index];
+    const usb_hid_channel_diagnostics_t previous = *report;
     uart_driver_port_info_t info;
     uint8_t health = uart_driver_port_status((uart_port_id_t)index);
     uint32_t counts[2] = {
@@ -416,6 +418,9 @@ static void usb_hid_sample_diagnostics(size_t index, const uart_driver_port_stat
     if (counts[0] != 0u) health |= USB_HID_CHANNEL_STATUS_RX_OVERRUN;
     if (counts[1] != 0u) health |= USB_HID_CHANNEL_STATUS_RX_ERROR;
     report->health = health;
+    if (memcmp(&previous, report, sizeof(previous)) != 0) {
+        usb_hid_diagnostics_generation[index] = (uint8_t)(usb_hid_diagnostics_generation[index] + 1u);
+    }
 }
 
 static void usb_hid_build_status_report(usb_hid_status_report_t *report,
@@ -495,6 +500,7 @@ void usb_hid_init(void)
     memset(usb_hid_last_reported_cdc_stats, 0, sizeof(usb_hid_last_reported_cdc_stats));
     memset(usb_hid_diagnostics, 0, sizeof(usb_hid_diagnostics));
     memset(usb_hid_diagnostic_rx_counts, 0, sizeof(usb_hid_diagnostic_rx_counts));
+    memset(usb_hid_diagnostics_generation, 0, sizeof(usb_hid_diagnostics_generation));
 }
 
 void usb_hid_poll(void)
@@ -545,8 +551,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
     usb_hid_board_status_report_t board_status_report;
     usb_hid_hardware_info_report_t hardware_info_report;
     usb_hid_identity_report_t identity_report;
-    usb_hid_runtime_report_t runtime_report;
-    usb_hid_overflow_counts_report_t overflow_counts_report;
+    usb_hid_telemetry_report_t telemetry_report;
     usb_hid_status_report_t report;
     uart_driver_port_stats_t uart_stats[UART_PORT_COUNT];
     usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT];
@@ -583,14 +588,16 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
         memcpy(buffer, &usb_hid_diagnostics[index], length);
         return length;
     }
-    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_LED)) {
-        bool on = false;
-        bool available = led_read_state(&on);
-        const uint8_t led_report[2] = {1u, available ? (uint8_t)(1u | (on ? 6u : 0u)) : 0u};
-        if (reqlen > sizeof(led_report)) {
-            reqlen = sizeof(led_report);
+    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_TELEMETRY)) {
+        usb_hid_sample_stats(uart_stats, cdc_stats);
+        for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+            usb_hid_sample_diagnostics(index, &uart_stats[index]);
         }
-        memcpy(buffer, led_report, reqlen);
+        usb_hid_build_telemetry_report(&telemetry_report, uart_stats);
+        if (reqlen > sizeof(telemetry_report)) {
+            reqlen = sizeof(telemetry_report);
+        }
+        memcpy(buffer, &telemetry_report, reqlen);
         return reqlen;
     }
 
@@ -600,15 +607,6 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
             reqlen = sizeof(identity_report);
         }
         memcpy(buffer, &identity_report, reqlen);
-        return reqlen;
-    }
-
-    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_RUNTIME)) {
-        usb_hid_build_runtime_report(&runtime_report);
-        if (reqlen > sizeof(runtime_report)) {
-            reqlen = sizeof(runtime_report);
-        }
-        memcpy(buffer, &runtime_report, reqlen);
         return reqlen;
     }
 
@@ -634,17 +632,6 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
         }
 
         memcpy(buffer, &board_status_report, reqlen);
-        return reqlen;
-    }
-
-    if ((report_type == HID_REPORT_TYPE_FEATURE) && (report_id == USB_HID_REPORT_ID_OVERFLOW_COUNTS)) {
-        usb_hid_sample_stats(uart_stats, cdc_stats);
-        usb_hid_build_overflow_counts_report(&overflow_counts_report, uart_stats);
-        if (reqlen > sizeof(overflow_counts_report)) {
-            reqlen = sizeof(overflow_counts_report);
-        }
-
-        memcpy(buffer, &overflow_counts_report, reqlen);
         return reqlen;
     }
 

@@ -49,21 +49,123 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
         }
     }
 
-    private void ReadConfigurationSave(PicoUartHid connection)
+    /// <summary>State read from one HID connection; static reports are fetched once and diagnostics cached by generation.</summary>
+    private sealed class ConnectionCache
     {
-        lock (gate)
+        public readonly HashSet<string> StaticLoaded = [];
+        public BoardStatus? Board;
+        public string? BoardError;
+        public string? TelemetryError;
+        public double? Temperature;
+        public readonly DiagnosticsCache Diagnostics = new();
+    }
+
+    /// <summary>Combine static board info with the latest temperature; callers hold the gate.</summary>
+    private void PublishBoard(ConnectionCache cache)
+    {
+        snapshot.MetadataError = cache.TelemetryError ?? cache.BoardError;
+        snapshot.Board = cache.TelemetryError is null && cache.Temperature is double temperature && cache.Board is not null
+            ? cache.Board with { TemperatureCelsius = temperature }
+            : null;
+    }
+
+    private byte[]? ReadTelemetry(PicoUartHid connection, ConnectionCache cache)
+    {
+        try
         {
-            try
+            var telemetry = connection.ReadTelemetry();
+            lock (gate)
             {
-                snapshot.ConfigurationSave = connection.ReadConfigurationSave();
+                cache.TelemetryError = null;
+                cache.Temperature = telemetry.TemperatureCelsius;
+                snapshot.Led = telemetry.Led;
+                snapshot.LedError = null;
+                snapshot.SetRuntimeReadResult(telemetry.Runtime, null);
+                snapshot.ConfigurationSave = telemetry.ConfigurationSave;
                 snapshot.ConfigurationSaveError = null;
+                snapshot.OverflowCounts = telemetry.OverflowCounts.Select(count => (uint?)count).ToArray();
+                PublishBoard(cache);
             }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            return telemetry.DiagnosticsGeneration;
+        }
+        catch (Exception error) when (HidErrors.IsDeviceError(error))
+        {
+            lock (gate)
             {
+                cache.TelemetryError = error.Message;
+                snapshot.Led = null;
+                snapshot.LedError = error.Message;
+                snapshot.SetRuntimeReadResult(null, error.Message);
                 snapshot.ConfigurationSave = null;
                 snapshot.ConfigurationSaveError = error.Message;
+                snapshot.OverflowCounts = new uint?[Protocol.ChannelCount];
+                PublishBoard(cache);
+            }
+            return null;
+        }
+    }
+
+    private void ReadDiagnostics(PicoUartHid connection, ConnectionCache cache, byte[] generations)
+    {
+        try
+        {
+            var diagnostics = cache.Diagnostics.Refresh(generations, connection.ReadChannelDiagnostic);
+            lock (gate)
+            {
+                snapshot.ChannelDiagnostics = diagnostics;
+                snapshot.DiagnosticsError = null;
             }
         }
+        catch (Exception error) when (HidErrors.IsDeviceError(error))
+        {
+            lock (gate)
+            {
+                snapshot.ChannelDiagnostics = null;
+                snapshot.DiagnosticsError = error.Message;
+            }
+        }
+    }
+
+    /// <summary>Read a report that cannot change while connected; failures are retried until one read succeeds.</summary>
+    private void LoadOnce<T>(ConnectionCache cache, string name, Func<T> read, Action<T?, string?> publish)
+        where T : class
+    {
+        if (cache.StaticLoaded.Contains(name)) return;
+        try
+        {
+            var value = read();
+            cache.StaticLoaded.Add(name);
+            lock (gate) publish(value, null);
+        }
+        catch (Exception error) when (HidErrors.IsDeviceError(error))
+        {
+            lock (gate) publish(null, error.Message);
+        }
+    }
+
+    private void ReadStatic(PicoUartHid connection, ConnectionCache cache)
+    {
+        LoadOnce(cache, "identity", connection.ReadIdentity, (value, error) =>
+        {
+            snapshot.Identity = value;
+            snapshot.IdentityError = error;
+        });
+        LoadOnce(cache, "configuration", connection.ReadConfiguration, (value, error) =>
+        {
+            snapshot.Configuration = value;
+            snapshot.ConfigurationError = error;
+        });
+        LoadOnce(cache, "hardware", connection.ReadHardwareInfo, (value, error) =>
+        {
+            snapshot.Hardware = value;
+            snapshot.HardwareError = error;
+        });
+        LoadOnce(cache, "board", connection.ReadBoardStatus, (value, error) =>
+        {
+            cache.Board = value;
+            cache.BoardError = error;
+            PublishBoard(cache);
+        });
     }
 
     private void ReadLed(PicoUartHid connection)
@@ -100,6 +202,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     client = connection;
                     snapshot = new() { Connected = true };
                 }
+                var cache = new ConnectionCache();
                 var nextMetadataRead = DateTimeOffset.MinValue;
                 while (!stoppingToken.IsCancellationRequested)
                 {
@@ -110,115 +213,9 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     }
                     var now = DateTimeOffset.UtcNow;
                     if (now < nextMetadataRead) continue;
-                    ReadLed(connection);
-                    ReadConfigurationSave(connection);
-                    try
-                    {
-                        var diagnostics = connection.ReadChannelDiagnostics();
-                        lock (gate)
-                        {
-                            snapshot.ChannelDiagnostics = diagnostics;
-                            snapshot.DiagnosticsError = null;
-                        }
-                    }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.ChannelDiagnostics = null;
-                            snapshot.DiagnosticsError = error.Message;
-                        }
-                    }
-                    try
-                    {
-                        var identity = connection.ReadIdentity();
-                        lock (gate)
-                        {
-                            snapshot.Identity = identity;
-                            snapshot.IdentityError = null;
-                        }
-                    }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.Identity = null;
-                            snapshot.IdentityError = error.Message;
-                        }
-                    }
-                    try
-                    {
-                        var runtime = connection.ReadRuntime();
-                        lock (gate)
-                        {
-                            snapshot.SetRuntimeReadResult(runtime, null);
-                        }
-                    }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.SetRuntimeReadResult(null, error.Message);
-                        }
-                    }
-                    try
-                    {
-                        var configuration = connection.ReadConfiguration();
-                        lock (gate)
-                        {
-                            snapshot.Configuration = configuration;
-                            snapshot.ConfigurationError = null;
-                            snapshot.ConfigurationSave = null;
-                            snapshot.ConfigurationSaveError = null;
-                        }
-                    }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.Configuration = null;
-                            snapshot.ConfigurationError = error.Message;
-                        }
-                    }
-                    try
-                    {
-                        var board = connection.ReadBoardStatus();
-                        var counts = connection.ReadOverflowCounts();
-                        lock (gate)
-                        {
-                            snapshot.Board = board;
-                            snapshot.OverflowCounts = counts.Select(count => (uint?)count).ToArray();
-                            snapshot.MetadataError = null;
-                        }
-                        try
-                        {
-                            var hardware = connection.ReadHardwareInfo();
-                            lock (gate)
-                            {
-                                snapshot.Hardware = hardware;
-                                snapshot.HardwareError = null;
-                            }
-                        }
-                        catch (Exception error) when (HidErrors.IsDeviceError(error))
-                        {
-                            lock (gate)
-                            {
-                                snapshot.Hardware = null;
-                                snapshot.HardwareError = error.Message;
-                            }
-                        }
-                    }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.Board = null;
-                            snapshot.OverflowCounts = new uint?[Protocol.ChannelCount];
-                            snapshot.MetadataError = error.Message;
-                            snapshot.Hardware = null;
-                            snapshot.HardwareError = null;
-                        }
-                    }
+                    var generations = ReadTelemetry(connection, cache);
+                    if (generations is not null) ReadDiagnostics(connection, cache, generations);
+                    ReadStatic(connection, cache);
                     nextMetadataRead = now.AddSeconds(1);
                 }
             }

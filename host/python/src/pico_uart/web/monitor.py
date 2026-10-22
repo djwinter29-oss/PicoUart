@@ -77,8 +77,19 @@ class BoardMonitor:
         self._client: PicoUartHid | None = None
         self._last_sequence: int | None = None
         self._snapshot = empty_snapshot()
+        self._reset_connection_cache()
         self._thread = threading.Thread(target=self._poll, name="pico-uart-monitor", daemon=True)
         self._thread.start()
+
+    def _reset_connection_cache(self) -> None:
+        """Forget everything read from a previous connection; static reports are read once per connection."""
+        self._static_loaded: set[str] = set()
+        self._board_static: dict[str, Any] | None = None
+        self._board_error: str | None = None
+        self._telemetry_error: str | None = None
+        self._temperature: float | None = None
+        self._diagnostics: list[dict[str, Any] | None] = [None] * UART_CHANNEL_COUNT
+        self._diagnostics_generation: list[int | None] = [None] * UART_CHANNEL_COUNT
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -121,6 +132,7 @@ class BoardMonitor:
                     self._client = client
                     self._snapshot = empty_snapshot()
                     self._last_sequence = None
+                    self._reset_connection_cache()
                     self._snapshot["connected"] = True
                 next_metadata_read = 0.0
                 while not self._stop.is_set():
@@ -204,27 +216,76 @@ class BoardMonitor:
                 self._snapshot["led_error"] = None
 
     def _read_metadata(self, client: PicoUartHid) -> None:
-        self._read_led(client)
-        with self._lock:
-            try:
-                configuration_save = client.read_configuration_save()
-            except (OSError, RuntimeError) as error:
-                self._snapshot["configuration_save"] = None
-                self._snapshot["configuration_save_error"] = str(error)
-            else:
-                self._snapshot["configuration_save"] = configuration_save
-                self._snapshot["configuration_save_error"] = None
+        generations = self._read_telemetry(client)
+        if generations is not None:
+            self._read_diagnostics(client, generations)
+        self._read_static(client)
+
+    def _publish_board(self) -> None:
+        """Combine static board info with the latest temperature; callers hold the lock."""
+        telemetry_ok = self._telemetry_error is None and self._temperature is not None
+        self._snapshot["metadata_error"] = self._telemetry_error or self._board_error
+        self._snapshot["board"] = (
+            {**self._board_static, "temperature_celsius": self._temperature}
+            if telemetry_ok and self._board_static is not None
+            else None
+        )
+
+    def _read_telemetry(self, client: PicoUartHid) -> list[int] | None:
+        """Read every changing value in one transfer; returns diagnostics generations or None on failure."""
         try:
-            diagnostics = client.read_channel_diagnostics()
+            telemetry = client.read_telemetry()
         except (OSError, RuntimeError) as error:
+            message = str(error)
+            with self._lock:
+                self._telemetry_error = message
+                self._snapshot.update(
+                    led=None, led_error=message, runtime=None, runtime_error=message,
+                    configuration_save=None, configuration_save_error=message,
+                    overflow_counts=[None] * UART_CHANNEL_COUNT,
+                )
+                self._publish_board()
+            return None
+        with self._lock:
+            self._telemetry_error = None
+            self._temperature = telemetry["temperature_celsius"]
+            self._snapshot.update(
+                led=telemetry["led"], led_error=None,
+                runtime=telemetry["runtime"], runtime_error=None,
+                configuration_save=telemetry["configuration_save"], configuration_save_error=None,
+                overflow_counts=telemetry["overflow_counts"],
+            )
+            self._publish_board()
+        return telemetry["diagnostics_generation"]
+
+    def _read_diagnostics(self, client: PicoUartHid, generations: list[int]) -> None:
+        """Re-read only channels whose firmware-reported diagnostics generation changed."""
+        try:
+            for index, generation in enumerate(generations):
+                if self._diagnostics[index] is None or self._diagnostics_generation[index] != generation:
+                    self._diagnostics[index] = client.read_channel_diagnostic(index)
+                    # The generation from before the read is kept: a newer change only costs one extra read.
+                    self._diagnostics_generation[index] = generation
+        except (OSError, RuntimeError) as error:
+            self._diagnostics = [None] * UART_CHANNEL_COUNT
+            self._diagnostics_generation = [None] * UART_CHANNEL_COUNT
             with self._lock:
                 self._snapshot["channel_diagnostics"] = None
                 self._snapshot["diagnostics_error"] = str(error)
-        else:
-            with self._lock:
-                self._snapshot["channel_diagnostics"] = diagnostics
-                self._snapshot["diagnostics_error"] = None
-        for field, reader in (("identity", client.read_identity), ("runtime", client.read_runtime)):
+            return
+        with self._lock:
+            self._snapshot["channel_diagnostics"] = list(self._diagnostics)
+            self._snapshot["diagnostics_error"] = None
+
+    def _read_static(self, client: PicoUartHid) -> None:
+        """Read reports that cannot change while connected until each succeeds once."""
+        for name, field, reader in (
+            ("identity", "identity", client.read_identity),
+            ("configuration", "configuration", client.read_configuration),
+            ("hardware", "hardware", client.read_hardware_info),
+        ):
+            if name in self._static_loaded:
+                continue
             try:
                 value = reader()
             except (OSError, RuntimeError) as error:
@@ -232,41 +293,20 @@ class BoardMonitor:
                     self._snapshot[field] = None
                     self._snapshot[f"{field}_error"] = str(error)
             else:
+                self._static_loaded.add(name)
                 with self._lock:
                     self._snapshot[field] = value
                     self._snapshot[f"{field}_error"] = None
-        try:
-            configuration = client.read_configuration()
-        except (OSError, RuntimeError) as error:
-            with self._lock:
-                self._snapshot["configuration"] = None
-                self._snapshot["configuration_error"] = str(error)
-        else:
-            with self._lock:
-                self._snapshot["configuration"] = configuration
-                self._snapshot["configuration_error"] = None
-        try:
-            board = client.read_board_status()
-            overflows = client.read_overflow_counts()
-        except (OSError, RuntimeError) as error:
-            with self._lock:
-                self._snapshot["metadata_error"] = str(error)
-                self._snapshot["board"] = None
-                self._snapshot["overflow_counts"] = [None] * UART_CHANNEL_COUNT
-                self._snapshot["hardware"] = None
-                self._snapshot["hardware_error"] = None
-            return
-        with self._lock:
-            self._snapshot["metadata_error"] = None
-            self._snapshot["board"] = board
-            self._snapshot["overflow_counts"] = overflows
-        try:
-            hardware = client.read_hardware_info()
-        except (OSError, RuntimeError) as error:
-            with self._lock:
-                self._snapshot["hardware"] = None
-                self._snapshot["hardware_error"] = str(error)
-            return
-        with self._lock:
-            self._snapshot["hardware"] = hardware
-            self._snapshot["hardware_error"] = None
+        if "board" not in self._static_loaded:
+            try:
+                board = client.read_board_status()
+            except (OSError, RuntimeError) as error:
+                with self._lock:
+                    self._board_error = str(error)
+                    self._publish_board()
+            else:
+                self._static_loaded.add("board")
+                with self._lock:
+                    self._board_static = {key: value for key, value in board.items() if key != "temperature_celsius"}
+                    self._board_error = None
+                    self._publish_board()

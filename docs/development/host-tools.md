@@ -289,20 +289,23 @@ Both dashboards separate device identity from live runtime status, retaining the
 `/api/status` carries `identity` (product and serial) and `runtime` (uptime, per-core service-load basis points,
 reserved and total RAM), with independent `identity_error` and `runtime_error` fields. Unsupported or failed reads clear
 the affected values without discarding unrelated valid reports; disconnect clears device identity and runtime.
-Metadata, including uptime, is sampled every second. See the
+Telemetry, including uptime, is read once per second as one HID report; reports that cannot change while connected are
+read once per connection, and channel diagnostics only when their firmware generation changes (see
+[host polling](../design/usb/hid-report-reference.md#host-polling)). See the
 [HID report reference](../design/usb/hid-report-reference.md) for the authoritative version-1 field definitions, UID
 source, service-load semantics, and RAM accounting.
 
-Snapshots can be partially available. `metadata_error` covers the grouped board-status and overflow-count reads; a
-failure clears `board` and `hardware` and marks each overflow count unknown, while independent identity/runtime data
-can remain valid.
-If only the later hardware-info read fails, `hardware_error` is set without discarding board status or overflow counts.
+Snapshots can be partially available. `metadata_error` covers the telemetry read and the once-per-connection
+board-status read. A telemetry failure clears `board`, `led`, `runtime` and the configuration-save result and marks each
+overflow count unknown (with `led_error`, `runtime_error` and `configuration_save_error` set), while the static
+`identity`, `hardware` and `configuration` remain valid.
+If only the hardware-info read fails, `hardware_error` is set without discarding board status or overflow counts.
 Clients must inspect the relevant error fields rather than treating missing metadata as zero or the whole board as
 disconnected.
 
 `configuration` reports the source (defaults, stored, or recovery), fallback reason, stored profile, and active profile
-using read-only HID feature report 16; `configuration_error` is independent. The snapshot and both dashboards refresh
-this diagnostic with other metadata once per second and clear it when unavailable or disconnected. No credentials or raw
+using read-only HID feature report 16; `configuration_error` is independent. The snapshot and both dashboards read
+this diagnostic once per connection (retrying until it succeeds) and clear it when disconnected. No credentials or raw
 flash contents are returned.
 
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
@@ -343,8 +346,9 @@ All three dashboards show applied baud/framing and TX/RX GPIOs from the
 hard-coded board map or a CDC request that might have been rejected. Snapshots expose `channel_diagnostics` (six records
 in channel order) and an independent `diagnostics_error`; failed reads clear those records and surface an error,
 while unrelated valid reports remain visible. Versioned HID payloads require their current version-1 layouts; no
-legacy decoder or missing-report compatibility mode is provided. Diagnostics refresh with metadata every second in
-all three dashboards.
+legacy decoder or missing-report compatibility mode is provided. Dashboards read all six diagnostic reports at
+connection and afterwards only the channels whose `diagnostics_generation` in telemetry changed; a failed read clears
+the cache so the next refresh reads every channel again.
 
 Each channel shows a health badge and simple error flags with short troubleshooting tooltips, without expandable
 history, counts, or detection times. The underlying diagnostic records remain available to host tools.
