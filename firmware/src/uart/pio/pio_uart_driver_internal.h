@@ -30,7 +30,7 @@ struct pio_uart_driver {
     size_t tx_dma_bytes_in_flight;   /**< Bytes currently owned by the active TX DMA transfer. */
     size_t tx_polled_bytes;          /**< Bytes sent through the direct FIFO polling path. */
     size_t tx_dma_bytes;             /**< Bytes sent through the TX DMA path. */
-    uint32_t controller_rx_bytes;    /**< Valid received bytes published into the RX ring. */
+    uint32_t uart_rx_bytes;          /**< Valid received bytes published into the RX ring. */
     uint32_t rx_error_count;         /**< Framing (stop-bit) errors observed since initialization. */
     volatile uint32_t rx_dma_last_progress; /**< Last published RX DMA progress (`max - remaining`). */
     ring_buffer_t rx_ring;                  /**< PIO RX producer ring shared with the USB bridge. */

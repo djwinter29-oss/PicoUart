@@ -6,9 +6,9 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PicoUart Diagnostics | WebHID</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/dashboard.css?v=9">
+  <link rel="stylesheet" href="css/dashboard.css?v=10">
   <link rel="stylesheet" href="css/webhid.css?v=5">
-  <script type="module" src="js/app.mjs?v=5"></script>
+  <script type="module" src="js/app.mjs?v=8"></script>
 </head>
 <body>
   <header class="topbar">
@@ -39,7 +39,7 @@
         <h2 id="identity-title">Device identity</h2>
         <div class="actions" aria-label="Device connection and identification">
           <button class="button button-led" id="toggle-led" type="button" data-state="unknown"
-            title="Toggle manual LED state; USB activity may also light the LED" disabled>Board LED: --</button>
+            title="Board identification LED state unavailable" disabled>Board LED: --</button>
           <button class="button button-secondary" id="connect" type="button" disabled>Connect</button>
         </div>
       </div>
@@ -54,7 +54,7 @@
 
     <section aria-labelledby="configuration-title">
       <div class="section-heading">
-        <h2 id="configuration-title">Persistent configuration</h2>
+        <h2 id="configuration-title">Boot configuration</h2>
         <div class="actions" aria-label="Configuration controls">
           <button class="button button-led" id="save-configuration" type="button" disabled>Save &amp; Reboot</button>
         </div>
@@ -102,6 +102,14 @@
       </div>
       <div class="table-scroll">
         <table>
+          <colgroup>
+            <col class="port-column">
+            <col class="session-column">
+            <col class="configuration-column">
+            <col class="health-column">
+            <col class="throughput-column">
+            <col class="overflow-column">
+          </colgroup>
           <thead>
             <tr>
               <th scope="col">Port</th>

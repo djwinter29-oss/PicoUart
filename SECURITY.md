@@ -13,7 +13,8 @@ include technical details until one is provided.
 - The USB identity `cafe:4010` is an unallocated development/lab identity. Do not use it for commercial products;
   collisions and driver-association conflicts are possible. See the [release guide](docs/deployment/releasing.md) before
   distributing derivative devices.
-- Remote HID reset is disabled by default. In builds that enable it, any local process with permission to open the HID
+- Remote HID reset is enabled by default (build with `-DPICO_UART_ALLOW_HID_RESET=0`, or
+  `tools/firmware/build.sh --disable-hid-reset`, to remove it). Any local process with permission to open the HID
   device can reset the board. Restrict operating-system access to the HID device node to trusted users. Serial-port
   group membership (such as `dialout` on Linux) does not itself grant or restrict HID access.
 - The HID interface is a local USB control/diagnostic interface, not a network service. The host tool checks whether

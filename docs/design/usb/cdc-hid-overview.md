@@ -21,7 +21,10 @@ Each CDC port maps to one target-side UART channel. The GPIO pinout is defined i
 ## CDC Behavior
 
 CDC carries serial bytes and `SET_LINE_CODING` requests for the matching UART. DTR is reported for monitoring but does
-not gate data transfer. Hardware UARTs support the broader validated line-coding set; PIO UARTs are 8N1-only.
+not gate data transfer. A DTR closed-to-open transition requests a fresh state for only that CDC/UART channel: firmware
+clears that interface's CDC FIFOs and the worker restarts its UART backend, discarding queued bytes while preserving
+applied line coding and boot-lifetime counters. A USB packet already in flight may still complete. Hardware UARTs
+support the broader validated line-coding set; PIO UARTs are 8N1-only.
 
 TinyUSB may complete a line-coding request before firmware applies or rejects it. Hosts must monitor HID health for the
 result; request ownership and deferred application are described in [Control Plane Design](../control-plane-design.md).
@@ -29,12 +32,15 @@ result; request ownership and deferred application are described in [Control Pla
 ## HID Behavior
 
 HID carries no UART data and cannot select UART pins or backends. It reports bridge health, board metadata, and applied
-UART settings. Board controls include LED toggling, capability-gated reset, and persistent boot-time clock-profile
+UART settings. Board controls include explicit LED On/Off, capability-gated reset, and persistent boot-time clock-profile
 saving.
 A verified configuration save automatically reboots the board, independently of the optional reset-command capability;
-see the [save contract](hid-report-reference.md#report-17-save-persistent-clock-profile) before using it.
+see the [save safety contract](hid-report-reference.md#save-and-reboot-safety) before using it.
 Exact report layouts, health bits, and command semantics are defined in the
-[HID Report Reference](hid-report-reference.md).
+[HID Report Reference](hid-report-reference.md). The version-1 design uses report 1 for static device information,
+report 2 for board commands and boot configuration, report 3 for board telemetry, and reports 10-15 for combined
+per-channel traffic, settings, and compact fault history. Channel snapshots publish every 500 ms as Input reports;
+the same layout is available through read-only Feature reads.
 
 ## Typical Host Workflow
 

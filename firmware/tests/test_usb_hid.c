@@ -1,15 +1,13 @@
 /**
  * @file test_usb_hid.c
- * @brief Exercise the production HID callback, payload offsets and SDK/linker value sources on the host.
+ * @brief Verify the production HID callbacks against the version-1 wire layouts.
  */
 
 #include "unity.h"
-/* Native linker scripts unconditionally define __end__; use a fixture-only name for that SDK symbol. */
 #define __end__ pico_uart_test_static_end
 #include "../src/usb/usb_hid.c"
 #undef __end__
 
-/* Fixed link-time extents, including nonzero scratch data and both stacks. */
 __asm__(
     ".global pico_uart_test_static_end\n"
     ".global __scratch_x_start__, __scratch_x_end__, __scratch_y_start__, __scratch_y_end__\n"
@@ -26,18 +24,24 @@ __asm__(
 );
 
 absolute_time_t pico_test_time_us;
-static bool led_on;
 static bool led_available;
-static uart_driver_port_stats_t diagnostic_stats;
-static uint8_t diagnostic_health;
-static boot_config_status_t configuration;
+static bool led_on;
 static bool cdc_open;
-static bool save_success;
-static bool set_success;
-static boot_config_t staged_configuration;
-static unsigned int save_calls;
+static bool endpoint_ready;
+static bool endpoint_accepts;
+static uint8_t accepted_report_id;
+static uint8_t accepted_payload[USB_HID_CHANNEL_SIZE];
+static unsigned int accepted_reports;
 static unsigned int reset_calls;
-static uint32_t saved_profile;
+static unsigned int save_calls;
+static bool config_set_succeeds;
+static boot_config_save_result_t config_save_result;
+static boot_config_t staged_config;
+static uart_driver_port_info_t port_info[UART_PORT_COUNT];
+static uart_driver_port_stats_t port_stats[UART_PORT_COUNT];
+static uint8_t port_status[UART_PORT_COUNT];
+static usb_cdc_port_stats_t cdc_stats[UART_PORT_COUNT];
+static boot_config_status_t boot_status;
 
 bool boot_config_profile_supported(uint32_t profile)
 {
@@ -46,18 +50,22 @@ bool boot_config_profile_supported(uint32_t profile)
 
 bool boot_config_set(const boot_config_t *config)
 {
-    if (!set_success || config == NULL || !boot_config_profile_supported((uint32_t)config->clock_profile)) {
+    if (!config_set_succeeds || config == NULL || !boot_config_profile_supported(config->clock_profile)) {
         return false;
     }
-    staged_configuration = *config;
+    staged_config = *config;
     return true;
+}
+
+boot_config_save_result_t boot_config_save_with_result(void)
+{
+    ++save_calls;
+    return config_save_result;
 }
 
 bool boot_config_save(void)
 {
-    ++save_calls;
-    saved_profile = (uint32_t)staged_configuration.clock_profile;
-    return save_success;
+    return boot_config_save_with_result() == BOOT_CONFIG_SAVE_OK;
 }
 
 void system_reset(void)
@@ -65,60 +73,40 @@ void system_reset(void)
     ++reset_calls;
 }
 
-void led_set(bool on)
-{
-    TEST_ASSERT_TRUE(led_available);
-    led_on = on;
-}
-
 const boot_config_status_t *boot_config_get_status(void)
 {
-    return &configuration;
+    return &boot_status;
 }
 
 bool tud_hid_ready(void)
 {
-    return false;
+    return endpoint_ready;
 }
 
 bool tud_hid_report(uint8_t report_id, void const *report, uint16_t len)
 {
-    (void)report_id;
-    (void)report;
-    (void)len;
-    TEST_FAIL_MESSAGE("The unavailable interrupt endpoint must not publish reports");
-    return false;
+    if (!endpoint_accepts) {
+        return false;
+    }
+    TEST_ASSERT_EQUAL_UINT16(USB_HID_CHANNEL_SIZE, len);
+    accepted_report_id = report_id;
+    memcpy(accepted_payload, report, len);
+    ++accepted_reports;
+    return true;
 }
 
 bool led_read_state(bool *on)
 {
-    *on = led_on;
+    if (on != NULL) {
+        *on = led_on;
+    }
     return led_available;
 }
 
-void setUp(void)
+void led_set(bool on)
 {
-    pico_test_time_us = 0;
-    service_load_init();
-    led_on = false;
-    led_available = true;
-    memset(&diagnostic_stats, 0, sizeof(diagnostic_stats));
-    diagnostic_health = UART_DRIVER_PORT_STATUS_READY;
-    cdc_open = false;
-    save_success = true;
-    set_success = true;
-    staged_configuration = (boot_config_t){.clock_profile = BOOT_CLOCK_DEFAULT};
-    save_calls = 0u;
-    reset_calls = 0u;
-    configuration = (boot_config_status_t){
-        .source = BOOT_CONFIG_DEFAULTS, .reason = BOOT_CONFIG_ERASED,
-        .stored_profile = BOOT_CONFIG_PROFILE_UNAVAILABLE, .active_profile = BOOT_CLOCK_DEFAULT,
-    };
-    usb_hid_init();
-}
-
-void tearDown(void)
-{
+    TEST_ASSERT_TRUE(led_available);
+    led_on = on;
 }
 
 void pico_get_unique_board_id_string(char *id_out, size_t len)
@@ -138,319 +126,354 @@ float temperature_read_celsius(void)
     return 25.0f;
 }
 
-bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *stats)
+bool uart_driver_port_stats(uart_port_id_t port, uart_driver_port_stats_t *stats)
 {
-    (void)port_id;
-    *stats = diagnostic_stats;
+    *stats = port_stats[port];
     return true;
 }
 
-bool usb_cdc_port_stats(uint8_t itf, usb_cdc_port_stats_t *stats)
+bool usb_cdc_port_stats(uint8_t port, usb_cdc_port_stats_t *stats)
 {
-    (void)itf;
-    memset(stats, 0, sizeof(*stats));
+    *stats = cdc_stats[port];
     stats->opened = cdc_open;
     return true;
 }
 
-bool uart_driver_port_info(uart_port_id_t port_id, uart_driver_port_info_t *info)
+uint8_t uart_driver_port_status(uart_port_id_t port)
 {
-    (void)port_id;
-    memset(info, 0, sizeof(*info));
-    info->baud_rate = 115200u;
-    info->data_bits = 8u;
-    info->stop_bits = 1u;
-    info->tx_pin = (uint32_t)port_id * 4u;
-    info->rx_pin = info->tx_pin + 1u;
+    return port_status[port];
+}
+
+bool uart_driver_port_snapshot(uart_port_id_t port, uart_driver_port_info_t *info, uint8_t *status)
+{
+    *info = port_info[port];
+    *status = port_status[port];
     return true;
 }
 
-uint8_t uart_driver_port_status(uart_port_id_t port_id)
+static void make_command(uint8_t payload[USB_HID_CONTROL_SIZE], uint8_t command, uint8_t flags, uint32_t id,
+                         uint32_t profile)
 {
-    (void)port_id;
-    return diagnostic_health;
+    memset(payload, 0, USB_HID_CONTROL_SIZE);
+    payload[0] = 1u;
+    payload[1] = command;
+    payload[2] = flags;
+    usb_hid_write_u32(payload + 4u, id);
+    usb_hid_write_u32(payload + 16u, profile);
 }
 
-static void test_identity_payload(void)
+static uint16_t get_report(uint8_t id, hid_report_type_t type, uint8_t *out)
 {
-    uint8_t buffer[64];
-    uint8_t expected[49] = {1u};
-    memcpy(expected + 1u, PICO_UART_USB_PRODUCT, sizeof(PICO_UART_USB_PRODUCT));
-    memcpy(expected + 33u, "0123456789ABCDEF", 16u);
-
-    memset(buffer, 0xa5, sizeof(buffer));
-    TEST_ASSERT_EQUAL_UINT16(49u, tud_hid_get_report_cb(0, 7, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, buffer, sizeof(expected));
-    TEST_ASSERT_EQUAL_HEX8(0xa5, buffer[49]);
-    TEST_ASSERT_EQUAL_UINT16(5u, tud_hid_get_report_cb(0, 7, HID_REPORT_TYPE_FEATURE, buffer, 5u));
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, buffer, 5u);
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 7, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
+    return tud_hid_get_report_cb(0u, id, type, out, 64u);
 }
 
-static void test_runtime_payload(void)
+void setUp(void)
 {
-    uint8_t buffer[64];
-    /* More than 2^32 ms; verify all eight uptime bytes and little-endian encoding. */
-    pico_test_time_us = INT64_C(0x010203040506) * 1000 + 999;
-    const uint8_t expected[21] = {
-        1, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0, 0,
-        0xc4, 0x09, 0xff, 0xff, /* Core 0 measured 25%; core 1 has no completed window. */
-        0x94, 0x22, 0, 0,       /* Static 0x1234 + scratch 0x60 + stacks 0x1000. */
-#if PICO_RP2350
-        0, 0x20, 0x08, 0,
-#else
-        0, 0x20, 0x04, 0,
-#endif
-    };
-    service_load_begin(0u, 0u);
-    service_load_note(0u);
-    service_load_end(0u, 250000u);
-    service_load_begin(0u, 250000u);
-    service_load_end(0u, 1000000u);
-    memset(buffer, 0xa5, sizeof(buffer));
-    TEST_ASSERT_EQUAL_UINT16(21u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, buffer, sizeof(expected));
-    TEST_ASSERT_EQUAL_HEX8(0xa5, buffer[21]);
-    TEST_ASSERT_EQUAL_UINT16(3u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_FEATURE, buffer, 3u));
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, buffer, 3u);
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_FEATURE, buffer, 0u));
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
-
     pico_test_time_us = 0;
-    TEST_ASSERT_EQUAL_UINT16(21u, tud_hid_get_report_cb(0, 8, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    const uint8_t zero_uptime[8] = {0};
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(zero_uptime, buffer + 1u, sizeof(zero_uptime));
-}
-
-static void test_report_lengths(void)
-{
-    uint8_t buffer[64];
-    TEST_ASSERT_EQUAL_UINT16(63u, tud_hid_get_report_cb(0, 1, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
-    TEST_ASSERT_EQUAL_UINT8(1u, buffer[1]);
-    TEST_ASSERT_EQUAL_UINT16(8u, tud_hid_get_report_cb(0, 3, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    TEST_ASSERT_EQUAL_UINT8(1u, buffer[0]);
-    TEST_ASSERT_EQUAL_UINT16(25u, tud_hid_get_report_cb(0, 5, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    TEST_ASSERT_EQUAL_UINT8(1u, buffer[0]);
-    TEST_ASSERT_EQUAL_UINT16(6u, tud_hid_get_report_cb(0, 6, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    TEST_ASSERT_EQUAL_UINT16(12u, tud_hid_get_report_cb(0, 16, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    const uint8_t expected_config[] = {1, 0, 1, 0, 255, 255, 255, 255, 0, 0, 0, 0};
-    TEST_ASSERT_EQUAL_MEMORY(expected_config, buffer, sizeof(expected_config));
-    TEST_ASSERT_EQUAL_UINT16(3u, tud_hid_get_report_cb(0, 16, HID_REPORT_TYPE_FEATURE, buffer, 3u));
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 16, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
-    TEST_ASSERT_EQUAL_UINT16(8u, tud_hid_get_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    const uint8_t expected_save[] = {1, 0, 0, 0, 255, 255, 255, 255};
-    TEST_ASSERT_EQUAL_MEMORY(expected_save, buffer, sizeof(expected_save));
-}
-
-static void test_configuration_save_validation_and_deferred_result(void)
-{
-    uint8_t request[9] = {1, 1, 0, 0, BOOT_CLOCK_250_MHZ, 0, 0, 0, 0};
-    uint8_t result[8];
-    for (uint16_t size = 0u; size <= 9u; ++size) {
-        if (size == 8u) continue;
-        tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, size);
-        usb_hid_poll();
-        TEST_ASSERT_EQUAL_UINT(0u, save_calls);
-        TEST_ASSERT_EQUAL(USB_HID_CONFIG_INVALID, usb_hid_config_save_state);
-    }
-    for (unsigned int field = 0u; field < 8u; ++field) {
-        uint8_t malformed[8];
-        memcpy(malformed, request, sizeof(malformed));
-        malformed[field] ^= 0x80;
-        tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, malformed, sizeof(malformed));
-        usb_hid_poll();
-        TEST_ASSERT_EQUAL_UINT(0u, save_calls);
-        TEST_ASSERT_EQUAL(USB_HID_CONFIG_INVALID, usb_hid_config_save_state);
-    }
-    request[1] = 0;
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, 8);
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_INVALID, usb_hid_config_save_state);
-    request[1] = 1;
-    request[4] = PICO_RP2350 ? 5u : BOOT_CLOCK_280_MHZ;
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, 8);
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_INVALID, usb_hid_config_save_state);
-    request[4] = BOOT_CLOCK_250_MHZ;
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, 8);
-    TEST_ASSERT_EQUAL_UINT(0u, save_calls);
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_PENDING, usb_hid_config_save_state);
-    uint8_t replacement[8] = {1, 0, 0, 0, 0, 0, 0, 0};
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, replacement, sizeof(replacement));
-    TEST_ASSERT_EQUAL_UINT32(request[4], usb_hid_config_save_profile);
-    usb_hid_poll();
-    TEST_ASSERT_EQUAL_UINT(1u, save_calls);
-    TEST_ASSERT_EQUAL_UINT(request[4], saved_profile);
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_SAVED, usb_hid_config_save_state);
-    TEST_ASSERT_EQUAL_UINT16(8, tud_hid_get_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, result, sizeof(result)));
-    TEST_ASSERT_EQUAL_UINT8(2, result[1]);
-    TEST_ASSERT_EQUAL_UINT8(request[4], result[4]);
-    TEST_ASSERT_EQUAL(BOOT_CLOCK_DEFAULT, configuration.active_profile);
-    TEST_ASSERT_EQUAL_UINT(0u, reset_calls);
-    absolute_time_t reboot_deadline = usb_hid_config_reboot_deadline;
-    pico_test_time_us = 500000;
-    for (uint16_t size = 0u; size <= sizeof(request); ++size) {
-        tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, size);
-        TEST_ASSERT_EQUAL(USB_HID_CONFIG_SAVED, usb_hid_config_save_state);
-    }
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, replacement, sizeof(replacement));
-    cdc_open = true;
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, 8u);
+    service_load_init();
+    led_available = true;
+    led_on = false;
     cdc_open = false;
+    endpoint_ready = false;
+    endpoint_accepts = true;
+    accepted_report_id = 0u;
+    accepted_reports = 0u;
+    reset_calls = 0u;
+    save_calls = 0u;
+    config_set_succeeds = true;
+    config_save_result = BOOT_CONFIG_SAVE_OK;
+    staged_config = (boot_config_t){.clock_profile = BOOT_CLOCK_DEFAULT};
+    boot_status = (boot_config_status_t){
+        .source = BOOT_CONFIG_DEFAULTS,
+        .reason = BOOT_CONFIG_ERASED,
+        .stored_profile = BOOT_CONFIG_PROFILE_UNAVAILABLE,
+        .active_profile = BOOT_CLOCK_DEFAULT,
+    };
+    memset(port_stats, 0, sizeof(port_stats));
+    memset(cdc_stats, 0, sizeof(cdc_stats));
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        port_info[index] = (uart_driver_port_info_t){
+            .backend = index < 2u ? UART_DRIVER_BACKEND_HW : UART_DRIVER_BACKEND_PIO,
+            .baud_rate = 115200u,
+            .tx_pin = (uint32_t)index * 4u,
+            .rx_pin = (uint32_t)index * 4u + 1u,
+            .data_bits = 8u,
+            .stop_bits = 1u,
+            .parity = UART_DRIVER_PARITY_NONE,
+        };
+        port_status[index] = UART_DRIVER_PORT_STATUS_READY;
+    }
+    usb_hid_init();
+}
+
+void tearDown(void)
+{
+}
+
+static void test_device_information_exact_63_byte_payload(void)
+{
+    uint8_t payload[64];
+    memset(payload, 0xa5, sizeof(payload));
+    TEST_ASSERT_EQUAL_UINT16(63u, get_report(1u, HID_REPORT_TYPE_FEATURE, payload));
+    TEST_ASSERT_EQUAL_UINT8(1u, payload[0]);
+    TEST_ASSERT_EQUAL_MEMORY(PICO_UART_USB_PRODUCT, payload + 1u, sizeof(PICO_UART_USB_PRODUCT));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY("0123456789ABCDEF", payload + 33u, 16u);
+    TEST_ASSERT_EQUAL_UINT8(6u, payload[53]);
+    TEST_ASSERT_EQUAL_HEX8(0x03u, payload[54]);
+    TEST_ASSERT_EQUAL_HEX8(0x3cu, payload[55]);
+    TEST_ASSERT_EQUAL_HEX8(0x07u, payload[56]);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, payload[57]);
+#if PICO_RP2350
+    TEST_ASSERT_EQUAL_UINT8(2u, payload[52]);
+    TEST_ASSERT_EQUAL_HEX8(0x1fu, payload[58]);
+    TEST_ASSERT_EQUAL_UINT32(0x82000u, usb_hid_read_u32(payload + 59u));
+#else
+    TEST_ASSERT_EQUAL_UINT8(1u, payload[52]);
+    TEST_ASSERT_EQUAL_HEX8(0x0fu, payload[58]);
+    TEST_ASSERT_EQUAL_UINT32(0x42000u, usb_hid_read_u32(payload + 59u));
+#endif
+    TEST_ASSERT_EQUAL_HEX8(0xa5u, payload[63]);
+    TEST_ASSERT_EQUAL_UINT16(0u, get_report(1u, HID_REPORT_TYPE_INPUT, payload));
+}
+
+static void test_control_and_telemetry_layout_lengths(void)
+{
+    uint8_t payload[64];
+    TEST_ASSERT_EQUAL_UINT16(24u, get_report(2u, HID_REPORT_TYPE_FEATURE, payload));
+    const uint8_t control_prefix[] = {1u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+    TEST_ASSERT_EQUAL_MEMORY(control_prefix, payload, sizeof(control_prefix));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, usb_hid_read_u32(payload + 8u));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, usb_hid_read_u32(payload + 16u));
+    TEST_ASSERT_EQUAL_HEX8(0u, payload[23]);
+
+    TEST_ASSERT_EQUAL_UINT16(24u, get_report(3u, HID_REPORT_TYPE_FEATURE, payload));
+    TEST_ASSERT_EQUAL_UINT8(1u, payload[0]);
+    TEST_ASSERT_EQUAL_UINT8(0u, payload[1]);
+    TEST_ASSERT_EQUAL_UINT16(2500u, (uint16_t)payload[2] | ((uint16_t)payload[3] << 8));
+    TEST_ASSERT_EQUAL_UINT32(125000000u, usb_hid_read_u32(payload + 20u));
+    TEST_ASSERT_EQUAL_UINT16(0u, get_report(3u, HID_REPORT_TYPE_INPUT, payload));
+}
+
+static void test_channel_feature_and_input_reads_are_non_consuming(void)
+{
+    uint8_t feature[64];
+    uint8_t input[64];
+    port_stats[0].uart_tx_bytes = 100u;
+    port_stats[0].uart_rx_bytes = 200u;
+    cdc_stats[0].tx_bytes = 300u;
+    cdc_stats[0].rx_bytes = 400u;
+    pico_test_time_us = 1000000;
+
+    TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, feature));
+    TEST_ASSERT_EQUAL_UINT8(1u, feature[0]);
+    TEST_ASSERT_EQUAL_UINT16(0u, (uint16_t)feature[1] | ((uint16_t)feature[2] << 8));
+    TEST_ASSERT_EQUAL_UINT32(1000u, usb_hid_read_u32(feature + 3u));
+    TEST_ASSERT_EQUAL_UINT32(100u, usb_hid_read_u32(feature + 9u));
+    TEST_ASSERT_EQUAL_UINT32(200u, usb_hid_read_u32(feature + 13u));
+    TEST_ASSERT_EQUAL_UINT32(300u, usb_hid_read_u32(feature + 17u));
+    TEST_ASSERT_EQUAL_UINT32(400u, usb_hid_read_u32(feature + 21u));
+    TEST_ASSERT_EQUAL_UINT32(115200u, usb_hid_read_u32(feature + 25u));
+    TEST_ASSERT_EQUAL_UINT8(0u, feature[31]);
+    TEST_ASSERT_EQUAL_UINT8(0u, feature[32]);
+    TEST_ASSERT_EQUAL_UINT8(1u, feature[33]);
+    TEST_ASSERT_EQUAL_UINT8(1u, feature[7]);
+
+    TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_INPUT, input));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(feature, input, sizeof(feature) < 54u ? sizeof(feature) : 54u);
+    TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, input));
+    TEST_ASSERT_EQUAL_UINT32(100u, usb_hid_read_u32(input + 9u));
+    TEST_ASSERT_EQUAL_UINT16(0u, get_report(16u, HID_REPORT_TYPE_FEATURE, input));
+    for (uint8_t id = 11u; id <= 15u; ++id) {
+        TEST_ASSERT_EQUAL_UINT16(54u, get_report(id, HID_REPORT_TYPE_FEATURE, input));
+    }
+}
+
+static void test_channel_publication_commits_independent_sequence_and_baseline(void)
+{
+    uint8_t feature[64];
+    port_stats[0].uart_tx_bytes = 25u;
+    endpoint_ready = true;
+    pico_test_time_us = 499000;
     usb_hid_poll();
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_SAVED, usb_hid_config_save_state);
-    TEST_ASSERT_EQUAL_UINT32(BOOT_CLOCK_250_MHZ, usb_hid_config_save_profile);
+    TEST_ASSERT_EQUAL_UINT(0u, accepted_reports);
+    pico_test_time_us = 500000;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT(1u, accepted_reports);
+    TEST_ASSERT_EQUAL_UINT8(10u, accepted_report_id);
+    TEST_ASSERT_EQUAL_UINT16(1u, (uint16_t)accepted_payload[1] | ((uint16_t)accepted_payload[2] << 8));
+    TEST_ASSERT_EQUAL_UINT32(500u, usb_hid_read_u32(accepted_payload + 3u));
+    TEST_ASSERT_EQUAL_UINT32(25u, usb_hid_read_u32(accepted_payload + 9u));
+
+    for (size_t channel = 1u; channel < UART_PORT_COUNT; ++channel) {
+        usb_hid_traffic[channel].last_publication_ms = 1000u;
+    }
+    port_stats[0].uart_tx_bytes = 50u;
+    pico_test_time_us = 600000;
+    TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, feature));
+    TEST_ASSERT_EQUAL_UINT16(1u, (uint16_t)feature[1] | ((uint16_t)feature[2] << 8));
+    TEST_ASSERT_EQUAL_UINT32(50u, usb_hid_read_u32(feature + 9u));
+    endpoint_accepts = false;
+    pico_test_time_us = 1000000;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT16(1u, usb_hid_traffic[0].sequence);
+    endpoint_accepts = true;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT16(2u, usb_hid_traffic[0].sequence);
+    TEST_ASSERT_EQUAL_UINT16(10u, accepted_report_id);
+}
+
+static void test_boot_counter_wraps_on_wire(void)
+{
+    uint8_t payload[64];
+    port_stats[0].uart_tx_bytes = UINT32_MAX - 15u;
+    usb_hid_init();
+    port_stats[0].uart_tx_bytes = 32u;
+    pico_test_time_us = 1000;
+    TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, payload));
+    TEST_ASSERT_EQUAL_UINT32(32u, usb_hid_read_u32(payload + 9u));
+}
+
+static void test_boot_counters_survive_usb_host_reset(void)
+{
+    uint8_t payload[64];
+    port_stats[0].uart_tx_bytes = 10u;
+    usb_hid_init();
+    port_stats[0].uart_tx_bytes = 25u;
+    usb_hid_reset_host_state();
+    TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, payload));
+    TEST_ASSERT_EQUAL_UINT32(25u, usb_hid_read_u32(payload + 9u));
+}
+
+static void test_command_validation_precedence_echo_and_deduplication(void)
+{
+    uint8_t request[USB_HID_CONTROL_SIZE];
+    uint8_t result[64];
+
+    make_command(request, 5u, 0u, 11u, BOOT_CLOCK_150_MHZ);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_EQUAL_UINT16(24u, get_report(2u, HID_REPORT_TYPE_FEATURE, result));
+    TEST_ASSERT_EQUAL_UINT8(3u, result[3]);
+    TEST_ASSERT_EQUAL_UINT32(11u, usb_hid_read_u32(result + 4u));
+    TEST_ASSERT_EQUAL_UINT32(BOOT_CLOCK_150_MHZ, usb_hid_read_u32(result + 16u));
+    TEST_ASSERT_EQUAL_UINT8(3u, result[22]);
+
+    make_command(request, 0x7fu, 1u, 12u, 0u);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_EQUAL_UINT16(24u, get_report(2u, HID_REPORT_TYPE_FEATURE, result));
+    TEST_ASSERT_EQUAL_UINT8(4u, result[3]);
+    TEST_ASSERT_EQUAL_UINT8(5u, result[22]);
+    make_command(request, 0x7fu, 0x80u, 13u, 0u);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_EQUAL_UINT16(24u, get_report(2u, HID_REPORT_TYPE_FEATURE, result));
+    TEST_ASSERT_EQUAL_UINT8(3u, result[3]);
+    TEST_ASSERT_EQUAL_UINT8(1u, result[22]);
+    TEST_ASSERT_EQUAL_UINT8(0x80u, result[2]);
+
+    make_command(request, 2u, 0u, 14u, 0u);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_TRUE(led_on);
+    make_command(request, 1u, 0u, 14u, 0u);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_TRUE(led_on);
+}
+
+static void test_save_pending_verified_completion_and_error_results(void)
+{
+    uint8_t request[USB_HID_CONTROL_SIZE];
+    uint8_t result[64];
+    make_command(request, 5u, 1u, 21u, BOOT_CLOCK_150_MHZ);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_EQUAL_UINT16(24u, get_report(2u, HID_REPORT_TYPE_FEATURE, result));
+    TEST_ASSERT_EQUAL_UINT8(1u, result[3]);
+    TEST_ASSERT_EQUAL_UINT8(0u, save_calls);
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT8(2u, usb_hid_command_status);
     TEST_ASSERT_EQUAL_UINT(1u, save_calls);
-    TEST_ASSERT_EQUAL_MEMORY(&reboot_deadline, &usb_hid_config_reboot_deadline, sizeof(reboot_deadline));
-    uint8_t unchanged_result[8];
-    TEST_ASSERT_EQUAL_UINT16(8u,
-        tud_hid_get_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, unchanged_result, sizeof(unchanged_result)));
-    TEST_ASSERT_EQUAL_MEMORY(result, unchanged_result, sizeof(result));
-    pico_test_time_us = 999999;
+    TEST_ASSERT_EQUAL_UINT32(BOOT_CLOCK_150_MHZ, staged_config.clock_profile);
+    TEST_ASSERT_TRUE(usb_hid_reboot_pending);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_EQUAL_UINT(1u, save_calls);
+    pico_test_time_us = 999000;
     usb_hid_poll();
     TEST_ASSERT_EQUAL_UINT(0u, reset_calls);
     pico_test_time_us = 1000000;
     usb_hid_poll();
     TEST_ASSERT_EQUAL_UINT(1u, reset_calls);
+
+    usb_hid_init();
+    config_save_result = BOOT_CONFIG_SAVE_VERIFY_FAILED;
+    make_command(request, 5u, 0u, 22u, BOOT_CLOCK_DEFAULT);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT8(6u, usb_hid_command_status);
+    TEST_ASSERT_EQUAL_UINT8(8u, usb_hid_error_reason);
+    TEST_ASSERT_FALSE(usb_hid_reboot_pending);
+
+    usb_hid_init();
+    config_save_result = BOOT_CONFIG_SAVE_FLASH_FAILED;
+    make_command(request, 5u, 0u, 23u, BOOT_CLOCK_DEFAULT);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT8(6u, usb_hid_command_status);
+    TEST_ASSERT_EQUAL_UINT8(7u, usb_hid_error_reason);
 }
 
-static void test_configuration_save_busy_failure_and_default(void)
+static void test_save_busy_and_malformed_requests_have_no_side_effects(void)
 {
-    uint8_t request[8] = {1, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t request[USB_HID_CONTROL_SIZE];
+    uint8_t result[64];
     cdc_open = true;
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
-    usb_hid_poll();
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_BUSY, usb_hid_config_save_state);
+    make_command(request, 5u, 0u, 31u, BOOT_CLOCK_DEFAULT);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_EQUAL_UINT16(24u, get_report(2u, HID_REPORT_TYPE_FEATURE, result));
+    TEST_ASSERT_EQUAL_UINT8(5u, result[3]);
+    TEST_ASSERT_EQUAL_UINT8(6u, result[22]);
     TEST_ASSERT_EQUAL_UINT(0u, save_calls);
+
     cdc_open = false;
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
-    cdc_open = true;
-    usb_hid_poll();
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_BUSY, usb_hid_config_save_state);
+    request[3] = 1u;
+    usb_hid_write_u32(request + 4u, 32u);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_EQUAL_UINT8(3u, usb_hid_command_status);
+    TEST_ASSERT_EQUAL_UINT8(1u, usb_hid_error_reason);
     TEST_ASSERT_EQUAL_UINT(0u, save_calls);
-    cdc_open = false;
-    set_success = false;
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
-    usb_hid_poll();
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_FAILED, usb_hid_config_save_state);
-    TEST_ASSERT_EQUAL_UINT(0u, save_calls);
-    set_success = true;
-    save_success = false;
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
-    usb_hid_poll();
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_FAILED, usb_hid_config_save_state);
-    save_success = true;
-    tud_hid_set_report_cb(0, 17, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
-    usb_hid_poll();
-    TEST_ASSERT_EQUAL(USB_HID_CONFIG_SAVED, usb_hid_config_save_state);
-    TEST_ASSERT_EQUAL_UINT32(BOOT_CLOCK_DEFAULT, saved_profile);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request) - 1u);
+    TEST_ASSERT_EQUAL_UINT8(0u, usb_hid_command);
+    TEST_ASSERT_EQUAL_UINT32(0u, usb_hid_request_id);
 }
 
-static void test_channel_diagnostics_history(void)
+static void test_standalone_reboot_requires_fresh_arm_and_is_deduplicated(void)
 {
-    uint8_t buffer[64];
-    usb_hid_channel_diagnostics_t report;
-    diagnostic_stats.rx_error_count = 3u;
-    diagnostic_stats.rx_ring_pending_overflow_count = 7u;
-    diagnostic_health |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-    pico_test_time_us = INT64_C(0x100000001) * 1000;
-    memset(buffer, 0xa5, sizeof(buffer));
-    TEST_ASSERT_EQUAL_UINT16(59u, tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    memcpy(&report, buffer, sizeof(report));
-    TEST_ASSERT_EQUAL_UINT8(1u, report.version);
-    TEST_ASSERT_EQUAL_UINT32(115200u, report.baud_rate);
-    TEST_ASSERT_EQUAL_UINT8(8u, report.data_bits);
-    TEST_ASSERT_EQUAL_UINT8(1u, report.stop_bits);
-    TEST_ASSERT_EQUAL_UINT8(0u, report.tx_pin);
-    TEST_ASSERT_EQUAL_UINT8(1u, report.rx_pin);
-    TEST_ASSERT_EQUAL_UINT32(1u, report.faults[1].count);
-    TEST_ASSERT_EQUAL_UINT32(7u, report.faults[2].count);
-    TEST_ASSERT_EQUAL_UINT32(3u, report.faults[3].count);
-    TEST_ASSERT_EQUAL_UINT64(UINT64_C(0x100000001), report.faults[3].last_seen_ms);
-    TEST_ASSERT_EQUAL_HEX8(0xa5, buffer[59]);
-    pico_test_time_us += 1000000;
-    diagnostic_stats.rx_ring_overflow_count = 7u;
-    diagnostic_stats.rx_ring_pending_overflow_count = 0u;
-    diagnostic_health &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-    (void)tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer));
-    memcpy(&report, buffer, sizeof(report));
-    TEST_ASSERT_EQUAL_UINT32(7u, report.faults[2].count);
-    TEST_ASSERT_EQUAL_UINT64(UINT64_C(0x100000001), report.faults[3].last_seen_ms);
-    diagnostic_stats.rx_error_count++;
-    diagnostic_health |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
-    (void)tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer));
-    memcpy(&report, buffer, sizeof(report));
-    TEST_ASSERT_EQUAL_UINT32(2u, report.faults[1].count);
-    TEST_ASSERT_EQUAL_UINT32(4u, report.faults[3].count);
-    TEST_ASSERT_EQUAL_UINT64(UINT64_C(0x1000003e9), report.faults[3].last_seen_ms);
-    TEST_ASSERT_EQUAL_UINT16(2u, tud_hid_get_report_cb(0, 15, HID_REPORT_TYPE_FEATURE, buffer, 2u));
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 10, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
-}
-
-static void test_channel_diagnostics_sample_without_interrupt_endpoint(void)
-{
-    diagnostic_stats.rx_error_count = 2u;
-    diagnostic_health |= UART_DRIVER_PORT_STATUS_INIT_FAILED;
-    pico_test_time_us = 100000;
+    uint8_t request[USB_HID_CONTROL_SIZE];
+    make_command(request, 3u, 0u, 41u, 0u);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+#if PICO_UART_ALLOW_HID_RESET
+    const absolute_time_t arm_deadline = usb_hid_arm_deadline;
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_EQUAL_MEMORY(&arm_deadline, &usb_hid_arm_deadline, sizeof(arm_deadline));
+    make_command(request, 4u, 0u, 42u, 0u);
+    tud_hid_set_report_cb(0u, 2u, HID_REPORT_TYPE_FEATURE, request, sizeof(request));
+    TEST_ASSERT_TRUE(usb_hid_reboot_pending);
+    pico_test_time_us = 1000000;
     usb_hid_poll();
-    TEST_ASSERT_EQUAL_UINT32(2u, usb_hid_diagnostics[0].faults[3].count);
-    TEST_ASSERT_EQUAL_UINT64(100u, usb_hid_diagnostics[0].faults[3].last_seen_ms);
-    diagnostic_stats.rx_error_count = 5u;
-    pico_test_time_us = 150000;
-    usb_hid_poll();
-    TEST_ASSERT_EQUAL_UINT32(2u, usb_hid_diagnostics[0].faults[3].count);
-    pico_test_time_us = 200000;
-    usb_hid_poll();
-    TEST_ASSERT_EQUAL_UINT32(5u, usb_hid_diagnostics[0].faults[3].count);
-    TEST_ASSERT_EQUAL_UINT32(1u, usb_hid_diagnostics[0].faults[0].count);
-    TEST_ASSERT_EQUAL_UINT64(200u, usb_hid_diagnostics[0].faults[3].last_seen_ms);
-    usb_hid_diagnostics[0].faults[3].count = UINT32_MAX - 1u;
-    diagnostic_stats.rx_error_count = 10u;
-    pico_test_time_us = 300000;
-    usb_hid_poll();
-    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, usb_hid_diagnostics[0].faults[3].count);
-}
-
-static void test_led_payload(void)
-{
-    uint8_t buffer[3] = {0, 0, 0xa5};
-    for (unsigned int state = 0; state < 2u; ++state) {
-        led_on = state != 0u;
-        TEST_ASSERT_EQUAL_UINT16(2u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-        TEST_ASSERT_EQUAL_UINT8(1u, buffer[0]);
-        TEST_ASSERT_EQUAL_UINT8(state ? 7u : 1u, buffer[1]);
-        TEST_ASSERT_EQUAL_UINT8(0xa5, buffer[2]);
-    }
-    led_available = false;
-    TEST_ASSERT_EQUAL_UINT16(2u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_FEATURE, buffer, sizeof(buffer)));
-    TEST_ASSERT_EQUAL_UINT8(0u, buffer[1]);
-    TEST_ASSERT_EQUAL_UINT16(1u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_FEATURE, buffer, 1u));
-    TEST_ASSERT_EQUAL_UINT16(0u, tud_hid_get_report_cb(0, 9, HID_REPORT_TYPE_INPUT, buffer, sizeof(buffer)));
-}
-
-static void test_identification_toggle_and_usb_reset(void)
-{
-    const uint8_t command[] = {USB_HID_COMMAND_TOGGLE_LED};
-    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, command, sizeof(command));
-    TEST_ASSERT_TRUE(led_on);
-    usb_hid_reset_host_state();
-    TEST_ASSERT_TRUE(led_on);
-    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, command, sizeof(command));
-    TEST_ASSERT_FALSE(led_on);
-    led_available = false;
-    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, command, sizeof(command));
-    TEST_ASSERT_FALSE(led_on);
+    TEST_ASSERT_EQUAL_UINT(1u, reset_calls);
+#else
+    TEST_ASSERT_EQUAL_UINT8(USB_HID_STATUS_UNSUPPORTED, usb_hid_command_status);
+#endif
 }
 
 int main(void)
 {
     UNITY_BEGIN();
-    RUN_TEST(test_identity_payload);
-    RUN_TEST(test_runtime_payload);
-    RUN_TEST(test_report_lengths);
-    RUN_TEST(test_configuration_save_validation_and_deferred_result);
-    RUN_TEST(test_configuration_save_busy_failure_and_default);
-    RUN_TEST(test_led_payload);
-    RUN_TEST(test_identification_toggle_and_usb_reset);
-    RUN_TEST(test_channel_diagnostics_history);
-    RUN_TEST(test_channel_diagnostics_sample_without_interrupt_endpoint);
+    RUN_TEST(test_device_information_exact_63_byte_payload);
+    RUN_TEST(test_control_and_telemetry_layout_lengths);
+    RUN_TEST(test_channel_feature_and_input_reads_are_non_consuming);
+    RUN_TEST(test_channel_publication_commits_independent_sequence_and_baseline);
+    RUN_TEST(test_boot_counter_wraps_on_wire);
+    RUN_TEST(test_boot_counters_survive_usb_host_reset);
+    RUN_TEST(test_command_validation_precedence_echo_and_deduplication);
+    RUN_TEST(test_save_pending_verified_completion_and_error_results);
+    RUN_TEST(test_save_busy_and_malformed_requests_have_no_side_effects);
+    RUN_TEST(test_standalone_reboot_requires_fresh_arm_and_is_deduplicated);
     return UNITY_END();
 }

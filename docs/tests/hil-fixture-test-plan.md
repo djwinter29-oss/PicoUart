@@ -74,7 +74,8 @@ the result log.
 Run performance testing only after functional pass. Every stream verifies returned payload bytes; traffic activity alone
 is not a pass. Test each pair individually, then run all six streams concurrently. The pair and concurrent runners
 process comma-separated rates sequentially in one process; they reopen and reconfigure the ports and wait for the settle
-interval before testing each rate.
+interval before testing each rate. After settling, the runner flushes all host TTY queues so bytes arriving during
+CDC re-enumeration or DTR-triggered channel reset cannot contaminate the next rate's first payload.
 
 The standalone performance runner and combined runner default to this concurrent six-port sweep, in order:
 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, and 3000000 baud. The default sweep
@@ -84,7 +85,8 @@ rate; later configured rates are reported as `NOT RUN`, not as failures or missi
 The standalone performance workflow and combined runner require clean HID health before and after each rate,
 including unchanged overrun counts. A health failure blocks traffic or fails the completed rate even if payload
 verification passed. Raw `stress` invocations opt into these same checks with `--check-hid-health`.
-Each rate reopens the endpoints, configures line coding, and settles before its health baseline is collected.
+Each rate reopens the endpoints, configures line coding, settles, flushes host TTY queues, and then collects its health
+baseline.
 After a failure, reset or reflash the intended image and verify clean health before running a different rate in
 a separate invocation. Do not interpret later measurements from older continue-after-failure sweeps as isolated
 clean-start results. The runners never reset, reflash, or change regulator voltage automatically.

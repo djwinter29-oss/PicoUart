@@ -1,34 +1,59 @@
-"""Persistent sysclk saves validate the target, acknowledgement, and device readback."""
+"""Report-2 configuration commands validate capabilities and correlate results."""
 
-import struct
 from unittest.mock import patch
 
 import pytest
 
 from pico_uart.client import PicoUartHid
-from pico_uart.protocol import parse_configuration, parse_configuration_save
+from helpers import control_bytes, device_info_bytes
 from pico_uart.web.app import create_app
+from pico_uart.protocol import REPORT_ID_CONTROL, REPORT_ID_DEVICE_INFO
 
 
 class ConfigDevice:
-    def __init__(self, mcu=1, status=2, written=9, result_profile=None, initial_status=0):
+    def __init__(self, *, mcu=1, status=2, written=None, result_profile=None, initial_status=0, capabilities=7):
         self.mcu = mcu
         self.status = status
         self.written = written
         self.result_profile = result_profile
         self.initial_status = initial_status
+        self.capabilities = capabilities
         self.writes = []
 
     def get_feature_report(self, report_id, length):
-        if report_id == 6:
-            return [6, *struct.pack("<BBI", 1, self.mcu, 125000000)]
-        assert report_id == 17 and length == 9
-        profile = self.result_profile if self.result_profile is not None else self.writes[-1][5] if self.writes else 0
-        return [17, *struct.pack("<BBHI", 1, self.status if self.writes else self.initial_status, 0, profile)]
+        if report_id == REPORT_ID_DEVICE_INFO:
+            return [report_id, *device_info_bytes(
+                mcu=self.mcu,
+                capabilities=self.capabilities,
+                profile_mask=0x1F if self.mcu == 2 else 0x0F,
+            )]
+        assert report_id == REPORT_ID_CONTROL and length == 25
+        if not self.writes:
+            return [report_id, *control_bytes(
+                command=5 if self.initial_status else 0,
+                status=self.initial_status,
+                request_id=1 if self.initial_status else 0,
+                requested=0 if self.initial_status else 0xFFFFFFFF,
+            )]
+        command, flags = self.writes[-1][2:4]
+        profile = int.from_bytes(self.writes[-1][17:21], "little")
+        profile = self.result_profile if self.result_profile is not None else profile
+        error_reason = {3: 3, 4: 5, 5: 6, 6: 9}.get(self.status, 0)
+        return [report_id, *control_bytes(
+            command=command,
+            flags=flags,
+            status=self.status,
+            request_id=int.from_bytes(self.writes[-1][5:9], "little"),
+            requested=profile,
+            error_reason=error_reason,
+        )]
 
     def send_feature_report(self, report):
         self.writes.append(report)
-        return self.written
+        return len(report) if self.written is None else self.written
+
+    def close(self):
+        pass
 
 
 @pytest.mark.parametrize("mcu,profile,ack", [(1, 0, False), (1, 3, True), (2, 0, False), (2, 4, True),
@@ -36,14 +61,17 @@ class ConfigDevice:
 def test_save_supported_profile_has_explicit_payload(mcu, profile, ack):
     device = ConfigDevice(mcu=mcu)
     result = PicoUartHid(device=device).save_configuration(profile, ack)
-    assert result == {"status": 2, "profile": profile}
-    assert device.writes == [[17, 1, int(ack), 0, 0, profile, 0, 0, 0]]
-    assert parse_configuration(struct.pack("<BBBBII", 1, 1, 0, 0, 0, 0))["stored_profile"] == 0
+    assert result["status"] == 2 and result["requested_profile"] == profile
+    report = device.writes[0]
+    assert report[0] == REPORT_ID_CONTROL and len(report) == 25
+    assert report[1:4] == [1, 5, int(ack)]
+    assert report[5:9] == [1, 0, 0, 0]
+    assert int.from_bytes(report[17:21], "little") == profile
 
 
 @pytest.mark.parametrize("mcu,profile,ack", [
     (1, 1, False), (2, 2, False), (1, 4, True),
-    (99, 0, False), (1, True, True), (1, 5, True), (1, 0, 1), (1, 3, False), (2, 4, False),
+    (1, True, True), (1, 5, True), (1, 0, 1), (1, 3, False), (2, 4, False),
 ])
 def test_invalid_request_never_writes(mcu, profile, ack):
     device = ConfigDevice(mcu=mcu)
@@ -53,7 +81,7 @@ def test_invalid_request_never_writes(mcu, profile, ack):
 
 
 @pytest.mark.parametrize("status,message", [
-    (3, "rejected"), (4, "close all CDC ports"), (5, "verification failed"),
+    (3, "rejected"), (5, "close all CDC ports"), (6, "operation failed"),
 ])
 def test_save_errors_are_explicit(status, message):
     with pytest.raises(RuntimeError, match=message):
@@ -63,7 +91,7 @@ def test_save_errors_are_explicit(status, message):
 def test_partial_write_mismatch_and_timeout_are_not_success():
     with pytest.raises(RuntimeError, match="incomplete"):
         PicoUartHid(device=ConfigDevice(written=8)).save_configuration(0)
-    with pytest.raises(RuntimeError, match="does not match"):
+    with pytest.raises(RuntimeError, match="requested profile"):
         PicoUartHid(device=ConfigDevice(result_profile=1)).save_configuration(0)
     with patch("pico_uart.client.time.monotonic", side_effect=[0, 1, 4]), patch("pico_uart.client.time.sleep"):
         with pytest.raises(RuntimeError, match="timed out"):
@@ -72,19 +100,20 @@ def test_partial_write_mismatch_and_timeout_are_not_success():
 
 def test_pending_save_is_not_replaced():
     device = ConfigDevice(initial_status=1)
-    with pytest.raises(RuntimeError, match="already pending"):
+    with pytest.raises(RuntimeError, match="operation is pending"):
         PicoUartHid(device=device).save_configuration(0)
     assert device.writes == []
 
 
 @pytest.mark.parametrize("payload", [
-    b"", bytes(8), struct.pack("<BBHI", 2, 0, 0, 0), struct.pack("<BBHI", 1, 6, 0, 0),
-    struct.pack("<BBHI", 1, 0, 1, 0), struct.pack("<BBHI", 1, 0, 0, 5),
-    struct.pack("<BBHI", 1, 2, 0, 0xFFFFFFFF),
+    b"", bytes(24), bytes((2,)) + bytes(23), bytes((1, 0, 0, 7)) + bytes(20),
+    control_bytes(status=3, error_reason=5),
 ])
 def test_save_report_rejects_malformed_payload(payload):
     with pytest.raises(RuntimeError):
-        parse_configuration_save(payload)
+        from pico_uart.protocol import parse_control
+
+        parse_control(payload)
 
 
 def test_configuration_endpoint_requires_csrf_and_validated_json():

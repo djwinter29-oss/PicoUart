@@ -66,9 +66,10 @@ pico-uart monitor --duration 60 > uart-traffic.log
 pico-uart overruns > uart-dropped-bytes.txt
 ```
 
-Monitor output includes all six channels' health flags, UART/CDC byte deltas, and ring-buffer peaks. Byte deltas cover
-the interval since the preceding successfully published status report and saturate at 65535. Dropped-byte counts from
-`overruns` and buffer peaks are cumulative since boot, not per-test totals; account for resets and saturation.
+Monitor output includes per-channel health flags, UART/CDC byte deltas, and ring-buffer peaks. The Input stream carries
+each channel's independently sequenced 500 ms measurement interval. Status JSON includes cumulative observed totals,
+the sum of valid observed intervals, sequence-gap counts, and sticky incompleteness indicators. Dropped-byte counts
+from `overruns` and buffer peaks are cumulative since boot, not per-test totals; account for resets and saturation.
 
 `status` exits non-zero if its timeout expires without a valid report. `monitor` exits non-zero if it receives no valid
 reports during its duration; it can succeed after one report even if later reads time out. Both exit non-zero on device
@@ -88,13 +89,17 @@ if status is None:
 print(status["channels"])
 ```
 
-`read_status()` returns `None` on timeout; device access failures may raise `OSError` or `RuntimeError`. Use
-`PicoUartHid(serial_number="ABC123")` to select a board. Other read methods include `read_board_status()`,
-`read_overflow_counts()`, `read_hardware_info()`, and `read_configuration()`.
+`read_status()` returns `None` on timeout; otherwise it returns the latest six-channel snapshot, updating the channel
+whose Input report arrived. Device access failures may raise `OSError` or `RuntimeError`. Use
+`PicoUartHid(serial_number="ABC123")` to select a board. Static identity and capability data come from
+`read_identity()` / `read_board_status()`. Live board values come from `read_telemetry()`; channel Feature snapshots
+are available through `read_channel_diagnostic(index)` and do not contribute to Input traffic totals.
+`read_runtime()`, `read_led()`, `read_overflow_counts()`, `read_hardware_info()`, and `read_configuration()` remain
+convenience methods.
 
 The supported high-level API is `PicoUartHid` and its methods described here, plus the module-level convenience
 functions `read_board_status`, `read_board_temperature`, `read_firmware_version`, `read_configuration`,
-`read_hardware_info`, `read_overflow_counts`, and `reset_board`. Report parsers, report IDs and sizes, USB identifiers,
+`read_hardware_info`, `read_overflow_counts`, `read_telemetry`, and `reset_board`. Report parsers, report IDs and sizes, USB identifiers,
 raw HID access, and generic feature-report helpers are low-level exports tied to the firmware report contract; prefer
 their owning `pico_uart.protocol`, `pico_uart.transport`, and `pico_uart.client` modules when using them directly.
 
@@ -104,7 +109,7 @@ Read-only commands include `hardware`, `config`, `temperature`, and `version`. R
 `pico-uart COMMAND --help` for options.
 
 `toggle-led` changes the board LED. `reset` reboots the board and is refused unless firmware advertises reset support,
-which is disabled by default. The API exposes equivalent `toggle_led()` and `reset_board()` methods.
+which is enabled by default. The API exposes equivalent `toggle_led()` and `reset_board()` methods.
 
 The API's `save_configuration(profile, unsafe_overclock=False)` writes a supported boot-time clock profile;
 `read_configuration_save()` reads the save result. A verified save automatically reboots the board, independently of

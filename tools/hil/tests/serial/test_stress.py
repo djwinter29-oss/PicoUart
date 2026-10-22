@@ -253,6 +253,7 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
         result[label] = (64, None)
 
     monkeypatch.setattr(stress, "configure_port", lambda *_args, **_kwargs: (next(next_descriptor), []))
+    monkeypatch.setattr(stress.termios, "tcflush", lambda *_args: None)
     monkeypatch.setattr(stress, "run_stream", fake_run_stream)
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(stress, "close_ports", lambda *_args: None)
@@ -327,6 +328,7 @@ def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> N
         result[label] = (64, None)
 
     monkeypatch.setattr(stress, "configure_port", lambda *_args, **_kwargs: (next(next_descriptor), []))
+    monkeypatch.setattr(stress.termios, "tcflush", lambda *_args: None)
     monkeypatch.setattr(stress, "run_stream", complete_stream)
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(stress, "close_ports", lambda *_args: OSError("restore failed"))
@@ -347,6 +349,7 @@ def test_setup_only_fails_when_port_cleanup_fails(monkeypatch: pytest.MonkeyPatc
     )()
     descriptors = iter(range(20, 26))
     monkeypatch.setattr(stress, "configure_port", lambda *_args, **_kwargs: (next(descriptors), []))
+    monkeypatch.setattr(stress.termios, "tcflush", lambda *_args: None)
     monkeypatch.setattr(stress.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(stress, "close_ports", lambda _ports: OSError("restore failed"))
 
@@ -622,9 +625,11 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     )
     opened = []
     streams = []
+    events = []
 
     def configure(path, _baud, **_kwargs):
         opened.append(path)
+        events.append(("open", path))
         return len(opened), []
 
     class ImmediateThread:
@@ -639,8 +644,11 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
 
     def run_stream(label, source, destination, _duration, _payload, _timeout, _start, results, _timing):
         streams.append((label, source, destination))
+        events.append(("transmit", label))
         results[label] = (64, None)
 
+    monkeypatch.setattr(stress.time, "sleep", lambda _seconds: events.append(("settle", None)))
+    monkeypatch.setattr(stress.termios, "tcflush", lambda fd, _queue: events.append(("flush", fd)))
     monkeypatch.setattr(stress, "configure_port", configure)
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(stress, "run_stream", run_stream)
@@ -656,6 +664,9 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     ]
     assert streams == expected
     assert opened == [f"cdc{channel}" for channel in range(6)]
+    assert events[:6] == [("open", f"cdc{channel}") for channel in range(6)]
+    assert events[6:13] == [("settle", None), *[("flush", fd) for fd in range(1, 7)]]
+    assert all(event[0] == "transmit" for event in events[13:])
 
 
 def test_hil_fixture_plan_matches_modes_and_timing(repo_root):

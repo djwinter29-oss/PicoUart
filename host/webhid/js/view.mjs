@@ -41,31 +41,33 @@ function uptimeLabel(milliseconds) {
 }
 
 export function channelPresentation(data, channel, now = Date.now()) {
-  const sample = Date.parse(data.updated_at);
+  const sample = Date.parse(channel.updated_at);
   let history = channelHistory.get(channel.id);
   if (!data.connected || !history || history.serial !== data.identity?.serial_number
-    || data.runtime?.uptime_ms < history.uptime
-    || directions.some(([, key]) => channel.totals[key] < history.totals[key])) {
+    || data.runtime?.uptime_ms < history.uptime) {
     history = { serial: data.identity?.serial_number, uptime: data.runtime?.uptime_ms,
       totals: { ...channel.totals }, sample, observedSample: sample, receivedAt: now,
-      gaps: data.traffic_gaps, rates: null };
+      interval: channel.observed_interval_ms, gaps: channel.traffic_gaps, rates: null };
     channelHistory.set(channel.id, history);
   }
-  const elapsed = sample - history.sample;
-  if (data.traffic_gaps !== history.gaps || elapsed < 0 || elapsed > 3000) {
+  const elapsed = channel.observed_interval_ms - history.interval;
+  if (channel.traffic_gaps !== history.gaps || elapsed < 0 || sample - history.sample > 3000) {
     history.rates = null;
     history.sample = sample;
     history.totals = { ...channel.totals };
-    history.gaps = data.traffic_gaps;
+    history.interval = channel.observed_interval_ms;
+    history.gaps = channel.traffic_gaps;
   } else if (elapsed >= 1000) {
     history.rates = Object.fromEntries(directions.map(([, key]) =>
-      [key, (channel.totals[key] - history.totals[key]) * 1000 / elapsed]));
+      [key, ((channel.totals[key] - history.totals[key]) >>> 0) * 1000 / elapsed]));
     history.sample = sample;
     history.totals = { ...channel.totals };
+    history.interval = channel.observed_interval_ms;
   }
   if (!Number.isFinite(history.sample) && Number.isFinite(sample)) {
     history.sample = sample;
     history.totals = { ...channel.totals };
+    history.interval = channel.observed_interval_ms;
     history.rates = null;
   }
   if (data.runtime) history.uptime = data.runtime.uptime_ms;
@@ -144,9 +146,13 @@ function renderChannels(data) {
       direction.className = "traffic-label";
       direction.textContent = label;
       value.textContent = view.rates
-        ? `${view.rates[key].toLocaleString(undefined, { maximumFractionDigits: 1 })} B/s` : "-- B/s";
-      metric.title = `${label}: ${channel.totals[key]} B observed total since monitoring began (lower bound).`;
-      metric.append(direction, value);
+        ? `${(view.rates[key] / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB/s`
+        : "-- KB/s";
+      const total = document.createElement("span");
+      total.className = "traffic-total";
+      total.textContent = `${channel.totals[key].toLocaleString()} B`;
+      metric.title = `${label}: ${channel.totals[key].toLocaleString()} B since firmware boot, modulo 2^32.`;
+      metric.append(direction, value, total);
       metrics.append(metric);
     });
     traffic.append(metrics);
@@ -162,11 +168,12 @@ export function renderDashboard(data) {
   const statusMessage = document.querySelector("#status-message");
   connection.dataset.state = data.connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
-  document.querySelector("#mcu").textContent = data.hardware?.mcu ?? "--";
+  document.querySelector("#mcu").textContent = data.identity?.mcu ?? data.hardware?.mcu ?? "--";
   document.querySelector("#system-clock").textContent = data.hardware
     ? `${(data.hardware.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
     : "--";
-  document.querySelector("#firmware").textContent = data.board?.firmware_version ?? "--";
+  document.querySelector("#firmware").textContent =
+    data.identity?.firmware_version ?? data.board?.firmware_version ?? "--";
   document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
   document.querySelector("#serial").textContent = data.identity?.serial_number ?? "--";
   const runtime = data.runtime;
@@ -184,8 +191,8 @@ export function renderDashboard(data) {
   const ledButton = document.querySelector("#toggle-led");
   ledButton.textContent = `Board LED: ${led?.output_on == null ? "--" : led.output_on ? "On" : "Off"}`;
   ledButton.dataset.state = led?.output_on == null ? "unknown" : led.output_on ? "on" : "off";
-  ledButton.title = led?.manual_on == null ? "Toggle manual LED state; USB activity may also light the LED"
-    : `Toggle manual LED state (currently ${led.manual_on ? "On" : "Off"}); USB activity may also light the LED`;
+  ledButton.title = led?.manual_on == null ? "Board identification LED state unavailable"
+    : `Set board identification LED ${led.manual_on ? "Off" : "On"}`;
   updateReportAge(data);
   document.querySelector("#overflow-total").textContent = data.overflow_counts.every(value => value !== null)
     ? `${data.overflow_counts.reduce((sum, count) => sum + count, 0)} B` : "--";
@@ -195,7 +202,7 @@ export function renderDashboard(data) {
   trafficNote.hidden = !data.traffic_incomplete;
   trafficNote.dataset.incomplete = String(data.traffic_incomplete);
   trafficNote.textContent = data.traffic_incomplete
-    ? "Incomplete traffic samples detected; totals may undercount."
+    ? "Input report gaps detected; rate windows restart after a clean sample. Byte counters are modulo 2^32 since boot."
     : "";
   renderChannels(data);
   statusMessage.textContent = data.error

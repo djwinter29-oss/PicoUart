@@ -343,7 +343,7 @@ static void hw_uart_driver_poll_tx_completion(hw_uart_driver_t *driver)
     if (!dma_channel_is_busy((uint)driver->tx_dma_channel)) {
         service_load_note(1u);
         (void)ring_buffer_commit_consumed(&driver->tx_ring, driver->tx_dma_bytes_in_flight);
-        driver->controller_tx_bytes += (uint32_t)driver->tx_dma_bytes_in_flight;
+        driver->uart_tx_bytes += (uint32_t)driver->tx_dma_bytes_in_flight;
         driver->tx_active = false;
         driver->tx_dma_bytes_in_flight = 0u;
     }
@@ -369,7 +369,7 @@ static void hw_uart_driver_publish_rx(hw_uart_driver_t *driver)
      * overflow-recovery paths in read_span and commit_consumed).
      */
     produced = uart_dma_rx_bytes_produced(progress, driver->rx_dma_last_progress, uart_dma_rx_transfer_count_max());
-    driver->controller_rx_bytes += produced;
+    driver->uart_rx_bytes += produced;
     if (produced != 0u) {
         service_load_note(1u);
     }
@@ -443,8 +443,8 @@ bool hw_uart_driver_start(void *context)
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_active = false;
     driver->rx_rts_asserted = false;
-    driver->controller_tx_bytes = 0u;
-    driver->controller_rx_bytes = 0u;
+    driver->uart_tx_bytes = 0u;
+    driver->uart_rx_bytes = 0u;
     driver->rx_error_count = 0u;
     driver->rx_dma_last_progress = 0u;
 
@@ -524,6 +524,44 @@ void hw_uart_driver_deinit(void *context)
         gpio_disable_pulls(driver->config->port->cts_pin);
     }
     driver->initialized = false;
+}
+
+bool hw_uart_driver_reset_buffers(void *context)
+{
+    hw_uart_driver_t *driver = context;
+    uint32_t uart_tx_bytes;
+    uint32_t uart_rx_bytes;
+    uint32_t rx_error_count;
+    uint32_t rx_high_watermark;
+    uint32_t tx_high_watermark;
+    uint32_t rx_overflow_count;
+    uint32_t tx_overflow_count;
+    bool initialized;
+
+    if ((driver == NULL) || (driver->config == NULL)) {
+        return false;
+    }
+
+    hw_uart_driver_deinit(driver);
+    (void)ring_buffer_recover_overflow(&driver->rx_ring);
+    uart_tx_bytes = driver->uart_tx_bytes;
+    uart_rx_bytes = driver->uart_rx_bytes;
+    rx_error_count = driver->rx_error_count;
+    rx_high_watermark = driver->rx_ring.high_watermark;
+    tx_high_watermark = driver->tx_ring.high_watermark;
+    rx_overflow_count = driver->rx_ring.overflow_count;
+    tx_overflow_count = driver->tx_ring.overflow_count;
+
+    initialized = hw_uart_driver_start(driver);
+
+    driver->uart_tx_bytes = uart_tx_bytes;
+    driver->uart_rx_bytes = uart_rx_bytes;
+    driver->rx_error_count = rx_error_count;
+    driver->rx_ring.high_watermark = rx_high_watermark;
+    driver->tx_ring.high_watermark = tx_high_watermark;
+    driver->rx_ring.overflow_count = rx_overflow_count;
+    driver->tx_ring.overflow_count = tx_overflow_count;
+    return initialized;
 }
 
 bool hw_uart_driver_apply_line_format(void *context, uint32_t baud_rate, uint8_t data_bits, uint8_t stop_bits,

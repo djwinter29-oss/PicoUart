@@ -197,8 +197,9 @@ stateDiagram-v2
 
 ## Observability
 
-The backend tracks TX bytes sent through polling and DMA. The compact HID input report exposes aggregate controller
-TX/RX byte deltas and per-channel health; it does not distinguish PIO poll TX from PIO DMA TX.
+The backend tracks TX bytes sent through polling and DMA. The compact HID input report exposes cumulative boot-time
+controller TX/RX counters and per-channel health; hosts derive per-interval increments, and the report does not
+distinguish PIO poll TX from PIO DMA TX.
 
 Relevant host-visible signals:
 

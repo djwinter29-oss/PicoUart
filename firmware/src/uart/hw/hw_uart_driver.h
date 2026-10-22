@@ -42,8 +42,8 @@ typedef struct {
     size_t tx_dma_bytes_in_flight;          /**< Bytes currently owned by the active TX DMA transfer. */
     bool tx_active;                         /**< True while a TX DMA transfer is still in flight. */
     bool rx_rts_asserted;                   /**< True while manual RTS permits the peer to transmit. */
-    uint32_t controller_tx_bytes;           /**< Bytes completed by the UART TX DMA engine. */
-    uint32_t controller_rx_bytes;           /**< Bytes accepted by the UART RX DMA engine. */
+    uint32_t uart_tx_bytes;                 /**< Bytes completed by the UART TX DMA engine. */
+    uint32_t uart_rx_bytes;                 /**< Bytes accepted by the UART RX DMA engine. */
     uint32_t rx_error_count;                /**< Hardware UART receive-status events observed since initialization. */
     volatile uint32_t rx_dma_last_progress; /**< Last current-transfer RX DMA progress used for accounting. */
     ring_buffer_t rx_ring;                  /**< UART-to-USB receive ring. */
@@ -104,6 +104,16 @@ void hw_uart_driver_poll(void *context, bool tx_launch_allowed);
  * @param context Driver instance to deinitialize.
  */
 void hw_uart_driver_deinit(void *context);
+
+/**
+ * @brief Restart one initialized HW UART and discard its queued bytes.
+ * @param context HW UART runtime instance.
+ * @return `true` when the UART and DMA resources were reinitialized.
+ *
+ * The UART worker must own the instance and both bridge sides must be quiesced.
+ * Applied line coding and cumulative counters are preserved.
+ */
+bool hw_uart_driver_reset_buffers(void *context);
 
 /**
  * @brief Reconfigure the full UART line format for one hardware UART backend.

@@ -1,476 +1,301 @@
-"""Golden-buffer pytest suite for PicoUart HID report parsers (no hardware)."""
+"""Version-1 HID report and host accounting tests."""
 
-from __future__ import annotations
+import threading
+import time
 
-import json
-import sys
 import pytest
 
-from helpers import FakeHidDevice, board_status_bytes, overflow_counts_bytes, status_report_bytes
-from pico_uart import transport
-from pico_uart.client import PicoUartHid, read_board_status, send_command
-from pico_uart.client import read_configuration, read_hardware_info
+from helpers import FakeHidDevice, channel_bytes, control_bytes, device_info_bytes, telemetry_bytes
+from pico_uart.client import PicoUartHid
 from pico_uart.protocol import (
-    parse_configuration, parse_hardware_info, REPORT_ID_CONFIGURATION, REPORT_ID_HARDWARE_INFO,
+    CHANNEL_SIZE,
+    CONTROL_SIZE,
+    DEVICE_INFO_SIZE,
+    REPORT_ID_CHANNEL_BASE,
+    REPORT_ID_CONTROL,
+    REPORT_ID_DEVICE_INFO,
+    REPORT_ID_TELEMETRY,
+    parse_channel,
+    parse_control,
+    parse_device_info,
+    parse_telemetry,
 )
 
 
-def test_configuration_report_decodes_and_rejects_invalid_values():
-    import struct
+def test_all_version1_payload_sizes_and_identity_fields():
+    identity = parse_device_info(device_info_bytes())
+    assert len(device_info_bytes()) == DEVICE_INFO_SIZE == 63
+    assert identity["serial_number"] == "0123456789ABCDEF"
+    assert identity["firmware_version"] == "1.2.3"
+    assert identity["capabilities"] == 7
+    assert identity["clock_profile_mask"] == 0x0F
+    assert identity["ram_total_bytes"] == 270336
+    assert len(control_bytes()) == CONTROL_SIZE == 24
+    assert len(telemetry_bytes()) == 24
+    assert len(channel_bytes()) == CHANNEL_SIZE == 54
 
-    payload = struct.pack("<BBBBII", 1, 0, 3, 0, 0xFFFFFFFF, 1)
-    expected = {"source": "defaults", "reason": "crc_failed", "stored_profile": None, "active_profile": 1}
-    assert parse_configuration(payload) == expected
-    assert read_configuration(FakeHidDevice(payload, REPORT_ID_CONFIGURATION)) == expected
 
-    stored = struct.pack("<BBBBII", 1, 1, 0, 0, 2, 2)
-    assert parse_configuration(stored) == {
-        "source": "stored", "reason": "none", "stored_profile": 2, "active_profile": 2,
+@pytest.mark.parametrize("mutation", [
+    {"profile_mask": 0}, {"capabilities": 0x8000}, {"ram_total": 0},
+    {"product": b"bad\0name"}, {"serial": b"not-a-serial!!"},
+])
+def test_device_info_rejects_invalid_static_contract(mutation):
+    with pytest.raises(RuntimeError):
+        parse_device_info(device_info_bytes(**mutation))
+
+
+def test_control_report_validates_status_pairing_and_boot_configuration():
+    result = parse_control(control_bytes(
+        command=5, flags=1, status=3, request_id=8, requested=2,
+        source=2, reason=6, error_reason=3,
+    ))
+    assert result["status"] == 3
+    assert result["requested_profile"] == 2
+    assert result["error"] == "missing_overclock_acknowledgement"
+    with pytest.raises(RuntimeError, match="pairing"):
+        parse_control(control_bytes(status=3, error_reason=5))
+    with pytest.raises(RuntimeError, match="reserved"):
+        parse_control(control_bytes(reserved=1))
+
+
+def test_control_parser_accepts_only_contractual_echoed_unknown_flags():
+    assert parse_control(control_bytes(
+        command=0x7F, flags=1, status=4, request_id=4, error_reason=5,
+    ))["command"] == 0x7F
+    assert parse_control(control_bytes(
+        command=0x7F, flags=0x80, status=3, request_id=5, error_reason=1,
+    ))["flags"] == 0x80
+    with pytest.raises(RuntimeError, match="echoed control flags"):
+        parse_control(control_bytes(
+            command=0x7F, flags=0x80, status=4, request_id=5, error_reason=5,
+        ))
+
+
+def test_telemetry_and_channel_layouts_keep_shared_fault_timestamp():
+    telemetry = parse_telemetry(telemetry_bytes(temperature_c=-1.25, cores=(10000, 0xFFFF)))
+    assert telemetry["temperature_celsius"] == -1.25
+    assert telemetry["runtime"]["cpu_usage_basis_points"] == [10000, None]
+    sample = parse_channel(channel_bytes(
+        sequence=65535, faults=(2, 3, 4, 5), health=0xD7, last_fault_uptime_s=9,
+    ))
+    assert sample["sequence"] == 65535
+    assert sample["faults"]["rx_overrun"] == {"count": 4}
+    assert sample["last_fault_uptime_s"] == 9
+    assert "last_seen_ms" not in sample["faults"]["rx_error"]
+    assert parse_channel(channel_bytes())["last_fault_uptime_s"] == 0
+    with pytest.raises(RuntimeError, match="fault history"):
+        parse_channel(channel_bytes(faults=(0, 0, 1, 0), health=0x01))
+
+
+def test_input_totals_seed_from_boot_counters_and_deltas_are_per_channel():
+    device = FakeHidDevice(
+        {},
+        inputs=[
+            (10, channel_bytes(sequence=1, traffic=(100, 200, 300, 400))),
+            (11, channel_bytes(sequence=65535, traffic=(50, 60, 70, 80))),
+            (10, channel_bytes(sequence=2, interval_ms=750, traffic=(110, 220, 330, 440))),
+            (11, channel_bytes(sequence=0, interval_ms=500, traffic=(55, 66, 77, 88))),
+        ],
+    )
+    client = PicoUartHid(device=device)
+    first = client.read_status()
+    assert first["channels"][0]["totals"]["uart_tx"] == 100
+    assert first["channels"][0]["observed_interval_ms"] == 0
+    client.read_status()
+    after = client.read_status()
+    channel0, channel1 = after["channels"][:2]
+    assert channel0["totals"] == {
+        "uart_tx": 110, "uart_rx": 220, "usb_tx": 330, "usb_rx": 440,
     }
-    recovery = struct.pack("<BBBBII", 1, 2, 6, 0, 1, 0)
-    assert parse_configuration(recovery)["source"] == "recovery"
-    for profile in (3, 4):
-        assert parse_configuration(struct.pack("<BBBBII", 1, 1, 0, 0, profile, profile))["active_profile"] == profile
-
-    invalid = [
-        payload[:-1], payload + b"\0",
-        struct.pack("<BBBBII", 2, 0, 0, 0, 0, 0),
-        struct.pack("<BBBBII", 1, 3, 0, 0, 0, 0),
-        struct.pack("<BBBBII", 1, 0, 8, 0, 0, 0),
-        struct.pack("<BBBBII", 1, 0, 0, 1, 0, 0),
-        struct.pack("<BBBBII", 1, 0, 0, 0, 5, 0),
-        struct.pack("<BBBBII", 1, 0, 0, 0, 0, 5),
-        struct.pack("<BBBBII", 1, 1, 1, 0, 1, 1),
-        struct.pack("<BBBBII", 1, 1, 0, 0, 0, 1),
-        struct.pack("<BBBBII", 1, 2, 0, 0, 1, 0),
-    ]
-    for item in invalid:
-        with pytest.raises(RuntimeError):
-            parse_configuration(item)
-
-
-def test_configuration_client_reads_report_16():
-    import struct
-
-    payload = struct.pack("<BBBBII", 1, 0, 0, 0, 0, 0)
-    device = FakeHidDevice(payload, REPORT_ID_CONFIGURATION)
-    assert PicoUartHid(device=device).read_configuration()["source"] == "defaults"
-
-
-def test_channel_diagnostics_and_client_read_all_six_channels():
-    import struct
-    from pico_uart.protocol import parse_channel_diagnostics
-
-    payload = bytearray(struct.pack("<BBIBBBBB", 1, 0x81, 115200, 8, 1, 0, 20, 21) + bytes(48))
-    struct.pack_into("<IQ", payload, 47, 3, 4294967296)
-    result = parse_channel_diagnostics(payload)
-    assert (result["baud_rate"], result["parity"], result["tx_pin"], result["rx_pin"]) == (115200, "N", 20, 21)
-    assert result["faults"]["rx_error"] == {"count": 3, "last_seen_ms": 4294967296}
-    assert result["faults"]["control_error"] == {"count": 0, "last_seen_ms": None}
-
-    class DiagnosticDevice:
-        def __init__(self):
-            self.reads = []
-
-        def get_feature_report(self, report_id, size):
-            self.reads.append((report_id, size))
-            return [report_id, *payload]
-
-        def close(self):
-            pass
-
-    device = DiagnosticDevice()
-    with PicoUartHid(device=device) as client:
-        assert client.read_channel_diagnostics() == [result] * 6
-    assert device.reads == [(report_id, 60) for report_id in range(10, 16)]
-
-
-@pytest.mark.parametrize("offset,value", [(0, 2), (6, 4), (7, 3), (8, 3), (9, 48), (10, 254)])
-def test_channel_diagnostics_reject_invalid_settings(offset, value):
-    import struct
-    from pico_uart.protocol import parse_channel_diagnostics
-
-    payload = bytearray(struct.pack("<BBIBBBBB", 1, 1, 115200, 8, 1, 0, 0, 1) + bytes(48))
-    payload[offset] = value
-    with pytest.raises(RuntimeError):
-        parse_channel_diagnostics(payload)
-    with pytest.raises(RuntimeError):
-        parse_channel_diagnostics(payload[:-1])
-
-
-@pytest.mark.parametrize("mcu,clock_hz,model", [
-    (1, 125_000_000, "RP2040"),
-    (1, 200_000_000, "RP2040"),
-    (1, 250_000_000, "RP2040"),
-    (2, 150_000_000, "RP2350"),
-    (2, 280_000_000, "RP2350"),
-    (0, 200_000_000, "Unknown MCU (0)"),
-    (3, 200_000_000, "Unknown MCU (3)"),
-    (255, 0xFFFFFFFF, "Unknown MCU (255)"),
-])
-def test_hardware_info_decodes_mcu_and_current_clock(mcu, clock_hz, model):
-    import struct
-
-    payload = struct.pack("<BBI", 1, mcu, clock_hz)
-    expected = {"mcu": model, "mcu_id": mcu, "system_clock_hz": clock_hz}
-    assert parse_hardware_info(payload) == expected
-    device = FakeHidDevice(payload, REPORT_ID_HARDWARE_INFO)
-    assert read_hardware_info(device) == expected
-    assert PicoUartHid(device=device).read_hardware_info() == expected
-
-
-@pytest.mark.parametrize("payload", [
-    b"",
-    bytes(5),
-    bytes(7),
-    bytes([0, 1, 1, 0, 0, 0]),
-    bytes([2, 1, 1, 0, 0, 0]),
-    bytes([1, 1, 0, 0, 0, 0]),
-    bytes([1, 3, 0, 0, 0, 0]),
-])
-def test_hardware_info_rejects_invalid_layout_or_clock(payload):
-    with pytest.raises(RuntimeError):
-        parse_hardware_info(payload)
-
-
-from pico_uart.protocol import COMMAND_TOGGLE_LED
-
-
-def test_version_and_temperature(hid_module):
-    device = FakeHidDevice(board_status_bytes(temperature_c=25.30, major=1, minor=2, patch=3))
-    status = hid_module.read_board_status(device)
-    assert status["firmware_version"] == "1.2.3"
-    assert status["temperature_celsius"] == pytest.approx(25.30, abs=0.01)
-    assert status["hid_reset_enabled"] is False
-    assert hid_module.read_firmware_version(device) == "1.2.3"
-    assert hid_module.read_board_temperature(device) == pytest.approx(25.30, abs=0.01)
-
-
-def test_board_status_reports_hid_reset_capability(hid_module):
-    device = FakeHidDevice(board_status_bytes(reserved0=hid_module.BOARD_STATUS_FLAG_HID_RESET))
-    assert hid_module.read_board_status(device)["hid_reset_enabled"] is True
-
-
-def test_overflow_counts(hid_module):
-    device = FakeHidDevice(overflow_counts_bytes(), report_id=hid_module.REPORT_ID_OVERFLOW_COUNTS)
-    assert hid_module.read_overflow_counts(device) == [1, 2, 3, 4, 5, 6]
-
-
-def test_hidraw_feature_read_rejects_short_ioctl_result(monkeypatch):
-    if transport.fcntl is None:
-        pytest.skip("hidraw ioctl is only available on Linux")
-    device = object.__new__(transport._LinuxHidrawDevice)
-    device._file_descriptor = 7
-    monkeypatch.setattr(transport.fcntl, "ioctl", lambda *args: 2)
-
-    with pytest.raises(RuntimeError, match="unexpected report"):
-        read_board_status(device)
-
-
-def test_hidraw_feature_write_propagates_short_ioctl_result(monkeypatch):
-    if transport.fcntl is None:
-        pytest.skip("hidraw ioctl is only available on Linux")
-    device = object.__new__(transport._LinuxHidrawDevice)
-    device._file_descriptor = 7
-    monkeypatch.setattr(transport.fcntl, "ioctl", lambda *args: 1)
-
-    with pytest.raises(RuntimeError, match="incomplete"):
-        send_command(device, COMMAND_TOGGLE_LED)
-
-
-@pytest.mark.parametrize("version", [0, 2, 15, 255])
-def test_rejects_unsupported_board_status_layout(hid_module, version):
-    device = FakeHidDevice(board_status_bytes(layout_version=version))
-    with pytest.raises(RuntimeError, match="unsupported board-status"):
-        hid_module.read_board_status(device)
-
-
-def test_rejects_malformed_feature_and_status_payloads(hid_module):
-    with pytest.raises(RuntimeError, match="board-status report size"):
-        hid_module.parse_board_status(b"short")
-    with pytest.raises(RuntimeError, match="overflow-count report size"):
-        hid_module.parse_overflow_counts(b"short")
-    with pytest.raises(RuntimeError, match="unsupported overflow-count report version"):
-        hid_module.parse_overflow_counts(bytes([0]) + bytes(24))
-    with pytest.raises(RuntimeError, match="status report size"):
-        hid_module.parse_status(b"short")
-
-
-@pytest.mark.parametrize("reserved0,reserved1", [(0x02, 0), (0, 1), (0x03, 0)])
-def test_rejects_unknown_board_status_reserved_fields(hid_module, reserved0, reserved1):
-    device = FakeHidDevice(board_status_bytes(reserved0=reserved0, reserved1=reserved1))
-    with pytest.raises(RuntimeError, match="unknown reserved fields"):
-        hid_module.read_board_status(device)
-
-
-def test_parse_status_channels(hid_module):
-    from pico_uart.protocol import decode_health, parse_status
-
-    status = hid_module.parse_status(status_report_bytes(sequence=9, health0=0x31))
-    modular_status = parse_status(status_report_bytes(sequence=9, health0=0x31))
-    assert status["sequence"] == 9
-    assert modular_status == status
-    assert len(status["channels"]) == hid_module.UART_CHANNEL_COUNT
-    channel0 = status["channels"][0]
-    assert channel0["health"] == 0x31
-    assert channel0["ring_high_watermark"] == 32
-    assert channel0["controller_tx_bytes"] == 10
-    assert channel0["cdc_rx_bytes"] == 40
-    assert hid_module.decode_health(0x31) == ["ready", "cdc_open", "pio"]
-    assert decode_health(0x31) == ["ready", "cdc_open", "pio"]
-    assert "control_error" in hid_module.decode_health(0x04)
-    assert "control_pending" in hid_module.decode_health(0x08)
-    assert "init_failed" in hid_module.decode_health(0x02)
-    assert "rx_overrun" in hid_module.decode_health(0x40)
-    assert "rx_error" in hid_module.decode_health(0x80)
-
-
-def test_rejects_bad_signature(hid_module):
-    payload = bytearray(status_report_bytes())
-    payload[0] = ord("X")
-    with pytest.raises(RuntimeError, match="invalid signature"):
-        hid_module.parse_status(bytes(payload))
-
-
-@pytest.mark.parametrize("version", [0, 2, 15, 255])
-def test_rejects_wrong_status_layout_version(hid_module, version):
-    payload = bytearray(status_report_bytes())
-    payload[1] = version
-    with pytest.raises(RuntimeError, match="unsupported status report version"):
-        hid_module.parse_status(bytes(payload))
-
-
-def test_require_payload_rejects_bad_prefix(hid_module):
-    with pytest.raises(RuntimeError, match="unexpected report"):
-        hid_module.require_payload(
-            [hid_module.REPORT_ID_BOARD_STATUS, 1, 2],
-            report_id=hid_module.REPORT_ID_STATUS,
-            payload_size=2,
-        )
-    with pytest.raises(RuntimeError, match="unexpected report"):
-        hid_module.require_payload(
-            [hid_module.REPORT_ID_STATUS, 1],
-            report_id=hid_module.REPORT_ID_STATUS,
-            payload_size=2,
-        )
-
-
-def test_send_command_and_reset_sequence(hid_module):
-    writes: list[list[int]] = []
-
-    class FakeWriteDevice:
-        def get_feature_report(self, report_id: int, size: int) -> list[int]:
-            assert report_id == hid_module.REPORT_ID_BOARD_STATUS
-            payload = board_status_bytes(reserved0=hid_module.BOARD_STATUS_FLAG_HID_RESET)
-            assert size == len(payload) + 1
-            return [report_id, *payload]
-
-        def send_feature_report(self, report: list[int]) -> int:
-            writes.append(report)
-            return len(report)
-
-    device = FakeWriteDevice()
-    hid_module.send_command(device, hid_module.COMMAND_TOGGLE_LED)
-    hid_module.reset_board(device)
-    assert writes[0] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_TOGGLE_LED]
-    assert writes[1] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_ARM_RESET]
-    assert writes[2] == [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_RESET_BOARD]
-
-
-def test_reset_fails_closed_when_firmware_disables_hid_reset(hid_module):
-    writes: list[list[int]] = []
-
-    class FakeWriteDevice:
-        def get_feature_report(self, report_id: int, size: int) -> list[int]:
-            payload = board_status_bytes()
-            assert size == len(payload) + 1
-            return [report_id, *payload]
-
-        def send_feature_report(self, report: list[int]) -> int:
-            writes.append(report)
-            return len(report)
-
-    with pytest.raises(RuntimeError, match="HID reset is disabled"):
-        hid_module.reset_board(FakeWriteDevice())
-    assert writes == []
-
-
-def _run_one_monitor_iteration(monkeypatch, report):
-    from pico_uart import cli
-
-    times = iter((0.0, 0.0, 1.0))
-    monkeypatch.setattr(cli.time, "monotonic", lambda: next(times))
-
-    class FakeClient:
-        def read_status(self, timeout_ms):
-            assert timeout_ms == 250
-            if isinstance(report, Exception):
-                raise report
-            return report
-
-    return FakeClient()
-
-
-def test_monitor_rejects_empty_reads(monkeypatch, hid_module):
-    from pico_uart import cli
-
-    client = _run_one_monitor_iteration(monkeypatch, None)
-    with pytest.raises(RuntimeError, match="timed out without receiving"):
-        cli.monitor(client, 1.0)
-
-
-def test_monitor_rejects_malformed_status(monkeypatch, hid_module):
-    from pico_uart import cli
-
-    client = _run_one_monitor_iteration(monkeypatch, RuntimeError("unexpected status report size 62"))
-    with pytest.raises(RuntimeError, match="unexpected status report size"):
-        cli.monitor(client, 1.0)
-
-
-def test_monitor_accepts_valid_status(monkeypatch, hid_module, capsys):
-    from pico_uart import cli
-
-    status = hid_module.parse_status(status_report_bytes(sequence=9))
-    client = _run_one_monitor_iteration(monkeypatch, status)
-    cli.monitor(client, 1.0)
-    assert capsys.readouterr().out.startswith("seq=9 ")
-
-
-def test_client_owns_connection_and_exposes_decoded_operations(hid_module):
-    from pico_uart import PicoUartHid as PackageClient
-
-    class FakeDevice:
-        def __init__(self):
-            self.closed = False
-            self.commands = []
-
-        def read(self, size, timeout_ms):
-            assert size == hid_module.STATUS_SIZE + 1
-            assert timeout_ms == 100
-            return [hid_module.REPORT_ID_STATUS, *status_report_bytes(sequence=12)]
-
-        def get_feature_report(self, report_id, size):
-            payload = {
-                hid_module.REPORT_ID_BOARD_STATUS: board_status_bytes(),
-                hid_module.REPORT_ID_OVERFLOW_COUNTS: overflow_counts_bytes(),
-            }[report_id]
-            assert size == len(payload) + 1
-            return [report_id, *payload]
-
-        def send_feature_report(self, report):
-            self.commands.append(report)
-            return len(report)
-
-        def close(self):
-            self.closed = True
-
-    device = FakeDevice()
-    client = PackageClient(device=device)
-
-    assert client.read_status(100)["sequence"] == 12
-    assert client.read_board_status()["firmware_version"] == "1.2.3"
-    assert client.read_board_temperature() == pytest.approx(25.30)
-    assert client.read_firmware_version() == "1.2.3"
-    assert client.read_overflow_counts() == [1, 2, 3, 4, 5, 6]
-    client.toggle_led()
-    client.close()
-    client.close()
-
-    assert device.commands == [[hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_TOGGLE_LED]]
-    assert device.closed
-    with pytest.raises(RuntimeError, match="connection is closed"):
+    assert channel0["traffic"] == {"uart_tx": 10, "uart_rx": 20, "usb_tx": 30, "usb_rx": 40}
+    assert channel0["observed_interval_ms"] == 750
+    assert channel0["sequence"] == 2
+    assert channel0["traffic_gaps"] == 0
+    client.read_status()
+    assert client.read_status(0) is None
+    assert channel1["sequence"] == 65535
+    assert client._channels[1]["sequence"] == 0
+    assert client._channels[1]["traffic_gaps"] == 0
+    assert client._channels[1]["observed_interval_ms"] == 500
+    assert client._channels[1]["totals"] == {
+        "uart_tx": 55, "uart_rx": 66, "usb_tx": 77, "usb_rx": 88,
+    }
+
+
+def test_sequence_gap_and_invalid_interval_only_mark_the_affected_channel_incomplete():
+    device = FakeHidDevice({}, inputs=[
+        (10, channel_bytes(sequence=3)),
+        (11, channel_bytes(sequence=7)),
+        (10, channel_bytes(sequence=5, interval_ms=0xFFFFFFFF, traffic=(0xFFFFFFFF, 1, 1, 1))),
+        (11, channel_bytes(sequence=8)),
+    ])
+    client = PicoUartHid(device=device)
+    client.read_status()
+    client.read_status()
+    client.read_status()
+    channel0, channel1 = client._channels[:2]
+    assert channel0["traffic_incomplete"] is True
+    assert channel0["traffic_gaps"] == 1
+    assert channel0["totals"]["uart_tx"] == 0xFFFFFFFF
+    assert channel0["observed_interval_ms"] == 0
+    assert channel1["traffic_incomplete"] is False
+    assert channel1["traffic_gaps"] == 0
+
+
+def test_boot_counter_wrap_derives_modulo_delta():
+    device = FakeHidDevice({}, inputs=[
+        (10, channel_bytes(sequence=1, traffic=(0xFFFFFFF0, 0, 0, 0))),
+        (10, channel_bytes(sequence=2, traffic=(32, 0, 0, 0))),
+    ])
+    client = PicoUartHid(device=device)
+    client.read_status()
+    channel = client.read_status()["channels"][0]
+    assert channel["totals"]["uart_tx"] == 32
+    assert channel["traffic"]["uart_tx"] == 48
+    assert channel["observed_interval_ms"] == 500
+
+
+def test_duplicate_and_old_sequence_reports_never_add_traffic_or_interval_twice():
+    device = FakeHidDevice({}, inputs=[
+        (10, channel_bytes(sequence=100, interval_ms=500, traffic=(8, 0, 0, 0))),
+        (10, channel_bytes(sequence=101, interval_ms=500, traffic=(11, 0, 0, 0))),
+        (10, channel_bytes(sequence=101, interval_ms=500, traffic=(3, 0, 0, 0))),
+        (10, channel_bytes(sequence=100, interval_ms=500, traffic=(100, 0, 0, 0))),
+    ])
+    client = PicoUartHid(device=device)
+    for _ in range(4):
         client.read_status()
+    channel = client._channels[0]
+    assert channel["totals"]["uart_tx"] == 11
+    assert channel["observed_interval_ms"] == 500
+    assert channel["traffic_incomplete"] is True
+    assert channel["traffic_gaps"] == 1
+    assert channel["sequence"] == 101
 
 
-def test_client_rejects_injected_device_with_selector():
-    with pytest.raises(ValueError, match="cannot be combined"):
-        PicoUartHid(serial_number="board-1", device=object())
+@pytest.mark.parametrize("resumed_sequence", [100, 99, 40000, 0])
+def test_stale_stream_rebaselines_any_sequence_then_resumes_accounting(resumed_sequence):
+    from pico_uart.protocol import parse_channel
+
+    client = PicoUartHid(device=FakeHidDevice({}))
+    client._apply_input(0, parse_channel(channel_bytes(sequence=100)), 0.0)
+    client._apply_input(0, parse_channel(channel_bytes(
+        sequence=resumed_sequence, traffic=(1000, 0, 0, 0),
+    )), 3.1)
+    channel = client._channels[0]
+    assert channel["sequence"] == resumed_sequence
+    assert channel["traffic_gaps"] == 1
+    assert channel["traffic_incomplete"] is True
+    assert channel["totals"]["uart_tx"] == 1000
+    assert channel["observed_interval_ms"] == 0
+    client._apply_input(0, parse_channel(channel_bytes(
+        sequence=(resumed_sequence + 1) % 65536, traffic=(1007, 0, 0, 0),
+    )), 3.6)
+    assert channel["totals"]["uart_tx"] == 1007
+    assert channel["observed_interval_ms"] == 500
+    assert channel["traffic_gaps"] == 1
 
 
-def test_client_rejects_negative_status_timeout():
-    class FakeDevice:
-        def close(self):
-            pass
+def test_channel_feature_read_is_non_consuming_for_input_totals():
+    device = FakeHidDevice(
+        {REPORT_ID_CHANNEL_BASE: channel_bytes(sequence=7, traffic=(500, 0, 0, 0))},
+        inputs=[
+            (10, channel_bytes(sequence=1, traffic=(10, 0, 0, 0))),
+            (10, channel_bytes(sequence=2, traffic=(20, 0, 0, 0))),
+        ],
+    )
+    client = PicoUartHid(device=device)
+    client.read_status()
+    client.read_channel_diagnostic(0)
+    assert client.read_status()["channels"][0]["totals"]["uart_tx"] == 20
 
-    with PicoUartHid(device=FakeDevice()) as client:
-        with pytest.raises(ValueError, match="must not be negative"):
-            client.read_status(-1)
+
+class ControlDevice(FakeHidDevice):
+    def __init__(self, results: list[bytes], capabilities: int = 7):
+        super().__init__({
+            REPORT_ID_DEVICE_INFO: device_info_bytes(capabilities=capabilities),
+            REPORT_ID_TELEMETRY: telemetry_bytes(led=0),
+        })
+        self.results = list(results)
+
+    def get_feature_report(self, report_id: int, size: int) -> list[int]:
+        if report_id == REPORT_ID_CONTROL:
+            payload = self.results.pop(0)
+            assert len(payload) + 1 == size
+            return [report_id, *payload]
+        return super().get_feature_report(report_id, size)
 
 
-def test_client_reset_uses_guarded_reset_sequence(monkeypatch, hid_module):
-    from pico_uart import client as hid_client
+def test_led_toggle_uses_observed_state_and_correlated_explicit_command():
+    device = ControlDevice([
+        control_bytes(),
+        control_bytes(command=2, status=2, request_id=1),
+    ])
+    PicoUartHid(device=device).toggle_led()
+    assert len(device.writes) == 1
+    report = device.writes[0]
+    assert report[0] == REPORT_ID_CONTROL and len(report) == 25
+    assert report[1:8] == [1, 2, 0, 0, 1, 0, 0]
 
-    writes = []
 
-    class FakeDevice:
-        def get_feature_report(self, report_id, _size):
-            return [report_id, *board_status_bytes(reserved0=hid_module.BOARD_STATUS_FLAG_HID_RESET)]
+def test_save_configuration_uses_report2_request_and_verified_result():
+    device = ControlDevice([
+        control_bytes(),
+        control_bytes(command=5, flags=1, status=2, request_id=1, requested=2),
+    ])
+    result = PicoUartHid(device=device).save_configuration(2, unsafe_overclock=True)
+    assert result["status"] == 2
+    assert result["requested_profile"] == 2
+    assert device.writes[0][0] == REPORT_ID_CONTROL
+    assert len(device.writes[0]) == 25
+    assert device.writes[0][2:4] == [5, 1]
+    assert int.from_bytes(device.writes[0][17:21], "little") == 2
 
-        def send_feature_report(self, report):
-            writes.append(report)
-            return len(report)
 
-        def close(self):
-            pass
+def test_request_allocator_skips_latest_id_without_wrapping():
+    client = PicoUartHid(device=FakeHidDevice({}))
+    assert client._allocate_request_id(1) == 2
+    assert client._allocate_request_id(2) == 3
+    client._next_request_id = 0xFFFFFFFF
+    with pytest.raises(RuntimeError, match="space exhausted"):
+        client._allocate_request_id(0)
 
-    monkeypatch.setattr(hid_client.time, "sleep", lambda _duration: None)
-    with PicoUartHid(device=FakeDevice()) as client:
+
+def test_static_identity_failure_prevents_board_control_write():
+    device = ControlDevice([control_bytes()])
+    device.reports[REPORT_ID_DEVICE_INFO] = bytes(DEVICE_INFO_SIZE)
+    with pytest.raises(RuntimeError, match="device-information"):
+        PicoUartHid(device=device).toggle_led()
+    assert device.writes == []
+
+
+def test_capability_masks_gate_led_reset_and_save_commands():
+    device = ControlDevice([], capabilities=0)
+    client = PicoUartHid(device=device)
+    with pytest.raises(RuntimeError, match="LED is unavailable"):
+        client.toggle_led()
+    with pytest.raises(RuntimeError, match="reset is disabled"):
         client.reset_board()
-
-    assert writes == [
-        [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_ARM_RESET],
-        [hid_module.REPORT_ID_COMMAND, hid_module.COMMAND_RESET_BOARD],
-    ]
+    with pytest.raises(RuntimeError, match="does not support configuration save"):
+        client.save_configuration(0)
+    assert device.writes == []
 
 
-def test_client_rejects_unexpected_status_report_id(hid_module):
-    from pico_uart import PicoUartHid as PackageClient
+def test_late_feature_transfer_is_bounded_and_quarantines_the_connection(monkeypatch):
+    import pico_uart.client as client_module
 
-    class FakeDevice:
-        def read(self, _size, _timeout_ms):
-            return [hid_module.REPORT_ID_BOARD_STATUS]
+    started = threading.Event()
 
-        def close(self):
-            pass
+    class SlowDevice(FakeHidDevice):
+        def get_feature_report(self, report_id, size):
+            started.set()
+            time.sleep(0.05)
+            return super().get_feature_report(report_id, size)
 
-    with PackageClient(device=FakeDevice()) as client:
-        with pytest.raises(RuntimeError, match="unexpected HID report ID 3"):
-            client.read_status()
-
-
-def test_client_returns_none_when_hid_read_times_out():
-    class EmptyDevice:
-        def read(self, _size, _timeout_ms):
-            return []
-
-        def close(self):
-            pass
-
-    with PicoUartHid(device=EmptyDevice()) as client:
-        assert client.read_status(timeout_ms=10) is None
-
-
-def test_cli_status_supports_json_output(monkeypatch, capsys, hid_module):
-    from pico_uart import cli
-
-    expected = hid_module.parse_status(status_report_bytes(sequence=21))
-
-    class FakeClient:
-        def __init__(self, *_args):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            pass
-
-        def read_status(self, timeout_ms):
-            assert timeout_ms > 0
-            return expected
-
-    monkeypatch.setattr(cli, "PicoUartHid", FakeClient)
-    monkeypatch.setattr(sys, "argv", ["pico-uart", "status", "--json"])
-
-    assert cli.main() == 0
-    assert json.loads(capsys.readouterr().out) == expected
+    monkeypatch.setattr(client_module, "COMMAND_TIMEOUT_S", 0.01)
+    client = PicoUartHid(device=SlowDevice({REPORT_ID_DEVICE_INFO: device_info_bytes()}))
+    with pytest.raises(RuntimeError, match="transfer timed out"):
+        client.read_identity()
+    assert started.is_set()
+    with pytest.raises(RuntimeError, match="still in flight"):
+        client.read_control()

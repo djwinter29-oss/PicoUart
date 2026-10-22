@@ -171,9 +171,16 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     return build_parser().parse_args(argv)
 
 
-def close_port(file_descriptor: int, settings: list) -> None:
+def close_port(file_descriptor: int, settings: list | tuple) -> None:
     try:
-        termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
+        if isinstance(settings, tuple):
+            from .config import TCSETS2
+            import fcntl
+
+            fcntl.ioctl(file_descriptor, TCSETS2, settings[1])
+            termios.tcsetattr(file_descriptor, termios.TCSANOW, settings[0])
+        else:
+            termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
     finally:
         os.close(file_descriptor)
 
@@ -233,6 +240,9 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         ]
 
         time.sleep(getattr(arguments, "settle_seconds", LINE_CODING_SETTLE_SECONDS))
+        # DTR-open recovery can finish during settling and deliver stale bytes after configure_port's initial flush.
+        for file_descriptor, _ in ports:
+            termios.tcflush(file_descriptor, termios.TCIOFLUSH)
         if getattr(arguments, "setup_only", False):
             print(f"SETUP PASS at {stream_baud} baud")
             passed = True

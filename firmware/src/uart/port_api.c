@@ -143,8 +143,8 @@ bool uart_port_api_stats(const uart_port_api_t *api, uart_port_id_t port_id, uar
             continue;
         }
 
-        stats->controller_tx_bytes = 0u;
-        stats->controller_rx_bytes = 0u;
+        stats->uart_tx_bytes = 0u;
+        stats->uart_rx_bytes = 0u;
         stats->tx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(tx_ring);
         stats->rx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(rx_ring);
         stats->tx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(tx_ring);
@@ -153,8 +153,8 @@ bool uart_port_api_stats(const uart_port_api_t *api, uart_port_id_t port_id, uar
         stats->rx_error_count = 0u;
 
         backend_stats = port->ops->stats(&port->backend);
-        stats->controller_tx_bytes = backend_stats.controller_tx_bytes;
-        stats->controller_rx_bytes = backend_stats.controller_rx_bytes;
+        stats->uart_tx_bytes = backend_stats.uart_tx_bytes;
+        stats->uart_rx_bytes = backend_stats.uart_rx_bytes;
         stats->rx_error_count = backend_stats.rx_error_count;
 
         __dmb();

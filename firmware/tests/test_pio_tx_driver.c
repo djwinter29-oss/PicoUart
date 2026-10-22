@@ -385,7 +385,7 @@ static void seed_baud_change(void)
     }
     expected_rx_producer = driver.rx_ring.producer + 8u;
     driver.rx_dma_last_progress = 20u;
-    driver.controller_rx_bytes = 100u;
+    driver.uart_rx_bytes = 100u;
     rx_progress = 24u;
     driver.txstall_waiting = true;
     config.pio->fdebug = 1u << (PIO_FDEBUG_TXSTALL_LSB + config.tx_state_machine);
@@ -396,7 +396,7 @@ static void assert_rx_preserved_and_resumed(void)
 {
     TEST_ASSERT_EQUAL_UINT32(expected_rx_producer, driver.rx_ring.producer);
     TEST_ASSERT_EQUAL_UINT32(expected_rx_producer - 20u, driver.rx_ring.consumer);
-    TEST_ASSERT_EQUAL_UINT32(108u, driver.controller_rx_bytes);
+    TEST_ASSERT_EQUAL_UINT32(108u, driver.uart_rx_bytes);
     TEST_ASSERT_EQUAL_UINT32(0u, driver.rx_dma_last_progress);
     for (uint32_t index = 0u; index < 20u; ++index) {
         TEST_ASSERT_EQUAL_UINT8(0xa0u + index,
@@ -599,7 +599,7 @@ void test_unsettled_rx_resumes_without_abort_or_final_publication(void)
     TEST_ASSERT_FALSE(pio_uart_driver_apply_baud_rate(&driver, 230400u));
     TEST_ASSERT_EQUAL_UINT32(expected_rx_producer - 4u, driver.rx_ring.producer);
     TEST_ASSERT_EQUAL_UINT32(24u, driver.rx_dma_last_progress);
-    TEST_ASSERT_EQUAL_UINT32(104u, driver.controller_rx_bytes);
+    TEST_ASSERT_EQUAL_UINT32(104u, driver.uart_rx_bytes);
     TEST_ASSERT_EQUAL_UINT32(115200u, driver.baud_rate);
     TEST_ASSERT_EQUAL_UINT(1u, pause_calls);
     TEST_ASSERT_EQUAL_UINT(0u, rx_abort_calls);

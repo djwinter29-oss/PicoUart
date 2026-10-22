@@ -28,7 +28,8 @@ dashboard instead.
 2. Open the hosted page, click **Connect**, and choose the PicoUart vendor HID interface.
 3. Inspect board identity, runtime values, and UART health/traffic alongside your serial tools.
 
-The button becomes **Disconnect** while connected. Metadata/runtime refresh every second. Disconnect closes the HID
+The button becomes **Disconnect** while connected. Board telemetry refreshes every second; static device information
+is read once, and each channel publishes a combined traffic/settings/fault snapshot every 500 ms. Disconnect closes the HID
 connection; unplugging clears the last sample. After unplug/replug or a configuration-save reboot, use **Connect**
 again; the app does not automatically select or reopen a device.
 
@@ -46,24 +47,25 @@ payload capture. For scripted status samples and traffic logs, use the [Python C
 or [.NET CLI](../dotnet/README.md#test-automation). Disconnect the browser before another client monitors the same
 board.
 
-Traffic statistics are not raw UART messages. Missing reports or saturated byte deltas make observed totals incomplete;
-a quiet or healthy-looking page alone is not evidence that an automated test passed.
+Traffic statistics are not raw UART messages. Firmware counters show bytes since MCU boot modulo $2^{32}$, so a
+missing report does not by itself lose totals; it resets the current throughput window. If counters may have wrapped
+more than once between observations, the exact increment is unknowable. A quiet or healthy-looking page alone is not
+evidence that an automated test passed.
 
 ## Other Commands And Controls
 
-**Board LED** switches board identification on/off; its indicator shows physical output. Older firmware may also use
-that output for USB activity.
-The **Persistent configuration** section saves the selected boot-time clock profile. A verified save automatically
+**Board LED** sends explicit identification On/Off commands; its indicator shows physical output.
+The **Boot configuration** section saves the selected boot-time clock profile. A verified save automatically
 reboots the board and briefly disconnects USB, even though there is no standalone reset command. Close all CDC ports
 and stop external UART traffic first; non-default clocks require explicit unsafe-overclock acknowledgement.
 
-Persistent configuration source, fallback reason, and active/stored clock profiles are read from report 16; this
+Persistent configuration source, fallback reason, and active/stored clock profiles are read from report 2; this
 diagnostic does not expose credentials or raw flash contents.
 After reconnecting, inspect the actual active profile and any fallback reason rather than assuming the requested clock
 became active. A verified save does not establish overclock stability. See the
 [configuration procedure](../../docs/development/host-tools.md#persistent-configuration).
 
-Writes are limited to user-initiated LED toggle and configuration save. Firmware flashing and WebSerial payload access
+Writes are limited to user-initiated LED state changes and configuration save. Firmware flashing and WebSerial payload access
 are not implemented.
 
 ## Troubleshooting

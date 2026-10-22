@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-
+import pytest
 from tomlkit import parse
 
 from contract import (
@@ -13,14 +13,12 @@ from contract import (
     firmware_hid_report_count,
     firmware_hid_reset_cmake_default_enabled,
     firmware_hid_reset_default_enabled,
-    firmware_hid_status_report_count,
     firmware_uart_board_ports,
     firmware_usb_ids,
     firmware_usb_product_string,
     is_lab_placeholder_identity,
 )
 import pico_uart as hid
-from pico_uart import protocol
 
 
 def test_release_lock_matches_direct_requirement_pins(repo_root):
@@ -61,70 +59,63 @@ def test_hid_interface_number_matches_descriptor_enum(repo_root):
 
 def test_hid_layout_and_command_constants_match_firmware(repo_root):
     fw = firmware_hid_constants(repo_root)
-    assert fw["USB_HID_REPORT_VERSION"] == hid.STATUS_LAYOUT_VERSION
-    assert fw["USB_HID_REPORT_VERSION"] == hid.BOARD_STATUS_LAYOUT_VERSION
-    assert fw["USB_HID_REPORT_ID_STATUS"] == hid.REPORT_ID_STATUS
-    assert fw["USB_HID_REPORT_ID_BOARD_STATUS"] == hid.REPORT_ID_BOARD_STATUS
-    assert fw["USB_HID_REPORT_ID_COMMAND"] == hid.REPORT_ID_COMMAND
-    assert fw["USB_HID_REPORT_ID_OVERFLOW_COUNTS"] == hid.REPORT_ID_OVERFLOW_COUNTS
-    assert fw["USB_HID_COMMAND_TOGGLE_LED"] == hid.COMMAND_TOGGLE_LED
-    assert fw["USB_HID_COMMAND_RESET_BOARD"] == hid.COMMAND_RESET_BOARD
-    assert fw["USB_HID_COMMAND_ARM_RESET"] == hid.COMMAND_ARM_RESET
-    assert fw["USB_HID_RESET_ARM_WINDOW_MS"] == int(hid.RESET_ARM_WINDOW_S * 1000)
-    assert fw["USB_HID_BOARD_STATUS_FLAG_HID_RESET"] == hid.BOARD_STATUS_FLAG_HID_RESET
-    assert hid.BOARD_STATUS_RESERVED0_KNOWN_FLAGS == hid.BOARD_STATUS_FLAG_HID_RESET
-    assert fw["USB_HID_SIGNATURE0"] == hid.STATUS_SIGNATURE
-    assert hid.STATUS_SIZE == 63
-    assert hid.STATUS_SIZE == hid.STATUS_HEADER_SIZE + (hid.UART_CHANNEL_COUNT * hid.STATUS_CHANNEL_SIZE)
-    assert hid.BOARD_STATUS_SIZE == 8
-    assert hid.OVERFLOW_COUNTS_SIZE == 25
-    assert hid.STATUS_SIZE + 1 <= 64
+    assert fw["USB_HID_REPORT_VERSION"] == 1
+    assert fw["USB_HID_REPORT_ID_DEVICE_INFO"] == 1
+    assert fw["USB_HID_REPORT_ID_CONTROL"] == 2
+    assert fw["USB_HID_REPORT_ID_TELEMETRY"] == 3
+    assert fw["USB_HID_REPORT_ID_CHANNEL_BASE"] == 10
+    assert fw["USB_HID_DEVICE_INFO_SIZE"] == 63
+    assert fw["USB_HID_CONTROL_SIZE"] == 24
+    assert fw["USB_HID_TELEMETRY_SIZE"] == 24
+    assert fw["USB_HID_CHANNEL_SIZE"] == 54
+    assert fw["USB_HID_CHANNEL_INTERVAL_MS"] == 500
+    assert fw["USB_HID_COMMAND_LED_OFF"] == 1
+    assert fw["USB_HID_COMMAND_LED_ON"] == 2
+    assert fw["USB_HID_COMMAND_ARM_REBOOT"] == 3
+    assert fw["USB_HID_COMMAND_REBOOT"] == 4
+    assert fw["USB_HID_COMMAND_SAVE_CONFIGURATION"] == 5
+    assert fw["USB_HID_RESET_ARM_WINDOW_MS"] == 2000
+    assert all(size + 1 <= 64 for size in (63, 24, 24, 54))
 
 
 def test_hid_descriptor_status_report_count_matches_host_payload(repo_root):
-    assert firmware_hid_status_report_count(repo_root) == hid.STATUS_SIZE
+    assert firmware_hid_report_count(repo_root, 1) == 63
 
 
 def test_hid_descriptor_board_status_report_count_matches_host_payload(repo_root):
-    assert firmware_hid_report_count(repo_root, hid.REPORT_ID_BOARD_STATUS) == hid.BOARD_STATUS_SIZE
+    assert firmware_hid_report_count(repo_root, 2) == 24
+    assert firmware_hid_report_count(repo_root, 3) == 24
 
 
 def test_hid_descriptor_command_report_count_matches_host_payload(repo_root):
-    assert firmware_hid_report_count(repo_root, hid.REPORT_ID_COMMAND) == 1
+    assert firmware_hid_report_count(repo_root, 10) == 54
+    assert firmware_hid_report_count(repo_root, 15) == 54
 
 
-def test_hid_led_report_contract(repo_root):
-    assert firmware_hid_constants(repo_root)["USB_HID_REPORT_ID_LED"] == protocol.REPORT_ID_LED
-    assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_LED) == protocol.LED_SIZE
-
-
-def test_persistent_configuration_report_contracts(repo_root):
-    constants = firmware_hid_constants(repo_root)
-    assert constants["USB_HID_REPORT_ID_CONFIGURATION"] == protocol.REPORT_ID_CONFIGURATION == 16
-    assert constants["USB_HID_REPORT_ID_CONFIGURATION_SAVE"] == protocol.REPORT_ID_CONFIGURATION_SAVE == 17
-    assert firmware_hid_report_count(repo_root, 16) == protocol.CONFIGURATION_SIZE == 12
-    assert firmware_hid_report_count(repo_root, 17) == protocol.CONFIGURATION_SAVE_SIZE == 8
-
-
-def test_channel_diagnostic_reports_match_current_layout(repo_root):
-    assert firmware_hid_constants(repo_root)["USB_HID_REPORT_ID_CHANNEL_BASE"] == protocol.REPORT_ID_CHANNEL_BASE
-    assert protocol.CHANNEL_DIAGNOSTICS_SIZE == 59
-    for report_id in range(protocol.REPORT_ID_CHANNEL_BASE, protocol.REPORT_ID_CHANNEL_BASE + 6):
-        assert firmware_hid_report_count(repo_root, report_id) == protocol.CHANNEL_DIAGNOSTICS_SIZE
-
-
-def test_hid_descriptor_overflow_report_count_matches_host_payload(repo_root):
-    assert firmware_hid_report_count(repo_root, hid.REPORT_ID_OVERFLOW_COUNTS) == hid.OVERFLOW_COUNTS_SIZE
-
-
-def test_hardware_info_contract_matches_current_layout(repo_root):
+def test_legacy_hid_reports_are_absent(repo_root):
     fw = firmware_hid_constants(repo_root)
-    assert fw["USB_HID_REPORT_ID_HARDWARE_INFO"] == protocol.REPORT_ID_HARDWARE_INFO == 6
-    assert fw["USB_HID_HARDWARE_INFO_VERSION"] == protocol.HARDWARE_INFO_LAYOUT_VERSION == 1
-    assert fw["USB_HID_MCU_RP2040"] == protocol.MCU_RP2040
-    assert fw["USB_HID_MCU_RP2350"] == protocol.MCU_RP2350
-    assert firmware_hid_report_count(repo_root, protocol.REPORT_ID_HARDWARE_INFO) == protocol.HARDWARE_INFO_SIZE == 6
-    assert fw["USB_HID_REPORT_VERSION"] == 1
+    assert fw["USB_HID_REPORT_ID_TELEMETRY"] == 3
+    assert fw["USB_HID_REPORT_ID_CHANNEL_BASE"] == 10
+    assert firmware_hid_report_count(repo_root, 1) == 63
+    assert firmware_hid_report_count(repo_root, 2) == 24
+    assert firmware_hid_report_count(repo_root, 3) == 24
+    assert [firmware_hid_report_count(repo_root, report_id) for report_id in range(10, 16)] == [54] * 6
+
+
+@pytest.mark.parametrize("retired_report_id", [*range(4, 10), *range(16, 256)])
+def test_retired_reports_are_absent_from_the_descriptor(repo_root, retired_report_id):
+    with pytest.raises(ValueError):
+        firmware_hid_report_count(repo_root, retired_report_id)
+
+
+def test_channel_reports_have_input_and_feature_contract_in_source(repo_root):
+    descriptor = (repo_root / "firmware/src/usb/usb_descriptors.c").read_text(encoding="utf-8")
+    for report_id in range(10, 16):
+        start = descriptor.index(f"0x85, 0x{report_id:02X}")
+        end = descriptor.find("0x85,", start + 1)
+        chunk = descriptor[start:] if end < 0 else descriptor[start:end]
+        assert chunk.count("0x81, 0x02") == 1
+        assert chunk.count("0xB1, 0x02") == 1
 
 
 def test_lab_placeholder_helper_is_independent_of_tree_identity():
@@ -162,9 +153,9 @@ def test_cdc_interface_strings_advertise_hw_and_pio_8n1(repo_root):
     ]
 
 
-def test_hid_reset_disabled_by_default(repo_root):
-    assert firmware_hid_reset_default_enabled(repo_root) is False
-    assert firmware_hid_reset_cmake_default_enabled(repo_root) is False
+def test_hid_reset_enabled_by_default(repo_root):
+    assert firmware_hid_reset_default_enabled(repo_root) is True
+    assert firmware_hid_reset_cmake_default_enabled(repo_root) is True
 
 
 def test_uart_board_map_matches_documented_tx_rx_and_hw_fc_default(repo_root):

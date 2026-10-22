@@ -6,7 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(PICO_BOARD pico CACHE STRING "Target board")
 set(PICO_UART_VERSION "0.0.0-dev" CACHE STRING "Firmware semantic version string")
-option(PICO_UART_ALLOW_HID_RESET "Enable the trusted-host HID watchdog reset command" OFF)
+option(PICO_UART_ALLOW_HID_RESET "Enable the HID watchdog reset command (arm, then reset within 2 s)" ON)
 if((DEFINED PICO_UART_SYSTEM_CLOCK_KHZ AND NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "") OR
    PICO_UART_ALLOW_UNSAFE_OVERCLOCK)
     message(FATAL_ERROR "Build-time clock overrides were removed; use tools/firmware/config.py to select a stored profile")

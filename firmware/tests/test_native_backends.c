@@ -81,6 +81,24 @@ void pio_uart_driver_deinit(void *context)
     TEST_FAIL_MESSAGE("unexpected PIO deinitialization");
 }
 
+bool hw_uart_driver_reset_buffers(void *context)
+{
+    if (context == NULL) {
+        return false;
+    }
+    TEST_FAIL_MESSAGE("unexpected HW buffer reset");
+    return false;
+}
+
+bool pio_uart_driver_reset_buffers(void *context)
+{
+    if (context == NULL) {
+        return false;
+    }
+    TEST_FAIL_MESSAGE("unexpected PIO buffer reset");
+    return false;
+}
+
 void hw_uart_driver_poll(void *context, bool tx_launch_allowed)
 {
     (void)context;
@@ -163,7 +181,7 @@ void test_pio_reinitialization_preserves_resource_ownership_and_state(void)
     pio.baud_rate = 230400u;
     pio.tx_polled_bytes = 11u;
     pio.tx_dma_bytes = 23u;
-    pio.controller_rx_bytes = 45u;
+    pio.uart_rx_bytes = 45u;
     pio.rx_error_count = 2u;
     pio.rx_ring.producer = 45u;
     pio.rx_ring.consumer = 12u;
@@ -192,8 +210,8 @@ void test_hw_reinitialization_preserves_resource_ownership_and_state(void)
     hardware.data_bits = 7u;
     hardware.stop_bits = 2u;
     hardware.parity = UART_PARITY_EVEN;
-    hardware.controller_tx_bytes = 32u;
-    hardware.controller_rx_bytes = 17u;
+    hardware.uart_tx_bytes = 32u;
+    hardware.uart_rx_bytes = 17u;
     hardware.rx_error_count = 1u;
     hardware.rx_ring.producer = 17u;
     hardware.rx_ring.consumer = 4u;
@@ -314,14 +332,15 @@ void test_null_api_inputs_return_neutral_results_without_hardware_access(void)
         TEST_ASSERT_NULL(ops->tx_ring(NULL));
         TEST_ASSERT_EQUAL_UINT32(0u, ops->baud_rate(NULL));
         uart_backend_stats_t stats = ops->stats(NULL);
-        TEST_ASSERT_EQUAL_UINT32(0u, stats.controller_tx_bytes);
-        TEST_ASSERT_EQUAL_UINT32(0u, stats.controller_rx_bytes);
+        TEST_ASSERT_EQUAL_UINT32(0u, stats.uart_tx_bytes);
+        TEST_ASSERT_EQUAL_UINT32(0u, stats.uart_rx_bytes);
         TEST_ASSERT_EQUAL_UINT32(0u, stats.rx_error_count);
         TEST_ASSERT_FALSE(ops->line_coding_matches(NULL, &request));
         TEST_ASSERT_FALSE(ops->line_coding_matches(NULL, NULL));
         TEST_ASSERT_FALSE(ops->line_coding_acceptable(NULL));
         TEST_ASSERT_FALSE(ops->set_line_coding(NULL, &request));
         TEST_ASSERT_FALSE(ops->set_line_coding(NULL, NULL));
+        TEST_ASSERT_FALSE(ops->reset_buffers(NULL));
     }
     hardware.initialized = true;
     pio.initialized = true;
@@ -428,13 +447,13 @@ void test_real_callbacks_return_driver_rings_rates_and_counters(void)
 {
     hardware.initialized = true;
     hardware.baud_rate = 115207u;
-    hardware.controller_tx_bytes = 13u;
-    hardware.controller_rx_bytes = 19u;
+    hardware.uart_tx_bytes = 13u;
+    hardware.uart_rx_bytes = 19u;
     hardware.rx_error_count = 2u;
     pio.baud_rate = 230400u;
     pio.tx_polled_bytes = 17u;
     pio.tx_dma_bytes = 23u;
-    pio.controller_rx_bytes = 29u;
+    pio.uart_rx_bytes = 29u;
     pio.rx_error_count = 3u;
     TEST_ASSERT_TRUE(uart_backend_hw_ops.is_initialized(&hardware));
     TEST_ASSERT_FALSE(uart_backend_pio_ops.is_initialized(&pio));
@@ -445,12 +464,12 @@ void test_real_callbacks_return_driver_rings_rates_and_counters(void)
     TEST_ASSERT_EQUAL_UINT32(115207u, uart_backend_hw_ops.baud_rate(&hardware));
     TEST_ASSERT_EQUAL_UINT32(230400u, uart_backend_pio_ops.baud_rate(&pio));
     uart_backend_stats_t stats = uart_backend_hw_ops.stats(&hardware);
-    TEST_ASSERT_EQUAL_UINT32(13u, stats.controller_tx_bytes);
-    TEST_ASSERT_EQUAL_UINT32(19u, stats.controller_rx_bytes);
+    TEST_ASSERT_EQUAL_UINT32(13u, stats.uart_tx_bytes);
+    TEST_ASSERT_EQUAL_UINT32(19u, stats.uart_rx_bytes);
     TEST_ASSERT_EQUAL_UINT32(2u, stats.rx_error_count);
     stats = uart_backend_pio_ops.stats(&pio);
-    TEST_ASSERT_EQUAL_UINT32(40u, stats.controller_tx_bytes);
-    TEST_ASSERT_EQUAL_UINT32(29u, stats.controller_rx_bytes);
+    TEST_ASSERT_EQUAL_UINT32(40u, stats.uart_tx_bytes);
+    TEST_ASSERT_EQUAL_UINT32(29u, stats.uart_rx_bytes);
     TEST_ASSERT_EQUAL_UINT32(3u, stats.rx_error_count);
 }
 

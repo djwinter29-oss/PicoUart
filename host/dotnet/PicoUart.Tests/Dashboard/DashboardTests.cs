@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Wire;
@@ -9,342 +9,226 @@ namespace PicoUart.Tests;
 [Trait("Category", "Unit")]
 public sealed class DashboardTests
 {
-    [Fact]
-    public void InitialSnapshotHasSixUnknownChannelsAndNoInventedMetadata()
+    [Theory]
+    [InlineData(0u, 500)]
+    [InlineData(100u, 500)]
+    [InlineData(500u, 500)]
+    [InlineData(750u, 750)]
+    [InlineData(1000u, 1000)]
+    [InlineData(5000u, 1000)]
+    [InlineData(uint.MaxValue, 500)]
+    public void RefreshCadenceUsesOnlyAcceptedInputIntervalsWithinBounds(uint interval, int expected)
     {
         var snapshot = new DashboardSnapshot();
-
-        Assert.False(snapshot.Connected);
-        Assert.Null(snapshot.Error);
-        Assert.Null(snapshot.MetadataError);
-        Assert.Null(snapshot.HardwareError);
-        Assert.Null(snapshot.Hardware);
-        Assert.Null(snapshot.Configuration);
-        Assert.Null(snapshot.ConfigurationError);
-        Assert.Null(snapshot.ConfigurationSave);
-        Assert.Null(snapshot.ConfigurationSaveError);
-        Assert.Null(snapshot.Identity);
-        Assert.Null(snapshot.IdentityError);
-        Assert.Null(snapshot.Runtime);
-        Assert.Null(snapshot.RuntimeError);
-        Assert.Null(snapshot.UpdatedAt);
-        Assert.Null(snapshot.Sequence);
-        Assert.Null(snapshot.Board);
-        Assert.False(snapshot.TrafficIncomplete);
-        Assert.Equal(6, snapshot.OverflowCounts.Length);
-        Assert.All(snapshot.OverflowCounts, count => Assert.Null(count));
-        Assert.Equal(Enumerable.Range(0, 6), snapshot.Channels.Select(channel => channel.Id));
-        Assert.All(snapshot.Channels, channel =>
-        {
-            Assert.Null(channel.Health);
-            Assert.Empty(channel.HealthLabels);
-            Assert.Equal("unknown", channel.State);
-            Assert.False(channel.CdcOpen);
-            Assert.Equal(0, channel.RingHighWatermark);
-            AssertTraffic(channel.Traffic, 0, 0, 0, 0);
-            AssertTraffic(channel.Totals, 0, 0, 0, 0);
-        });
-    }
-
-    [Fact]
-    public void BoardTelemetryUsesTheSharedDashboardJsonContract()
-    {
-        var snapshot = new DashboardSnapshot
-        {
-            Identity = new("PicoUart", "0123456789ABCDEF"),
-            Runtime = new(4294967296, [10000, null], 65536, 270336),
-            RuntimeError = "previous read failed"
-        };
-        snapshot.Apply(CreateStatus(1));
+        Assert.Equal(500, snapshot.RefreshIntervalMs);
+        snapshot.ApplyFeature(Sample(1) with { IntervalMs = 900 });
+        Assert.Equal(500, snapshot.RefreshIntervalMs);
+        snapshot.Apply(Sample(1) with { IntervalMs = interval });
+        Assert.Equal(expected, snapshot.RefreshIntervalMs);
+        snapshot.Apply(Sample(1) with { IntervalMs = 600 });
+        Assert.Equal(expected, snapshot.RefreshIntervalMs);
+        snapshot.Apply(Sample(2) with { IntervalMs = 600 });
+        Assert.Equal(600, snapshot.RefreshIntervalMs);
+        snapshot.Apply(Sample(3) with { IntervalMs = 0 });
+        snapshot.Apply(Sample(4) with { IntervalMs = uint.MaxValue });
+        Assert.Equal(600, snapshot.RefreshIntervalMs);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
-        var root = json.RootElement;
-        Assert.Equal("0123456789ABCDEF", root.GetProperty("identity").GetProperty("serial_number").GetString());
-        Assert.Equal(4294967296ul, root.GetProperty("runtime").GetProperty("uptime_ms").GetUInt64());
-        Assert.Equal(65536u, root.GetProperty("runtime").GetProperty("ram_reserved_bytes").GetUInt32());
-        Assert.Equal(10000, root.GetProperty("runtime").GetProperty("cpu_usage_basis_points")[0].GetInt32());
-        Assert.Equal(JsonValueKind.Null, root.GetProperty("runtime").GetProperty("cpu_usage_basis_points")[1].ValueKind);
-        Assert.Equal("previous read failed", snapshot.RuntimeError);
+        Assert.Equal(600, json.RootElement.GetProperty("refresh_interval_ms").GetInt32());
     }
 
     [Fact]
-    public void RuntimeReadFailurePreservesIndependentLedState()
-    {
-        var led = new LedStatus(false, true);
-        var snapshot = new DashboardSnapshot
-        {
-            Runtime = new(42, [1000, 2000], 65536, 270336),
-            Led = led
-        };
-
-        snapshot.SetRuntimeReadResult(null, "runtime report unsupported");
-
-        Assert.Null(snapshot.Runtime);
-        Assert.Equal("runtime report unsupported", snapshot.RuntimeError);
-        Assert.Equal(led, snapshot.Led);
-    }
-
-    [Theory]
-    [InlineData(0, "initializing", false)]
-    [InlineData(1, "ready", false)]
-    [InlineData(8, "initializing", false)]
-    [InlineData(9, "ready", false)]
-    [InlineData(17, "ready", true)]
-    [InlineData(33, "ready", false)]
-    [InlineData(49, "ready", true)]
-    [InlineData(2, "attention", false)]
-    [InlineData(3, "attention", false)]
-    [InlineData(5, "attention", false)]
-    [InlineData(65, "attention", false)]
-    [InlineData(129, "attention", false)]
-    [InlineData(255, "attention", true)]
-    public void TelemetryMapsHealthForEveryChannel(byte health, string state, bool cdcOpen)
+    public void FirstInputOnlyEstablishesContinuityAndFeaturesNeverConsumeDeltas()
     {
         var snapshot = new DashboardSnapshot();
-        snapshot.Apply(CreateStatus(0, health));
-
-        Assert.All(snapshot.Channels, channel =>
-        {
-            Assert.Equal(health, channel.Health);
-            Assert.Equal(Protocol.DecodeHealth(health), channel.HealthLabels);
-            Assert.Equal(state, channel.State);
-            Assert.Equal(cdcOpen, channel.CdcOpen);
-            Assert.Equal(32, channel.RingHighWatermark);
-        });
+        snapshot.ApplyFeature(Sample(1));
+        Assert.Null(snapshot.Channels[0].Sequence);
+        Assert.Null(snapshot.Channels[0].UpdatedAt);
+        snapshot.Apply(Sample(2));
+        Assert.Equal(150000, snapshot.Channels[0].Totals.UartTx);
+        Assert.Equal(0ul, snapshot.Channels[0].ObservedIntervalMs);
+        snapshot.ApplyFeature(Sample(2) with { UartTxBytes = 99999, IntervalMs = 800 });
+        snapshot.Apply(Sample(3) with { IntervalMs = 700 });
+        Assert.Equal(150000, snapshot.Channels[0].Totals.UartTx);
+        Assert.Equal(700ul, snapshot.Channels[0].ObservedIntervalMs);
+        Assert.False(snapshot.Channels[0].TrafficIncomplete);
     }
 
     [Fact]
-    public void TelemetryClearsConnectionErrorsButPreservesMetadataErrors()
-    {
-        var snapshot = new DashboardSnapshot
-        {
-            Error = "disconnected", MetadataError = "feature read failed", HardwareError = "report unsupported"
-        };
-        var before = DateTimeOffset.UtcNow;
-
-        snapshot.Apply(CreateStatus(42));
-
-        Assert.True(snapshot.Connected);
-        Assert.Null(snapshot.Error);
-        Assert.Equal("feature read failed", snapshot.MetadataError);
-        Assert.Equal("report unsupported", snapshot.HardwareError);
-        Assert.Equal((byte)42, snapshot.Sequence);
-        Assert.NotNull(snapshot.UpdatedAt);
-        Assert.InRange(snapshot.UpdatedAt.Value, before, DateTimeOffset.UtcNow);
-        Assert.Null(snapshot.Board);
-        Assert.All(snapshot.OverflowCounts, count => Assert.Null(count));
-    }
-
-    [Fact]
-    public void TrafficDeltasAreReplacedAndTotalsAccumulateIndependentlyForAllChannels()
+    public void IndependentChannelsHandleSequenceWrapAndGaps()
     {
         var snapshot = new DashboardSnapshot();
-        snapshot.Apply(CreateStatus(0));
-        var firstTraffic = snapshot.Channels[0].Traffic;
-        var second = new Status(1, Enumerable.Range(0, 6).Select(index =>
-            new ChannelStatus(index, 0, 64, 100, 200, 300, 400)).ToArray());
-
-        snapshot.Apply(second);
-
-        Assert.NotSame(firstTraffic, snapshot.Channels[0].Traffic);
-        for (var index = 0; index < 6; index++)
-        {
-            var channel = snapshot.Channels[index];
-            AssertTraffic(channel.Traffic, 100, 200, 300, 400);
-            AssertTraffic(channel.Totals, 110 + index, 220 + index, 330 + index, 440 + index);
-            Assert.Equal("initializing", channel.State);
-            Assert.Equal(64, channel.RingHighWatermark);
-        }
-    }
-
-    [Theory]
-    [InlineData(0, 1, false)]
-    [InlineData(254, 255, false)]
-    [InlineData(255, 0, false)]
-    [InlineData(0, 0, true)]
-    [InlineData(1, 0, true)]
-    [InlineData(0, 2, true)]
-    [InlineData(255, 1, true)]
-    public void SequenceTracksWrapGapsDuplicatesAndBackwardsReports(byte first, byte second, bool incomplete)
-    {
-        var snapshot = new DashboardSnapshot();
-        snapshot.Apply(CreateStatus(first));
-        Assert.False(snapshot.TrafficIncomplete);
-
-        snapshot.Apply(CreateStatus(second));
-
-        Assert.Equal(incomplete, snapshot.TrafficIncomplete);
-    }
-
-    [Fact]
-    public void TrafficIncompleteRemainsSetAfterLaterConsecutiveReports()
-    {
-        var snapshot = new DashboardSnapshot();
-        snapshot.Apply(CreateStatus(0));
-        snapshot.Apply(CreateStatus(2));
-        snapshot.Apply(CreateStatus(3));
-
-        Assert.True(snapshot.TrafficIncomplete);
+        snapshot.Apply(Sample(65535));
+        snapshot.Apply(Sample(10, 1));
+        snapshot.Apply(Sample(0));
+        snapshot.Apply(Sample(12, 1));
+        Assert.False(snapshot.Channels[0].TrafficIncomplete);
+        Assert.True(snapshot.Channels[1].TrafficIncomplete);
+        Assert.Equal(1, snapshot.Channels[1].TrafficGaps);
+        snapshot.Apply(Sample(13, 1));
+        Assert.True(snapshot.Channels[1].TrafficIncomplete);
+        Assert.Equal(1, snapshot.Channels[1].TrafficGaps);
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    public void EachSaturatedDirectionMarksTrafficIncompleteOnTheLastChannel(int direction)
+    public void InvalidIntervalsDoNotCreateRateWindows(int field)
     {
-        var status = CreateStatus(0);
-        ushort[] counts = [10, 20, 30, 40];
-        counts[direction] = ushort.MaxValue;
-        status.Channels[5] = new(5, 1, 32, counts[0], counts[1], counts[2], counts[3]);
         var snapshot = new DashboardSnapshot();
-
-        snapshot.Apply(status);
-
-        Assert.True(snapshot.TrafficIncomplete);
-        AssertTraffic(snapshot.Channels[5].Totals, counts[0], counts[1], counts[2], counts[3]);
+        snapshot.Apply(Sample(1));
+        var sample = Sample(2) with { IntervalMs = field == 0 ? 0u : uint.MaxValue };
+        snapshot.Apply(sample);
+        Assert.True(snapshot.Channels[0].TrafficIncomplete);
+        Assert.Equal(1, snapshot.Channels[0].TrafficGaps);
+        Assert.Equal(0ul, snapshot.Channels[0].ObservedIntervalMs);
+        Assert.Equal(sample.UartTxBytes, snapshot.Channels[0].Totals.UartTx);
     }
 
     [Fact]
-    public void TrafficTotalsDoNotWrapAtTheReportCounterWidth()
+    public void DuplicateDoesNotProduceAnExactRateAndWireCounterWrapIsModulo32()
     {
-        var status = CreateStatus(0);
-        status.Channels[0] = new(0, 1, 32, 60000, 60000, 60000, 60000);
         var snapshot = new DashboardSnapshot();
-        snapshot.Apply(status);
-        snapshot.Apply(status with { Sequence = 1 });
-
-        AssertTraffic(snapshot.Channels[0].Totals, 120000, 120000, 120000, 120000);
-        Assert.False(snapshot.TrafficIncomplete);
+        snapshot.Apply(Sample(1) with { UartTxBytes = uint.MaxValue - 15 });
+        snapshot.Apply(Sample(2) with { UartTxBytes = 32 });
+        Assert.Equal(32, snapshot.Channels[0].Totals.UartTx);
+        Assert.Equal(48, snapshot.Channels[0].Traffic.UartTx);
+        Assert.Equal(500ul, snapshot.Channels[0].ObservedIntervalMs);
+        snapshot.Apply(Sample(2));
+        Assert.True(snapshot.Channels[0].TrafficIncomplete);
+        Assert.Equal(32, snapshot.Channels[0].Totals.UartTx);
+        Assert.Equal(500ul, snapshot.Channels[0].ObservedIntervalMs);
+        Assert.Equal((ushort)2, snapshot.Channels[0].Sequence);
     }
 
     [Fact]
-    public void JsonPreservesTheSharedWebContractAndNullUnknownValues()
+    public void StaleChannelMarksContinuityUncertainEvenIfSequenceMatches()
     {
-        using var service = new DashboardService(null, null);
-        using var initial = JsonDocument.Parse(service.SnapshotJson());
-        Assert.Equal(new[] { "board", "channel_diagnostics", "channels", "configuration", "configuration_error",
-            "configuration_save", "configuration_save_error", "connected",
-            "diagnostics_error", "error", "hardware", "hardware_error",
-            "identity", "identity_error", "led", "led_error", "metadata_error", "overflow_counts", "runtime", "runtime_error",
-            "sequence", "traffic_gaps", "traffic_incomplete", "updated_at" },
-            initial.RootElement.EnumerateObject().Select(property => property.Name).Order());
-        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("board").ValueKind);
-        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("hardware").ValueKind);
-        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("configuration").ValueKind);
-        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("configuration_save").ValueKind);
-        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("led").ValueKind);
-        Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("overflow_counts")[0].ValueKind);
-
-        var snapshot = new DashboardSnapshot
-        {
-            Board = new(25.3, "1.2.3", 1, 2, 3, false),
-            Hardware = new("RP2350", 280000000, 2),
-            Configuration = new("defaults", "crc_failed", null, 1),
-            ConfigurationSave = new(2, 0),
-            Led = new(false, true),
-            OverflowCounts = [0, 1, 2, 3, 4, uint.MaxValue]
-        };
-        snapshot.Apply(CreateStatus(7));
-        using var populated = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
-        var board = populated.RootElement.GetProperty("board");
-        var led = populated.RootElement.GetProperty("led");
-        Assert.False(led.GetProperty("manual_on").GetBoolean());
-        Assert.True(led.GetProperty("output_on").GetBoolean());
-        Assert.Equal(new[] { "firmware_major", "firmware_minor", "firmware_patch", "firmware_version",
-            "hid_reset_enabled", "temperature_celsius" }, board.EnumerateObject().Select(property => property.Name).Order());
-        Assert.Equal("1.2.3", board.GetProperty("firmware_version").GetString());
-        Assert.False(board.GetProperty("hid_reset_enabled").GetBoolean());
-        var hardware = populated.RootElement.GetProperty("hardware");
-        Assert.Equal("RP2350", hardware.GetProperty("mcu").GetString());
-        Assert.Equal(2, hardware.GetProperty("mcu_id").GetByte());
-        Assert.Equal(280000000u, hardware.GetProperty("system_clock_hz").GetUInt32());
-        var configuration = populated.RootElement.GetProperty("configuration");
-        Assert.Equal("defaults", configuration.GetProperty("source").GetString());
-        Assert.Equal("crc_failed", configuration.GetProperty("reason").GetString());
-        Assert.Equal(JsonValueKind.Null, configuration.GetProperty("stored_profile").ValueKind);
-        Assert.Equal(1u, configuration.GetProperty("active_profile").GetUInt32());
-        var save = populated.RootElement.GetProperty("configuration_save");
-        Assert.Equal(new[] { "profile", "status" }, save.EnumerateObject().Select(property => property.Name).Order());
-        Assert.Equal(2, save.GetProperty("status").GetInt32());
-        Assert.Equal(0u, save.GetProperty("profile").GetUInt32());
-        Assert.Equal(uint.MaxValue, populated.RootElement.GetProperty("overflow_counts")[5].GetUInt32());
-        var channel = populated.RootElement.GetProperty("channels")[0];
-        Assert.Equal(new[] { "cdc_open", "health", "health_labels", "id", "ring_high_watermark",
-            "state", "totals", "traffic" }, channel.EnumerateObject().Select(property => property.Name).Order());
-        Assert.Equal(new[] { "uart_rx", "uart_tx", "usb_rx", "usb_tx" },
-            channel.GetProperty("totals").EnumerateObject().Select(property => property.Name).Order());
-        Assert.Equal(10, channel.GetProperty("totals").GetProperty("uart_tx").GetInt64());
+        var snapshot = new DashboardSnapshot();
+        snapshot.Apply(Sample(1));
+        snapshot.Apply(Sample(1, 1));
+        snapshot.Channels[0].LastInputTimestamp = Stopwatch.GetTimestamp() - 4 * Stopwatch.Frequency;
+        snapshot.MarkStale();
+        Assert.Equal("stale", snapshot.Channels[0].State);
+        Assert.Equal(1, snapshot.Channels[0].TrafficGaps);
+        snapshot.ApplyFeature(Sample(1));
+        Assert.Equal((ushort)1, snapshot.Channels[0].Sequence);
+        snapshot.MarkStale();
+        snapshot.Apply(Sample(2));
+        Assert.True(snapshot.Channels[0].TrafficIncomplete);
+        Assert.Equal(1, snapshot.Channels[0].TrafficGaps);
+        Assert.False(snapshot.Channels[1].TrafficIncomplete);
     }
 
     [Theory]
-    [InlineData("toggle-led")]
-    [InlineData("reset")]
-    public void ControlsFailClearlyWithoutAnOpenConnection(string action)
+    [InlineData(false, 1)]
+    [InlineData(false, 40000)]
+    [InlineData(true, 1)]
+    [InlineData(true, 40000)]
+    public void StaleStreamRebaselinesEvenForDuplicateOrOldHalfRangeSequence(bool markStaleFirst, ushort sequence)
     {
-        using var service = new DashboardService(null, null);
-
-        var error = Assert.Throws<InvalidOperationException>(() => service.Action(action));
-
-        Assert.Equal("PicoUart HID interface is not connected", error.Message);
+        var snapshot = new DashboardSnapshot();
+        snapshot.Apply(Sample(1));
+        snapshot.Apply(Sample(1, 1));
+        snapshot.Channels[0].LastInputTimestamp = Stopwatch.GetTimestamp() - 4 * Stopwatch.Frequency;
+        if (markStaleFirst) snapshot.MarkStale();
+        snapshot.Apply(Sample(sequence));
+        var channel = snapshot.Channels[0];
+        Assert.Equal(sequence, channel.Sequence);
+        Assert.Equal(150000, channel.Totals.UartTx);
+        Assert.Equal(0ul, channel.ObservedIntervalMs);
+        Assert.Equal(0, channel.Traffic.UartTx);
+        Assert.True(channel.TrafficIncomplete);
+        Assert.Equal(1, channel.TrafficGaps);
+        Assert.False(snapshot.Channels[1].TrafficIncomplete);
+        snapshot.Apply(Sample((ushort)(sequence + 1)));
+        Assert.Equal(150000, channel.Totals.UartTx);
+        Assert.Equal(500ul, channel.ObservedIntervalMs);
+        Assert.Equal(1, channel.TrafficGaps);
     }
 
     [Fact]
-    public void ConfigurationSaveRequiresAnOpenConnection()
+    public void JsonExposesRequestedSharedSchemaWithoutInventedFaultTimesOrBoardSequence()
     {
-        using var service = new DashboardService(null, null);
-        var error = Assert.Throws<InvalidOperationException>(() => service.SaveConfiguration(0, false));
-        Assert.Equal("PicoUart HID interface is not connected", error.Message);
+        var snapshot = new DashboardSnapshot { Identity = ProtocolTests.Identity() };
+        snapshot.Apply(Sample(1));
+        snapshot.Apply(Sample(2));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
+        var root = json.RootElement;
+        Assert.False(root.TryGetProperty("sequence", out _));
+        Assert.Equal(7, root.GetProperty("identity").GetProperty("capabilities").GetInt32());
+        Assert.Equal(31, root.GetProperty("identity").GetProperty("clock_profile_mask").GetInt32());
+        var channel = root.GetProperty("channels")[0];
+        Assert.Equal(2, channel.GetProperty("sequence").GetInt32());
+        Assert.Equal(500ul, channel.GetProperty("observed_interval_ms").GetUInt64());
+        Assert.NotEqual(default, channel.GetProperty("updated_at").GetDateTimeOffset());
+        Assert.Equal(150000, channel.GetProperty("totals").GetProperty("uart_tx").GetInt64());
+        var diag = root.GetProperty("channel_diagnostics")[0];
+        Assert.Equal(uint.MaxValue, diag.GetProperty("last_fault_uptime_s").GetUInt32());
+        Assert.Equal(new[] { "count" }, diag.GetProperty("faults").GetProperty("rx_error")
+            .EnumerateObject().Select(property => property.Name));
     }
 
     [Fact]
-    public void ConfigurationSaveReadFailureDoesNotInvalidateOtherMetadataOrTraffic()
+    public void ControlsFailClearlyWithoutAnOpenConnection()
     {
-        var snapshot = new DashboardSnapshot
+        using var service = new DashboardService(null, null);
+        Assert.Throws<InvalidOperationException>(() => service.Action("toggle-led"));
+        Assert.Throws<InvalidOperationException>(() => service.Action("reset"));
+        Assert.Throws<InvalidOperationException>(() => service.SaveConfiguration(0, false));
+    }
+
+    [Fact]
+    public void InitialSnapshotHasNoInventedMetadataOrChannelDiagnostics()
+    {
+        var snapshot = new DashboardSnapshot();
+        Assert.Null(snapshot.Identity);
+        Assert.Null(snapshot.Board);
+        Assert.All(snapshot.ChannelDiagnostics, Assert.Null);
+        Assert.All(snapshot.Channels, channel =>
         {
-            ConfigurationSaveError = "report unsupported",
-            Configuration = new("stored", "none", 0, 0),
-            Hardware = new("RP2040", 125000000, 1),
-            Identity = new("PicoUart", "0123456789ABCDEF")
-        };
-        snapshot.Apply(CreateStatus(1));
-        Assert.True(snapshot.Connected);
-        Assert.Null(snapshot.Error);
-        Assert.Equal("report unsupported", snapshot.ConfigurationSaveError);
-        Assert.Null(snapshot.ConfigurationSave);
-        Assert.NotNull(snapshot.Configuration);
-        Assert.NotNull(snapshot.Hardware);
-        Assert.NotNull(snapshot.Identity);
+            Assert.Null(channel.UpdatedAt);
+            Assert.Null(channel.Sequence);
+            Assert.Null(channel.Health);
+        });
     }
 
     [Theory]
     [InlineData(0)]
-    [InlineData(3)]
-    [InlineData(255)]
-    public void UnknownMcuKeepsItsNumericIdAndClockInDashboardJson(byte mcuId)
+    [InlineData(2)]
+    public void IdleOrLedControlResultEnablesSaveAndClearsPreviousSaveError(byte command)
     {
-        byte[] payload = [1, mcuId, 0, 0, 0, 0];
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(2), 200000000);
-        var snapshot = new DashboardSnapshot { Hardware = Protocol.ParseHardwareInfo(payload) };
-        snapshot.Apply(CreateStatus(0));
-
-        using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
-        var hardware = json.RootElement.GetProperty("hardware");
-        Assert.Equal($"Unknown MCU ({mcuId})", hardware.GetProperty("mcu").GetString());
-        Assert.Equal(mcuId, hardware.GetProperty("mcu_id").GetByte());
-        Assert.Equal(200000000u, hardware.GetProperty("system_clock_hz").GetUInt32());
-        Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("hardware_error").ValueKind);
+        var snapshot = new DashboardSnapshot
+        {
+            ConfigurationSave = new(3, 1),
+            ConfigurationSaveError = "previous save rejected",
+            ConfigurationError = "previous read failed"
+        };
+        var configuration = new ConfigurationStatus("defaults", "erased", null, 0);
+        snapshot.ApplyControl(new(command, 0, command == 0 ? (byte)0 : (byte)2,
+            command == 0 ? 0u : 1u, null, configuration, 0), ProtocolTests.Identity());
+        Assert.Equal(new ConfigurationSaveStatus(0, null), snapshot.ConfigurationSave);
+        Assert.Null(snapshot.ConfigurationSaveError);
+        Assert.Null(snapshot.ConfigurationError);
+        Assert.Equal(configuration, snapshot.Configuration);
     }
 
-    private static Status CreateStatus(byte sequence, byte health = 1) => new(sequence,
-        Enumerable.Range(0, 6).Select(index => new ChannelStatus(index, health, 32,
-            (ushort)(10 + index), (ushort)(20 + index), (ushort)(30 + index), (ushort)(40 + index))).ToArray());
-
-    private static void AssertTraffic(Traffic traffic, long uartTx, long uartRx, long usbTx, long usbRx)
+    [Fact]
+    public void SaveCapabilityUnavailabilityIsExplicitAndSaveResultsKeepNewStatus()
     {
-        Assert.Equal(uartTx, traffic.UartTx);
-        Assert.Equal(uartRx, traffic.UartRx);
-        Assert.Equal(usbTx, traffic.UsbTx);
-        Assert.Equal(usbRx, traffic.UsbRx);
+        var snapshot = new DashboardSnapshot();
+        var control = new ControlResult(5, 1, 6, 1, 1, new("defaults", "erased", null, 0), 8);
+        snapshot.ApplyControl(control, ProtocolTests.Identity());
+        Assert.Equal(new ConfigurationSaveStatus(6, 1), snapshot.ConfigurationSave);
+        Assert.Null(snapshot.ConfigurationSaveError);
+        snapshot.ApplyControl(control with { Command = 0, Status = 0, RequestId = 0, RequestedProfile = null },
+            ProtocolTests.Identity() with { Capabilities = 3 });
+        Assert.Equal(new ConfigurationSaveStatus(0, null), snapshot.ConfigurationSave);
+        Assert.Equal("configuration save unavailable", snapshot.ConfigurationSaveError);
     }
+
+    private static ChannelStatus Sample(ushort sequence, int id = 0) =>
+        Protocol.ParseChannel((byte)(10 + id), ProtocolTests.ChannelPayload()) with
+        {
+            Sequence = sequence, IntervalMs = 500, CdcTxBytes = 100, CdcRxBytes = 200
+        };
 }

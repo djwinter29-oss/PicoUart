@@ -36,6 +36,14 @@ void test_nil_deadline_is_never_a_timeout(void)
     TEST_ASSERT_FALSE(usb_cdc_soft_pending_has_timed_out(false, false));
 }
 
+void test_only_dtr_closed_to_open_requests_channel_reset(void)
+{
+    TEST_ASSERT_FALSE(usb_cdc_dtr_open_should_reset_channel(false, false));
+    TEST_ASSERT_TRUE(usb_cdc_dtr_open_should_reset_channel(false, true));
+    TEST_ASSERT_FALSE(usb_cdc_dtr_open_should_reset_channel(true, true));
+    TEST_ASSERT_FALSE(usb_cdc_dtr_open_should_reset_channel(true, false));
+}
+
 void test_mailbox_acceptance_and_sequence_wrap(void)
 {
     TEST_ASSERT_TRUE(uart_control_mailbox_is_empty(4u, 4u));
@@ -161,6 +169,7 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_deadline_retained_only_for_identical_retry);
     RUN_TEST(test_nil_deadline_is_never_a_timeout);
+    RUN_TEST(test_only_dtr_closed_to_open_requests_channel_reset);
     RUN_TEST(test_mailbox_acceptance_and_sequence_wrap);
     RUN_TEST(test_worker_completion_keeps_newer_control_pending_owner);
     RUN_TEST(test_mailbox_completion_keeps_successor_mailbox_owner);

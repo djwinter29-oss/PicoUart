@@ -105,26 +105,36 @@ for (const frontend of ["webhid", "web"]) {
     const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
     const { present } = setup(document);
     const channel = { id: 0, health: 1, health_labels: ["ready"], cdc_open: false,
+      updated_at: null, observed_interval_ms: 0, traffic_gaps: 0,
       totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
     const data = { connected: true, identity: { serial_number: "rate-test" }, traffic_gaps: 0,
       updated_at: new Date(100000).toISOString(), runtime: { uptime_ms: 5000 } };
     try {
       assert.equal(present({ ...data, updated_at: null }, channel, 99999).rates, null);
+      channel.updated_at = data.updated_at;
       channel.totals.uart_tx = 100;
       assert.equal(present(data, channel, 100000).rates, null);
       assert.equal(present(data, channel, 100000).state, "idle");
       data.updated_at = new Date(100999).toISOString();
+      channel.updated_at = data.updated_at;
+      channel.observed_interval_ms = 999;
       assert.equal(present(data, channel, 100999).rates, null);
       data.updated_at = new Date(101000).toISOString();
+      channel.updated_at = data.updated_at;
+      channel.observed_interval_ms = 1000;
       channel.totals = { uart_tx: 1100, uart_rx: 2000, usb_tx: 3000, usb_rx: 4000 };
       let result = present(data, channel, 101000);
       assert.deepEqual({ ...result.rates }, { uart_tx: 1000, uart_rx: 2000, usb_tx: 3000, usb_rx: 4000 });
       assert.equal(result.state, "ready");
       assert.equal(present(data, channel, 104001).rates, null);
-      data.traffic_gaps++;
+      channel.traffic_gaps++;
       data.updated_at = new Date(102000).toISOString();
+      channel.updated_at = data.updated_at;
+      channel.observed_interval_ms = 2000;
       assert.equal(present(data, channel, 102000).rates, null);
       data.updated_at = new Date(103000).toISOString();
+      channel.updated_at = data.updated_at;
+      channel.observed_interval_ms = 3000;
       result = present(data, channel, 103000);
       assert.equal(result.rates.uart_tx, 0);
       assert.equal(result.state, "idle");
@@ -132,6 +142,26 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(present(data, channel, 103000).rates, null);
       data.connected = false;
       assert.equal(present(data, channel, 103000).state, "unknown");
+    } finally {
+      delete globalThis.document;
+    }
+  });
+
+  test(`${frontend} computes throughput across a 32-bit boot-counter wrap`, () => {
+    const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
+    const { present } = setup(document);
+    const channel = { id: 5, health: 1, health_labels: ["ready"], cdc_open: true,
+      updated_at: new Date(100000).toISOString(), observed_interval_ms: 0, traffic_gaps: 0,
+      totals: { uart_tx: 0xfffffff0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
+    const data = { connected: true, identity: { serial_number: "counter-wrap-test" }, traffic_gaps: 0,
+      runtime: { uptime_ms: 5000 } };
+    try {
+      assert.equal(present({ ...data, updated_at: channel.updated_at }, channel, 100000).rates, null);
+      channel.totals.uart_tx = 32;
+      channel.observed_interval_ms = 1000;
+      channel.updated_at = new Date(101000).toISOString();
+      const result = present({ ...data, updated_at: channel.updated_at }, channel, 101000);
+      assert.equal(result.rates.uart_tx, 48);
     } finally {
       delete globalThis.document;
     }
@@ -149,6 +179,7 @@ for (const frontend of ["webhid", "web"]) {
     const diagnostic = { baud_rate: 115200, data_bits: 8, stop_bits: 1, parity: "N", tx_pin: 0, rx_pin: 1,
       faults: { rx_error: { count: 3, last_seen_ms: 5000 } } };
     const channel = { id: 0, health: 0x81, state: "attention", health_labels: ["ready", "rx_error"], cdc_open: false,
+      updated_at: new Date().toISOString(), observed_interval_ms: 0, traffic_gaps: 0,
       totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
     const data = { connected: true, identity: { serial_number: "fault-test" }, updated_at: new Date().toISOString(),
       traffic_gaps: 0, channels: [channel], channel_diagnostics: [diagnostic],
@@ -156,6 +187,13 @@ for (const frontend of ["webhid", "web"]) {
       overflow_counts: [0, 0, 0, 0, 0, 0] };
     try {
       render(data);
+      if (frontend === "web") {
+        const resetButton = document.querySelector("#reset-board");
+        assert.equal(resetButton.hidden, true);
+        data.board = { hid_reset_enabled: true, temperature_celsius: 25.3 };
+        render(data);
+        assert.equal(resetButton.hidden, false);
+      }
       let rows = document.querySelector("#channel-rows");
       assert.equal(rows.children[0].children.length, 6);
       assert.equal(rows.children[0].children[1].textContent, "Closed");
@@ -170,7 +208,7 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(descendants(rows).filter(node => ["details", "summary", "button"].includes(node.tag)).length, 0);
       assert.match(rows.textContent, /attention/);
       assert.ok(!rows.textContent.includes(">="));
-      assert.ok(descendants(rows).some(node => node.title?.includes("0 B observed total")));
+      assert.ok(descendants(rows).some(node => node.title?.includes("0 B since firmware boot")));
       assert.equal(descendants(rows).filter(node => node.tag === "button").length, 0);
       assert.ok(!rows.textContent.includes("(acknowledged)"));
       channel.health_labels = ["ready"];
@@ -198,7 +236,8 @@ for (const frontend of ["webhid", "web"]) {
       render(data);
       assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
         "Recorded: control_error; Recorded: rx_error");
-      render({ ...data, updated_at: null });
+      channel.updated_at = null;
+      render(data);
       assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
         "Last reported: control_error; Last reported: rx_error");
       const metrics = descendants(rows).find(node => node.className === "traffic-metrics");
@@ -206,12 +245,62 @@ for (const frontend of ["webhid", "web"]) {
         ["UART TX", "UART RX", "USB TX", "USB RX"]);
       assert.ok(metrics.children.every(metric => metric.children[1].tag === "b"));
       channel.health_labels = ["ready", "control_error", "rx_error"];
+      channel.updated_at = data.updated_at;
       render({ ...data, channel_diagnostics: null, diagnostics_error: "Firmware upgrade required" });
       assert.match(rows.textContent, /Firmware diagnostics unavailable/);
       assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
         "Current: control_error; Recorded: rx_error");
       assert.ok(descendants(rows).some(node => node.title === "Firmware upgrade required"));
       assert.equal(descendants(rows).filter(node => node.textContent === "Clear flags").length, 0);
+    } finally {
+      delete globalThis.document;
+    }
+  });
+
+  test(`${frontend} shows KB/s rates and exact byte totals`, () => {
+    const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
+    const { render } = setup(document);
+    const channel = { id: 0, health: 1, health_labels: ["ready"], cdc_open: true,
+      updated_at: null, observed_interval_ms: 0, traffic_gaps: 0,
+      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
+    const start = Date.now() - 1000;
+    channel.updated_at = new Date(start).toISOString();
+    const data = { connected: true, identity: { serial_number: "totals-test" }, traffic_gaps: 0,
+      updated_at: new Date(start).toISOString(), channels: [channel], channel_diagnostics: null,
+      overflow_counts: [0, 0, 0, 0, 0, 0] };
+    try {
+      render(data);
+      channel.totals = { uart_tx: 12345, uart_rx: 0, usb_tx: 1234567, usb_rx: 999 };
+      channel.updated_at = new Date(start + 1000).toISOString();
+      channel.observed_interval_ms = 1000;
+      render({ ...data, updated_at: new Date(start + 1000).toISOString() });
+      const cells = descendants(document.querySelector("#channel-rows"))
+        .filter(node => node.className === "traffic-total" || node.tag === "b").map(node => node.textContent);
+      assert.deepEqual(cells, ["12.3 KB/s", "12,345 B", "0.0 KB/s", "0 B",
+        "1,234.6 KB/s", "1,234,567 B", "1.0 KB/s", "999 B"]);
+    } finally {
+      delete globalThis.document;
+    }
+  });
+
+  test(`${frontend} weights device intervals independently of arrival time and other-channel gaps`, () => {
+    const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
+    const { present } = setup(document);
+    const channel = { id: 1, health: 1, health_labels: ["ready"], cdc_open: true,
+      updated_at: new Date(100000).toISOString(), observed_interval_ms: 0, traffic_gaps: 0,
+      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
+    const data = { connected: true, identity: { serial_number: "device-window-test" }, traffic_gaps: 0 };
+    try {
+      assert.equal(present(data, channel, 100000).rates, null);
+      channel.updated_at = new Date(101000).toISOString();
+      channel.observed_interval_ms = 2000;
+      channel.totals.uart_tx = 4000;
+      data.traffic_gaps = 1;
+      assert.equal(present(data, channel, 101000).rates.uart_tx, 2000);
+      channel.updated_at = new Date(102000).toISOString();
+      channel.observed_interval_ms = 3000;
+      channel.traffic_gaps = 1;
+      assert.equal(present(data, channel, 102000).rates, null);
     } finally {
       delete globalThis.document;
     }
@@ -285,7 +374,8 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(text("traffic-note"), "");
       render({ ...data, traffic_incomplete: true });
       assert.equal(document.querySelector("#traffic-note").hidden, false);
-      assert.equal(text("traffic-note"), "Incomplete traffic samples detected; totals may undercount.");
+      assert.equal(text("traffic-note"),
+        "Input report gaps detected; rate windows restart after a clean sample. Byte counters are modulo 2^32 since boot.");
       render(data);
       assert.equal(document.querySelector("#traffic-note").hidden, true);
       render({ ...data, overflow_counts: [1, 2, 3, 4, 5, 6] });

@@ -62,7 +62,8 @@ Use your completed build directories. The check detects SDK automatic voltage ad
 startup object/ELF; it does not measure physical voltage, thermal margin, or hardware stability.
 
 Changing board, SDK path, generator, firmware version, or HID-reset option causes the build wrapper to reset stale
-CMake cache state before reconfiguring. Dependency build caches and external-tool stamps are reset together; the
+CMake cache state before reconfiguring. HID reboot is built in by default; pass `--disable-hid-reset` to remove it.
+Dependency build caches and external-tool stamps are reset together; the
 wrapper also detects a leftover picotool configure stamp whose dependency cache is missing.
 
 ## Load

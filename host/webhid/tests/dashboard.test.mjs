@@ -48,12 +48,13 @@ class Element {
 }
 
 function snapshot(serial, mcuId = 2, storedProfile = 2) {
-  return { connected: true, identity: { product_name: "PicoUart", serial_number: serial },
+  return { connected: true, identity: { product_name: "PicoUart", serial_number: serial,
+    capabilities: 7, clock_profile_mask: mcuId === 1 ? 15 : 31 },
     updated_at: "2026-01-01T00:00:00Z", overflow_counts: Array(6).fill(0),
     hardware: { mcu: mcuId === 1 ? "RP2040" : "RP2350", mcu_id: mcuId, system_clock_hz: 150000000 },
     configuration: { source: "stored", reason: "none", stored_profile: storedProfile, active_profile: storedProfile },
     configuration_save: { status: 0, profile: null },
-    channels: Array.from({ length: 6 }, (_, id) => ({ id, health: null, health_labels: [], cdc_open: false,
+    channels: Array.from({ length: 6 }, (_, id) => ({ id, health: 1, health_labels: ["ready"], cdc_open: false,
       totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } })),
     led: { manual_on: false, output_on: false } };
 }
@@ -70,12 +71,16 @@ function page() {
       createElement: () => new Element(),
       createTextNode: text => { const element = new Element(); element.textContent = text; return element; },
     },
-    window: { setInterval(callback, delay) { interval = callback; intervalMs = delay; }, confirm: () => true },
+    window: {
+      setInterval(callback, delay) { interval = callback; intervalMs = delay; return 1; },
+      clearInterval() {},
+      confirm: () => true,
+    },
     fetch: (url, options) => new Promise(resolve => requests.push({ url, options, resolve })),
   });
   vm.runInContext(script, context);
   return {
-    context, requests, intervalMs, element: id => elements.get(`#${id}`),
+    context, requests, get intervalMs() { return intervalMs; }, element: id => elements.get(`#${id}`),
     tick: () => interval(),
     async respond(data, status = 200) {
       const request = requests.shift();
@@ -106,8 +111,8 @@ async function connect(view) {
 
 test("hosted pages select independently and render board labels as text", async () => {
   const alice = page(), bob = page();
-  assert.equal(alice.intervalMs, 1000);
-  assert.equal(bob.intervalMs, 1000);
+  assert.equal(alice.intervalMs, 500);
+  assert.equal(bob.intervalMs, 500);
   await connect(alice);
   await connect(bob);
   assert.equal(alice.element("board-select").value, "A");
@@ -127,6 +132,26 @@ test("hosted pages select independently and render board labels as text", async 
   assert.equal(bob.element("configuration-unsafe-ack").checked, false);
   assert.equal(alice.element("serial").textContent, "first");
   assert.equal(alice.element("configuration-profile").value, "2");
+});
+
+test("status polling follows bounded backend HID cadence and resets on board selection or errors", async () => {
+  const view = page();
+  await connect(view);
+  for (const [interval, expected] of [[750, 750], [2000, 1000], [10, 500], [null, 500]]) {
+    view.tick();
+    await view.respond({ ...snapshot("first"), refresh_interval_ms: interval });
+    assert.equal(view.intervalMs, expected);
+  }
+  view.tick();
+  await view.respond({ ...snapshot("first"), refresh_interval_ms: 900 });
+  assert.equal(view.intervalMs, 900);
+  view.change("B");
+  assert.equal(view.intervalMs, 500);
+  await view.respond({ ...snapshot("second"), refresh_interval_ms: 800 });
+  assert.equal(view.intervalMs, 800);
+  view.tick();
+  await view.respond({ error: "offline" }, 503);
+  assert.equal(view.intervalMs, 500);
 });
 
 test("persistent configuration saves only on explicit POST and preserves the draft across polling", async () => {
@@ -190,7 +215,7 @@ test("board discovery runs only at startup or on an explicit rescan, never on st
     { data: { error: "enumeration failed" }, status: 503, board: null },
   ]) {
     const view = page();
-    assert.equal(view.intervalMs, 1000);
+    assert.equal(view.intervalMs, 500);
     assert.equal(view.requests.length, 1);
     assert.equal(view.requests[0].url, "/api/boards");
     await view.respond(startup.data, startup.status);

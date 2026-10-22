@@ -10,7 +10,12 @@ public sealed class PicoUartHid : IDisposable
 {
     private readonly HidStream stream;
     private readonly object gate = new();
+    private BoardIdentity? identity;
+    private ulong nextRequestId = 1;
     private bool disposed;
+    private bool transferUnconfirmed;
+    private bool rebootScheduled;
+    internal ControlResult? LastCommandResult { get; private set; }
 
     public PicoUartHid(string? serialNumber = null, string? devicePath = null)
     {
@@ -24,9 +29,14 @@ public sealed class PicoUartHid : IDisposable
             throw new InvalidOperationException("PicoUart HID interface not found with the expected usage metadata");
         if (devices.Length != 1)
             throw new InvalidOperationException("multiple PicoUart HID interfaces matched; use --serial or --device-path");
+        var descriptor = devices[0].GetReportDescriptor();
+        ValidateReports(descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
+                .Select(report => ((byte)report.ReportID, report.Length)),
+            descriptor.DeviceItems.SelectMany(item => item.InputReports)
+                .Select(report => ((byte)report.ReportID, report.Length)));
         stream = devices[0].Open();
         stream.ReadTimeout = 250;
-        stream.WriteTimeout = 1000;
+        stream.WriteTimeout = 3000;
     }
 
     private static IEnumerable<HidDevice> MatchingDevices() => DeviceList.Local.GetHidDevices(0xCAFE, 0x4010)
@@ -36,107 +46,198 @@ public sealed class PicoUartHid : IDisposable
     public static HidBoard[] Discover() => MatchingDevices().Select(device =>
         new HidBoard(device.DevicePath, device.GetSerialNumber(), device.GetProductName())).ToArray();
 
-    public Status? ReadStatus(int timeoutMs = 250)
+    internal static void ValidateReports(IEnumerable<(byte Id, int Length)> features,
+        IEnumerable<(byte Id, int Length)> inputs)
+    {
+        (byte Id, int Length)[] expectedFeatures =
+        [
+            (Protocol.IdentityReportId, Protocol.IdentitySize + 1),
+            (Protocol.ControlReportId, Protocol.ControlSize + 1),
+            (Protocol.TelemetryReportId, Protocol.TelemetrySize + 1),
+            .. Enumerable.Range(0, Protocol.ChannelCount)
+                .Select(index => ((byte)(Protocol.ChannelReportId + index), Protocol.ChannelSize + 1))
+        ];
+        var expectedInputs = Enumerable.Range(0, Protocol.ChannelCount)
+            .Select(index => ((byte)(Protocol.ChannelReportId + index), Protocol.ChannelSize + 1));
+        if (!features.OrderBy(report => report.Id).SequenceEqual(expectedFeatures)
+            || !inputs.OrderBy(report => report.Id).SequenceEqual(expectedInputs))
+            throw new InvalidOperationException("unsupported HID report descriptor; consolidated v1 reports required");
+    }
+
+    public ChannelStatus? ReadStatus(int timeoutMs = 250)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(timeoutMs);
         lock (gate)
         {
-            ObjectDisposedException.ThrowIf(disposed, this);
+            CheckConnection();
             stream.ReadTimeout = timeoutMs;
             var report = new byte[stream.Device.GetMaxInputReportLength()];
             int count;
             try { count = stream.Read(report, 0, report.Length); }
             catch (TimeoutException) { return null; }
-            if (count != 64 || report[0] != 1)
-                throw new InvalidOperationException("unexpected HID status report ID or size");
-            return Protocol.ParseStatus(report.AsSpan(1, count - 1));
+            if (count != Protocol.ChannelSize + 1)
+                throw new InvalidOperationException("unexpected HID channel report size");
+            return Protocol.ParseChannel(report[0], report.AsSpan(1, count - 1));
         }
     }
 
-    public BoardStatus ReadBoardStatus() => Protocol.ParseBoardStatus(ReadFeature(3, 8));
-
-    public uint[] ReadOverflowCounts() => Protocol.ParseOverflowCounts(ReadFeature(5, 25));
-
-    public HardwareInfo ReadHardwareInfo() => Protocol.ParseHardwareInfo(
-        ReadFeature(Protocol.HardwareInfoReportId, Protocol.HardwareInfoSize));
-
-    public ConfigurationStatus ReadConfiguration() => Protocol.ParseConfiguration(
-        ReadFeature(Protocol.ConfigurationReportId, Protocol.ConfigurationSize));
-
-    public ConfigurationSaveStatus ReadConfigurationSave() => Protocol.ParseConfigurationSave(
-        ReadFeature(Protocol.ConfigurationSaveReportId, Protocol.ConfigurationSaveSize));
-
-    /// <summary>Save the next-boot clock profile without resetting the board.</summary>
-    public ConfigurationSaveStatus SaveConfiguration(uint profile, bool unsafeOverclock)
+    public BoardIdentity ReadIdentity()
     {
         lock (gate)
         {
-            ObjectDisposedException.ThrowIf(disposed, this);
-            var payload = Protocol.BuildConfigurationSave(profile, unsafeOverclock, ReadHardwareInfo().McuId);
-            return SaveConfigurationRequest(payload, ReadConfigurationSave, stream.SetFeature);
+            CheckConnection();
+            return identity ??= Protocol.ParseIdentity(ReadFeature(Protocol.IdentityReportId, Protocol.IdentitySize));
         }
     }
 
-    internal static ConfigurationSaveStatus SaveConfigurationRequest(byte[] payload,
-        Func<ConfigurationSaveStatus> read, Action<byte[]> write)
+    public Telemetry ReadTelemetry()
     {
-        if (read().Status == 1)
-            throw new InvalidOperationException("a configuration save is already pending");
-        byte[] report = [Protocol.ConfigurationSaveReportId, .. payload];
-        write(report);
-        return WaitForConfigurationSave(
-            System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(4)), read);
-    }
-
-    internal static ConfigurationSaveStatus WaitForConfigurationSave(uint profile,
-        Func<ConfigurationSaveStatus> read, int timeoutMs = 2000)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(timeoutMs);
-        var elapsed = Stopwatch.StartNew();
-        while (true)
+        lock (gate)
         {
-            var result = read();
-            if (result.Status != 3 && result.Profile != profile)
-                throw new InvalidOperationException("configuration save returned a different profile");
-            switch (result.Status)
-            {
-                case 2: return result;
-                case 3: throw new InvalidOperationException("firmware rejected the configuration save request");
-                case 4:
-                    throw new InvalidOperationException("stop UART traffic and close all CDC ports before saving configuration");
-                case 5: throw new IOException("configuration flash save failed");
-                case 0 or 1: break;
-                default: throw new InvalidOperationException("unexpected configuration save status");
-            }
-            var remaining = timeoutMs - elapsed.ElapsedMilliseconds;
-            if (remaining <= 0)
-                throw new TimeoutException("configuration save did not complete before timeout");
-            Thread.Sleep((int)Math.Min(25, remaining));
+            var info = ReadIdentity();
+            return Protocol.ParseTelemetry(ReadFeature(Protocol.TelemetryReportId, Protocol.TelemetrySize), info);
         }
     }
 
-    public BoardIdentity ReadIdentity() => Protocol.ParseIdentity(ReadFeature(7, 49));
+    public BoardStatus ReadBoardStatus()
+    {
+        lock (gate)
+        {
+            var info = ReadIdentity();
+            return new(ReadTelemetry().TemperatureCelsius, info.FirmwareVersion,
+                info.FirmwareMajor, info.FirmwareMinor, info.FirmwarePatch, (info.Capabilities & 2) != 0);
+        }
+    }
 
-    public RuntimeStatus ReadRuntime() => Protocol.ParseRuntime(ReadFeature(8, 21));
+    public HardwareInfo ReadHardwareInfo()
+    {
+        lock (gate)
+        {
+            var info = ReadIdentity();
+            return new(info.Mcu, ReadTelemetry().SystemClockHz, info.McuId);
+        }
+    }
+
+    public ControlResult ReadControl(int timeoutMs = 3000)
+    {
+        lock (gate)
+        {
+            var info = ReadIdentity();
+            return Protocol.ParseControl(ReadFeature(Protocol.ControlReportId, Protocol.ControlSize, timeoutMs), info);
+        }
+    }
+
+    public ConfigurationStatus ReadConfiguration() => ReadControl().Configuration;
+    public RuntimeStatus ReadRuntime() => ReadTelemetry().Runtime;
+    public LedStatus ReadLed() => ReadTelemetry().Led;
+    public uint[] ReadOverflowCounts() => ReadChannelDiagnostics()
+        .Select(channel => channel.Faults["rx_overrun"].Count).ToArray();
+
+    /// <summary>Non-consuming Feature sample; never add its traffic to interrupt totals.</summary>
+    public ChannelStatus ReadChannel(int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Protocol.ChannelCount);
+        var id = (byte)(Protocol.ChannelReportId + index);
+        return Protocol.ParseChannel(id, ReadFeature(id, Protocol.ChannelSize));
+    }
+
+    public ChannelDiagnostics ReadChannelDiagnostic(int index) => ReadChannel(index).Diagnostics;
     public ChannelDiagnostics[] ReadChannelDiagnostics() => Enumerable.Range(0, Protocol.ChannelCount)
-        .Select(index => Protocol.ParseChannelDiagnostics(ReadFeature(
-            (byte)(Protocol.ChannelDiagnosticsReportId + index), Protocol.ChannelDiagnosticsSize))).ToArray();
-    public LedStatus ReadLed() => Protocol.ParseLed(ReadFeature(9, 2));
+        .Select(ReadChannelDiagnostic).ToArray();
 
     public void ToggleLed()
     {
-        lock (gate) SendCommand(1);
+        lock (gate)
+        {
+            var output = ReadLed().OutputOn
+                ?? throw new InvalidOperationException("board identification LED unavailable");
+            SendCommand(output ? (byte)1 : (byte)2);
+            ReadTelemetry();
+        }
     }
 
     public void ResetBoard()
     {
         lock (gate)
         {
-            if (!ReadBoardStatus().HidResetEnabled)
-                throw new InvalidOperationException("firmware HID reset is disabled; rebuild with -DPICO_UART_ALLOW_HID_RESET=1");
             SendCommand(3);
-            Thread.Sleep(50);
-            SendCommand(2);
+            SendCommand(4);
+        }
+    }
+
+    /// <summary>Return only after verified completion has scheduled the automatic reboot.</summary>
+    public ConfigurationSaveStatus SaveConfiguration(uint profile, bool unsafeOverclock)
+    {
+        lock (gate)
+        {
+            var result = SendCommand(5, profile, unsafeOverclock);
+            return new(result.Status, result.RequestedProfile);
+        }
+    }
+
+    private ControlResult SendCommand(byte command, uint profile = 0, bool unsafeOverclock = false)
+    {
+        CheckConnection();
+        if (rebootScheduled) throw new InvalidOperationException("board reboot already scheduled; reconnect");
+        var info = ReadIdentity();
+        var latest = ReadControl();
+        if (latest.Status == 1 || (latest.Status == 2 && latest.Command is 4 or 5))
+            throw new InvalidOperationException("a board command is pending or reboot is already scheduled; reconnect");
+        var id = AllocateRequestId(ref nextRequestId, latest.RequestId);
+        var payload = Protocol.BuildCommand(command, id, info, profile, unsafeOverclock);
+        byte[] report = [Protocol.ControlReportId, .. payload];
+        LastCommandResult = null;
+        try
+        {
+            Transfer(() => { stream.SetFeature(report); return true; }, 3000);
+            var result = WaitForCommand(command, payload[2], id, command == 5 ? profile : null, timeout =>
+            {
+                var observed = ReadControl(timeout);
+                if (observed.Command == command && observed.RequestId == id && observed.Flags == payload[2])
+                    LastCommandResult = observed;
+                return observed;
+            });
+            rebootScheduled = command is 4 or 5;
+            return result;
+        }
+        catch (Exception error) when (error is TimeoutException or IOException)
+        {
+            transferUnconfirmed = true;
+            throw;
+        }
+    }
+
+    internal static uint AllocateRequestId(ref ulong next, uint latest)
+    {
+        if (next == latest) next++;
+        if (next > uint.MaxValue)
+            throw new InvalidOperationException("control request ID space exhausted; reconnect");
+        return (uint)next++;
+    }
+
+    internal static ControlResult WaitForCommand(byte command, byte flags, uint requestId, uint? profile,
+        Func<int, ControlResult> read, int timeoutMs = 3000)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (true)
+        {
+            var remaining = timeoutMs - (int)elapsed.ElapsedMilliseconds;
+            if (remaining <= 0) throw new TimeoutException("board command outcome unconfirmed; reconnect and inspect configuration");
+            var result = read(remaining);
+            if (elapsed.ElapsedMilliseconds >= timeoutMs)
+                throw new TimeoutException("board command outcome unconfirmed; reconnect and inspect configuration");
+            if (result.RequestId != requestId || result.Command != command || result.Flags != flags)
+                throw new IOException("board command outcome unconfirmed: result belongs to another request");
+            if (result.Status is 1 or 2 && result.RequestedProfile != profile)
+                throw new IOException("board command outcome unconfirmed: requested profile mismatch");
+            if (result.Status == 2) return result;
+            if (result.Status >= 3)
+                throw new InvalidOperationException($"board command rejected: status {result.Status}, error {result.ErrorReason}"
+                    + (result.Status == 5 ? "; stop UART traffic and close all CDC ports" : ""));
+            if (result.Status != 1) throw new IOException("board command outcome unconfirmed: idle result");
+            remaining = timeoutMs - (int)elapsed.ElapsedMilliseconds;
+            if (remaining > 0) Thread.Sleep(Math.Min(50, remaining));
         }
     }
 
@@ -146,20 +247,43 @@ public sealed class PicoUartHid : IDisposable
         {
             if (disposed) return;
             disposed = true;
+            identity = null;
             stream.Dispose();
         }
     }
 
-    private byte[] ReadFeature(byte reportId, int payloadSize)
+    private void CheckConnection()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (transferUnconfirmed)
+            throw new IOException("previous HID operation is unconfirmed; reconnect before further I/O");
+    }
+
+    private T Transfer<T>(Func<T> transfer, int timeoutMs)
+    {
+        CheckConnection();
+        try
+        {
+            // HidSharp feature transfers have no portable cancellation; retire the connection after a deadline.
+            return Task.Run(transfer).WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)).GetAwaiter().GetResult();
+        }
+        catch (TimeoutException)
+        {
+            transferUnconfirmed = true;
+            throw;
+        }
+    }
+
+    private byte[] ReadFeature(byte reportId, int payloadSize, int timeoutMs = 3000)
     {
         lock (gate)
         {
-            ObjectDisposedException.ThrowIf(disposed, this);
+            CheckConnection();
             var prefixSize = OperatingSystem.IsLinux() ? 2 : 1;
             var report = new byte[Math.Max(payloadSize + prefixSize,
                 stream.Device.GetMaxFeatureReportLength() + prefixSize - 1)];
             report[0] = reportId;
-            stream.GetFeature(report);
+            Transfer(() => { stream.GetFeature(report); return true; }, timeoutMs);
             return FeaturePayload(report, reportId, payloadSize, prefixSize);
         }
     }
@@ -170,14 +294,5 @@ public sealed class PicoUartHid : IDisposable
             || (prefixSize == 2 && report[1] != reportId))
             throw new InvalidOperationException("unexpected HID feature report ID or size");
         return report.AsSpan(prefixSize, payloadSize).ToArray();
-    }
-
-    private void SendCommand(byte command)
-    {
-        ObjectDisposedException.ThrowIf(disposed, this);
-        var report = new byte[Math.Max(2, stream.Device.GetMaxFeatureReportLength())];
-        report[0] = 4;
-        report[1] = command;
-        stream.SetFeature(report);
     }
 }

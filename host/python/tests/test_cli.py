@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import runpy
+import re
 
 import pytest
 
-from helpers import status_report_bytes
 from pico_uart import cli
-from pico_uart.protocol import parse_status
 
 
 @pytest.mark.parametrize(
@@ -70,7 +69,19 @@ def test_main_dispatches_board_commands(monkeypatch, capsys, command, expected_o
 
 
 def test_main_status_text_retries_empty_reads_and_selects_device_path(monkeypatch, capsys):
-    status = parse_status(status_report_bytes(sequence=17))
+    status = {
+        "channels": [
+            {
+                "id": index, "sequence": 17 if index == 0 else None,
+                "health": 0x11 if index == 0 else None, "health_labels": [],
+                "traffic": {
+                    "uart_tx": 1, "uart_rx": 2, "usb_tx": 3, "usb_rx": 4,
+                },
+                "ring_high_watermark": 32,
+            }
+            for index in range(6)
+        ],
+    }
     read_timeouts = []
 
     class FakeClient:
@@ -92,7 +103,32 @@ def test_main_status_text_retries_empty_reads_and_selects_device_path(monkeypatc
 
     assert cli.main(["--device-path", "/dev/hidraw7", "status", "--timeout", "1"]) == 0
     assert len(read_timeouts) == 2
-    assert capsys.readouterr().out.startswith("seq=17 ")
+    output = capsys.readouterr().out
+    assert output.startswith("cdc0 health=0x11")
+    assert "seq=17" in output
+    assert "cdc1 waiting-for-input" in output
+
+
+def test_monitor_preserves_all_six_hil_health_tokens_in_one_publication_round(monkeypatch, capsys):
+    from helpers import FakeHidDevice, channel_bytes
+    from pico_uart.client import PicoUartHid
+
+    device = FakeHidDevice({}, inputs=[
+        (10 + index, channel_bytes(sequence=1, health=0x11)) for index in range(6)
+    ])
+    client = PicoUartHid(device=device)
+    samples = [client.read_status(0) for _ in range(6)]
+
+    class Reader:
+        def read_status(self, timeout_ms):
+            return samples.pop(0)
+
+    now = iter((0.0, 0.5, 0.51, 0.52, 0.53, 0.54, 0.55, 1.0))
+    monkeypatch.setattr(cli.time, "monotonic", lambda: next(now))
+    cli.monitor(Reader(), 1.0)
+    assert set(re.findall(r"cdc([0-5]) health=0x([0-9a-f]+)", capsys.readouterr().out)) == {
+        (str(index), "11") for index in range(6)
+    }
 
 
 def test_main_monitor_dispatches_configured_duration(monkeypatch):

@@ -238,6 +238,12 @@ static void __not_in_flash_func(boot_config_program)(void *page)
 /** @copydoc boot_config_save */
 bool boot_config_save(void)
 {
+    return boot_config_save_with_result() == BOOT_CONFIG_SAVE_OK;
+}
+
+/** @copydoc boot_config_save_with_result */
+boot_config_save_result_t boot_config_save_with_result(void)
+{
     boot_clock_profile_t profile = boot_config_settings.clock_profile;
 
     uint8_t page[FLASH_PAGE_SIZE];
@@ -247,15 +253,16 @@ bool boot_config_save(void)
     const uint8_t *sector = (const uint8_t *)(XIP_BASE + PICO_UART_CONFIG_FLASH_OFFSET);
     boot_config_status_t stored = boot_config_decode(sector, BOOT_CONFIG_SECTOR_SIZE, false);
     if ((stored.reason == BOOT_CONFIG_OK) && (stored.stored_profile == profile)) {
-        return true;
+        return BOOT_CONFIG_SAVE_OK;
     }
     if (flash_safe_execute(boot_config_program, page, 1000u) != PICO_OK) {
-        return false;
+        return BOOT_CONFIG_SAVE_FLASH_FAILED;
     }
     if (memcmp(sector, page, sizeof(page)) != 0) {
-        return false;
+        return BOOT_CONFIG_SAVE_VERIFY_FAILED;
     }
 
     stored = boot_config_decode(sector, BOOT_CONFIG_SECTOR_SIZE, false);
-    return (stored.reason == BOOT_CONFIG_OK) && (stored.stored_profile == profile);
+    return (stored.reason == BOOT_CONFIG_OK) && (stored.stored_profile == profile) ? BOOT_CONFIG_SAVE_OK
+                                                                                   : BOOT_CONFIG_SAVE_VERIFY_FAILED;
 }

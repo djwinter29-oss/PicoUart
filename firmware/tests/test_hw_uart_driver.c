@@ -369,7 +369,7 @@ void test_tx_commits_only_after_completion_and_relaunches_in_order(void)
     hw_uart_driver_poll(&driver, false);
     TEST_ASSERT_FALSE(driver.tx_active);
     TEST_ASSERT_EQUAL_UINT32(first, driver.tx_ring.consumer);
-    TEST_ASSERT_EQUAL_UINT32(first, driver.controller_tx_bytes);
+    TEST_ASSERT_EQUAL_UINT32(first, driver.uart_tx_bytes);
     hw_uart_driver_poll(&driver, true);
     TEST_ASSERT_EQUAL_UINT(2u, launches);
     TEST_ASSERT_EQUAL_PTR(&driver.tx_storage[first], (const void *)read_address[3]);

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using PicoUart.Hid;
 using PicoUart.Wire;
@@ -12,21 +13,36 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
 
     public string SnapshotJson()
     {
-        lock (gate) return JsonSerializer.Serialize(snapshot, Protocol.JsonOptions);
+        lock (gate)
+        {
+            snapshot.MarkStale();
+            return JsonSerializer.Serialize(snapshot, Protocol.JsonOptions);
+        }
     }
 
     public void Action(string action)
     {
         lock (gate)
         {
-            if (client is null)
-                throw new InvalidOperationException(snapshot.Error ?? "PicoUart HID interface is not connected");
+            var connection = client
+                ?? throw new InvalidOperationException(snapshot.Error ?? "PicoUart HID interface is not connected");
             if (action == "toggle-led")
             {
-                client.ToggleLed();
-                ReadLed(client);
+                try
+                {
+                    connection.ToggleLed();
+                    ReadTelemetry(connection);
+                    ReadControl(connection);
+                }
+                catch
+                {
+                    snapshot.Led = null;
+                    snapshot.LedError = "LED operation unconfirmed; reread telemetry";
+                    throw;
+                }
             }
-            else client.ResetBoard();
+            else if (action == "reset") connection.ResetBoard();
+            else throw new ArgumentException("unknown board action", nameof(action));
         }
     }
 
@@ -34,56 +50,76 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
     {
         lock (gate)
         {
-            if (client is null)
-                throw new InvalidOperationException(snapshot.Error ?? "PicoUart HID interface is not connected");
+            var connection = client
+                ?? throw new InvalidOperationException(snapshot.Error ?? "PicoUart HID interface is not connected");
             try
             {
-                snapshot.ConfigurationSave = client.SaveConfiguration(profile, unsafeOverclock);
+                snapshot.ConfigurationSave = connection.SaveConfiguration(profile, unsafeOverclock);
                 snapshot.ConfigurationSaveError = null;
             }
             catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
             {
+                var result = connection.LastCommandResult;
+                snapshot.ConfigurationSave = result?.Command == 5
+                    ? new(result.Status, result.RequestedProfile) : null;
                 snapshot.ConfigurationSaveError = error.Message;
                 throw;
             }
         }
     }
 
-    private void ReadConfigurationSave(PicoUartHid connection)
-    {
-        lock (gate)
-        {
-            try
-            {
-                snapshot.ConfigurationSave = connection.ReadConfigurationSave();
-                snapshot.ConfigurationSaveError = null;
-            }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
-            {
-                snapshot.ConfigurationSave = null;
-                snapshot.ConfigurationSaveError = error.Message;
-            }
-        }
-    }
-
-    private void ReadLed(PicoUartHid connection)
+    private void ReadTelemetry(PicoUartHid connection)
     {
         try
         {
-            var led = connection.ReadLed();
-            lock (gate)
-            {
-                snapshot.Led = led;
-                snapshot.LedError = null;
-            }
+            var info = snapshot.Identity ?? connection.ReadIdentity();
+            var telemetry = connection.ReadTelemetry();
+            snapshot.Led = telemetry.Led;
+            snapshot.LedError = null;
+            snapshot.SetRuntimeReadResult(telemetry.Runtime, null);
+            snapshot.Hardware = new(info.Mcu, telemetry.SystemClockHz, info.McuId);
+            snapshot.HardwareError = null;
+            snapshot.Board = new(telemetry.TemperatureCelsius, info.FirmwareVersion,
+                info.FirmwareMajor, info.FirmwareMinor, info.FirmwarePatch, (info.Capabilities & 2) != 0);
+            snapshot.MetadataError = null;
         }
         catch (Exception error) when (HidErrors.IsDeviceError(error))
         {
-            lock (gate)
-            {
-                snapshot.Led = null;
-                snapshot.LedError = error.Message;
-            }
+            snapshot.Led = null;
+            snapshot.LedError = error.Message;
+            snapshot.SetRuntimeReadResult(null, error.Message);
+            snapshot.Hardware = null;
+            snapshot.HardwareError = error.Message;
+            snapshot.Board = null;
+            snapshot.MetadataError = error.Message;
+        }
+    }
+
+    private bool ReadStatic(PicoUartHid connection)
+    {
+        try
+        {
+            snapshot.Identity ??= connection.ReadIdentity();
+            snapshot.IdentityError = null;
+        }
+        catch (Exception error) when (HidErrors.IsDeviceError(error))
+        {
+            snapshot.IdentityError = error.Message;
+            return false;
+        }
+        if (snapshot.Configuration is not null) return true;
+        ReadControl(connection);
+        return true;
+    }
+
+    private void ReadControl(PicoUartHid connection)
+    {
+        try { snapshot.ApplyControl(connection.ReadControl(), connection.ReadIdentity()); }
+        catch (Exception error) when (HidErrors.IsDeviceError(error))
+        {
+            snapshot.ConfigurationError = error.Message;
+            snapshot.ConfigurationSave = null;
+            snapshot.ConfigurationSaveError = error.Message;
         }
     }
 
@@ -100,142 +136,48 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     client = connection;
                     snapshot = new() { Connected = true };
                 }
-                var nextMetadataRead = DateTimeOffset.MinValue;
+                var nextMetadataRead = Stopwatch.GetTimestamp();
+                var initialChannelsRead = false;
                 while (!stoppingToken.IsCancellationRequested)
                 {
-                    var status = connection.ReadStatus();
-                    if (status is not null)
+                    // Keep board operations and stream reads under the same lock order.
+                    lock (gate)
                     {
-                        lock (gate) snapshot.Apply(status);
-                    }
-                    var now = DateTimeOffset.UtcNow;
-                    if (now < nextMetadataRead) continue;
-                    ReadLed(connection);
-                    ReadConfigurationSave(connection);
-                    try
-                    {
-                        var diagnostics = connection.ReadChannelDiagnostics();
-                        lock (gate)
+                        if (Stopwatch.GetTimestamp() >= nextMetadataRead)
                         {
-                            snapshot.ChannelDiagnostics = diagnostics;
-                            snapshot.DiagnosticsError = null;
-                        }
-                    }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.ChannelDiagnostics = null;
-                            snapshot.DiagnosticsError = error.Message;
-                        }
-                    }
-                    try
-                    {
-                        var identity = connection.ReadIdentity();
-                        lock (gate)
-                        {
-                            snapshot.Identity = identity;
-                            snapshot.IdentityError = null;
-                        }
-                    }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.Identity = null;
-                            snapshot.IdentityError = error.Message;
-                        }
-                    }
-                    try
-                    {
-                        var runtime = connection.ReadRuntime();
-                        lock (gate)
-                        {
-                            snapshot.SetRuntimeReadResult(runtime, null);
-                        }
-                    }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.SetRuntimeReadResult(null, error.Message);
-                        }
-                    }
-                    try
-                    {
-                        var configuration = connection.ReadConfiguration();
-                        lock (gate)
-                        {
-                            snapshot.Configuration = configuration;
-                            snapshot.ConfigurationError = null;
-                            snapshot.ConfigurationSave = null;
-                            snapshot.ConfigurationSaveError = null;
-                        }
-                    }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.Configuration = null;
-                            snapshot.ConfigurationError = error.Message;
-                        }
-                    }
-                    try
-                    {
-                        var board = connection.ReadBoardStatus();
-                        var counts = connection.ReadOverflowCounts();
-                        lock (gate)
-                        {
-                            snapshot.Board = board;
-                            snapshot.OverflowCounts = counts.Select(count => (uint?)count).ToArray();
-                            snapshot.MetadataError = null;
-                        }
-                        try
-                        {
-                            var hardware = connection.ReadHardwareInfo();
-                            lock (gate)
+                            if (ReadStatic(connection))
                             {
-                                snapshot.Hardware = hardware;
-                                snapshot.HardwareError = null;
+                                ReadTelemetry(connection);
+                                if (!initialChannelsRead)
+                                {
+                                    var failed = false;
+                                    for (var index = 0; index < Protocol.ChannelCount; index++)
+                                    {
+                                        try { snapshot.ApplyFeature(connection.ReadChannel(index)); }
+                                        catch (Exception error) when (HidErrors.IsDeviceError(error))
+                                        {
+                                            failed = true;
+                                            snapshot.DiagnosticsError = error.Message;
+                                            snapshot.ChannelDiagnostics[index] = null;
+                                        }
+                                    }
+                                    initialChannelsRead = !failed;
+                                    if (!failed) snapshot.DiagnosticsError = null;
+                                }
                             }
+                            nextMetadataRead = Stopwatch.GetTimestamp()
+                                + Stopwatch.Frequency * snapshot.RefreshIntervalMs / 1000;
                         }
-                        catch (Exception error) when (HidErrors.IsDeviceError(error))
-                        {
-                            lock (gate)
-                            {
-                                snapshot.Hardware = null;
-                                snapshot.HardwareError = error.Message;
-                            }
-                        }
+                        var status = connection.ReadStatus();
+                        if (status is not null) snapshot.Apply(status);
+                        snapshot.MarkStale();
                     }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
-                    {
-                        lock (gate)
-                        {
-                            snapshot.Board = null;
-                            snapshot.OverflowCounts = new uint?[Protocol.ChannelCount];
-                            snapshot.MetadataError = error.Message;
-                            snapshot.Hardware = null;
-                            snapshot.HardwareError = null;
-                        }
-                    }
-                    nextMetadataRead = now.AddSeconds(1);
+                    await Task.Yield();
                 }
             }
             catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
-                lock (gate)
-                {
-                    snapshot.Connected = false;
-                    snapshot.Error = error.Message;
-                    snapshot.ChannelDiagnostics = null;
-                    snapshot.Identity = null;
-                    snapshot.Runtime = null;
-                    snapshot.Board = null;
-                    snapshot.Hardware = null;
-                    snapshot.Configuration = null;
-                    snapshot.ConfigurationError = null;
-                }
+                lock (gate) snapshot = new() { Error = error.Message };
             }
             finally
             {

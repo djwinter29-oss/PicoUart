@@ -50,8 +50,8 @@ extern const uart_driver_port_info_t uart_board_ports[UART_PORT_COUNT];
  * @brief Transport counters for one logical UART port.
  */
 typedef struct {
-    uint32_t controller_tx_bytes;            /**< Bytes transmitted by the UART controller. */
-    uint32_t controller_rx_bytes;            /**< Bytes received by the UART controller. */
+    uint32_t uart_tx_bytes;                   /**< Bytes transmitted by the UART controller. */
+    uint32_t uart_rx_bytes;                   /**< Bytes received by the UART controller. */
     uint16_t tx_ring_high_watermark;         /**< Largest observed USB-to-UART ring occupancy. */
     uint16_t rx_ring_high_watermark;         /**< Largest observed UART-to-USB ring occupancy. */
     uint32_t tx_ring_overflow_count;         /**< Bytes rejected by the USB-to-UART ring. */
@@ -78,6 +78,33 @@ bool uart_driver_init(void);
  * @return `true` when the port is active, otherwise `false`.
  */
 bool uart_driver_port_is_ready(uart_port_id_t port_id);
+
+/**
+ * @brief Queue a per-port channel reset from the USB core to the UART worker.
+ * @param port_id Logical UART port identifier.
+ * @return `true` when a reset is queued or already pending.
+ */
+bool uart_driver_request_buffer_reset(uart_port_id_t port_id);
+
+/**
+ * @brief Return whether a per-port reset is holding the CDC bridge.
+ * @param port_id Logical UART port identifier.
+ * @return `true` while the reset request is pending.
+ */
+bool uart_driver_buffer_reset_pending(uart_port_id_t port_id);
+
+/**
+ * @brief Mark a port quiesced after the USB core stops bridging and clears CDC FIFOs.
+ * @param port_id Logical UART port identifier.
+ */
+void uart_driver_buffer_reset_usb_quiesced(uart_port_id_t port_id);
+
+/**
+ * @brief Return whether a queued port reset is ready for the worker.
+ * @param port_id Logical UART port identifier.
+ * @return `true` when pending and USB-side access is quiesced.
+ */
+bool uart_driver_buffer_reset_ready(uart_port_id_t port_id);
 
 /**
  * @brief Drain RX bytes from one logical UART port into a caller-owned writer.
@@ -185,6 +212,15 @@ uint32_t uart_driver_mark_control_pending(uart_port_id_t port_id);
  * @return Bitwise OR of @ref UART_DRIVER_PORT_STATUS_* flags.
  */
 uint8_t uart_driver_port_status(uart_port_id_t port_id);
+
+/**
+ * @brief Capture applied settings and control health under their shared ownership lock.
+ * @param port_id Logical UART port identifier.
+ * @param info Output storage for the applied settings and board pins.
+ * @param status Output storage for driver status flags.
+ * @return `true` when both values were captured coherently.
+ */
+bool uart_driver_port_snapshot(uart_port_id_t port_id, uart_driver_port_info_t *info, uint8_t *status);
 
 /**
  * @brief Return whether the dedicated UART worker core is running.

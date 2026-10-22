@@ -1,174 +1,66 @@
-"""Pure decoders and constants for the PicoUart HID report contract."""
+"""Pure decoders and constants for the version-1 PicoUart HID contract."""
 
 import struct
 
 
-REPORT_ID_STATUS = 1
-REPORT_ID_BOARD_STATUS = 3
-REPORT_ID_COMMAND = 4
-REPORT_ID_OVERFLOW_COUNTS = 5
-REPORT_ID_HARDWARE_INFO = 6
-REPORT_ID_IDENTITY = 7
-REPORT_ID_RUNTIME = 8
-REPORT_ID_LED = 9
-LED_SIZE = 2
-IDENTITY_SIZE = 49
-RUNTIME_SIZE = 21
-HARDWARE_INFO_SIZE = 6
-HARDWARE_INFO_LAYOUT_VERSION = 1
+REPORT_ID_DEVICE_INFO = 1
+REPORT_ID_CONTROL = 2
+REPORT_ID_TELEMETRY = 3
+REPORT_ID_CHANNEL_BASE = 10
+UART_CHANNEL_COUNT = 6
+DEVICE_INFO_SIZE = 63
+CONTROL_SIZE = 24
+TELEMETRY_SIZE = 24
+CHANNEL_SIZE = 54
+LAYOUT_VERSION = 1
+
 MCU_RP2040 = 1
 MCU_RP2350 = 2
 
-COMMAND_TOGGLE_LED = 1
-COMMAND_RESET_BOARD = 2
-COMMAND_ARM_RESET = 3
+COMMAND_LED_OFF = 1
+COMMAND_LED_ON = 2
+COMMAND_ARM_REBOOT = 3
+COMMAND_REBOOT = 4
+COMMAND_SAVE_CONFIGURATION = 5
 
-STATUS_SIZE = 63
-BOARD_STATUS_SIZE = 8
-OVERFLOW_COUNTS_SIZE = 25
-BOARD_STATUS_LAYOUT_VERSION = 1
-STATUS_LAYOUT_VERSION = 1
-STATUS_SIGNATURE = ord("P")
-UART_CHANNEL_COUNT = 6
-REPORT_ID_CHANNEL_BASE = 10
-REPORT_ID_CONFIGURATION = 16
-REPORT_ID_CONFIGURATION_SAVE = 17
-CHANNEL_DIAGNOSTICS_SIZE = 59
-CONFIGURATION_SIZE = 12
-CONFIGURATION_SAVE_SIZE = 8
+STATUS_IDLE = 0
+STATUS_PENDING = 1
+STATUS_COMPLETED = 2
+STATUS_INVALID = 3
+STATUS_UNSUPPORTED = 4
+STATUS_BUSY = 5
+STATUS_FAILED = 6
+
 FAULT_LABELS = ("init_failed", "control_error", "rx_overrun", "rx_error")
 CONFIGURATION_SOURCES = ("defaults", "stored", "recovery")
 CONFIGURATION_REASONS = (
     "none", "erased", "invalid_header", "crc_failed", "unsupported_version",
     "invalid_profile", "watchdog_recovery", "clock_unavailable",
 )
-STATUS_HEADER_SIZE = 3
-STATUS_CHANNEL_SIZE = 10
-RESET_ARM_WINDOW_S = 2.0
-BOARD_STATUS_FLAG_HID_RESET = 1 << 0
-BOARD_STATUS_RESERVED0_KNOWN_FLAGS = BOARD_STATUS_FLAG_HID_RESET
+ERROR_REASONS = (
+    "none", "malformed_payload", "invalid_profile", "missing_overclock_acknowledgement",
+    "missing_reboot_authorization", "unsupported", "cdc_session_open", "flash_operation_failed",
+    "flash_verification_failed", "execution_failed",
+)
+HEALTH_NAMES = (
+    "ready", "init_failed", "control_error", "control_pending",
+    "cdc_open", "pio", "rx_overrun", "rx_error",
+)
+MAX_U32 = 0xFFFFFFFF
 
 
-def parse_channel_diagnostics(payload: bytes) -> dict[str, object]:
-    """Decode applied settings and sampled fault history; times are device boot uptime in milliseconds."""
-    if len(payload) != CHANNEL_DIAGNOSTICS_SIZE or payload[0] != 1:
-        raise RuntimeError("unsupported channel diagnostics size or version")
-    _, health, baud, data, stop, parity, tx, rx = struct.unpack_from("<BBIBBBBB", payload)
-    if baud and (not 5 <= data <= 8 or stop not in (1, 2) or parity > 2):
-        raise RuntimeError("invalid applied UART framing")
-    if any(pin > 47 and pin != 255 for pin in (tx, rx)):
-        raise RuntimeError("invalid UART GPIO")
-    faults = {}
-    for index, name in enumerate(FAULT_LABELS):
-        count, last_seen = struct.unpack_from("<IQ", payload, 11 + index * 12)
-        if last_seen > 2**53 - 1 or (not count and last_seen):
-            raise RuntimeError("invalid channel fault timestamp")
-        faults[name] = {"count": count, "last_seen_ms": last_seen if count else None}
-    return {"health": health, "baud_rate": baud, "data_bits": data, "stop_bits": stop,
-            "parity": "NOE"[parity] if baud else None,
-            "tx_pin": None if tx == 255 else tx, "rx_pin": None if rx == 255 else rx, "faults": faults}
+def _profile(value: int, *, unavailable: bool = False) -> int | None:
+    if value == MAX_U32 and unavailable:
+        return None
+    if value not in (0, 1, 2, 3, 4):
+        raise RuntimeError("invalid clock profile")
+    return value
 
 
-def parse_configuration(payload: bytes) -> dict[str, object]:
-    """Decode the read-only persistent configuration and profile-selection report."""
-    if len(payload) != CONFIGURATION_SIZE or payload[0] != 1:
-        raise RuntimeError("unsupported configuration report size or version")
-    _, source, reason, reserved, stored_profile, active_profile = struct.unpack("<BBBBII", payload)
-    if source >= len(CONFIGURATION_SOURCES) or reason >= len(CONFIGURATION_REASONS) or reserved != 0:
-        raise RuntimeError("invalid configuration source, reason, or reserved field")
-    if stored_profile not in (0, 1, 2, 3, 4, 0xFFFFFFFF) or active_profile not in (0, 1, 2, 3, 4):
-        raise RuntimeError("invalid configuration profile")
-    if source == 1 and (reason != 0 or stored_profile not in (0, 1, 2, 3, 4) or active_profile != stored_profile):
-        raise RuntimeError("inconsistent stored configuration")
-    if source == 2 and reason == 0:
-        raise RuntimeError("inconsistent recovery configuration")
-    return {
-        "source": CONFIGURATION_SOURCES[source],
-        "reason": CONFIGURATION_REASONS[reason],
-        "stored_profile": None if stored_profile == 0xFFFFFFFF else stored_profile,
-        "active_profile": active_profile,
-    }
-
-
-def parse_configuration_save(payload: bytes) -> dict[str, object]:
-    """Decode the latest requested profile and asynchronous flash verification result."""
-    if len(payload) != CONFIGURATION_SAVE_SIZE or payload[0] != 1:
-        raise RuntimeError("unsupported configuration save report size or version")
-    _, status, reserved, profile = struct.unpack("<BBHI", payload)
-    if status > 5 or reserved != 0 or profile not in (0, 1, 2, 3, 4, 0xFFFFFFFF):
-        raise RuntimeError("invalid configuration save status, reserved field, or profile")
-    if profile == 0xFFFFFFFF and status not in (0, 3):
-        raise RuntimeError("configuration save result has no requested profile")
-    return {"status": status, "profile": None if profile == 0xFFFFFFFF else profile}
-
-
-def parse_led(payload: bytes) -> dict[str, bool | None]:
-    """Decode the manual state and merged physical LED output."""
-    if len(payload) != LED_SIZE or payload[0] != 1 or payload[1] & ~7:
-        raise RuntimeError("unsupported LED report size, version, or flags")
-    flags = payload[1]
-    if not flags & 1 and flags != 0 or flags & 2 and not flags & 4:
-        raise RuntimeError("inconsistent LED state")
-    return {"manual_on": bool(flags & 2) if flags & 1 else None,
-            "output_on": bool(flags & 4) if flags & 1 else None}
-
-
-def require_payload(report: list[int], report_id: int, payload_size: int) -> bytes:
-    """Validate a report-ID-prefixed HID feature report and return its payload."""
-    if len(report) != payload_size + 1 or report[0] != report_id:
-        raise RuntimeError(
-            f"unexpected report {report_id}: expected {payload_size + 1} bytes with report ID prefix, "
-            f"received {len(report)} bytes"
-        )
-    return bytes(report[1:])
-
-
-def parse_board_status(payload: bytes) -> dict[str, object]:
-    """Decode temperature, firmware version, and supported board capabilities."""
-    if len(payload) != BOARD_STATUS_SIZE:
-        raise RuntimeError(f"unexpected board-status report size {len(payload)}")
-    version, reserved0, centidegrees, major, minor, patch, reserved1 = struct.unpack("<BBhBBBB", payload)
-    if version != BOARD_STATUS_LAYOUT_VERSION:
-        raise RuntimeError(f"unsupported board-status report version {version}")
-    if (reserved0 & ~BOARD_STATUS_RESERVED0_KNOWN_FLAGS) != 0 or reserved1 != 0:
-        raise RuntimeError("unsupported board-status report with unknown reserved fields")
-    return {
-        "temperature_celsius": centidegrees / 100.0,
-        "firmware_version": f"{major}.{minor}.{patch}",
-        "firmware_major": major,
-        "firmware_minor": minor,
-        "firmware_patch": patch,
-        "hid_reset_enabled": bool(reserved0 & BOARD_STATUS_FLAG_HID_RESET),
-    }
-
-
-def parse_hardware_info(payload: bytes) -> dict[str, object]:
-    """Decode the MCU identity and SDK-reported system clock in Hz."""
-    if len(payload) != HARDWARE_INFO_SIZE:
-        raise RuntimeError(f"unexpected hardware-info report size {len(payload)}")
-    version, mcu, system_clock_hz = struct.unpack("<BBI", payload)
-    if version != HARDWARE_INFO_LAYOUT_VERSION:
-        raise RuntimeError(f"unsupported hardware-info report version {version}")
-    if system_clock_hz == 0:
-        raise RuntimeError("invalid hardware-info system clock")
-    model = {MCU_RP2040: "RP2040", MCU_RP2350: "RP2350"}.get(mcu, f"Unknown MCU ({mcu})")
-    return {"mcu": model, "mcu_id": mcu, "system_clock_hz": system_clock_hz}
-
-
-def parse_overflow_counts(payload: bytes) -> list[int]:
-    """Decode cumulative UART-to-USB dropped-byte counts for all channels."""
-    if len(payload) != OVERFLOW_COUNTS_SIZE:
-        raise RuntimeError(f"unexpected overflow-count report size {len(payload)}")
-    version, *overflow_counts = struct.unpack("<B6I", payload)
-    if version != STATUS_LAYOUT_VERSION:
-        raise RuntimeError(f"unsupported overflow-count report version {version}")
-    return overflow_counts
-
-
-def parse_identity(payload: bytes) -> dict[str, object]:
-    """Decode the product and SDK board UID used as the USB serial."""
-    if len(payload) != IDENTITY_SIZE or payload[0] != 1:
-        raise RuntimeError("unsupported identity report size or version")
+def parse_device_info(payload: bytes) -> dict[str, object]:
+    """Decode static product, firmware, MCU, channel, capability, and RAM data."""
+    if len(payload) != DEVICE_INFO_SIZE or payload[0] != LAYOUT_VERSION:
+        raise RuntimeError("unsupported device-information report size or version")
     product_bytes = payload[1:33]
     product, separator, padding = product_bytes.partition(b"\0")
     serial = payload[33:49]
@@ -178,73 +70,188 @@ def parse_identity(payload: bytes) -> dict[str, object]:
         or any(byte not in b"0123456789abcdefABCDEF" for byte in serial)
     ):
         raise RuntimeError("invalid HID product or serial identity")
-    return {"product_name": product.decode("ascii"), "serial_number": serial.decode("ascii")}
-
-
-def parse_runtime(payload: bytes) -> dict[str, object]:
-    """Decode uptime, per-core measured service load, and reserved SRAM."""
-    if len(payload) != RUNTIME_SIZE or payload[0] != 1:
-        raise RuntimeError("unsupported runtime report size or version")
-    _, uptime, core0, core1, reserved, total = struct.unpack("<BQHHII", payload)
-    if any(value > 10000 and value != 0xffff for value in (core0, core1)) or not total or reserved > total:
-        raise RuntimeError("invalid runtime CPU or RAM values")
+    major, minor, patch, mcu, count, hardware_mask, pio_mask = payload[49:56]
+    capabilities = int.from_bytes(payload[56:58], "little")
+    profile_mask = payload[58]
+    total_ram = int.from_bytes(payload[59:63], "little")
+    if (
+        count != UART_CHANNEL_COUNT
+        or hardware_mask & pio_mask
+        or (hardware_mask | pio_mask) != (1 << UART_CHANNEL_COUNT) - 1
+        or capabilities & 0xFFF8
+        or profile_mask & 0xE0
+        or not profile_mask & 1
+        or not total_ram
+    ):
+        raise RuntimeError("invalid static device information")
+    model = {MCU_RP2040: "RP2040", MCU_RP2350: "RP2350"}.get(mcu, f"Unknown MCU ({mcu})")
     return {
-        "uptime_ms": uptime,
-        "cpu_usage_basis_points": [None if value == 0xffff else value for value in (core0, core1)],
-        "ram_reserved_bytes": reserved,
-        "ram_total_bytes": total,
+        "product_name": product.decode("ascii"),
+        "serial_number": serial.decode("ascii"),
+        "firmware_version": f"{major}.{minor}.{patch}",
+        "firmware_major": major,
+        "firmware_minor": minor,
+        "firmware_patch": patch,
+        "mcu": model,
+        "mcu_id": mcu,
+        "channel_count": count,
+        "hardware_channel_mask": hardware_mask,
+        "pio_channel_mask": pio_mask,
+        "capabilities": capabilities,
+        "clock_profile_mask": profile_mask,
+        "ram_total_bytes": total_ram,
+        "hid_led_available": bool(capabilities & 1),
+        "hid_reset_enabled": bool(capabilities & 2),
+        "configuration_save_available": bool(capabilities & 4),
     }
 
 
-def parse_status(payload: bytes) -> dict[str, object]:
-    """Decode the 63-byte periodic monitor report (layout v1)."""
-    if len(payload) != STATUS_SIZE:
-        raise RuntimeError(f"unexpected status report size {len(payload)}")
+def parse_control(payload: bytes) -> dict[str, object]:
+    """Decode the board command result and boot-configuration snapshot."""
+    if len(payload) != CONTROL_SIZE or payload[0] != LAYOUT_VERSION:
+        raise RuntimeError("unsupported control report size or version")
+    (
+        _, command, flags, status, request_id, stored, active, requested,
+        source, reason, error_reason, reserved,
+    ) = struct.unpack("<BBBBIIII4B", payload)
+    if reserved or status > STATUS_FAILED or source >= len(CONFIGURATION_SOURCES):
+        raise RuntimeError("invalid control status, source, or reserved field")
+    if reason >= len(CONFIGURATION_REASONS) or error_reason >= len(ERROR_REASONS):
+        raise RuntimeError("invalid control reason")
+    allowed_errors = {
+        STATUS_IDLE: {0},
+        STATUS_PENDING: {0},
+        STATUS_COMPLETED: {0},
+        STATUS_INVALID: {1, 2, 3, 4},
+        STATUS_UNSUPPORTED: {5},
+        STATUS_BUSY: {6},
+        STATUS_FAILED: {7, 8, 9},
+    }
+    if error_reason not in allowed_errors[status]:
+        raise RuntimeError("invalid control status/error pairing")
+    stored_profile = _profile(stored, unavailable=True)
+    active_profile = _profile(active)
+    requested_profile = _profile(requested, unavailable=True)
+    known_commands = {
+        COMMAND_LED_OFF, COMMAND_LED_ON, COMMAND_ARM_REBOOT, COMMAND_REBOOT, COMMAND_SAVE_CONFIGURATION,
+    }
+    if flags & 0xFE and (status != STATUS_INVALID or error_reason != 1):
+        raise RuntimeError("invalid echoed control flags")
+    if command not in known_commands and status not in (STATUS_IDLE,):
+        if (status, error_reason) not in ((STATUS_INVALID, 1), (STATUS_UNSUPPORTED, 5)):
+            raise RuntimeError("unknown command has an invalid rejection result")
+    if status in (STATUS_PENDING, STATUS_COMPLETED) and request_id == 0:
+        raise RuntimeError("accepted control result has a zero request ID")
+    if status == STATUS_IDLE and (command or flags or request_id or requested_profile is not None):
+        raise RuntimeError("idle control result contains command data")
+    if status in (STATUS_PENDING, STATUS_COMPLETED) and command != COMMAND_SAVE_CONFIGURATION:
+        if flags or requested_profile is not None:
+            raise RuntimeError("non-save command result has save-only fields")
+    if source == 1 and (reason != 0 or stored_profile is None or active_profile != stored_profile):
+        raise RuntimeError("inconsistent stored configuration")
+    if source == 2 and reason == 0:
+        raise RuntimeError("inconsistent recovery configuration")
+    if source == 0 and stored_profile is not None:
+        raise RuntimeError("defaults configuration reports stored profile")
+    return {
+        "command": command,
+        "flags": flags,
+        "status": status,
+        "request_id": request_id,
+        "stored_profile": stored_profile,
+        "active_profile": active_profile,
+        "requested_profile": requested_profile,
+        "source": CONFIGURATION_SOURCES[source],
+        "reason": CONFIGURATION_REASONS[reason],
+        "error_reason": error_reason,
+        "error": ERROR_REASONS[error_reason],
+    }
 
-    signature0, version, sequence = payload[:3]
-    if signature0 != STATUS_SIGNATURE:
-        raise RuntimeError("received a status report with an invalid signature")
-    if version != STATUS_LAYOUT_VERSION:
-        raise RuntimeError(f"unsupported status report version {version}")
 
-    channels = [
-        struct.unpack_from("<BB4H", payload, STATUS_HEADER_SIZE + index * STATUS_CHANNEL_SIZE)
-        for index in range(UART_CHANNEL_COUNT)
-    ]
+def parse_telemetry(payload: bytes) -> dict[str, object]:
+    """Decode live board telemetry from Feature report 3."""
+    if len(payload) != TELEMETRY_SIZE or payload[0] != LAYOUT_VERSION:
+        raise RuntimeError("unsupported telemetry report size or version")
+    led_flags = payload[1]
+    temperature = int.from_bytes(payload[2:4], "little", signed=True)
+    uptime = int.from_bytes(payload[4:12], "little")
+    core0, core1 = struct.unpack_from("<HH", payload, 12)
+    reserved, clock_hz = struct.unpack_from("<II", payload, 16)
+    if (
+        led_flags & ~1
+        or any(value > 10000 and value != 0xFFFF for value in (core0, core1))
+        or not clock_hz
+    ):
+        raise RuntimeError("invalid telemetry values")
+    return {
+        "led": bool(led_flags & 1),
+        "temperature_celsius": temperature / 100.0,
+        "runtime": {
+            "uptime_ms": uptime,
+            "cpu_usage_basis_points": [None if value == 0xFFFF else value for value in (core0, core1)],
+            "ram_reserved_bytes": reserved,
+            "system_clock_hz": clock_hz,
+        },
+        "system_clock_hz": clock_hz,
+    }
+
+
+def parse_channel(payload: bytes) -> dict[str, object]:
+    """Decode a combined cumulative-counter, health, applied-settings, and fault snapshot."""
+    if len(payload) != CHANNEL_SIZE or payload[0] != LAYOUT_VERSION:
+        raise RuntimeError("unsupported channel report size or version")
+    sequence = int.from_bytes(payload[1:3], "little")
+    interval_ms = int.from_bytes(payload[3:7], "little")
+    health, ring_blocks = payload[7:9]
+    counters = struct.unpack_from("<4I", payload, 9)
+    baud = int.from_bytes(payload[25:29], "little")
+    data_bits, stop_bits, parity, tx_pin, rx_pin = payload[29:34]
+    fault_counts = struct.unpack_from("<4I", payload, 34)
+    last_fault_uptime_s = int.from_bytes(payload[50:54], "little")
+    if baud and (not 5 <= data_bits <= 8 or stop_bits not in (1, 2) or parity > 2):
+        raise RuntimeError("invalid applied UART framing")
+    if any((data_bits, stop_bits, parity)) and not baud:
+        raise RuntimeError("unavailable UART framing must be zero")
+    if any(pin > 47 and pin != 255 for pin in (tx_pin, rx_pin)):
+        raise RuntimeError("invalid UART GPIO")
+    if (not any(fault_counts) and last_fault_uptime_s) or (fault_counts[2] and not health & 0x40) or (
+        fault_counts[3] and not health & 0x80
+    ):
+        raise RuntimeError("inconsistent channel fault history")
     return {
         "sequence": sequence,
-        "channels": [
-            {
-                "id": index,
-                "health": channel[0],
-                "ring_high_watermark": channel[1] * 16,
-                "controller_tx_bytes": channel[2],
-                "controller_rx_bytes": channel[3],
-                "cdc_tx_bytes": channel[4],
-                "cdc_rx_bytes": channel[5],
-            }
-            for index, channel in enumerate(channels)
-        ],
+        "interval_ms": interval_ms,
+        "health": health,
+        "health_labels": [name for bit, name in enumerate(HEALTH_NAMES) if health & (1 << bit)],
+        "ring_high_watermark": ring_blocks * 16,
+        "uart_tx_bytes": counters[0],
+        "uart_rx_bytes": counters[1],
+        "cdc_tx_bytes": counters[2],
+        "cdc_rx_bytes": counters[3],
+        "baud_rate": baud,
+        "data_bits": data_bits if baud else None,
+        "stop_bits": stop_bits if baud else None,
+        "parity": ("none", "odd", "even")[parity] if baud else None,
+        "tx_pin": None if tx_pin == 255 else tx_pin,
+        "rx_pin": None if rx_pin == 255 else rx_pin,
+        "faults": {
+            name: {"count": count}
+            for name, count in zip(FAULT_LABELS, fault_counts, strict=True)
+        },
+        "last_fault_uptime_s": last_fault_uptime_s,
     }
 
 
 def decode_health(health: int) -> list[str]:
-    """Decode compact HID channel health bits into short labels."""
-    labels = []
-    if health & (1 << 0):
-        labels.append("ready")
-    if health & (1 << 1):
-        labels.append("init_failed")
-    if health & (1 << 2):
-        labels.append("control_error")
-    if health & (1 << 3):
-        labels.append("control_pending")
-    if health & (1 << 4):
-        labels.append("cdc_open")
-    if health & (1 << 5):
-        labels.append("pio")
-    if health & (1 << 6):
-        labels.append("rx_overrun")
-    if health & (1 << 7):
-        labels.append("rx_error")
-    return labels
+    """Decode compact channel health bits into short labels."""
+    return [name for bit, name in enumerate(HEALTH_NAMES) if health & (1 << bit)]
+
+
+def require_payload(report: list[int], report_id: int, payload_size: int) -> bytes:
+    """Validate a report-ID-prefixed HID report and return its payload."""
+    if len(report) != payload_size + 1 or report[0] != report_id:
+        raise RuntimeError(
+            f"unexpected report {report_id}: expected {payload_size + 1} bytes with report ID prefix, "
+            f"received {len(report)} bytes"
+        )
+    return bytes(report[1:])

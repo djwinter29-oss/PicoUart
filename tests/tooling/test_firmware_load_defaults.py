@@ -76,4 +76,5 @@ def test_loader_builds_and_programs_the_same_default_elf(tmp_path, board_env, bo
     assert result.returncode == 0, result.stdout + result.stderr
     arguments = json.loads(log.read_text())
     assert f"target/{target}.cfg" in arguments
+    assert "adapter speed 100" in arguments
     assert f"program {{{expected_elf}}} verify reset exit" in arguments

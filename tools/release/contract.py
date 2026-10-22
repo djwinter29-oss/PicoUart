@@ -58,33 +58,23 @@ def firmware_hid_constants(repo_root: Path) -> dict[str, int]:
     text = (repo_root / "firmware" / "src" / "usb" / "usb_hid.c").read_text(encoding="utf-8")
     names = (
         "USB_HID_REPORT_VERSION",
-        "USB_HID_REPORT_ID_STATUS",
-        "USB_HID_REPORT_ID_BOARD_STATUS",
-        "USB_HID_REPORT_ID_COMMAND",
-        "USB_HID_REPORT_ID_OVERFLOW_COUNTS",
-        "USB_HID_REPORT_ID_HARDWARE_INFO",
-        "USB_HID_HARDWARE_INFO_VERSION",
-        "USB_HID_MCU_RP2040",
-        "USB_HID_MCU_RP2350",
-        "USB_HID_REPORT_ID_IDENTITY",
-        "USB_HID_IDENTITY_VERSION",
-        "USB_HID_REPORT_ID_RUNTIME",
-        "USB_HID_RUNTIME_VERSION",
-        "USB_HID_REPORT_ID_LED",
-        "USB_HID_REPORT_ID_CONFIGURATION",
-        "USB_HID_REPORT_ID_CONFIGURATION_SAVE",
+        "USB_HID_REPORT_ID_DEVICE_INFO",
+        "USB_HID_REPORT_ID_CONTROL",
+        "USB_HID_REPORT_ID_TELEMETRY",
         "USB_HID_REPORT_ID_CHANNEL_BASE",
-        "USB_HID_COMMAND_TOGGLE_LED",
-        "USB_HID_COMMAND_RESET_BOARD",
-        "USB_HID_COMMAND_ARM_RESET",
+        "USB_HID_DEVICE_INFO_SIZE",
+        "USB_HID_CONTROL_SIZE",
+        "USB_HID_TELEMETRY_SIZE",
+        "USB_HID_CHANNEL_SIZE",
+        "USB_HID_CHANNEL_INTERVAL_MS",
+        "USB_HID_COMMAND_LED_OFF",
+        "USB_HID_COMMAND_LED_ON",
+        "USB_HID_COMMAND_ARM_REBOOT",
+        "USB_HID_COMMAND_REBOOT",
+        "USB_HID_COMMAND_SAVE_CONFIGURATION",
         "USB_HID_RESET_ARM_WINDOW_MS",
-        "USB_HID_BOARD_STATUS_FLAG_HID_RESET",
     )
     constants = {name: parse_c_u_define(text, name) for name in names}
-    match = re.search(r"^\s*#define\s+USB_HID_SIGNATURE0\s+'([^']+)'\s*$", text, flags=re.MULTILINE)
-    if not match or len(match.group(1)) != 1:
-        raise ValueError("USB_HID_SIGNATURE0 character literal not found")
-    constants["USB_HID_SIGNATURE0"] = ord(match.group(1))
     return constants
 
 
