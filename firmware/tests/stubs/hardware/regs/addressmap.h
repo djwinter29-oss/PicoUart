@@ -4,6 +4,11 @@
 #ifndef HARDWARE_REGS_ADDRESSMAP_H
 #define HARDWARE_REGS_ADDRESSMAP_H
 
+#include <stdint.h>
+
+extern uint8_t g_boot_config_flash[4096];
+#define XIP_BASE ((uintptr_t)g_boot_config_flash)
+
 /** @brief First physical SRAM address. */
 #define SRAM_BASE 0x20000000u
 /** @brief End of physical SRAM, excluding XIP cache SRAM. */

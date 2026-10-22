@@ -176,52 +176,35 @@ def firmware_hid_interface_number(repo_root: Path) -> int:
 
 
 def firmware_uart_board_ports(repo_root: Path) -> list[dict[str, object]]:
-    """Parse TX/RX pins and HW flow-control defaults from uart_board.c."""
-    text = (repo_root / "firmware" / "src" / "board" / "uart_board.c").read_text(encoding="utf-8")
+    """Parse common pin assignments and HW descriptor flow-control defaults."""
+    text = (repo_root / "firmware/src/config/uart_config.c").read_text(encoding="utf-8")
+    hardware = (repo_root / "firmware/src/uart/hw/hw_uart_board_config.c").read_text(encoding="utf-8")
     ports: list[dict[str, object]] = []
     for match in re.finditer(
-        r"\{\s*\.info\s*=\s*\{(.*?)\n\s*\},\s*"
-        r"\.backend\.(hw|pio)\s*=\s*\{(.*?)\n\s*\},\s*\n\s*\},",
+        r"\{\s*\.id\s*=\s*(UART_PORT_\d+)(.*?)\n\s*\},",
         text,
         flags=re.DOTALL,
     ):
-        info_body, backend_kind, backend_body = match.groups()
-        id_match = re.search(r"\.id\s*=\s*(UART_PORT_\d+)", info_body)
+        port_name, info_body = match.groups()
         backend_match = re.search(r"\.backend\s*=\s*(UART_DRIVER_BACKEND_\w+)", info_body)
-        tx_match = re.search(r"\.tx_pin\s*=\s*(\d+)u", info_body)
-        rx_match = re.search(r"\.rx_pin\s*=\s*(\d+)u", info_body)
-        if not all((id_match, backend_match, tx_match, rx_match)):
-            raise ValueError("incomplete uart_board port info initializer")
-
-        port_name = id_match.group(1)
+        if backend_match is None:
+            raise ValueError(f"backend not found for {port_name}")
         backend = backend_match.group(1)
-        tx_pin = tx_match.group(1)
-        rx_pin = rx_match.group(1)
         entry: dict[str, object] = {
             "id": port_name,
             "backend": backend,
-            "tx_pin": int(tx_pin),
-            "rx_pin": int(rx_pin),
         }
+        for field in ("tx_pin", "rx_pin", "cts_pin", "rts_pin"):
+            pin = re.search(rf"\.{field}\s*=\s*(\d+)u", info_body)
+            if pin is None:
+                raise ValueError(f"{field} not found for {port_name}")
+            entry[field] = int(pin.group(1))
         if backend == "UART_DRIVER_BACKEND_HW":
-            hw = re.search(
-                r"\.cts_pin\s*=\s*(\d+)u.*?"
-                r"\.rts_pin\s*=\s*(\d+)u.*?"
-                r"\.hardware_flow_control\s*=\s*(true|false)",
-                backend_body,
-                flags=re.DOTALL,
-            )
-            if not hw:
-                raise ValueError(f"HW backend fields not found for {port_name}")
-            backend_tx = re.search(r"\.tx_pin\s*=\s*(\d+)u", backend_body)
-            backend_rx = re.search(r"\.rx_pin\s*=\s*(\d+)u", backend_body)
-            if (backend_tx is None) or (backend_rx is None):
-                raise ValueError(f"HW TX/RX fields not found for {port_name}")
-            if int(backend_tx.group(1)) != entry["tx_pin"] or int(backend_rx.group(1)) != entry["rx_pin"]:
-                raise ValueError(f"HW TX/RX mismatch for {port_name}")
-            entry["cts_pin"] = int(hw.group(1))
-            entry["rts_pin"] = int(hw.group(2))
-            entry["hardware_flow_control"] = hw.group(3) == "true"
+            descriptor = re.search(rf"\[{re.escape(port_name)}\]\s*=\s*\{{([^{{}}]*)\}}", hardware)
+            flow = re.search(r"\.hardware_flow_control\s*=\s*(true|false)", descriptor.group(1)) if descriptor else None
+            if flow is None:
+                raise ValueError(f"HW flow-control setting not found for {port_name}")
+            entry["hardware_flow_control"] = flow.group(1) == "true"
         ports.append(entry)
     if len(ports) != 6:
         raise ValueError(f"expected 6 uart_board ports, found {len(ports)}")

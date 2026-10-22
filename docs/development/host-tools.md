@@ -306,8 +306,8 @@ this diagnostic with other metadata once per second and clear it when unavailabl
 flash contents are returned.
 
 `led` carries nullable `manual_on` and `output_on` values, with an independent `led_error` on failed reads.
-The **Board LED: On/Off** action toggles the manual LED setting; its output indicator reports physical state, which USB
-activity may also affect. Unknown output is shown as `--`. Sequence numbers remain internal for report-gap detection
+The **Board LED: On/Off** action toggles board identification; its indicator reports physical output. Older firmware
+may also use that output for USB activity. Unknown output is shown as `--`. Sequence numbers remain internal for gap detection
 rather than appearing in the UI.
 The connection indicator includes report age, updated every second and marked stale after three seconds without a
 changed status sample. Age measures browser receipt time so remote host clock offsets do not distort freshness.
@@ -329,7 +329,8 @@ requested profile became active. A verified save does not establish overclock st
 Unavailable save reports disable Save without hiding other valid diagnostics.
 
 Python and .NET expose `POST /api/configuration?board=<id>` with the same session CSRF header as board actions.
-The JSON object must contain exactly `profile` (integer `0`, `1`, or `2`) and `unsafe_overclock` (boolean).
+The JSON object must contain exactly `profile` (integer `0` through `4`, using the IDs in the linked HID report) and
+`unsafe_overclock` (boolean).
 The selected board's client checks MCU compatibility and acknowledgement; firmware validates them independently.
 HTTP success (`{"ok": true}`) means firmware reported a verified save, not just a successful HID transfer.
 Snapshots expose the independent `configuration_save` result (`status`, nullable `profile`) and

@@ -4,7 +4,7 @@ This document describes the PicoUart target-side UART pinout for Pico-class RP20
 and connector planning; the fixed hardware-in-the-loop test fixture is documented separately in
 [HIL Fixture Setup](tests/hil-fixture-setup.md).
 
-The [board configuration](../firmware/src/board/uart_board.c) is the source of truth for this pinout.
+The [UART configuration](../firmware/src/config/uart_config.c) is the source of truth for this pinout.
 
 ## Port Map
 

@@ -50,7 +50,7 @@ target_include_directories(test_bridge PRIVATE
 pico_uart_add_unity_test(test_worker worker
     test_worker.c
     ${FIRMWARE_ROOT}/src/uart/worker.c
-    ${FIRMWARE_ROOT}/src/driver/service_load.c
+    ${FIRMWARE_ROOT}/src/platform/service_load.c
 )
 target_include_directories(test_worker PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
@@ -69,7 +69,7 @@ pico_uart_add_unity_test(test_control_plane plane
     ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
     ${FIRMWARE_ROOT}/src/uart/control/plane.c
     ${FIRMWARE_ROOT}/src/uart/line_coding.c
-    ${FIRMWARE_ROOT}/src/driver/service_load.c
+    ${FIRMWARE_ROOT}/src/platform/service_load.c
 )
 target_include_directories(test_control_plane PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
@@ -88,13 +88,68 @@ pico_uart_add_unity_test(test_txstall_wait txstall_wait
     test_txstall_wait.c
 )
 
+set(_pio_tx_stubs "${CMAKE_CURRENT_BINARY_DIR}/pio_tx_stubs")
+foreach(_header IN ITEMS
+    hardware/pio.h hardware/clocks.h hardware/dma.h hardware/gpio.h hardware/irq.h
+    hardware/regs/pio.h hardware/structs/dma.h hardware/sync.h
+    pico/platform.h pico/stdlib.h pico/time.h uart.pio.h
+)
+    configure_file(support/pio_tx_sdk.h "${_pio_tx_stubs}/${_header}" COPYONLY)
+endforeach()
+pico_uart_add_unity_test(test_pio_tx_driver pio_tx_driver
+    test_pio_tx_driver.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
+)
+target_include_directories(test_pio_tx_driver BEFORE PRIVATE "${_pio_tx_stubs}")
+target_compile_options(test_pio_tx_driver PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(test_pio_tx_driver PRIVATE -Wl,--gc-sections)
+
+set(_hw_uart_stubs "${CMAKE_CURRENT_BINARY_DIR}/hw_uart_stubs")
+foreach(_header IN ITEMS
+    hardware/uart.h hardware/clocks.h hardware/dma.h hardware/gpio.h hardware/irq.h
+    hardware/regs/uart.h hardware/structs/dma.h hardware/sync.h pico/stdlib.h pico/time.h
+)
+    configure_file(support/hw_uart_sdk.h "${_hw_uart_stubs}/${_header}" COPYONLY)
+endforeach()
+pico_uart_add_unity_test(test_hw_uart_driver hw_uart_driver
+    test_hw_uart_driver.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
+    ${FIRMWARE_ROOT}/src/uart/hw/dma_claim.c
+)
+target_include_directories(test_hw_uart_driver BEFORE PRIVATE
+    "${_hw_uart_stubs}" "${CMAKE_CURRENT_SOURCE_DIR}/support"
+)
+target_compile_options(test_hw_uart_driver PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(test_hw_uart_driver PRIVATE -Wl,--gc-sections)
+
+if(MINGW)
+    # COFF unwind tables retain untested SDK paths despite --gc-sections.
+    # These C harnesses need only the driver sections exercised by their mocks.
+    target_compile_options(test_pio_tx_driver PRIVATE -fno-asynchronous-unwind-tables -fno-unwind-tables)
+    target_compile_options(test_hw_uart_driver PRIVATE -fno-asynchronous-unwind-tables -fno-unwind-tables)
+endif()
+
 pico_uart_add_unity_test(test_cdc_soft_pending cdc_soft_pending
     test_cdc_soft_pending.c
 )
 
 pico_uart_add_unity_test(test_topology topology
     test_topology.c
-    ${FIRMWARE_ROOT}/src/board/uart_topology.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/support/board/uart_topology.c
+)
+target_include_directories(test_topology PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
+
+pico_uart_add_unity_test(test_uart_board_config uart_board_config
+    test_uart_board_config.c
+    ${FIRMWARE_ROOT}/src/config/uart_config.c
+    ${FIRMWARE_ROOT}/src/uart/hw/hw_uart_board_config.c
+    ${FIRMWARE_ROOT}/src/uart/pio/pio_uart_board_config.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/support/board/uart_topology.c
+)
+target_include_directories(test_uart_board_config PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+    ${CMAKE_CURRENT_SOURCE_DIR}/support
 )
 
 pico_uart_add_unity_test(test_backend_policy backend_policy
@@ -108,36 +163,59 @@ target_include_directories(test_backend_contract PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
 )
 
+pico_uart_add_unity_test(test_native_backends native_backends
+    test_native_backends.c
+    ${FIRMWARE_ROOT}/src/config/uart_config.c
+    ${FIRMWARE_ROOT}/src/uart/hw/hw_uart_board_config.c
+    ${FIRMWARE_ROOT}/src/uart/pio/pio_uart_board_config.c
+    ${FIRMWARE_ROOT}/src/uart/hw/hw_uart_backend.c
+    ${FIRMWARE_ROOT}/src/uart/pio/pio_uart_backend.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+)
+target_include_directories(test_native_backends PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
+
 pico_uart_add_unity_test(test_hw_baud_rate hw_baud_rate
     test_hw_baud_rate.c
 )
 
-pico_uart_add_unity_test(test_led_policy led_policy
-    test_led_policy.c
-)
+foreach(_led IN ITEMS present absent)
+    pico_uart_add_unity_test(test_led_${_led} led_${_led}
+        test_led.c
+        ${FIRMWARE_ROOT}/src/platform/led.c
+    )
+    target_include_directories(test_led_${_led} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
+endforeach()
+target_compile_definitions(test_led_present PRIVATE PICO_DEFAULT_LED_PIN=25)
 
 pico_uart_add_unity_test(test_temperature temperature
     test_temperature.c
 )
 
-pico_uart_add_unity_test(test_board_config board_config
-    test_board_config.c
-    ${FIRMWARE_ROOT}/src/driver/board_config.c
-)
+foreach(_family IN ITEMS rp2040 rp2350)
+    pico_uart_add_unity_test(test_boot_config_${_family} boot_config_${_family} test_boot_config.c)
+    target_include_directories(test_boot_config_${_family} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
+    target_compile_definitions(test_boot_config_${_family} PRIVATE
+        PICO_RP2350=$<STREQUAL:${_family},rp2350>
+        PICO_FLASH_SIZE_BYTES=4096
+        PICO_UART_CONFIG_FLASH_SIZE=4096
+        PICO_UART_CONFIG_FLASH_OFFSET=0
+    )
+endforeach()
 
 pico_uart_add_unity_test(test_service_load service_load
     test_service_load.c
-    ${FIRMWARE_ROOT}/src/driver/service_load.c
+    ${FIRMWARE_ROOT}/src/platform/service_load.c
 )
 
 foreach(_family IN ITEMS rp2040 rp2350)
     pico_uart_add_unity_test(test_usb_hid_${_family} usb_hid_${_family}
         test_usb_hid.c
-        ${FIRMWARE_ROOT}/src/driver/service_load.c
-        ${FIRMWARE_ROOT}/src/driver/board_config.c
+        ${FIRMWARE_ROOT}/src/platform/service_load.c
     )
     target_include_directories(test_usb_hid_${_family} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
-    target_compile_definitions(test_usb_hid_${_family} PRIVATE PICO_RP2350=$<STREQUAL:${_family},rp2350>)
+    target_compile_definitions(test_usb_hid_${_family} PRIVATE
+        PICO_RP2350=$<STREQUAL:${_family},rp2350>
+    )
     target_compile_options(test_usb_hid_${_family} PRIVATE -ffunction-sections -fdata-sections -fno-pie)
     target_link_options(test_usb_hid_${_family} PRIVATE -Wl,--gc-sections -no-pie)
 endforeach()

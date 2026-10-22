@@ -31,7 +31,8 @@ class ConfigDevice:
         return self.written
 
 
-@pytest.mark.parametrize("mcu,profile,ack", [(1, 0, False), (1, 1, True), (2, 0, False), (2, 2, True)])
+@pytest.mark.parametrize("mcu,profile,ack", [(1, 0, False), (1, 3, True), (2, 0, False), (2, 4, True),
+                                          (1, 1, True), (1, 2, True), (2, 1, True), (2, 2, True), (2, 3, True)])
 def test_save_supported_profile_has_explicit_payload(mcu, profile, ack):
     device = ConfigDevice(mcu=mcu)
     result = PicoUartHid(device=device).save_configuration(profile, ack)
@@ -41,8 +42,8 @@ def test_save_supported_profile_has_explicit_payload(mcu, profile, ack):
 
 
 @pytest.mark.parametrize("mcu,profile,ack", [
-    (1, 1, False), (2, 2, False), (1, 2, True), (2, 1, True),
-    (99, 0, False), (1, True, True), (1, 3, True), (1, 0, 1),
+    (1, 1, False), (2, 2, False), (1, 4, True),
+    (99, 0, False), (1, True, True), (1, 5, True), (1, 0, 1), (1, 3, False), (2, 4, False),
 ])
 def test_invalid_request_never_writes(mcu, profile, ack):
     device = ConfigDevice(mcu=mcu)
@@ -78,7 +79,7 @@ def test_pending_save_is_not_replaced():
 
 @pytest.mark.parametrize("payload", [
     b"", bytes(8), struct.pack("<BBHI", 2, 0, 0, 0), struct.pack("<BBHI", 1, 6, 0, 0),
-    struct.pack("<BBHI", 1, 0, 1, 0), struct.pack("<BBHI", 1, 0, 0, 3),
+    struct.pack("<BBHI", 1, 0, 1, 0), struct.pack("<BBHI", 1, 0, 0, 5),
     struct.pack("<BBHI", 1, 2, 0, 0xFFFFFFFF),
 ])
 def test_save_report_rejects_malformed_payload(payload):
@@ -107,7 +108,7 @@ def test_configuration_endpoint_requires_csrf_and_validated_json():
     assert response.status_code == 415
     assert response.json == {"error": "configuration request must be JSON"}
     for body in ({}, [], {"profile": True, "unsafe_overclock": False}, {"profile": 0, "unsafe_overclock": 1},
-                 {"profile": 3, "unsafe_overclock": True},
+                 {"profile": 5, "unsafe_overclock": True},
                  {"profile": 0, "unsafe_overclock": False, "extra": 1}):
         assert client.post("/api/configuration", json=body, headers=headers).status_code == 400
     assert dashboard.calls == []

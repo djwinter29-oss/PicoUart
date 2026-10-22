@@ -25,9 +25,6 @@ typedef struct {
     uint32_t tx_pin;               /**< Public TX GPIO. */
     uint32_t rx_pin;               /**< Public RX GPIO. */
     uintptr_t backend_instance;    /**< Hardware UART or PIO block identity. */
-    uint32_t backend_baud_rate;    /**< Backend-configured baud rate. */
-    uint32_t backend_tx_pin;       /**< Backend-configured TX GPIO. */
-    uint32_t backend_rx_pin;       /**< Backend-configured RX GPIO. */
     uint32_t tx_state_machine;     /**< PIO TX state machine; ignored for hardware UART. */
     uint32_t rx_state_machine;     /**< PIO RX state machine; ignored for hardware UART. */
     uint32_t target_gpio_count;    /**< Number of valid GPIO indices on the selected target. */

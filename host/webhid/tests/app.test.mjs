@@ -77,13 +77,13 @@ test("one connection button belongs to Device identity, with no separate refresh
 test("persistent configuration uses target profiles and gates unsafe saves", () => {
   const { client, get } = fixture();
   client.state.dashboard = { connected: true, hardware: { mcu_id: 2 },
-    configuration: { stored_profile: 2 }, configuration_save: { status: 0, profile: null },
+    configuration: { stored_profile: 2 }, configuration_save: { status: 0, profile: 2 },
     channels: Array.from({ length: 6 }, () => ({ cdc_open: false })) };
   client.state.phase = "connected";
   client.render(client.state);
   const profile = get("configuration-profile");
   assert.deepEqual(profile.children.map(option => [option.value, option.textContent]), [
-    ["0", "Default (150 MHz)"], ["2", "280 MHz (RP2350)"],
+    ["0", "SDK default (150 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz"], ["4", "280 MHz (RP2350)"],
   ]);
   assert.equal(profile.value, "2");
   assert.equal(profile.disabled, false);

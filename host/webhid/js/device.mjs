@@ -39,10 +39,10 @@ export function decodeConfigurationReport(report) {
   if (source >= sources.length || reason >= reasons.length || payload.getUint8(3) !== 0) {
     throw new Error("Invalid configuration source, reason, or reserved field");
   }
-  if (![0, 1, 2, 0xffffffff].includes(stored) || active > 2) {
+  if (![0, 1, 2, 3, 4, 0xffffffff].includes(stored) || active > 4) {
     throw new Error("Invalid configuration profile");
   }
-  if ((source === 1 && (reason !== 0 || ![0, 1, 2].includes(stored) || active !== stored))
+  if ((source === 1 && (reason !== 0 || ![0, 1, 2, 3, 4].includes(stored) || active !== stored))
     || (source === 2 && reason === 0)) throw new Error("Inconsistent configuration values");
   return { source: sources[source], reason: reasons[reason],
     stored_profile: stored === 0xffffffff ? null : stored, active_profile: active };
@@ -57,14 +57,14 @@ export function decodeConfigurationSaveReport(report) {
     throw new Error("Invalid configuration-save status or reserved field");
   }
   if (status === 0) {
-    if (profile !== 0xffffffff) throw new Error("Invalid idle configuration-save profile");
-    return { status, profile: null };
+    if (![0, 1, 2, 3, 4, 0xffffffff].includes(profile)) throw new Error("Invalid idle configuration-save profile");
+    return { status, profile: profile === 0xffffffff ? null : profile };
   }
   if (status === 3) {
     if (profile !== 0xffffffff) throw new Error("Invalid rejected configuration-save profile");
     return { status, profile: null };
   }
-  if (![0, 1, 2].includes(profile)) {
+  if (![0, 1, 2, 3, 4].includes(profile)) {
     throw new Error("Invalid configuration-save profile");
   }
   return { status, profile };
@@ -397,8 +397,8 @@ export class PicoUartWebHid {
       this.update({ configurationSaveMessage: "Cannot save a clock profile for an unknown microcontroller." });
       return;
     }
-    const expectedProfile = hardware.mcu_id === 1 ? 1 : 2;
-    if (![0, expectedProfile].includes(profile) || typeof unsafeOverclock !== "boolean"
+    const supportedProfiles = hardware.mcu_id === 1 ? [0, 1, 2, 3] : [0, 1, 2, 3, 4];
+    if (!supportedProfiles.includes(profile) || typeof unsafeOverclock !== "boolean"
       || (profile === 0 && unsafeOverclock) || (profile !== 0 && !unsafeOverclock)) {
       this.update({ configurationSaveMessage: "Select a valid profile and explicitly acknowledge overclocking." });
       return;

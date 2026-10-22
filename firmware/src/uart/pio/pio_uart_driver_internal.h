@@ -16,13 +16,15 @@
  * @brief Runtime state for one PIO UART instance.
  */
 struct pio_uart_driver {
-    pio_uart_driver_config_t config; /**< Immutable PIO UART configuration. */
+    const pio_uart_driver_config_t *config; /**< Immutable backend descriptor and board wiring. */
+    uint32_t baud_rate; /**< Applied PIO UART baud rate. */
     bool initialized;                /**< True after the PIO state machines and software rings are configured. */
     bool tx_sm_claimed;              /**< True while this instance owns its configured TX state machine. */
     bool rx_sm_claimed;              /**< True while this instance owns its configured RX state machine. */
     int rx_dma_channel;              /**< Persistent DMA channel writing PIO RX FIFO bytes into @ref rx_ring. */
     int tx_dma_channel;              /**< Persistent DMA channel used for high-backlog TX draining. */
     bool tx_dma_active;              /**< True while the active TX DMA channel owns a ring span. */
+    bool txstall_waiting;            /**< TXSTALL cleared for a fresh-idle probe; invalidated by any TX launch. */
     bool rx_rts_asserted;            /**< True while manual RTS permits the peer to transmit. */
     bool tx_cts_enabled;             /**< True when the TX state machine waits for active-low CTS between frames. */
     size_t tx_dma_bytes_in_flight;   /**< Bytes currently owned by the active TX DMA transfer. */
@@ -42,14 +44,22 @@ struct pio_uart_driver {
     uint8_t tx_storage[PICO_UART_PIO_UART_TX_BUFFER_SIZE];           /**< TX ring storage. */
 };
 
-void pio_uart_driver_poll(pio_uart_driver_t *driver, bool tx_launch_allowed);
+/**
+ * @brief Allocate and start hardware for an inactive PIO UART instance.
+ * @param context Inactive PIO UART runtime instance checked by the native init entry point.
+ * @return `true` when hardware startup succeeds, otherwise `false`.
+ * @internal Only the native init entry point may call this routine.
+ */
+bool pio_uart_driver_start(void *context);
+
+void pio_uart_driver_poll(void *context, bool tx_launch_allowed);
 
 /**
  * @brief Check a consumer reservation against the live RX DMA write position.
- * @param driver PIO UART backend to inspect.
+ * @param context PIO UART backend to inspect.
  * @param consumer_sequence Consumer sequence captured for the RX span.
  * @return `true` when live DMA progress has not overwritten the reservation.
  */
-bool pio_uart_driver_rx_snapshot_is_current(const pio_uart_driver_t *driver, uint32_t consumer_sequence);
+bool pio_uart_driver_rx_snapshot_is_current(const void *context, uint32_t consumer_sequence);
 
 #endif

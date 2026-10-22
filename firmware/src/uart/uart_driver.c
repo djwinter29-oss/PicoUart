@@ -5,8 +5,7 @@
 
 #include "uart/uart_driver.h"
 
-#include "board/uart_board.h"
-#include "uart/backend/adapter.h"
+#include "uart/backend/backend.h"
 #include "uart/control/mailbox.h"
 #include "uart/control/plane.h"
 #include "uart/control/ownership.h"
@@ -90,7 +89,8 @@ static const uart_worker_hooks_t uart_driver_worker_hooks = {
 static void uart_driver_worker_initialize(void)
 {
     hard_assert(flash_safe_execute_core_init());
-    uart_backend_enable_rx_dma_irq();
+    hw_uart_driver_enable_rx_dma_irq();
+    pio_uart_driver_enable_rx_dma_irq();
 }
 
 static void uart_driver_worker_service_control(void)
@@ -133,20 +133,13 @@ static uart_runtime_port_t *uart_driver_port_mutable(uart_port_id_t port_id)
 static void uart_driver_load_board_config(void)
 {
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        const uart_board_port_config_t *board_port = &uart_board_ports[index];
+        const uart_driver_port_info_t *board_port = &uart_board_ports[index];
         uart_runtime_port_t *port = &uart_driver_state.ports[index];
 
-        port->info = board_port->info;
-        port->info.data_bits = 8u;
-        port->info.stop_bits = 1u;
-        port->info.parity = UART_DRIVER_PARITY_NONE;
-        port->ops = uart_backend_ops_for_type(board_port->info.backend);
-        if (board_port->info.backend == UART_DRIVER_BACKEND_HW) {
-            port->backend.hw.config = board_port->backend.hw;
-            port->backend.hw.initialized = false;
-        } else {
-            port->backend.pio.config = board_port->backend.pio;
-            port->backend.pio.initialized = false;
+        port->info = *board_port;
+        port->ops = uart_backend_ops_for_type(board_port->backend);
+        if ((port->ops == NULL) || !port->ops->load_config(&port->backend, board_port)) {
+            port->ops = NULL;
         }
     }
 }
@@ -157,9 +150,7 @@ static bool uart_driver_init_backends(void)
 
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
         uart_runtime_port_t *port = &uart_driver_state.ports[index];
-        bool port_ok = false;
-
-        port_ok = (port->ops != NULL) && (port->ops->is_initialized(&port->backend) || port->ops->init(&port->backend));
+        bool port_ok = (port->ops != NULL) && port->ops->init(&port->backend);
 
         if (!port_ok) {
             init_ok = false;
@@ -229,10 +220,12 @@ bool uart_driver_init(void)
             uart_driver_state.pending_controls[index].deadline = nil_time;
             uart_driver_state.pending_controls[index].control_generation = 0u;
             uart_driver_state.pending_controls[index].tx_boundary_sequence = 0u;
-            uart_driver_state.pending_controls[index].line_coding.baud_rate = PICO_UART_BOARD_DEFAULT_BAUD_RATE;
-            uart_driver_state.pending_controls[index].line_coding.data_bits = 8u;
-            uart_driver_state.pending_controls[index].line_coding.stop_bits = 1u;
-            uart_driver_state.pending_controls[index].line_coding.parity = UART_DRIVER_PARITY_NONE;
+            uart_driver_state.pending_controls[index].line_coding = (uart_driver_line_coding_t){
+                .baud_rate = uart_board_ports[index].baud_rate,
+                .data_bits = uart_board_ports[index].data_bits,
+                .stop_bits = uart_board_ports[index].stop_bits,
+                .parity = uart_board_ports[index].parity,
+            };
         }
 
         for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {

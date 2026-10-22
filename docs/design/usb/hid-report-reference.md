@@ -94,14 +94,22 @@ possible causes, but this report cannot identify which one occurred. See [Hardwa
 Report 16 is read-only diagnostic metadata for boot-time configuration selection. It does not expose raw flash bytes,
 credentials, or mutable settings. This snapshot remains unchanged after a report-17 save until the next boot.
 
+Firmware settings are a separate private cache accessed through `boot_config_get`, `boot_config_set`, and
+`boot_config_save`. Its `clock_profile` field selects a predefined clock; the default profile preserves the SDK clock.
+A private table maps profile IDs to exact frequencies and supported targets. Target-family detection and profile
+validation are internal to the module. The same IDs are used in settings, storage, and HID. Watchdog recovery or
+clock-application failure can bypass a stored request without changing that request. Invalid or corrupt storage selects
+defaults in RAM and never triggers an
+automatic flash rewrite.
+
 | Offset | Size | Field | Meaning |
 | -----: | ---: | ----- | ------- |
 | 0 | 1 | `version` | Independent layout version, currently `1`. |
 | 1 | 1 | `source` | Active source: defaults=`0`, stored=`1`, recovery=`2`. |
 | 2 | 1 | `reason` | Validation/recovery reason: none=`0`, erased=`1`, invalid_header=`2`, crc_failed=`3`, unsupported_version=`4`, invalid_profile=`5`, watchdog_recovery=`6`, clock_unavailable=`7`. |
 | 3 | 1 | `reserved0` | Reserved, zero. |
-| 4 | 4 | `stored_profile` | Stored profile ID (`0` default, `1` 250 MHz, `2` 280 MHz, `0xffffffff` unavailable). |
-| 8 | 4 | `active_profile` | Active profile ID (`0`, `1`, `2`). |
+| 4 | 4 | `stored_profile` | Stored profile ID (`0` default, `1` 150 MHz, `2` 200 MHz, `3` 250 MHz, `4` 280 MHz, `0xffffffff` unavailable). |
+| 8 | 4 | `active_profile` | Active profile ID (`0` through `4`). |
 
 Unknown versions, inconsistent enums, or nonzero reserved bytes are rejected by host tools. Source `stored` requires
 matching stored and active profiles, including profile `0` (SDK default with no clock reconfiguration).
@@ -116,12 +124,14 @@ little-endian integers and independent layout version `1`.
 | 0 | 1 | `version = 1` | `version = 1` |
 | 1 | 1 | `flags`: bit 0 acknowledges unsafe overclocking; other bits zero | `status`: idle=`0`, pending=`1`, saved=`2`, invalid=`3`, CDC busy=`4`, flash failed=`5` |
 | 2 | 2 | Reserved, zero | Reserved, zero |
-| 4 | 4 | Requested `profile`: `0` SDK default, `1` 250 MHz (RP2040 only), `2` 280 MHz (RP2350 only) | Requested profile, or `0xffffffff` when unavailable (idle/invalid only) |
+| 4 | 4 | Requested `profile`: `0` SDK default, `1` 150 MHz (both), `2` 200 MHz (both), `3` 250 MHz (both), `4` 280 MHz (RP2350 only) | Requested profile, or `0xffffffff` when unavailable (idle/invalid only) |
 
 An exact-size, valid request is queued; the USB poll loop performs the write outside the TinyUSB control callback.
 Non-default profiles require flags bit 0. Unknown profiles, wrong-family profiles, missing acknowledgement, and invalid
-versions/lengths/reserved fields produce `invalid` without writing flash. While a request is pending, another SET
-does not replace it. Hosts check readiness first and wait for a matching `saved` profile, not merely USB transfer success.
+versions/lengths/reserved fields produce `invalid` without writing flash. While a request is pending or saved awaiting
+reboot, further SET requests are ignored, including malformed requests. They cannot replace the verified result,
+rewrite flash, or cancel or postpone its scheduled reboot. Hosts check readiness first and wait for a matching `saved`
+profile, not merely USB transfer success.
 Idle reports contain the boot's accepted stored profile, or the unavailable sentinel.
 
 Saving requires every CDC DTR session to be closed, checked both when accepting and executing the request.
@@ -317,11 +327,13 @@ not a board-name lookup in the host.
 | 1      | 1    | `flags`   | Bit 0: LED available; bit 1: manual on; bit 2: physical output on. |
 
 Other flag bits are reserved and zero. An unavailable LED reports zero flags; hosts show unknown states, not Off.
-The physical GPIO output is the OR of the persistent manual state and transient CDC activity. Toggling report `4`'s
-existing LED command changes only the manual state, so USB activity may keep the output lit after toggling manual Off.
-Manual On with physical Off is invalid. All LED access occurs on core 0.
+The LED is an on/off board-identification output. Report `4`'s existing toggle command inverts that state; CDC traffic
+and USB enumeration do not change it. The identification state starts Off after firmware initialization. Bits 1 and 2
+are retained for wire compatibility and both reflect identification on/off in this firmware. Older firmware may drive
+output independently for CDC activity; hosts may still accept manual Off with physical On. Manual On with physical Off
+is invalid. All LED access occurs on core 0.
 
-Dashboards distinguish the manual toggle action from physical output state; see
+Dashboards use the existing manual/output fields to control and display identification; see
 [dashboard controls](../../development/host-tools.md#pythonnet-web-ui).
 The button tooltip identifies the manual state. Successful toggles reread state instead of predicting the result.
 Failed LED reads show unknown output and disable the toggle until a valid state is read.

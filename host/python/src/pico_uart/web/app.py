@@ -87,7 +87,7 @@ def create_app(service: BoardRegistry | None = None) -> Flask:
         except BadRequest:
             return jsonify(error="malformed JSON body"), 400
         if (not isinstance(body, dict) or set(body) != {"profile", "unsafe_overclock"}
-                or type(body["profile"]) is not int or body["profile"] not in (0, 1, 2)
+                or type(body["profile"]) is not int or body["profile"] not in (0, 1, 2, 3, 4)
                 or type(body["unsafe_overclock"]) is not bool):
             return jsonify(error="expected a clock profile and boolean unsafe_overclock acknowledgement"), 400
         try:

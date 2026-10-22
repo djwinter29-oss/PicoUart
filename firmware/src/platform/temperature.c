@@ -3,7 +3,7 @@
  * @brief Internal ADC temperature-sensor helpers for PicoUart firmware.
  */
 
-#include "driver/temperature.h"
+#include "platform/temperature.h"
 
 #include "hardware/adc.h"
 

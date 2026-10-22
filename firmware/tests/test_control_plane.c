@@ -64,13 +64,13 @@ static void spin_unlock_ownership_probe(void)
     spin_unlock_ownership_probe_armed = false;
 }
 
-static ring_buffer_t *test_tx_ring_for_backend(uart_backend_instance_t *instance)
+static ring_buffer_t *test_tx_ring_for_backend(void *instance)
 {
     (void)instance;
     return &test_tx_ring;
 }
 
-static bool test_line_coding_matches(const uart_backend_instance_t *instance,
+static bool test_line_coding_matches(const void *instance,
                                      const uart_driver_line_coding_t *line_coding)
 {
     (void)instance;
@@ -83,13 +83,13 @@ static bool test_line_coding_acceptable(const uart_driver_line_coding_t *line_co
     return line_coding->data_bits == 8u;
 }
 
-static bool test_is_initialized(const uart_backend_instance_t *instance)
+static bool test_is_initialized(const void *instance)
 {
     (void)instance;
     return backend_alive;
 }
 
-static bool test_set_line_coding(uart_backend_instance_t *instance, const uart_driver_line_coding_t *line_coding)
+static bool test_set_line_coding(void *instance, const uart_driver_line_coding_t *line_coding)
 {
     (void)instance;
     if (fail_closed) {
@@ -102,7 +102,7 @@ static bool test_set_line_coding(uart_backend_instance_t *instance, const uart_d
     return apply_result;
 }
 
-static uint32_t test_baud_rate(const uart_backend_instance_t *instance)
+static uint32_t test_baud_rate(const void *instance)
 {
     (void)instance;
     return applied_line_coding.baud_rate;

@@ -12,6 +12,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/** @brief Marker for an optional logical-port GPIO that is not assigned. */
+#define UART_DRIVER_PIN_UNASSIGNED ((uint32_t)UINT32_MAX)
+
 /** @brief Port status flag: backend is initialized and available. */
 #define UART_DRIVER_PORT_STATUS_READY (1u << 0)
 /** @brief Port status flag: backend init failed for this port. */
@@ -22,18 +25,26 @@
 #define UART_DRIVER_PORT_STATUS_CONTROL_PENDING (1u << 3)
 
 /**
- * @brief Public view of one logical UART port.
+ * @brief Backend-neutral startup configuration and runtime view of one logical UART port.
+ *
+ * The static configuration table supplies startup values. Runtime copies reflect the last
+ * successfully applied host line coding while retaining the static pin map.
  */
 typedef struct {
     uart_port_id_t id;             /**< Logical port identifier. */
     uart_driver_backend_t backend; /**< Backend class assigned to the port. */
-    uint32_t baud_rate; /**< Current baud rate (startup default; updated after a successful line-coding apply). */
-    uint32_t tx_pin;    /**< Configured TX GPIO, or unassigned marker. */
-    uint32_t rx_pin;    /**< Configured RX GPIO, or unassigned marker. */
-    uint8_t data_bits;  /**< Successfully applied data-bit count. */
-    uint8_t stop_bits;  /**< Successfully applied stop-bit count. */
-    uart_driver_parity_t parity; /**< Successfully applied parity mode. */
+    uint32_t baud_rate;            /**< Startup default; updated after a successful line-coding apply. */
+    uint32_t tx_pin;               /**< Configured TX GPIO. */
+    uint32_t rx_pin;               /**< Configured RX GPIO. */
+    uint32_t rts_pin;              /**< Configured RTS GPIO, or @ref UART_DRIVER_PIN_UNASSIGNED. */
+    uint32_t cts_pin;              /**< Configured CTS GPIO, or @ref UART_DRIVER_PIN_UNASSIGNED. */
+    uint8_t data_bits;             /**< Initial value; updated after a successful line-coding apply. */
+    uint8_t stop_bits;             /**< Initial value; updated after a successful line-coding apply. */
+    uart_driver_parity_t parity;   /**< Initial value; updated after a successful line-coding apply. */
 } uart_driver_port_info_t;
+
+/** @brief Immutable startup records defined by the firmware UART configuration. */
+extern const uart_driver_port_info_t uart_board_ports[UART_PORT_COUNT];
 
 /**
  * @brief Transport counters for one logical UART port.

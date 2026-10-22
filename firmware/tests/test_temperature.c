@@ -5,7 +5,7 @@
 
 #include "unity.h"
 
-#include "driver/temperature.h"
+#include "platform/temperature.h"
 
 void setUp(void)
 {

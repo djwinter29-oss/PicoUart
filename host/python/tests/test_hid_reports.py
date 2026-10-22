@@ -29,6 +29,8 @@ def test_configuration_report_decodes_and_rejects_invalid_values():
     }
     recovery = struct.pack("<BBBBII", 1, 2, 6, 0, 1, 0)
     assert parse_configuration(recovery)["source"] == "recovery"
+    for profile in (3, 4):
+        assert parse_configuration(struct.pack("<BBBBII", 1, 1, 0, 0, profile, profile))["active_profile"] == profile
 
     invalid = [
         payload[:-1], payload + b"\0",
@@ -36,8 +38,8 @@ def test_configuration_report_decodes_and_rejects_invalid_values():
         struct.pack("<BBBBII", 1, 3, 0, 0, 0, 0),
         struct.pack("<BBBBII", 1, 0, 8, 0, 0, 0),
         struct.pack("<BBBBII", 1, 0, 0, 1, 0, 0),
-        struct.pack("<BBBBII", 1, 0, 0, 0, 3, 0),
-        struct.pack("<BBBBII", 1, 0, 0, 0, 0, 3),
+        struct.pack("<BBBBII", 1, 0, 0, 0, 5, 0),
+        struct.pack("<BBBBII", 1, 0, 0, 0, 0, 5),
         struct.pack("<BBBBII", 1, 1, 1, 0, 1, 1),
         struct.pack("<BBBBII", 1, 1, 0, 0, 0, 1),
         struct.pack("<BBBBII", 1, 2, 0, 0, 1, 0),

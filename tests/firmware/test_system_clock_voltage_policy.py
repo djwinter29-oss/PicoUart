@@ -122,7 +122,8 @@ _MAIN_C = """
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include "driver/system.h"
+#include "platform/system.h"
+#include "platform/boot_config.h"
 extern uint8_t g_sector[4096];
 extern unsigned int g_requested_clock_khz;
 extern int g_set_sys_clock_khz_calls;
@@ -130,6 +131,19 @@ extern int g_flash_calls, g_flash_result;
 extern bool g_flash_corrupt;
 static void put_u32(unsigned offset, uint32_t value) {
     for (unsigned i=0; i<4; i++) g_sector[offset+i] = value >> (8*i);
+}
+static uint32_t get_u32(const uint8_t *data) {
+    return (uint32_t)data[0] | (uint32_t)data[1] << 8 | (uint32_t)data[2] << 16 | (uint32_t)data[3] << 24;
+}
+static uint32_t fixture_crc32(const uint8_t *data, size_t size) {
+    uint32_t crc = UINT32_MAX;
+    for (size_t index = 0; index < size; ++index) {
+        crc ^= data[index];
+        for (unsigned int bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
+        }
+    }
+    return crc ^ UINT32_MAX;
 }
 int main(void) {
     memset(g_sector, 255, sizeof(g_sector));
@@ -143,37 +157,48 @@ int main(void) {
         uint8_t protected[32];
         memcpy(protected, g_sector, 12);
         memcpy(protected+12, g_sector+16, 20);
-        put_u32(12, board_config_crc32(protected, 32) ^ CORRUPT);
+        put_u32(12, fixture_crc32(protected, 32) ^ CORRUPT);
     }
     system_watchdog_enable();
     system_init_clock();
-    const board_config_status_t *config = system_config_status();
+    const boot_config_status_t *config = boot_config_get_status();
     printf("%u %d %u %u\\n", g_requested_clock_khz, g_set_sys_clock_khz_calls,
            (unsigned)config->reason, (unsigned)config->active_profile);
-    board_config_status_t boot = *config;
+    boot_config_status_t boot = *config;
     int boot_clock_calls = g_set_sys_clock_khz_calls;
     unsigned boot_clock_khz = g_requested_clock_khz;
-    assert(!system_save_clock_profile(0xffffffffu));
-    unsigned profile = PICO_RP2350 ? 2 : 1;
-    assert(!system_save_clock_profile(PICO_RP2350 ? 1 : 2));
+    boot_config_t settings = {.clock_profile = (boot_clock_profile_t)UINT32_MAX};
+    assert(!boot_config_set(&settings));
+    unsigned profile = BOOT_CLOCK_250_MHZ;
+    if (!PICO_RP2350) {
+        settings.clock_profile = BOOT_CLOCK_280_MHZ;
+        assert(!boot_config_set(&settings));
+    }
+    settings.clock_profile = (boot_clock_profile_t)profile;
+    assert(boot_config_set(&settings));
     memset(g_sector, 255, sizeof(g_sector));
     g_flash_result = -1;
-    assert(!system_save_clock_profile(profile));
+    assert(!boot_config_save());
     assert(g_flash_calls == 0 && g_sector[0] == 255);
     g_flash_result = 0;
     g_flash_corrupt = true;
-    assert(!system_save_clock_profile(profile));
+    assert(!boot_config_save());
     assert(g_flash_calls == 1);
     g_flash_corrupt = false;
-    assert(system_save_clock_profile(profile));
+    assert(boot_config_save());
     assert(g_flash_calls == 2);
-    assert(system_save_clock_profile(profile));
+    assert(boot_config_save());
     assert(g_flash_calls == 2);
-    board_config_status_t stored = board_config_decode(g_sector, sizeof(g_sector), PICO_RP2350, false);
-    assert(stored.reason == BOARD_CONFIG_OK && stored.stored_profile == profile);
-    assert(system_save_clock_profile(0));
-    stored = board_config_decode(g_sector, sizeof(g_sector), PICO_RP2350, false);
-    assert(stored.reason == BOARD_CONFIG_OK && stored.active_profile == BOARD_CLOCK_DEFAULT);
+    assert(memcmp(g_sector, "PUCF", 4) == 0);
+    assert(get_u32(g_sector + 32) == profile);
+    uint8_t protected[32];
+    memcpy(protected, g_sector, 12);
+    memcpy(protected + 12, g_sector + 16, 20);
+    assert(fixture_crc32(protected, sizeof(protected)) == get_u32(g_sector + 12));
+    settings.clock_profile = BOOT_CLOCK_DEFAULT;
+    assert(boot_config_set(&settings));
+    assert(boot_config_save());
+    assert(get_u32(g_sector + 32) == BOOT_CLOCK_DEFAULT);
     assert(memcmp(config, &boot, sizeof(boot)) == 0);
     assert(g_set_sys_clock_khz_calls == boot_clock_calls && g_requested_clock_khz == boot_clock_khz);
     return 0;
@@ -212,14 +237,18 @@ def _read_nm_symbols(nm, artifact):
         (1, -1, 0, 0, 1, 0, 1, 0),
         (0, 0, 0, 0, 1, 0, 0, 0),
         (1, 0, 0, 0, 1, 0, 0, 0),
-        (0, 1, 0, 0, 1, 250000, 0, 1),
-        (1, 2, 0, 0, 1, 280000, 0, 2),
-        (0, 2, 0, 0, 1, 0, 5, 0),
-        (1, 1, 0, 0, 1, 0, 5, 0),
-        (0, 1, 1, 0, 1, 0, 3, 0),
-        (0, 1, 0, 1, 1, 0, 6, 0),
-        (1, 2, 0, 1, 1, 0, 6, 0),
-        (0, 1, 0, 0, 0, 250000, 7, 0),
+        (0, 1, 0, 0, 1, 150000, 0, 1),
+        (1, 1, 0, 0, 1, 150000, 0, 1),
+        (0, 2, 0, 0, 1, 200000, 0, 2),
+        (1, 2, 0, 0, 1, 200000, 0, 2),
+        (0, 3, 0, 0, 1, 250000, 0, 3),
+        (1, 3, 0, 0, 1, 250000, 0, 3),
+        (1, 4, 0, 0, 1, 280000, 0, 4),
+        (0, 4, 0, 0, 1, 0, 5, 0),
+        (0, 3, 1, 0, 1, 0, 3, 0),
+        (0, 3, 0, 1, 1, 0, 6, 0),
+        (1, 3, 0, 1, 1, 0, 6, 0),
+        (0, 3, 0, 0, 0, 250000, 7, 0),
     ],
 )
 def test_system_init_clock_never_writes_voltage(
@@ -236,7 +265,7 @@ def test_system_init_clock_never_writes_voltage(
     (tmp_path / "mock_runtime.c").write_text(_MOCK_RUNTIME_C)
     (tmp_path / "main.c").write_text(_MAIN_C)
 
-    system_c = repo_root / "firmware" / "src" / "driver" / "system.c"
+    system_c = repo_root / "firmware" / "src" / "platform" / "system.c"
     source_text = system_c.read_text(encoding="utf-8")
     # Defense in depth alongside the missing-header compile failure: the real
     # source must not reference vreg at all.
@@ -262,7 +291,7 @@ def test_system_init_clock_never_writes_voltage(
         f"-I{mock_sdk}",
         f"-I{repo_root / 'firmware' / 'src'}",
         str(system_c),
-        str(repo_root / "firmware/src/driver/board_config.c"),
+        str(repo_root / "firmware/src/platform/boot_config.c"),
         str(tmp_path / "mock_runtime.c"),
         str(tmp_path / "main.c"),
         "-o",

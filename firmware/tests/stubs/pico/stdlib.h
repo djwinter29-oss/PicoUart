@@ -9,6 +9,13 @@
 #include "pico/time.h"
 #include <assert.h>
 
+#ifndef PICO_OK
+#define PICO_OK 0
+#endif
+#ifndef __not_in_flash_func
+#define __not_in_flash_func(function) function
+#endif
+
 /** @brief Mirror the SDK invariant assertion in native tests. */
 #define hard_assert(condition) assert(condition)
 

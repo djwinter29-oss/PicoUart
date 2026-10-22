@@ -37,7 +37,7 @@ public sealed class ConfigurationSaveTests
     [InlineData(1, 6)]
     [InlineData(2, 1)]
     [InlineData(3, 1)]
-    [InlineData(4, 3)]
+    [InlineData(4, 5)]
     public void RejectsMalformedConfigurationSaveReports(int offset, byte value)
     {
         byte[] payload = [1, 2, 0, 0, 0, 0, 0, 0];
@@ -67,6 +67,11 @@ public sealed class ConfigurationSaveTests
     [InlineData(0u, true, 1)]
     [InlineData(1u, true, 1)]
     [InlineData(2u, true, 2)]
+    [InlineData(3u, true, 1)]
+    [InlineData(1u, true, 2)]
+    [InlineData(2u, true, 1)]
+    [InlineData(3u, true, 2)]
+    [InlineData(4u, true, 2)]
     public void BuildsExactRequestPayload(uint profile, bool acknowledgement, byte mcuId)
     {
         var payload = Protocol.BuildConfigurationSave(profile, acknowledgement, mcuId);
@@ -76,14 +81,14 @@ public sealed class ConfigurationSaveTests
     }
 
     [Theory]
-    [InlineData(3u, true, 1)]
+    [InlineData(5u, true, 1)]
     [InlineData(uint.MaxValue, false, 0)]
     [InlineData(0u, false, 0)]
     [InlineData(0u, false, 255)]
     [InlineData(1u, false, 1)]
     [InlineData(2u, false, 2)]
-    [InlineData(1u, true, 2)]
-    [InlineData(2u, true, 1)]
+    [InlineData(4u, true, 1)]
+    [InlineData(3u, false, 2)]
     [InlineData(1u, true, 0)]
     [InlineData(2u, true, 255)]
     public void RejectsUnsafeOrWrongFamilyRequests(uint profile, bool acknowledgement, byte mcuId) =>

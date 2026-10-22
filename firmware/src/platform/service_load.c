@@ -2,7 +2,7 @@
  * @file service_load.c
  * @brief Single-writer per-core service windows with atomic result publication.
  */
-#include "driver/service_load.h"
+#include "platform/service_load.h"
 
 #include <assert.h>
 #include <stdbool.h>

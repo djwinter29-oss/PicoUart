@@ -1,7 +1,7 @@
 # Hardware UART Design
 
 This document describes the hardware UART backend used for the two logical ports mapped to RP2040/RP2350 UART
-peripherals. Shared adapter behavior is covered by [Backend Adapter Design](backend-adapter-design.md); generic ring
+peripherals. Shared backend behavior is covered by [Backend Contract Design](backend-adapter-design.md); generic ring
 ownership is covered by [Ring Buffer Design](ring-buffer-design.md).
 
 ## Ownership
@@ -15,7 +15,8 @@ and synchronization rules are defined in [Architecture](../architecture.md#inter
 
 Initialization validates the peripheral and pin configuration, claims RX and TX DMA channels, configures the PL011, and
 starts circular RX DMA. The backend holds its channels until deinitialization. Other DMA users must account for
-resources reserved across all configured backends.
+resources reserved across all configured backends. Reinitializing an active backend is rejected before hardware startup,
+preserving its DMA ownership, ring contents, and applied settings.
 
 Acquisition or initialization failure releases resources already claimed. The top-level driver rolls back initialized
 ports and does not start the worker unless all configured ports are ready. If a runtime line-format change cannot be
@@ -33,6 +34,11 @@ against live DMA progress and rejects overwritten snapshots so loss can be accou
 The worker sends bounded contiguous TX-ring spans by DMA when the UART is idle and no control transition blocks TX. It
 commits bytes only after transfer completion. Span length is limited by ring contiguity and a configured wire-time
 budget so one busy port cannot monopolize the worker.
+
+Completion accounting only commits the finished span; the outer poll owns the single TX launch attempt. Fixed DMA
+width, increment, peripheral request, and destination settings are configured once per channel claim. Each launch
+publishes ownership, sets the source address, restores channel `EN` without triggering, then triggers the transfer count.
+Restoring `EN` is required because format-change aborts clear it, including when the previous format is restored.
 
 DMA completion means the reserved bytes have been handed to the UART peripheral, not that the final stop bit has left
 the TX pin. Safe line-coding application also requires UART idle; an empty ring or completed DMA alone is insufficient.
@@ -52,8 +58,8 @@ flow-control guarantee.
 
 ## Baud Rate and Line Coding
 
-The adapter checks PL011 divisor representability and rejects rates exceeding the configured error tolerance. Supported
-data bits, stop bits, and parity are validated before application.
+The native backend checks PL011 divisor representability and rejects rates exceeding the configured error tolerance.
+Supported data bits, stop bits, and parity are validated before application.
 
 A line-coding change is deferred until the old TX boundary drains and the UART is idle. The backend pauses RX DMA,
 publishes stable progress, applies the supported format, then restarts DMA at the live producer position so unread data
@@ -74,5 +80,8 @@ and receive-status errors then remain visible through backend statistics and HID
 - RX overflow remains possible when the peer ignores RTS or the host does not drain CDC IN quickly enough.
 - DMA, IRQ timing, UART idle behavior, and RTS/CTS behavior require
     [hardware-in-the-loop testing](../../tests/hil-fixture-test-plan.md).
-- Host tests cover pure baud/policy and resource-claim logic; the real backend path is validated by firmware builds and
-  the documented hardware test plans.
+- Host tests cover baud/policy, resource claims, and rejection of repeated initialization. A real-driver harness with SDK
+  register-call mocks checks TX completion and launch ordering, fixed DMA reuse, RX pause/restart, and line-format success,
+  rollback, and unrecoverable failure. These checks do not establish physical register timing or UART line behavior.
+- Firmware builds validate SDK integration; the documented hardware test plans establish physical behavior for the
+  tested artifacts and conditions.
