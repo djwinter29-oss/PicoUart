@@ -34,6 +34,7 @@ def main() -> int:
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--tag", help="Release tag requiring PR and release validation")
     selection.add_argument("--sha", help="Test deployment commit requiring PR validation")
+    parser.add_argument("--expected-sha", help="Require the selected tag/commit to match the triggering workflow commit")
     arguments = parser.parse_args()
     repository = os.environ["GITHUB_REPOSITORY"]
     try:
@@ -42,6 +43,8 @@ def main() -> int:
             check=True, capture_output=True, text=True,
         )
         sha = json.loads(result.stdout)["sha"]
+        if arguments.expected_sha and sha != arguments.expected_sha:
+            raise RuntimeError("selected tag/commit no longer matches the triggering workflow commit")
         require_successful_run(repository, "pr-check.yml", sha)
         if arguments.tag:
             require_successful_run(repository, "release.yml", sha, arguments.tag)

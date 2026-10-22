@@ -222,7 +222,11 @@ def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -
     assert "needs: [build, host-validation, python-package, dotnet-packages]" in text
     publish = text.split("\n  publish:\n", 1)[1]
     assert 'require_release_checks.py --sha "$SOURCE_SHA"' in publish
-    assert publish.index("Require successful PR checks") < publish.index("Create draft GitHub Release")
+    assert publish.index("Require successful PR checks") < publish.index("- name: Publish GitHub Release")
+    assert "draft: false" in publish
+    assert "prerelease: false" in publish
+    assert "draft: true" not in publish
+    assert "Hardware qualification is separate" in publish
 
 
 def test_python_test_publication_overrides_git_version():
@@ -248,7 +252,8 @@ def test_pypi_publication_reuses_released_artifacts_with_scoped_oidc():
     text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
     verify, publish = text.split("\n  publish:\n", 1)
     publish = publish.split("\n  test-package:\n", 1)[0]
-    assert "types: [published]" in verify
+    assert "workflows: [Release]" in verify
+    assert "types: [completed]" in verify
     assert ".isDraft == false and .isPrerelease == false" in verify
     assert "gh release download" in verify
     assert 'require_release_checks.py --tag "$RELEASE_TAG"' in verify
@@ -344,7 +349,8 @@ def test_pypi_wheel_verification_rejects_invalid_release_artifacts(tmp_path, cas
 def test_webhid_pages_requires_a_published_release_and_checks_the_tag() -> None:
     text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
 
-    assert "types: [published]" in text
+    assert "workflows: [Release]" in text
+    assert "types: [completed]" in text
     assert "workflow_dispatch:" in text
     assert "tools/release/resolve-release-version.sh push '' \"$RELEASE_TAG\"" in text
     assert "gh release view" in text
@@ -477,6 +483,57 @@ def test_publication_gate_requires_all_applicable_workflows(monkeypatch, tmp_pat
         assert output.read_text() == "sha=abc\n"
         assert any("pr-check.yml" in call for call in calls)
         assert any("release.yml" in call for call in calls) == (mode == "--tag")
+
+
+@pytest.mark.parametrize("filename,job_name", [
+    ("publish-pypi.yml", "verify"), ("publish-webhid.yml", "build"),
+])
+def test_publishers_follow_successful_same_repository_tag_builds(filename, job_name):
+    text = (REPO_ROOT / ".github/workflows" / filename).read_text(encoding="utf-8")
+    assert "  workflow_run:\n    workflows: [Release]\n    types: [completed]" in text
+    assert "  release:\n" not in text
+    job = text.split(f"\n  {job_name}:\n", 1)[1].split("    runs-on:", 1)[0]
+    assert "github.event.workflow_run.conclusion == 'success' &&" in job
+    assert "github.event.workflow_run.event == 'push' &&" in job
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in job
+    assert "RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}" in text
+    assert "SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}" in text
+    assert '--tag "$RELEASE_TAG" --expected-sha "$SOURCE_SHA"' in text
+    assert "github.event.release" not in text
+
+
+@pytest.mark.parametrize("expected_sha,success", [("abc", True), ("other", False)])
+def test_publication_gate_checks_triggering_commit_before_workflow_validation(
+        monkeypatch, tmp_path, expected_sha, success):
+    import sys
+
+    calls = []
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr(sys, "argv", ["require_release_checks.py", "--tag", "v1.2.3",
+                                     "--expected-sha", expected_sha])
+
+    def gh_api(command, **kwargs):
+        endpoint = command[-1]
+        calls.append(endpoint)
+        if "/commits/" in endpoint:
+            payload = {"sha": "abc"}
+        else:
+            run = {"head_sha": "abc", "event": "push", "head_branch": "v1.2.3", "run_number": 1,
+                   "run_attempt": 1, "status": "completed", "conclusion": "success",
+                   "html_url": "https://example.test/1"}
+            payload = [{"workflow_runs": [run]}]
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload))
+
+    monkeypatch.setattr(require_release_checks.subprocess, "run", gh_api)
+    assert require_release_checks.main() == (0 if success else 1)
+    if success:
+        assert output.read_text() == "sha=abc\n"
+        assert len(calls) == 3
+    else:
+        assert not output.exists()
+        assert len(calls) == 1
 
 
 def test_publication_gate_blocks_when_github_api_is_unavailable(monkeypatch):

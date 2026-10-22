@@ -7,6 +7,7 @@ import threading
 import time
 
 import pytest
+from flask import session
 
 from pico_uart.protocol import parse_hardware_info, parse_status
 from pico_uart.web.app import create_app
@@ -78,6 +79,21 @@ def test_dashboard_routes_require_csrf_and_dispatch_controls():
     assert response.status_code == 200
     assert response.json == {"ok": True}
     assert service.actions == ["toggle-led"]
+
+
+def test_session_membership_access_sets_vary_cookie():
+    app = create_app(FakeDashboard())
+
+    @app.get("/session-membership")
+    def session_membership():
+        return {"has_token": "csrf_token" in session}
+
+    client = app.test_client()
+    _csrf_token(client)
+    response = client.get("/session-membership")
+    assert response.status_code == 200
+    assert response.json == {"has_token": True}
+    assert "Cookie" in response.vary
 
 
 def test_dashboard_serves_shared_assets():

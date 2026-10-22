@@ -75,6 +75,6 @@ browser/device access. Mocked checks do not prove native WebHID compatibility.
 
 ## Release Order And Gates
 
-The [release guide](releasing.md#workflow-overview) owns ordering, draft promotion, and shared gates. The
+The [release guide](releasing.md#workflow-overview) owns automatic tested-tag publication and shared gates. The
 [publishing runbook](host-app-publishing.md) owns channel-specific operations. Host checks do not replace firmware
 HIL: record tested firmware, supported HID contract, platforms, and unverified compatibility claims in release notes.
