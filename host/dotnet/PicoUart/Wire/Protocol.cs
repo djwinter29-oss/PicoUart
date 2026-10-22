@@ -24,7 +24,7 @@ public sealed record FaultHistory(uint Count);
 public sealed record ChannelDiagnostics(byte Health, uint BaudRate, byte DataBits, byte StopBits,
     string? Parity, byte? TxPin, byte? RxPin, Dictionary<string, FaultHistory> Faults, uint LastFaultUptimeS);
 public sealed record ChannelStatus(int Id, ushort Sequence, uint IntervalMs, byte Health, int RingHighWatermark,
-    uint ControllerTxBytes, uint ControllerRxBytes, uint CdcTxBytes, uint CdcRxBytes, ChannelDiagnostics Diagnostics);
+    uint UartTxBytes, uint UartRxBytes, uint CdcTxBytes, uint CdcRxBytes, ChannelDiagnostics Diagnostics);
 public sealed record ControlResult(byte Command, byte Flags, byte Status, uint RequestId, uint? RequestedProfile,
     ConfigurationStatus Configuration, byte ErrorReason);
 

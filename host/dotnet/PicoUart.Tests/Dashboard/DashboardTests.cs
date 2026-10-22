@@ -46,7 +46,7 @@ public sealed class DashboardTests
         snapshot.Apply(Sample(2));
         Assert.Equal(150000, snapshot.Channels[0].Totals.UartTx);
         Assert.Equal(0ul, snapshot.Channels[0].ObservedIntervalMs);
-        snapshot.ApplyFeature(Sample(2) with { ControllerTxBytes = 99999, IntervalMs = 800 });
+        snapshot.ApplyFeature(Sample(2) with { UartTxBytes = 99999, IntervalMs = 800 });
         snapshot.Apply(Sample(3) with { IntervalMs = 700 });
         Assert.Equal(150000, snapshot.Channels[0].Totals.UartTx);
         Assert.Equal(700ul, snapshot.Channels[0].ObservedIntervalMs);
@@ -88,8 +88,8 @@ public sealed class DashboardTests
     public void DuplicateDoesNotProduceAnExactRateAndWireCounterWrapIsModulo32()
     {
         var snapshot = new DashboardSnapshot();
-        snapshot.Apply(Sample(1) with { ControllerTxBytes = uint.MaxValue - 15 });
-        snapshot.Apply(Sample(2) with { ControllerTxBytes = 32 });
+        snapshot.Apply(Sample(1) with { UartTxBytes = uint.MaxValue - 15 });
+        snapshot.Apply(Sample(2) with { UartTxBytes = 32 });
         Assert.Equal(32, snapshot.Channels[0].Totals.UartTx);
         Assert.Equal(48, snapshot.Channels[0].Traffic.UartTx);
         Assert.Equal(500ul, snapshot.Channels[0].ObservedIntervalMs);

@@ -81,7 +81,10 @@ implementation.
 ## USB Mount and Unmount Reset
 
 USB mount and unmount clear host-facing CDC state, cancel soft-pending requests, and reset HID scheduling and reset-arm
-state. Canceled requests must not later produce timeout errors.
+state. Canceled requests must not later produce timeout errors. Separately, a CDC DTR closed-to-open edge requests a
+per-port buffered-channel reset: USB core clears that interface's CDC FIFOs and pauses its bridge, then the UART worker
+restarts only that backend. The reset discards queued bytes, preserves applied line coding and cumulative counters, and
+does not reboot the board. Any new line-coding request is applied after the reset completes.
 
 ## Host-Visible Rules
 

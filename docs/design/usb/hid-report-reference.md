@@ -338,8 +338,8 @@ The six reports are not an atomic board-wide snapshot, and their sequences or in
 | 3 | 4 | `interval_ms` | Elapsed milliseconds since this channel's preceding accepted Input publication; saturates at `UINT32_MAX`. |
 | 7 | 1 | `health` | Driver, CDC-open, backend, and historical RX flags. |
 | 8 | 1 | `ring_high_watermark_blocks` | Largest RX/TX ring occupancy, rounded up to 16-byte blocks. |
-| 9 | 4 | `controller_tx_bytes` | Low 32 bits of UART controller TX bytes since MCU boot; wraps modulo $2^{32}$. |
-| 13 | 4 | `controller_rx_bytes` | Low 32 bits of valid UART controller RX bytes since MCU boot; wraps modulo $2^{32}$. |
+| 9 | 4 | `uart_tx_bytes` | Low 32 bits of UART TX bytes since MCU boot; wraps modulo $2^{32}$. |
+| 13 | 4 | `uart_rx_bytes` | Low 32 bits of valid UART RX bytes since MCU boot; wraps modulo $2^{32}$. |
 | 17 | 4 | `cdc_tx_bytes` | Low 32 bits of device-to-host CDC bytes since MCU boot; wraps modulo $2^{32}$. |
 | 21 | 4 | `cdc_rx_bytes` | Low 32 bits of host-to-device CDC bytes since MCU boot; wraps modulo $2^{32}$. |
 | 25 | 4 | `baud_rate` | Successfully applied baud rate, not last requested; zero if unavailable. |

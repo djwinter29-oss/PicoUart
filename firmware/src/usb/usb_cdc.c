@@ -45,6 +45,8 @@ typedef struct {
 static usb_cdc_pending_line_coding_t usb_cdc_line_coding_pending[USB_CDC_PORT_COUNT];
 /** @brief Per-port host-side CDC transport state. */
 static usb_cdc_port_stats_t usb_cdc_stats[USB_CDC_PORT_COUNT];
+/** @brief True after the RX FIFO was cleared for the current DTR-open reset. */
+static bool usb_cdc_reset_rx_flushed[USB_CDC_PORT_COUNT];
 /** @brief Interface serviced first on the next bounded CDC bridge pass. */
 static uint8_t usb_cdc_poll_start_itf;
 /** @brief True when a partial CDC IN buffer is waiting for its latency deadline. */
@@ -278,6 +280,19 @@ void usb_cdc_poll(void)
     for (uint8_t offset = 0u; offset < USB_CDC_PORT_COUNT; ++offset) {
         uint8_t itf = (uint8_t)((start_itf + offset) % USB_CDC_PORT_COUNT);
 
+        if (uart_driver_buffer_reset_pending((uart_port_id_t)itf)) {
+            if (!uart_driver_buffer_reset_ready((uart_port_id_t)itf)) {
+                if (!usb_cdc_reset_rx_flushed[itf]) {
+                    tud_cdc_n_read_flush(itf);
+                    usb_cdc_reset_rx_flushed[itf] = true;
+                }
+                if (tud_cdc_n_write_clear(itf)) {
+                    uart_driver_buffer_reset_usb_quiesced((uart_port_id_t)itf);
+                }
+            }
+            continue;
+        }
+
         usb_cdc_apply_pending_line_coding(itf);
 
         if (!uart_driver_port_is_ready((uart_port_id_t)itf)) {
@@ -299,9 +314,15 @@ void usb_cdc_poll(void)
  */
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 {
+    bool was_open;
     (void)rts;
 
     if (itf < USB_CDC_PORT_COUNT) {
+        was_open = usb_cdc_stats[itf].opened;
+        if (usb_cdc_dtr_open_should_reset_channel(was_open, dtr) &&
+            uart_driver_request_buffer_reset((uart_port_id_t)itf)) {
+            usb_cdc_reset_rx_flushed[itf] = false;
+        }
         usb_cdc_stats[itf].opened = dtr;
     }
 }

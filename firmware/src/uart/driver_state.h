@@ -25,6 +25,8 @@ typedef struct {
     spin_lock_t *status_lock;                                 /**< Lock protecting shared status and generations. */
     uart_control_pending_t pending_controls[UART_PORT_COUNT]; /**< Worker-owned control state. */
     bool soft_pending_controls[UART_PORT_COUNT];              /**< Core-0 mailbox wait state. */
+    bool buffer_reset_pending[UART_PORT_COUNT];               /**< Core-0 requested a fresh CDC/UART channel. */
+    bool buffer_reset_usb_quiesced[UART_PORT_COUNT];          /**< Core-0 stopped bridging and cleared CDC FIFOs. */
     uint32_t control_generations[UART_PORT_COUNT];            /**< Latest host generation per port. */
     volatile uint32_t stats_sequence[UART_PORT_COUNT];        /**< Coherent stats snapshot sequence. */
     size_t poll_start_index;            /**< First port of the next worker step (control and I/O). */

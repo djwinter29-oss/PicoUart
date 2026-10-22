@@ -174,8 +174,8 @@ public sealed class ProtocolTests
         Assert.Equal(ushort.MaxValue, decoded.Sequence);
         Assert.Equal(700u, decoded.IntervalMs);
         Assert.Equal(4080, decoded.RingHighWatermark);
-        Assert.Equal(150000u, decoded.ControllerTxBytes);
-        Assert.Equal(200000u, decoded.ControllerRxBytes);
+        Assert.Equal(150000u, decoded.UartTxBytes);
+        Assert.Equal(200000u, decoded.UartRxBytes);
         Assert.Equal(0x80000000u, decoded.CdcTxBytes);
         Assert.Equal(uint.MaxValue, decoded.CdcRxBytes);
         Assert.Equal("N", decoded.Diagnostics.Parity);

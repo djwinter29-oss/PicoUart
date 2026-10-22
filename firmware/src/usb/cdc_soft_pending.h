@@ -1,6 +1,6 @@
 /**
  * @file cdc_soft_pending.h
- * @brief Pure helpers for CDC soft-pending deadline coalescing (host-testable).
+ * @brief Pure host-testable CDC line-state and soft-pending helpers.
  */
 
 #ifndef USB_CDC_SOFT_PENDING_H
@@ -8,6 +8,17 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+
+/**
+ * @brief Decide whether a DTR transition starts a fresh CDC/UART channel.
+ * @param was_open Previous DTR state for this interface.
+ * @param is_open New DTR state for this interface.
+ * @return `true` only on a closed-to-open transition.
+ */
+static inline bool usb_cdc_dtr_open_should_reset_channel(bool was_open, bool is_open)
+{
+    return !was_open && is_open;
+}
 
 /**
  * @brief Decide whether arming soft-pending should refresh the expiry deadline.

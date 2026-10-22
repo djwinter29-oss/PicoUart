@@ -117,6 +117,11 @@ static bool test_startup_set_line_coding(void *instance, const uart_driver_line_
     return (instance != NULL) && (line_coding != NULL);
 }
 
+static bool test_startup_reset_buffers(void *instance)
+{
+    return instance != NULL;
+}
+
 static bool test_startup_rx_snapshot_is_current(const void *instance, uint32_t consumer_sequence)
 {
     (void)consumer_sequence;
@@ -152,6 +157,7 @@ const uart_backend_ops_t uart_backend_hw_ops = {
     .line_coding_matches = test_startup_line_coding_matches,
     .line_coding_acceptable = test_startup_line_coding_acceptable,
     .set_line_coding = test_startup_set_line_coding,
+    .reset_buffers = test_startup_reset_buffers,
     .rx_snapshot_is_current = test_startup_rx_snapshot_is_current,
     .clear_rx_error_baseline = test_startup_clear_rx_error_baseline,
     .baud_rate = test_startup_baud_rate,
@@ -169,6 +175,7 @@ const uart_backend_ops_t uart_backend_pio_ops = {
     .line_coding_matches = test_startup_line_coding_matches,
     .line_coding_acceptable = test_startup_line_coding_acceptable,
     .set_line_coding = test_startup_set_line_coding,
+    .reset_buffers = test_startup_reset_buffers,
     .rx_snapshot_is_current = test_startup_rx_snapshot_is_current,
     .clear_rx_error_baseline = test_startup_clear_rx_error_baseline,
     .baud_rate = test_startup_baud_rate,
@@ -345,6 +352,14 @@ void test_startup_rolls_back_partial_backend_init_and_retries(void)
 
     TEST_ASSERT_TRUE(uart_driver_init());
     TEST_ASSERT_EQUAL_UINT(1u, test_multicore_launch_calls);
+
+    TEST_ASSERT_TRUE(uart_driver_request_buffer_reset(UART_PORT_2));
+    TEST_ASSERT_TRUE(uart_driver_buffer_reset_pending(UART_PORT_2));
+    TEST_ASSERT_FALSE(uart_driver_buffer_reset_ready(UART_PORT_2));
+    uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);
+    TEST_ASSERT_TRUE(uart_driver_buffer_reset_ready(UART_PORT_2));
+    TEST_ASSERT_FALSE(uart_driver_request_buffer_reset(UART_PORT_2));
+    TEST_ASSERT_TRUE(uart_driver_buffer_reset_ready(UART_PORT_2));
 }
 
 int main(void)

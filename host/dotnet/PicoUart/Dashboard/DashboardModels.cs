@@ -110,14 +110,14 @@ public sealed class DashboardSnapshot
         channel.Stale = false;
         var counters = new Traffic
         {
-            UartTx = source.ControllerTxBytes, UartRx = source.ControllerRxBytes,
+            UartTx = source.UartTxBytes, UartRx = source.UartRxBytes,
             UsbTx = source.CdcTxBytes, UsbRx = source.CdcRxBytes
         };
         var previous = channel.CounterBaseline;
         channel.Traffic = previous is null ? new() : new()
         {
-            UartTx = Delta(source.ControllerTxBytes, previous.UartTx),
-            UartRx = Delta(source.ControllerRxBytes, previous.UartRx),
+            UartTx = Delta(source.UartTxBytes, previous.UartTx),
+            UartRx = Delta(source.UartRxBytes, previous.UartRx),
             UsbTx = Delta(source.CdcTxBytes, previous.UsbTx),
             UsbRx = Delta(source.CdcRxBytes, previous.UsbRx)
         };

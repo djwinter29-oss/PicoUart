@@ -105,8 +105,8 @@ static uart_backend_stats_t hw_uart_driver_stats(const void *context)
         return (uart_backend_stats_t){0};
     }
     return (uart_backend_stats_t){
-        .controller_tx_bytes = driver->controller_tx_bytes,
-        .controller_rx_bytes = driver->controller_rx_bytes,
+        .uart_tx_bytes = driver->uart_tx_bytes,
+        .uart_rx_bytes = driver->uart_rx_bytes,
         .rx_error_count = driver->rx_error_count,
     };
 }
@@ -122,6 +122,7 @@ const uart_backend_ops_t uart_backend_hw_ops = {
     .line_coding_matches = hw_uart_driver_line_coding_matches,
     .line_coding_acceptable = hw_uart_driver_line_coding_acceptable,
     .set_line_coding = hw_uart_driver_set_line_coding,
+    .reset_buffers = hw_uart_driver_reset_buffers,
     .rx_snapshot_is_current = hw_uart_driver_rx_snapshot_is_current,
     .clear_rx_error_baseline = hw_uart_driver_clear_rx_error_baseline,
     .baud_rate = hw_uart_driver_baud_rate,

@@ -225,7 +225,7 @@ static void usb_hid_harvest_traffic(const uart_driver_port_stats_t uart[UART_POR
 {
     for (size_t channel = 0u; channel < UART_PORT_COUNT; ++channel) {
         usb_hid_channel_traffic_t *traffic = &usb_hid_traffic[channel];
-        const uint32_t raw[4] = {uart[channel].controller_tx_bytes, uart[channel].controller_rx_bytes,
+        const uint32_t raw[4] = {uart[channel].uart_tx_bytes, uart[channel].uart_rx_bytes,
                                  cdc[channel].tx_bytes, cdc[channel].rx_bytes};
         if (!traffic->initialized) {
             memcpy(traffic->previous, raw, sizeof(raw));
@@ -295,13 +295,13 @@ static void usb_hid_start_traffic_session(bool boot_start)
         usb_hid_channel_traffic_t *traffic = &usb_hid_traffic[channel];
         if (boot_start) {
             memset(traffic, 0, sizeof(*traffic));
-            traffic->total[0] = uart[channel].controller_tx_bytes;
-            traffic->total[1] = uart[channel].controller_rx_bytes;
+            traffic->total[0] = uart[channel].uart_tx_bytes;
+            traffic->total[1] = uart[channel].uart_rx_bytes;
             traffic->total[2] = cdc[channel].tx_bytes;
             traffic->total[3] = cdc[channel].rx_bytes;
         }
-        traffic->previous[0] = uart[channel].controller_tx_bytes;
-        traffic->previous[1] = uart[channel].controller_rx_bytes;
+        traffic->previous[0] = uart[channel].uart_tx_bytes;
+        traffic->previous[1] = uart[channel].uart_rx_bytes;
         traffic->previous[2] = cdc[channel].tx_bytes;
         traffic->previous[3] = cdc[channel].rx_bytes;
         traffic->last_publication_ms = now_ms;

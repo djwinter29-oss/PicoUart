@@ -62,6 +62,11 @@ static bool test_set_line_coding(void *instance, const uart_driver_line_coding_t
     return line_coding != NULL;
 }
 
+static bool test_reset_buffers(void *instance)
+{
+    return instance != NULL;
+}
+
 static bool test_snapshot(const void *instance, uint32_t sequence)
 {
     (void)instance;
@@ -97,6 +102,7 @@ const uart_backend_ops_t uart_backend_hw_ops = {
     .line_coding_matches = test_line_coding_matches,
     .line_coding_acceptable = test_line_coding_acceptable,
     .set_line_coding = test_set_line_coding,
+    .reset_buffers = test_reset_buffers,
     .rx_snapshot_is_current = test_snapshot,
     .clear_rx_error_baseline = test_baseline,
     .baud_rate = test_baud_rate,

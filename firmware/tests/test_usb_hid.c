@@ -258,8 +258,8 @@ static void test_channel_feature_and_input_reads_are_non_consuming(void)
 {
     uint8_t feature[64];
     uint8_t input[64];
-    port_stats[0].controller_tx_bytes = 100u;
-    port_stats[0].controller_rx_bytes = 200u;
+    port_stats[0].uart_tx_bytes = 100u;
+    port_stats[0].uart_rx_bytes = 200u;
     cdc_stats[0].tx_bytes = 300u;
     cdc_stats[0].rx_bytes = 400u;
     pico_test_time_us = 1000000;
@@ -291,7 +291,7 @@ static void test_channel_feature_and_input_reads_are_non_consuming(void)
 static void test_channel_publication_commits_independent_sequence_and_baseline(void)
 {
     uint8_t feature[64];
-    port_stats[0].controller_tx_bytes = 25u;
+    port_stats[0].uart_tx_bytes = 25u;
     endpoint_ready = true;
     pico_test_time_us = 499000;
     usb_hid_poll();
@@ -307,7 +307,7 @@ static void test_channel_publication_commits_independent_sequence_and_baseline(v
     for (size_t channel = 1u; channel < UART_PORT_COUNT; ++channel) {
         usb_hid_traffic[channel].last_publication_ms = 1000u;
     }
-    port_stats[0].controller_tx_bytes = 50u;
+    port_stats[0].uart_tx_bytes = 50u;
     pico_test_time_us = 600000;
     TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, feature));
     TEST_ASSERT_EQUAL_UINT16(1u, (uint16_t)feature[1] | ((uint16_t)feature[2] << 8));
@@ -325,9 +325,9 @@ static void test_channel_publication_commits_independent_sequence_and_baseline(v
 static void test_boot_counter_wraps_on_wire(void)
 {
     uint8_t payload[64];
-    port_stats[0].controller_tx_bytes = UINT32_MAX - 15u;
+    port_stats[0].uart_tx_bytes = UINT32_MAX - 15u;
     usb_hid_init();
-    port_stats[0].controller_tx_bytes = 32u;
+    port_stats[0].uart_tx_bytes = 32u;
     pico_test_time_us = 1000;
     TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, payload));
     TEST_ASSERT_EQUAL_UINT32(32u, usb_hid_read_u32(payload + 9u));
@@ -336,9 +336,9 @@ static void test_boot_counter_wraps_on_wire(void)
 static void test_boot_counters_survive_usb_host_reset(void)
 {
     uint8_t payload[64];
-    port_stats[0].controller_tx_bytes = 10u;
+    port_stats[0].uart_tx_bytes = 10u;
     usb_hid_init();
-    port_stats[0].controller_tx_bytes = 25u;
+    port_stats[0].uart_tx_bytes = 25u;
     usb_hid_reset_host_state();
     TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, payload));
     TEST_ASSERT_EQUAL_UINT32(25u, usb_hid_read_u32(payload + 9u));

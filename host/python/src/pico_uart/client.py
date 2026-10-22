@@ -41,8 +41,8 @@ from .transport import open_device
 
 
 TRAFFIC_FIELDS = {
-    "uart_tx": "controller_tx_bytes",
-    "uart_rx": "controller_rx_bytes",
+    "uart_tx": "uart_tx_bytes",
+    "uart_rx": "uart_rx_bytes",
     "usb_tx": "cdc_tx_bytes",
     "usb_rx": "cdc_rx_bytes",
 }
