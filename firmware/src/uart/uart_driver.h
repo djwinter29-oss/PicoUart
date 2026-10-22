@@ -87,6 +87,20 @@ bool uart_driver_port_is_ready(uart_port_id_t port_id);
 bool uart_driver_request_buffer_reset(uart_port_id_t port_id);
 
 /**
+ * @brief Queue a per-port backend start after a CDC DTR-open transition.
+ * @param port_id Logical UART port identifier.
+ * @return `true` when the start request is queued or already pending.
+ */
+bool uart_driver_request_channel_start(uart_port_id_t port_id);
+
+/**
+ * @brief Return whether a channel start is waiting for the UART worker.
+ * @param port_id Logical UART port identifier.
+ * @return `true` while a start request is pending.
+ */
+bool uart_driver_channel_start_pending(uart_port_id_t port_id);
+
+/**
  * @brief Return whether a per-port reset is holding the CDC bridge.
  * @param port_id Logical UART port identifier.
  * @return `true` while the reset request is pending.

@@ -193,9 +193,9 @@ def close_port(file_descriptor: int, settings: list | tuple) -> None:
 
 
 def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
-    """Close every configured port and return the first terminal cleanup error."""
+    """Close configured ports in fixture order and return the first cleanup error."""
     first_error = None
-    for file_descriptor, settings in reversed(ports):
+    for file_descriptor, settings in ports:
         try:
             close_port(file_descriptor, settings)
         except OSError as error:

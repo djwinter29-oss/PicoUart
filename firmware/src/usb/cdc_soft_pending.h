@@ -10,14 +10,14 @@
 #include <stdint.h>
 
 /**
- * @brief Decide whether a DTR transition starts a fresh CDC/UART channel.
+ * @brief Decide whether a DTR close requests a fresh CDC/UART channel state.
  * @param was_open Previous DTR state for this interface.
  * @param is_open New DTR state for this interface.
- * @return `true` only on a closed-to-open transition.
+ * @return `true` only on an open-to-closed transition.
  */
-static inline bool usb_cdc_dtr_open_should_reset_channel(bool was_open, bool is_open)
+static inline bool usb_cdc_dtr_close_should_reset_channel(bool was_open, bool is_open)
 {
-    return !was_open && is_open;
+    return was_open && !is_open;
 }
 
 /**

@@ -111,6 +111,37 @@ def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.Monkey
     assert closes == [17, 18]
 
 
+def test_configure_ports_opens_pair_before_applying_line_coding(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _load_bridge()
+    events = []
+
+    def open_port(path, _baud):
+        events.append(("open", path))
+        return len(events), []
+
+    def set_line_coding(descriptor, _baud):
+        events.append(("line coding", descriptor))
+
+    monkeypatch.setattr(bridge, "open_port", open_port)
+    monkeypatch.setattr(bridge, "set_port_line_coding", set_line_coding)
+    monkeypatch.setattr(bridge.time, "sleep", lambda seconds: events.append(("sleep", seconds)))
+    monkeypatch.setattr(bridge.termios, "tcflush", lambda descriptor, _queue: events.append(("flush", descriptor)))
+
+    ports = bridge.configure_ports(["pico", "peer"], 115200)
+
+    assert ports == [(1, []), (2, [])]
+    assert events == [
+        ("open", "pico"),
+        ("open", "peer"),
+        ("sleep", bridge.PORT_OPEN_SETTLE_SECONDS),
+        ("line coding", 1),
+        ("line coding", 2),
+        ("sleep", bridge.LINE_CODING_SETTLE_SECONDS),
+        ("flush", 1),
+        ("flush", 2),
+    ]
+
+
 def test_run_test_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     bridge = _load_bridge()
     arguments = type(

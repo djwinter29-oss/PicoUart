@@ -10,7 +10,15 @@ import sys
 import termios
 import time
 
-from .config import BAUD_RATES, STANDARD_BAUD_RATES, configure_port
+from .config import (
+    BAUD_RATES,
+    LINE_CODING_SETTLE_SECONDS,
+    PORT_OPEN_SETTLE_SECONDS,
+    STANDARD_BAUD_RATES,
+    configure_port,
+    open_port,
+    set_port_line_coding,
+)
 
 
 def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
@@ -29,6 +37,24 @@ def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
                 if first_error is None:
                     first_error = error
     return first_error
+
+
+def configure_ports(paths: list[str], baud_rate: int) -> list[tuple[int, list]]:
+    """Open all linked endpoints before setting either line coding."""
+    ports = []
+    try:
+        for path in paths:
+            ports.append(open_port(path, baud_rate))
+        time.sleep(PORT_OPEN_SETTLE_SECONDS)
+        for file_descriptor, _settings in ports:
+            set_port_line_coding(file_descriptor, baud_rate)
+        time.sleep(LINE_CODING_SETTLE_SECONDS)
+        for file_descriptor, _settings in ports:
+            termios.tcflush(file_descriptor, termios.TCIOFLUSH)
+        return ports
+    except BaseException:
+        close_ports(ports)
+        raise
 
 
 def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
@@ -320,7 +346,10 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
             passed = test_direction(pico_fd, pico_fd, "pico-loopback", arguments.payload_bytes, arguments.timeout)
             result = 0 if passed else 1
         else:
-            peer_fd, peer_settings = configure_port(arguments.peer_port, baud_rate)
+            peer_fd, peer_settings = -1, None
+            ports = configure_ports([arguments.pico_port, arguments.peer_port], baud_rate)
+            pico_fd, pico_settings = ports[0]
+            peer_fd, peer_settings = ports[1]
             time.sleep(arguments.settle_seconds)
             print(f"Testing {arguments.label} at {baud_rate} baud")
             pico_to_peer = test_direction(pico_fd, peer_fd, "pico-to-peer", arguments.payload_bytes, arguments.timeout)

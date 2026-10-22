@@ -120,6 +120,18 @@ def test_health_cleanliness_checks_flags_and_overrun_baseline() -> None:
     baseline = _clean_snapshot()
 
     assert health.health_is_clean(baseline, baseline)
+    closed = {**baseline, "channels": {index: (0x20 if index >= 2 else 0) for index in range(6)}}
+    assert health.health_is_clean(closed)
+    closed_pending = {**closed, "channels": {index: flags | health.CONTROL_PENDING_BIT
+                                                 for index, flags in closed["channels"].items()}}
+    assert health.health_is_clean(closed_pending)
+    starting = {**closed, "channels": {**closed["channels"], 0: health.CDC_OPEN_BIT}}
+    assert not health.health_is_clean(starting)
+    open_pending = {
+        **baseline,
+        "channels": {**baseline["channels"], 0: 1 | health.CDC_OPEN_BIT | health.CONTROL_PENDING_BIT},
+    }
+    assert not health.health_is_clean(open_pending)
     assert not health.health_is_clean(None)
     assert not health.health_is_clean({**baseline, "error": "query failed"})
     assert not health.health_is_clean({**baseline, "channels": {0: 1}})

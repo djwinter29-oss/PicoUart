@@ -91,7 +91,7 @@ def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.Monkey
     error = stress.close_ports([(19, []), (20, [])])
     assert isinstance(error, OSError)
     assert str(error) == "restore failed"
-    assert closes == [20, 19]
+    assert closes == [19, 20]
 
 
 def test_run_stream_collects_first_transfer_timing(monkeypatch: pytest.MonkeyPatch) -> None:

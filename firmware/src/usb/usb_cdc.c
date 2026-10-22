@@ -45,7 +45,7 @@ typedef struct {
 static usb_cdc_pending_line_coding_t usb_cdc_line_coding_pending[USB_CDC_PORT_COUNT];
 /** @brief Per-port host-side CDC transport state. */
 static usb_cdc_port_stats_t usb_cdc_stats[USB_CDC_PORT_COUNT];
-/** @brief True after the RX FIFO was cleared for the current DTR-open reset. */
+/** @brief True after the RX FIFO was cleared for the current DTR-close reset. */
 static bool usb_cdc_reset_rx_flushed[USB_CDC_PORT_COUNT];
 /** @brief Interface serviced first on the next bounded CDC bridge pass. */
 static uint8_t usb_cdc_poll_start_itf;
@@ -264,6 +264,12 @@ void tud_mount_cb(void)
 
 void tud_umount_cb(void)
 {
+    for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
+        if (usb_cdc_stats[itf].opened && uart_driver_request_buffer_reset((uart_port_id_t)itf)) {
+            usb_cdc_reset_rx_flushed[itf] = false;
+            uart_driver_buffer_reset_usb_quiesced((uart_port_id_t)itf);
+        }
+    }
     usb_cdc_reset_host_state();
     usb_hid_reset_host_state();
 }
@@ -293,6 +299,11 @@ void usb_cdc_poll(void)
             continue;
         }
 
+        if (!usb_cdc_stats[itf].opened) {
+            tud_cdc_n_read_flush(itf);
+            continue;
+        }
+
         usb_cdc_apply_pending_line_coding(itf);
 
         if (!uart_driver_port_is_ready((uart_port_id_t)itf)) {
@@ -309,7 +320,7 @@ void usb_cdc_poll(void)
 /**
  * @brief TinyUSB callback for CDC line-state changes.
  * @param itf TinyUSB CDC interface index.
- * @param dtr Host DTR state (recorded for HID monitoring only; does not gate bridging).
+ * @param dtr Host DTR state; opening starts the backend and closing stops it.
  * @param rts Host RTS state (currently ignored; HW UART RTS/CTS is board-side).
  */
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
@@ -319,9 +330,17 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 
     if (itf < USB_CDC_PORT_COUNT) {
         was_open = usb_cdc_stats[itf].opened;
-        if (usb_cdc_dtr_open_should_reset_channel(was_open, dtr) &&
-            uart_driver_request_buffer_reset((uart_port_id_t)itf)) {
-            usb_cdc_reset_rx_flushed[itf] = false;
+        if (usb_cdc_dtr_close_should_reset_channel(was_open, dtr)) {
+            usb_cdc_line_coding_pending[itf].pending = false;
+            usb_cdc_line_coding_pending[itf].deadline = nil_time;
+            usb_cdc_tx_flush_pending[itf] = false;
+            usb_cdc_tx_flush_deadline[itf] = nil_time;
+            uart_driver_reset_soft_pending((uart_port_id_t)itf);
+            if (uart_driver_request_buffer_reset((uart_port_id_t)itf)) {
+                usb_cdc_reset_rx_flushed[itf] = false;
+            }
+        } else if (!was_open && dtr) {
+            uart_driver_request_channel_start((uart_port_id_t)itf);
         }
         usb_cdc_stats[itf].opened = dtr;
     }

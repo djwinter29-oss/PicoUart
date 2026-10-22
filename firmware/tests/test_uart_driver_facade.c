@@ -341,19 +341,23 @@ void test_startup_rolls_back_partial_backend_init_and_retries(void)
     test_startup_fail_at = 0u;
     TEST_ASSERT_TRUE(uart_driver_init());
     TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT, test_startup_init_calls);
-    TEST_ASSERT_EQUAL_UINT(0u, test_startup_deinit_calls);
+    TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT, test_startup_deinit_calls);
     TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT, test_startup_baseline_calls);
     TEST_ASSERT_EQUAL_UINT(1u, test_multicore_launch_calls);
     TEST_ASSERT_TRUE(uart_driver_worker_is_running());
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        TEST_ASSERT_TRUE(test_startup_initialized[index]);
-        TEST_ASSERT_TRUE(uart_driver_port_is_ready((uart_port_id_t)index));
+        TEST_ASSERT_FALSE(test_startup_initialized[index]);
+        TEST_ASSERT_FALSE(uart_driver_port_is_ready((uart_port_id_t)index));
     }
 
     TEST_ASSERT_TRUE(uart_driver_init());
     TEST_ASSERT_EQUAL_UINT(1u, test_multicore_launch_calls);
 
+    TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_2));
+    TEST_ASSERT_TRUE(uart_driver_channel_start_pending(UART_PORT_2));
+    TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_2));
     TEST_ASSERT_TRUE(uart_driver_request_buffer_reset(UART_PORT_2));
+    TEST_ASSERT_FALSE(uart_driver_channel_start_pending(UART_PORT_2));
     TEST_ASSERT_TRUE(uart_driver_buffer_reset_pending(UART_PORT_2));
     TEST_ASSERT_FALSE(uart_driver_buffer_reset_ready(UART_PORT_2));
     uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);

@@ -16,7 +16,9 @@ HID_MODULE = "pico_uart"
 HEALTH_PATTERN = re.compile(r"cdc([0-5]) health=0x([0-9a-fA-F]+)\[[^]]*\]")
 OVERRUN_PATTERN = re.compile(r"cdc([0-5])=([0-9]+)")
 READY_BIT = 1 << 0
-BAD_HEALTH_BITS = 0xCE  # init_failed, control_error, control_pending, rx_overrun, rx_error
+CONTROL_PENDING_BIT = 1 << 3
+CDC_OPEN_BIT = 1 << 4
+BAD_HEALTH_BITS = 0xC6  # init_failed, control_error, rx_overrun, rx_error
 
 
 def _run_hid(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -97,8 +99,13 @@ def health_is_clean(snapshot: dict | None, baseline: dict | None = None) -> bool
         return False
     if len(snapshot["channels"]) != 6 or len(snapshot["overruns"]) != 6:
         return False
-    if any(not flags & READY_BIT or flags & BAD_HEALTH_BITS for flags in snapshot["channels"].values()):
-        return False
+    for flags in snapshot["channels"].values():
+        if flags & BAD_HEALTH_BITS:
+            return False
+        if not flags & READY_BIT and flags & CDC_OPEN_BIT:
+            return False
+        if flags & CONTROL_PENDING_BIT and flags & CDC_OPEN_BIT:
+            return False
     if baseline is not None:
         if baseline.get("error"):
             return False

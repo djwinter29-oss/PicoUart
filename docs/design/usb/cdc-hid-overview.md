@@ -20,11 +20,12 @@ Each CDC port maps to one target-side UART channel. The GPIO pinout is defined i
 
 ## CDC Behavior
 
-CDC carries serial bytes and `SET_LINE_CODING` requests for the matching UART. DTR is reported for monitoring but does
-not gate data transfer. A DTR closed-to-open transition requests a fresh state for only that CDC/UART channel: firmware
-clears that interface's CDC FIFOs and the worker restarts its UART backend, discarding queued bytes while preserving
-applied line coding and boot-lifetime counters. A USB packet already in flight may still complete. Hardware UARTs
-support the broader validated line-coding set; PIO UARTs are 8N1-only.
+CDC carries serial bytes and `SET_LINE_CODING` requests for the matching UART. DTR controls the per-channel backend
+lifecycle. On an open-to-closed transition, firmware clears that interface's CDC FIFOs and the UART worker
+deinitializes the backend; queued bytes are discarded while applied line coding and boot-lifetime counters are
+preserved. No UART bridge traffic is processed while the channel is closed. On the next open, the worker starts the
+backend and applies any deferred line-coding request before bridging resumes. A USB packet already in flight may still
+complete. Hardware UARTs support the broader validated line-coding set; PIO UARTs are 8N1-only.
 
 TinyUSB may complete a line-coding request before firmware applies or rejects it. Hosts must monitor HID health for the
 result; request ownership and deferred application are described in [Control Plane Design](../control-plane-design.md).
