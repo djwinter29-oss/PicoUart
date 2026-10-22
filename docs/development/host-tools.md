@@ -259,8 +259,11 @@ shared assets and API behavior. Distribution details belong in the [Python](../.
 ### Board selection and shared monitoring
 
 The **Board** dropdown lists boards attached to the dashboard server, not the browser's computer. The page scans this
-list only at startup or when the user clicks **Rescan**, without changing an existing selection. Status refreshes once
-per second and does not rescan the board list, even when disconnected or after a failed scan.
+list only at startup or when the user clicks **Rescan**, without changing an existing selection. Status refresh uses
+the backend's `refresh_interval_ms` and does not rescan the board list, even when disconnected or after a failed scan.
+Python and .NET derive this hint from the latest accepted channel Input's valid `interval_ms`, clamped to 500–1000 ms.
+The initial hint is 500 ms; zero/saturated intervals and duplicate/old reports do not change it. The hosted dashboard
+uses the same bounds and returns to 500 ms on board selection, disconnection, or HTTP failure.
 Initially the page selects the first discovered board (or the only
 board). With `--serial` or `--device-path`, that board is the preferred initial selection; all boards remain available,
 and an absent preferred board leaves the page unselected.
@@ -290,7 +293,7 @@ Both dashboards separate device identity from live runtime status, retaining the
 and `runtime` (uptime, per-core service-load basis points,
 reserved and total RAM), with independent `identity_error` and `runtime_error` fields. Unsupported or failed reads clear
 the affected values without discarding unrelated valid reports; disconnect clears device identity and runtime.
-Board telemetry, including uptime, is read once per second as one HID report; static device information is
+Board telemetry, including uptime, is read at the same bounded cadence as one HID report; static device information is
 read once per connection, and combined channel snapshots arrive every 500 ms (see
 [host polling](../design/usb/hid-report-reference.md#host-polling-and-validation)). The
 [HID report reference](../design/usb/hid-report-reference.md) defines the version-1 design, including UID source,
@@ -316,7 +319,7 @@ its indicator reports physical output. The API's `toggle-led` action selects the
 rather than sending a wire-level toggle. Unknown output is shown as `--` and disables the action.
 Sequence numbers remain internal for gap detection
 rather than appearing in the UI.
-The connection indicator includes report age, updated every second and marked stale after three seconds without a
+The connection indicator includes report age, updated on each status refresh and marked stale after three seconds without a
 changed status sample. Age measures browser receipt time so remote host clock offsets do not distort freshness.
 
 ### Persistent configuration

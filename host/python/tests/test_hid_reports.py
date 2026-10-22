@@ -156,6 +156,29 @@ def test_duplicate_and_old_sequence_reports_never_add_traffic_or_interval_twice(
     assert channel["sequence"] == 101
 
 
+@pytest.mark.parametrize("resumed_sequence", [100, 99, 40000, 0])
+def test_stale_stream_rebaselines_any_sequence_then_resumes_accounting(resumed_sequence):
+    from pico_uart.protocol import parse_channel
+
+    client = PicoUartHid(device=FakeHidDevice({}))
+    client._apply_input(0, parse_channel(channel_bytes(sequence=100)), 0.0)
+    client._apply_input(0, parse_channel(channel_bytes(
+        sequence=resumed_sequence, traffic=(1000, 0, 0, 0),
+    )), 3.1)
+    channel = client._channels[0]
+    assert channel["sequence"] == resumed_sequence
+    assert channel["traffic_gaps"] == 1
+    assert channel["traffic_incomplete"] is True
+    assert channel["totals"]["uart_tx"] == 0
+    assert channel["observed_interval_ms"] == 0
+    client._apply_input(0, parse_channel(channel_bytes(
+        sequence=(resumed_sequence + 1) % 65536, traffic=(7, 0, 0, 0),
+    )), 3.6)
+    assert channel["totals"]["uart_tx"] == 7
+    assert channel["observed_interval_ms"] == 500
+    assert channel["traffic_gaps"] == 1
+
+
 def test_channel_feature_read_is_non_consuming_for_input_totals():
     device = FakeHidDevice(
         {REPORT_ID_CHANNEL_BASE: channel_bytes(sequence=7, traffic=(500, 0, 0, 0))},

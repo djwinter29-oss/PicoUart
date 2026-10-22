@@ -286,13 +286,37 @@ public sealed class ProtocolTests
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
-    public void FeatureFramingRequiresExactPayloadAndPlatformPrefix(int prefix)
+    public void FeatureFramingRequiresPlatformPrefixAndStripsTransportPadding(int prefix)
     {
         var data = IdentityPayload();
         byte[] report = prefix == 1 ? [1, .. data] : [1, 1, .. data];
         Assert.Equal(data, PicoUartHid.FeaturePayload(report, 1, 63, prefix));
-        Assert.Throws<InvalidOperationException>(() => PicoUartHid.FeaturePayload([.. report, 0], 1, 63, prefix));
+        Assert.Equal(data, PicoUartHid.FeaturePayload([.. report, 0], 1, 63, prefix));
+        Assert.Throws<InvalidOperationException>(() =>
+            PicoUartHid.FeaturePayload(report[..^1], 1, 63, prefix));
         report[0] = 3;
         Assert.Throws<InvalidOperationException>(() => PicoUartHid.FeaturePayload(report, 1, 63, prefix));
+    }
+
+    [Fact]
+    public void DescriptorRequiresEveryV1ReportWithExactWireSizesAndNoLegacyReports()
+    {
+        (byte Id, int Length)[] features = [(1, 64), (2, 25), (3, 25),
+            (10, 55), (11, 55), (12, 55), (13, 55), (14, 55), (15, 55)];
+        var inputs = features.Skip(3).ToArray();
+        PicoUartHid.ValidateReports(features, inputs);
+        Assert.Throws<InvalidOperationException>(() => PicoUartHid.ValidateReports(features.Skip(1), inputs));
+        Assert.Throws<InvalidOperationException>(() => PicoUartHid.ValidateReports(features, inputs.Skip(1)));
+        Assert.Throws<InvalidOperationException>(() => PicoUartHid.ValidateReports([.. features, (18, 60)], inputs));
+        inputs[0] = (10, 60);
+        Assert.Throws<InvalidOperationException>(() => PicoUartHid.ValidateReports(features, inputs));
+    }
+
+    [Fact]
+    public void HealthLabelsPreserveBitOrder()
+    {
+        Assert.Empty(Protocol.DecodeHealth(0));
+        Assert.Equal(["ready", "init_failed", "control_error", "control_pending",
+            "cdc_open", "pio", "rx_overrun", "rx_error"], Protocol.DecodeHealth(255));
     }
 }

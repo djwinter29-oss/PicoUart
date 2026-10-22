@@ -21,6 +21,16 @@ let selectionVersion = 0;
 let refreshing = null;
 let scanning = false;
 let scanError = null;
+let refreshIntervalMs = 500;
+let refreshTimer = null;
+
+function setRefreshInterval(interval) {
+  const delay = Number.isFinite(interval) ? Math.max(500, Math.min(1000, interval)) : 500;
+  if (refreshTimer !== null && delay === refreshIntervalMs) return;
+  if (refreshTimer !== null) window.clearInterval(refreshTimer);
+  refreshIntervalMs = delay;
+  refreshTimer = window.setInterval(refresh, delay);
+}
 
 function makeCell(className, text) {
   const cell = document.createElement("td");
@@ -248,7 +258,8 @@ function render(data) {
     ? `${(data.hardware.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
     : "--";
   renderConfiguration(data);
-  document.querySelector("#firmware").textContent = data.identity?.firmware_version ?? data.board?.firmware_version ?? "--";
+  document.querySelector("#firmware").textContent =
+    data.identity?.firmware_version ?? data.board?.firmware_version ?? "--";
   document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
   document.querySelector("#serial").textContent = data.identity?.serial_number ?? "--";
   const runtime = data.runtime;
@@ -311,9 +322,11 @@ async function refresh() {
     const data = await response.json();
     if (version !== selectionVersion) return;
     if (!response.ok) throw new Error(data.error || `Status request failed (${response.status})`);
+    setRefreshInterval(data.connected ? data.refresh_interval_ms : 500);
     render(data);
   } catch (error) {
     if (version !== selectionVersion) return;
+    setRefreshInterval(500);
     if (latestData) render({ ...latestData, connected: false, error: error.message,
       configuration: null, configuration_error: null });
     statusMessage.textContent = error.message;
@@ -326,6 +339,7 @@ async function refresh() {
 function selectBoard(id, label) {
   if (selectedBoard === id) return;
   selectedBoard = id;
+  setRefreshInterval(500);
   selectedLabel = label;
   configurationDraft = null;
   configurationUnsafeAck.checked = false;
@@ -488,4 +502,4 @@ boardSelect.addEventListener("change", () => {
 });
 rescanButton.addEventListener("click", rescanBoards);
 rescanBoards();
-window.setInterval(refresh, 1000);
+setRefreshInterval(500);

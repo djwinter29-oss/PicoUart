@@ -33,6 +33,7 @@ public sealed class DashboardChannel(int id)
 public sealed class DashboardSnapshot
 {
     public bool Connected { get; set; }
+    public int RefreshIntervalMs { get; private set; } = 500;
     public string? Error { get; set; }
     public string? MetadataError { get; set; }
     public string? HardwareError { get; set; }
@@ -63,6 +64,14 @@ public sealed class DashboardSnapshot
         RuntimeError = error;
     }
 
+    internal void ApplyControl(ControlResult control, BoardIdentity identity)
+    {
+        Configuration = control.Configuration;
+        ConfigurationError = null;
+        ConfigurationSave = control.Command == 5 ? new(control.Status, control.RequestedProfile) : new(0, null);
+        ConfigurationSaveError = (identity.Capabilities & 4) != 0 ? null : "configuration save unavailable";
+    }
+
     /// <summary>Refresh on-demand state without advancing interrupt traffic or freshness.</summary>
     public void ApplyFeature(ChannelStatus source) => ApplyState(source);
 
@@ -71,6 +80,13 @@ public sealed class DashboardSnapshot
         var channel = Channels[source.Id];
         var now = Stopwatch.GetTimestamp();
         var first = channel.Sequence is null;
+        var stale = !first && (channel.Stale
+            || Stopwatch.GetElapsedTime(channel.LastInputTimestamp, now).TotalSeconds >= 3);
+        if (stale)
+        {
+            if (!channel.Stale) MarkIncomplete(channel);
+            first = true;
+        }
         var advance = first ? 1 : (source.Sequence - channel.Sequence!.Value + 65536) & 65535;
         if (!first && (advance == 0 || advance >= 32768))
         {
@@ -86,6 +102,8 @@ public sealed class DashboardSnapshot
             MarkIncomplete(channel);
         Connected = true;
         Error = null;
+        if (source.IntervalMs is > 0 and < uint.MaxValue)
+            RefreshIntervalMs = (int)Math.Clamp(source.IntervalMs, 500u, 1000u);
         ApplyState(source);
         channel.Sequence = source.Sequence;
         channel.UpdatedAt = UpdatedAt = DateTimeOffset.UtcNow;
@@ -97,6 +115,14 @@ public sealed class DashboardSnapshot
             UsbTx = source.CdcTxBytes, UsbRx = source.CdcRxBytes
         };
         if (first) return;
+        if (channel.Totals.UartTx > long.MaxValue - source.ControllerTxBytes
+            || channel.Totals.UartRx > long.MaxValue - source.ControllerRxBytes
+            || channel.Totals.UsbTx > long.MaxValue - source.CdcTxBytes
+            || channel.Totals.UsbRx > long.MaxValue - source.CdcRxBytes)
+        {
+            if (!gap && exact) MarkIncomplete(channel);
+            exact = false;
+        }
         channel.Totals.UartTx = Add(channel.Totals.UartTx, source.ControllerTxBytes);
         channel.Totals.UartRx = Add(channel.Totals.UartRx, source.ControllerRxBytes);
         channel.Totals.UsbTx = Add(channel.Totals.UsbTx, source.CdcTxBytes);

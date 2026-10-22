@@ -2,6 +2,8 @@
 
 import threading
 
+import pytest
+
 from pico_uart.web.monitor import BoardMonitor, empty_snapshot
 
 
@@ -18,7 +20,41 @@ def test_empty_snapshot_uses_per_channel_accounting_fields():
         assert channel["totals"] == {"uart_tx": 0, "uart_rx": 0, "usb_tx": 0, "usb_rx": 0}
 
 
-def test_input_snapshot_preserves_shared_fault_timestamp_without_category_timestamps():
+def test_metadata_polling_uses_hid_cadence_without_sleeping_between_input_reads(monkeypatch):
+    service = object.__new__(BoardMonitor)
+    service._lock = threading.RLock()
+    service._stop = threading.Event()
+    service._snapshot = empty_snapshot()
+    now = 0.0
+    reads = []
+
+    class Client:
+        def read_status(self, timeout_ms):
+            nonlocal now
+            assert timeout_ms == 250
+            now += 0.25
+            return {}
+
+        def close(self):
+            pass
+
+    def read_metadata(client):
+        reads.append(now)
+        if len(reads) == 3:
+            service._stop.set()
+
+    service._client_factory = Client
+    service._apply_status = lambda status: service._snapshot.update(refresh_interval_ms=750)
+    service._read_metadata = read_metadata
+    monkeypatch.setattr("pico_uart.web.monitor.time.monotonic", lambda: now)
+    service._poll()
+    assert reads == [0.25, 1.0, 1.75]
+
+
+@pytest.mark.parametrize(("interval", "refresh"), [
+    (0, 500), (100, 500), (500, 500), (750, 750), (1000, 1000), (5000, 1000), (0xFFFFFFFF, 500),
+])
+def test_input_snapshot_preserves_shared_fault_timestamp_without_category_timestamps(interval, refresh):
     service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
     service._snapshot = empty_snapshot()
@@ -27,6 +63,7 @@ def test_input_snapshot_preserves_shared_fault_timestamp_without_category_timest
             "id": 2,
             "updated_at": "2026-10-22T12:00:00.000+00:00",
             "sequence": 12,
+            "interval_ms": interval,
             "observed_interval_ms": 1000,
             "traffic_gaps": 1,
             "traffic_incomplete": True,
@@ -54,6 +91,7 @@ def test_input_snapshot_preserves_shared_fault_timestamp_without_category_timest
     }
     service._apply_status(status)
     snapshot = service.snapshot()
+    assert snapshot["refresh_interval_ms"] == refresh
     channel = snapshot["channels"][2]
     assert channel["updated_at"] == "2026-10-22T12:00:00.000+00:00"
     assert channel["sequence"] == 12
@@ -63,6 +101,18 @@ def test_input_snapshot_preserves_shared_fault_timestamp_without_category_timest
     assert diagnostic["faults"]["rx_overrun"] == {"count": 9}
     assert diagnostic["last_fault_uptime_s"] == 123
     assert all("last_seen_ms" not in fault for fault in diagnostic["faults"].values())
+    status["channels"][0]["interval_ms"] = 600
+    service._apply_status(status)
+    assert service.snapshot()["refresh_interval_ms"] == refresh
+    status["channels"][0]["updated_at"] = "2026-10-22T12:00:00.500+00:00"
+    service._apply_status(status)
+    assert service.snapshot()["refresh_interval_ms"] == 600
+    for second, invalid in [(1, 0), (2, 0xFFFFFFFF)]:
+        status["channels"][0].update(
+            updated_at=f"2026-10-22T12:00:0{second}.000+00:00", interval_ms=invalid,
+        )
+        service._apply_status(status)
+        assert service.snapshot()["refresh_interval_ms"] == 600
 
 
 def test_static_identity_masks_and_dynamic_clock_keep_their_own_report_sources():
@@ -94,6 +144,7 @@ def test_static_identity_masks_and_dynamic_clock_keep_their_own_report_sources()
 
         def read_control(self):
             return {
+                "command": 5,
                 "status": 2,
                 "requested_profile": 2,
                 "request_id": 4,
@@ -115,3 +166,25 @@ def test_static_identity_masks_and_dynamic_clock_keep_their_own_report_sources()
     assert snapshot["hardware"]["system_clock_hz"] == 200000000
     assert snapshot["runtime"]["system_clock_hz"] == 200000000
     assert snapshot["configuration_save"]["status"] == 2
+
+
+def test_non_save_control_result_is_idle_for_save_ui_and_capability_failure_is_explicit():
+    from helpers import control_bytes
+    from pico_uart.protocol import parse_control
+
+    service = object.__new__(BoardMonitor)
+    service._lock = threading.RLock()
+    service._snapshot = empty_snapshot()
+
+    class Client:
+        def read_control(self):
+            return parse_control(control_bytes(command=2, status=2, request_id=1))
+
+    service._snapshot["identity"] = {"capabilities": 4}
+    service._read_control(Client())
+    assert service.snapshot()["configuration_save"] == {"status": 0, "profile": None}
+    assert service.snapshot()["configuration_save_error"] is None
+    service._snapshot["identity"] = {"capabilities": 0}
+    service._read_control(Client())
+    assert service.snapshot()["configuration_save"] is None
+    assert service.snapshot()["configuration_save_error"]

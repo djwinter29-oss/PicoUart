@@ -9,6 +9,33 @@ namespace PicoUart.Tests;
 [Trait("Category", "Unit")]
 public sealed class DashboardTests
 {
+    [Theory]
+    [InlineData(0u, 500)]
+    [InlineData(100u, 500)]
+    [InlineData(500u, 500)]
+    [InlineData(750u, 750)]
+    [InlineData(1000u, 1000)]
+    [InlineData(5000u, 1000)]
+    [InlineData(uint.MaxValue, 500)]
+    public void RefreshCadenceUsesOnlyAcceptedInputIntervalsWithinBounds(uint interval, int expected)
+    {
+        var snapshot = new DashboardSnapshot();
+        Assert.Equal(500, snapshot.RefreshIntervalMs);
+        snapshot.ApplyFeature(Sample(1) with { IntervalMs = 900 });
+        Assert.Equal(500, snapshot.RefreshIntervalMs);
+        snapshot.Apply(Sample(1) with { IntervalMs = interval });
+        Assert.Equal(expected, snapshot.RefreshIntervalMs);
+        snapshot.Apply(Sample(1) with { IntervalMs = 600 });
+        Assert.Equal(expected, snapshot.RefreshIntervalMs);
+        snapshot.Apply(Sample(2) with { IntervalMs = 600 });
+        Assert.Equal(600, snapshot.RefreshIntervalMs);
+        snapshot.Apply(Sample(3) with { IntervalMs = 0 });
+        snapshot.Apply(Sample(4) with { IntervalMs = uint.MaxValue });
+        Assert.Equal(600, snapshot.RefreshIntervalMs);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
+        Assert.Equal(600, json.RootElement.GetProperty("refresh_interval_ms").GetInt32());
+    }
+
     [Fact]
     public void FirstInputOnlyEstablishesContinuityAndFeaturesNeverConsumeDeltas()
     {
@@ -88,6 +115,18 @@ public sealed class DashboardTests
     }
 
     [Fact]
+    public void AccumulatorSaturationCannotWrapOrProduceAnExactRate()
+    {
+        var snapshot = new DashboardSnapshot();
+        snapshot.Apply(Sample(1));
+        snapshot.Channels[0].Totals.UartTx = long.MaxValue - 1;
+        snapshot.Apply(Sample(2));
+        Assert.Equal(long.MaxValue, snapshot.Channels[0].Totals.UartTx);
+        Assert.True(snapshot.Channels[0].TrafficIncomplete);
+        Assert.Equal(0ul, snapshot.Channels[0].ObservedIntervalMs);
+    }
+
+    [Fact]
     public void StaleChannelMarksContinuityUncertainEvenIfSequenceMatches()
     {
         var snapshot = new DashboardSnapshot();
@@ -104,6 +143,33 @@ public sealed class DashboardTests
         Assert.True(snapshot.Channels[0].TrafficIncomplete);
         Assert.Equal(1, snapshot.Channels[0].TrafficGaps);
         Assert.False(snapshot.Channels[1].TrafficIncomplete);
+    }
+
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(false, 40000)]
+    [InlineData(true, 1)]
+    [InlineData(true, 40000)]
+    public void StaleStreamRebaselinesEvenForDuplicateOrOldHalfRangeSequence(bool markStaleFirst, ushort sequence)
+    {
+        var snapshot = new DashboardSnapshot();
+        snapshot.Apply(Sample(1));
+        snapshot.Apply(Sample(1, 1));
+        snapshot.Channels[0].LastInputTimestamp = Stopwatch.GetTimestamp() - 4 * Stopwatch.Frequency;
+        if (markStaleFirst) snapshot.MarkStale();
+        snapshot.Apply(Sample(sequence));
+        var channel = snapshot.Channels[0];
+        Assert.Equal(sequence, channel.Sequence);
+        Assert.Equal(0, channel.Totals.UartTx);
+        Assert.Equal(0ul, channel.ObservedIntervalMs);
+        Assert.Equal(0, channel.Traffic.UartTx);
+        Assert.True(channel.TrafficIncomplete);
+        Assert.Equal(1, channel.TrafficGaps);
+        Assert.False(snapshot.Channels[1].TrafficIncomplete);
+        snapshot.Apply(Sample((ushort)(sequence + 1)));
+        Assert.Equal(150000, channel.Totals.UartTx);
+        Assert.Equal(500ul, channel.ObservedIntervalMs);
+        Assert.Equal(1, channel.TrafficGaps);
     }
 
     [Fact]
@@ -150,6 +216,40 @@ public sealed class DashboardTests
             Assert.Null(channel.Sequence);
             Assert.Null(channel.Health);
         });
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public void IdleOrLedControlResultEnablesSaveAndClearsPreviousSaveError(byte command)
+    {
+        var snapshot = new DashboardSnapshot
+        {
+            ConfigurationSave = new(3, 1),
+            ConfigurationSaveError = "previous save rejected",
+            ConfigurationError = "previous read failed"
+        };
+        var configuration = new ConfigurationStatus("defaults", "erased", null, 0);
+        snapshot.ApplyControl(new(command, 0, command == 0 ? (byte)0 : (byte)2,
+            command == 0 ? 0u : 1u, null, configuration, 0), ProtocolTests.Identity());
+        Assert.Equal(new ConfigurationSaveStatus(0, null), snapshot.ConfigurationSave);
+        Assert.Null(snapshot.ConfigurationSaveError);
+        Assert.Null(snapshot.ConfigurationError);
+        Assert.Equal(configuration, snapshot.Configuration);
+    }
+
+    [Fact]
+    public void SaveCapabilityUnavailabilityIsExplicitAndSaveResultsKeepNewStatus()
+    {
+        var snapshot = new DashboardSnapshot();
+        var control = new ControlResult(5, 1, 6, 1, 1, new("defaults", "erased", null, 0), 8);
+        snapshot.ApplyControl(control, ProtocolTests.Identity());
+        Assert.Equal(new ConfigurationSaveStatus(6, 1), snapshot.ConfigurationSave);
+        Assert.Null(snapshot.ConfigurationSaveError);
+        snapshot.ApplyControl(control with { Command = 0, Status = 0, RequestId = 0, RequestedProfile = null },
+            ProtocolTests.Identity() with { Capabilities = 3 });
+        Assert.Equal(new ConfigurationSaveStatus(0, null), snapshot.ConfigurationSave);
+        Assert.Equal("configuration save unavailable", snapshot.ConfigurationSaveError);
     }
 
     private static ChannelStatus Sample(ushort sequence, int id = 0) =>

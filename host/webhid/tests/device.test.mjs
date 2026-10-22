@@ -131,6 +131,8 @@ test("control validates rejected echoes and configuration independently", () => 
   assert.equal(decodeControlReport(control({ command: 127, flags: 128, status: 3, id: 1, error: 1 })).flags, 128);
   assert.throws(() => decodeControlReport(control({ command: 2, flags: 128, status: 4, id: 1, error: 5 })));
   assert.throws(() => decodeControlReport(control({ command: 5, status: 2, id: 1 })));
+  assert.throws(() => decodeControlReport(control({ command: 5, status: 2, id: 1, profile: 2 })));
+  assert.equal(decodeControlReport(control({ command: 2, flags: 1, status: 4, id: 1, error: 5 })).status, 4);
   assert.throws(() => decodeControlReport(control({ command: 2, status: 3, id: 1, error: 7 })));
   const invalid = control();
   invalid.setUint8(24, 1);
@@ -220,6 +222,20 @@ test("channel failures clear only that channel and remain visible until it recov
   assert.ok(client.state.dashboard.channel_diagnostics[1]);
   device.input(10, channel());
   assert.equal(client.state.dashboard.diagnostics_error, null);
+  await client.disconnect();
+});
+
+test("stale streams rebaseline even when sequence advances beyond half range", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
+  await client.connect();
+  device.input(10, channel({ sequence: 1 }));
+  client.state.dashboard.channels[0].updated_at = new Date(Date.now() - 4000).toISOString();
+  device.input(10, channel({ sequence: 40000 }));
+  assert.equal(client.state.dashboard.channels[0].sequence, 40000);
+  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 0);
+  device.input(10, channel({ sequence: 40001 }));
+  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 150000);
+  assert.equal(client.state.dashboard.channels[0].traffic_gaps, 1);
   await client.disconnect();
 });
 

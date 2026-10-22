@@ -396,6 +396,9 @@ do not average rates without weighting. Host arrival time is only for freshness 
 Track sequences separately per channel, expecting an increment modulo 65536. Missing reports make observed
 totals incomplete; later deltas do not recover them. A 16-bit sequence cannot detect a loss of exactly 65536 reports;
 after a host read pause or stale stream, conservatively mark continuity uncertain even if the next sequence matches.
+Re-establish continuity from the next Input sample after staleness, excluding its deltas as with the first sample.
+Do not count duplicate or older reports as new traffic while a stream is fresh; a stale stream must still be able
+to rebaseline regardless of its next sequence value.
 One channel's gap must not invalidate other channels. Sequences are not dashboard values.
 
 Feature GET_REPORT samples against that channel's committed baseline without advancing interval origin, counter
@@ -449,11 +452,13 @@ which occurred. See [Hardware Setup](../../hardware-setup.md).
 1. Read Feature report 1 and validate layout version 1 before sending any board command. Cache static information
    for the connection, retrying failures without substituting invented identity or capabilities.
 2. Read report 2 at connection for boot configuration. Read it around commands until the matching result is terminal.
-3. Poll report 3 about once per second.
+3. Poll report 3 every 500–1000 ms. Python/.NET dashboards follow the bounded observed Input cadence as documented in
+   [host tools](../../development/host-tools.md#board-selection-and-shared-monitoring); other hosts may use a fixed interval
+   in that range.
 4. Consume Input reports 10-15 for complete channel snapshots and committed traffic deltas. Read their Feature
    counterparts for on-demand state, without counting those overlapping deltas.
 
-Steady-state monitoring requires one board-telemetry control read per second when no command is active, plus six
+Steady-state monitoring requires one or two board-telemetry control reads per second when no command is active, plus six
 channel Input publications per 500 ms (nominally twelve packets per second). No periodic channel Feature reads
 are required. A channel Feature read can obtain initial state without waiting for the stream.
 Read failures clear affected live values, not unrelated valid static data. Failed channel reads surface an error;

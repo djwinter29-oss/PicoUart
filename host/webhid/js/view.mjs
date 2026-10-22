@@ -173,7 +173,8 @@ export function renderDashboard(data) {
   document.querySelector("#system-clock").textContent = data.hardware
     ? `${(data.hardware.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
     : "--";
-  document.querySelector("#firmware").textContent = data.identity?.firmware_version ?? data.board?.firmware_version ?? "--";
+  document.querySelector("#firmware").textContent =
+    data.identity?.firmware_version ?? data.board?.firmware_version ?? "--";
   document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
   document.querySelector("#serial").textContent = data.identity?.serial_number ?? "--";
   const runtime = data.runtime;

@@ -68,7 +68,7 @@ export function decodeControlReport(report) {
       || ((flags & ~1) && !(status === 3 && error === 1))
       || (command !== 5 && flags && ![1, 5].includes(error))
       || (command !== 5 && profile !== UNAVAILABLE)
-      || (status <= 2 && command === 5 && profile === UNAVAILABLE)) {
+      || (status <= 2 && command === 5 && (profile === UNAVAILABLE || (profile !== 0 && !(flags & 1))))) {
     throw new Error("Invalid echoed board-control fields");
   }
   return { command, flags, status, request_id: requestId, error_reason: error,
@@ -210,16 +210,17 @@ export class PicoUartWebHid {
     overflow[id] = snapshot.faults.rx_overrun.count;
     let gap = false;
     if (input) {
-      const first = previous.sequence === null;
+      const expired = previous.sequence !== null
+        && (!previous.updated_at || Date.now() - Date.parse(previous.updated_at) > 3000);
+      const first = previous.sequence === null || expired;
       const advance = first ? 1 : (snapshot.sequence - previous.sequence + 65536) % 65536;
-      if (!first && (advance === 0 || advance > 32768)) {
+      if (!first && (advance === 0 || advance >= 32768)) {
         channels[id] = { ...previous, traffic_gaps: previous.traffic_gaps + 1, traffic_incomplete: true };
         this.update({ dashboard: { ...dashboard, channels, traffic_gaps: dashboard.traffic_gaps + 1,
           traffic_incomplete: true } });
         return;
       }
-      gap = !first && (snapshot.sequence !== (previous.sequence + 1) % 65536
-        || !previous.updated_at || Date.now() - Date.parse(previous.updated_at) > 3000);
+      gap = expired || (!first && snapshot.sequence !== (previous.sequence + 1) % 65536);
       gap ||= snapshot.interval_ms === 0 || snapshot.interval_ms === UNAVAILABLE
         || Object.values(snapshot.traffic).includes(UNAVAILABLE);
       channels[id] = { ...snapshot, updated_at: new Date().toISOString(),
@@ -273,7 +274,9 @@ export class PicoUartWebHid {
         this.update({ phase: "disconnected", message: "No device selected. Connect PicoUart USB to this browser." });
         return;
       }
-      if (devices.length !== 1 || !matchesPicoUart(devices[0])) throw new Error("Select one PicoUart vendor HID interface");
+      if (devices.length !== 1 || !matchesPicoUart(devices[0])) {
+        throw new Error("Select one PicoUart vendor HID interface");
+      }
       selected = devices[0];
       this.pendingDevice = selected;
       if (!selected.opened) await selected.open();
@@ -294,7 +297,11 @@ export class PicoUartWebHid {
     } catch (error) {
       if (selected?.opened) {
         selected.removeEventListener("inputreport", this.onInputReport);
-        try { await selected.close(); } catch (closeError) { error = new Error(`${error.message}; ${closeError.message}`); }
+        try {
+          await selected.close();
+        } catch (closeError) {
+          error = new Error(`${error.message}; ${closeError.message}`);
+        }
       }
       if (generation !== this.generation) return;
       this.device = null;
@@ -321,13 +328,15 @@ export class PicoUartWebHid {
       return;
     }
     try {
-      const telemetry = decodeTelemetryReport(await this.transfer(() => device.receiveFeatureReport(3)), this.information);
+      const telemetry = decodeTelemetryReport(
+        await this.transfer(() => device.receiveFeatureReport(3)), this.information);
       const hardware = { mcu: this.information.mcu, mcu_id: this.information.mcu_id,
         system_clock_hz: telemetry.system_clock_hz, clock_profile_mask: this.information.clock_profile_mask };
       this.update({ hardware, updatedAt: new Date().toISOString(), dashboard: { ...this.state.dashboard,
         hardware, hardware_error: null, metadata_error: null, runtime_error: null, led_error: null,
         led: telemetry.led, runtime: telemetry.runtime,
-        board: { firmware_version: this.information.firmware_version, temperature_celsius: telemetry.temperature_celsius,
+        board: { firmware_version: this.information.firmware_version,
+          temperature_celsius: telemetry.temperature_celsius,
           hid_reset_enabled: Boolean(this.information.capabilities & 2) } } });
     } catch (error) {
       if (stale()) return;
@@ -395,7 +404,9 @@ export class PicoUartWebHid {
         if (command === 5 && result.profile !== profile) throw new Error("Firmware saved a different profile.");
         return result;
       }
-      if (result.status !== 1) throw new Error(`Board command rejected: status ${result.status}, reason ${result.error_reason}.`);
+      if (result.status !== 1) {
+        throw new Error(`Board command rejected: status ${result.status}, reason ${result.error_reason}.`);
+      }
       await new Promise(resolve => globalThis.setTimeout(resolve, 50));
     }
     throw new Error("Timed out awaiting board command; outcome is unconfirmed.");
@@ -430,7 +441,9 @@ export class PicoUartWebHid {
       if (!Number.isInteger(profile) || profile < 0 || profile > 4
         || !(this.information?.clock_profile_mask & (1 << profile))
         || typeof unsafeOverclock !== "boolean" || (profile !== 0 && !unsafeOverclock)
-        || (profile === 0 && unsafeOverclock)) throw new Error("Select a supported profile and acknowledge overclocking.");
+        || (profile === 0 && unsafeOverclock)) {
+        throw new Error("Select a supported profile and acknowledge overclocking.");
+      }
       if (this.state.dashboard.channels.some(channel => channel.health === null || channel.cdc_open)) {
         throw new Error("Close all CDC ports and stop UART traffic before saving.");
       }

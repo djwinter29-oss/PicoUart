@@ -40,6 +40,7 @@ def _empty_channel(channel_id: int) -> dict[str, Any]:
 def empty_snapshot() -> dict[str, Any]:
     return {
         "connected": False,
+        "refresh_interval_ms": 500,
         "error": None,
         "metadata_error": None,
         "hardware_error": None,
@@ -133,7 +134,9 @@ class BoardMonitor:
                     now = time.monotonic()
                     if now >= next_metadata_read:
                         self._read_metadata(client)
-                        next_metadata_read = now + 1.0
+                        with self._lock:
+                            interval = self._snapshot["refresh_interval_ms"]
+                        next_metadata_read = time.monotonic() + interval / 1000
             except (OSError, RuntimeError) as error:
                 with self._lock:
                     self._snapshot["connected"] = False
@@ -177,6 +180,9 @@ class BoardMonitor:
                 )
                 if not sample_updated and not accounting_changed:
                     continue
+                interval = source.get("interval_ms")
+                if sample_updated and interval is not None and 0 < interval < 0xFFFFFFFF:
+                    self._snapshot["refresh_interval_ms"] = max(500, min(1000, interval))
                 self._snapshot["channels"][channel_id] = {
                     key: deepcopy(source[key])
                     for key in (
@@ -276,11 +282,18 @@ class BoardMonitor:
             "error_reason": result["error_reason"],
         }
         with self._lock:
+            identity = self._snapshot["identity"]
+            save_error = None
+            if identity is None or not identity["capabilities"] & 4:
+                save = None
+                save_error = self._snapshot["identity_error"] or "configuration save capability is unavailable"
+            elif result["command"] != 5:
+                save = {"status": 0, "profile": None}
             self._snapshot.update(
                 configuration=configuration,
                 configuration_error=None,
                 configuration_save=save,
-                configuration_save_error=None,
+                configuration_save_error=save_error,
             )
 
     def _read_static(self, client: PicoUartHid) -> None:

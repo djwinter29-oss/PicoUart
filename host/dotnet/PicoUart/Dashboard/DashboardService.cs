@@ -32,6 +32,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 {
                     connection.ToggleLed();
                     ReadTelemetry(connection);
+                    ReadControl(connection);
                 }
                 catch
                 {
@@ -58,7 +59,9 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
             }
             catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
             {
-                snapshot.ConfigurationSave = null;
+                var result = connection.LastCommandResult;
+                snapshot.ConfigurationSave = result?.Command == 5
+                    ? new(result.Status, result.RequestedProfile) : null;
                 snapshot.ConfigurationSaveError = error.Message;
                 throw;
             }
@@ -105,19 +108,19 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
             return false;
         }
         if (snapshot.Configuration is not null) return true;
-        try
-        {
-            var control = connection.ReadControl();
-            snapshot.Configuration = control.Configuration;
-            snapshot.ConfigurationError = null;
-            snapshot.ConfigurationSave = control.Command == 5 ? new(control.Status, control.RequestedProfile) : null;
-            snapshot.ConfigurationSaveError = null;
-        }
+        ReadControl(connection);
+        return true;
+    }
+
+    private void ReadControl(PicoUartHid connection)
+    {
+        try { snapshot.ApplyControl(connection.ReadControl(), connection.ReadIdentity()); }
         catch (Exception error) when (HidErrors.IsDeviceError(error))
         {
             snapshot.ConfigurationError = error.Message;
+            snapshot.ConfigurationSave = null;
+            snapshot.ConfigurationSaveError = error.Message;
         }
-        return true;
     }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.Run(async () =>
@@ -162,7 +165,8 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                                     if (!failed) snapshot.DiagnosticsError = null;
                                 }
                             }
-                            nextMetadataRead = Stopwatch.GetTimestamp() + Stopwatch.Frequency;
+                            nextMetadataRead = Stopwatch.GetTimestamp()
+                                + Stopwatch.Frequency * snapshot.RefreshIntervalMs / 1000;
                         }
                         var status = connection.ReadStatus();
                         if (status is not null) snapshot.Apply(status);

@@ -156,6 +156,11 @@ public static class Protocol
             Require(command == 0 && flags == 0 && requested == uint.MaxValue, "invalid idle control result");
         Require(requested == uint.MaxValue || (command == 5 && Supported(requested)
             && !malformed && !unsupported && error != 2), "invalid requested profile echo");
+        Require(error is not (2 or 3) || command == 5, "profile error for a non-save command");
+        Require(error != 3 || (requested is > 0 and < 5 && flags == 0), "invalid acknowledgement error");
+        Require(error != 4 || command == 4, "authorization error for a non-reboot command");
+        Require(status != 5 || command == 5, "busy result for a non-save command");
+        Require(error is not (7 or 8) || command == 5, "flash error for a non-save command");
         if (command == 5 && status is 1 or 2 or 5 or 6)
             Require(Supported(requested) && (requested == 0 || flags == 1), "invalid accepted save result");
         if (status is 1 or 2 or 5 or 6)

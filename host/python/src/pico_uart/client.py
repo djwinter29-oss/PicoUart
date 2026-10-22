@@ -251,19 +251,20 @@ class PicoUartHid:
         first = not self._input_seen[channel_id]
         sequence_delta = None if first else (int(sample["sequence"]) - int(previous_sequence)) & 0xFFFF
         stale = not first and (previous_at is None or now - previous_at > 3.0)
-        if sequence_delta == 0:
-            if stale and not self._ignored_gap[channel_id]:
-                channel["traffic_incomplete"] = True
+        if stale:
+            channel["traffic_incomplete"] = True
+            if not self._ignored_gap[channel_id]:
                 channel["traffic_gaps"] += 1
-                self._ignored_gap[channel_id] = True
+            first = True
+        elif sequence_delta == 0:
             return
-        if sequence_delta is not None and sequence_delta > 0x8000:
+        elif sequence_delta is not None and sequence_delta > 0x8000:
             channel["traffic_incomplete"] = True
             if not self._ignored_gap[channel_id]:
                 channel["traffic_gaps"] += 1
                 self._ignored_gap[channel_id] = True
             return
-        gap = not first and (sequence_delta != 1 or stale)
+        gap = not first and sequence_delta != 1
         interval = int(sample["interval_ms"])
         saturated = interval == MAX_U32 or any(sample[source] == MAX_U32 for source in TRAFFIC_FIELDS.values())
         invalid_interval = interval in (0, MAX_U32)

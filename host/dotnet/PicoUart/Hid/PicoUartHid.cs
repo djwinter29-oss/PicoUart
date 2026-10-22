@@ -15,6 +15,7 @@ public sealed class PicoUartHid : IDisposable
     private bool disposed;
     private bool transferUnconfirmed;
     private bool rebootScheduled;
+    internal ControlResult? LastCommandResult { get; private set; }
 
     public PicoUartHid(string? serialNumber = null, string? devicePath = null)
     {
@@ -186,10 +187,17 @@ public sealed class PicoUartHid : IDisposable
         var id = AllocateRequestId(ref nextRequestId, latest.RequestId);
         var payload = Protocol.BuildCommand(command, id, info, profile, unsafeOverclock);
         byte[] report = [Protocol.ControlReportId, .. payload];
+        LastCommandResult = null;
         try
         {
             Transfer(() => { stream.SetFeature(report); return true; }, 3000);
-            var result = WaitForCommand(command, payload[2], id, command == 5 ? profile : null, ReadControl);
+            var result = WaitForCommand(command, payload[2], id, command == 5 ? profile : null, timeout =>
+            {
+                var observed = ReadControl(timeout);
+                if (observed.Command == command && observed.RequestId == id && observed.Flags == payload[2])
+                    LastCommandResult = observed;
+                return observed;
+            });
             rebootScheduled = command is 4 or 5;
             return result;
         }
@@ -272,7 +280,8 @@ public sealed class PicoUartHid : IDisposable
         {
             CheckConnection();
             var prefixSize = OperatingSystem.IsLinux() ? 2 : 1;
-            var report = new byte[payloadSize + prefixSize];
+            var report = new byte[Math.Max(payloadSize + prefixSize,
+                stream.Device.GetMaxFeatureReportLength() + prefixSize - 1)];
             report[0] = reportId;
             Transfer(() => { stream.GetFeature(report); return true; }, timeoutMs);
             return FeaturePayload(report, reportId, payloadSize, prefixSize);
@@ -281,7 +290,7 @@ public sealed class PicoUartHid : IDisposable
 
     internal static byte[] FeaturePayload(byte[] report, byte reportId, int payloadSize, int prefixSize)
     {
-        if (report.Length != payloadSize + prefixSize || report[0] != reportId
+        if (report.Length < payloadSize + prefixSize || report[0] != reportId
             || (prefixSize == 2 && report[1] != reportId))
             throw new InvalidOperationException("unexpected HID feature report ID or size");
         return report.AsSpan(prefixSize, payloadSize).ToArray();

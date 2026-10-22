@@ -15,8 +15,9 @@ def print_status(status: dict[str, object]) -> None:
     channels = " ".join(
         f"cdc{channel['id']} "
         + (
-            f"seq={channel['sequence']} health=0x{channel['health']:02x}"
+            f"health=0x{channel['health']:02x}"
             f"[{','.join(decode_health(channel['health'])) or '-'}] "
+            f"seq={channel['sequence']} "
             f"uart_tx/rx={channel['traffic']['uart_tx']}/{channel['traffic']['uart_rx']} "
             f"cdc_tx/rx={channel['traffic']['usb_tx']}/{channel['traffic']['usb_rx']} "
             f"ring_peak={channel['ring_high_watermark']}"

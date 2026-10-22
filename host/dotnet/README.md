@@ -108,9 +108,12 @@ Each `channels[]` item adds `updated_at` (ISO timestamp of its last Input), `seq
 `traffic_gaps`, and sticky `traffic_incomplete`. Measurement time sums complete valid Input intervals after the first
 sample; the renderer can divide changes in totals by changes in this time, invalidating a window when that channel's
 gap count changes. There is no board-wide `sequence`. Top-level gap/incomplete fields summarize all channels.
+After three seconds without an accepted Input, the next sample establishes a fresh baseline regardless of sequence;
+its deltas are excluded, preventing old-sequence filtering from blocking recovery after a pause or USB reset.
 `channel_diagnostics[]` is indexed by channel and may contain null before state is available. Fault objects retain
 `faults.<name>.count` only; `last_fault_uptime_s` is shared by all four categories, not a per-fault timestamp.
-`configuration_save.status` uses report-2 statuses 0-6; it is null when the latest result is not a save.
+`configuration_save.status` uses report-2 statuses 0-6; a non-save result projects to idle `{status: 0, profile: null}`.
+An unavailable save capability sets `configuration_save_error`; an unread/failed control read leaves the result null.
 
 ## Troubleshooting
 

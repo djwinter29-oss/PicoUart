@@ -124,6 +124,12 @@ def test_published_dotnet_serves_the_canonical_frontend(server, host_version, pa
         assert request(server, f"/{path}")[0] == 404
 
 
+def test_dotnet_refresh_interval_matches_python_default(server):
+    status, _, payload = request(server, "/api/status")
+    assert status == 200
+    assert json.loads(payload)["refresh_interval_ms"] == empty_snapshot()["refresh_interval_ms"] == 500
+
+
 def test_dotnet_status_matches_python_dashboard_shape(server):
     status, headers, payload = request(server, "/api/status")
     assert status == 200
