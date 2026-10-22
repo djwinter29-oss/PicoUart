@@ -84,7 +84,7 @@ bool uart_driver_port_is_ready(uart_port_id_t port_id);
  * @param port_id Logical UART port identifier.
  * @return `true` when a reset is queued or already pending.
  */
-bool uart_driver_request_buffer_reset(uart_port_id_t port_id);
+bool uart_driver_request_channel_stop(uart_port_id_t port_id);
 
 /**
  * @brief Queue a per-port backend start after a CDC DTR-open transition.
@@ -105,20 +105,20 @@ bool uart_driver_channel_start_pending(uart_port_id_t port_id);
  * @param port_id Logical UART port identifier.
  * @return `true` while the reset request is pending.
  */
-bool uart_driver_buffer_reset_pending(uart_port_id_t port_id);
+bool uart_driver_channel_stop_pending(uart_port_id_t port_id);
 
 /**
  * @brief Mark a port quiesced after the USB core stops bridging and clears CDC FIFOs.
  * @param port_id Logical UART port identifier.
  */
-void uart_driver_buffer_reset_usb_quiesced(uart_port_id_t port_id);
+void uart_driver_channel_stop_usb_quiesced(uart_port_id_t port_id);
 
 /**
  * @brief Return whether a queued port reset is ready for the worker.
  * @param port_id Logical UART port identifier.
  * @return `true` when pending and USB-side access is quiesced.
  */
-bool uart_driver_buffer_reset_ready(uart_port_id_t port_id);
+bool uart_driver_channel_stop_is_quiesced(uart_port_id_t port_id);
 
 /**
  * @brief Drain RX bytes from one logical UART port into a caller-owned writer.

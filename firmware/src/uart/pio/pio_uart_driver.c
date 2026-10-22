@@ -715,19 +715,19 @@ bool pio_uart_driver_start(void *context)
     driver->rx_rts_asserted = false;
     driver->tx_cts_enabled = (driver->config->pin_flags & PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL) != 0u;
     driver->tx_dma_bytes_in_flight = 0u;
-    driver->tx_polled_bytes = 0u;
-    driver->tx_dma_bytes = 0u;
-    driver->uart_rx_bytes = 0u;
-    driver->rx_error_count = 0u;
     driver->rx_dma_last_progress = 0u;
 
-    if (!ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
+    if ((driver->rx_ring.storage == NULL) &&
+        !ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
         return false;
     }
 
-    if (!ring_buffer_init(&driver->tx_ring, driver->tx_storage, sizeof(driver->tx_storage))) {
+    if ((driver->tx_ring.storage == NULL) &&
+        !ring_buffer_init(&driver->tx_ring, driver->tx_storage, sizeof(driver->tx_storage))) {
         return false;
     }
+    ring_buffer_clear(&driver->rx_ring);
+    ring_buffer_clear(&driver->tx_ring);
 
     if (!pio_uart_driver_ensure_programs(driver)) {
         return false;
@@ -827,15 +827,6 @@ void pio_uart_driver_deinit(void *context)
 bool pio_uart_driver_reset_buffers(void *context)
 {
     pio_uart_driver_t *driver = context;
-    size_t tx_polled_bytes;
-    size_t tx_dma_bytes;
-    uint32_t uart_rx_bytes;
-    uint32_t rx_error_count;
-    uint32_t rx_high_watermark;
-    uint32_t tx_high_watermark;
-    uint32_t rx_overflow_count;
-    uint32_t tx_overflow_count;
-    bool initialized;
 
     if ((driver == NULL) || (driver->config == NULL)) {
         return false;
@@ -843,26 +834,7 @@ bool pio_uart_driver_reset_buffers(void *context)
 
     pio_uart_driver_deinit(driver);
     (void)ring_buffer_recover_overflow(&driver->rx_ring);
-    tx_polled_bytes = driver->tx_polled_bytes;
-    tx_dma_bytes = driver->tx_dma_bytes;
-    uart_rx_bytes = driver->uart_rx_bytes;
-    rx_error_count = driver->rx_error_count;
-    rx_high_watermark = driver->rx_ring.high_watermark;
-    tx_high_watermark = driver->tx_ring.high_watermark;
-    rx_overflow_count = driver->rx_ring.overflow_count;
-    tx_overflow_count = driver->tx_ring.overflow_count;
-
-    initialized = pio_uart_driver_start(driver);
-
-    driver->tx_polled_bytes = tx_polled_bytes;
-    driver->tx_dma_bytes = tx_dma_bytes;
-    driver->uart_rx_bytes = uart_rx_bytes;
-    driver->rx_error_count = rx_error_count;
-    driver->rx_ring.high_watermark = rx_high_watermark;
-    driver->tx_ring.high_watermark = tx_high_watermark;
-    driver->rx_ring.overflow_count = rx_overflow_count;
-    driver->tx_ring.overflow_count = tx_overflow_count;
-    return initialized;
+    return pio_uart_driver_start(driver);
 }
 
 static bool pio_uart_driver_rx_quiescent(const pio_uart_driver_t *driver)

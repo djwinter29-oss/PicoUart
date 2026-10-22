@@ -667,7 +667,10 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     monkeypatch.setattr(stress.termios, "tcflush", lambda fd, _queue: events.append(("flush", fd)))
     monkeypatch.setattr(stress, "open_port", open_endpoint)
     monkeypatch.setattr(stress, "set_port_line_coding", configure_endpoint)
-    monkeypatch.setattr(stress, "wait_ports_ready", lambda ports, baud: events.append(("ready", ports, baud)))
+    def wait_ready(ports, baud, *, expected_channels):
+        assert expected_channels == {f"cdc{channel}": channel for channel in range(6)}
+        events.append(("ready", ports, baud))
+    monkeypatch.setattr(stress, "wait_ports_ready", wait_ready)
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(stress, "run_stream", run_stream)
     monkeypatch.setattr(stress, "close_ports", lambda *_: None)

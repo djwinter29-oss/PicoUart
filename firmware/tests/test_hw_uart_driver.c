@@ -486,6 +486,9 @@ void test_failure_to_restore_releases_channels_and_disables_port(void)
     TEST_ASSERT_EQUAL_UINT(1u, unclaim_calls[3]);
     TEST_ASSERT_NULL(hw_uart_driver_rx_irq_owners[2]);
     TEST_ASSERT_FALSE(irq_enabled[2]);
+    TEST_ASSERT_EQUAL_UINT(GPIO_FUNC_SIO, tx_gpio_function);
+    TEST_ASSERT_TRUE(tx_gpio_output);
+    TEST_ASSERT_TRUE(tx_gpio_high);
 }
 
 void test_unsettled_rx_resumes_without_abort_or_publication(void)

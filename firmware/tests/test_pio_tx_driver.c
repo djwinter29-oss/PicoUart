@@ -61,6 +61,8 @@ static bool progress_settles;
 static bool parked_tx_high;
 static bool parked_tx_output;
 static uint parked_tx_function;
+static uint claimed_state_machines;
+static uint claimed_dma_channels;
 static uint rx_pc;
 /** @brief Hardware activity injected after RX is paused for the critical recheck. */
 typedef enum {
@@ -77,6 +79,44 @@ void service_load_note(unsigned int core)
 {
     TEST_ASSERT_EQUAL_UINT(1u, core);
     ++service_notes;
+}
+
+bool pio_sm_is_claimed(PIO selected, uint sm)
+{
+    TEST_ASSERT_EQUAL_PTR(config.pio, selected);
+    TEST_ASSERT_TRUE(sm == config.tx_state_machine || sm == config.rx_state_machine);
+    return (claimed_state_machines & (1u << sm)) != 0u;
+}
+
+void pio_sm_claim(PIO selected, uint sm)
+{
+    TEST_ASSERT_FALSE(pio_sm_is_claimed(selected, sm));
+    claimed_state_machines |= 1u << sm;
+}
+
+void pio_sm_unclaim(PIO selected, uint sm)
+{
+    TEST_ASSERT_TRUE(pio_sm_is_claimed(selected, sm));
+    claimed_state_machines &= ~(1u << sm);
+}
+
+int dma_claim_unused_channel(bool required)
+{
+    TEST_ASSERT_FALSE(required);
+    for (uint channel = 2u; channel < 4u; ++channel) {
+        if ((claimed_dma_channels & (1u << channel)) == 0u) {
+            claimed_dma_channels |= 1u << channel;
+            return (int)channel;
+        }
+    }
+    return -1;
+}
+
+void dma_channel_unclaim(uint channel)
+{
+    TEST_ASSERT_TRUE(channel == 2u || channel == 3u);
+    TEST_ASSERT_BITS_HIGH(1u << channel, claimed_dma_channels);
+    claimed_dma_channels &= ~(1u << channel);
 }
 
 uint pio_get_dreq(PIO selected, uint sm, bool tx)
@@ -465,6 +505,8 @@ static void assert_fresh_idle_is_required(void)
 
 void setUp(void)
 {
+    claimed_state_machines = 0u;
+    claimed_dma_channels = 0u;
     memset(&driver, 0, sizeof(driver));
     memset(&pio_tx_test_pio0, 0, sizeof(pio_tx_test_pio0));
     memset(&dma_registers, 0, sizeof(dma_registers));
@@ -701,9 +743,27 @@ void test_released_pio_backend_parks_tx_idle_high(void)
     TEST_ASSERT_EQUAL_UINT(GPIO_FUNC_SIO, parked_tx_function);
 }
 
+void test_production_resource_bindings_delegate_to_sdk(void)
+{
+    const pio_uart_resource_claim_ops_t *ops = &pio_uart_resource_claim_ops_default;
+
+    TEST_ASSERT_FALSE(ops->sm_is_claimed(config.pio, config.tx_state_machine));
+    ops->sm_claim(config.pio, config.tx_state_machine);
+    TEST_ASSERT_TRUE(ops->sm_is_claimed(config.pio, config.tx_state_machine));
+    ops->sm_unclaim(config.pio, config.tx_state_machine);
+    TEST_ASSERT_FALSE(ops->sm_is_claimed(config.pio, config.tx_state_machine));
+    TEST_ASSERT_EQUAL_INT(2, ops->claim_dma_channel(false));
+    TEST_ASSERT_EQUAL_INT(3, ops->claim_dma_channel(false));
+    TEST_ASSERT_EQUAL_INT(-1, ops->claim_dma_channel(false));
+    ops->unclaim_dma_channel(3u);
+    ops->unclaim_dma_channel(2u);
+    TEST_ASSERT_EQUAL_UINT(0u, claimed_dma_channels);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_production_resource_bindings_delegate_to_sdk);
     RUN_TEST(test_released_pio_backend_parks_tx_idle_high);
     RUN_TEST(test_fifo_launch_invalidates_probe_before_writing_bytes);
     RUN_TEST(test_empty_and_full_fifo_paths_do_not_invalidate_probe);

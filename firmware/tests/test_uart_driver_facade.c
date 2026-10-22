@@ -132,7 +132,7 @@ static bool test_startup_reset_buffers(void *instance)
     ++test_reset_calls;
     test_startup_initialized[index] = !test_reset_fails;
     if (test_close_during_start) {
-        uart_driver_request_buffer_reset((uart_port_id_t)index);
+        uart_driver_request_channel_stop((uart_port_id_t)index);
         if (test_reopen_during_start) {
             uart_driver_request_channel_start((uart_port_id_t)index);
         }
@@ -351,14 +351,14 @@ void test_startup_rolls_back_partial_backend_init_and_retries(void)
     TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_2));
     TEST_ASSERT_TRUE(uart_driver_channel_start_pending(UART_PORT_2));
     TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_2));
-    TEST_ASSERT_TRUE(uart_driver_request_buffer_reset(UART_PORT_2));
+    TEST_ASSERT_TRUE(uart_driver_request_channel_stop(UART_PORT_2));
     TEST_ASSERT_FALSE(uart_driver_channel_start_pending(UART_PORT_2));
-    TEST_ASSERT_TRUE(uart_driver_buffer_reset_pending(UART_PORT_2));
-    TEST_ASSERT_FALSE(uart_driver_buffer_reset_ready(UART_PORT_2));
-    uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);
-    TEST_ASSERT_TRUE(uart_driver_buffer_reset_ready(UART_PORT_2));
-    TEST_ASSERT_FALSE(uart_driver_request_buffer_reset(UART_PORT_2));
-    TEST_ASSERT_TRUE(uart_driver_buffer_reset_ready(UART_PORT_2));
+    TEST_ASSERT_TRUE(uart_driver_channel_stop_pending(UART_PORT_2));
+    TEST_ASSERT_FALSE(uart_driver_channel_stop_is_quiesced(UART_PORT_2));
+    uart_driver_channel_stop_usb_quiesced(UART_PORT_2);
+    TEST_ASSERT_TRUE(uart_driver_channel_stop_is_quiesced(UART_PORT_2));
+    TEST_ASSERT_FALSE(uart_driver_request_channel_stop(UART_PORT_2));
+    TEST_ASSERT_TRUE(uart_driver_channel_stop_is_quiesced(UART_PORT_2));
 }
 
 void test_failed_channel_start_finishes_without_retrying_forever(void)
@@ -390,11 +390,11 @@ void test_close_during_start_does_not_publish_ready(void)
     test_worker_hooks->service_control();
     test_close_during_start = false;
 
-    TEST_ASSERT_TRUE(uart_driver_buffer_reset_pending(UART_PORT_2));
+    TEST_ASSERT_TRUE(uart_driver_channel_stop_pending(UART_PORT_2));
     TEST_ASSERT_BITS_LOW(UART_DRIVER_PORT_STATUS_READY, uart_driver_port_status(UART_PORT_2));
     TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_2));
     TEST_ASSERT_TRUE(uart_driver_port_stats(UART_PORT_2, &stats));
-    uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);
+    uart_driver_channel_stop_usb_quiesced(UART_PORT_2);
     test_worker_hooks->service_control();
 }
 
@@ -410,7 +410,7 @@ void test_reopen_during_start_keeps_the_new_start_request(void)
     TEST_ASSERT_TRUE(uart_driver_channel_start_pending(UART_PORT_2));
     TEST_ASSERT_BITS_LOW(UART_DRIVER_PORT_STATUS_READY, uart_driver_port_status(UART_PORT_2));
     TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_2));
-    uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);
+    uart_driver_channel_stop_usb_quiesced(UART_PORT_2);
     test_reset_calls = 0u;
     test_worker_hooks->service_control();
     TEST_ASSERT_EQUAL_UINT(0u, test_reset_calls);
@@ -423,8 +423,8 @@ void test_reopen_during_start_keeps_the_new_start_request(void)
 void test_close_completion_preserves_reopened_control_state(void)
 {
     uint32_t old_generation = uart_driver_mark_control_pending(UART_PORT_2);
-    TEST_ASSERT_TRUE(uart_driver_request_buffer_reset(UART_PORT_2));
-    uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);
+    TEST_ASSERT_TRUE(uart_driver_request_channel_stop(UART_PORT_2));
+    uart_driver_channel_stop_usb_quiesced(UART_PORT_2);
     TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_2));
     TEST_ASSERT_EQUAL_UINT32(old_generation + 2u, uart_driver_mark_control_pending(UART_PORT_2));
     uart_driver_report_control_error(UART_PORT_2);
@@ -441,8 +441,8 @@ void test_close_completion_preserves_reopened_control_state(void)
 
 void test_start_completion_preserves_a_newer_control_rejection(void)
 {
-    TEST_ASSERT_TRUE(uart_driver_request_buffer_reset(UART_PORT_2));
-    uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);
+    TEST_ASSERT_TRUE(uart_driver_request_channel_stop(UART_PORT_2));
+    uart_driver_channel_stop_usb_quiesced(UART_PORT_2);
     test_worker_hooks->service_control();
     TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_2));
     pico_test_time_us += 250000u;

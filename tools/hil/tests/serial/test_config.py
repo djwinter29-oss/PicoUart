@@ -223,6 +223,20 @@ def test_readiness_rejects_duplicate_channels(monkeypatch):
         serial_port.wait_ports_ready([("pico0", 17), ("alias", 18)], 115200)
 
 
+@pytest.mark.parametrize("endpoints, message", [
+    ({"cdc0": ("BOARD-A", 0), "cdc1": None}, "not PicoUart"),
+    ({"cdc0": ("BOARD-A", 1), "cdc1": ("BOARD-A", 0)}, "expected CDC"),
+    ({"cdc0": ("BOARD-A", 0), "cdc1": ("BOARD-B", 1)}, "one PicoUart"),
+])
+def test_fixture_readiness_rejects_unidentified_swapped_or_mixed_board_endpoints(monkeypatch, endpoints, message):
+    serial_port = _load_serial_config()
+    monkeypatch.setattr(serial_port, "pico_uart_endpoint", endpoints.get)
+    monkeypatch.setattr(serial_port.fcntl, "ioctl", lambda *_args: pytest.fail("DTR asserted before validation"))
+    with pytest.raises(OSError, match=message):
+        serial_port.wait_ports_ready([("cdc0", 17), ("cdc1", 18)], 115200,
+                                    expected_channels={"cdc0": 0, "cdc1": 1})
+
+
 @pytest.mark.parametrize("vendor, interface_number, expected", [("cafe", "04", ("BOARD-SERIAL", 2)),
                                                                ("1234", "04", None)])
 def test_pico_endpoint_uses_usb_interface_not_tty_ordinal(monkeypatch, tmp_path, vendor, interface_number, expected):

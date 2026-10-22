@@ -49,6 +49,13 @@ typedef struct {
 bool ring_buffer_init(ring_buffer_t *ring, uint8_t *storage, size_t size);
 
 /**
+ * @brief Discard queued bytes and reservations without clearing lifetime watermark or overflow counts.
+ * @param ring Initialized ring, or null for no action.
+ * @note The caller must quiesce both producer and consumer, including DMA, before clearing the ring.
+ */
+void ring_buffer_clear(ring_buffer_t *ring);
+
+/**
  * @brief Run the fixed-size ring overwrite and sequence-wrap self-check.
  * @return `true` when the ring preserves its ownership and ordering invariants.
  */

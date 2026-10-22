@@ -15,7 +15,7 @@
  * @param is_open New DTR state for this interface.
  * @return `true` only on an open-to-closed transition.
  */
-static inline bool usb_cdc_dtr_close_should_reset_channel(bool was_open, bool is_open)
+static inline bool usb_cdc_dtr_close_should_stop_channel(bool was_open, bool is_open)
 {
     return was_open && !is_open;
 }

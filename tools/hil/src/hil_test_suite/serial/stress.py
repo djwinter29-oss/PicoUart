@@ -238,7 +238,10 @@ def configure_fixture_ports(arguments: argparse.Namespace, baud_rate: int, ports
     for channel in range(6):
         set_port_line_coding(descriptors[channel], baud_rate, allow_arbitrary=True)
     time.sleep(LINE_CODING_SETTLE_SECONDS)
-    wait_ports_ready([(getattr(arguments, f"cdc{channel}"), descriptors[channel]) for channel in range(6)], baud_rate)
+    wait_ports_ready(
+        [(getattr(arguments, f"cdc{channel}"), descriptors[channel]) for channel in range(6)], baud_rate,
+        expected_channels={getattr(arguments, f"cdc{channel}"): channel for channel in range(6)},
+    )
     for descriptor in descriptors.values():
         termios.tcflush(descriptor, termios.TCIOFLUSH)
     return descriptors

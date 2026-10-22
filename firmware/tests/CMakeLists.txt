@@ -134,6 +134,13 @@ pico_uart_add_unity_test(test_cdc_soft_pending cdc_soft_pending
     test_cdc_soft_pending.c
 )
 
+pico_uart_add_unity_test(test_usb_cdc usb_cdc
+    test_usb_cdc.c
+    ${FIRMWARE_ROOT}/src/usb/usb_cdc.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+)
+target_include_directories(test_usb_cdc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
+
 pico_uart_add_unity_test(test_topology topology
     test_topology.c
     ${CMAKE_CURRENT_SOURCE_DIR}/support/board/uart_topology.c

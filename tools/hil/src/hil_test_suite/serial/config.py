@@ -57,24 +57,32 @@ def pico_uart_endpoint(path: str) -> tuple[str, int] | None:
 
 
 def wait_ports_ready(ports: list[tuple[str, int]], baud_rate: int, *, require_pico: bool = True,
-                     timeout_s: float = 3.0) -> None:
+                     timeout_s: float = 3.0, expected_channels: dict[str, int] | None = None) -> None:
     """Assert DTR after group configuration and await applied settings on the matching HID devices."""
     from pico_uart import PicoUartHid
 
     if not math.isfinite(timeout_s) or timeout_s <= 0:
         raise ValueError("timeout_s must be finite and positive")
+    if expected_channels is not None and set(expected_channels) != {path for path, _descriptor in ports}:
+        raise ValueError("expected CDC mapping must cover every selected endpoint")
     boards: dict[str, dict[int, int]] = {}
     descriptors = []
     for path, descriptor in ports:
         endpoint = pico_uart_endpoint(path)
         if endpoint is None:
+            if expected_channels is not None:
+                raise OSError(f"selected fixture endpoint is not PicoUart: {path}")
             continue
         serial, channel = endpoint
+        if expected_channels is not None and channel != expected_channels[path]:
+            raise OSError(f"{path} is CDC{channel}, expected CDC{expected_channels[path]}")
         channels = boards.setdefault(serial, {})
         if channel in channels:
             raise ValueError(f"duplicate PicoUart CDC{channel} endpoint for {serial}")
         channels[channel] = baud_rate
         descriptors.append(descriptor)
+    if expected_channels is not None and len(boards) != 1:
+        raise OSError("all fixture CDC endpoints must belong to one PicoUart board")
     if require_pico and not boards:
         raise OSError("no PicoUart CDC endpoint identified; readiness cannot be verified")
     if not boards:

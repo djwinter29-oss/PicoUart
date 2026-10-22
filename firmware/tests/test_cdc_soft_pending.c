@@ -38,10 +38,10 @@ void test_nil_deadline_is_never_a_timeout(void)
 
 void test_only_dtr_open_to_closed_requests_channel_reset(void)
 {
-    TEST_ASSERT_FALSE(usb_cdc_dtr_close_should_reset_channel(false, false));
-    TEST_ASSERT_FALSE(usb_cdc_dtr_close_should_reset_channel(false, true));
-    TEST_ASSERT_FALSE(usb_cdc_dtr_close_should_reset_channel(true, true));
-    TEST_ASSERT_TRUE(usb_cdc_dtr_close_should_reset_channel(true, false));
+    TEST_ASSERT_FALSE(usb_cdc_dtr_close_should_stop_channel(false, false));
+    TEST_ASSERT_FALSE(usb_cdc_dtr_close_should_stop_channel(false, true));
+    TEST_ASSERT_FALSE(usb_cdc_dtr_close_should_stop_channel(true, true));
+    TEST_ASSERT_TRUE(usb_cdc_dtr_close_should_stop_channel(true, false));
 }
 
 void test_mailbox_acceptance_and_sequence_wrap(void)
