@@ -424,6 +424,7 @@ void test_close_during_start_does_not_publish_ready(void)
 
     TEST_ASSERT_TRUE(uart_driver_buffer_reset_pending(UART_PORT_2));
     TEST_ASSERT_BITS_LOW(UART_DRIVER_PORT_STATUS_READY, uart_driver_port_status(UART_PORT_2));
+    TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_2));
     uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);
     test_worker_hooks->service_control();
 }
@@ -439,6 +440,7 @@ void test_reopen_during_start_keeps_the_new_start_request(void)
 
     TEST_ASSERT_TRUE(uart_driver_channel_start_pending(UART_PORT_2));
     TEST_ASSERT_BITS_LOW(UART_DRIVER_PORT_STATUS_READY, uart_driver_port_status(UART_PORT_2));
+    TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_2));
     uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);
     test_reset_calls = 0u;
     test_worker_hooks->service_control();
@@ -482,6 +484,23 @@ void test_start_completion_preserves_a_newer_control_rejection(void)
                           uart_driver_port_status(UART_PORT_2));
 }
 
+void test_channel_settle_does_not_block_another_start_or_control_service(void)
+{
+    TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_0));
+    pico_test_time_us += 100000u;
+    TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_1));
+    pico_test_time_us += 150000u;
+    test_control_service_calls = 0u;
+    test_worker_hooks->service_control();
+
+    TEST_ASSERT_BITS_HIGH(UART_DRIVER_PORT_STATUS_READY, uart_driver_port_status(UART_PORT_0));
+    TEST_ASSERT_TRUE(uart_driver_channel_start_pending(UART_PORT_1));
+    TEST_ASSERT_EQUAL_UINT(1u, test_control_service_calls);
+    pico_test_time_us += 100000u;
+    test_worker_hooks->service_control();
+    TEST_ASSERT_BITS_HIGH(UART_DRIVER_PORT_STATUS_READY, uart_driver_port_status(UART_PORT_1));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -496,5 +515,6 @@ int main(void)
     RUN_TEST(test_reopen_during_start_keeps_the_new_start_request);
     RUN_TEST(test_close_completion_preserves_reopened_control_state);
     RUN_TEST(test_start_completion_preserves_a_newer_control_rejection);
+    RUN_TEST(test_channel_settle_does_not_block_another_start_or_control_service);
     return UNITY_END();
 }

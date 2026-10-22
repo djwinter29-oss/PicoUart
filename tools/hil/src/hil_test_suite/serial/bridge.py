@@ -19,6 +19,7 @@ from .config import (
     deassert_dtr,
     open_port,
     set_port_line_coding,
+    wait_ports_ready,
 )
 
 
@@ -56,6 +57,8 @@ def configure_ports(paths: list[str], baud_rate: int) -> list[tuple[int, list]]:
         for file_descriptor, _settings in ports:
             set_port_line_coding(file_descriptor, baud_rate)
         time.sleep(LINE_CODING_SETTLE_SECONDS)
+        wait_ports_ready([(path, descriptor) for path, (descriptor, _settings) in zip(paths, ports, strict=True)],
+                 baud_rate)
         for file_descriptor, _settings in ports:
             termios.tcflush(file_descriptor, termios.TCIOFLUSH)
         return ports
@@ -321,7 +324,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
                 "HID monitor for rx_overrun / rx_error claims."
             )
             result = 0
-    except OSError as error:
+    except (OSError, RuntimeError) as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
         result = 2
     finally:

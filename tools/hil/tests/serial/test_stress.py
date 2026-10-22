@@ -261,6 +261,7 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
 
     monkeypatch.setattr(stress, "open_port", lambda *_args, **_kwargs: (next(next_descriptor), []))
     monkeypatch.setattr(stress, "set_port_line_coding", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(stress, "wait_ports_ready", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(stress.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(stress.termios, "tcflush", lambda *_args: None)
     monkeypatch.setattr(stress, "run_stream", fake_run_stream)
@@ -666,6 +667,7 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     monkeypatch.setattr(stress.termios, "tcflush", lambda fd, _queue: events.append(("flush", fd)))
     monkeypatch.setattr(stress, "open_port", open_endpoint)
     monkeypatch.setattr(stress, "set_port_line_coding", configure_endpoint)
+    monkeypatch.setattr(stress, "wait_ports_ready", lambda ports, baud: events.append(("ready", ports, baud)))
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(stress, "run_stream", run_stream)
     monkeypatch.setattr(stress, "close_ports", lambda *_: None)
@@ -684,10 +686,11 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     assert events[6] == ("sleep", stress.PORT_OPEN_SETTLE_SECONDS)
     assert events[7:13] == [("line coding", fd) for fd in range(1, 7)]
     assert events[13] == ("sleep", stress.LINE_CODING_SETTLE_SECONDS)
-    assert events[14:20] == [("flush", fd) for fd in range(1, 7)]
-    assert events[20] == ("sleep", arguments.settle_seconds)
-    assert events[21:27] == [("flush", fd) for fd in range(1, 7)]
-    assert all(event[0] == "transmit" for event in events[27:])
+    assert events[14] == ("ready", [(f"cdc{channel}", channel + 1) for channel in range(6)], 115200)
+    assert events[15:21] == [("flush", fd) for fd in range(1, 7)]
+    assert events[21] == ("sleep", arguments.settle_seconds)
+    assert events[22:28] == [("flush", fd) for fd in range(1, 7)]
+    assert all(event[0] == "transmit" for event in events[28:])
 
 
 def test_hil_fixture_plan_matches_modes_and_timing(repo_root):

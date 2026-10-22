@@ -78,13 +78,15 @@ interval before testing each rate. After settling, the runner flushes all host T
 CDC re-enumeration or DTR-triggered channel reset cannot contaminate the next rate's first payload.
 
 For each paired functional test, the bridge runner opens both endpoints before applying either line coding. For each
-concurrent rate, the stress runner opens all six CDC endpoints first, waits 250 ms for the worker to start the backends,
-applies line coding to all six, waits another 250 ms for firmware to apply it, and flushes the host TTY queues. After
-traffic, closing the endpoints deinitializes each backend while the host is closed; the next rate starts them again
-before applying line coding. The host runner deasserts DTR before restoring saved TTY settings so restoration cannot
-reconfigure a backend during close. The runner waits the configured rate-settle interval (8 seconds by default) and
-flushes once more before health sampling or traffic. Keep these delays enabled for ceiling searches; they are setup
-time, not time removed from the payload duration.
+concurrent rate, the stress runner opens all six CDC endpoints first. Identified PicoUart endpoints hold DTR low during
+configuration. Setup retains 250 ms delays around line coding, then asserts DTR for the configured group and requires
+a bounded HID readiness handshake before returning descriptors or transmitting. Linux sysfs associates each selected
+TTY with its USB serial number and CDC interface; HID auto-discovery of an unrelated board is not used for readiness.
+The handshake contract and timeout are defined in [Control Plane Design](../design/control-plane-design.md#usb-mount-and-unmount-reset).
+Failure closes all opened endpoints and prevents payload transmission. After traffic, closing deinitializes each
+backend; teardown deasserts DTR before restoring saved TTY settings. The runner then retains the configured rate-settle
+interval (8 seconds by default) and flushes once more before health sampling or traffic. These delays are setup time,
+not time removed from the payload duration, and are not a substitute for readiness verification.
 
 The standalone performance runner and combined runner default to this concurrent six-port sweep, in order:
 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, and 3000000 baud. The default sweep

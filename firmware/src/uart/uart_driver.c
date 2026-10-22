@@ -23,7 +23,7 @@
 #include "uart/worker.h"
 #include "uart/worker_health.h"
 
-/** @brief Let the host open/configure sibling CDC interfaces before RX is enabled. */
+/** @brief Debounce each channel's DTR-open transition before enabling RX. */
 #define UART_DRIVER_CHANNEL_START_SETTLE_MS 250u
 
 /** @brief Single owner for top-level UART facade state. */
@@ -35,7 +35,7 @@ static void uart_driver_poll_io(void);
 static void uart_driver_worker_initialize(void);
 static void uart_driver_worker_service_control(void);
 static void uart_driver_worker_core_main(void);
-static bool uart_driver_service_channel_lifecycle(void);
+static void uart_driver_service_channel_lifecycle(void);
 static bool uart_driver_mailbox_has_pending_port(uart_port_id_t port_id);
 static void uart_driver_bind_state_views(void);
 
@@ -99,41 +99,24 @@ static void uart_driver_worker_initialize(void)
 
 static void uart_driver_worker_service_control(void)
 {
-    if (!uart_driver_service_channel_lifecycle()) {
-        uart_control_plane_service(&uart_driver_state.control_plane);
-    }
+    uart_driver_service_channel_lifecycle();
+    uart_control_plane_service(&uart_driver_state.control_plane);
 }
 
 /** @brief Stop closed ports and start opened ports only on the UART worker core. */
-static bool uart_driver_service_channel_lifecycle(void)
+static void uart_driver_service_channel_lifecycle(void)
 {
-    static const uart_port_id_t channel_start_order[UART_PORT_COUNT] = {
-        UART_PORT_2, UART_PORT_0, UART_PORT_4, UART_PORT_3, UART_PORT_1, UART_PORT_5,
-    };
-    bool any_pending = false;
-    bool channel_starts_ready = true;
-    uint32_t save = spin_lock_blocking(uart_driver_state.status_lock);
-
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
-        if (uart_driver_state.channel_start_pending[index] &&
-            !time_reached(uart_driver_state.channel_start_deadline[index])) {
-            channel_starts_ready = false;
-        }
-    }
-    spin_unlock(uart_driver_state.status_lock, save);
-
-    for (size_t order = 0u; order < UART_PORT_COUNT; ++order) {
-        uart_port_id_t port_id = channel_start_order[order];
-        size_t index = (size_t)port_id;
+        uart_port_id_t port_id = (uart_port_id_t)index;
         uart_runtime_port_t *port = &uart_driver_state.ports[index];
         bool reset_pending;
         bool lifecycle_ok;
+        uint32_t save;
 
         save = spin_lock_blocking(uart_driver_state.status_lock);
         reset_pending = uart_driver_state.buffer_reset_pending[index];
         if (reset_pending && !uart_driver_state.buffer_reset_usb_quiesced[index]) {
             spin_unlock(uart_driver_state.status_lock, save);
-            any_pending = true;
             continue;
         }
         spin_unlock(uart_driver_state.status_lock, save);
@@ -162,10 +145,9 @@ static bool uart_driver_service_channel_lifecycle(void)
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
         }
-        if (uart_driver_state.buffer_reset_pending[index] || !channel_starts_ready ||
+        if (uart_driver_state.buffer_reset_pending[index] ||
             !time_reached(uart_driver_state.channel_start_deadline[index])) {
             spin_unlock(uart_driver_state.status_lock, save);
-            any_pending = true;
             continue;
         }
         uart_driver_state.channel_start_pending[index] = false;
@@ -185,7 +167,8 @@ static bool uart_driver_service_channel_lifecycle(void)
 
         save = spin_lock_blocking(uart_driver_state.status_lock);
         if (uart_driver_state.buffer_reset_pending[index] || uart_driver_state.channel_start_pending[index]) {
-            any_pending = true;
+            spin_unlock(uart_driver_state.status_lock, save);
+            continue;
         } else if (lifecycle_ok) {
             port->info.baud_rate = port->ops->baud_rate(&port->backend);
             uart_driver_state.status_flags[index] &= (uint8_t)~UART_DRIVER_PORT_STATUS_INIT_FAILED;
@@ -196,8 +179,6 @@ static bool uart_driver_service_channel_lifecycle(void)
         }
         spin_unlock(uart_driver_state.status_lock, save);
     }
-
-    return any_pending;
 }
 
 static void uart_driver_bind_state_views(void)
@@ -362,7 +343,8 @@ size_t uart_driver_port_count(void)
 
 bool uart_driver_port_is_ready(uart_port_id_t port_id)
 {
-    return uart_port_api_is_ready(&uart_driver_state.port_api, port_id);
+    return ((uart_driver_port_status(port_id) & UART_DRIVER_PORT_STATUS_READY) != 0u) &&
+           uart_port_api_is_ready(&uart_driver_state.port_api, port_id);
 }
 
 bool uart_driver_request_buffer_reset(uart_port_id_t port_id)

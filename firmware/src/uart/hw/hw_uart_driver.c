@@ -515,8 +515,10 @@ void hw_uart_driver_deinit(void *context)
     /* Publish while the RX channel is still claimed. release_dma aborts it. */
     hw_uart_driver_publish_rx(driver);
     hw_uart_driver_release_dma(driver);
+    gpio_put(driver->config->port->tx_pin, true);
+    gpio_set_dir(driver->config->port->tx_pin, GPIO_OUT);
+    gpio_set_function(driver->config->port->tx_pin, GPIO_FUNC_SIO);
     uart_deinit(driver->config->instance);
-    gpio_set_function(driver->config->port->tx_pin, GPIO_FUNC_NULL);
     gpio_set_function(driver->config->port->rx_pin, GPIO_FUNC_NULL);
     if (driver->config->hardware_flow_control) {
         gpio_set_function(driver->config->port->rts_pin, GPIO_FUNC_NULL);

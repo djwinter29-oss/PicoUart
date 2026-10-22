@@ -58,6 +58,9 @@ static bool rx_dma_busy;
 static bool rx_fifo_empty;
 static bool rx_high;
 static bool progress_settles;
+static bool parked_tx_high;
+static bool parked_tx_output;
+static uint parked_tx_function;
 static uint rx_pc;
 /** @brief Hardware activity injected after RX is paused for the critical recheck. */
 typedef enum {
@@ -307,9 +310,32 @@ bool gpio_get(uint pin) { TEST_ASSERT_EQUAL_UINT(port.rx_pin, pin); return rx_hi
 
 void gpio_put(uint pin, bool value)
 {
-    (void)pin;
-    (void)value;
-    TEST_FAIL_MESSAGE("RTS is disabled in this fixture");
+    TEST_ASSERT_EQUAL_UINT(port.tx_pin, pin);
+    parked_tx_high = value;
+}
+
+void gpio_set_dir(uint pin, bool output)
+{
+    TEST_ASSERT_EQUAL_UINT(port.tx_pin, pin);
+    parked_tx_output = output;
+}
+
+void gpio_set_function(uint pin, uint function)
+{
+    TEST_ASSERT_EQUAL_UINT(port.tx_pin, pin);
+    parked_tx_function = function;
+}
+
+void gpio_deinit(uint pin)
+{
+    TEST_ASSERT_EQUAL_UINT(port.rx_pin, pin);
+}
+
+void pio_set_input_sync_bypass_with_mask(PIO selected, uint32_t value, uint32_t mask)
+{
+    TEST_ASSERT_EQUAL_PTR(config.pio, selected);
+    TEST_ASSERT_EQUAL_UINT32(0u, value);
+    TEST_ASSERT_EQUAL_UINT32(1u << port.rx_pin, mask);
 }
 
 bool pio_interrupt_get(PIO selected, uint irq)
@@ -664,9 +690,21 @@ void test_baud_change_waits_for_fresh_txstall_across_calls(void)
     assert_rx_preserved_and_resumed();
 }
 
+void test_released_pio_backend_parks_tx_idle_high(void)
+{
+    parked_tx_high = false;
+    parked_tx_output = false;
+    parked_tx_function = 99u;
+    pio_uart_driver_release_gpio(&driver);
+    TEST_ASSERT_TRUE(parked_tx_high);
+    TEST_ASSERT_TRUE(parked_tx_output);
+    TEST_ASSERT_EQUAL_UINT(GPIO_FUNC_SIO, parked_tx_function);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_released_pio_backend_parks_tx_idle_high);
     RUN_TEST(test_fifo_launch_invalidates_probe_before_writing_bytes);
     RUN_TEST(test_empty_and_full_fifo_paths_do_not_invalidate_probe);
     RUN_TEST(test_dma_completion_relaunch_preserves_order_and_requires_fresh_idle);

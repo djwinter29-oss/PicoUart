@@ -35,6 +35,80 @@ def test_all_version1_payload_sizes_and_identity_fields():
     assert len(channel_bytes()) == CHANNEL_SIZE == 54
 
 
+def test_ready_wait_ignores_historical_control_faults(monkeypatch):
+    client = PicoUartHid(device=object())
+    monkeypatch.setattr(client, "_read_feature", lambda *_args: channel_bytes(health=0x11, faults=(0, 2, 0, 0)))
+    baud = parse_channel(channel_bytes())["baud_rate"]
+    assert client.wait_channels_ready({0: baud})[0]["faults"]["control_error"]["count"] == 2
+
+
+@pytest.mark.parametrize("health", [0x13, 0x15])
+def test_ready_wait_rejects_current_errors(monkeypatch, health):
+    client = PicoUartHid(device=object())
+    monkeypatch.setattr(client, "_read_feature", lambda *_args: channel_bytes(health=health))
+    with pytest.raises(OSError, match="CDC0 configuration failed"):
+        client.wait_channels_ready({0: 115200})
+
+
+@pytest.mark.parametrize("health", [0x00, 0x01, 0x10, 0x19])
+def test_ready_wait_times_out_without_open_ready_and_applied(monkeypatch, health):
+    client = PicoUartHid(device=object())
+    monkeypatch.setattr(client, "_read_feature", lambda *_args: channel_bytes(health=health))
+    with pytest.raises(TimeoutError, match="readiness"):
+        client.wait_channels_ready({0: 115200}, timeout_s=0.001)
+
+
+def test_ready_wait_propagates_disconnect(monkeypatch):
+    client = PicoUartHid(device=object())
+    def disconnected(*_args):
+        raise OSError("disconnected")
+    monkeypatch.setattr(client, "_read_feature", disconnected)
+    with pytest.raises(OSError, match="disconnected"):
+        client.wait_channels_ready({0: 115200})
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan")])
+def test_ready_wait_validates_timeout(timeout):
+    with pytest.raises(ValueError, match="timeout_s"):
+        PicoUartHid(device=object()).wait_channels_ready({0: 115200}, timeout_s=timeout)
+
+
+@pytest.mark.parametrize("changes", [{"baud": 9600}, {"framing": (7, 1, 0)}, {"framing": (8, 2, 0)},
+                                     {"framing": (8, 1, 1)}])
+def test_ready_wait_requires_requested_baud_and_framing(monkeypatch, changes):
+    client = PicoUartHid(device=object())
+    monkeypatch.setattr(client, "_read_feature", lambda *_args: channel_bytes(**changes))
+    with pytest.raises(TimeoutError, match="readiness"):
+        client.wait_channels_ready({0: 115200}, timeout_s=0.001)
+
+
+def test_ready_wait_accepts_pending_then_applied_for_all_channels(monkeypatch):
+    client = PicoUartHid(device=object())
+    reports = iter([channel_bytes(health=0x19), channel_bytes(), channel_bytes(), channel_bytes()])
+    calls = []
+    def read(report_id, _size, deadline):
+        calls.append((report_id, deadline))
+        return next(reports)
+    monkeypatch.setattr(client, "_read_feature", read)
+    assert set(client.wait_channels_ready({0: 115200, 2: 115200})) == {0, 2}
+    assert [report_id for report_id, _deadline in calls] == [10, 12, 10, 12]
+    assert len({deadline for _report_id, deadline in calls}) == 1
+
+
+def test_ready_wait_rejects_ready_sample_returned_after_deadline(monkeypatch):
+    from types import SimpleNamespace
+    import pico_uart.client as client_module
+    now = [0.0]
+    monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    client = PicoUartHid(device=object())
+    def late_read(*_args):
+        now[0] = 4.0
+        return channel_bytes()
+    monkeypatch.setattr(client, "_read_feature", late_read)
+    with pytest.raises(TimeoutError, match="HID read timed out"):
+        client.wait_channels_ready({0: 115200}, timeout_s=3.0)
+
+
 @pytest.mark.parametrize("mutation", [
     {"profile_mask": 0}, {"capabilities": 0x8000}, {"ram_total": 0},
     {"product": b"bad\0name"}, {"serial": b"not-a-serial!!"},

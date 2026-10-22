@@ -39,6 +39,9 @@ static uint launches;
 static uint uart_reads;
 static uint gpio_put_calls;
 static bool gpio_put_value;
+static uint tx_gpio_function;
+static bool tx_gpio_output;
+static bool tx_gpio_high;
 static uint clock_calls;
 static uint init_calls;
 static uint deinit_calls;
@@ -132,18 +135,18 @@ void uart_set_fifo_enabled(uart_inst_t *uart, bool enabled)
     TEST_ASSERT_TRUE(enabled);
 }
 
-void gpio_set_function(uint pin, uint function) { (void)pin; (void)function; }
+void gpio_set_function(uint pin, uint function) { if (pin == port.tx_pin) tx_gpio_function = function; }
 void gpio_set_slew_rate(uint pin, uint rate) { (void)pin; (void)rate; }
 void gpio_set_drive_strength(uint pin, uint strength) { (void)pin; (void)strength; }
 void gpio_pull_down(uint pin) { (void)pin; }
 void gpio_disable_pulls(uint pin) { (void)pin; }
 void gpio_put(uint pin, bool value)
 {
-    (void)pin;
+    if (pin == port.tx_pin) tx_gpio_high = value;
     gpio_put_value = value;
     ++gpio_put_calls;
 }
-void gpio_set_dir(uint pin, bool output) { (void)pin; (void)output; }
+void gpio_set_dir(uint pin, bool output) { if (pin == port.tx_pin) tx_gpio_output = output; }
 
 uint32_t save_and_disable_interrupts(void)
 {
@@ -536,9 +539,22 @@ void test_rx_dma_poll_fallback_acknowledges_before_delayed_irq(void)
     TEST_ASSERT_EQUAL_UINT(1u, rx_rearm_calls);
 }
 
+void test_closed_hw_backend_parks_tx_idle_high(void)
+{
+    tx_gpio_function = GPIO_FUNC_UART;
+    tx_gpio_output = false;
+    tx_gpio_high = false;
+    hw_uart_driver_deinit(&driver);
+    TEST_ASSERT_EQUAL_UINT(GPIO_FUNC_SIO, tx_gpio_function);
+    TEST_ASSERT_TRUE(tx_gpio_output);
+    TEST_ASSERT_TRUE(tx_gpio_high);
+    TEST_ASSERT_FALSE(driver.initialized);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_closed_hw_backend_parks_tx_idle_high);
     RUN_TEST(test_tx_commits_only_after_completion_and_relaunches_in_order);
     RUN_TEST(test_empty_tx_queue_skips_uart_busy_register_read);
     RUN_TEST(test_rts_runtime_updates_use_hysteresis_and_only_write_on_transition);

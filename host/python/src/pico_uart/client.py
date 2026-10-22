@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import threading
 import time
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -244,6 +245,43 @@ class PicoUartHid:
             channel_id = report[0] - REPORT_ID_CHANNEL_BASE
             self._apply_input(channel_id, parse_channel(bytes(report[1:])), time.monotonic())
             return {"channels": deepcopy(self._channels)}
+
+    def wait_channels_ready(self, channels: dict[int, int], timeout_s: float = 3.0) -> dict[int, dict[str, object]]:
+        """Wait for selected open channels to apply raw 8N1 at the requested baud (within 3%).
+
+        Call after opening/configuring every endpoint in a group. Historical faults do not fail this wait;
+        current initialization/configuration errors do. HID transport errors propagate to the caller.
+        """
+        if not channels or any(type(index) is not int or not 0 <= index < UART_CHANNEL_COUNT
+                               or type(baud) is not int or baud <= 0 for index, baud in channels.items()):
+            raise ValueError("channels must map indices 0 through 5 to positive integer baud rates")
+        if not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError("timeout_s must be finite and positive")
+        deadline = time.monotonic() + timeout_s
+        while True:
+            samples = {}
+            for index, baud in channels.items():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"CDC readiness timed out for channels {list(channels)}")
+                try:
+                    with self._lock:
+                        sample = parse_channel(self._read_feature(REPORT_ID_CHANNEL_BASE + index, CHANNEL_SIZE, deadline))
+                except RuntimeError as error:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("CDC readiness HID read timed out") from error
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("CDC readiness HID read timed out")
+                health = sample["health"]
+                if health & 0x06:
+                    raise OSError(f"CDC{index} configuration failed: {sample['health_labels']}")
+                if (health & 0x19 == 0x11 and sample["baud_rate"]
+                        and abs(sample["baud_rate"] - baud) <= baud * 0.03
+                        and (sample["data_bits"], sample["parity"], sample["stop_bits"]) == (8, "none", 1)):
+                    samples[index] = {"id": index, **sample}
+            if len(samples) == len(channels):
+                return samples
+            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
     def _apply_input(self, channel_id: int, sample: dict[str, object], now: float) -> None:
         channel = self._channels[channel_id]

@@ -94,6 +94,12 @@ whose Input report arrived. Device access failures may raise `OSError` or `Runti
 `PicoUartHid(serial_number="ABC123")` to select a board. Static identity and capability data come from
 `read_identity()` / `read_board_status()`. Live board values come from `read_telemetry()`; channel Feature snapshots
 are available through `read_channel_diagnostic(index)` and do not contribute to Input traffic totals.
+After opening and configuring all selected CDC TTYs and asserting DTR, use
+`board.wait_channels_ready({0: 115200, 2: 115200}, timeout_s=3.0)` before transmitting. This waits for open, ready
+channels with applied 8N1 settings within 3% of the requested baud and no pending control. It raises `OSError` for
+current initialization/configuration failures, `TimeoutError` on expiry, and propagates HID access errors. Historical
+fault counters do not fail readiness. Select the HID board by the same USB serial number as the TTY endpoints;
+this helper does not open or configure TTYs and does not change generic POSIX `open()` behavior.
 `read_runtime()`, `read_led()`, `read_overflow_counts()`, `read_hardware_info()`, and `read_configuration()` remain
 convenience methods.
 

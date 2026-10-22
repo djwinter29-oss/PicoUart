@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import fcntl
+import math
 import os
 import struct
 import termios
 import time
+from pathlib import Path
 
 
 BAUD_RATES = {
@@ -29,6 +31,63 @@ TCGETS2 = 0x802C542A
 TCSETS2 = 0x402C542B
 BOTHER = 0x1000
 CBAUD = termios.CBAUD
+
+
+def pico_uart_endpoint(path: str) -> tuple[str, int] | None:
+    """Resolve a Linux TTY to its PicoUart USB serial and CDC index, never its ttyACM ordinal."""
+    from pico_uart.transport import PRODUCT_ID, VENDOR_ID
+
+    device = Path("/sys/class/tty") / Path(os.path.realpath(path)).name / "device"
+    if not device.exists():
+        return None
+    device = device.resolve(strict=True)
+    interface = next((parent for parent in (device, *device.parents)
+                      if (parent / "bInterfaceNumber").is_file()), None)
+    if interface is None:
+        return None
+    usb = interface.parent
+    if (int((usb / "idVendor").read_text().strip(), 16),
+            int((usb / "idProduct").read_text().strip(), 16)) != (VENDOR_ID, PRODUCT_ID):
+        return None
+    number = int((interface / "bInterfaceNumber").read_text().strip(), 16)
+    serial = (usb / "serial").read_text().strip()
+    if not serial or number not in range(0, 12, 2):
+        raise OSError(f"cannot identify PicoUart CDC endpoint: {path}")
+    return serial, number // 2
+
+
+def wait_ports_ready(ports: list[tuple[str, int]], baud_rate: int, *, require_pico: bool = True,
+                     timeout_s: float = 3.0) -> None:
+    """Assert DTR after group configuration and await applied settings on the matching HID devices."""
+    from pico_uart import PicoUartHid
+
+    if not math.isfinite(timeout_s) or timeout_s <= 0:
+        raise ValueError("timeout_s must be finite and positive")
+    boards: dict[str, dict[int, int]] = {}
+    descriptors = []
+    for path, descriptor in ports:
+        endpoint = pico_uart_endpoint(path)
+        if endpoint is None:
+            continue
+        serial, channel = endpoint
+        channels = boards.setdefault(serial, {})
+        if channel in channels:
+            raise ValueError(f"duplicate PicoUart CDC{channel} endpoint for {serial}")
+        channels[channel] = baud_rate
+        descriptors.append(descriptor)
+    if require_pico and not boards:
+        raise OSError("no PicoUart CDC endpoint identified; readiness cannot be verified")
+    if not boards:
+        return
+    for descriptor in descriptors:
+        fcntl.ioctl(descriptor, termios.TIOCMBIS, struct.pack("I", termios.TIOCM_DTR))
+    deadline = time.monotonic() + timeout_s
+    for serial, channels in boards.items():
+        with PicoUartHid(serial_number=serial) as board:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("CDC readiness timed out")
+            board.wait_channels_ready(channels, timeout_s=remaining)
 
 
 def deassert_dtr(file_descriptor: int) -> None:
@@ -70,6 +129,8 @@ def open_port(path: str, baud_rate: int, *, allow_arbitrary: bool = False) -> tu
 
     file_descriptor = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     try:
+        if pico_uart_endpoint(path) is not None:
+            deassert_dtr(file_descriptor)
         original_settings = termios.tcgetattr(file_descriptor)
         original_termios2 = None
         if baud_rate not in BAUD_RATES:
@@ -131,6 +192,7 @@ def configure_port(path: str, baud_rate: int, *, allow_arbitrary: bool = False) 
         time.sleep(PORT_OPEN_SETTLE_SECONDS)
         set_port_line_coding(file_descriptor, baud_rate, allow_arbitrary=allow_arbitrary)
         time.sleep(LINE_CODING_SETTLE_SECONDS)
+        wait_ports_ready([(path, file_descriptor)], baud_rate, require_pico=False)
         termios.tcflush(file_descriptor, termios.TCIOFLUSH)
         return file_descriptor, original
     except BaseException:

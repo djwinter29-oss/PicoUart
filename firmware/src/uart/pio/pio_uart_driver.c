@@ -316,10 +316,13 @@ static void pio_uart_driver_unclaim_state_machines(pio_uart_driver_t *driver)
     }
 }
 
+/** @brief Release backend GPIOs while keeping the disconnected UART transmitter idle-high. */
 static void pio_uart_driver_release_gpio(pio_uart_driver_t *driver)
 {
     if (driver->config->port->tx_pin != UART_DRIVER_PIN_UNASSIGNED) {
-        gpio_deinit(driver->config->port->tx_pin);
+        gpio_put(driver->config->port->tx_pin, true);
+        gpio_set_dir(driver->config->port->tx_pin, GPIO_OUT);
+        gpio_set_function(driver->config->port->tx_pin, GPIO_FUNC_SIO);
     }
     if (driver->config->port->rx_pin != UART_DRIVER_PIN_UNASSIGNED) {
         /* Init leaves the synchronizer on. Clear bypass anyway so a partial

@@ -90,7 +90,16 @@ the bridge resumes.
 Close invalidates older control generations. Worker close completion preserves control requests received after reopen,
 and a start completion cannot overwrite a newer close/open request or clear a newer control error. Each open makes one
 backend start attempt; failure publishes `INIT_FAILED` instead of retrying indefinitely and blocking other ports' control
-processing. Close and reopen to retry. Startup still waits for the pending opens' settle deadlines before enabling RX.
+processing. Close and reopen to retry. Each channel observes its own 250 ms DTR-open debounce before enabling RX;
+there is no cross-channel barrier or fixture-specific startup order. Closed backends park TX idle-high. Control service
+skips only channels without `READY`, so one channel's startup or close cannot hold another channel's configuration.
+
+CDC callbacks remain asynchronous. POSIX TTY `open()` does not guarantee backend initialization or applied line coding.
+After opening and configuring a group, hosts can use Python `wait_channels_ready()` on the matching HID device to wait
+for `READY`, DTR open, no `CONTROL_PENDING`, no current initialization/configuration error, and applied 8N1 settings
+within 3% of the requested baud. The wait uses a shared deadline (3 seconds by default), reports current errors
+immediately, propagates transport failures, and raises `TimeoutError` if readiness or matching settings never arrive.
+Historical fault counters are not current configuration failures and do not by themselves fail this handshake.
 
 ## Host-Visible Rules
 

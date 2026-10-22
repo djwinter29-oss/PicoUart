@@ -125,6 +125,7 @@ def test_configure_ports_opens_pair_before_applying_line_coding(monkeypatch: pyt
 
     monkeypatch.setattr(bridge, "open_port", open_port)
     monkeypatch.setattr(bridge, "set_port_line_coding", set_line_coding)
+    monkeypatch.setattr(bridge, "wait_ports_ready", lambda ports, baud: events.append(("ready", ports, baud)))
     monkeypatch.setattr(bridge.time, "sleep", lambda seconds: events.append(("sleep", seconds)))
     monkeypatch.setattr(bridge.termios, "tcflush", lambda descriptor, _queue: events.append(("flush", descriptor)))
 
@@ -138,9 +139,27 @@ def test_configure_ports_opens_pair_before_applying_line_coding(monkeypatch: pyt
         ("line coding", 1),
         ("line coding", 2),
         ("sleep", bridge.LINE_CODING_SETTLE_SECONDS),
+        ("ready", [("pico", 1), ("peer", 2)], 115200),
         ("flush", 1),
         ("flush", 2),
     ]
+
+
+@pytest.mark.parametrize("error", [TimeoutError("not ready"), OSError("disconnected"), RuntimeError("HID failed")])
+def test_configure_ports_closes_entire_group_when_readiness_fails(monkeypatch, error):
+    bridge = _load_bridge()
+    descriptors = iter([17, 18])
+    closed = []
+    monkeypatch.setattr(bridge, "open_port", lambda *_args: (next(descriptors), []))
+    monkeypatch.setattr(bridge, "set_port_line_coding", lambda *_args: None)
+    monkeypatch.setattr(bridge.time, "sleep", lambda *_args: None)
+    def fail(*_args):
+        raise error
+    monkeypatch.setattr(bridge, "wait_ports_ready", fail)
+    monkeypatch.setattr(bridge, "close_ports", lambda ports: closed.extend(ports))
+    with pytest.raises(type(error), match=str(error)):
+        bridge.configure_ports(["pico", "peer"], 115200)
+    assert closed == [(17, []), (18, [])]
 
 
 def test_run_test_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -184,3 +184,58 @@ def test_verify_line_speed_accepts_readback_within_fifty_percent(monkeypatch):
     monkeypatch.setattr(serial_port.termios, "tcgetattr", lambda _fd: settings)
 
     serial_port.verify_line_speed(17, 1000000)
+
+
+def test_readiness_requires_an_identified_pico(monkeypatch):
+    serial_port = _load_serial_config()
+    monkeypatch.setattr(serial_port, "pico_uart_endpoint", lambda _path: None)
+    with pytest.raises(OSError, match="no PicoUart"):
+        serial_port.wait_ports_ready([("/dev/peer", 17)], 115200)
+
+
+def test_readiness_groups_and_selects_the_matching_board(monkeypatch):
+    import pico_uart
+    serial_port = _load_serial_config()
+    events = []
+    endpoints = {"pico0": ("SERIAL-A", 0), "pico2": ("SERIAL-A", 2), "peer": None}
+    monkeypatch.setattr(serial_port, "pico_uart_endpoint", endpoints.get)
+    monkeypatch.setattr(serial_port.fcntl, "ioctl", lambda *args: events.append(("dtr", args[0])))
+    class Board:
+        def __init__(self, serial_number):
+            events.append(("select", serial_number))
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            events.append(("close",))
+        def wait_channels_ready(self, channels, timeout_s):
+            assert 0 < timeout_s <= 3
+            events.append(("ready", channels))
+    monkeypatch.setattr(pico_uart, "PicoUartHid", Board)
+    serial_port.wait_ports_ready([("pico0", 17), ("peer", 18), ("pico2", 19)], 115200)
+    assert events == [("dtr", 17), ("dtr", 19), ("select", "SERIAL-A"),
+                      ("ready", {0: 115200, 2: 115200}), ("close",)]
+
+
+def test_readiness_rejects_duplicate_channels(monkeypatch):
+    serial_port = _load_serial_config()
+    monkeypatch.setattr(serial_port, "pico_uart_endpoint", lambda _path: ("SERIAL-A", 0))
+    with pytest.raises(ValueError, match="duplicate"):
+        serial_port.wait_ports_ready([("pico0", 17), ("alias", 18)], 115200)
+
+
+@pytest.mark.parametrize("vendor, interface_number, expected", [("cafe", "04", ("BOARD-SERIAL", 2)),
+                                                               ("1234", "04", None)])
+def test_pico_endpoint_uses_usb_interface_not_tty_ordinal(monkeypatch, tmp_path, vendor, interface_number, expected):
+    serial_port = _load_serial_config()
+    usb = tmp_path / "usb-device"
+    interface = usb / "interface"
+    interface.mkdir(parents=True)
+    (usb / "idVendor").write_text(vendor)
+    (usb / "idProduct").write_text("4010")
+    (usb / "serial").write_text("BOARD-SERIAL\n")
+    (interface / "bInterfaceNumber").write_text(interface_number)
+    tty = tmp_path / "tty" / "ttyACM7"
+    tty.mkdir(parents=True)
+    (tty / "device").symlink_to(interface, target_is_directory=True)
+    monkeypatch.setattr(serial_port, "Path", lambda path: tmp_path / "tty" if path == "/sys/class/tty" else Path(path))
+    assert serial_port.pico_uart_endpoint("/dev/ttyACM7") == expected

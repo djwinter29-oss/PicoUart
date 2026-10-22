@@ -450,7 +450,7 @@ RX overruns include retired drops and known overwritten bytes not yet retired by
 At saturation, counts cannot distinguish further events. There is no device-side fault-history clear command;
 dashboards show history read-only, without local acknowledgement.
 
-Historical RX flags are not live signal-level indicators. A closed CDC session does not stop its UART receiver.
+Historical RX flags are not live signal-level indicators. They survive CDC close even though closing stops the backend.
 Floating RX, a break, incorrect baud/framing, and wiring faults are possible causes; diagnostics cannot identify
 which occurred. See [Hardware Setup](../../hardware-setup.md).
 

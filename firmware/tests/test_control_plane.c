@@ -209,7 +209,9 @@ void setUp(void)
         test_pending_controls[index] = (uart_control_pending_t){0};
         test_soft_pending_controls[index] = false;
         test_control_generations[index] = (index == UART_PORT_0) ? 1u : 0u;
-        test_status_flags[index] = (index == UART_PORT_0) ? UART_DRIVER_PORT_STATUS_CONTROL_PENDING : 0u;
+        test_status_flags[index] = (index == UART_PORT_0)
+                           ? UART_DRIVER_PORT_STATUS_READY | UART_DRIVER_PORT_STATUS_CONTROL_PENDING
+                           : 0u;
         test_stats_sequence[index] = 0u;
     }
     test_poll_start_index = 0u;
@@ -252,7 +254,7 @@ void test_control_plane_waits_for_tx_boundary_before_applying(void)
     TEST_ASSERT_EQUAL_UINT8(8u, test_ports[UART_PORT_0].info.data_bits);
     TEST_ASSERT_EQUAL_UINT8(applied_line_coding.stop_bits, test_ports[UART_PORT_0].info.stop_bits);
     TEST_ASSERT_EQUAL_UINT8(applied_line_coding.parity, test_ports[UART_PORT_0].info.parity);
-    TEST_ASSERT_EQUAL_UINT8(0u, test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_EQUAL_UINT8(UART_DRIVER_PORT_STATUS_READY, test_status_flags[UART_PORT_0]);
     TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_0));
 }
 
@@ -351,7 +353,7 @@ void test_control_plane_unavailable_backend_releases_provisional_ownership(void)
     };
 
     test_control_generations[UART_PORT_1] = 1u;
-    test_status_flags[UART_PORT_1] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    test_status_flags[UART_PORT_1] = UART_DRIVER_PORT_STATUS_READY | UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailboxes[UART_PORT_1], &request));
 
     uart_control_plane_service(&test_control_plane);
@@ -430,7 +432,7 @@ void test_control_plane_applies_requests_on_independent_port_slots(void)
 {
     test_ports[UART_PORT_1] = (uart_runtime_port_t){.ops = &test_backend_ops};
     test_control_generations[UART_PORT_1] = 1u;
-    test_status_flags[UART_PORT_1] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    test_status_flags[UART_PORT_1] = UART_DRIVER_PORT_STATUS_READY | UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     test_tx_ring.consumer = 0u;
     publish_request_for_port(UART_PORT_0, 0u);
     publish_request_for_port(UART_PORT_1, 0u);
@@ -448,14 +450,14 @@ void test_control_plane_applies_requests_on_independent_port_slots(void)
 void test_control_plane_immediate_completion_clears_pending_when_unowned(void)
 {
     line_coding_matches = true;
-    test_status_flags[UART_PORT_0] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    test_status_flags[UART_PORT_0] = UART_DRIVER_PORT_STATUS_READY | UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     publish_request(0u);
 
     uart_control_plane_service(&test_control_plane);
 
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
-    TEST_ASSERT_EQUAL_UINT8(0u, test_status_flags[UART_PORT_0]);
+    TEST_ASSERT_EQUAL_UINT8(UART_DRIVER_PORT_STATUS_READY, test_status_flags[UART_PORT_0]);
 }
 
 void test_control_plane_mailbox_reject_keeps_worker_pending(void)
@@ -477,7 +479,7 @@ void test_control_plane_mailbox_reject_keeps_worker_pending(void)
     test_pending_controls[UART_PORT_0].line_coding = test_line_coding();
     test_pending_controls[UART_PORT_0].deadline = make_timeout_time_ms(1000u);
     test_control_generations[UART_PORT_0] = 2u;
-    test_status_flags[UART_PORT_0] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    test_status_flags[UART_PORT_0] = UART_DRIVER_PORT_STATUS_READY | UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailboxes[UART_PORT_0], &request));
 
     uart_control_plane_service(&test_control_plane);
@@ -597,9 +599,26 @@ void test_control_plane_expired_deadline_blocks_backend_apply(void)
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
 }
 
+void test_not_ready_port_does_not_block_ready_peer(void)
+{
+    test_status_flags[UART_PORT_0] &= (uint8_t)~UART_DRIVER_PORT_STATUS_READY;
+    test_ports[UART_PORT_1] = (uart_runtime_port_t){.ops = &test_backend_ops};
+    test_status_flags[UART_PORT_1] = UART_DRIVER_PORT_STATUS_READY | UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
+    test_control_generations[UART_PORT_1] = 1u;
+    publish_request_for_port(UART_PORT_0, 0u);
+    publish_request_for_port(UART_PORT_1, 0u);
+
+    uart_control_plane_service(&test_control_plane);
+
+    TEST_ASSERT_EQUAL_UINT32(1u, apply_count);
+    TEST_ASSERT_FALSE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_0]));
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_1]));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_not_ready_port_does_not_block_ready_peer);
     RUN_TEST(test_control_plane_waits_for_tx_boundary_before_applying);
     RUN_TEST(test_control_plane_drops_invalid_mailbox_port);
     RUN_TEST(test_control_plane_invalid_line_coding_releases_provisional_ownership);

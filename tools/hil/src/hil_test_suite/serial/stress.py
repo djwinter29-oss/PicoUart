@@ -19,6 +19,7 @@ from .config import (
     deassert_dtr,
     open_port,
     set_port_line_coding,
+    wait_ports_ready,
 )
 from ..support.health import collect_hid_health, health_is_clean, health_summary
 
@@ -237,6 +238,7 @@ def configure_fixture_ports(arguments: argparse.Namespace, baud_rate: int, ports
     for channel in range(6):
         set_port_line_coding(descriptors[channel], baud_rate, allow_arbitrary=True)
     time.sleep(LINE_CODING_SETTLE_SECONDS)
+    wait_ports_ready([(getattr(arguments, f"cdc{channel}"), descriptors[channel]) for channel in range(6)], baud_rate)
     for descriptor in descriptors.values():
         termios.tcflush(descriptor, termios.TCIOFLUSH)
     return descriptors
@@ -324,7 +326,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
                     passed = False
             for label, timestamps in timing.items():
                 print(f"TIME {label}: {timestamps}")
-    except OSError as error:
+    except (OSError, RuntimeError) as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
         passed = False
     finally:
