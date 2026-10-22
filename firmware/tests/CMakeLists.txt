@@ -244,7 +244,6 @@ pico_uart_add_unity_test(test_uart_driver_facade uart_driver_facade
     ${FIRMWARE_ROOT}/src/uart/bridge.c
     ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
     ${FIRMWARE_ROOT}/src/uart/line_coding.c
-    ${FIRMWARE_ROOT}/src/uart/port_api.c
     ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
 )
 target_include_directories(test_uart_driver_facade PRIVATE

@@ -53,16 +53,11 @@ static bool rx_arrives_after_abort;
 static bool reject_new_clock;
 static bool reject_restore_clock;
 
-static int claim_channel(bool required)
+int dma_claim_unused_channel(bool required)
 {
     TEST_ASSERT_FALSE(required);
     return (int)(2u + claims++);
 }
-
-const hw_uart_dma_claim_ops_t hw_uart_driver_dma_claim_ops_default = {
-    .claim_channel = claim_channel,
-    .unclaim_channel = dma_channel_unclaim,
-};
 
 void service_load_note(unsigned int core)
 {

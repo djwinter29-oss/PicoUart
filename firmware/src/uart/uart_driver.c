@@ -6,13 +6,12 @@
 #include "uart/uart_driver.h"
 
 #include "uart/backend/backend.h"
+#include "uart/bridge.h"
 #include "uart/control/mailbox.h"
 #include "uart/control/plane.h"
 #include "uart/control/ownership.h"
-#include "uart/driver_state.h"
 #include "uart/hw/hw_uart_driver.h"
 #include "uart/line_coding.h"
-#include "uart/port_api.h"
 #include "hardware/sync.h"
 #include "pico/multicore.h"
 #include "pico/flash.h"
@@ -21,10 +20,32 @@
 #include "uart/pio/pio_uart_driver_internal.h"
 #include "uart/runtime.h"
 #include "uart/worker.h"
-#include "uart/worker_health.h"
 
 /** @brief Debounce each channel's DTR-open transition before enabling RX. */
 #define UART_DRIVER_CHANNEL_START_SETTLE_MS 250u
+
+/** @brief Maximum attempts to acquire a coherent worker-owned telemetry snapshot. */
+#define UART_DRIVER_STATS_SNAPSHOT_ATTEMPTS 3u
+
+/** @brief Driver-owned backend storage, lifecycle requests, and shared control/telemetry state. */
+typedef struct {
+    uart_runtime_port_t ports[UART_PORT_COUNT];                /**< Backend storage and public metadata. */
+    uart_control_mailbox_t mailboxes[UART_PORT_COUNT];         /**< One core-0 to core-1 control slot per port. */
+    bool worker_started;                                      /**< True after core 1 has been launched. */
+    volatile uint32_t worker_heartbeat;                        /**< Core-1 worker progress counter. */
+    volatile uint8_t status_flags[UART_PORT_COUNT];            /**< Per-port health flags. */
+    spin_lock_t *status_lock;                                 /**< Lock protecting shared status and generations. */
+    uart_control_pending_t pending_controls[UART_PORT_COUNT];  /**< Worker-owned control state. */
+    bool soft_pending_controls[UART_PORT_COUNT];               /**< Core-0 mailbox wait state. */
+    bool buffer_reset_pending[UART_PORT_COUNT];                /**< Core-0 requested a fresh CDC/UART channel. */
+    bool buffer_reset_usb_quiesced[UART_PORT_COUNT];            /**< Core-0 stopped bridging and cleared CDC FIFOs. */
+    bool channel_start_pending[UART_PORT_COUNT];               /**< Core-0 requested a channel start on DTR open. */
+    absolute_time_t channel_start_deadline[UART_PORT_COUNT];    /**< Earliest worker start time after DTR open. */
+    uint32_t control_generations[UART_PORT_COUNT];              /**< Latest host generation per port. */
+    volatile uint32_t stats_sequence[UART_PORT_COUNT];         /**< Coherent stats snapshot sequence. */
+    size_t poll_start_index;                                  /**< First port of the next worker step. */
+    uart_control_plane_t control_plane;                       /**< Worker-side deferred control context. */
+} uart_driver_state_t;
 
 /** @brief Single owner for top-level UART facade state. */
 static uart_driver_state_t uart_driver_state;
@@ -38,6 +59,35 @@ static void uart_driver_worker_core_main(void);
 static void uart_driver_service_channel_lifecycle(void);
 static bool uart_driver_mailbox_has_pending_port(uart_port_id_t port_id);
 static void uart_driver_bind_state_views(void);
+
+static uart_runtime_port_t *uart_driver_port(uart_port_id_t port_id)
+{
+    return port_id < UART_PORT_COUNT ? &uart_driver_state.ports[port_id] : NULL;
+}
+
+static bool uart_driver_backend_is_initialized(const uart_runtime_port_t *port)
+{
+    return (port != NULL) && (port->ops != NULL) && port->ops->is_initialized(&port->backend);
+}
+
+static ring_buffer_t *uart_driver_rx_ring(uart_runtime_port_t *port)
+{
+    return ((port != NULL) && (port->ops != NULL)) ? port->ops->rx_ring(&port->backend) : NULL;
+}
+
+static ring_buffer_t *uart_driver_tx_ring(uart_runtime_port_t *port)
+{
+    return ((port != NULL) && (port->ops != NULL)) ? port->ops->tx_ring(&port->backend) : NULL;
+}
+
+/** @brief Revalidate a backend RX snapshot before the bridge commits its consumer sequence. */
+static bool uart_driver_rx_snapshot_is_current(void *context, uint32_t consumer_sequence)
+{
+    uart_runtime_port_t *port = context;
+
+    return (port != NULL) && (port->ops != NULL) &&
+           port->ops->rx_snapshot_is_current(&port->backend, consumer_sequence);
+}
 
 static void uart_driver_begin_port_stats_update(uart_port_id_t port_id)
 {
@@ -193,10 +243,6 @@ static void uart_driver_bind_state_views(void)
     uart_driver_state.control_plane.stats_sequence = uart_driver_state.stats_sequence;
     uart_driver_state.control_plane.poll_start_index = &uart_driver_state.poll_start_index;
 
-    uart_driver_state.port_api.ports = uart_driver_state.ports;
-    uart_driver_state.port_api.stats_sequence = uart_driver_state.stats_sequence;
-    uart_driver_state.port_api.status_flags = uart_driver_state.status_flags;
-    uart_driver_state.port_api.status_lock = uart_driver_state.status_lock;
 }
 
 static void uart_driver_worker_core_main(void)
@@ -338,13 +384,13 @@ bool uart_driver_init(void)
 
 size_t uart_driver_port_count(void)
 {
-    return uart_port_api_count();
+    return UART_PORT_COUNT;
 }
 
 bool uart_driver_port_is_ready(uart_port_id_t port_id)
 {
     return ((uart_driver_port_status(port_id) & UART_DRIVER_PORT_STATUS_READY) != 0u) &&
-           uart_port_api_is_ready(&uart_driver_state.port_api, port_id);
+           uart_driver_backend_is_initialized(uart_driver_port(port_id));
 }
 
 bool uart_driver_request_buffer_reset(uart_port_id_t port_id)
@@ -454,18 +500,41 @@ bool uart_driver_buffer_reset_ready(uart_port_id_t port_id)
 size_t uart_driver_drain_rx(uart_port_id_t port_id, size_t capacity,
                             uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length), void *context)
 {
-    return uart_port_api_drain_rx(&uart_driver_state.port_api, port_id, capacity, writer, context);
+    uart_runtime_port_t *port = uart_driver_port(port_id);
+    ring_buffer_t *rx_ring = uart_driver_rx_ring(port);
+
+    if ((rx_ring == NULL) || !uart_driver_backend_is_initialized(port) || (writer == NULL)) {
+        return 0u;
+    }
+
+    return uart_bridge_drain_rx(rx_ring, capacity, writer, context, uart_driver_rx_snapshot_is_current, port,
+                                &uart_driver_state.stats_sequence[port_id]);
 }
 
 size_t uart_driver_recover_rx(uart_port_id_t port_id)
 {
-    return uart_port_api_recover_rx(&uart_driver_state.port_api, port_id);
+    uart_runtime_port_t *port = uart_driver_port(port_id);
+    ring_buffer_t *rx_ring = uart_driver_rx_ring(port);
+
+    if ((rx_ring == NULL) || !uart_driver_backend_is_initialized(port)) {
+        return 0u;
+    }
+
+    return uart_bridge_recover_rx(rx_ring);
 }
 
 size_t uart_driver_fill_tx(uart_port_id_t port_id, size_t capacity,
                            uint32_t (*reader)(void *context, uint8_t *data, uint32_t length), void *context)
 {
-    return uart_port_api_fill_tx(&uart_driver_state.port_api, port_id, capacity, reader, context);
+    uart_runtime_port_t *port = uart_driver_port(port_id);
+    ring_buffer_t *tx_ring = uart_driver_tx_ring(port);
+
+    if ((tx_ring == NULL) || !uart_driver_backend_is_initialized(port) || (reader == NULL) ||
+        uart_driver_port_tx_is_blocked(port_id)) {
+        return 0u;
+    }
+
+    return uart_bridge_fill_tx(tx_ring, capacity, reader, context);
 }
 
 bool uart_driver_line_coding_acceptable(uart_port_id_t port_id, const uart_driver_line_coding_t *line_coding)
@@ -644,12 +713,67 @@ bool uart_driver_worker_heartbeat_is_fresh(void)
 
 bool uart_driver_port_info(uart_port_id_t port_id, uart_driver_port_info_t *info)
 {
-    return uart_port_api_info(&uart_driver_state.port_api, port_id, info);
+    uart_runtime_port_t *port = uart_driver_port(port_id);
+    uint32_t save;
+
+    if ((port == NULL) || (info == NULL) || (uart_driver_state.status_lock == NULL)) {
+        return false;
+    }
+
+    save = spin_lock_blocking(uart_driver_state.status_lock);
+    *info = port->info;
+    spin_unlock(uart_driver_state.status_lock, save);
+    return true;
 }
 
 bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *stats)
 {
-    return uart_port_api_stats(&uart_driver_state.port_api, port_id, stats);
+    uart_runtime_port_t *port = uart_driver_port(port_id);
+    ring_buffer_t *rx_ring;
+    ring_buffer_t *tx_ring;
+    uart_backend_stats_t backend_stats;
+    uint32_t first_sequence;
+    uint32_t second_sequence;
+
+    if ((stats == NULL) || !uart_driver_backend_is_initialized(port)) {
+        return false;
+    }
+
+    rx_ring = uart_driver_rx_ring(port);
+    tx_ring = uart_driver_tx_ring(port);
+    if ((rx_ring == NULL) || (tx_ring == NULL)) {
+        return false;
+    }
+
+    for (size_t attempt = 0u; attempt < UART_DRIVER_STATS_SNAPSHOT_ATTEMPTS; ++attempt) {
+        first_sequence = uart_driver_state.stats_sequence[port_id];
+        __dmb();
+        if ((first_sequence & 1u) != 0u) {
+            continue;
+        }
+
+        stats->uart_tx_bytes = 0u;
+        stats->uart_rx_bytes = 0u;
+        stats->tx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(tx_ring);
+        stats->rx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(rx_ring);
+        stats->tx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(tx_ring);
+        stats->rx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(rx_ring);
+        stats->rx_ring_pending_overflow_count = (uint32_t)ring_buffer_pending_overflow(rx_ring);
+        stats->rx_error_count = 0u;
+
+        backend_stats = port->ops->stats(&port->backend);
+        stats->uart_tx_bytes = backend_stats.uart_tx_bytes;
+        stats->uart_rx_bytes = backend_stats.uart_rx_bytes;
+        stats->rx_error_count = backend_stats.rx_error_count;
+
+        __dmb();
+        second_sequence = uart_driver_state.stats_sequence[port_id];
+        if ((first_sequence == second_sequence) && ((second_sequence & 1u) == 0u)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void uart_driver_reset_soft_pending(uart_port_id_t port_id)

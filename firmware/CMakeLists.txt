@@ -64,17 +64,14 @@ target_sources(pico_uart PRIVATE
     src/uart/control/mailbox.c
     src/uart/control/plane.c
     src/uart/hw/dma_claim.c
-    src/uart/hw/dma_claim_ops.c
     src/uart/hw/hw_uart_backend.c
     src/uart/hw/hw_uart_board_config.c
     src/uart/hw/hw_uart_driver.c
     src/uart/line_coding.c
-    src/uart/port_api.c
     src/uart/pio/pio_uart_backend.c
     src/uart/pio/pio_uart_board_config.c
     src/uart/pio/pio_uart_driver.c
     src/uart/pio/resource_claim.c
-    src/uart/pio/resource_claim_ops.c
     src/uart/ring_buffer/ring_buffer.c
     src/uart/uart_driver.c
     src/uart/worker.c

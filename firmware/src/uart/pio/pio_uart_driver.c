@@ -55,6 +55,30 @@ static pio_uart_driver_t *pio_uart_driver_rx_irq_owners[NUM_DMA_CHANNELS];
 /** @brief True after the shared DMA IRQ1 handler has been installed once. */
 static bool pio_uart_driver_rx_dma_irq_installed;
 
+static bool pio_uart_resource_claim_sm_is_claimed(void *pio, unsigned int sm)
+{
+    return pio_sm_is_claimed((PIO)pio, sm);
+}
+
+static void pio_uart_resource_claim_sm_claim(void *pio, unsigned int sm)
+{
+    pio_sm_claim((PIO)pio, sm);
+}
+
+static void pio_uart_resource_claim_sm_unclaim(void *pio, unsigned int sm)
+{
+    pio_sm_unclaim((PIO)pio, sm);
+}
+
+/** @copydoc pio_uart_resource_claim_ops_default */
+const pio_uart_resource_claim_ops_t pio_uart_resource_claim_ops_default = {
+    .sm_is_claimed = pio_uart_resource_claim_sm_is_claimed,
+    .sm_claim = pio_uart_resource_claim_sm_claim,
+    .sm_unclaim = pio_uart_resource_claim_sm_unclaim,
+    .claim_dma_channel = dma_claim_unused_channel,
+    .unclaim_dma_channel = dma_channel_unclaim,
+};
+
 static void pio_uart_driver_publish_rx(pio_uart_driver_t *driver);
 static void pio_uart_driver_harvest_framing_errors(pio_uart_driver_t *driver);
 static bool pio_uart_driver_prepare_baud_change(pio_uart_driver_t *driver);

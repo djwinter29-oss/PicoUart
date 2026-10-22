@@ -10,7 +10,6 @@
 #include "pico/time.h"
 #include "uart/backend/backend.h"
 #include "uart/control/plane.h"
-#include "uart/port_api.h"
 #include "uart/uart_driver.h"
 #include "uart/worker.h"
 
@@ -165,6 +164,7 @@ static uint32_t test_startup_baud_rate(const void *instance)
 static uart_backend_stats_t test_startup_stats(const void *instance)
 {
     (void)instance;
+    ++test_stats_call_count;
     return (uart_backend_stats_t){0};
 }
 
@@ -237,31 +237,6 @@ bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_pl
     return false;
 }
 
-static bool test_backend_is_initialized(const void *instance)
-{
-    (void)instance;
-    return false;
-}
-
-static ring_buffer_t *test_backend_ring(void *instance)
-{
-    return (ring_buffer_t *)instance;
-}
-
-static uart_backend_stats_t test_backend_stats(const void *instance)
-{
-    (void)instance;
-    test_stats_call_count += 1u;
-    return (uart_backend_stats_t){0};
-}
-
-static const uart_backend_ops_t test_uninitialized_backend_ops = {
-    .is_initialized = test_backend_is_initialized,
-    .rx_ring = test_backend_ring,
-    .tx_ring = test_backend_ring,
-    .stats = test_backend_stats,
-};
-
 void setUp(void)
 {
     test_stats_call_count = 0u;
@@ -324,19 +299,11 @@ void test_uart_driver_handles_valid_ports_before_initialization(void)
     TEST_ASSERT_EQUAL_UINT8(0u, uart_driver_port_status(UART_PORT_0));
 }
 
-void test_port_api_rejects_stats_from_uninitialized_backend(void)
+void test_uart_driver_rejects_stats_from_stopped_backend(void)
 {
-    uart_runtime_port_t port = {0};
-    volatile uint32_t stats_sequence[UART_PORT_COUNT] = {0};
-    uart_port_api_t api = {
-        .ports = &port,
-        .stats_sequence = stats_sequence,
-    };
     uart_driver_port_stats_t stats;
 
-    port.ops = &test_uninitialized_backend_ops;
-
-    TEST_ASSERT_FALSE(uart_port_api_stats(&api, UART_PORT_0, &stats));
+    TEST_ASSERT_FALSE(uart_driver_port_stats(UART_PORT_0, &stats));
     TEST_ASSERT_EQUAL_UINT32(0u, test_stats_call_count);
 }
 
@@ -416,6 +383,7 @@ void test_failed_channel_start_finishes_without_retrying_forever(void)
 
 void test_close_during_start_does_not_publish_ready(void)
 {
+    uart_driver_port_stats_t stats;
     TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_2));
     pico_test_time_us += 250000u;
     test_close_during_start = true;
@@ -425,6 +393,7 @@ void test_close_during_start_does_not_publish_ready(void)
     TEST_ASSERT_TRUE(uart_driver_buffer_reset_pending(UART_PORT_2));
     TEST_ASSERT_BITS_LOW(UART_DRIVER_PORT_STATUS_READY, uart_driver_port_status(UART_PORT_2));
     TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_2));
+    TEST_ASSERT_TRUE(uart_driver_port_stats(UART_PORT_2, &stats));
     uart_driver_buffer_reset_usb_quiesced(UART_PORT_2);
     test_worker_hooks->service_control();
 }
@@ -508,8 +477,8 @@ int main(void)
     RUN_TEST(test_uart_driver_rejects_invalid_port_operations);
     RUN_TEST(test_uart_driver_rejects_null_public_arguments);
     RUN_TEST(test_uart_driver_handles_valid_ports_before_initialization);
-    RUN_TEST(test_port_api_rejects_stats_from_uninitialized_backend);
     RUN_TEST(test_startup_rolls_back_partial_backend_init_and_retries);
+    RUN_TEST(test_uart_driver_rejects_stats_from_stopped_backend);
     RUN_TEST(test_failed_channel_start_finishes_without_retrying_forever);
     RUN_TEST(test_close_during_start_does_not_publish_ready);
     RUN_TEST(test_reopen_during_start_keeps_the_new_start_request);

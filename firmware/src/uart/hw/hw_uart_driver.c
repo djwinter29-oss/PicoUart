@@ -35,6 +35,12 @@ static hw_uart_driver_t *hw_uart_driver_rx_irq_owners[NUM_DMA_CHANNELS];
 /** @brief True after the shared DMA IRQ0 handler has been installed once. */
 static bool hw_uart_driver_rx_dma_irq_installed;
 
+/** @copydoc hw_uart_driver_dma_claim_ops_default */
+const hw_uart_dma_claim_ops_t hw_uart_driver_dma_claim_ops_default = {
+    .claim_channel = dma_claim_unused_channel,
+    .unclaim_channel = dma_channel_unclaim,
+};
+
 static bool hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
 {
     uint32_t actual_rate;
