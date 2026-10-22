@@ -208,9 +208,13 @@ function renderChannels(data) {
       direction.className = "traffic-label";
       direction.textContent = label;
       value.textContent = view.rates
-        ? `${view.rates[key].toLocaleString(undefined, { maximumFractionDigits: 1 })} B/s` : "-- B/s";
-      metric.title = `${label}: ${channel.totals[key]} B observed total since monitoring began (lower bound).`;
-      metric.append(direction, value);
+        ? `${(view.rates[key] / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB/s`
+        : "-- KB/s";
+      const total = document.createElement("span");
+      total.className = "traffic-total";
+      total.textContent = `${channel.totals[key].toLocaleString()} B`;
+      metric.title = `${label}: ${channel.totals[key].toLocaleString()} B observed total since monitoring began (lower bound).`;
+      metric.append(direction, value, total);
       metrics.append(metric);
     });
     traffic.append(metrics);

@@ -356,9 +356,9 @@ in **Attention** while telemetry is fresh, even if the corresponding live flag i
 Healthy, closed CDC channels without observed throughput are labelled **Idle**, not disconnected: UART RX remains
 active and reported faults remain visible even with CDC closed.
 
-The four directions display observed B/s over windows of at least one second. Hover a rate for cumulative observed
-bytes since the monitor connected. Initial/stale windows and windows containing report gaps or saturated deltas show
-`--`; they recover after a clean window. Three seconds without a new status sample makes rates stale. `traffic_gaps`
+The four directions display observed KB/s (1 KB = 1000 bytes) over windows of at least one second, with the exact
+cumulative observed byte count since the monitor connected beside each rate. Initial/stale windows and windows containing
+report gaps or saturated deltas show `--` for the rate; they recover after a clean window. Three seconds without a new status sample makes rates stale. `traffic_gaps`
 is a monotonic count of incomplete status observations, allowing each page to invalidate its current rate window while
 retaining the sticky `traffic_incomplete` notice. Totals remain lower bounds after missing/saturated reports.
 

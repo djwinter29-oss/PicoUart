@@ -80,7 +80,8 @@ Read-only commands include `hardware`, `config`, `temperature`, and `version`. H
 results are JSON; temperature and firmware version are plain values. Use `./PicoUart --help` for command options.
 
 `toggle-led` changes the board LED. `reset` reboots the board and is refused unless firmware advertises reset support,
-which is disabled by default. The dashboard can also save a persistent boot-time clock profile; a verified save
+which is enabled by default. The dashboard's **Reboot only** button uses it, and can also save a persistent boot-time
+clock profile; a verified save
 automatically reboots the board, independently of the optional reset command. Stop UART traffic, close CDC ports, and
 read the [configuration precautions](../../docs/development/host-tools.md#persistent-configuration) before changing it.
 After reconnecting, check the actual active profile and any fallback reason rather than assuming the requested clock

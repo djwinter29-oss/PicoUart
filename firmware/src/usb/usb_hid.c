@@ -143,8 +143,8 @@ static uint32_t usb_hid_diagnostic_rx_counts[UART_PORT_COUNT][2];
 /**
  * @brief HID command value that resets the board after a prior arm command.
  *
- * Remote reset is **disabled by default** (`PICO_UART_ALLOW_HID_RESET` is 0).
- * Compile with `-DPICO_UART_ALLOW_HID_RESET=1` to enable it on trusted hosts.
+ * Remote reset is **enabled by default** (`PICO_UART_ALLOW_HID_RESET` is 1).
+ * Compile with `-DPICO_UART_ALLOW_HID_RESET=0` to remove it.
  * When enabled, @ref USB_HID_COMMAND_ARM_RESET must be sent first and
  * @ref USB_HID_COMMAND_RESET_BOARD must follow within
  * @ref USB_HID_RESET_ARM_WINDOW_MS.
@@ -156,7 +156,7 @@ static uint32_t usb_hid_diagnostic_rx_counts[UART_PORT_COUNT][2];
 #define USB_HID_RESET_ARM_WINDOW_MS 2000u
 
 #ifndef PICO_UART_ALLOW_HID_RESET
-#define PICO_UART_ALLOW_HID_RESET 0
+#define PICO_UART_ALLOW_HID_RESET 1
 #endif
 
 /** @brief Board-status reserved0 bit 0: HID arm/reset commands are compiled in. */

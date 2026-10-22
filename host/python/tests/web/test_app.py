@@ -104,10 +104,10 @@ def test_dashboard_serves_shared_assets():
     assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page.data
     assert b'id="mcu"' in page.data
     assert b'id="system-clock"' in page.data
-    assert b'href="/css/dashboard.css?v=11"' in page.data
+    assert b'href="/css/dashboard.css?v=12"' in page.data
     assert page.data.count(b'<col class="') == 6
     assert b'table-layout: fixed' in client.get("/css/dashboard.css").data
-    assert b'src="/js/dashboard.js?v=7"' in page.data
+    assert b'src="/js/dashboard.js?v=8"' in page.data
     assert b'id="save-configuration"' in page.data
     assert b'id="reset-board" type="button"' in page.data
     assert b"Reboot only" in page.data

@@ -440,6 +440,29 @@ static void test_identification_toggle_and_usb_reset(void)
     TEST_ASSERT_FALSE(led_on);
 }
 
+static void test_hid_reset_requires_fresh_arm(void)
+{
+    uint8_t status[8];
+    const uint8_t arm[] = {USB_HID_COMMAND_ARM_RESET};
+    const uint8_t reset[] = {USB_HID_COMMAND_RESET_BOARD};
+    TEST_ASSERT_EQUAL_UINT16(8u, tud_hid_get_report_cb(0, 3, HID_REPORT_TYPE_FEATURE, status, sizeof(status)));
+    TEST_ASSERT_EQUAL_UINT8(USB_HID_BOARD_STATUS_FLAG_HID_RESET, status[1]);
+
+    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, reset, sizeof(reset));
+    TEST_ASSERT_EQUAL_UINT(0u, reset_calls);
+
+    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, arm, sizeof(arm));
+    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, reset, sizeof(reset));
+    TEST_ASSERT_EQUAL_UINT(1u, reset_calls);
+    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, reset, sizeof(reset));
+    TEST_ASSERT_EQUAL_UINT(1u, reset_calls);
+
+    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, arm, sizeof(arm));
+    pico_test_time_us = (absolute_time_t)USB_HID_RESET_ARM_WINDOW_MS * 1000;
+    tud_hid_set_report_cb(0, USB_HID_REPORT_ID_COMMAND, HID_REPORT_TYPE_FEATURE, reset, sizeof(reset));
+    TEST_ASSERT_EQUAL_UINT(1u, reset_calls);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -450,6 +473,7 @@ int main(void)
     RUN_TEST(test_configuration_save_busy_failure_and_default);
     RUN_TEST(test_led_payload);
     RUN_TEST(test_identification_toggle_and_usb_reset);
+    RUN_TEST(test_hid_reset_requires_fresh_arm);
     RUN_TEST(test_channel_diagnostics_history);
     RUN_TEST(test_channel_diagnostics_sample_without_interrupt_endpoint);
     return UNITY_END();

@@ -104,7 +104,7 @@ Read-only commands include `hardware`, `config`, `temperature`, and `version`. R
 `pico-uart COMMAND --help` for options.
 
 `toggle-led` changes the board LED. `reset` reboots the board and is refused unless firmware advertises reset support,
-which is disabled by default. The API exposes equivalent `toggle_led()` and `reset_board()` methods.
+which is enabled by default. The API exposes equivalent `toggle_led()` and `reset_board()` methods.
 
 The API's `save_configuration(profile, unsafe_overclock=False)` writes a supported boot-time clock profile;
 `read_configuration_save()` reads the save result. A verified save automatically reboots the board, independently of

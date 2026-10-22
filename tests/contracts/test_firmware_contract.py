@@ -162,9 +162,9 @@ def test_cdc_interface_strings_advertise_hw_and_pio_8n1(repo_root):
     ]
 
 
-def test_hid_reset_disabled_by_default(repo_root):
-    assert firmware_hid_reset_default_enabled(repo_root) is False
-    assert firmware_hid_reset_cmake_default_enabled(repo_root) is False
+def test_hid_reset_enabled_by_default(repo_root):
+    assert firmware_hid_reset_default_enabled(repo_root) is True
+    assert firmware_hid_reset_cmake_default_enabled(repo_root) is True
 
 
 def test_uart_board_map_matches_documented_tx_rx_and_hw_fc_default(repo_root):

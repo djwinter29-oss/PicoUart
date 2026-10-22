@@ -59,7 +59,7 @@ def test_build_reset_clears_picotool_stamps(tmp_path, cause):
         "CMAKE_GENERATOR:INTERNAL=Ninja\n"
         "PICO_BOARD:STRING=pico\n"
         f"PICO_UART_VERSION:STRING={'old' if cause == 'version-change' else '0.0.0-dev'}\n"
-        "PICO_UART_ALLOW_HID_RESET:BOOL=OFF\n"
+        "PICO_UART_ALLOW_HID_RESET:BOOL=ON\n"
     )
     shim = tmp_path / "cmake"
     shim.write_text(

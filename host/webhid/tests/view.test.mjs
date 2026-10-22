@@ -224,6 +224,28 @@ for (const frontend of ["webhid", "web"]) {
     }
   });
 
+  test(`${frontend} shows KB/s rates and exact byte totals`, () => {
+    const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
+    const { render } = setup(document);
+    const channel = { id: 0, health: 1, health_labels: ["ready"], cdc_open: true,
+      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
+    const start = Date.now() - 1000;
+    const data = { connected: true, identity: { serial_number: "totals-test" }, traffic_gaps: 0,
+      updated_at: new Date(start).toISOString(), channels: [channel], channel_diagnostics: null,
+      overflow_counts: [0, 0, 0, 0, 0, 0] };
+    try {
+      render(data);
+      channel.totals = { uart_tx: 12345, uart_rx: 0, usb_tx: 1234567, usb_rx: 999 };
+      render({ ...data, updated_at: new Date(start + 1000).toISOString() });
+      const cells = descendants(document.querySelector("#channel-rows"))
+        .filter(node => node.className === "traffic-total" || node.tag === "b").map(node => node.textContent);
+      assert.deepEqual(cells, ["12.3 KB/s", "12,345 B", "0.0 KB/s", "0 B",
+        "1,234.6 KB/s", "1,234,567 B", "1.0 KB/s", "999 B"]);
+    } finally {
+      delete globalThis.document;
+    }
+  });
+
   test(`${frontend} separates identity/runtime and renders real board fields and unavailable states`, () => {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];

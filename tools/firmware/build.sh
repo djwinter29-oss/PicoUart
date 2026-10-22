@@ -6,7 +6,7 @@ BOARD="${PICO_BOARD:-pico}"
 GENERATOR="${GENERATOR:-}"
 PICO_SDK_PATH_VALUE=""
 FIRMWARE_VERSION="${PICO_UART_VERSION:-}"
-ALLOW_HID_RESET="${PICO_UART_ALLOW_HID_RESET:-OFF}"
+ALLOW_HID_RESET="${PICO_UART_ALLOW_HID_RESET:-ON}"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -36,6 +36,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --allow-hid-reset)
             ALLOW_HID_RESET="ON"
+            shift
+            ;;
+        --disable-hid-reset)
+            ALLOW_HID_RESET="OFF"
             shift
             ;;
         *)

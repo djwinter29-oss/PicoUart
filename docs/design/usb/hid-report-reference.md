@@ -20,7 +20,7 @@ limits: `CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
 | Health, traffic, ring peak, temperature, and firmware version | HID                        | Read-only monitoring data.                                                                                                                                                                                                                                                   |
 | Applied UART settings, GPIOs, and fault history | HID feature reports 10-15 | Read-only snapshots. These reports cannot change line coding or pin mapping. |
 | Toggle default board LED                                      | HID command feature report | Toggles `PICO_DEFAULT_LED_PIN` when the selected board defines one.                                                                                                                                                                                                          |
-| Reset board                                                   | HID command feature report | Disabled by default; trusted lab builds may enable arm (`3`) then reset (`2`) within 2 seconds with `PICO_UART_ALLOW_HID_RESET=1`. Enabled builds set board-status `reserved0` bit 0; the host `reset` command fails closed when that bit is clear.                          |
+| Reset board                                                   | HID command feature report | Enabled by default; arm (`3`) then reset (`2`) within 2 seconds. Build with `PICO_UART_ALLOW_HID_RESET=0` to remove it. Enabled builds set board-status `reserved0` bit 0; the host `reset` command fails closed when that bit is clear.                          |
 | Save boot-time system clock profile | HID feature report 17 | Validates a board-specific profile, requires overclock acknowledgement, and verifies the reserved flash sector. Automatically reboots after a short grace period to apply the saved profile. |
 
 HID must not be used to select a UART, set baud rate, change GPIO mapping, or alter ring-buffer behavior. The three
@@ -234,10 +234,10 @@ Write feature report ID `4` with one payload byte:
 |   `2` | Reset the board through the watchdog **only if** command `3` armed a reset within the previous 2 seconds. |
 |   `3` | Arm a subsequent reset (`2`) for 2 seconds.                                                               |
 
-Unknown command values are ignored. The report has no response payload. Remote reset is disabled by default; enable it
-only for a trusted lab build with `-DPICO_UART_ALLOW_HID_RESET=1`. Enabled builds advertise that capability in
-board-status `reserved0` bit 0. The reference host tool's `reset` command reads that flag first and refuses to send
-arm/reset when it is clear.
+Unknown command values are ignored. The report has no response payload. Remote reset is enabled by default; build with
+`-DPICO_UART_ALLOW_HID_RESET=0` (or `tools/firmware/build.sh --disable-hid-reset`) to remove it. Enabled builds
+advertise that capability in board-status `reserved0` bit 0. The reference host tool's `reset` command reads that flag
+first and refuses to send arm/reset when it is clear.
 
 ## Report ID 5: RX Overflow Counts
 
@@ -353,7 +353,7 @@ Validate reserved fields and bits according to each report's layout, permitting 
 All reports listed above are required by this contract. Missing reports and other versions are explicit errors,
 not signals to select another layout or silently substitute values. Independent read errors clear the affected values
 without discarding unrelated valid telemetry. Board-status `reserved0` bit 0 indicates HID reset is enabled;
-default firmware sends `0`.
+default firmware sends `1`, and builds with reset removed send `0`.
 
 For a valid report containing an unrecognized MCU ID, hosts preserve the raw ID and system clock and present the MCU as
 unknown. This does not assign meaning to future IDs; firmware must define each mapping when adding MCU support.
