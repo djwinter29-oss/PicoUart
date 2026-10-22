@@ -1,11 +1,12 @@
 # Releasing PicoUart
 
-Build the release artifacts, test the exact packaged firmware on each rated board, then publish the qualified draft.
-This checklist covers that path; it does not treat a successful CI run as hardware qualification.
+Push a version tag to build, test, and automatically publish the release artifacts. Physical qualification is a separate
+step on the exact packaged firmware; a successful CI run does not establish UART timing, reliability, or board stability.
 
 > [!IMPORTANT]
-> Keep the release as a draft until all required HIL evidence passes and artifact hashes match. A local rebuild or a
-> passing result for another image does not qualify the files being published.
+> Automated publication means software checks and packaging passed, not that hardware qualification is complete.
+> Keep unqualified artifacts labeled lab/test-only. A local rebuild or a passing result for another image does not
+> qualify the published files.
 
 For the check graph and tool dependencies, see
 [GitHub Actions: Validation and Releases](../development/github-actions.md).
@@ -15,21 +16,24 @@ For downloads and publisher operations, see [Host App Distribution](host-app-dis
 ## Release Sequence
 
 1. Complete [preflight](#release-preflight) and confirm the [version policy](#versioning).
-2. Run a manual preflight if needed, or push the release tag to build the gated draft and checksum manifests.
-3. [Flash the packaged images](#flashing-release-artifacts), without rebuilding, and collect the
+2. Run a manual preflight if needed, then push the release tag. Required checks and packaging must pass before the
+   workflow publishes the GitHub Release and checksum manifests automatically.
+3. Monitor the [PyPI and Pages jobs](host-app-publishing.md), triggered by successful completion of that tag's Release
+   workflow. Environment approvals still apply; a downstream failure does not undo the GitHub Release.
+4. [Flash the packaged images](#flashing-release-artifacts), without rebuilding, and collect the
    [required HIL evidence](#required-hil-matrix) for every rated board artifact.
-4. Check hashes, results, and compatibility notes against the [promotion checklist](#promotion-checklist).
-5. Publish the qualified draft, then monitor the separate
-   [PyPI and Pages jobs](host-app-publishing.md). A downstream failure does not undo the GitHub Release.
+5. Check hashes, results, and compatibility notes against the [promotion checklist](#promotion-checklist) before
+   describing the published release as hardware-qualified.
 
 ## Workflow Overview
 
 The [Release workflow](../../.github/workflows/release.yml) builds firmware and host packages with checksums.
-A tag push creates the gated draft; manual dispatch creates preflight artifacts only. The
+A successful tag push publishes a non-draft, non-prerelease release; manual dispatch creates preflight artifacts only. The
 [GitHub Actions guide](../development/github-actions.md#release-and-publication) shows the parallel jobs and
 dependencies.
-After manual promotion, PyPI and Pages publish independently; use the [publishing runbook](host-app-publishing.md)
-for setup, retries, or rollback rather than treating a tag push as publication.
+After the tag-push Release run completes successfully, PyPI and Pages publish independently; use the
+[publishing runbook](host-app-publishing.md) for setup, retries, or rollback. Their workflows must be present on the
+default branch for automatic completion events to trigger them.
 
 ## Release Preflight
 
@@ -46,12 +50,16 @@ Do not begin physical testing from an uncommitted or locally modified image.
 
 ## Publication Gates
 
-Normal publication is fail-closed. Draft creation waits for host validation, firmware builds, both host package jobs,
+Normal publication is fail-closed. GitHub publication waits for host validation, firmware builds, both host package jobs,
 and a successful **PR Check** run for the exact commit. PyPI publication and release-mode Pages deployment additionally
 require a completed, successful **Release** tag-push run for that commit and tag. The
 [publication gate](../../tools/release/require_release_checks.py) checks the latest matching run and attempt; missing,
 queued, running, failed, skipped, cancelled, or unavailable check results block publication. An older successful run
 does not override a newer failed or pending run. Retry publication after the required checks pass.
+
+Automatic publishers accept only successful tag-push Release runs from this repository. They verify that the tag still
+resolves to the triggering run's commit before validating checks and reading release assets. Failed/cancelled runs and
+manual preflights do not publish. No personal access token is needed to chain these workflows.
 
 Explicit manual test modes are the only exception to the full cross-project gate. They still run their own scoped
 checks, use visibly non-release versions, and do not create or promote a qualified firmware release:
@@ -83,8 +91,8 @@ and the USB identity contract tests before publishing.
 Use the [Test Documentation Index](../tests/README.md) for automated validation, HIL sequence, and result semantics. CI
 validates builds and host tests; it cannot establish physical qualification.
 
-Release promotion requires a complete `PASS` on every rated board artifact in the release workflow. Run HIL on the exact
-packaged UF2/ELF and verify its SHA-256 against the draft; a local rebuild or a result for another artifact does not
+Hardware qualification requires a complete `PASS` on every rated board artifact in the release workflow. Run HIL on the exact
+packaged UF2/ELF and verify its SHA-256 against the release; a local rebuild or a result for another artifact does not
 qualify the release. Optional overclock profiles are board-local configuration settings; any overclock claim still
 requires exact-board HIL evidence and does not establish general stability or operating margins.
 
@@ -212,7 +220,8 @@ Run optional tests only when the release notes claim the behavior:
 - [ ] Records and necessary transcripts are accessible; local cache paths alone are not a shared evidence archive.
 - [ ] Release notes disclose compatibility changes, tested conditions, and any unqualified optional claims.
 
-Once every item is satisfied, promote the draft. Diagnose PyPI or Pages failures separately; never overwrite a
+Once every item is satisfied, attach the evidence and record hardware qualification in the release notes. Publication
+itself is automatic and does not certify those results. Diagnose PyPI or Pages failures separately; never overwrite a
 published PyPI version.
 
 ## Versioning
@@ -224,7 +233,7 @@ match.
 
 For **Release** preflight and independent **Publish .NET Packages** runs, this input is a base version label; it need
 not already exist as a Git tag, does not create a tag, and does not change which branch/commit is checked out.
-Stable PyPI releases and release-mode WebHID publication require an existing, published, qualified release tag.
+Stable PyPI releases and release-mode WebHID publication require an existing, published, software-validated release tag.
 WebHID and Python development-publish modes leave **tag** empty and generate their marked test versions automatically.
 
 Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release version resolver owns tag bounds; firmware

@@ -15,7 +15,7 @@ modes bypass the full cross-project gate but still run scoped checks and remain 
 
 The [Publish .NET Packages workflow](../../.github/workflows/publish-dotnet.yml) is called by Release after host
 validation. It builds self-contained archives, verifies extraction, native CLI startup, and version metadata, and
-returns archives and per-target checksums for the release draft. It does not create its own GitHub Release.
+returns archives and per-target checksums for the automatically published release. It does not create its own GitHub Release.
 The [distribution guide](host-app-distribution.md#net-downloads) owns supported targets and installation boundaries.
 
 For an independent packaging test:
@@ -35,10 +35,11 @@ in the [.NET host guide](../../host/dotnet/README.md).
 
 ## PyPI Publication
 
-The [PyPI workflow](../../.github/workflows/publish-pypi.yml) normally runs when a non-prerelease GitHub Release is
-published. It downloads the existing wheel and `SHA256SUMS-python.txt`, verifies the checksum, package name, filename,
+The [PyPI workflow](../../.github/workflows/publish-pypi.yml) normally runs after a successful tag-push Release workflow
+from this repository. It verifies the published non-prerelease release and triggering commit, downloads the existing
+wheel and `SHA256SUMS-python.txt`, and verifies the checksum, package name, filename,
 and tag version, then passes the unchanged wheel to the protected publishing job. It does not rebuild stable packages
-or upload on tag push, draft creation, or release preflight.
+or upload before the Release workflow completes. Manual release preflight does not publish.
 
 All uploads target production PyPI and use environment `pypi`. Source archives have rebuild regression coverage, but
 are not uploaded by the current workflow; enabling them needs explicit packaging/publication support and qualification.
@@ -46,8 +47,8 @@ are not uploaded by the current workflow; enabling them needs explicit packaging
 ### Trusted Publisher Setup
 
 1. Merge the publishing workflow into the default branch.
-2. Create GitHub environment **pypi** under **Settings > Environments**, with required reviewers. Permit release tags
-   and the approved branches used for manual retry or development publication.
+2. Create GitHub environment **pypi** under **Settings > Environments**, with required reviewers if desired. Permit the
+   default branch for completion-triggered publication and approved refs used for manual retry/development publication.
 3. Sign in to PyPI with a verified account and two-factor authentication. For an existing project you own, use its
    **Publishing** settings. For a first upload, use **Your account > Publishing > Add a new pending publisher**.
    Confirm project-name availability; a missing public project does not guarantee that you can register it.
@@ -68,18 +69,18 @@ publication credentials. The PyPA action creates publication attestations using 
 
 ### Publish And Retry
 
-1. Create a normal release tag and wait for the gated draft and its wheel/checksum assets.
-2. Complete [release HIL qualification](releasing.md#release-hil-gates), publish the qualified draft, and approve the
-   **pypi** environment deployment.
+1. Push a normal release tag and wait for software checks, packaging, and automatic GitHub publication to complete.
+2. The completion event starts the PyPI workflow. Approve the **pypi** environment deployment if required.
 3. Verify the published version and files at <https://pypi.org/project/pico-uart/>.
 
-For a failed publication or an older qualified release, run **Actions > Publish Python to PyPI > Run workflow** with
+For a failed publication or an older tested release, run **Actions > Publish Python to PyPI > Run workflow** with
 the already-published **tag**, leaving **test_publish** unchecked. The release must contain the expected wheel and
 checksum manifest and satisfy the shared gates. Drafts, prereleases, checksum failures, and metadata mismatches fail
 before upload.
 
-Publication through another workflow's default `GITHUB_TOKEN` does not trigger the release-event workflow; use manual
-dispatch in that case. PyPI versions and uploaded filenames are immutable, even after deletion. Existing distributions
+Completion-triggered workflows must exist on the default branch. Publishing or editing a release manually does not
+start this workflow; use manual dispatch for retries and existing releases. PyPI versions and uploaded filenames are
+immutable, even after deletion. Existing distributions
 are not silently skipped: inspect PyPI before retrying, and publish corrections under a new version. A PyPI failure
 does not roll back GitHub Releases or Pages.
 
@@ -100,15 +101,16 @@ run gets a new version; rerunning the same run retains its version and fails if 
 ## WebHID Pages
 
 The [Pages workflow](../../.github/workflows/publish-webhid.yml) publishes the independent app from `host/webhid`.
-It neither deploys nor modifies the shared Python/.NET frontend. Normal deployment follows a published,
-non-prerelease GitHub Release; a tag push, draft, or release preflight does not change the live site.
+It neither deploys nor modifies the shared Python/.NET frontend. Normal deployment follows successful completion of a
+tag-push Release run and verifies its published, non-prerelease release. Failed builds and manual preflights do not
+change the live site.
 
 ### Repository Setup
 
 1. Merge the Pages workflow into the default branch.
 2. Under **Settings > Pages > Build and deployment**, set **Source** to **GitHub Actions**. No deployment branch,
    custom domain, or personal access token is required.
-3. Configure environment **github-pages** to permit release tags and approved manual-deployment branches. Add required
+3. Configure environment **github-pages** to permit the default branch and approved manual-deployment refs. Add required
    reviewers if desired. Only the deployment job receives `pages: write` and `id-token: write`.
 
 The project's hosted dashboard is <https://djwinter29-oss.github.io/PicoUart/>. The deployment environment URL is
@@ -116,15 +118,15 @@ authoritative if Pages settings or the repository name changes.
 
 ### Publish Or Roll Back
 
-Publish the qualified draft through GitHub's release UI. The Pages workflow validates the published release and shared
-gates, checks out the gate-validated commit rather than relying on a movable tag, and runs WebHID checks. It stamps the
+After the tag-push Release run succeeds, the Pages workflow validates the published release and shared gates, rejects a
+moved tag, checks out the gate-validated commit, and runs WebHID checks. It stamps the
 visible app version from the tag without its leading `v`, then uploads only `host/webhid`. Deployments are serialized.
 
 For redeployment or rollback, use **Actions > Publish WebHID Pages > Run workflow** with the already-published **tag**
 and **test_publish** unchecked. Drafts, prereleases, and tags outside the release policy are rejected. The selected
 commit must contain the standalone app and tests. A deployment changes the hosted app, not firmware or connected boards.
-If another workflow published the release with its default `GITHUB_TOKEN`, use this manual route instead of expecting
-the release event to trigger automatically.
+Existing releases and manual release edits do not generate a new Release-completion event; use this manual route to
+redeploy them. Hardware qualification remains separate from publication.
 
 ### Test Publish From A Branch
 

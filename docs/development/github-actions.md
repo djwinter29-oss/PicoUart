@@ -67,7 +67,7 @@ or physical overclock/voltage margins. See [HIL scope](../tests/hil-fixture-test
 
 [Release](../../.github/workflows/release.yml) runs on a version-tag push or manual preflight. Firmware packaging starts
 alongside Host Validation. Python and .NET packaging wait for **all** Host Validation jobs, not for firmware packaging.
-Only a tag push enters the draft-publication job.
+Only a tag push enters the automatic GitHub-publication job.
 
 ```mermaid
 flowchart TD
@@ -75,43 +75,44 @@ flowchart TD
   Tag --> Firmware["pico / pico2<br/>Build, verify, package, checksum"]
   Host --> Python["Python wheel<br/>Build, install-check, checksum"]
   Host --> Dotnet[".NET native matrix<br/>Publish, extract-check, checksum"]
-  Host --> Gate["Draft-publication job"]
+  Host --> Gate["GitHub-publication job"]
   Firmware --> Gate
   Python --> Gate
   Dotnet --> Gate
   PR["Successful PR Check<br/>for the exact release commit"] -.->|"Explicit gate check"| Gate
-  Gate --> Draft["Draft GitHub Release<br/>Packaged artifacts and checksums"]
-  Draft --> HIL["Manual HIL on exact artifacts<br/>Every rated board and required case"]
+  Gate --> Release["Published GitHub Release<br/>Packaged artifacts and checksums"]
+  Release --> Complete["Successful Release workflow completion"]
+  Complete --> PyPI["PyPI: release/checksum/version gates<br/>Protected upload of unchanged wheel"]
+  Complete --> Pages["Pages: release/check gates<br/>Validated commit, Node checks, version stamp"]
+  Release --> HIL["Manual HIL on exact artifacts<br/>Every rated board and required case"]
   HIL --> Qualified{"Complete PASS<br/>and matching hashes?"}
-  Qualified -->|"No"| Hold["Keep draft; diagnose or rerun"]
-  Qualified -->|"Yes"| Promote["Manually publish qualified draft"]
-  Promote --> PyPI["PyPI: release/checksum/version gates<br/>Protected upload of unchanged wheel"]
-  Promote --> Pages["Pages: release/check gates<br/>Validated commit, Node checks, version stamp"]
+  Qualified -->|"No"| Hold["Keep hardware unqualified; diagnose or rerun"]
+  Qualified -->|"Yes"| Record["Record hardware qualification and evidence"]
 ```
 
 The exact-commit PR Check is a **separate workflow requirement**, not a Release `needs` job. A tag push does not itself
 trigger PR Check. A successful PR run for a different merge commit does not satisfy this gate; confirm a successful
 matching run, commonly from the push to `main`, before releasing that commit.
 
-CI creates the draft but does not perform physical HIL or automatically qualify/promote it. Artifact hashes identify
+CI publishes tested tags but does not perform physical HIL or automatically qualify hardware. Artifact hashes identify
 the tested image; record the board's active clock profile and boot fallback too. A local rebuild, a partial run, or a
 ceiling-search aggregate `PASS` with failed rows cannot replace required exact-artifact evidence.
 
-After publication, PyPI and Pages independently recheck the successful exact-commit PR Check and matching Release
-tag-push run. PyPI reuses the released wheel; Pages runs its own Node checks before deployment. Repository environment
-approvals still apply. Publishing via another workflow's default `GITHUB_TOKEN` does not trigger these release-event
-workflows; use the documented manual release-mode retry instead.
+After successful Release completion, PyPI and Pages independently recheck the exact-commit PR Check and matching
+tag-push run. They reject a tag moved away from the triggering commit. PyPI reuses the released wheel; Pages runs its
+own Node checks before deployment. Repository environment approvals still apply. The `workflow_run` trigger avoids
+depending on a release event emitted by `GITHUB_TOKEN`, which GitHub does not forward to downstream workflows.
 
 ## Manual Modes And Failures
 
 | Mode Or Failure | Consequence |
 | --- | --- |
-| Manual Release preflight | Builds firmware and host artifacts with the entered version label, but creates no draft or public upload |
+| Manual Release preflight | Builds firmware and host artifacts with the entered version label, but creates no release or public upload |
 | Independent .NET packaging test | Native archive checks produce marked workflow artifacts; no release attachment or publication |
 | Explicit Python test publication | Scoped package tests and installed-wheel checks, then an approved public development upload to production PyPI |
 | Explicit Pages test publication | Scoped Node checks, then a marked deployment replacing the live site; not a private preview |
 | Required automated check fails | No successful normal gate; fix or rerun before continuing |
-| HIL fails, is partial, or lacks matching artifacts | Keep the release unqualified and do not promote the draft |
+| HIL fails, is partial, or lacks matching artifacts | Keep the published artifacts hardware-unqualified/lab-only; do not claim a HIL pass |
 | PyPI or Pages fails after GitHub publication | Diagnose/retry that channel; GitHub publication and the other channel are not automatically rolled back |
 
 Manual test modes are intentional exceptions, not equivalent substitutes for the normal release graph. The
