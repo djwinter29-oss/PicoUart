@@ -81,11 +81,13 @@ detection.
 
 ## Get Started
 
-1. **Get the firmware.** Download the rated **`pico`** or **`pico2`** firmware for your board from
+1. **Get the firmware.** Download the rated **`pico`** or **`pico2`** `.uf2` file for your board from
    [Releases](https://github.com/djwinter29-oss/PicoUart/releases).
-2. **Connect the hardware.** [Flash the firmware](docs/deployment/releasing.md#flashing-release-artifacts) and connect the board
-    over USB. Check the [hardware setup](docs/hardware-setup.md) before connecting UART devices.
-3. **Use the serial ports.** Open the port for the wired UART in your terminal or test script and set the baud rate and
+2. **Flash over USB.** Hold **BOOTSEL** while plugging the board into USB, release it when the USB drive appears, then
+    copy the `.uf2` file onto that drive. The board automatically reboots into PicoUart; no debug probe is needed.
+    See [USB-drive flashing](docs/deployment/releasing.md#usb-drive-uf2) for upgrade and reset-button instructions.
+3. **Connect the hardware.** Check the [hardware setup](docs/hardware-setup.md) before connecting UART devices.
+4. **Use the serial ports.** Open the port for the wired UART in your terminal or test script and set the baud rate and
    framing for the connected device.
 
 ## Test Automation
