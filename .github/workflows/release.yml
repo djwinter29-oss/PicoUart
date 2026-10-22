@@ -168,8 +168,7 @@ jobs:
 
       - name: Build Python wheel
         env:
-          SETUPTOOLS_SCM_PRETEND_VERSION: >-
-            ${{ github.event_name == 'workflow_dispatch' && steps.version.outputs.version || '' }}
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}
         run: python -m pip wheel --no-deps host/python --wheel-dir dist
 
       - name: Verify installed Python release
