@@ -252,7 +252,9 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
         timing[label] = {key: object() for key in expected_keys}
         result[label] = (64, None)
 
-    monkeypatch.setattr(stress, "configure_port", lambda *_args, **_kwargs: (next(next_descriptor), []))
+    monkeypatch.setattr(stress, "open_port", lambda *_args, **_kwargs: (next(next_descriptor), []))
+    monkeypatch.setattr(stress, "set_port_line_coding", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(stress.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(stress.termios, "tcflush", lambda *_args: None)
     monkeypatch.setattr(stress, "run_stream", fake_run_stream)
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
@@ -327,7 +329,9 @@ def test_benchmark_reports_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> N
     def complete_stream(label, _source, _destination, _duration, _payload, _timeout, _start, result, _timing):
         result[label] = (64, None)
 
-    monkeypatch.setattr(stress, "configure_port", lambda *_args, **_kwargs: (next(next_descriptor), []))
+    monkeypatch.setattr(stress, "open_port", lambda *_args, **_kwargs: (next(next_descriptor), []))
+    monkeypatch.setattr(stress, "set_port_line_coding", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(stress.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(stress.termios, "tcflush", lambda *_args: None)
     monkeypatch.setattr(stress, "run_stream", complete_stream)
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
@@ -348,7 +352,8 @@ def test_setup_only_fails_when_port_cleanup_fails(monkeypatch: pytest.MonkeyPatc
         },
     )()
     descriptors = iter(range(20, 26))
-    monkeypatch.setattr(stress, "configure_port", lambda *_args, **_kwargs: (next(descriptors), []))
+    monkeypatch.setattr(stress, "open_port", lambda *_args, **_kwargs: (next(descriptors), []))
+    monkeypatch.setattr(stress, "set_port_line_coding", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(stress.termios, "tcflush", lambda *_args: None)
     monkeypatch.setattr(stress.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(stress, "close_ports", lambda _ports: OSError("restore failed"))
@@ -493,7 +498,7 @@ def test_fixture_paths_reject_duplicate_endpoint() -> None:
 def test_benchmark_allows_time_for_concurrent_line_coding() -> None:
     stress = _load_stress()
 
-    assert stress.LINE_CODING_SETTLE_SECONDS >= 2.0
+    assert stress.RATE_SETTLE_SECONDS >= 2.0
 
 
 def test_performance_test_plan_documents_time_diagnostic_output(repo_root: Path) -> None:
@@ -627,10 +632,13 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     streams = []
     events = []
 
-    def configure(path, _baud, **_kwargs):
+    def open_endpoint(path, _baud, **_kwargs):
         opened.append(path)
         events.append(("open", path))
         return len(opened), []
+
+    def configure_endpoint(descriptor, _baud, **_kwargs):
+        events.append(("line coding", descriptor))
 
     class ImmediateThread:
         def __init__(self, target, args):
@@ -647,9 +655,10 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
         events.append(("transmit", label))
         results[label] = (64, None)
 
-    monkeypatch.setattr(stress.time, "sleep", lambda _seconds: events.append(("settle", None)))
+    monkeypatch.setattr(stress.time, "sleep", lambda seconds: events.append(("sleep", seconds)))
     monkeypatch.setattr(stress.termios, "tcflush", lambda fd, _queue: events.append(("flush", fd)))
-    monkeypatch.setattr(stress, "configure_port", configure)
+    monkeypatch.setattr(stress, "open_port", open_endpoint)
+    monkeypatch.setattr(stress, "set_port_line_coding", configure_endpoint)
     monkeypatch.setattr(stress.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(stress, "run_stream", run_stream)
     monkeypatch.setattr(stress, "close_ports", lambda *_: None)
@@ -665,8 +674,13 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     assert streams == expected
     assert opened == [f"cdc{channel}" for channel in range(6)]
     assert events[:6] == [("open", f"cdc{channel}") for channel in range(6)]
-    assert events[6:13] == [("settle", None), *[("flush", fd) for fd in range(1, 7)]]
-    assert all(event[0] == "transmit" for event in events[13:])
+    assert events[6] == ("sleep", stress.PORT_OPEN_SETTLE_SECONDS)
+    assert events[7:13] == [("line coding", fd) for fd in range(1, 7)]
+    assert events[13] == ("sleep", stress.LINE_CODING_SETTLE_SECONDS)
+    assert events[14:20] == [("flush", fd) for fd in range(1, 7)]
+    assert events[20] == ("sleep", arguments.settle_seconds)
+    assert events[21:27] == [("flush", fd) for fd in range(1, 7)]
+    assert all(event[0] == "transmit" for event in events[27:])
 
 
 def test_hil_fixture_plan_matches_modes_and_timing(repo_root):

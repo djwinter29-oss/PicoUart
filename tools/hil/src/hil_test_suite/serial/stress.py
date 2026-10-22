@@ -11,11 +11,18 @@ import termios
 import threading
 import time
 from datetime import datetime, timezone
-from .config import BAUD_RATES, configure_port
+from .config import (
+    BAUD_RATES,
+    LINE_CODING_SETTLE_SECONDS,
+    PORT_OPEN_SETTLE_SECONDS,
+    configure_port,
+    open_port,
+    set_port_line_coding,
+)
 from ..support.health import collect_hid_health, health_is_clean, health_summary
 
 DEFAULT_RATES = tuple(BAUD_RATES)
-LINE_CODING_SETTLE_SECONDS = 8.0
+RATE_SETTLE_SECONDS = 8.0
 
 
 def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
@@ -211,6 +218,23 @@ def fixture_paths_valid(arguments: argparse.Namespace) -> bool:
     return True
 
 
+def configure_fixture_ports(arguments: argparse.Namespace, baud_rate: int, ports: list[tuple[int, list]]) -> dict[int, int]:
+    """Open all six CDC endpoints before applying any line-coding request."""
+    descriptors = {}
+    for channel in range(6):
+        descriptor, settings = open_port(getattr(arguments, f"cdc{channel}"), baud_rate, allow_arbitrary=True)
+        ports.append((descriptor, settings))
+        descriptors[channel] = descriptor
+
+    time.sleep(PORT_OPEN_SETTLE_SECONDS)
+    for channel in range(6):
+        set_port_line_coding(descriptors[channel], baud_rate, allow_arbitrary=True)
+    time.sleep(LINE_CODING_SETTLE_SECONDS)
+    for descriptor in descriptors.values():
+        termios.tcflush(descriptor, termios.TCIOFLUSH)
+    return descriptors
+
+
 def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     ports: list[tuple[int, list]] = []
     results: dict[str, tuple[int, str | None]] = {}
@@ -222,13 +246,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         return False
 
     try:
-        descriptors = {}
-        for channel in range(6):
-            descriptor, settings = configure_port(
-                getattr(arguments, f"cdc{channel}"), stream_baud, allow_arbitrary=True
-            )
-            ports.append((descriptor, settings))
-            descriptors[channel] = descriptor
+        descriptors = configure_fixture_ports(arguments, stream_baud, ports)
 
         streams: list[tuple[str, int, int]] = [
             ("cdc0-to-cdc2", descriptors[0], descriptors[2]),
@@ -239,7 +257,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             ("cdc5-loopback", descriptors[5], descriptors[5]),
         ]
 
-        time.sleep(getattr(arguments, "settle_seconds", LINE_CODING_SETTLE_SECONDS))
+        time.sleep(getattr(arguments, "settle_seconds", RATE_SETTLE_SECONDS))
         # DTR-open recovery can finish during settling and deliver stale bytes after configure_port's initial flush.
         for file_descriptor, _ in ports:
             termios.tcflush(file_descriptor, termios.TCIOFLUSH)
