@@ -129,6 +129,13 @@ def incremental_ceiling_found(
 
     attempted_rates = list(dict.fromkeys(int(rate) for rate in RATE_PATTERN.findall(output)))
     parsed = parse_benchmark_output_by_rate(output)
+    if not attempted_rates:
+        return False
+    if any(
+        not all(parsed.get((rate, label), ("NOT REPORTED",))[0] == "PASS" for label in expected_link_labels())
+        for rate in attempted_rates[:-1]
+    ):
+        return False
     passing_rates = [
         rate for rate in attempted_rates
         if all(parsed.get((rate, label), ("NOT REPORTED",))[0] == "PASS" for label in expected_link_labels())
