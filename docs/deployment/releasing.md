@@ -99,6 +99,27 @@ Without matching evidence, the release remains lab-only.
 
 ## Flashing Release Artifacts
 
+Identify the target board and stop UART traffic and host applications before flashing. Use the packaged artifact for
+that board, without rebuilding, and verify its SHA-256 against the matching release checksum manifest. Both methods
+below apply to initial installation and firmware upgrades; release qualification still requires the documented HIL gates.
+
+### USB Drive (UF2)
+
+No debug probe or firmware build tools are required.
+
+1. Download the `.uf2` artifact for your board: **`pico`** for Raspberry Pi Pico or **`pico2`** for Pico 2.
+2. With the board powered off, hold **BOOTSEL** while connecting a USB data cable to your computer. For a USB-powered
+   board, unplug USB first, then reconnect while holding BOOTSEL.
+3. Release BOOTSEL when the bootloader's USB drive appears, then copy the matching `.uf2` file onto that drive.
+4. Wait for the copy to finish. The drive disconnects automatically, the board reboots, and PicoUart's USB serial ports
+   and HID interface reappear. Check the reported firmware version before resuming UART traffic.
+
+If your board has a **RESET** button, you can instead hold BOOTSEL, press and release RESET, then release BOOTSEL when
+the USB drive appears. Reset alone restarts the installed firmware; it does not enter the USB-drive bootloader.
+Standard Pico/Pico 2 boards have BOOTSEL but no separate onboard reset button.
+
+### Debug Probe (ELF)
+
 The commands below program the packaged ELF through a Debug Probe; they do not build a replacement image.
 Identify the board and probe and obtain authorization before flashing or using recovery commands. Replace all example
 placeholders with the selected target and artifact; do not pass a UF2 file to an `--elf` option.

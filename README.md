@@ -63,29 +63,18 @@ _Current WebHID layout with simulated telemetry; illustrative, not a live hardwa
 
 ### When a test times out
 
-A nightly test fails with an empty serial log. Was the device silent, or did bytes never get through? Serial logs alone
-may not show where traffic stopped. Monitor PicoUart during the run and compare its dropped-byte counts before and
-after, to see which UARTs carried traffic and whether the bridge reported an RX overrun. That gives you evidence
-beyond the device's own messages.
-
-```mermaid
-flowchart LR
-    Runner["Test runner"] <-->|"6 USB serial ports + HID status"| Pico["PicoUart board"]
-    Pico <-->|"UART0"| DUT["Device under test"]
-    Pico <-->|"UART1"| Peripheral["Peripheral"]
-    Pico <-->|"UART2-5"| Logs["Controller logs"]
-```
-
-Your test runner still owns sequencing and pass/fail; PicoUart adds bridge-level evidence, not automatic root-cause
-detection.
+Compare UART/USB traffic and RX dropped-byte counts before and after the run to help locate where traffic stopped.
+PicoUart adds evidence, not automatic root-cause detection. Your runner still owns test sequencing and pass/fail.
 
 ## Get Started
 
-1. **Get the firmware.** Download the rated **`pico`** or **`pico2`** firmware for your board from
+1. **Get the firmware.** Download the rated **`pico`** or **`pico2`** `.uf2` file for your board from
    [Releases](https://github.com/djwinter29-oss/PicoUart/releases).
-2. **Connect the hardware.** [Flash the firmware](docs/deployment/releasing.md#flashing-release-artifacts) and connect the board
-    over USB. Check the [hardware setup](docs/hardware-setup.md) before connecting UART devices.
-3. **Use the serial ports.** Open the port for the wired UART in your terminal or test script and set the baud rate and
+2. **Flash over USB.** Hold **BOOTSEL** while plugging the board into USB, release it when the USB drive appears, then
+    copy the `.uf2` file onto that drive. The board automatically reboots into PicoUart; no debug probe is needed.
+    See [USB-drive flashing](docs/deployment/releasing.md#usb-drive-uf2) for upgrade and reset-button instructions.
+3. **Connect the hardware.** Check the [hardware setup](docs/hardware-setup.md) before connecting UART devices.
+4. **Use the serial ports.** Open the port for the wired UART in your terminal or test script and set the baud rate and
    framing for the connected device.
 
 ## Test Automation
@@ -158,6 +147,19 @@ See the [WebHID guide](host/webhid/README.md) for controls and connection troubl
 With the [pico-uart](https://pypi.org/project/pico-uart/) package installed as above, run `pico-uart web` and open
 `http://127.0.0.1:5000/`. It does not require browser WebHID support. See the [Python guide](host/python/README.md) for
 `pipx` and device permissions. Prefer .NET? See the [.NET host guide](host/dotnet/README.md).
+
+## Hardware Compatibility
+
+**Pico W and Pico 2 W:** use the matching `pico_w` or `pico2_w`
+[board-specific build](firmware/build-and-config.md#build) for USB/UART operation. Wi-Fi and Bluetooth are not enabled.
+See the [wireless-board notes](docs/hardware-setup.md#wireless-boards) for the LED limitation and qualification scope;
+the prebuilt `pico` and `pico2` images shown near the top target the non-wireless boards.
+
+**PicoUART6 carrier:** the default UART TX/RX pinout matches
+[8086net/pico-sexa-uart-bridge](https://github.com/8086net/pico-sexa-uart-bridge) and the PicoUART6 hardware sold on
+[Lectronz](https://lectronz.com/products/picouart6) and [The Pi Hut](https://thepihut.com/products/picouart6).
+Carrier-board LEDs and USB-to-I2C are not supported; see the
+[compatibility notes](docs/hardware-setup.md#picouart6-carrier-compatibility) before using it.
 
 ## Before You Connect
 

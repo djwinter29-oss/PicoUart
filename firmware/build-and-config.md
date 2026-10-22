@@ -24,6 +24,16 @@ Release version policy is documented in [Releasing](../docs/deployment/releasing
 All generated output is stored under the repository-root `build/` directory. Use a separate build directory per board.
 The Linux build/load tools accept `--board` values supported by the installed Pico SDK.
 
+For USB/UART-only builds on wireless boards:
+
+```sh
+tools/firmware/build.sh --board pico_w
+tools/firmware/build.sh --board pico2_w
+```
+
+Wi-Fi and Bluetooth are not enabled. Board-specific LED behavior and qualification limits are described in the
+[wireless-board notes](../docs/hardware-setup.md#wireless-boards).
+
 The scripts honor an exported `PICO_SDK_PATH`; otherwise they use the pinned repository-local `.pico-sdk` checkout.
 `load.sh` uses the same SDK selection as `build.sh` when it rebuilds an image.
 

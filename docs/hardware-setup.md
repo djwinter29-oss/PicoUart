@@ -22,6 +22,23 @@ The host sees six USB CDC ACM ports. Each CDC port maps to one target-side UART:
 Normal UART wiring needs TX, RX, and a shared ground. RTS/CTS pins are reserved assignments, but they are not active in
 the default firmware configuration.
 
+## PicoUART6 Carrier Compatibility
+
+With flow control disabled, PicoUart's six UART TX/RX pairs match the published pinout of
+[8086net/pico-sexa-uart-bridge](https://github.com/8086net/pico-sexa-uart-bridge). This provides UART TX/RX pin
+compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com/products/picouart6) and
+[The Pi Hut](https://thepihut.com/products/picouart6), subject to the following limits:
+
+- The carrier's UART activity, I2C activity, and GPIO-controlled power LEDs are not driven by PicoUart. The Pico's own
+	identification LED is separate and remains available on non-wireless Pico/Pico 2 boards.
+- The STEMMA QT/Qwiic connector has no firmware I2C support: PicoUart does not expose a USB-to-I2C interface and is not
+	compatible with the original firmware's `i2c-tiny-usb` functionality.
+- Keep RTS/CTS disabled on this carrier. PicoUart's optional flow-control assignments overlap the carrier's LED and I2C
+	wiring; enabling them requires a separately reviewed pin map and hardware setup.
+
+This is a comparison of documented pin assignments, not a physical qualification of the carrier or a claim of full
+feature compatibility with its original firmware.
+
 ## Default Firmware Behavior
 
 RTS/CTS assignments are reserved but flow control is disabled by default. Enabling it is backend-specific; see the
@@ -44,6 +61,19 @@ reports status and board controls but does not change the pinout.
 - GP25 is reserved for the selected board's default LED when `PICO_DEFAULT_LED_PIN` is defined.
 - GP26 is used as UART5 CTS when PIO flow control is enabled. In that configuration it is not available as an ADC input.
 - GP27 and GP28 remain free for future use.
+
+## Wireless Boards
+
+Pico W and Pico 2 W expose the same UART pins listed above. Build specifically for `pico_w` or `pico2_w` using the
+[firmware build guide](../firmware/build-and-config.md#build). The firmware operates as a USB/UART bridge only;
+Wi-Fi and Bluetooth are not initialized or used.
+
+The wireless boards' onboard LED is connected through the wireless chip rather than a direct MCU GPIO, so HID LED
+identification is unavailable in these builds. Do not substitute the non-wireless `pico` or `pico2` image: it treats
+GPIO25 as an LED output, but that pin is the wireless chip-select on W boards.
+
+The release build/HIL matrix currently covers Pico and Pico 2, not the wireless variants. Successful compilation does
+not qualify a Pico W or Pico 2 W for physical UART behavior, throughput, or clock-profile stability.
 
 ## Test Fixture
 
