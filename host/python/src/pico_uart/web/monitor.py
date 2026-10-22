@@ -55,6 +55,9 @@ def empty_snapshot() -> dict[str, Any]:
         "runtime_error": None,
         "led": None,
         "led_error": None,
+        "updated_at": None,
+        "traffic_incomplete": False,
+        "traffic_gaps": 0,
         "channel_diagnostics": None,
         "diagnostics_error": None,
         "board": None,
@@ -204,6 +207,15 @@ class BoardMonitor:
                             )
                         },
                     }
+            channels = self._snapshot["channels"]
+            self._snapshot["updated_at"] = max(
+                (channel["updated_at"] for channel in channels if channel["updated_at"] is not None),
+                default=None,
+            )
+            self._snapshot["traffic_incomplete"] = any(
+                channel["traffic_incomplete"] for channel in channels
+            )
+            self._snapshot["traffic_gaps"] = sum(channel["traffic_gaps"] for channel in channels)
             if any(item is not None for item in diagnostics):
                 self._snapshot["channel_diagnostics"] = [
                     diagnostics[index] if diagnostics[index] is not None else prior[index]

@@ -92,6 +92,9 @@ def test_input_snapshot_preserves_shared_fault_timestamp_without_category_timest
     service._apply_status(status)
     snapshot = service.snapshot()
     assert snapshot["refresh_interval_ms"] == refresh
+    assert snapshot["updated_at"] == "2026-10-22T12:00:00.000+00:00"
+    assert snapshot["traffic_incomplete"] is True
+    assert snapshot["traffic_gaps"] == 1
     channel = snapshot["channels"][2]
     assert channel["updated_at"] == "2026-10-22T12:00:00.000+00:00"
     assert channel["sequence"] == 12
