@@ -25,7 +25,7 @@ python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial 
 python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <serial> set-clock default
 python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <serial> erase
 
-# Host dashboards (Linux/macOS/WSL; choose one)
+# Host dashboards (Linux/macOS/WSL; use separate ports for concurrent instances)
 tools/host/run-python.sh
 tools/host/run-dotnet.sh
 tools/host/run-webhid.sh
@@ -45,7 +45,15 @@ python3 tools/release/verify-build.py --help
 
 Python and .NET launchers default to `web` and pass application arguments through unchanged, for example
 `tools/host/run-python.sh --serial ABC123 status` or `tools/host/run-dotnet.sh web --port 5001`.
-Both backend dashboards default to port 5000; select a different port to run them together.
+Each dashboard instance needs its own port and uses a port-specific session cookie. Run only one HID monitor per
+physical board; select a different board for each process:
+
+```sh
+tools/host/run-python.sh --serial <serial-1> web --port 5001
+tools/host/run-dotnet.sh --serial <serial-2> web --port 5002
+```
+
+The same pattern works for multiple instances of either backend.
 The WebHID launcher serves only static assets on loopback port 8000; use `--port` to change it.
 Run each launcher with `--help` for prerequisites and environment overrides.
 The Python/.NET launchers check local USB/HID permissions before starting; they do not install rules automatically.

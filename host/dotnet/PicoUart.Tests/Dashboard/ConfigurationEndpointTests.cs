@@ -82,6 +82,7 @@ public sealed class ConfigurationEndpointTests
                 catch (HttpRequestException) { await Task.Delay(25); }
             }
             Assert.NotNull(page);
+            Assert.NotNull(handler.CookieContainer.GetCookies(http.BaseAddress!)[$"PicoUart.Session.{port}"]);
             var token = Regex.Match(page, "[A-F0-9]{64}").Value;
             Assert.Equal(64, token.Length);
             const string valid = "{\"profile\":0,\"unsafe_overclock\":false}";

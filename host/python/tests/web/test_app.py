@@ -21,6 +21,14 @@ class FakeDashboard:
         self.actions.append("reset")
 
 
+def test_dashboard_session_cookie_names_are_port_specific():
+    first = create_app(FakeDashboard(), port=5101)
+    second = create_app(FakeDashboard(), port=5102)
+
+    assert first.config["SESSION_COOKIE_NAME"] == "PicoUart.Session.5101"
+    assert second.config["SESSION_COOKIE_NAME"] == "PicoUart.Session.5102"
+
+
 def _csrf_token(client):
     response = client.get("/")
     match = re.search(rb'name="csrf-token" content="([^"]+)"', response.data)

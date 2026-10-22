@@ -13,7 +13,7 @@ from werkzeug.exceptions import BadRequest
 from .boards import BoardRegistry
 
 
-def create_app(service: BoardRegistry | None = None) -> Flask:
+def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
     """Create the web app; an injected service keeps route tests hardware-free."""
     web_root = Path(__file__).parent / "assets"
     if not web_root.is_dir():
@@ -28,6 +28,7 @@ def create_app(service: BoardRegistry | None = None) -> Flask:
     app.config.update(
         SECRET_KEY=secrets.token_bytes(32),
         TRUSTED_HOSTS=["localhost", "127.0.0.1"],
+        SESSION_COOKIE_NAME=f"PicoUart.Session.{port}",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
     )
@@ -130,6 +131,6 @@ def run_server(
     """Run the dashboard on loopback only; never expose board controls to a LAN."""
     dashboard = BoardRegistry(serial_number, device_path)
     try:
-        create_app(dashboard).run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
+        create_app(dashboard, port=port).run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
     finally:
         dashboard.close()

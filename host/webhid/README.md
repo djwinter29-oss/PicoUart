@@ -53,7 +53,7 @@ a quiet or healthy-looking page alone is not evidence that an automated test pas
 ## Other Commands And Controls
 
 **Board LED** sends explicit identification On/Off commands; its indicator shows physical output.
-The **Persistent configuration** section saves the selected boot-time clock profile. A verified save automatically
+The **Boot configuration** section saves the selected boot-time clock profile. A verified save automatically
 reboots the board and briefly disconnects USB, even though there is no standalone reset command. Close all CDC ports
 and stop external UART traffic first; non-default clocks require explicit unsafe-overclock acknowledgement.
 
