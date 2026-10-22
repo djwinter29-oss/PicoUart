@@ -311,7 +311,7 @@ static void test_channel_publication_commits_independent_sequence_and_baseline(v
     pico_test_time_us = 600000;
     TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, feature));
     TEST_ASSERT_EQUAL_UINT16(1u, (uint16_t)feature[1] | ((uint16_t)feature[2] << 8));
-    TEST_ASSERT_EQUAL_UINT32(25u, usb_hid_read_u32(feature + 9u));
+    TEST_ASSERT_EQUAL_UINT32(50u, usb_hid_read_u32(feature + 9u));
     endpoint_accepts = false;
     pico_test_time_us = 1000000;
     usb_hid_poll();
@@ -322,7 +322,7 @@ static void test_channel_publication_commits_independent_sequence_and_baseline(v
     TEST_ASSERT_EQUAL_UINT16(10u, accepted_report_id);
 }
 
-static void test_counter_wrap_accumulates_before_wire_saturation(void)
+static void test_boot_counter_wraps_on_wire(void)
 {
     uint8_t payload[64];
     port_stats[0].controller_tx_bytes = UINT32_MAX - 15u;
@@ -330,7 +330,18 @@ static void test_counter_wrap_accumulates_before_wire_saturation(void)
     port_stats[0].controller_tx_bytes = 32u;
     pico_test_time_us = 1000;
     TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, payload));
-    TEST_ASSERT_EQUAL_UINT32(48u, usb_hid_read_u32(payload + 9u));
+    TEST_ASSERT_EQUAL_UINT32(32u, usb_hid_read_u32(payload + 9u));
+}
+
+static void test_boot_counters_survive_usb_host_reset(void)
+{
+    uint8_t payload[64];
+    port_stats[0].controller_tx_bytes = 10u;
+    usb_hid_init();
+    port_stats[0].controller_tx_bytes = 25u;
+    usb_hid_reset_host_state();
+    TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, payload));
+    TEST_ASSERT_EQUAL_UINT32(25u, usb_hid_read_u32(payload + 9u));
 }
 
 static void test_command_validation_precedence_echo_and_deduplication(void)
@@ -458,7 +469,8 @@ int main(void)
     RUN_TEST(test_control_and_telemetry_layout_lengths);
     RUN_TEST(test_channel_feature_and_input_reads_are_non_consuming);
     RUN_TEST(test_channel_publication_commits_independent_sequence_and_baseline);
-    RUN_TEST(test_counter_wrap_accumulates_before_wire_saturation);
+    RUN_TEST(test_boot_counter_wraps_on_wire);
+    RUN_TEST(test_boot_counters_survive_usb_host_reset);
     RUN_TEST(test_command_validation_precedence_echo_and_deduplication);
     RUN_TEST(test_save_pending_verified_completion_and_error_results);
     RUN_TEST(test_save_busy_and_malformed_requests_have_no_side_effects);

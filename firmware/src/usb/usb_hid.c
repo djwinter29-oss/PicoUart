@@ -111,12 +111,11 @@ typedef struct {
     uint32_t rx_counts[2]; /**< Last sampled backend overrun and error counters. */
 } usb_hid_fault_history_t;
 
-/** @brief Monotonic, wide traffic accumulation harvested from wrapping backend counters. */
+/** @brief Boot-lifetime traffic accumulation harvested from wrapping backend counters. */
 typedef struct {
     uint32_t previous[4]; /**< Last raw UART-TX, UART-RX, CDC-TX, and CDC-RX counters. */
-    uint64_t total[4]; /**< Saturating totals since this USB session began. */
-    uint64_t published[4]; /**< Accumulator values at the last accepted Input report. */
-    uint64_t last_publication_ms; /**< Measurement boundary for deltas and interval. */
+    uint64_t total[4]; /**< Monotonic totals since MCU boot. */
+    uint64_t last_publication_ms; /**< Measurement boundary for the report interval. */
     uint16_t sequence; /**< Last accepted per-channel Input sequence. */
     bool initialized; /**< Raw counter baseline has been established. */
 } usb_hid_channel_traffic_t;
@@ -220,7 +219,7 @@ static void usb_hid_read_stats(uart_driver_port_stats_t uart[UART_PORT_COUNT],
     }
 }
 
-/** @brief Harvest raw byte counters frequently so their 32-bit wrap cannot erase publication totals. */
+/** @brief Harvest raw byte counters frequently so their 32-bit wrap cannot erase boot-lifetime totals. */
 static void usb_hid_harvest_traffic(const uart_driver_port_stats_t uart[UART_PORT_COUNT],
                                    const usb_cdc_port_stats_t cdc[UART_PORT_COUNT])
 {
@@ -281,22 +280,32 @@ static void usb_hid_sample_faults(size_t channel, const uart_driver_port_stats_t
     }
 }
 
-/** @brief Start a new USB traffic interval without clearing boot-lifetime fault history. */
-static void usb_hid_start_traffic_session(void)
+/** @brief Start a USB publication session, optionally initializing boot-lifetime totals. */
+static void usb_hid_start_traffic_session(bool boot_start)
 {
     uart_driver_port_stats_t uart[UART_PORT_COUNT] = {0};
     usb_cdc_port_stats_t cdc[UART_PORT_COUNT] = {0};
     const uint64_t now_ms = time_us_64() / 1000u;
 
     usb_hid_read_stats(uart, cdc);
+    if (!boot_start) {
+        usb_hid_harvest_traffic(uart, cdc);
+    }
     for (size_t channel = 0u; channel < UART_PORT_COUNT; ++channel) {
         usb_hid_channel_traffic_t *traffic = &usb_hid_traffic[channel];
-        memset(traffic, 0, sizeof(*traffic));
+        if (boot_start) {
+            memset(traffic, 0, sizeof(*traffic));
+            traffic->total[0] = uart[channel].controller_tx_bytes;
+            traffic->total[1] = uart[channel].controller_rx_bytes;
+            traffic->total[2] = cdc[channel].tx_bytes;
+            traffic->total[3] = cdc[channel].rx_bytes;
+        }
         traffic->previous[0] = uart[channel].controller_tx_bytes;
         traffic->previous[1] = uart[channel].controller_rx_bytes;
         traffic->previous[2] = cdc[channel].tx_bytes;
         traffic->previous[3] = cdc[channel].rx_bytes;
         traffic->last_publication_ms = now_ms;
+        traffic->sequence = 0u;
         traffic->initialized = true;
     }
     usb_hid_next_channel = 0u;
@@ -402,10 +411,7 @@ static void usb_hid_build_channel(uint8_t channel, uint8_t payload[USB_HID_CHANN
                            (history->health & 0xc0u));
     payload[8] = (uint8_t)((ring_high_watermark + 15u) / 16u);
     for (size_t counter = 0u; counter < 4u; ++counter) {
-        const uint64_t delta = traffic->total[counter] >= traffic->published[counter]
-                                   ? traffic->total[counter] - traffic->published[counter]
-                                   : UINT64_MAX;
-        usb_hid_write_u32(payload + 9u + (4u * counter), usb_hid_saturate_u32(delta));
+        usb_hid_write_u32(payload + 9u + (4u * counter), (uint32_t)traffic->total[counter]);
     }
     if (info.baud_rate != 0u) {
         usb_hid_write_u32(payload + 25u, info.baud_rate);
@@ -433,7 +439,6 @@ static bool usb_hid_publish_channel(uint8_t channel, const uart_driver_port_stat
         return false;
     }
     service_load_note(0u);
-    memcpy(traffic->published, traffic->total, sizeof(traffic->published));
     traffic->last_publication_ms = now_ms;
     traffic->sequence = (uint16_t)(traffic->sequence + 1u);
     usb_hid_next_channel = (uint8_t)((channel + 1u) % UART_PORT_COUNT);
@@ -616,11 +621,12 @@ void usb_hid_init(void)
     memset(usb_hid_faults, 0, sizeof(usb_hid_faults));
     memset(usb_hid_last_uart_stats, 0, sizeof(usb_hid_last_uart_stats));
     memset(usb_hid_last_cdc_stats, 0, sizeof(usb_hid_last_cdc_stats));
+    memset(usb_hid_traffic, 0, sizeof(usb_hid_traffic));
     usb_hid_arm_deadline = nil_time;
     usb_hid_reboot_deadline = nil_time;
     usb_hid_reboot_pending = false;
     usb_hid_next_fault_sample_ms = 0u;
-    usb_hid_start_traffic_session();
+    usb_hid_start_traffic_session(true);
 }
 
 void usb_hid_poll(void)
@@ -714,5 +720,5 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
 void usb_hid_reset_host_state(void)
 {
     usb_hid_arm_deadline = nil_time;
-    usb_hid_start_traffic_session();
+    usb_hid_start_traffic_session(false);
 }

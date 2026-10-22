@@ -222,12 +222,11 @@ export class PicoUartWebHid {
       }
       gap = expired || (!first && snapshot.sequence !== (previous.sequence + 1) % 65536);
       gap ||= snapshot.interval_ms === 0 || snapshot.interval_ms === UNAVAILABLE
-        || Object.values(snapshot.traffic).includes(UNAVAILABLE);
+      const traffic = Object.fromEntries(TRAFFIC_FIELDS.map(field => [field,
+        first ? 0 : (snapshot.traffic[field] - previous.totals[field]) >>> 0]));
       channels[id] = { ...snapshot, updated_at: new Date().toISOString(),
-        totals: Object.fromEntries(TRAFFIC_FIELDS.map(field =>
-          [field, previous.totals[field] + (first ? 0 : snapshot.traffic[field])])),
-        observed_interval_ms: previous.observed_interval_ms + (first || !snapshot.interval_ms
-          || snapshot.interval_ms === UNAVAILABLE ? 0 : snapshot.interval_ms),
+        traffic, totals: { ...snapshot.traffic },
+        observed_interval_ms: previous.observed_interval_ms + (first || gap ? 0 : snapshot.interval_ms),
         traffic_gaps: previous.traffic_gaps + Number(gap),
         traffic_incomplete: previous.traffic_incomplete || gap };
     } else if (previous.sequence === null) {

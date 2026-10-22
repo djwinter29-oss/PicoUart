@@ -44,8 +44,7 @@ export function channelPresentation(data, channel, now = Date.now()) {
   const sample = Date.parse(channel.updated_at);
   let history = channelHistory.get(channel.id);
   if (!data.connected || !history || history.serial !== data.identity?.serial_number
-    || data.runtime?.uptime_ms < history.uptime
-    || directions.some(([, key]) => channel.totals[key] < history.totals[key])) {
+    || data.runtime?.uptime_ms < history.uptime) {
     history = { serial: data.identity?.serial_number, uptime: data.runtime?.uptime_ms,
       totals: { ...channel.totals }, sample, observedSample: sample, receivedAt: now,
       interval: channel.observed_interval_ms, gaps: channel.traffic_gaps, rates: null };
@@ -60,7 +59,7 @@ export function channelPresentation(data, channel, now = Date.now()) {
     history.gaps = channel.traffic_gaps;
   } else if (elapsed >= 1000) {
     history.rates = Object.fromEntries(directions.map(([, key]) =>
-      [key, (channel.totals[key] - history.totals[key]) * 1000 / elapsed]));
+      [key, ((channel.totals[key] - history.totals[key]) >>> 0) * 1000 / elapsed]));
     history.sample = sample;
     history.totals = { ...channel.totals };
     history.interval = channel.observed_interval_ms;
@@ -152,7 +151,7 @@ function renderChannels(data) {
       const total = document.createElement("span");
       total.className = "traffic-total";
       total.textContent = `${channel.totals[key].toLocaleString()} B`;
-      metric.title = `${label}: ${channel.totals[key].toLocaleString()} B observed total since monitoring began (lower bound).`;
+      metric.title = `${label}: ${channel.totals[key].toLocaleString()} B since firmware boot, modulo 2^32.`;
       metric.append(direction, value, total);
       metrics.append(metric);
     });
@@ -203,7 +202,7 @@ export function renderDashboard(data) {
   trafficNote.hidden = !data.traffic_incomplete;
   trafficNote.dataset.incomplete = String(data.traffic_incomplete);
   trafficNote.textContent = data.traffic_incomplete
-    ? "Incomplete traffic samples detected; totals may undercount."
+    ? "Input report gaps detected; rate windows restart after a clean sample. Byte counters are modulo 2^32 since boot."
     : "";
   renderChannels(data);
   statusMessage.textContent = data.error

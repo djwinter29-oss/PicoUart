@@ -67,10 +67,11 @@ snapshot, launch a timed monitor alongside a serial test, or collect cumulative 
 ```
 
 Each monitor line contains one channel's combined snapshot, identified by `id` (0-5), with its own 16-bit `sequence`
-and measured `interval_ms`. Four byte deltas saturate at `UINT32_MAX`; use the measured interval rather than host
-arrival time for rates. Discard the first Input per channel from session totals and rate windows. Feature reads
-overlap those intervals and must never be accumulated. Missing/stale reports and saturated values make totals lower
-bounds. Dropped-byte counts and buffer peaks are cumulative since boot.
+and measured `interval_ms`. Four byte counters report totals since MCU boot modulo $2^{32}$; derive increments with
+modulo subtraction between Input reports and use the measured interval, not host arrival time, for rates. The first
+Input per channel seeds the boot total and rate baseline. Feature reads do not advance the interval or sequence and
+must not be accumulated as traffic. A report gap resets the rate window, while counters recover totals unless more
+than one wrap could have occurred between observations. Dropped-byte counts and buffer peaks are cumulative since boot.
 The [consolidated HID v1 contract](../../docs/design/usb/hid-report-reference.md) is authoritative for layouts,
 validation, traffic accounting, fault-history interpretation, and command timing; legacy layouts are not supported.
 

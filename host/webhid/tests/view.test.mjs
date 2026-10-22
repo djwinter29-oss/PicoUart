@@ -147,6 +147,26 @@ for (const frontend of ["webhid", "web"]) {
     }
   });
 
+  test(`${frontend} computes throughput across a 32-bit boot-counter wrap`, () => {
+    const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
+    const { present } = setup(document);
+    const channel = { id: 5, health: 1, health_labels: ["ready"], cdc_open: true,
+      updated_at: new Date(100000).toISOString(), observed_interval_ms: 0, traffic_gaps: 0,
+      totals: { uart_tx: 0xfffffff0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
+    const data = { connected: true, identity: { serial_number: "counter-wrap-test" }, traffic_gaps: 0,
+      runtime: { uptime_ms: 5000 } };
+    try {
+      assert.equal(present({ ...data, updated_at: channel.updated_at }, channel, 100000).rates, null);
+      channel.totals.uart_tx = 32;
+      channel.observed_interval_ms = 1000;
+      channel.updated_at = new Date(101000).toISOString();
+      const result = present({ ...data, updated_at: channel.updated_at }, channel, 101000);
+      assert.equal(result.rates.uart_tx, 48);
+    } finally {
+      delete globalThis.document;
+    }
+  });
+
   test(`${frontend} renders settings and simple read-only fault flags`, () => {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     assert.ok(!html.includes("Backend</th>") && !html.includes("Ring peak"));
@@ -188,7 +208,7 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(descendants(rows).filter(node => ["details", "summary", "button"].includes(node.tag)).length, 0);
       assert.match(rows.textContent, /attention/);
       assert.ok(!rows.textContent.includes(">="));
-      assert.ok(descendants(rows).some(node => node.title?.includes("0 B observed total")));
+      assert.ok(descendants(rows).some(node => node.title?.includes("0 B since firmware boot")));
       assert.equal(descendants(rows).filter(node => node.tag === "button").length, 0);
       assert.ok(!rows.textContent.includes("(acknowledged)"));
       channel.health_labels = ["ready"];
@@ -354,7 +374,8 @@ for (const frontend of ["webhid", "web"]) {
       assert.equal(text("traffic-note"), "");
       render({ ...data, traffic_incomplete: true });
       assert.equal(document.querySelector("#traffic-note").hidden, false);
-      assert.equal(text("traffic-note"), "Incomplete traffic samples detected; totals may undercount.");
+      assert.equal(text("traffic-note"),
+        "Input report gaps detected; rate windows restart after a clean sample. Byte counters are modulo 2^32 since boot.");
       render(data);
       assert.equal(document.querySelector("#traffic-note").hidden, true);
       render({ ...data, overflow_counts: [1, 2, 3, 4, 5, 6] });

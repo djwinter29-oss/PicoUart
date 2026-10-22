@@ -87,26 +87,27 @@ def test_telemetry_and_channel_layouts_keep_shared_fault_timestamp():
         parse_channel(channel_bytes(faults=(0, 0, 1, 0), health=0x01))
 
 
-def test_input_accounting_is_per_channel_and_excludes_first_sample():
+def test_input_totals_seed_from_boot_counters_and_deltas_are_per_channel():
     device = FakeHidDevice(
         {},
         inputs=[
             (10, channel_bytes(sequence=1, traffic=(100, 200, 300, 400))),
             (11, channel_bytes(sequence=65535, traffic=(50, 60, 70, 80))),
-            (10, channel_bytes(sequence=2, interval_ms=750, traffic=(10, 20, 30, 40))),
-            (11, channel_bytes(sequence=0, interval_ms=500, traffic=(5, 6, 7, 8))),
+            (10, channel_bytes(sequence=2, interval_ms=750, traffic=(110, 220, 330, 440))),
+            (11, channel_bytes(sequence=0, interval_ms=500, traffic=(55, 66, 77, 88))),
         ],
     )
     client = PicoUartHid(device=device)
     first = client.read_status()
-    assert first["channels"][0]["totals"]["uart_tx"] == 0
+    assert first["channels"][0]["totals"]["uart_tx"] == 100
     assert first["channels"][0]["observed_interval_ms"] == 0
     client.read_status()
     after = client.read_status()
     channel0, channel1 = after["channels"][:2]
     assert channel0["totals"] == {
-        "uart_tx": 10, "uart_rx": 20, "usb_tx": 30, "usb_rx": 40,
+        "uart_tx": 110, "uart_rx": 220, "usb_tx": 330, "usb_rx": 440,
     }
+    assert channel0["traffic"] == {"uart_tx": 10, "uart_rx": 20, "usb_tx": 30, "usb_rx": 40}
     assert channel0["observed_interval_ms"] == 750
     assert channel0["sequence"] == 2
     assert channel0["traffic_gaps"] == 0
@@ -116,9 +117,12 @@ def test_input_accounting_is_per_channel_and_excludes_first_sample():
     assert client._channels[1]["sequence"] == 0
     assert client._channels[1]["traffic_gaps"] == 0
     assert client._channels[1]["observed_interval_ms"] == 500
+    assert client._channels[1]["totals"] == {
+        "uart_tx": 55, "uart_rx": 66, "usb_tx": 77, "usb_rx": 88,
+    }
 
 
-def test_sequence_gap_and_saturation_only_mark_the_affected_channel_incomplete():
+def test_sequence_gap_and_invalid_interval_only_mark_the_affected_channel_incomplete():
     device = FakeHidDevice({}, inputs=[
         (10, channel_bytes(sequence=3)),
         (11, channel_bytes(sequence=7)),
@@ -138,10 +142,23 @@ def test_sequence_gap_and_saturation_only_mark_the_affected_channel_incomplete()
     assert channel1["traffic_gaps"] == 0
 
 
+def test_boot_counter_wrap_derives_modulo_delta():
+    device = FakeHidDevice({}, inputs=[
+        (10, channel_bytes(sequence=1, traffic=(0xFFFFFFF0, 0, 0, 0))),
+        (10, channel_bytes(sequence=2, traffic=(32, 0, 0, 0))),
+    ])
+    client = PicoUartHid(device=device)
+    client.read_status()
+    channel = client.read_status()["channels"][0]
+    assert channel["totals"]["uart_tx"] == 32
+    assert channel["traffic"]["uart_tx"] == 48
+    assert channel["observed_interval_ms"] == 500
+
+
 def test_duplicate_and_old_sequence_reports_never_add_traffic_or_interval_twice():
     device = FakeHidDevice({}, inputs=[
         (10, channel_bytes(sequence=100, interval_ms=500, traffic=(8, 0, 0, 0))),
-        (10, channel_bytes(sequence=101, interval_ms=500, traffic=(3, 0, 0, 0))),
+        (10, channel_bytes(sequence=101, interval_ms=500, traffic=(11, 0, 0, 0))),
         (10, channel_bytes(sequence=101, interval_ms=500, traffic=(3, 0, 0, 0))),
         (10, channel_bytes(sequence=100, interval_ms=500, traffic=(100, 0, 0, 0))),
     ])
@@ -149,7 +166,7 @@ def test_duplicate_and_old_sequence_reports_never_add_traffic_or_interval_twice(
     for _ in range(4):
         client.read_status()
     channel = client._channels[0]
-    assert channel["totals"]["uart_tx"] == 3
+    assert channel["totals"]["uart_tx"] == 11
     assert channel["observed_interval_ms"] == 500
     assert channel["traffic_incomplete"] is True
     assert channel["traffic_gaps"] == 1
@@ -169,12 +186,12 @@ def test_stale_stream_rebaselines_any_sequence_then_resumes_accounting(resumed_s
     assert channel["sequence"] == resumed_sequence
     assert channel["traffic_gaps"] == 1
     assert channel["traffic_incomplete"] is True
-    assert channel["totals"]["uart_tx"] == 0
+    assert channel["totals"]["uart_tx"] == 1000
     assert channel["observed_interval_ms"] == 0
     client._apply_input(0, parse_channel(channel_bytes(
-        sequence=(resumed_sequence + 1) % 65536, traffic=(7, 0, 0, 0),
+        sequence=(resumed_sequence + 1) % 65536, traffic=(1007, 0, 0, 0),
     )), 3.6)
-    assert channel["totals"]["uart_tx"] == 7
+    assert channel["totals"]["uart_tx"] == 1007
     assert channel["observed_interval_ms"] == 500
     assert channel["traffic_gaps"] == 1
 

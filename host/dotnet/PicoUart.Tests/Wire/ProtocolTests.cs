@@ -167,7 +167,7 @@ public sealed class ProtocolTests
     [Theory]
     [InlineData(10, 0)]
     [InlineData(15, 5)]
-    public void CombinedSnapshotUsesFullWidthDeltasAndSharedFaultTime(byte id, int index)
+    public void CombinedSnapshotUsesFullWidthCountersAndSharedFaultTime(byte id, int index)
     {
         var decoded = Protocol.ParseChannel(id, ChannelPayload());
         Assert.Equal(index, decoded.Id);

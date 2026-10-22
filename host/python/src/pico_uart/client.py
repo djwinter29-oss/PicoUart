@@ -100,6 +100,7 @@ class PicoUartHid:
         self._next_request_id = 1
         self._transfer_in_flight = False
         self._channels = [_empty_channel(index) for index in range(UART_CHANNEL_COUNT)]
+        self._last_counters: list[dict[str, int] | None] = [None] * UART_CHANNEL_COUNT
         self._input_seen = [False] * UART_CHANNEL_COUNT
         self._last_input_at: list[float | None] = [None] * UART_CHANNEL_COUNT
         self._ignored_gap = [False] * UART_CHANNEL_COUNT
@@ -229,7 +230,7 @@ class PicoUartHid:
             return {"id": index, **parse_channel(payload)}
 
     def read_status(self, timeout_ms: int = 250) -> dict[str, object] | None:
-        """Read and accumulate one Input report; return the latest per-channel host snapshot."""
+        """Read one Input report, derive its counter increments, and return the latest channel snapshot."""
         if timeout_ms < 0:
             raise ValueError("timeout_ms must not be negative")
         with self._lock:
@@ -266,19 +267,21 @@ class PicoUartHid:
             return
         gap = not first and sequence_delta != 1
         interval = int(sample["interval_ms"])
-        saturated = interval == MAX_U32 or any(sample[source] == MAX_U32 for source in TRAFFIC_FIELDS.values())
         invalid_interval = interval in (0, MAX_U32)
-        if gap or saturated or invalid_interval:
+        counters = {field: int(sample[source]) for field, source in TRAFFIC_FIELDS.items()}
+        previous_counters = self._last_counters[channel_id]
+        if gap or invalid_interval:
             channel["traffic_incomplete"] = True
         if gap:
             channel["traffic_gaps"] += 1
-        traffic = {field: int(sample[source]) for field, source in TRAFFIC_FIELDS.items()}
+        traffic = {
+            field: (value - previous_counters[field]) & MAX_U32 if previous_counters is not None else 0
+            for field, value in counters.items()
+        }
         channel["traffic"] = traffic
-        if not first:
-            for field, count in traffic.items():
-                channel["totals"][field] += count
-            if not invalid_interval:
-                channel["observed_interval_ms"] += interval
+        channel["totals"] = counters
+        if not first and not gap and not invalid_interval:
+            channel["observed_interval_ms"] += interval
         labels = decode_health(int(sample["health"]))
         channel.update({
             "updated_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
@@ -302,6 +305,7 @@ class PicoUartHid:
             "last_fault_uptime_s": sample["last_fault_uptime_s"],
         })
         self._input_seen[channel_id] = True
+        self._last_counters[channel_id] = counters
         self._last_input_at[channel_id] = now
         self._ignored_gap[channel_id] = False
 

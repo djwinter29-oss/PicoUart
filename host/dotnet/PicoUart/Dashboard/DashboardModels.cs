@@ -26,6 +26,7 @@ public sealed class DashboardChannel(int id)
     public ulong ObservedIntervalMs { get; set; }
     public long TrafficGaps { get; set; }
     public bool TrafficIncomplete { get; set; }
+    internal Traffic? CounterBaseline { get; set; }
     internal long LastInputTimestamp { get; set; }
     internal bool Stale { get; set; }
 }
@@ -95,9 +96,7 @@ public sealed class DashboardSnapshot
         }
         var gap = !first && (source.Sequence != (ushort)((channel.Sequence!.Value + 1) & 65535)
             || Stopwatch.GetElapsedTime(channel.LastInputTimestamp, now).TotalSeconds >= 3);
-        var exact = source.IntervalMs is > 0 and < uint.MaxValue
-            && source.ControllerTxBytes != uint.MaxValue && source.ControllerRxBytes != uint.MaxValue
-            && source.CdcTxBytes != uint.MaxValue && source.CdcRxBytes != uint.MaxValue;
+        var exact = source.IntervalMs is > 0 and < uint.MaxValue;
         if (!first && ((gap && !channel.Stale) || !exact))
             MarkIncomplete(channel);
         Connected = true;
@@ -109,25 +108,25 @@ public sealed class DashboardSnapshot
         channel.UpdatedAt = UpdatedAt = DateTimeOffset.UtcNow;
         channel.LastInputTimestamp = now;
         channel.Stale = false;
-        channel.Traffic = first ? new() : new()
+        var counters = new Traffic
         {
             UartTx = source.ControllerTxBytes, UartRx = source.ControllerRxBytes,
             UsbTx = source.CdcTxBytes, UsbRx = source.CdcRxBytes
         };
-        if (first) return;
-        if (channel.Totals.UartTx > long.MaxValue - source.ControllerTxBytes
-            || channel.Totals.UartRx > long.MaxValue - source.ControllerRxBytes
-            || channel.Totals.UsbTx > long.MaxValue - source.CdcTxBytes
-            || channel.Totals.UsbRx > long.MaxValue - source.CdcRxBytes)
+        var previous = channel.CounterBaseline;
+        channel.Traffic = previous is null ? new() : new()
         {
-            if (!gap && exact) MarkIncomplete(channel);
-            exact = false;
-        }
-        channel.Totals.UartTx = Add(channel.Totals.UartTx, source.ControllerTxBytes);
-        channel.Totals.UartRx = Add(channel.Totals.UartRx, source.ControllerRxBytes);
-        channel.Totals.UsbTx = Add(channel.Totals.UsbTx, source.CdcTxBytes);
-        channel.Totals.UsbRx = Add(channel.Totals.UsbRx, source.CdcRxBytes);
-        if (exact) channel.ObservedIntervalMs += source.IntervalMs;
+            UartTx = Delta(source.ControllerTxBytes, previous.UartTx),
+            UartRx = Delta(source.ControllerRxBytes, previous.UartRx),
+            UsbTx = Delta(source.CdcTxBytes, previous.UsbTx),
+            UsbRx = Delta(source.CdcRxBytes, previous.UsbRx)
+        };
+        channel.CounterBaseline = counters;
+        channel.Totals.UartTx = counters.UartTx;
+        channel.Totals.UartRx = counters.UartRx;
+        channel.Totals.UsbTx = counters.UsbTx;
+        channel.Totals.UsbRx = counters.UsbRx;
+        if (!first && !gap && exact) channel.ObservedIntervalMs += source.IntervalMs;
     }
 
     public void MarkStale()
@@ -165,5 +164,5 @@ public sealed class DashboardSnapshot
         channel.TrafficGaps++;
     }
 
-    private static long Add(long total, uint delta) => total > long.MaxValue - delta ? long.MaxValue : total + delta;
+    private static uint Delta(uint current, long previous) => unchecked(current - (uint)previous);
 }

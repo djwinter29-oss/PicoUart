@@ -153,7 +153,7 @@ test("board telemetry uses static total RAM and LED availability", () => {
   assert.throws(() => decodeTelemetryReport(telemetry(1), unavailable));
 });
 
-test("channel snapshots retain 32-bit deltas and compact shared fault time", () => {
+test("channel snapshots retain 32-bit counters and compact shared fault time", () => {
   const data = channel({ sequence: 65535, count: 4000000000, health: 65 });
   data.setUint32(42, 3, true);
   data.setUint32(50, 123, true);
@@ -191,9 +191,10 @@ test("Input baselines, sequence wrap, measured intervals and gaps are channel-lo
   const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
   await client.connect();
   device.input(10, channel({ sequence: 65535, count: 100 }));
-  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 0);
+  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 100);
   device.input(10, channel({ sequence: 0, count: 200, interval: 750 }));
   assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 200);
+  assert.equal(client.state.dashboard.channels[0].traffic.uart_tx, 100);
   assert.equal(client.state.dashboard.channels[0].observed_interval_ms, 750);
   assert.equal(client.state.dashboard.channels[0].traffic_gaps, 0);
   device.input(11, channel());
@@ -202,11 +203,22 @@ test("Input baselines, sequence wrap, measured intervals and gaps are channel-lo
   device.input(11, channel({ sequence: 2 }));
   assert.equal(client.state.dashboard.channels[1].totals.uart_tx, previousTotal);
   const otherGaps = client.state.dashboard.channels[1].traffic_gaps;
-  device.input(10, channel({ sequence: 2 }));
+  device.input(10, channel({ sequence: 2, count: 200 }));
   assert.equal(client.state.dashboard.channels[0].traffic_gaps, 1);
   assert.equal(client.state.dashboard.channels[1].traffic_gaps, otherGaps);
   device.input(10, channel({ sequence: 3, count: 0xffffffff }));
-  assert.equal(client.state.dashboard.channels[0].traffic_gaps, 2);
+  assert.equal(client.state.dashboard.channels[0].traffic_gaps, 1);
+  await client.disconnect();
+});
+
+test("Input counters wrap modulo 32 bits without losing the current boot count", async () => {
+  const hid = new FakeHid(), client = new PicoUartWebHid(hid), device = hid.devices[0];
+  await client.connect();
+  device.input(10, channel({ sequence: 1, count: 0xfffffff0 }));
+  device.input(10, channel({ sequence: 2, count: 32 }));
+  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 32);
+  assert.equal(client.state.dashboard.channels[0].traffic.uart_tx, 48);
+  assert.equal(client.state.dashboard.channels[0].observed_interval_ms, 500);
   await client.disconnect();
 });
 
@@ -232,7 +244,7 @@ test("stale streams rebaseline even when sequence advances beyond half range", a
   client.state.dashboard.channels[0].updated_at = new Date(Date.now() - 4000).toISOString();
   device.input(10, channel({ sequence: 40000 }));
   assert.equal(client.state.dashboard.channels[0].sequence, 40000);
-  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 0);
+  assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 150000);
   device.input(10, channel({ sequence: 40001 }));
   assert.equal(client.state.dashboard.channels[0].totals.uart_tx, 150000);
   assert.equal(client.state.dashboard.channels[0].traffic_gaps, 1);

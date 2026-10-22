@@ -47,8 +47,10 @@ payload capture. For scripted status samples and traffic logs, use the [Python C
 or [.NET CLI](../dotnet/README.md#test-automation). Disconnect the browser before another client monitors the same
 board.
 
-Traffic statistics are not raw UART messages. Missing reports or saturated byte deltas make observed totals incomplete;
-a quiet or healthy-looking page alone is not evidence that an automated test passed.
+Traffic statistics are not raw UART messages. Firmware counters show bytes since MCU boot modulo $2^{32}$, so a
+missing report does not by itself lose totals; it resets the current throughput window. If counters may have wrapped
+more than once between observations, the exact increment is unknowable. A quiet or healthy-looking page alone is not
+evidence that an automated test passed.
 
 ## Other Commands And Controls
 

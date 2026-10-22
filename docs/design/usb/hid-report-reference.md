@@ -322,6 +322,10 @@ Report `10 + channel` identifies CDC0/UART0 through CDC5/UART5. Each channel pub
 at a nominal **500 ms** interval while HID IN is ready. The same 54-byte payload is available through read-only
 Feature GET_REPORT. Including the report ID, each report is 55 bytes and fits in one packet.
 
+The report version byte remains `1`. In this v1 contract, the four traffic fields are cumulative boot-lifetime counters,
+not the per-interval deltas used by earlier v1 firmware. Older host builds will misinterpret them; upgrade firmware and
+host software together.
+
 Each channel has an independent sequence, byte-counter baseline, and measurement start time. Service due channels
 fairly in round-robin order so endpoint contention cannot starve a channel. A busy endpoint delays publication;
 do not queue old snapshots or emit catch-up bursts. Sample fresh data when publication can proceed.
@@ -331,13 +335,13 @@ The six reports are not an atomic board-wide snapshot, and their sequences or in
 | -----: | ---: | ----- | ------- |
 | 0 | 1 | `version` | Layout version, `1`. |
 | 1 | 2 | `sequence` | Per-channel publication sequence, modulo 65536. |
-| 3 | 4 | `interval_ms` | Measured elapsed milliseconds for this channel's deltas; saturates at `UINT32_MAX`. |
+| 3 | 4 | `interval_ms` | Elapsed milliseconds since this channel's preceding accepted Input publication; saturates at `UINT32_MAX`. |
 | 7 | 1 | `health` | Driver, CDC-open, backend, and historical RX flags. |
 | 8 | 1 | `ring_high_watermark_blocks` | Largest RX/TX ring occupancy, rounded up to 16-byte blocks. |
-| 9 | 4 | `controller_tx_bytes` | Unsigned 32-bit UART controller TX byte delta. |
-| 13 | 4 | `controller_rx_bytes` | Unsigned 32-bit UART controller RX byte delta. |
-| 17 | 4 | `cdc_tx_bytes` | Unsigned 32-bit device-to-host CDC byte delta. |
-| 21 | 4 | `cdc_rx_bytes` | Unsigned 32-bit host-to-device CDC byte delta. |
+| 9 | 4 | `controller_tx_bytes` | Low 32 bits of UART controller TX bytes since MCU boot; wraps modulo $2^{32}$. |
+| 13 | 4 | `controller_rx_bytes` | Low 32 bits of valid UART controller RX bytes since MCU boot; wraps modulo $2^{32}$. |
+| 17 | 4 | `cdc_tx_bytes` | Low 32 bits of device-to-host CDC bytes since MCU boot; wraps modulo $2^{32}$. |
+| 21 | 4 | `cdc_rx_bytes` | Low 32 bits of host-to-device CDC bytes since MCU boot; wraps modulo $2^{32}$. |
 | 25 | 4 | `baud_rate` | Successfully applied baud rate, not last requested; zero if unavailable. |
 | 29 | 1 | `data_bits` | Successfully applied data-bit count. |
 | 30 | 1 | `stop_bits` | Successfully applied stop-bit count, 1 or 2. |
@@ -359,7 +363,7 @@ Capture related per-channel state coherently before encoding either an Input or 
 Baud, framing, and readiness/control health must describe one applied-configuration state, not fields mixed across
 a concurrent line-coding update. Fault counters, historical flags, and the shared timestamp must agree with the
 same captured fault-history state; for example, a nonzero RX-overrun count requires its historical health flag.
-Read multiword counters without tearing, and pair traffic deltas with their common interval boundary.
+Read multiword counters without tearing and capture all four traffic counters with the channel's interval boundary.
 
 This does not require an atomic board-wide snapshot or stopping UART traffic. The applied configuration is the
 state at capture time; a traffic interval may span several configurations. Capture immutable local values using
@@ -367,42 +371,45 @@ the existing ownership/synchronization mechanisms, then encode from that copy ra
 
 ### Traffic Measurement
 
-Deltas and interval share the same measurement boundaries, from this channel's preceding successful publication
-sample to its current sample. Start channel baselines at USB connection/session initialization; the first
-publication measures from that baseline and occurs no earlier than 500 ms later. Advance baselines and sequence
-only when the HID transport accepts publication, not on a failed/busy attempt. Reinitialize on USB disconnect/reset.
-Initialize each channel's committed sequence to zero. Encode each candidate Input publication with
+The firmware harvests wrapping backend counters into wide accumulators and publishes their low 32 bits. These
+counters start at MCU boot and survive USB disconnects, host-session resets, and dashboard reconnects; an MCU reboot
+starts new counters. They wrap modulo $2^{32}$ rather than saturating. The underlying counters are sampled frequently
+enough to account for raw 32-bit backend-counter wrap.
+
+`interval_ms` measures the time from this channel's preceding accepted Input publication to the current candidate.
+The firmware advances its interval boundary and sequence only when the HID transport accepts publication, not on a
+failed/busy attempt. On USB disconnect/reset, restart the publication sequence and interval boundary without clearing
+the boot-lifetime traffic counters. Initialize each channel's committed sequence to zero. Encode each candidate Input publication with
 `(committed_sequence + 1) modulo 65536`; commit that value only when publication is accepted.
 Thus the first accepted Input carries sequence 1; a failed attempt consumes no sequence number.
 Feature and control-pipe Input reads return the latest committed sequence, or zero before the first publication,
-even though their non-consuming traffic samples may be newer than that publication.
+even though their non-consuming traffic counters may be newer than that publication.
 Successful publication is not proof that a host application received the report.
-Opening a monitoring application does not necessarily reconnect USB. Use the first Input sample per channel only
-to establish observation continuity, excluding its deltas from monitor-session totals and rate windows.
-Totals then cover complete observed intervals, not an exact application-open instant.
+The first Input sample after a host starts or reconnects seeds its displayed total from the current firmware counter
+and establishes the rate baseline; it does not produce a rate. Hosts derive each increment as
+`(current_counter - previous_counter) modulo 2^32`. Use the device `interval_ms` for a contiguous sample, not nominal
+cadence or host arrival time. Zero or saturated intervals cannot produce an exact rate. Show the affected rate as
+unavailable. A sequence gap still permits cumulative totals to recover from the next counter, but its rate window
+must be discarded because the elapsed device interval for all bytes since the prior host sample is unknown.
+Aggregate clean windows using summed byte increments divided by summed device intervals; do not average rates without
+weighting. Host arrival time is only for freshness and gap suspicion.
 
-Each byte delta saturates at `UINT32_MAX` rather than wrapping. At 3 Mbaud, 8N1, a continuous direction carries
-approximately 150,000 bytes per 500 ms, comfortably within 32 bits. Saturation can still occur after prolonged
-publication delays; it means at least that many bytes, never an exact count. Ring peak remains cumulative from
-boot and saturates at 4080 bytes.
-Use sufficiently wide internal accumulation, or frequent harvesting into saturating accumulators, so underlying
-counter wrap cannot silently lose bytes during a long publication delay. A 32-bit wire field alone is not sufficient.
+Modulo subtraction is unambiguous only when fewer than $2^{32}$ bytes pass between host samples. At 3 Mbaud, 8N1,
+a continuously active UART direction wraps in about four hours; USB-side counters may wrap sooner. If a host is paused
+long enough for multiple wraps, mark its derived totals uncertain. Ring peak remains cumulative from boot and
+saturates at 4080 bytes.
 
-Compute per-channel rates from device `interval_ms`, not nominal cadence or host arrival timing. Zero or saturated
-intervals and saturated byte deltas cannot produce an exact rate. Show the affected rate as unavailable and totals
-as lower bounds. Aggregate clean windows using summed bytes divided by summed device intervals for that channel;
-do not average rates without weighting. Host arrival time is only for freshness and gap suspicion.
-
-Track sequences separately per channel, expecting an increment modulo 65536. Missing reports make observed
-totals incomplete; later deltas do not recover them. A 16-bit sequence cannot detect a loss of exactly 65536 reports;
-after a host read pause or stale stream, conservatively mark continuity uncertain even if the next sequence matches.
-Re-establish continuity from the next Input sample after staleness, excluding its deltas as with the first sample.
+Track sequences separately per channel, expecting an increment modulo 65536. A sequence gap resets the affected rate
+window, but cumulative counters recover total bytes across missing reports as long as fewer than $2^{32}$ bytes pass
+between host samples. A 16-bit sequence cannot detect a loss of exactly 65536 reports; after a host read pause or
+stale stream, conservatively mark rate continuity uncertain even if the next sequence matches. Re-establish the rate
+baseline from the next Input sample after staleness while retaining its current cumulative counters.
 Do not count duplicate or older reports as new traffic while a stream is fresh; a stale stream must still be able
 to rebaseline regardless of its next sequence value.
 One channel's gap must not invalidate other channels. Sequences are not dashboard values.
 
-Feature GET_REPORT samples against that channel's committed baseline without advancing interval origin, counter
-baseline, or sequence. It may refresh fault observations but never consumes traffic. The same non-consuming behavior
+Feature GET_REPORT returns current cumulative counters without advancing interval origin, counter-harvest baseline,
+or sequence. It may refresh fault observations but never consumes an Input rate interval. The same non-consuming behavior
 applies to control-pipe GET_REPORT of the Input report. Repeated control reads can overlap and must not be summed or
 mixed into interrupt totals. Use the interrupt stream for committed deltas; Feature reads are for on-demand state.
 
@@ -525,7 +532,7 @@ Matching Invalid/error 3 response; no flash write or reboot:
 | First channel publication fails, a Feature read follows, then publication succeeds | Failed candidate uses sequence 1 without committing; Feature returns 0; first accepted Input returns 1. |
 | Channel sequence `65535` followed by `0` | Normal modulo-65536 continuity, not a gap. |
 | Input at time T; Feature read at T+250 ms; next Input at T+500 ms | Feature read does not commit a baseline. Next Input still covers 500 ms from T and includes all interval bytes once. |
-| Channel 0 sequence jumps from 10 to 12 while channel 1 advances normally | Mark channel 0's rate window incomplete and totals lower bounds; channel 1 remains unaffected. |
+| Channel 0 sequence jumps from 10 to 12 while channel 1 advances normally | Recover channel 0's cumulative totals, discard its rate window, and leave channel 1 unaffected. |
 | Line coding changes during snapshot capture | Report either coherent old or coherent new applied configuration, never a mixture. |
 
 This reference owns wire layouts and field meanings. The [CDC/HID Overview](cdc-hid-overview.md) defines interface

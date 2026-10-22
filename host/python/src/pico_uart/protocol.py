@@ -197,7 +197,7 @@ def parse_telemetry(payload: bytes) -> dict[str, object]:
 
 
 def parse_channel(payload: bytes) -> dict[str, object]:
-    """Decode a combined traffic, health, applied-settings, and fault snapshot."""
+    """Decode a combined cumulative-counter, health, applied-settings, and fault snapshot."""
     if len(payload) != CHANNEL_SIZE or payload[0] != LAYOUT_VERSION:
         raise RuntimeError("unsupported channel report size or version")
     sequence = int.from_bytes(payload[1:3], "little")

@@ -44,7 +44,7 @@ public sealed class DashboardTests
         Assert.Null(snapshot.Channels[0].Sequence);
         Assert.Null(snapshot.Channels[0].UpdatedAt);
         snapshot.Apply(Sample(2));
-        Assert.Equal(0, snapshot.Channels[0].Totals.UartTx);
+        Assert.Equal(150000, snapshot.Channels[0].Totals.UartTx);
         Assert.Equal(0ul, snapshot.Channels[0].ObservedIntervalMs);
         snapshot.ApplyFeature(Sample(2) with { ControllerTxBytes = 99999, IntervalMs = 800 });
         snapshot.Apply(Sample(3) with { IntervalMs = 700 });
@@ -72,23 +72,11 @@ public sealed class DashboardTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(5)]
-    public void InvalidIntervalsOrSaturatedDeltasAreLowerBoundsNotRateWindows(int field)
+    public void InvalidIntervalsDoNotCreateRateWindows(int field)
     {
         var snapshot = new DashboardSnapshot();
         snapshot.Apply(Sample(1));
-        var sample = field switch
-        {
-            0 => Sample(2) with { IntervalMs = 0 },
-            1 => Sample(2) with { IntervalMs = uint.MaxValue },
-            2 => Sample(2) with { ControllerTxBytes = uint.MaxValue },
-            3 => Sample(2) with { ControllerRxBytes = uint.MaxValue },
-            4 => Sample(2) with { CdcTxBytes = uint.MaxValue },
-            _ => Sample(2) with { CdcRxBytes = uint.MaxValue }
-        };
+        var sample = Sample(2) with { IntervalMs = field == 0 ? 0u : uint.MaxValue };
         snapshot.Apply(sample);
         Assert.True(snapshot.Channels[0].TrafficIncomplete);
         Assert.Equal(1, snapshot.Channels[0].TrafficGaps);
@@ -97,33 +85,19 @@ public sealed class DashboardTests
     }
 
     [Fact]
-    public void DuplicateDoesNotProduceAnExactRateAndTotalsUseWideCounters()
+    public void DuplicateDoesNotProduceAnExactRateAndWireCounterWrapIsModulo32()
     {
         var snapshot = new DashboardSnapshot();
-        snapshot.Apply(Sample(1));
-        snapshot.Apply(Sample(2) with { ControllerTxBytes = 3000000000 });
-        snapshot.Apply(Sample(3) with { ControllerTxBytes = 3000000000 });
-        Assert.Equal(6000000000, snapshot.Channels[0].Totals.UartTx);
-        Assert.Equal(1000ul, snapshot.Channels[0].ObservedIntervalMs);
-        snapshot.Apply(Sample(3));
-        Assert.True(snapshot.Channels[0].TrafficIncomplete);
-        Assert.Equal(6000000000, snapshot.Channels[0].Totals.UartTx);
-        Assert.Equal(1000ul, snapshot.Channels[0].ObservedIntervalMs);
+        snapshot.Apply(Sample(1) with { ControllerTxBytes = uint.MaxValue - 15 });
+        snapshot.Apply(Sample(2) with { ControllerTxBytes = 32 });
+        Assert.Equal(32, snapshot.Channels[0].Totals.UartTx);
+        Assert.Equal(48, snapshot.Channels[0].Traffic.UartTx);
+        Assert.Equal(500ul, snapshot.Channels[0].ObservedIntervalMs);
         snapshot.Apply(Sample(2));
-        Assert.Equal(6000000000, snapshot.Channels[0].Totals.UartTx);
-        Assert.Equal((ushort)3, snapshot.Channels[0].Sequence);
-    }
-
-    [Fact]
-    public void AccumulatorSaturationCannotWrapOrProduceAnExactRate()
-    {
-        var snapshot = new DashboardSnapshot();
-        snapshot.Apply(Sample(1));
-        snapshot.Channels[0].Totals.UartTx = long.MaxValue - 1;
-        snapshot.Apply(Sample(2));
-        Assert.Equal(long.MaxValue, snapshot.Channels[0].Totals.UartTx);
         Assert.True(snapshot.Channels[0].TrafficIncomplete);
-        Assert.Equal(0ul, snapshot.Channels[0].ObservedIntervalMs);
+        Assert.Equal(32, snapshot.Channels[0].Totals.UartTx);
+        Assert.Equal(500ul, snapshot.Channels[0].ObservedIntervalMs);
+        Assert.Equal((ushort)2, snapshot.Channels[0].Sequence);
     }
 
     [Fact]
@@ -160,7 +134,7 @@ public sealed class DashboardTests
         snapshot.Apply(Sample(sequence));
         var channel = snapshot.Channels[0];
         Assert.Equal(sequence, channel.Sequence);
-        Assert.Equal(0, channel.Totals.UartTx);
+        Assert.Equal(150000, channel.Totals.UartTx);
         Assert.Equal(0ul, channel.ObservedIntervalMs);
         Assert.Equal(0, channel.Traffic.UartTx);
         Assert.True(channel.TrafficIncomplete);

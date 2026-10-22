@@ -376,17 +376,19 @@ in **Attention** while its snapshot is fresh, even if the corresponding live fla
 Healthy, closed CDC channels without observed throughput are labelled **Idle**, not disconnected: UART RX remains
 active and reported faults remain visible even with CDC closed.
 
-The four directions display observed KB/s (1 KB = 1000 bytes) over windows of at least one second, using summed
-32-bit byte deltas divided by summed device measurement intervals, not host arrival timing. Reports 10-15
-arrive nominally every 500 ms; track 16-bit sequence, interval, and freshness separately per channel.
-Use each channel's first Input sample only as a continuity baseline, excluding its deltas from session totals and
-rate windows. Display cumulative observed bytes for subsequent complete intervals beside each rate.
-Initial/stale windows and windows containing report gaps, saturated deltas, or zero/saturated intervals show `--`
-for the affected rate; they recover after a clean window. Three seconds without a new Input sample makes that channel's
-rates stale. After staleness or a host read pause, treat continuity as uncertain even when a 16-bit sequence matches.
-One channel's gap does not invalidate other channels. `traffic_gaps`
-is a monotonic count of incomplete status observations, allowing each page to invalidate its current rate window while
-retaining the sticky `traffic_incomplete` notice. Totals remain lower bounds after missing/saturated reports.
+The four directions display observed KB/s (1 KB = 1000 bytes) over windows of at least one second. Hosts derive
+increments by modulo-subtracting successive 32-bit firmware counters, then divide summed increments by summed device
+measurement intervals, not host arrival timing. The counters show bytes since MCU boot modulo $2^{32}$ and survive
+dashboard reconnects. Reports 10-15 arrive nominally every 500 ms; track 16-bit sequence, interval, and freshness
+separately per channel.
+Use each channel's first Input sample to seed its displayed boot counter and establish the rate baseline. A sequence
+gap resets that channel's current rate window, but the next counter recovers totals unless more than one wrap could
+have occurred between samples. Initial/stale windows and windows containing report gaps or zero/saturated intervals
+show `--` for the affected rate; they recover after a clean window. Three seconds without a new Input sample makes
+that channel's rates stale. After staleness or a host read pause, treat rate continuity as uncertain even when a
+16-bit sequence matches. One channel's gap does not invalidate other channels. `traffic_gaps` is a monotonic count of
+incomplete status observations, allowing each page to invalidate its current rate window while retaining the sticky
+`traffic_incomplete` notice.
 
 The independent WebHID renderer and hosted renderer retain their separate assets; the shared Node presentation tests
 exercise the same rate, read-only fault flag, fallback and state contracts against both.
