@@ -1,8 +1,9 @@
 name: Publish Python to PyPI
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -20,13 +21,18 @@ permissions:
   actions: read
 
 concurrency:
-  group: pypi-${{ inputs.test_publish && github.ref || github.event.release.tag_name || inputs.tag }}
+  group: pypi-${{ inputs.test_publish && github.ref || github.event.workflow_run.head_branch || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   verify:
     name: Verify released Python wheel
-    if: (github.event_name != 'workflow_dispatch' || !inputs.test_publish) && !github.event.release.prerelease
+    if: >-
+      (github.event_name != 'workflow_dispatch' || !inputs.test_publish) &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release tooling
@@ -38,7 +44,8 @@ jobs:
       - name: Validate published release and download wheel
         id: release
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
@@ -46,7 +53,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --json isDraft,isPrerelease --jq '.isDraft == false and .isPrerelease == false')" = true
-          python3 tools/release/require_release_checks.py --tag "$RELEASE_TAG"
+          python3 tools/release/require_release_checks.py --tag "$RELEASE_TAG" --expected-sha "$SOURCE_SHA"
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --pattern 'pico_uart-*-py3-none-any.whl' --pattern SHA256SUMS-python.txt --dir incoming
 

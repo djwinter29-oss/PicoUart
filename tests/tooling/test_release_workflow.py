@@ -222,7 +222,11 @@ def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -
     assert "needs: [build, host-validation, python-package, dotnet-packages]" in text
     publish = text.split("\n  publish:\n", 1)[1]
     assert 'require_release_checks.py --sha "$SOURCE_SHA"' in publish
-    assert publish.index("Require successful PR checks") < publish.index("Create draft GitHub Release")
+    assert publish.index("Require successful PR checks") < publish.index("- name: Publish GitHub Release")
+    assert "draft: false" in publish
+    assert "prerelease: false" in publish
+    assert "draft: true" not in publish
+    assert "Hardware qualification is separate" in publish
 
 
 def test_python_test_publication_overrides_git_version():
@@ -248,7 +252,8 @@ def test_pypi_publication_reuses_released_artifacts_with_scoped_oidc():
     text = (REPO_ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
     verify, publish = text.split("\n  publish:\n", 1)
     publish = publish.split("\n  test-package:\n", 1)[0]
-    assert "types: [published]" in verify
+    assert "workflows: [Release]" in verify
+    assert "types: [completed]" in verify
     assert ".isDraft == false and .isPrerelease == false" in verify
     assert "gh release download" in verify
     assert 'require_release_checks.py --tag "$RELEASE_TAG"' in verify
@@ -344,7 +349,8 @@ def test_pypi_wheel_verification_rejects_invalid_release_artifacts(tmp_path, cas
 def test_webhid_pages_requires_a_published_release_and_checks_the_tag() -> None:
     text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
 
-    assert "types: [published]" in text
+    assert "workflows: [Release]" in text
+    assert "types: [completed]" in text
     assert "workflow_dispatch:" in text
     assert "tools/release/resolve-release-version.sh push '' \"$RELEASE_TAG\"" in text
     assert "gh release view" in text

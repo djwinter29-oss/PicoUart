@@ -218,7 +218,7 @@ jobs:
     permissions:
       contents: write
       actions: read
-    # workflow_dispatch builds artifacts only; tag pushes create a draft release
+    # Manual preflight builds artifacts only; tested tag pushes publish a release.
     if: github.event_name == 'push'
 
     steps:
@@ -241,22 +241,23 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Create draft GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           name: PicoUart ${{ github.ref_name }}
           generate_release_notes: true
-          draft: true
+          draft: false
+          prerelease: false
           files: dist/*
           fail_on_unmatched_files: true
           body: |
-            Draft release — complete `docs/deployment/releasing.md` before publishing:
-            - Confirm packaged artifact SHAs match the recorded HIL images on the rated **pico** (125 MHz) and **pico2** (150 MHz) builds
+            Automated tag release — required software checks and packaging passed.
+            Hardware qualification is separate; see `docs/deployment/releasing.md`:
+            - For rated **pico** (125 MHz) and **pico2** (150 MHz), match packaged SHAs to recorded HIL images
             - Optional overclock profiles are selected on-device through the persistent configuration sector and require exact-board HIL qualification
             - Some Pico 2 boards may not support 300 MHz reliably; the reduced 280 MHz target still requires exact-board HIL before any stability claim
             - This project publishes lab/test artifacts using the unallocated `cafe:4010` USB identity
-            - Attach or link a recorded HIL pass covering both rated boards
-            - Promote from draft only after the promote checklist passes
+            - Attach or link recorded HIL evidence for every claimed board, rate, and workload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
