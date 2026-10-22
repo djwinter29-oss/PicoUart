@@ -176,6 +176,7 @@ def test_voltage_lock_is_exact_pytest_subset_of_host_lock(repo_root):
         "iniconfig",
         "packaging",
         "pluggy",
+        "pygments",
         "pytest",
     }
     assert subset == {entry: full[entry] for entry in subset}

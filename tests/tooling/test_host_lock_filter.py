@@ -43,7 +43,7 @@ def test_hidapi_filter_retains_setuptools_needed_by_vcs_builds(repo_root):
 
     # Every other locked package (and its hashes) must be preserved verbatim.
     for package in (
-        "pytest==8.3.5",
+        "pytest==9.1.1",
         "iniconfig==2.3.0",
         "pluggy==1.6.0",
         "packaging==26.3",
