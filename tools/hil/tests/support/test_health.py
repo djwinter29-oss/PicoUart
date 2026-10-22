@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import subprocess
 
@@ -70,6 +71,17 @@ def test_hid_command_uses_checkout_and_host_source_path(monkeypatch) -> None:
     assert options["env"]["PYTHONPATH"] == os.pathsep.join(
         (str(health.HOST_PYTHON_SRC), "/existing/python/path")
     )
+
+
+def test_reads_live_system_clock_from_hardware_json(monkeypatch) -> None:
+    health = _load_health()
+    monkeypatch.setattr(
+        health,
+        "_run_hid",
+        lambda *arguments: subprocess.CompletedProcess(arguments, 0, json.dumps({"system_clock_hz": 150000000}), ""),
+    )
+
+    assert health.read_system_clock_hz() == 150000000
 
 
 def test_health_collection_reports_command_and_sample_errors(monkeypatch) -> None:

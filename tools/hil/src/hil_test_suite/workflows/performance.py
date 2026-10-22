@@ -107,6 +107,50 @@ def parse_benchmark_output_by_rate(output: str) -> dict[tuple[int, str], tuple[s
     return results
 
 
+def incremental_ceiling_found(
+    arguments: SimpleNamespace,
+    result: int,
+    output: str,
+    health_before: dict | None,
+    health_after: dict | None,
+) -> bool:
+    """Accept a traffic failure as the measured ceiling only after a clean, passing baseline."""
+    if not getattr(arguments, "incremental", False) or result != 0 or not health_is_clean(health_before):
+        return False
+    if "no traffic sent" in output.lower():
+        return False
+    if (
+        health_after is None
+        or health_after.get("error")
+        or len(health_after.get("channels", {})) != 6
+        or len(health_after.get("overruns", {})) != 6
+    ):
+        return False
+
+    attempted_rates = list(dict.fromkeys(int(rate) for rate in RATE_PATTERN.findall(output)))
+    parsed = parse_benchmark_output_by_rate(output)
+    passing_rates = [
+        rate for rate in attempted_rates
+        if all(parsed.get((rate, label), ("NOT REPORTED",))[0] == "PASS" for label in expected_link_labels())
+    ]
+    failing_rates = [
+        rate for rate in attempted_rates
+        if any(parsed.get((rate, label), ("NOT REPORTED",))[0] == "FAIL" for label in expected_link_labels())
+    ]
+    if not passing_rates or not failing_rates or failing_rates[0] != attempted_rates[-1]:
+        return False
+
+    boundary_rate = failing_rates[0]
+    boundary = [parsed.get((boundary_rate, label)) for label in expected_link_labels()]
+    return all(item is not None for item in boundary) and any(item[0] == "FAIL" for item in boundary)
+
+
+def expected_link_labels() -> tuple[str, ...]:
+    return (
+        "cdc0-to-cdc2", "cdc2-to-cdc0", "cdc3-to-cdc4", "cdc4-to-cdc3", "cdc1-loopback", "cdc5-loopback",
+    )
+
+
 def format_result_entry(
     arguments: SimpleNamespace,
     timestamp: str,
@@ -117,7 +161,8 @@ def format_result_entry(
 ) -> str:
     parsed = parse_benchmark_output_by_rate(output)
     attempted_rates = {int(rate) for rate in RATE_PATTERN.findall(output)}
-    clean = result == 0 and health_is_clean(health_after, health_before)
+    ceiling_found = incremental_ceiling_found(arguments, result, output, health_before, health_after)
+    clean = (result == 0 and health_is_clean(health_after, health_before)) or ceiling_found
     overall = "PASS" if clean else "FAIL"
     expected_labels = [
         "cdc0-to-cdc2",
@@ -177,10 +222,12 @@ def format_result_entry(
         lines.extend(
             [
                 "",
-                f"**Highest supported concurrent rate:** `{max(passing_rates) if passing_rates else 'none'}`",
+                f"**Highest passing tested concurrent rate:** `{max(passing_rates) if passing_rates else 'none'}`",
                 f"**First failed tested rate:** `{failing_rates[0] if failing_rates else 'not reached'}`",
             ]
         )
+        if ceiling_found:
+            lines.extend(["", "**Ceiling search:** `PASS (boundary failure expected)`"])
     lines.extend(
         [
             "",
@@ -206,7 +253,9 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser.add_argument(
         "--rates", default=DEFAULT_RATES, help="Concurrent full-fixture rates, comma-separated (default: %(default)s)"
     )
-    parser.add_argument("--incremental", action="store_true", help="Increase baud until the first failing rate")
+    parser.add_argument(
+        "--incremental", action="store_true", help="Search for the six-port rate ceiling after a passing rate"
+    )
     parser.add_argument("--incremental-start-rate", type=int, default=460800)
     parser.add_argument("--incremental-rate-step", type=int, default=100000)
     parser.add_argument("--incremental-max-rate", type=int, default=3000000)
@@ -253,6 +302,9 @@ def main(arguments: argparse.Namespace | None = None) -> int:
     if not arguments.no_record:
         prepend_result(arguments.results_file.resolve(), entry)
         print(f"Recorded result in {arguments.results_file}")
+    if incremental_ceiling_found(arguments, completed.returncode, output, health_before, health_after):
+        print("CEILING SEARCH PASS: expected traffic failure at the measured boundary")
+        return 0
     return completed.returncode if health_is_clean(health_after, health_before) else 1
 
 

@@ -144,6 +144,7 @@ def test_writes_fixed_record_sections_and_board_metadata(tmp_path: Path) -> None
         firmware_commit="abc1234",
         runner_git_commit="0123456789abcdef",
         runner_worktree="dirty",
+        system_clock_hz=150_000_000,
         rates="460800",
         full_fixture=True,
         artifact_path="pico_uart.elf",
@@ -182,12 +183,13 @@ def test_writes_fixed_record_sections_and_board_metadata(tmp_path: Path) -> None
         arguments, run_at.isoformat(), (0, functional_output), (0, performance_output)
     )
 
-    record = full.write_hil_record(tmp_path, run_at, arguments.board, content)
+    record = full.write_hil_record(tmp_path, run_at, arguments.board, content, arguments.system_clock_hz)
 
-    assert record.name == "2026-10-08-143000Z-pico2-hil.md"
+    assert record.name == "2026-10-08-143000Z-pico2-150mhz-hil.md"
     text = record.read_text(encoding="utf-8")
     assert "**Overall result:** `PASS`" in text
     assert "**Artifact SHA-256:** `deadbeef`" in text
+    assert "**System clock:** `150 MHz`" in text
     assert "**Runner Git commit:** `0123456789abcdef`" in text
     assert "**Runner worktree:** `dirty`" in text
     assert "## Functional Summary" in text
@@ -223,6 +225,7 @@ def test_incremental_record_shows_ceiling_and_only_attempted_rates() -> None:
             f"{outcome} {label}: 1024 bytes, 100.0 B/s" if outcome == "PASS" else f"FAIL {label}: timeout"
             for label in stream_labels
         )
+    performance_lines.append("CEILING SEARCH PASS: expected traffic failure at the measured boundary")
 
     report = full.format_result_entry(
         arguments,
@@ -232,7 +235,8 @@ def test_incremental_record_shows_ceiling_and_only_attempted_rates() -> None:
     )
 
     assert "**Overall result:** `PASS`" in report
-    assert "Highest supported concurrent rate:** `560800 baud`" in report
+    assert "Ceiling search:** `PASS (boundary failure expected)`" in report
+    assert "Highest passing tested concurrent rate:** `560800 baud`" in report
     assert "First failed tested rate:** `660800 baud`" in report
     assert "760800" not in report
     assert "child command hidden" not in report
@@ -242,11 +246,11 @@ def test_record_writer_never_overwrites_same_run_name(tmp_path: Path) -> None:
     full = _load_full()
     run_at = datetime(2026, 10, 8, 14, 30, tzinfo=timezone.utc)
 
-    first = full.write_hil_record(tmp_path, run_at, "Pico 2", "first record")
-    second = full.write_hil_record(tmp_path, run_at, "Pico 2", "second record")
+    first = full.write_hil_record(tmp_path, run_at, "Pico 2", "first record", 150_000_000)
+    second = full.write_hil_record(tmp_path, run_at, "Pico 2", "second record", 150_000_000)
 
-    assert first.name == "2026-10-08-143000Z-pico-2-hil.md"
-    assert second.name == "2026-10-08-143000Z-pico-2-hil-02.md"
+    assert first.name == "2026-10-08-143000Z-pico-2-150mhz-hil.md"
+    assert second.name == "2026-10-08-143000Z-pico-2-150mhz-hil-02.md"
     assert first.read_text(encoding="utf-8") == "first record\n"
     assert second.read_text(encoding="utf-8") == "second record\n"
 
@@ -268,6 +272,7 @@ def test_main_sequences_phases_and_preserves_failure(
     phases = []
     monkeypatch.setattr(full, "git_metadata", lambda: ("commit", "clean"))
     monkeypatch.setattr(full, "artifact_metadata", lambda _artifact: {"path": "none", "sha256": "none"})
+    monkeypatch.setattr(full, "read_system_clock_hz", lambda: 125_000_000)
 
     def run_child(label, _command):
         phases.append(label)

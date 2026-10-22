@@ -182,6 +182,21 @@ intentional phase-only checks; the combined record is then `PARTIAL`, even if th
 Likewise, a single-stage functional success is not a full-fixture pass. Inspect the recorded scope and result, not only
 the process exit code. Continue-after-failure options are diagnostic, not a way to qualify a failed run.
 
+### Six-Port Ceiling Search
+
+When the goal is to find the highest tested rate that passes on all six ports, use the same combined command with
+`--incremental-performance` instead of `--rates`. Start at a recently verified all-stream passing rate, choose a
+practical step and maximum for the board/clock, and refine the passing/failing bracket with a smaller step if needed.
+Each rate includes the configured settling period, so keep the duration and sweep size practical.
+
+The runner stops at the first boundary rate where actual traffic fails. The run is an overall `PASS` for ceiling
+measurement only if initial HID health is clean, a lower rate passed on every stream, all six streams were attempted at
+the boundary, and final HID sampling succeeded. The boundary row remains `FAIL` and the record says the failure was
+expected for the search; report the highest passing tested rate and first failed tested rate. Do not claim an exact
+hardware limit or label the overall record `FAIL` for that expected boundary. A dirty HID check before traffic,
+serial-setup failure, missing stream outcome, or failure at the first tested rate means no ceiling was measured and
+must remain an overall `FAIL`.
+
 The benchmark prints one `TIME <label>: {...}` line per stream with host thread-start, first-send-attempt, and
 first-nonempty-read UTC and monotonic timestamps. These are not wire-level first-byte times and are not parsed by
 `pico-uart-hil performance`. `--duration` stops starting new blocks; the last in-flight block can finish afterward. A
@@ -205,7 +220,10 @@ runs.
 
 Record every tested rate, including failures. A rate is stable only if every direction and stream passes repeatedly.
 Full-speed USB bandwidth limits aggregate throughput; a concurrent failure does not by itself establish a single-UART
-baud limit. A data mismatch, unexplained loss, unexpected reset, persistent disconnect, or new RX error is a failure.
+baud limit. A data mismatch, unexplained loss, unexpected reset, persistent disconnect, or new RX error is a failure in
+a normal fixed-rate qualification run. During a ceiling search, such a failure at the first boundary rate is the expected
+stopping observation only when every lower rate passed and boundary traffic was actually attempted; retain and report
+the failed row and health evidence.
 
 ## Measured Six-Port Envelope
 

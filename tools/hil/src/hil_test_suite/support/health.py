@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -73,6 +74,21 @@ def collect_hid_health() -> dict:
         time.sleep(0.5)
         snapshot = _collect_hid_health_once()
     return snapshot
+
+
+def read_system_clock_hz() -> int | None:
+    """Read the live system clock through the board's read-only HID command."""
+    result = _run_hid("hardware")
+    if result.returncode != 0:
+        return None
+    try:
+        hardware = json.loads(result.stdout)
+    except (TypeError, ValueError):
+        return None
+    clock_hz = hardware.get("system_clock_hz") if isinstance(hardware, dict) else None
+    if isinstance(clock_hz, int) and not isinstance(clock_hz, bool) and clock_hz > 0:
+        return clock_hz
+    return None
 
 
 def health_is_clean(snapshot: dict | None, baseline: dict | None = None) -> bool:

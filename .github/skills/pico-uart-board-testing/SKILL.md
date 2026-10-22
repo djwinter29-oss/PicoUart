@@ -40,14 +40,28 @@ phase. Add `--no-record` for a dry run. Install both crossed pairs and both loop
 wiring during the run. Use `tools/hil/runner/functional.sh --stage 1|2|3|4` only to diagnose one link on the same fixed
 fixture.
 
+When asked to find the highest rate that all six ports can run together, use the combined runner with
+`--incremental-performance`, starting from a recently verified passing rate and choosing a step and maximum appropriate
+for the board and measured clock. The runner stops at the first rate where traffic fails. A ceiling-search record is an
+overall `PASS` only when initial HID health is clean, at least one lower rate passed on all six streams, all six streams
+were actually attempted at the boundary, and final HID sampling succeeded. The boundary row remains `FAIL` and the
+record labels it as an expected boundary failure; do not describe the overall test as failed.
+A dirty health check before transmitting (reported as “no traffic sent”), a setup error, missing stream results, or no
+lower passing rate means the ceiling was not measured and remains `FAIL`. Report the highest passing tested rate and
+first failed tested rate, not an
+unmeasured exact hardware limit.
+
 Before every physical HIL test, flash the selected board with the firmware being tested; never assume the board is
 already running the intended image. For development tests, use `tools/firmware/load.sh --board <pico|pico2>` to build
 and flash. For release qualification, flash the exact packaged artifact with `--skip-build --elf <artifact>` as
-documented in [Releasing](../../../docs/deployment/releasing.md#flashing-release-artifacts). After flashing, verify the board
-re-enumerates and reports the expected firmware version, then record the artifact path and SHA-256 in the HIL run.
+documented in [Releasing](../../../docs/deployment/releasing.md#flashing-release-artifacts). After flashing, verify
+the board re-enumerates and reports the expected firmware version, then record the artifact path and SHA-256 in the
+HIL run. The combined runner reads the live system clock over HID and includes it in the record header and filename,
+for example `2026-10-22-171334Z-pico-125mhz-hil.md`. If the record says `clock-unknown`, do not infer a clock from
+the board model or profile; resolve the read-only `pico-uart hardware` query before claiming clock-specific results.
 If OpenOCD cannot identify the QSPI flash, do not guess an override; use the verified-capacity procedure in
-[Releasing](../../../docs/deployment/releasing.md#override-qspi-auto-detection-advanced) only after confirming the chip marking
-and datasheet.
+[Releasing](../../../docs/deployment/releasing.md#override-qspi-auto-detection-advanced) only after confirming the
+chip marking and datasheet.
 
 ## Diagnostics
 
