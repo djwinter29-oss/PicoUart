@@ -264,8 +264,13 @@ class PicoUartHid:
                 if time.monotonic() >= deadline:
                     raise TimeoutError(f"CDC readiness timed out for channels {list(channels)}")
                 try:
-                    with self._lock:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not self._lock.acquire(timeout=remaining):
+                        raise TimeoutError("CDC readiness timed out waiting for HID lock")
+                    try:
                         sample = parse_channel(self._read_feature(REPORT_ID_CHANNEL_BASE + index, CHANNEL_SIZE, deadline))
+                    finally:
+                        self._lock.release()
                 except RuntimeError as error:
                     if time.monotonic() >= deadline:
                         raise TimeoutError("CDC readiness HID read timed out") from error

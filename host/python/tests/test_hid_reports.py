@@ -109,6 +109,46 @@ def test_ready_wait_rejects_ready_sample_returned_after_deadline(monkeypatch):
         client.wait_channels_ready({0: 115200}, timeout_s=3.0)
 
 
+def test_ready_wait_bounds_lock_contention(monkeypatch):
+    client = PicoUartHid(device=object())
+    held = threading.Event()
+    release = threading.Event()
+    def hold_lock():
+        with client._lock:
+            held.set()
+            release.wait(timeout=1)
+    worker = threading.Thread(target=hold_lock)
+    worker.start()
+    try:
+        assert held.wait(timeout=1)
+        monkeypatch.setattr(client, "_read_feature", lambda *_args: pytest.fail("read while lock unavailable"))
+        start = time.monotonic()
+        with pytest.raises(TimeoutError, match="HID lock"):
+            client.wait_channels_ready({0: 115200}, timeout_s=0.02)
+        assert time.monotonic() - start < 0.5
+    finally:
+        release.set()
+        worker.join(timeout=1)
+
+
+def test_ready_wait_releases_lock_on_feature_error(monkeypatch):
+    client = PicoUartHid(device=object())
+    def fail(*_args):
+        raise OSError("device disconnected")
+    monkeypatch.setattr(client, "_read_feature", fail)
+    with pytest.raises(OSError, match="disconnected"):
+        client.wait_channels_ready({0: 115200})
+    acquired = []
+    def acquire_from_other_thread():
+        if client._lock.acquire(timeout=0.1):
+            acquired.append(True)
+            client._lock.release()
+    worker = threading.Thread(target=acquire_from_other_thread)
+    worker.start()
+    worker.join(timeout=1)
+    assert acquired == [True]
+
+
 @pytest.mark.parametrize("mutation", [
     {"profile_mask": 0}, {"capabilities": 0x8000}, {"ram_total": 0},
     {"product": b"bad\0name"}, {"serial": b"not-a-serial!!"},

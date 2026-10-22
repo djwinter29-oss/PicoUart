@@ -101,6 +101,11 @@ including unchanged overrun counts. A health failure blocks traffic or fails the
 verification passed. Raw `stress` invocations opt into these same checks with `--check-hid-health`.
 Each rate reopens the endpoints, configures line coding, settles, flushes host TTY queues, and then collects its health
 baseline.
+
+For controlled budget/threshold experiments, use the
+[optional timing-profile procedure](../development/firmware-testing.md#optional-timing-profiles). Keep one variable
+different per variant and preserve the ordinary uninstrumented HIL gate. Dated results and limits are recorded in the
+[session/tuning check](records/2026-10-22-cdc-uart-session-validation.md), not as universal baud or timing guarantees.
 After a failure, reset or reflash the intended image and verify clean health before running a different rate in
 a separate invocation. Do not interpret later measurements from older continue-after-failure sweeps as isolated
 clean-start results. The runners never reset, reflash, or change regulator voltage automatically.

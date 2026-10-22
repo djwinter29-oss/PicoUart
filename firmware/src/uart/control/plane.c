@@ -293,6 +293,38 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
      * next worker step starts control and I/O on the same port. */
 }
 
+bool uart_control_plane_start_port(uart_control_plane_t *control_plane, uart_port_id_t port_id)
+{
+    if ((control_plane == NULL) || (port_id >= UART_PORT_COUNT)) {
+        return false;
+    }
+    uart_runtime_port_t *port = &control_plane->ports[port_id];
+    uart_control_mailbox_request_t request;
+    uint32_t save = spin_lock_blocking(control_plane->status_lock);
+    const uart_driver_line_coding_t previous = {
+        .baud_rate = port->info.baud_rate,
+        .data_bits = port->info.data_bits,
+        .stop_bits = port->info.stop_bits,
+        .parity = port->info.parity,
+    };
+    bool taken = uart_control_mailbox_take(&control_plane->mailboxes[port_id], &request);
+    if (taken) {
+        control_plane->pending_controls[port_id].pending = true;
+        control_plane->pending_controls[port_id].control_generation = request.control_generation;
+    }
+    spin_unlock(control_plane->status_lock, save);
+
+    const uart_driver_line_coding_t *initial = taken ? &request.line_coding : &previous;
+    bool started = (port->ops != NULL) && (!taken || request.port_id == (uint32_t)port_id) &&
+                   uart_line_coding_is_valid(initial) && port->ops->line_coding_acceptable(initial) &&
+                   port->ops->set_line_coding(&port->backend, initial) && port->ops->reset_buffers(&port->backend);
+    if (taken) {
+        uart_control_plane_finish_worker_control(control_plane, port_id, request.control_generation, started,
+                                                 started ? &request.line_coding : NULL);
+    }
+    return started;
+}
+
 bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane, uart_port_id_t port_id)
 {
     if ((control_plane == NULL) || (port_id >= UART_PORT_COUNT)) {

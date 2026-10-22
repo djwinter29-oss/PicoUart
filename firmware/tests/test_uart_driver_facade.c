@@ -12,6 +12,10 @@
 #include "uart/control/plane.h"
 #include "uart/uart_driver.h"
 #include "uart/worker.h"
+#ifdef PICO_UART_CDC_INTEGRATION
+#include "tusb.h"
+#include "usb/usb_cdc.h"
+#endif
 
 #include <string.h>
 
@@ -25,6 +29,8 @@ static size_t test_startup_baseline_calls;
 static size_t test_multicore_launch_calls;
 static size_t test_startup_fail_at;
 static ring_buffer_t test_startup_rings[UART_PORT_COUNT];
+static uint8_t test_startup_storage[UART_PORT_COUNT][128];
+static uart_driver_line_coding_t test_backend_coding[UART_PORT_COUNT];
 static const uart_worker_hooks_t *test_worker_hooks;
 static size_t test_control_service_calls;
 static size_t test_reset_calls;
@@ -34,12 +40,18 @@ static bool test_reopen_during_start;
 static bool test_reject_during_start;
 
 const uart_driver_port_info_t uart_board_ports[UART_PORT_COUNT] = {
-    [UART_PORT_0] = {.id = UART_PORT_0, .backend = UART_DRIVER_BACKEND_HW, .baud_rate = 115200u},
-    [UART_PORT_1] = {.id = UART_PORT_1, .backend = UART_DRIVER_BACKEND_HW, .baud_rate = 115200u},
-    [UART_PORT_2] = {.id = UART_PORT_2, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u},
-    [UART_PORT_3] = {.id = UART_PORT_3, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u},
-    [UART_PORT_4] = {.id = UART_PORT_4, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u},
-    [UART_PORT_5] = {.id = UART_PORT_5, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u},
+    [UART_PORT_0] = {.id = UART_PORT_0, .backend = UART_DRIVER_BACKEND_HW, .baud_rate = 115200u,
+                     .data_bits = 8u, .stop_bits = 1u},
+    [UART_PORT_1] = {.id = UART_PORT_1, .backend = UART_DRIVER_BACKEND_HW, .baud_rate = 115200u,
+                     .data_bits = 8u, .stop_bits = 1u},
+    [UART_PORT_2] = {.id = UART_PORT_2, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u,
+                     .data_bits = 8u, .stop_bits = 1u},
+    [UART_PORT_3] = {.id = UART_PORT_3, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u,
+                     .data_bits = 8u, .stop_bits = 1u},
+    [UART_PORT_4] = {.id = UART_PORT_4, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u,
+                     .data_bits = 8u, .stop_bits = 1u},
+    [UART_PORT_5] = {.id = UART_PORT_5, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u,
+                     .data_bits = 8u, .stop_bits = 1u},
 };
 
 bool flash_safe_execute_core_init(void)
@@ -64,6 +76,9 @@ static bool test_startup_load_config(void *instance, const uart_driver_port_info
         return false;
     }
     test_startup_contexts[port_info->id] = instance;
+    test_backend_coding[port_info->id] = (uart_driver_line_coding_t){
+        .baud_rate = port_info->baud_rate, .data_bits = 8u, .stop_bits = 1u, .parity = UART_DRIVER_PARITY_NONE,
+    };
     return true;
 }
 
@@ -110,7 +125,12 @@ static ring_buffer_t *test_startup_ring(void *instance)
 
 static bool test_startup_line_coding_matches(const void *instance, const uart_driver_line_coding_t *line_coding)
 {
-    return (instance != NULL) && (line_coding != NULL);
+    size_t index = test_startup_port_index(instance);
+    return (index < UART_PORT_COUNT) && (line_coding != NULL) &&
+           test_backend_coding[index].baud_rate == line_coding->baud_rate &&
+           test_backend_coding[index].data_bits == line_coding->data_bits &&
+           test_backend_coding[index].stop_bits == line_coding->stop_bits &&
+           test_backend_coding[index].parity == line_coding->parity;
 }
 
 static bool test_startup_line_coding_acceptable(const uart_driver_line_coding_t *line_coding)
@@ -120,7 +140,10 @@ static bool test_startup_line_coding_acceptable(const uart_driver_line_coding_t 
 
 static bool test_startup_set_line_coding(void *instance, const uart_driver_line_coding_t *line_coding)
 {
-    return (instance != NULL) && (line_coding != NULL);
+    size_t index = test_startup_port_index(instance);
+    if ((index >= UART_PORT_COUNT) || (line_coding == NULL)) return false;
+    test_backend_coding[index] = *line_coding;
+    return true;
 }
 
 static bool test_startup_reset_buffers(void *instance)
@@ -130,6 +153,8 @@ static bool test_startup_reset_buffers(void *instance)
         return false;
     }
     ++test_reset_calls;
+    TEST_ASSERT_TRUE(ring_buffer_init(&test_startup_rings[index], test_startup_storage[index],
+                                     sizeof(test_startup_storage[index])));
     test_startup_initialized[index] = !test_reset_fails;
     if (test_close_during_start) {
         uart_driver_request_channel_stop((uart_port_id_t)index);
@@ -158,7 +183,8 @@ static void test_startup_clear_rx_error_baseline(void *instance)
 
 static uint32_t test_startup_baud_rate(const void *instance)
 {
-    return instance != NULL ? 115200u : 0u;
+    size_t index = test_startup_port_index(instance);
+    return index < UART_PORT_COUNT ? test_backend_coding[index].baud_rate : 0u;
 }
 
 static uart_backend_stats_t test_startup_stats(const void *instance)
@@ -224,10 +250,17 @@ void pio_uart_driver_enable_rx_dma_irq(void)
 {
 }
 
+#ifndef PICO_UART_CDC_INTEGRATION
 void uart_control_plane_service(uart_control_plane_t *control_plane)
 {
     (void)control_plane;
     ++test_control_service_calls;
+}
+
+bool uart_control_plane_start_port(uart_control_plane_t *control_plane, uart_port_id_t port_id)
+{
+    uart_runtime_port_t *port = &control_plane->ports[port_id];
+    return port->ops->reset_buffers(&port->backend);
 }
 
 bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane, uart_port_id_t port_id)
@@ -236,6 +269,129 @@ bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_pl
     (void)port_id;
     return false;
 }
+#endif
+
+#ifdef PICO_UART_CDC_INTEGRATION
+static bool test_usb_mounted;
+static uint32_t test_usb_received;
+void tusb_init(void) {}
+bool tud_disconnect(void) { return true; }
+bool tud_connect(void) { return true; }
+bool tud_task_event_ready(void) { return false; }
+void tud_task(void) {}
+bool tud_mounted(void) { return test_usb_mounted; }
+uint32_t tud_cdc_n_available(uint8_t itf) { (void)itf; return 0u; }
+uint32_t tud_cdc_n_read(uint8_t itf, void *buffer, uint32_t length)
+{ (void)itf; (void)buffer; (void)length; return 0u; }
+void tud_cdc_n_read_flush(uint8_t itf) { (void)itf; }
+uint32_t tud_cdc_n_write(uint8_t itf, const void *buffer, uint32_t length)
+{ (void)itf; (void)buffer; test_usb_received += length; return length; }
+uint32_t tud_cdc_n_write_available(uint8_t itf) { (void)itf; return 64u; }
+uint32_t tud_cdc_n_write_flush(uint8_t itf) { (void)itf; return 0u; }
+bool tud_cdc_n_write_clear(uint8_t itf) { (void)itf; return true; }
+void usb_hid_reset_host_state(void) {}
+
+static void test_cdc_open(uint32_t baud, uint8_t stop_bits, uint8_t parity)
+{
+    cdc_line_coding_t coding = {.bit_rate = baud, .data_bits = 8u, .stop_bits = stop_bits, .parity = parity};
+    tud_cdc_line_coding_cb(0u, &coding);
+    tud_cdc_line_state_cb(0u, true, false);
+    usb_cdc_poll();
+}
+
+static void test_cdc_close(void)
+{
+    tud_cdc_line_state_cb(0u, false, false);
+    usb_cdc_poll();
+    test_worker_hooks->service_control();
+}
+
+void test_integrated_start_publishes_matching_framing_before_rx(void)
+{
+    test_cdc_open(230400u, 2u, 1u);
+    TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_0));
+    TEST_ASSERT_EQUAL_UINT32(0u, test_usb_received);
+    test_worker_hooks->service_control();
+    uart_driver_port_info_t info;
+    TEST_ASSERT_TRUE(uart_driver_port_info(UART_PORT_0, &info));
+    TEST_ASSERT_TRUE(uart_driver_port_is_ready(UART_PORT_0));
+    TEST_ASSERT_EQUAL_UINT32(test_backend_coding[0].baud_rate, info.baud_rate);
+    TEST_ASSERT_EQUAL_UINT8(test_backend_coding[0].stop_bits, info.stop_bits);
+    TEST_ASSERT_EQUAL_UINT8(test_backend_coding[0].parity, info.parity);
+    TEST_ASSERT_EQUAL_UINT8(2u, info.stop_bits);
+    TEST_ASSERT_EQUAL_UINT8(UART_DRIVER_PARITY_ODD, info.parity);
+    const uint8_t payload[] = {1u, 2u, 3u};
+    TEST_ASSERT_EQUAL_UINT(sizeof(payload), ring_buffer_write(&test_startup_rings[0], payload, sizeof(payload)));
+    usb_cdc_poll();
+    TEST_ASSERT_EQUAL_UINT32(sizeof(payload), test_usb_received);
+    test_cdc_close();
+}
+
+void test_integrated_open_without_new_settings_uses_board_defaults(void)
+{
+    tud_cdc_line_state_cb(1u, true, false);
+    usb_cdc_poll();
+    test_worker_hooks->service_control();
+    usb_cdc_poll();
+    TEST_ASSERT_TRUE(uart_driver_port_is_ready(UART_PORT_1));
+    TEST_ASSERT_EQUAL_UINT32(115200u, test_backend_coding[1].baud_rate);
+    TEST_ASSERT_EQUAL_UINT8(8u, test_backend_coding[1].data_bits);
+    TEST_ASSERT_EQUAL_UINT8(1u, test_backend_coding[1].stop_bits);
+    tud_cdc_line_state_cb(1u, false, false);
+    usb_cdc_poll();
+    test_worker_hooks->service_control();
+}
+
+void test_integrated_failed_start_and_reopen_without_new_line_coding(void)
+{
+    test_cdc_open(115200u, 0u, 0u);
+    test_worker_hooks->service_control();
+    usb_cdc_poll();
+    test_cdc_close();
+    test_cdc_open(230400u, 2u, 1u);
+    test_reset_fails = true;
+    test_worker_hooks->service_control();
+    TEST_ASSERT_BITS_HIGH(UART_DRIVER_PORT_STATUS_INIT_FAILED, uart_driver_port_status(UART_PORT_0));
+    TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_0));
+    test_reset_fails = false;
+    test_cdc_close();
+    tud_cdc_line_state_cb(0u, true, false);
+    usb_cdc_poll();
+    test_worker_hooks->service_control();
+    usb_cdc_poll();
+    uart_driver_port_info_t info;
+    TEST_ASSERT_TRUE(uart_driver_port_info(UART_PORT_0, &info));
+    TEST_ASSERT_TRUE(uart_driver_port_is_ready(UART_PORT_0));
+    TEST_ASSERT_EQUAL_UINT32(115200u, test_backend_coding[0].baud_rate);
+    TEST_ASSERT_EQUAL_UINT8(1u, test_backend_coding[0].stop_bits);
+    TEST_ASSERT_EQUAL_UINT8(UART_DRIVER_PARITY_NONE, test_backend_coding[0].parity);
+    TEST_ASSERT_EQUAL_UINT32(test_backend_coding[0].baud_rate, info.baud_rate);
+    TEST_ASSERT_EQUAL_UINT8(test_backend_coding[0].stop_bits, info.stop_bits);
+    TEST_ASSERT_EQUAL_UINT8(test_backend_coding[0].parity, info.parity);
+    test_cdc_close();
+}
+
+void test_integrated_bus_reset_stops_backend_and_discards_old_rx(void)
+{
+    test_cdc_open(115200u, 0u, 0u);
+    test_worker_hooks->service_control();
+    usb_cdc_poll();
+    const uint8_t old_payload[] = {7u, 8u};
+    TEST_ASSERT_EQUAL_UINT(sizeof(old_payload), ring_buffer_write(&test_startup_rings[0], old_payload, sizeof(old_payload)));
+    test_usb_mounted = false;
+    usb_cdc_poll();
+    test_worker_hooks->service_control();
+    TEST_ASSERT_FALSE(test_startup_initialized[0]);
+    TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_0));
+    test_usb_mounted = true;
+    tud_mount_cb();
+    test_cdc_open(115200u, 0u, 0u);
+    test_worker_hooks->service_control();
+    usb_cdc_poll();
+    TEST_ASSERT_EQUAL_UINT32(0u, test_usb_received);
+    test_cdc_close();
+}
+#endif
 
 void setUp(void)
 {
@@ -245,6 +401,12 @@ void setUp(void)
     test_close_during_start = false;
     test_reopen_during_start = false;
     test_reject_during_start = false;
+#ifdef PICO_UART_CDC_INTEGRATION
+    test_usb_mounted = true;
+    test_usb_received = 0u;
+    tud_mount_cb();
+    if (test_worker_hooks != NULL) test_worker_hooks->service_control();
+#endif
 }
 
 void tearDown(void)
@@ -485,6 +647,13 @@ void test_idle_lifecycle_sweep_requires_one_lock_per_port(void)
 int main(void)
 {
     UNITY_BEGIN();
+#ifdef PICO_UART_CDC_INTEGRATION
+    RUN_TEST(test_startup_rolls_back_partial_backend_init_and_retries);
+    RUN_TEST(test_integrated_start_publishes_matching_framing_before_rx);
+    RUN_TEST(test_integrated_open_without_new_settings_uses_board_defaults);
+    RUN_TEST(test_integrated_failed_start_and_reopen_without_new_line_coding);
+    RUN_TEST(test_integrated_bus_reset_stops_backend_and_discards_old_rx);
+#else
     RUN_TEST(test_uart_driver_exposes_the_six_port_contract);
     RUN_TEST(test_uart_driver_rejects_invalid_port_operations);
     RUN_TEST(test_uart_driver_rejects_null_public_arguments);
@@ -498,5 +667,6 @@ int main(void)
     RUN_TEST(test_start_completion_preserves_a_newer_control_rejection);
     RUN_TEST(test_channel_stop_wait_does_not_block_another_start_or_control_service);
     RUN_TEST(test_idle_lifecycle_sweep_requires_one_lock_per_port);
+#endif
     return UNITY_END();
 }

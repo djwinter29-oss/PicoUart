@@ -43,11 +43,21 @@ bool hw_uart_driver_load_port_config(void *context, const uart_driver_port_info_
 
 bool hw_uart_driver_set_line_coding(void *context, const uart_driver_line_coding_t *line_coding)
 {
-    const hw_uart_driver_t *driver = context;
+    hw_uart_driver_t *driver = context;
     uint32_t actual_rate;
-    if ((driver == NULL) || !driver->initialized || !uart_line_coding_is_valid(line_coding) ||
+    if ((driver == NULL) || !uart_line_coding_is_valid(line_coding) ||
         !hw_uart_baud_rate_supported(line_coding->baud_rate, clock_get_hz(clk_peri), &actual_rate)) {
         return false;
+    }
+    if (!driver->initialized) {
+        if (driver->config == NULL) {
+            return false;
+        }
+        driver->baud_rate = line_coding->baud_rate;
+        driver->data_bits = line_coding->data_bits;
+        driver->stop_bits = line_coding->stop_bits;
+        driver->parity = hw_uart_backend_parity(line_coding->parity);
+        return true;
     }
     return hw_uart_driver_apply_line_format(context, line_coding->baud_rate, line_coding->data_bits,
                                             line_coding->stop_bits, hw_uart_backend_parity(line_coding->parity));

@@ -32,6 +32,7 @@ bool tud_disconnect(void);
 bool tud_connect(void);
 bool tud_task_event_ready(void);
 void tud_task(void);
+bool tud_mounted(void);
 uint32_t tud_cdc_n_available(uint8_t itf);
 uint32_t tud_cdc_n_read(uint8_t itf, void *buffer, uint32_t length);
 void tud_cdc_n_read_flush(uint8_t itf);

@@ -32,10 +32,17 @@ bool pio_uart_driver_load_port_config(void *context, const uart_driver_port_info
 
 bool pio_uart_driver_set_line_coding(void *context, const uart_driver_line_coding_t *line_coding)
 {
-    const pio_uart_driver_t *driver = context;
-    if ((driver == NULL) || !driver->initialized || !uart_line_coding_is_valid(line_coding) ||
+    pio_uart_driver_t *driver = context;
+    if ((driver == NULL) || !uart_line_coding_is_valid(line_coding) ||
         !uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys))) {
         return false;
+    }
+    if (!driver->initialized) {
+        if (driver->config == NULL) {
+            return false;
+        }
+        driver->baud_rate = line_coding->baud_rate;
+        return true;
     }
     return pio_uart_driver_apply_baud_rate(context, line_coding->baud_rate);
 }

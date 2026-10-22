@@ -213,6 +213,7 @@ pico_uart_add_unity_test(test_service_load service_load
     test_service_load.c
     ${FIRMWARE_ROOT}/src/platform/service_load.c
 )
+target_compile_definitions(test_service_load PRIVATE PICO_UART_PROFILE_TIMING=1)
 
 foreach(_family IN ITEMS rp2040 rp2350)
     pico_uart_add_unity_test(test_usb_hid_${_family} usb_hid_${_family}
@@ -258,6 +259,20 @@ target_include_directories(test_uart_driver_facade PRIVATE
 )
 target_compile_options(test_uart_driver_facade PRIVATE -ffunction-sections -fdata-sections)
 target_link_options(test_uart_driver_facade PRIVATE -Wl,--gc-sections)
+
+pico_uart_add_unity_test(test_cdc_uart_integration cdc_uart_integration
+    test_uart_driver_facade.c
+    ${FIRMWARE_ROOT}/src/usb/usb_cdc.c
+    ${FIRMWARE_ROOT}/src/uart/uart_driver.c
+    ${FIRMWARE_ROOT}/src/uart/control/plane.c
+    ${FIRMWARE_ROOT}/src/uart/control/mailbox.c
+    ${FIRMWARE_ROOT}/src/uart/bridge.c
+    ${FIRMWARE_ROOT}/src/uart/line_coding.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
+    ${FIRMWARE_ROOT}/src/platform/service_load.c
+)
+target_compile_definitions(test_cdc_uart_integration PRIVATE PICO_UART_CDC_INTEGRATION=1)
+target_include_directories(test_cdc_uart_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set(_pico_uart_host_warnings -Wall -Wextra -Werror)

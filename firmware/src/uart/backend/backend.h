@@ -27,8 +27,9 @@ typedef struct {
  * Each context points to the selected driver's runtime instance, owned by the
  * logical port. Drivers implement this signature directly without forwarding wrappers.
  * Null queries return false, NULL, zero baud, or zero counters as appropriate.
- * Matching and applying line coding require an initialized instance and a valid,
- * clock-feasible request. Configuration binding accepts only an inactive instance
+ * Matching line coding requires an initialized instance. A valid, clock-feasible
+ * setter stages settings on a bound inactive instance or applies them safely to an active one.
+ * Configuration binding accepts only an inactive instance
  * and its immutable board-table entry; a failed binding leaves state unchanged.
  * Non-null contexts must have the selected driver's concrete type. Ring/rate/counter
  * queries may inspect inactive instances; use is_initialized before treating them as live.
@@ -46,7 +47,7 @@ typedef struct {
                                 const uart_driver_line_coding_t *line_coding);    /**< Compare active line coding. */
     bool (*line_coding_acceptable)(const uart_driver_line_coding_t *line_coding); /**< Check permanent support. */
     bool (*set_line_coding)(void *instance,
-                            const uart_driver_line_coding_t *line_coding); /**< Apply a safe line-coding change. */
+                            const uart_driver_line_coding_t *line_coding); /**< Stage stopped settings or safely apply. */
     bool (*reset_buffers)(void *instance);              /**< Restart one channel and discard its queued bytes. */
     bool (*rx_snapshot_is_current)(const void *instance,
                                    uint32_t consumer_sequence);             /**< Validate a copied RX span. */

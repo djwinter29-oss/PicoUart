@@ -4,6 +4,7 @@
  */
 
 #include "uart/uart_driver.h"
+#include "platform/service_load.h"
 
 #include "uart/backend/backend.h"
 #include "uart/bridge.h"
@@ -45,6 +46,11 @@ typedef struct {
 
 /** @brief Single owner for top-level UART facade state. */
 static uart_driver_state_t uart_driver_state;
+#if PICO_UART_PROFILE_TIMING
+/** @brief Maximum observed interval between backend polls per port, in microseconds, for SWD profiling. */
+volatile uint32_t uart_driver_max_service_gap_us[UART_PORT_COUNT];
+static uint32_t uart_driver_previous_service_us[UART_PORT_COUNT];
+#endif
 static bool uart_driver_init_backends(void);
 static void uart_driver_rollback_initialized_backends(void);
 static void uart_driver_load_board_config(void);
@@ -171,6 +177,9 @@ static void uart_driver_service_channel_lifecycle(void)
         }
         spin_unlock(uart_driver_state.status_lock, save);
         if (reset_pending) {
+    #if PICO_UART_PROFILE_TIMING
+            uart_driver_previous_service_us[index] = 0u;
+    #endif
             if ((port->ops != NULL) && port->ops->is_initialized(&port->backend)) {
                 uart_driver_begin_port_stats_update(port_id);
                 port->ops->deinit(&port->backend);
@@ -206,7 +215,7 @@ static void uart_driver_service_channel_lifecycle(void)
             lifecycle_ok = false;
         } else {
             uart_driver_begin_port_stats_update(port_id);
-            lifecycle_ok = port->ops->reset_buffers(&port->backend);
+            lifecycle_ok = uart_control_plane_start_port(&uart_driver_state.control_plane, port_id);
             if (lifecycle_ok) {
                 port->ops->clear_rx_error_baseline(&port->backend);
             }
@@ -310,12 +319,26 @@ static void uart_driver_poll_io(void)
         }
 
         if ((port->ops != NULL) && port->ops->is_initialized(&port->backend)) {
+#if PICO_UART_PROFILE_TIMING
+            uint32_t now_us = time_us_32();
+            uint32_t previous_us = uart_driver_previous_service_us[index];
+            uint32_t gap = now_us - previous_us;
+            if ((previous_us != 0u) && (gap > uart_driver_max_service_gap_us[index])) {
+                uart_driver_max_service_gap_us[index] = gap;
+            }
+            uart_driver_previous_service_us[index] = now_us;
+#endif
             bool tx_launch_allowed =
                 uart_control_plane_tx_launch_allowed(&uart_driver_state.control_plane, (uart_port_id_t)index);
             uart_driver_begin_port_stats_update((uart_port_id_t)index);
             port->ops->poll(&port->backend, tx_launch_allowed);
             uart_driver_end_port_stats_update((uart_port_id_t)index);
         }
+#if PICO_UART_PROFILE_TIMING
+        else {
+            uart_driver_previous_service_us[index] = 0u;
+        }
+#endif
     }
 
     /* Paired with uart_control_plane_service(), which walked this same index

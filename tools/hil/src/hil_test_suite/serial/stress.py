@@ -100,7 +100,8 @@ def run_stream(
     def stamp() -> str:
         return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
-    timing[label] = {"thread_start_utc": stamp(), "thread_start_monotonic": time.monotonic()}
+    timing[label] = {"thread_start_utc": stamp(), "thread_start_monotonic": time.monotonic(),
+                     "verified_blocks": 0, "max_block_duration_ms": 0.0, "total_block_duration_ms": 0.0}
     sequence = 0
 
     try:
@@ -111,8 +112,13 @@ def run_stream(
             if sequence == 0:
                 timing[label]["first_send_utc"] = stamp()
                 timing[label]["first_send_monotonic"] = time.monotonic()
-            write_all(source_fd, payload, time.monotonic() + timeout)
+            block_start = time.monotonic()
+            write_all(source_fd, payload, block_start + timeout)
             read_exact(destination_fd, payload, time.monotonic() + timeout, timing[label])
+            block_ms = (time.monotonic() - block_start) * 1000
+            timing[label]["max_block_duration_ms"] = max(timing[label]["max_block_duration_ms"], block_ms)
+            timing[label]["total_block_duration_ms"] += block_ms
+            timing[label]["verified_blocks"] += 1
             bytes_verified += len(payload)
             sequence += 1
         if bytes_verified == 0:

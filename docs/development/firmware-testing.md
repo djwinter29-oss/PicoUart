@@ -17,6 +17,30 @@ root [pytest configuration](../../pyproject.toml) discovers repository tests; ho
 project-specific configuration. Use the test index to choose the applicable level and command rather than treating one
 suite as a substitute for another.
 
+## Optional Timing Profiles
+
+Use a fresh build directory for each measured variant because CMake caches initial compiler flags:
+
+```sh
+CFLAGS='-DPICO_UART_PROFILE_TIMING=1' tools/firmware/build.sh --board pico --build-dir build/profile-default
+CFLAGS='-DPICO_UART_PROFILE_TIMING=1 -DPICO_UART_USB_CDC_BRIDGE_PASS_BUDGET=512' \
+	tools/firmware/build.sh --board pico --build-dir build/profile-budget512
+```
+
+The optional counters `service_load_max_pass_us[2]`, `service_load_max_gap_us[2]`, and
+`uart_driver_max_service_gap_us[6]` are SWD-readable observed maxima in microseconds. Locate them with
+`arm-none-eabi-nm --defined-only <elf>`. Authorized profiling can zero those arrays immediately before traffic, then
+read them without halting the cores through OpenOCD's `echo [read_memory <address> 32 <count>]`. Per-port timing
+excludes intentional stopped time. Instrumentation perturbs execution, and maxima include host/control activity in the
+measurement interval; they are not proven worst-case execution times or real-time bounds.
+
+Change only one tuning macro per variant. The bridge budget and PIO TX DMA threshold have compile-time range checks.
+Compare verified traffic, block latency, per-port service gaps, ring peaks, and faults under the same conditions.
+The serial stress runner's timing records include verified block count, maximum block duration, and total block time;
+these are host-observed round trips, not isolated UART wire latency. Retain defaults when a short comparison does not
+show a clear benefit. Return to an uninstrumented image for final HIL; profiling is disabled by default and adds no
+HID protocol fields. See the [dated session/tuning check](../tests/records/2026-10-22-cdc-uart-session-validation.md).
+
 ## CI And Hardware Scope
 
 CI validates host behavior and firmware builds. It has no physical board or wiring fixture and cannot prove UART

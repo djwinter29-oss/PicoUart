@@ -25,8 +25,9 @@ An incomplete operation table or unknown backend selection fails safely. Callbac
 driver's runtime storage. The native entry points have matching signatures, without function-pointer casts or wrapper
 dispatch. Concrete backends own hardware resources, parity conversion, baud matching, and counter reporting.
 
-Both backends reject malformed or clock-infeasible requests before hardware application. Match/apply operations require
-initialized instances; configuration binding refuses active-instance rebinding and accepts only the selected backend's
+Both backends reject malformed or clock-infeasible requests before hardware application. Matching requires an
+initialized instance. Setters stage valid settings on a bound stopped instance without touching hardware, or safely
+apply them to an active instance. Configuration binding refuses active-instance rebinding and accepts only the selected backend's
 immutable board-table entry. Failed binding leaves the existing configuration and applied settings unchanged.
 Null-context queries return neutral results: false readiness/matching, null rings, zero baud, and zero counters.
 Non-null contexts must be correctly typed instances for the selected backend. Queries may inspect inactive state;
@@ -45,6 +46,11 @@ Static topology is checked by host tests; peripheral initialization and DMA/stat
 
 Startup is all-or-nothing: if any configured backend fails, initialized backends are rolled back and the worker does not
 start. Runtime operations reject unavailable backends rather than accessing partially initialized state.
+
+Each DTR-open start seeds the complete initial baud/framing from its mailbox request, or from the last successfully
+applied metadata when no request is queued. Failed startup does not change applied metadata. A later retry reseeds all
+fields rather than inheriting unpublished settings left in the stopped backend; reported framing must match hardware
+whenever lifecycle `READY` is published.
 
 Traffic/error counters belong to the lifetime of the zero-initialized backend storage, not one hardware start.
 Restart clears only transient hardware state and queued ring bytes/reservations. Ring watermark and overflow counts

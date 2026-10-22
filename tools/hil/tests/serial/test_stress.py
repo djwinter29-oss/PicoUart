@@ -103,7 +103,7 @@ def test_close_ports_closes_all_after_restore_failure(monkeypatch: pytest.Monkey
 
 def test_run_stream_collects_first_transfer_timing(monkeypatch: pytest.MonkeyPatch) -> None:
     stress = _load_stress()
-    ticks = iter([0, 0, 0, 0.1, 0.2, 0.3, 0.4, 1])
+    ticks = iter([0, 0, 0, 0.1, 0.2, 0.3, 0.4, 1, 1.1])
     monkeypatch.setattr(stress.time, "monotonic", lambda: next(ticks))
     transfers = []
     monkeypatch.setattr(stress, "write_all", lambda fd, payload, deadline: transfers.append(payload))
@@ -692,6 +692,25 @@ def test_benchmark_configures_exact_six_fixture_streams(monkeypatch):
     assert events[19] == ("sleep", arguments.settle_seconds)
     assert events[20:26] == [("flush", fd) for fd in range(1, 7)]
     assert all(event[0] == "transmit" for event in events[26:])
+
+
+def test_run_stream_measures_verified_block_latency(monkeypatch):
+    from types import SimpleNamespace
+    stress = _load_stress()
+    now = [0.0]
+    monkeypatch.setattr(stress, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    def write(*_args):
+        now[0] += 0.001
+    def read(*_args):
+        now[0] += 0.002
+    monkeypatch.setattr(stress, "write_all", write)
+    monkeypatch.setattr(stress, "read_exact", read)
+    result, timing = {}, {}
+    stress.run_stream("latency", 1, 1, 0.005, 64, 1, stress.threading.Barrier(1), result, timing)
+    assert result["latency"] == (128, None)
+    assert timing["latency"]["verified_blocks"] == 2
+    assert timing["latency"]["max_block_duration_ms"] == pytest.approx(3)
+    assert timing["latency"]["total_block_duration_ms"] == pytest.approx(6)
 
 
 def test_hil_fixture_plan_matches_modes_and_timing(repo_root):

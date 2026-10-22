@@ -74,19 +74,36 @@ erase the newer error.
 ## Timeouts
 
 Soft-pending and worker application use separate bounded per-port deadlines; one busy port does not consume another
-port's timeout. A valid request received while DTR is low or its backend is starting remains deferred without consuming
-the mailbox timeout. That timeout starts when the open backend becomes ready to accept configuration. Repeating the
+port's timeout. A valid request received while DTR is low remains deferred without consuming the mailbox timeout.
+For startup, staging becomes eligible after the old stop handshake completes; hardware need not be active yet. Live
+changes wait for backend readiness before mailbox submission. Repeating the
 same eligible request does not extend its deadline indefinitely; a distinct replacement gets a new deadline. Timeout
 reports `CONTROL_ERROR`; the configured duration is maintained in the control-plane implementation.
 
 ## USB Mount and Unmount Reset
 
 USB mount and unmount clear host-facing CDC state, cancel soft-pending requests, and reset HID scheduling and reset-arm
-state. Canceled requests must not later produce timeout errors. Separately, a CDC DTR open-to-closed edge requests a
+state and stop backends belonging to old sessions. Polling detects lost TinyUSB mounted state because bus reset need
+not invoke the unmount callback; remount cleanup also works without a prior unmount. Canceled requests must not later
+produce timeout errors. Separately, a CDC DTR open-to-closed edge requests a
 per-port close: USB core clears that interface's CDC FIFOs and pauses its bridge, then the UART worker deinitializes
 only that backend. Queued bytes are discarded; applied line coding and cumulative counters are preserved, and the board
 does not reboot. On the next open, the worker starts that backend and applies any deferred line-coding request before
-the bridge resumes.
+the bridge resumes. Initial line coding is staged through the normal mailbox before the start request, so the worker
+seeds baud/framing while stopped and enables the receiver using those settings, not the previous session's format.
+
+## Lifecycle Invariants
+
+- USB core owns DTR and byte admission. An old USB session loses ownership on close, unplug, bus reset, or remount.
+- UART worker alone starts/stops backends. Stop completion requires USB quiescence; a newer lifecycle request wins.
+- Mailbox take and worker ownership are atomic under the status lock, for startup as well as live changes.
+- `READY` means the backend is active and its applied baud/framing metadata agrees with hardware. Startup failure
+  leaves `READY` clear and prior applied metadata intact; a retry seeds a complete known configuration.
+- USB startup admission progresses from `START_PENDING` through `STARTING` to `RUNNING`. Initial control errors or
+  pending settings block both directions; live reconfiguration retains RX draining while TX ingress is blocked.
+- Backend caches on stopped instances are staged values, not independently authoritative applied telemetry.
+- The HID readiness deadline includes shared-lock acquisition and feature reads. Lock/transport failure cannot return
+  success or leak the lock.
 
 Close invalidates older control generations. Worker close completion preserves control requests received after reopen,
 and a start completion cannot overwrite a newer close/open request or clear a newer control error. Each open makes one
@@ -115,6 +132,9 @@ Historical fault counters are not current configuration failures and do not by t
 
 Host tests cover mailbox ownership, deadlines, stale completions, and TX blocking. CDC integration tests execute the
 production callbacks with simulated time and UART/TinyUSB calls: delayed closed configuration, startup readiness,
-identical retries, replacement requests, close/reopen, disconnect, and stale errors. These checks do not establish real
+identical retries, replacement requests, close/reopen, disconnect, and stale errors. A separate integrated build of the
+existing facade harness links real CDC, driver, mailbox, and control-plane code against mocked backend/SDK edges; it
+checks framing metadata before RX admission, startup failure followed by a mailbox-free retry, board-default startup,
+and USB reset discarding old RX. These checks do not establish real
 USB bus behavior, backend quiescence, or physical timing under load; those require hardware validation. See the
 [HIL fixture plan](../tests/hil-fixture-test-plan.md).

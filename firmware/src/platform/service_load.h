@@ -10,6 +10,18 @@
 /** @brief Unavailable until a core completes its first measurement window. */
 #define SERVICE_LOAD_UNAVAILABLE UINT16_MAX
 
+/** @brief Enable intrusive SWD-readable timing diagnostics only in dedicated profiling builds. */
+#ifndef PICO_UART_PROFILE_TIMING
+#define PICO_UART_PROFILE_TIMING 0
+#endif
+
+#if PICO_UART_PROFILE_TIMING
+/** @brief Maximum observed service-pass duration per core since boot, in microseconds. */
+extern volatile uint32_t service_load_max_pass_us[2];
+/** @brief Maximum observed interval between service-pass starts per core, in microseconds. */
+extern volatile uint32_t service_load_max_gap_us[2];
+#endif
+
 /** @brief Reset both core windows before launching core 1. */
 void service_load_init(void);
 

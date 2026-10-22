@@ -22,9 +22,10 @@
  */
 #define USB_CDC_FLUSH_LATENCY_US 1000u
 /**
+ * @brief Bound mailbox staging after DTR opens and old-session stop completes.
  *
- * Starts only once DTR is open and the backend is ready. Matches the worker-side
- * deferred-apply window so an eligible request cannot wait indefinitely.
+ * Initial settings can be staged before backend startup. Live changes wait for
+ * backend readiness. Neither eligible mailbox submission can wait indefinitely.
  */
 #define USB_CDC_SOFT_PENDING_TIMEOUT_MS 1000u
 
@@ -36,7 +37,7 @@ _Static_assert(USB_CDC_PORT_COUNT == UART_PORT_COUNT, "USB CDC port count must m
 typedef struct {
     bool pending;                          /**< True while the host request has not entered the worker mailbox. */
     uint32_t control_generation;           /**< Host request generation retained until mailbox submission. */
-    absolute_time_t deadline;              /**< Mailbox expiry, nil until the backend is ready. */
+    absolute_time_t deadline;              /**< Mailbox expiry, nil until staging is eligible. */
     uart_driver_line_coding_t line_coding; /**< Latest requested UART settings. */
 } usb_cdc_pending_line_coding_t;
 
@@ -48,6 +49,17 @@ static usb_cdc_port_stats_t usb_cdc_stats[USB_CDC_PORT_COUNT];
 static bool usb_cdc_reset_rx_flushed[USB_CDC_PORT_COUNT];
 /** @brief Interface serviced first on the next bounded CDC bridge pass. */
 static uint8_t usb_cdc_poll_start_itf;
+/** @brief True while the current TinyUSB configuration owns the CDC session state. */
+static bool usb_cdc_session_active;
+
+/** @brief USB-side admission for one DTR-open session, independent of live reconfiguration. */
+typedef enum {
+    USB_CDC_START_PENDING = 0, /**< Wait for old stop completion and stage initial settings. */
+    USB_CDC_STARTING,         /**< Worker start requested; initial settings must complete before bridging. */
+    USB_CDC_RUNNING,          /**< Initial configuration is complete; live RX draining is permitted. */
+} usb_cdc_admission_t;
+
+static usb_cdc_admission_t usb_cdc_admission[USB_CDC_PORT_COUNT];
 /** @brief True when a partial CDC IN buffer is waiting for its latency deadline. */
 static bool usb_cdc_tx_flush_pending[USB_CDC_PORT_COUNT];
 /** @brief Flush deadlines for partial CDC IN buffers. */
@@ -92,7 +104,8 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
 {
     usb_cdc_pending_line_coding_t *pending = &usb_cdc_line_coding_pending[itf];
 
-    if (!pending->pending || !uart_driver_port_is_ready((uart_port_id_t)itf)) {
+    if (!pending->pending || ((usb_cdc_admission[itf] != USB_CDC_START_PENDING) &&
+                             !uart_driver_port_is_ready((uart_port_id_t)itf))) {
         return;
     }
 
@@ -222,7 +235,14 @@ void usb_cdc_init(void)
 void usb_cdc_reset_host_state(void)
 {
     for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
+        if (usb_cdc_stats[itf].opened) {
+            (void)uart_driver_request_channel_stop((uart_port_id_t)itf);
+        }
+        if (uart_driver_channel_stop_pending((uart_port_id_t)itf)) {
+            uart_driver_channel_stop_usb_quiesced((uart_port_id_t)itf);
+        }
         usb_cdc_stats[itf].opened = false;
+        usb_cdc_admission[itf] = USB_CDC_START_PENDING;
         usb_cdc_line_coding_pending[itf].pending = false;
         usb_cdc_line_coding_pending[itf].deadline = nil_time;
         usb_cdc_tx_flush_pending[itf] = false;
@@ -236,18 +256,14 @@ void tud_mount_cb(void)
     /* Reinitialize host-facing state after every USB enumeration. */
     usb_cdc_reset_host_state();
     usb_hid_reset_host_state();
+    usb_cdc_session_active = true;
 }
 
 void tud_umount_cb(void)
 {
-    for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
-        if (usb_cdc_stats[itf].opened && uart_driver_request_channel_stop((uart_port_id_t)itf)) {
-            usb_cdc_reset_rx_flushed[itf] = false;
-            uart_driver_channel_stop_usb_quiesced((uart_port_id_t)itf);
-        }
-    }
     usb_cdc_reset_host_state();
     usb_hid_reset_host_state();
+    usb_cdc_session_active = false;
 }
 
 void usb_cdc_poll(void)
@@ -258,6 +274,12 @@ void usb_cdc_poll(void)
         service_load_note(0u);
     }
     tud_task();
+    if (!tud_mounted()) {
+        if (usb_cdc_session_active) {
+            tud_umount_cb();
+        }
+        return;
+    }
 
     for (uint8_t offset = 0u; offset < USB_CDC_PORT_COUNT; ++offset) {
         uint8_t itf = (uint8_t)((start_itf + offset) % USB_CDC_PORT_COUNT);
@@ -280,10 +302,29 @@ void usb_cdc_poll(void)
             continue;
         }
 
-        usb_cdc_apply_pending_line_coding(itf);
+        if (usb_cdc_admission[itf] == USB_CDC_START_PENDING) {
+            usb_cdc_apply_pending_line_coding(itf);
+            if (usb_cdc_line_coding_pending[itf].pending) {
+                continue;
+            }
+            if (!uart_driver_request_channel_start((uart_port_id_t)itf)) {
+                uart_driver_report_control_error((uart_port_id_t)itf);
+                continue;
+            }
+            usb_cdc_admission[itf] = USB_CDC_STARTING;
+        }
 
         if (!uart_driver_port_is_ready((uart_port_id_t)itf)) {
             continue;
+        }
+        usb_cdc_apply_pending_line_coding(itf);
+        if (usb_cdc_admission[itf] == USB_CDC_STARTING) {
+            if (uart_driver_port_status((uart_port_id_t)itf) &
+                (UART_DRIVER_PORT_STATUS_CONTROL_PENDING | UART_DRIVER_PORT_STATUS_CONTROL_ERROR |
+                 UART_DRIVER_PORT_STATUS_INIT_FAILED)) {
+                continue;
+            }
+            usb_cdc_admission[itf] = USB_CDC_RUNNING;
         }
 
         usb_cdc_bridge_usb_to_uart(itf);
@@ -307,6 +348,7 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
     if (itf < USB_CDC_PORT_COUNT) {
         was_open = usb_cdc_stats[itf].opened;
         if (usb_cdc_dtr_close_should_stop_channel(was_open, dtr)) {
+            usb_cdc_admission[itf] = USB_CDC_START_PENDING;
             usb_cdc_line_coding_pending[itf].pending = false;
             usb_cdc_line_coding_pending[itf].deadline = nil_time;
             usb_cdc_tx_flush_pending[itf] = false;
@@ -316,7 +358,7 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
                 usb_cdc_reset_rx_flushed[itf] = false;
             }
         } else if (!was_open && dtr) {
-            uart_driver_request_channel_start((uart_port_id_t)itf);
+            usb_cdc_admission[itf] = USB_CDC_START_PENDING;
         }
         usb_cdc_stats[itf].opened = dtr;
     }
