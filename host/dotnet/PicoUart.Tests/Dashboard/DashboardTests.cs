@@ -81,7 +81,7 @@ public sealed class DashboardTests
         Assert.True(snapshot.Channels[0].TrafficIncomplete);
         Assert.Equal(1, snapshot.Channels[0].TrafficGaps);
         Assert.Equal(0ul, snapshot.Channels[0].ObservedIntervalMs);
-        Assert.Equal(sample.ControllerTxBytes, snapshot.Channels[0].Totals.UartTx);
+        Assert.Equal(sample.UartTxBytes, snapshot.Channels[0].Totals.UartTx);
     }
 
     [Fact]
