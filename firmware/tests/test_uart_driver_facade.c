@@ -466,6 +466,22 @@ void test_channel_stop_wait_does_not_block_another_start_or_control_service(void
     TEST_ASSERT_BITS_HIGH(UART_DRIVER_PORT_STATUS_READY, uart_driver_port_status(UART_PORT_1));
 }
 
+static uint32_t idle_unlock_count;
+
+static void count_idle_unlock(void)
+{
+    ++idle_unlock_count;
+}
+
+void test_idle_lifecycle_sweep_requires_one_lock_per_port(void)
+{
+    idle_unlock_count = 0u;
+    test_spin_unlock_hook = count_idle_unlock;
+    test_worker_hooks->service_control();
+    test_spin_unlock_hook = NULL;
+    TEST_ASSERT_EQUAL_UINT32(UART_PORT_COUNT, idle_unlock_count);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -481,5 +497,6 @@ int main(void)
     RUN_TEST(test_close_completion_preserves_reopened_control_state);
     RUN_TEST(test_start_completion_preserves_a_newer_control_rejection);
     RUN_TEST(test_channel_stop_wait_does_not_block_another_start_or_control_service);
+    RUN_TEST(test_idle_lifecycle_sweep_requires_one_lock_per_port);
     return UNITY_END();
 }

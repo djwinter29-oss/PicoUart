@@ -74,9 +74,10 @@ erase the newer error.
 ## Timeouts
 
 Soft-pending and worker application use separate bounded per-port deadlines; one busy port does not consume another
-port's timeout. Repeating the same request does not extend its deadline indefinitely, while a distinct replacement gets
-a new deadline. Timeout reports `CONTROL_ERROR`; the configured duration is maintained in the control-plane
-implementation.
+port's timeout. A valid request received while DTR is low or its backend is starting remains deferred without consuming
+the mailbox timeout. That timeout starts when the open backend becomes ready to accept configuration. Repeating the
+same eligible request does not extend its deadline indefinitely; a distinct replacement gets a new deadline. Timeout
+reports `CONTROL_ERROR`; the configured duration is maintained in the control-plane implementation.
 
 ## USB Mount and Unmount Reset
 
@@ -90,9 +91,10 @@ the bridge resumes.
 Close invalidates older control generations. Worker close completion preserves control requests received after reopen,
 and a start completion cannot overwrite a newer close/open request or clear a newer control error. Each open makes one
 backend start attempt; failure publishes `INIT_FAILED` instead of retrying indefinitely and blocking other ports' control
-processing. Close and reopen to retry. Each channel observes its own 250 ms DTR-open debounce before enabling RX;
-there is no cross-channel barrier or fixture-specific startup order. Closed backends park TX idle-high. Control service
-skips only channels without `READY`, so one channel's startup or close cannot hold another channel's configuration.
+processing. Close and reopen to retry. Startup is serviced on the next worker sweep without a fixed DTR debounce,
+cross-channel barrier, or fixture-specific startup order. Closed backends park TX idle-high, including hardware-UART
+configuration-failure cleanup. Control service skips channels without `READY`, and idle channels avoid a second lock
+pass and telemetry sequence-counter updates. One channel's startup or close cannot hold another channel's configuration.
 
 CDC callbacks remain asynchronous. POSIX TTY `open()` does not guarantee backend initialization or applied line coding.
 After opening and configuring a group, hosts can use Python `wait_channels_ready()` on the matching HID device to wait
@@ -111,7 +113,8 @@ Historical fault counters are not current configuration failures and do not by t
 
 ## Test Coverage
 
-Host tests cover mailbox ownership, deadlines, stale completions, and TX blocking, including modeled cancellation and
-deadline-reset behavior for USB lifecycle events. These checks do not establish real TinyUSB bus lifecycle behavior,
-backend quiescence, or physical timing under load; those require hardware validation. See the
+Host tests cover mailbox ownership, deadlines, stale completions, and TX blocking. CDC integration tests execute the
+production callbacks with simulated time and UART/TinyUSB calls: delayed closed configuration, startup readiness,
+identical retries, replacement requests, close/reopen, disconnect, and stale errors. These checks do not establish real
+USB bus behavior, backend quiescence, or physical timing under load; those require hardware validation. See the
 [HIL fixture plan](../tests/hil-fixture-test-plan.md).

@@ -46,6 +46,11 @@ Static topology is checked by host tests; peripheral initialization and DMA/stat
 Startup is all-or-nothing: if any configured backend fails, initialized backends are rolled back and the worker does not
 start. Runtime operations reject unavailable backends rather than accessing partially initialized state.
 
+Traffic/error counters belong to the lifetime of the zero-initialized backend storage, not one hardware start.
+Restart clears only transient hardware state and queued ring bytes/reservations. Ring watermark and overflow counts
+are preserved by `ring_buffer_clear()` after producer, consumer, and DMA quiesce; cold `ring_buffer_init()` resets
+those counters. Backend restart therefore does not need to save and restore telemetry field by field.
+
 ## Line Coding
 
 Each driver distinguishes formats it supports from whether a supported change is currently safe to apply. The

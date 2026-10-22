@@ -79,9 +79,12 @@ CDC re-enumeration or DTR-triggered channel reset cannot contaminate the next ra
 
 For each paired functional test, the bridge runner opens both endpoints before applying either line coding. For each
 concurrent rate, the stress runner opens all six CDC endpoints first. Identified PicoUart endpoints hold DTR low during
-configuration. Setup retains 250 ms delays around line coding, then asserts DTR for the configured group and requires
-a bounded HID readiness handshake before returning descriptors or transmitting. Linux sysfs associates each selected
-TTY with its USB serial number and CDC interface; HID auto-discovery of an unrelated board is not used for readiness.
+configuration. Setup applies line coding without fixed setup sleeps, then asserts DTR for the configured group and
+requires a bounded HID readiness handshake before returning descriptors or transmitting. Linux sysfs associates each
+selected TTY with its USB serial number and CDC interface. The six-port runner requires every endpoint to match its
+declared CDC index on the same board; unidentified, swapped, duplicate, or mixed-board endpoints fail setup before
+group DTR assertion. Paired bridge tests still permit a generic external UART peer. HID auto-discovery of an unrelated
+board is not used for readiness.
 The handshake contract and timeout are defined in [Control Plane Design](../design/control-plane-design.md#usb-mount-and-unmount-reset).
 Failure closes all opened endpoints and prevents payload transmission. After traffic, closing deinitializes each
 backend; teardown deasserts DTR before restoring saved TTY settings. The runner then retains the configured rate-settle

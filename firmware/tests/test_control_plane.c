@@ -615,9 +615,30 @@ void test_not_ready_port_does_not_block_ready_peer(void)
     TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&test_mailboxes[UART_PORT_1]));
 }
 
+static uint32_t idle_unlock_count;
+
+static void count_idle_unlock(void)
+{
+    ++idle_unlock_count;
+}
+
+void test_idle_control_sweep_avoids_second_lock_pass_and_stats_updates(void)
+{
+    idle_unlock_count = 0u;
+    test_spin_unlock_hook = count_idle_unlock;
+    uart_control_plane_service(&test_control_plane);
+    test_spin_unlock_hook = NULL;
+
+    TEST_ASSERT_EQUAL_UINT32(UART_PORT_COUNT, idle_unlock_count);
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        TEST_ASSERT_EQUAL_UINT32(0u, test_stats_sequence[index]);
+    }
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_idle_control_sweep_avoids_second_lock_pass_and_stats_updates);
     RUN_TEST(test_not_ready_port_does_not_block_ready_peer);
     RUN_TEST(test_control_plane_waits_for_tx_boundary_before_applying);
     RUN_TEST(test_control_plane_drops_invalid_mailbox_port);
