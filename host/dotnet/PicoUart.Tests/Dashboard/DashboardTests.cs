@@ -1,5 +1,6 @@
 using PicoUart.Dashboard;
 using PicoUart.Wire;
+using System.Text.Json;
 using Xunit;
 
 namespace PicoUart.Tests;
@@ -7,6 +8,42 @@ namespace PicoUart.Tests;
 [Trait("Category", "Unit")]
 public sealed class DashboardTests
 {
+    [Fact]
+    public void StatusKeepsActionResultsSeparateAndDerivesOverflowCountsFromDiagnostics()
+    {
+        var snapshot = new DashboardSnapshot();
+        Assert.All(snapshot.OverflowCounts, count => Assert.Null(count));
+        snapshot.ChannelDiagnostics[2] = new(2, 1, 0, 0, 17, 0, 0, 0, 0, 0, 0);
+        snapshot.ApplyAction(new(2, 2, 0));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
+        Assert.False(json.RootElement.TryGetProperty("control", out _));
+        Assert.Equal(17u, json.RootElement.GetProperty("overflow_counts")[2].GetUInt32());
+        Assert.Equal((byte)2, snapshot.Control?.Action);
+    }
+
+    [Theory]
+    [InlineData("closed", 0, false)]
+    [InlineData("starting", 1, true)]
+    [InlineData("ready", 2, true)]
+    [InlineData("configuring", 3, true)]
+    [InlineData("error", 4, true)]
+    public void ChannelStatusExposesSharedLifecycleAndInputFields(string state, byte code, bool open)
+    {
+        var snapshot = new DashboardSnapshot();
+        snapshot.Apply(Sample(12, 750, 100) with { State = state });
+        var channel = snapshot.Channels[0];
+        Assert.Equal(code, channel.ChannelState);
+        Assert.Equal(open, channel.CdcOpen);
+        Assert.Equal((ushort)12, channel.Sequence);
+        Assert.Equal((ushort)750, channel.IntervalMs);
+        snapshot.ApplyFeature(Sample(13, 500, 200) with { BaudRate = 0, DataBits = 0, StopBits = 0, Parity = null });
+        Assert.Equal(0u, channel.BaudRate);
+        Assert.Null(channel.DataBits);
+        Assert.Null(channel.StopBits);
+        Assert.Equal((ushort)12, channel.Sequence);
+        Assert.Equal((ushort)750, channel.IntervalMs);
+    }
+
     [Fact]
     public void InputSnapshotSetsCadenceAndTraffic()
     {

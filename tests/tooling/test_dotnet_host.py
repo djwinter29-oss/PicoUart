@@ -138,9 +138,8 @@ def test_dotnet_status_matches_python_dashboard_shape(server):
     expected = empty_snapshot()
     assert snapshot.keys() == expected.keys()
     assert len(snapshot["channels"]) == len(snapshot["overflow_counts"]) == 6
-    for channel in snapshot["channels"]:
-        assert channel.keys() == expected["channels"][0].keys()
-        assert channel["totals"].keys() == expected["channels"][0]["totals"].keys()
+    assert snapshot["overflow_counts"] == expected["overflow_counts"]
+    assert snapshot["channels"] == expected["channels"]
 
 
 def test_dotnet_startup_prints_dashboard_url_without_framework_info_logs(server, published_host):

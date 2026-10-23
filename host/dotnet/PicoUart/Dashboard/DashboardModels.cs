@@ -15,18 +15,21 @@ public sealed class DashboardChannel(int id)
 {
     public int Id { get; } = id;
     public string State { get; set; } = "unknown";
+    public byte? ChannelState { get; set; }
+    public bool CdcOpen { get; set; }
     public byte? UartMeasurementState { get; set; }
-    public uint BaudRate { get; set; }
-    public byte DataBits { get; set; }
-    public byte StopBits { get; set; }
+    public uint? BaudRate { get; set; }
+    public byte? DataBits { get; set; }
+    public byte? StopBits { get; set; }
     public string? Parity { get; set; }
     public Traffic Traffic { get; set; } = new();
-    public Traffic Totals { get; } = new();
+    public Traffic Totals { get; } = new() { UartTx = 0, UartRx = 0, UsbTx = 0, UsbRx = 0 };
     public DateTimeOffset? UpdatedAt { get; set; }
+    public ushort? Sequence { get; set; }
+    public ushort? IntervalMs { get; set; }
     public ulong ObservedIntervalMs { get; set; }
     public long TrafficGaps { get; set; }
     public bool TrafficIncomplete { get; set; }
-    internal ushort? Sequence { get; set; }
     internal Traffic? CounterBaseline { get; set; }
     internal byte? MeasurementBaseline { get; set; }
     internal long LastInputTimestamp { get; set; }
@@ -59,7 +62,8 @@ public sealed class DashboardSnapshot
     public ChannelDiagnostics?[] ChannelDiagnostics { get; } = new ChannelDiagnostics?[Protocol.ChannelCount];
     public string? DiagnosticsError { get; set; }
     public BoardStatus? Board { get; set; }
-    public BoardControlStatus? Control { get; set; }
+    public uint?[] OverflowCounts => ChannelDiagnostics.Select(diagnostic => diagnostic?.RxOverrunCount).ToArray();
+    internal BoardControlStatus? Control { get; set; }
     public DashboardChannel[] Channels { get; } = Enumerable.Range(0, Protocol.ChannelCount)
         .Select(index => new DashboardChannel(index)).ToArray();
 
@@ -115,6 +119,7 @@ public sealed class DashboardSnapshot
         if (exact) RefreshIntervalMs = Math.Clamp((int)source.IntervalMs, 500, 1000);
         ApplyState(source);
         channel.Sequence = source.Sequence;
+        channel.IntervalMs = source.IntervalMs;
         channel.UpdatedAt = UpdatedAt = DateTimeOffset.UtcNow;
         channel.LastInputTimestamp = now;
         channel.Stale = false;
@@ -164,11 +169,17 @@ public sealed class DashboardSnapshot
     private void ApplyState(ChannelStatus source)
     {
         var channel = Channels[source.Id];
-        channel.State = source.State == "error" ? "error" : source.State;
+        channel.State = source.State;
+        channel.ChannelState = source.State switch
+        {
+            "closed" => 0, "starting" => 1, "ready" => 2, "configuring" => 3, "error" => 4,
+            _ => throw new ArgumentException("invalid channel state", nameof(source))
+        };
+        channel.CdcOpen = channel.ChannelState != 0;
         channel.UartMeasurementState = source.UartMeasurementState;
         channel.BaudRate = source.BaudRate;
-        channel.DataBits = source.DataBits;
-        channel.StopBits = source.StopBits;
+        channel.DataBits = source.BaudRate == 0 ? null : source.DataBits;
+        channel.StopBits = source.BaudRate == 0 ? null : source.StopBits;
         channel.Parity = source.Parity;
     }
 

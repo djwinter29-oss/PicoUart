@@ -174,6 +174,9 @@ host/python/.venv/bin/python -m pytest tests/tooling/test_dotnet_host.py
 ```
 
 These integration checks skip when `dotnet` is not on `PATH`; set `DOTNET_EXE` to another SDK executable if needed.
+The shared `/api/status` contract includes per-channel lifecycle, Input sequence/interval, nullable applied framing,
+and `overflow_counts` derived from explicitly fetched diagnostics (unknown entries are null). Board-action results
+are returned by action endpoints, not as a .NET-only `control` field in the status snapshot.
 
 ### Local .NET Publishing
 
