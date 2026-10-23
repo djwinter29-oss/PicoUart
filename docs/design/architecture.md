@@ -97,6 +97,8 @@ IRQ, and multicore timing require [hardware-in-the-loop testing](../tests/hil-fi
 - PIO UARTs support 8N1; hardware UARTs support the broader CDC line-coding set.
 - Aggregate throughput depends on USB full-speed bandwidth and host drain rate; see the
   [HIL fixture plan](../tests/hil-fixture-test-plan.md) for measured results and test limits.
+  For example, six full-duplex 3 Mbaud 8N1 streams require 3.6 MB/s of UART payload, beyond the 12 Mbit/s USB link
+  even before USB overhead; an accepted per-port baud setting is not an aggregate-throughput guarantee.
 - Flow control is disabled by default. HID reset is enabled by default and can be removed at build time; see the
   [CDC/HID overview](usb/cdc-hid-overview.md) for interface behavior.
 

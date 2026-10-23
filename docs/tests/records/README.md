@@ -51,6 +51,8 @@ establish functional or recovery coverage, and requested baud is not independent
 
 | Record | Recorded Result | Scope And Limitations |
 | --- | --- | --- |
+| [2026-10-23 UART/CDC review validation](2026-10-23-uart-cdc-review-validation.md) | Scoped development checks | Exact-image RP2040 refill comparisons, configuration isolation, overflow, session-loss, and watchdog checks. Candidates removed; RP2350/CTS/full-countdown qualification remains pending. |
+| [2026-10-23 Pico final acceptance](2026-10-23-174031Z-pico-125mhz-hil.md) | `PASS` | Ordinary reviewed image; four functional stages and six streams at 115200/460800, 60 seconds per rate, with current diagnostics and zero faults. Not long-duration qualification. |
 | [2026-10-08 Pico 2](2026-10-08-173102Z-pico2-hil.md) | `PARTIAL` | Performance only, above the current default sweep, at low achieved load. Its historical “supported rate” label is not a general baud-capability claim. |
 | [2026-10-08 Pico](2026-10-08-183203Z-pico-hil.md) | `FAIL` | Missing stream results and incomplete performance evidence; functional success does not override the overall failure. |
 | [2026-10-09 Pico](2026-10-09-070652Z-pico-hil.md) | `FAIL` | Failed concurrent sweep with final RX errors. Later rates followed failures, and per-rate health was not recorded. |
