@@ -25,6 +25,20 @@
 /** @brief Maximum attempts to acquire a coherent worker-owned telemetry snapshot. */
 #define UART_DRIVER_STATS_SNAPSHOT_ATTEMPTS 3u
 
+/** @brief Fixed per-port RX storage; only the DMA arrays carry ring-size alignment. */
+typedef union {
+    uint8_t hw[PICO_UART_HW_UART_RX_BUFFER_SIZE]
+        __attribute__((aligned(PICO_UART_HW_UART_RX_BUFFER_SIZE))); /**< Hardware UART DMA ring storage. */
+    uint8_t pio[PICO_UART_PIO_UART_RX_BUFFER_SIZE]
+        __attribute__((aligned(PICO_UART_PIO_UART_RX_BUFFER_SIZE))); /**< PIO UART DMA ring storage. */
+} uart_driver_rx_storage_t;
+
+/** @brief Lifetime RX storage, separate from unaligned runtime metadata and TX rings. */
+static uart_driver_rx_storage_t uart_driver_rx_storage[UART_PORT_COUNT];
+
+_Static_assert(_Alignof(uart_runtime_port_t) < _Alignof(uart_driver_rx_storage_t),
+               "Logical-port metadata must not inherit DMA ring alignment");
+
 /** @brief Driver-owned backend storage, lifecycle requests, and shared control/telemetry state. */
 typedef struct {
     uart_runtime_port_t ports[UART_PORT_COUNT];                /**< Backend storage and public metadata. */
@@ -211,7 +225,7 @@ static void uart_driver_service_channel_lifecycle(void)
         uart_driver_state.channel_start_pending[index] = false;
         spin_unlock(uart_driver_state.status_lock, save);
 
-        if ((port->ops == NULL) || (port->ops->reset_buffers == NULL)) {
+        if ((port->ops == NULL) || (port->ops->restart == NULL)) {
             lifecycle_ok = false;
         } else {
             uart_driver_begin_port_stats_update(port_id);
@@ -267,6 +281,10 @@ static void uart_driver_load_board_config(void)
         port->ops = uart_backend_ops_for_type(board_port->backend);
         if ((port->ops == NULL) || !port->ops->load_config(&port->backend, board_port)) {
             port->ops = NULL;
+        } else if (board_port->backend == UART_DRIVER_BACKEND_HW) {
+            port->backend.hw.rx_storage = uart_driver_rx_storage[index].hw;
+        } else {
+            port->backend.pio.rx_storage = uart_driver_rx_storage[index].pio;
         }
     }
 }

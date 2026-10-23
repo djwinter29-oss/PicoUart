@@ -317,7 +317,7 @@ bool uart_control_plane_start_port(uart_control_plane_t *control_plane, uart_por
     const uart_driver_line_coding_t *initial = taken ? &request.line_coding : &previous;
     bool started = (port->ops != NULL) && (!taken || request.port_id == (uint32_t)port_id) &&
                    uart_line_coding_is_valid(initial) && port->ops->line_coding_acceptable(initial) &&
-                   port->ops->set_line_coding(&port->backend, initial) && port->ops->reset_buffers(&port->backend);
+                   port->ops->set_line_coding(&port->backend, initial) && port->ops->restart(&port->backend);
     if (taken) {
         uart_control_plane_finish_worker_control(control_plane, port_id, request.control_generation, started,
                                                  started ? &request.line_coding : NULL);

@@ -9,11 +9,18 @@ and CTest; they do not exercise the TinyUSB device stack, live DMA IRQs, or phys
 - UART line-coding and topology policy
 - DMA progress, TXSTALL timing, and backend policy helpers
 - CDC soft-pending and control-ownership rules
+- Bridge partial/zero writes, wrapped spans, snapshot sequence changes, and overflow during retirement
+- HID ring-peak saturation at the version-1 report limit
+- Logical-port RX alignment, independent storage, and compact metadata layout
 - Hardware/PIO resource claim rollback
 - LED policy behavior
 
 The test source files are the detailed inventory. The production design notes are linked from the root
 [README](../../README.md).
+
+Shared Pico SDK test hooks use one storage definition in [pico_sdk_hooks.c](stubs/pico_sdk_hooks.c), linked into the
+native test targets by CMake. Keep hook declarations in stub headers as `extern`; weak header definitions do not
+provide portable shared hook storage across ELF and Windows COFF linkers.
 
 ## Run C Tests
 

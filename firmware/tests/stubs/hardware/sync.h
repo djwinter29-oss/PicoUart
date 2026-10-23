@@ -27,12 +27,10 @@ static inline void __dmb(void)
  * spin_unlock() runs -- e.g. "if the mailbox looks acked, ownership must
  * already be registered". Left `NULL` outside of tests that opt in.
  *
- * This header is included by many production `.c` files linked into many
- * separate host-test executables, so the storage is a weak definition here
- * rather than an `extern` declared elsewhere: every executable gets its own
- * merged copy without a dedicated stub source file or per-target wiring.
+ * Storage is defined once in pico_sdk_hooks.c so all translation units use
+ * the same hook on ELF and Windows COFF linkers.
  */
-__attribute__((weak)) void (*test_spin_unlock_hook)(void) = NULL;
+extern void (*test_spin_unlock_hook)(void);
 
 static inline uint32_t spin_lock_blocking(spin_lock_t *lock)
 {

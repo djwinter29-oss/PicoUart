@@ -146,7 +146,7 @@ static bool test_startup_set_line_coding(void *instance, const uart_driver_line_
     return true;
 }
 
-static bool test_startup_reset_buffers(void *instance)
+static bool test_startup_restart(void *instance)
 {
     size_t index = test_startup_port_index(instance);
     if (index >= UART_PORT_COUNT) {
@@ -205,7 +205,7 @@ const uart_backend_ops_t uart_backend_hw_ops = {
     .line_coding_matches = test_startup_line_coding_matches,
     .line_coding_acceptable = test_startup_line_coding_acceptable,
     .set_line_coding = test_startup_set_line_coding,
-    .reset_buffers = test_startup_reset_buffers,
+    .restart = test_startup_restart,
     .rx_snapshot_is_current = test_startup_rx_snapshot_is_current,
     .clear_rx_error_baseline = test_startup_clear_rx_error_baseline,
     .baud_rate = test_startup_baud_rate,
@@ -223,7 +223,7 @@ const uart_backend_ops_t uart_backend_pio_ops = {
     .line_coding_matches = test_startup_line_coding_matches,
     .line_coding_acceptable = test_startup_line_coding_acceptable,
     .set_line_coding = test_startup_set_line_coding,
-    .reset_buffers = test_startup_reset_buffers,
+    .restart = test_startup_restart,
     .rx_snapshot_is_current = test_startup_rx_snapshot_is_current,
     .clear_rx_error_baseline = test_startup_clear_rx_error_baseline,
     .baud_rate = test_startup_baud_rate,
@@ -260,7 +260,7 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
 bool uart_control_plane_start_port(uart_control_plane_t *control_plane, uart_port_id_t port_id)
 {
     uart_runtime_port_t *port = &control_plane->ports[port_id];
-    return port->ops->reset_buffers(&port->backend);
+    return port->ops->restart(&port->backend);
 }
 
 bool uart_control_plane_tx_launch_allowed(const uart_control_plane_t *control_plane, uart_port_id_t port_id)
@@ -543,6 +543,31 @@ void test_failed_channel_start_finishes_without_retrying_forever(void)
     test_reset_fails = false;
 }
 
+void test_rx_storage_is_distinct_aligned_and_does_not_pad_runtime_ports(void)
+{
+    TEST_ASSERT_TRUE(_Alignof(uart_runtime_port_t) < PICO_UART_HW_UART_RX_BUFFER_SIZE);
+    TEST_ASSERT_TRUE(sizeof(uart_runtime_port_t) <
+                     PICO_UART_HW_UART_TX_BUFFER_SIZE + PICO_UART_PIO_UART_TX_BUFFER_SIZE);
+    for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
+        uart_backend_instance_t *backend = test_startup_contexts[index];
+        uint8_t *storage = uart_board_ports[index].backend == UART_DRIVER_BACKEND_HW ?
+                           backend->hw.rx_storage : backend->pio.rx_storage;
+        size_t capacity = uart_board_ports[index].backend == UART_DRIVER_BACKEND_HW ?
+                          PICO_UART_HW_UART_RX_BUFFER_SIZE : PICO_UART_PIO_UART_RX_BUFFER_SIZE;
+        TEST_ASSERT_NOT_NULL(storage);
+        TEST_ASSERT_EQUAL_UINT(0u, (uintptr_t)storage % capacity);
+        for (size_t previous = 0u; previous < index; ++previous) {
+            uart_backend_instance_t *other = test_startup_contexts[previous];
+            uint8_t *other_storage = uart_board_ports[previous].backend == UART_DRIVER_BACKEND_HW ?
+                                     other->hw.rx_storage : other->pio.rx_storage;
+            size_t other_capacity = uart_board_ports[previous].backend == UART_DRIVER_BACKEND_HW ?
+                                    PICO_UART_HW_UART_RX_BUFFER_SIZE : PICO_UART_PIO_UART_RX_BUFFER_SIZE;
+            TEST_ASSERT_TRUE(((uintptr_t)storage + capacity <= (uintptr_t)other_storage) ||
+                             ((uintptr_t)other_storage + other_capacity <= (uintptr_t)storage));
+        }
+    }
+}
+
 void test_close_during_start_does_not_publish_ready(void)
 {
     uart_driver_port_stats_t stats;
@@ -649,6 +674,7 @@ int main(void)
     UNITY_BEGIN();
 #ifdef PICO_UART_CDC_INTEGRATION
     RUN_TEST(test_startup_rolls_back_partial_backend_init_and_retries);
+    RUN_TEST(test_rx_storage_is_distinct_aligned_and_does_not_pad_runtime_ports);
     RUN_TEST(test_integrated_start_publishes_matching_framing_before_rx);
     RUN_TEST(test_integrated_open_without_new_settings_uses_board_defaults);
     RUN_TEST(test_integrated_failed_start_and_reopen_without_new_line_coding);
@@ -659,6 +685,7 @@ int main(void)
     RUN_TEST(test_uart_driver_rejects_null_public_arguments);
     RUN_TEST(test_uart_driver_handles_valid_ports_before_initialization);
     RUN_TEST(test_startup_rolls_back_partial_backend_init_and_retries);
+    RUN_TEST(test_rx_storage_is_distinct_aligned_and_does_not_pad_runtime_ports);
     RUN_TEST(test_uart_driver_rejects_stats_from_stopped_backend);
     RUN_TEST(test_failed_channel_start_finishes_without_retrying_forever);
     RUN_TEST(test_close_during_start_does_not_publish_ready);

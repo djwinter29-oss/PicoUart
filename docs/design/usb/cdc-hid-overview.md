@@ -20,6 +20,10 @@ Each CDC port maps to one target-side UART channel. The GPIO pinout is defined i
 
 ## CDC Behavior
 
+Core 0 owns one state record per CDC interface: DTR and cumulative statistics, startup admission, deferred line coding,
+close-flush progress, and the partial-IN flush deadline. Session cleanup updates only transient fields; it does not
+zero the record or reset boot-lifetime counters. USB mount ownership and round-robin scheduling remain device-wide.
+
 CDC carries serial bytes and `SET_LINE_CODING` requests for the matching UART. DTR controls the per-channel backend
 lifecycle. On an open-to-closed transition, firmware clears that interface's CDC FIFOs and the UART worker
 deinitializes the backend; queued bytes are discarded while applied line coding and boot-lifetime counters are

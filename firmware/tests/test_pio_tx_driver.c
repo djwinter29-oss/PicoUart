@@ -17,6 +17,8 @@ static pio_test_dma_hw_t dma_registers;
 pio_test_dma_hw_t *dma_hw = &dma_registers;
 
 static pio_uart_driver_t driver;
+static uint8_t rx_storage[PICO_UART_PIO_UART_RX_BUFFER_SIZE]
+    __attribute__((aligned(PICO_UART_PIO_UART_RX_BUFFER_SIZE)));
 static const uart_driver_port_info_t port = {
     .id = UART_PORT_2, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u,
     .tx_pin = 8u, .rx_pin = 9u, .data_bits = 8u, .stop_bits = 1u, .parity = UART_DRIVER_PARITY_NONE,
@@ -508,6 +510,7 @@ void setUp(void)
     claimed_state_machines = 0u;
     claimed_dma_channels = 0u;
     memset(&driver, 0, sizeof(driver));
+    driver.rx_storage = rx_storage;
     memset(&pio_tx_test_pio0, 0, sizeof(pio_tx_test_pio0));
     memset(&dma_registers, 0, sizeof(dma_registers));
     memset(pio_uart_program_state, 0, sizeof(pio_uart_program_state));
@@ -521,7 +524,7 @@ void setUp(void)
     driver.initialized = true;
     driver.tx_dma_channel = 3;
     driver.rx_dma_channel = 2;
-    TEST_ASSERT_TRUE(ring_buffer_init(&driver.rx_ring, driver.rx_storage, sizeof(driver.rx_storage)));
+    TEST_ASSERT_TRUE(ring_buffer_init(&driver.rx_ring, driver.rx_storage, sizeof(rx_storage)));
     TEST_ASSERT_TRUE(ring_buffer_init(&driver.tx_ring, driver.tx_storage, sizeof(driver.tx_storage)));
     fifo_level = 0u;
     fifo_writes = 0u;

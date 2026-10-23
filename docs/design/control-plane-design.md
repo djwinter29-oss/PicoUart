@@ -62,6 +62,24 @@ bytes. Clear it only after all owners have completed; a newer reject must not un
 Mailbox acknowledgement releases the slot, not the worker's deferred apply. Backend reconfiguration can still be
 pending after the mailbox becomes empty.
 
+The owners below are independent, not mutually exclusive states: a newer request may wait while an older request is
+still worker-owned. The table describes transitions, not a replacement for the generation and locking rules.
+
+| Event | Ownership transition | Required ordering and result |
+| --- | --- | --- |
+| Valid CDC request | Core 0 retains soft-pending ownership | Publish the new generation and pending status; block new TX ingress. Closed ports defer without consuming the staging timeout. |
+| Mailbox submission | Soft-pending to mailbox ownership | Publish settings, generation, and captured TX boundary before releasing soft-pending ownership. |
+| Worker takes mailbox | Mailbox to worker ownership | Acknowledge and register worker ownership in one status-lock hold; never expose an ownerless pending interval. |
+| Deferred apply | Worker retains ownership | Drain the captured old-format TX boundary, require backend quiescence, and check the apply deadline before touching hardware. |
+| Completion or timeout | Release the completing owner only | Publish applied metadata on success; clear pending only when no owner remains. Update error status only for the current generation. |
+| Newer rejected request | Existing owners remain | Advance the generation and report error; an older valid apply may finish but cannot erase the newer error. |
+| DTR close or USB session loss | Invalidate old-session ownership | Stop ingress, quiesce USB, then let the worker stop the backend and cancel old work. Preserve newer reopened requests. |
+
+Native coverage lives in [control-plane tests](../../firmware/tests/test_control_plane.c),
+[CDC callback tests](../../firmware/tests/test_usb_cdc.c), and the real CDC/driver/control integration target in
+[facade tests](../../firmware/tests/test_uart_driver_facade.c). These inject handoff and lifecycle boundaries but do not
+simulate concurrent cores or physical USB reset timing.
+
 ## Generations and Stale Completions
 
 Each host control request increments a per-port generation. Completions carry the generation they belong to. A

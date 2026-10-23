@@ -41,6 +41,37 @@ these are host-observed round trips, not isolated UART wire latency. Retain defa
 show a clear benefit. Return to an uninstrumented image for final HIL; profiling is disabled by default and adds no
 HID protocol fields. See the [dated session/tuning check](../tests/records/2026-10-22-cdc-uart-session-validation.md).
 
+## Buffer Capacity Measurement
+
+Build each intended board with the normal firmware wrapper before comparing allocations. For each exact ELF, retain its
+SHA-256, build options, linker map, and these read-only measurements:
+
+```sh
+sha256sum build/firmware-pico/pico_uart.elf
+arm-none-eabi-size build/firmware-pico/pico_uart.elf
+arm-none-eabi-nm -S --size-sort build/firmware-pico/pico_uart.elf
+```
+
+Inspect `uart_driver_state`, `uart_driver_rx_storage`, `_cdcd_itf`, and `usb_cdc_ports` in the symbol list and map. With debug
+information, GDB `p sizeof(...)` can distinguish backend instance size, per-port stride, and enclosing state size.
+Include the separate RX storage symbol when comparing UART allocations; the runtime-state symbol alone excludes it.
+Do not equate the difference between ring payload and driver allocation with unused buffers: alignment padding,
+metadata, and backend-union layout all contribute. BSS and data totals also exclude stack growth and dynamic allocations;
+retain the memory-region and reserved-stack information from the map when assessing available headroom.
+
+For runtime evidence, use the [concurrent fixture plan](../tests/hil-fixture-test-plan.md) on the identified board and
+exact flashed image. Collect all six channels' peaks and dropped/error counters during the run, not just after close.
+HID's ring peak combines RX/TX and rounds to 16-byte blocks; it cannot establish independent RX, TX, or CDC FIFO peaks.
+Use authorized, non-halting SWD snapshots of the individual rings and CDC statistics when that distinction is needed.
+Peaks are boot-lifetime values, so use a fresh boot per workload rather than attributing an old maximum to a new rate.
+
+Include bounded host stalls and burst traffic, not only the USB-paced write/read workload. At 8N1, an RX capacity of
+`N` bytes holds at most `N * 10 / baud` seconds of continuous input before accounting for existing occupancy and service
+delay. A low peak in a paced test therefore does not establish safe stall tolerance. Preserve capacities, RX DMA
+power-of-two/alignment constraints, bridge snapshot checks, and fairness bounds until representative measurements
+justify a smaller allocation. The existing [tuning record](../tests/records/2026-10-22-cdc-uart-session-validation.md)
+supports retaining the current scheduling defaults; it does not qualify reduced buffers.
+
 ## CI And Hardware Scope
 
 CI validates host behavior and firmware builds. It has no physical board or wiring fixture and cannot prove UART

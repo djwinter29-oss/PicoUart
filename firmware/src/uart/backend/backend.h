@@ -16,8 +16,8 @@
  * @brief Transport counters reported by one UART backend.
  */
 typedef struct {
-    uint32_t uart_tx_bytes; /**< Bytes transmitted by the UART backend. */
-    uint32_t uart_rx_bytes; /**< Bytes received by the UART backend. */
+    uint32_t uart_tx_bytes; /**< Bytes handed to the UART peripheral/FIFO, not wire completion. */
+    uint32_t uart_rx_bytes; /**< DMA-received bytes published into the RX ring. */
     uint32_t rx_error_count;      /**< Receive-status errors observed by the backend. */
 } uart_backend_stats_t;
 
@@ -48,7 +48,7 @@ typedef struct {
     bool (*line_coding_acceptable)(const uart_driver_line_coding_t *line_coding); /**< Check permanent support. */
     bool (*set_line_coding)(void *instance,
                             const uart_driver_line_coding_t *line_coding); /**< Stage stopped settings or safely apply. */
-    bool (*reset_buffers)(void *instance);              /**< Restart one channel and discard its queued bytes. */
+    bool (*restart)(void *instance);              /**< Restart one channel and discard its queued bytes. */
     bool (*rx_snapshot_is_current)(const void *instance,
                                    uint32_t consumer_sequence);             /**< Validate a copied RX span. */
     void (*clear_rx_error_baseline)(void *instance);     /**< Discard startup RX errors. */
@@ -67,7 +67,7 @@ static inline bool uart_backend_ops_is_complete(const uart_backend_ops_t *ops)
            (ops->init != NULL) && (ops->deinit != NULL) &&
            (ops->poll != NULL) && (ops->rx_ring != NULL) && (ops->tx_ring != NULL) &&
            (ops->line_coding_matches != NULL) && (ops->line_coding_acceptable != NULL) &&
-           (ops->set_line_coding != NULL) && (ops->reset_buffers != NULL) &&
+           (ops->set_line_coding != NULL) && (ops->restart != NULL) &&
            (ops->rx_snapshot_is_current != NULL) &&
            (ops->clear_rx_error_baseline != NULL) && (ops->baud_rate != NULL) && (ops->stats != NULL);
 }

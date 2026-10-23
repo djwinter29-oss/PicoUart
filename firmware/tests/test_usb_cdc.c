@@ -24,6 +24,10 @@ static bool request_queued;
 static uint32_t queued_generation;
 static uart_driver_line_coding_t queued_coding;
 static uint32_t rx_bridge_calls;
+static uint32_t drain_bytes[UART_PORT_COUNT];
+static uint32_t flush_calls[UART_PORT_COUNT];
+static uint32_t read_flush_calls[UART_PORT_COUNT];
+static bool write_clear_ready[UART_PORT_COUNT];
 
 void tusb_init(void) {}
 bool tud_disconnect(void) { return true; }
@@ -34,12 +38,12 @@ bool tud_mounted(void) { return mounted; }
 uint32_t tud_cdc_n_available(uint8_t itf) { (void)itf; return 0u; }
 uint32_t tud_cdc_n_read(uint8_t itf, void *buffer, uint32_t length)
 { (void)itf; (void)buffer; (void)length; return 0u; }
-void tud_cdc_n_read_flush(uint8_t itf) { (void)itf; }
+void tud_cdc_n_read_flush(uint8_t itf) { ++read_flush_calls[itf]; }
 uint32_t tud_cdc_n_write(uint8_t itf, const void *buffer, uint32_t length)
-{ (void)itf; (void)buffer; (void)length; return 0u; }
+{ (void)itf; (void)buffer; return length; }
 uint32_t tud_cdc_n_write_available(uint8_t itf) { (void)itf; return 64u; }
-uint32_t tud_cdc_n_write_flush(uint8_t itf) { (void)itf; return 0u; }
-bool tud_cdc_n_write_clear(uint8_t itf) { (void)itf; return true; }
+uint32_t tud_cdc_n_write_flush(uint8_t itf) { ++flush_calls[itf]; return 0u; }
+bool tud_cdc_n_write_clear(uint8_t itf) { return write_clear_ready[itf]; }
 void service_load_note(unsigned int core) { TEST_ASSERT_EQUAL_UINT(0u, core); }
 void usb_hid_reset_host_state(void) {}
 
@@ -104,7 +108,15 @@ size_t uart_driver_fill_tx(uart_port_id_t port, size_t capacity,
 { (void)port; (void)capacity; (void)reader; (void)context; return 0u; }
 size_t uart_driver_drain_rx(uart_port_id_t port, size_t capacity,
                             uint32_t (*writer)(void *, const uint8_t *, uint32_t), void *context)
-{ (void)port; (void)capacity; (void)writer; (void)context; ++rx_bridge_calls; return 0u; }
+{
+    uint8_t data[64] = {0};
+    uint32_t length = drain_bytes[port];
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(sizeof(data), length);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(capacity, length);
+    drain_bytes[port] = 0u;
+    ++rx_bridge_calls;
+    return length != 0u ? writer(context, data, length) : 0u;
+}
 size_t uart_driver_recover_rx(uart_port_id_t port) { (void)port; return 0u; }
 
 static void request_baud(uint32_t baud)
@@ -135,6 +147,12 @@ void setUp(void)
     accept_request = true;
     request_queued = false;
     rx_bridge_calls = 0u;
+    memset(drain_bytes, 0, sizeof(drain_bytes));
+    memset(flush_calls, 0, sizeof(flush_calls));
+    memset(read_flush_calls, 0, sizeof(read_flush_calls));
+    for (size_t port = 0u; port < UART_PORT_COUNT; ++port) {
+        write_clear_ready[port] = true;
+    }
     pico_test_time_us = 0;
     mounted = true;
     tud_mount_cb();
@@ -320,9 +338,70 @@ void test_rejected_initial_replacement_does_not_strand_staged_mailbox(void)
     TEST_ASSERT_EQUAL_UINT32(1u, rx_bridge_calls);
 }
 
+void test_port_flush_deadlines_and_close_are_independent(void)
+{
+    usb_cdc_port_stats_t stats;
+    uint32_t initial_tx_bytes[2];
+    for (uint8_t itf = 0u; itf < 2u; ++itf) {
+        TEST_ASSERT_TRUE(usb_cdc_port_stats(itf, &stats));
+        initial_tx_bytes[itf] = stats.tx_bytes;
+    }
+    open_ready();
+    tud_cdc_line_state_cb(1u, true, false);
+    usb_cdc_poll();
+    ready[1] = true;
+    usb_cdc_poll();
+    drain_bytes[0] = 3u;
+    usb_cdc_poll();
+    pico_test_time_us = 500;
+    drain_bytes[1] = 5u;
+    usb_cdc_poll();
+    pico_test_time_us = 1000;
+    usb_cdc_poll();
+    TEST_ASSERT_EQUAL_UINT32(1u, flush_calls[0]);
+    TEST_ASSERT_EQUAL_UINT32(0u, flush_calls[1]);
+
+    drain_bytes[0] = 2u;
+    usb_cdc_poll();
+    tud_cdc_line_state_cb(0u, false, false);
+    usb_cdc_poll();
+    pico_test_time_us = 2000;
+    usb_cdc_poll();
+    TEST_ASSERT_EQUAL_UINT32(1u, flush_calls[0]);
+    TEST_ASSERT_EQUAL_UINT32(1u, flush_calls[1]);
+    TEST_ASSERT_TRUE(usb_cdc_port_stats(0u, &stats));
+    TEST_ASSERT_FALSE(stats.opened);
+    TEST_ASSERT_EQUAL_UINT32(initial_tx_bytes[0] + 5u, stats.tx_bytes);
+    TEST_ASSERT_TRUE(usb_cdc_port_stats(1u, &stats));
+    TEST_ASSERT_TRUE(stats.opened);
+    TEST_ASSERT_EQUAL_UINT32(initial_tx_bytes[1] + 5u, stats.tx_bytes);
+    usb_cdc_reset_host_state();
+    TEST_ASSERT_TRUE(usb_cdc_port_stats(1u, &stats));
+    TEST_ASSERT_FALSE(stats.opened);
+    TEST_ASSERT_EQUAL_UINT32(initial_tx_bytes[1] + 5u, stats.tx_bytes);
+}
+
+void test_close_flushes_rx_once_while_waiting_for_usb_quiescence(void)
+{
+    open_ready();
+    read_flush_calls[0] = 0u;
+    write_clear_ready[0] = false;
+    tud_cdc_line_state_cb(0u, false, false);
+    usb_cdc_poll();
+    usb_cdc_poll();
+    TEST_ASSERT_EQUAL_UINT32(1u, read_flush_calls[0]);
+    TEST_ASSERT_FALSE(quiesced[0]);
+    write_clear_ready[0] = true;
+    usb_cdc_poll();
+    TEST_ASSERT_EQUAL_UINT32(1u, read_flush_calls[0]);
+    TEST_ASSERT_TRUE(quiesced[0]);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_port_flush_deadlines_and_close_are_independent);
+    RUN_TEST(test_close_flushes_rx_once_while_waiting_for_usb_quiescence);
     RUN_TEST(test_rejected_initial_replacement_does_not_strand_staged_mailbox);
     RUN_TEST(test_initial_settings_gate_rx_until_worker_completion);
     RUN_TEST(test_live_configuration_keeps_rx_draining);

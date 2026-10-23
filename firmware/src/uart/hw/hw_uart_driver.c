@@ -22,9 +22,6 @@
 
 #include <stddef.h>
 
-_Static_assert((offsetof(hw_uart_driver_t, rx_storage) % PICO_UART_HW_UART_RX_BUFFER_SIZE) == 0u,
-               "HW RX DMA ring storage must be size-aligned for channel_config_set_ring");
-
 /** @brief Shared DMA IRQ used for HW UART RX transfer-count re-arm. */
 #define HW_UART_DRIVER_RX_DMA_IRQ_INDEX 0
 /** @brief Target maximum wire time represented by one TX DMA launch. */
@@ -447,7 +444,8 @@ bool hw_uart_driver_start(void *context)
 {
     hw_uart_driver_t *driver = context;
     if ((driver == NULL) || (driver->config == NULL) || (driver->config->port == NULL) ||
-        (driver->config->instance == NULL)) {
+        (driver->config->instance == NULL) || (driver->rx_storage == NULL) ||
+        (((uintptr_t)driver->rx_storage % PICO_UART_HW_UART_RX_BUFFER_SIZE) != 0u)) {
         return false;
     }
 
@@ -466,7 +464,7 @@ bool hw_uart_driver_start(void *context)
     driver->rx_dma_last_progress = 0u;
 
     if ((driver->rx_ring.storage == NULL) &&
-        !ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
+        !ring_buffer_init(&driver->rx_ring, driver->rx_storage, PICO_UART_HW_UART_RX_BUFFER_SIZE)) {
         return false;
     }
 
@@ -536,7 +534,7 @@ void hw_uart_driver_deinit(void *context)
     driver->initialized = false;
 }
 
-bool hw_uart_driver_reset_buffers(void *context)
+bool hw_uart_driver_restart(void *context)
 {
     hw_uart_driver_t *driver = context;
 

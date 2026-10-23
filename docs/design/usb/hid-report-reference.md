@@ -337,7 +337,7 @@ The six reports are not an atomic board-wide snapshot, and their sequences or in
 | 1 | 2 | `sequence` | Per-channel publication sequence, modulo 65536. |
 | 3 | 4 | `interval_ms` | Elapsed milliseconds since this channel's preceding accepted Input publication; saturates at `UINT32_MAX`. |
 | 7 | 1 | `health` | Driver, CDC-open, backend, and historical RX flags. |
-| 8 | 1 | `ring_high_watermark_blocks` | Largest RX/TX ring occupancy, rounded up to 16-byte blocks. |
+| 8 | 1 | `ring_high_watermark_blocks` | Largest RX/TX ring occupancy, rounded up to 16-byte blocks; saturates at 255 (4080 bytes or more). |
 | 9 | 4 | `uart_tx_bytes` | Low 32 bits of UART TX bytes since MCU boot; wraps modulo $2^{32}$. |
 | 13 | 4 | `uart_rx_bytes` | Low 32 bits of valid UART RX bytes since MCU boot; wraps modulo $2^{32}$. |
 | 17 | 4 | `cdc_tx_bytes` | Low 32 bits of device-to-host CDC bytes since MCU boot; wraps modulo $2^{32}$. |
@@ -356,6 +356,14 @@ The six reports are not an atomic board-wide snapshot, and their sequences or in
 
 No signature or channel-number field is needed: report type, ID, length, and version identify the payload.
 Applied framing fields are meaningful only when baud is nonzero; unavailable framing fields are zero.
+
+Traffic counters measure handoffs, not end-to-end delivery acknowledgements. `cdc_rx_bytes` counts bytes consumed from
+TinyUSB into the UART TX ring; `cdc_tx_bytes` counts UART RX bytes accepted by TinyUSB, not confirmed host receipt.
+`uart_tx_bytes` counts bytes handed to the UART peripheral/FIFO: hardware UART and PIO DMA paths account at DMA
+completion, while PIO polling accounts at FIFO writes. Neither means the last stop bit has left the TX pin.
+`uart_rx_bytes` counts DMA-received bytes published into the RX ring, including bytes subsequently lost to ring overflow.
+Close, reset, or disconnect can discard queued bytes after a handoff was counted. Use payload verification and fault
+counters alongside traffic counters; equality between counters is not a delivery guarantee.
 
 ### Snapshot Consistency
 

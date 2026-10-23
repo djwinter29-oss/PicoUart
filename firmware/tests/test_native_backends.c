@@ -81,7 +81,7 @@ void pio_uart_driver_deinit(void *context)
     TEST_FAIL_MESSAGE("unexpected PIO deinitialization");
 }
 
-bool hw_uart_driver_reset_buffers(void *context)
+bool hw_uart_driver_restart(void *context)
 {
     if (context == NULL) {
         return false;
@@ -90,7 +90,7 @@ bool hw_uart_driver_reset_buffers(void *context)
     return false;
 }
 
-bool pio_uart_driver_reset_buffers(void *context)
+bool pio_uart_driver_restart(void *context)
 {
     if (context == NULL) {
         return false;
@@ -340,7 +340,7 @@ void test_null_api_inputs_return_neutral_results_without_hardware_access(void)
         TEST_ASSERT_FALSE(ops->line_coding_acceptable(NULL));
         TEST_ASSERT_FALSE(ops->set_line_coding(NULL, &request));
         TEST_ASSERT_FALSE(ops->set_line_coding(NULL, NULL));
-        TEST_ASSERT_FALSE(ops->reset_buffers(NULL));
+        TEST_ASSERT_FALSE(ops->restart(NULL));
     }
     hardware.initialized = true;
     pio.initialized = true;

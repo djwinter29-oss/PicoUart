@@ -254,6 +254,30 @@ static void test_control_and_telemetry_layout_lengths(void)
     TEST_ASSERT_EQUAL_UINT16(0u, get_report(3u, HID_REPORT_TYPE_INPUT, payload));
 }
 
+static void test_ring_watermark_encoding_saturates_at_wire_limit(void)
+{
+    const uint16_t peaks[] = {0u, 1u, 4080u, 4081u, 4095u, 4096u, UINT16_MAX};
+    const uint8_t expected[] = {0u, 1u, 255u, 255u, 255u, 255u, 255u};
+    uint8_t payload[64];
+
+    for (size_t index = 0u; index < sizeof(peaks) / sizeof(peaks[0]); ++index) {
+        port_stats[0].rx_ring_high_watermark = peaks[index];
+        port_stats[0].tx_ring_high_watermark = 0u;
+        TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_FEATURE, payload));
+        TEST_ASSERT_EQUAL_UINT8(expected[index], payload[8]);
+        port_stats[0].rx_ring_high_watermark = 0u;
+        port_stats[0].tx_ring_high_watermark = peaks[index];
+        TEST_ASSERT_EQUAL_UINT16(54u, get_report(10u, HID_REPORT_TYPE_INPUT, payload));
+        TEST_ASSERT_EQUAL_UINT8(expected[index], payload[8]);
+    }
+    endpoint_ready = true;
+    pico_test_time_us = 1000000;
+    usb_hid_poll();
+    TEST_ASSERT_EQUAL_UINT(1u, accepted_reports);
+    TEST_ASSERT_EQUAL_UINT8(10u, accepted_report_id);
+    TEST_ASSERT_EQUAL_UINT8(UINT8_MAX, accepted_payload[8]);
+}
+
 static void test_channel_feature_and_input_reads_are_non_consuming(void)
 {
     uint8_t feature[64];
@@ -467,6 +491,7 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_device_information_exact_63_byte_payload);
     RUN_TEST(test_control_and_telemetry_layout_lengths);
+    RUN_TEST(test_ring_watermark_encoding_saturates_at_wire_limit);
     RUN_TEST(test_channel_feature_and_input_reads_are_non_consuming);
     RUN_TEST(test_channel_publication_commits_independent_sequence_and_baseline);
     RUN_TEST(test_boot_counter_wraps_on_wire);

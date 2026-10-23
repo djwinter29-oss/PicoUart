@@ -41,12 +41,6 @@ typedef struct {
     uart_driver_line_coding_t line_coding; /**< Latest requested UART settings. */
 } usb_cdc_pending_line_coding_t;
 
-/** @brief Per-port host line-coding requests waiting for the worker mailbox. */
-static usb_cdc_pending_line_coding_t usb_cdc_line_coding_pending[USB_CDC_PORT_COUNT];
-/** @brief Per-port host-side CDC transport state. */
-static usb_cdc_port_stats_t usb_cdc_stats[USB_CDC_PORT_COUNT];
-/** @brief True after the RX FIFO was cleared for the current DTR-close reset. */
-static bool usb_cdc_reset_rx_flushed[USB_CDC_PORT_COUNT];
 /** @brief Interface serviced first on the next bounded CDC bridge pass. */
 static uint8_t usb_cdc_poll_start_itf;
 /** @brief True while the current TinyUSB configuration owns the CDC session state. */
@@ -59,11 +53,19 @@ typedef enum {
     USB_CDC_RUNNING,          /**< Initial configuration is complete; live RX draining is permitted. */
 } usb_cdc_admission_t;
 
-static usb_cdc_admission_t usb_cdc_admission[USB_CDC_PORT_COUNT];
-/** @brief True when a partial CDC IN buffer is waiting for its latency deadline. */
-static bool usb_cdc_tx_flush_pending[USB_CDC_PORT_COUNT];
-/** @brief Flush deadlines for partial CDC IN buffers. */
-static absolute_time_t usb_cdc_tx_flush_deadline[USB_CDC_PORT_COUNT];
+/** @brief Core-0-owned transport and control state for one CDC interface. */
+typedef struct {
+    usb_cdc_pending_line_coding_t line_coding; /**< Host request waiting for the worker mailbox. */
+    usb_cdc_port_stats_t stats;               /**< DTR state and boot-lifetime transport counters. */
+    absolute_time_t tx_flush_deadline;        /**< Deadline for flushing a partial CDC IN buffer. */
+    usb_cdc_admission_t admission;            /**< Startup admission for the current DTR-open session. */
+    bool reset_rx_flushed;                    /**< RX FIFO cleared for the current DTR-close reset. */
+    bool tx_flush_pending;                    /**< Partial CDC IN buffer awaiting its flush deadline. */
+} usb_cdc_port_t;
+
+/** @brief Independent state for the six CDC interfaces; session reset preserves counters. */
+static usb_cdc_port_t usb_cdc_ports[USB_CDC_PORT_COUNT];
+
 static void usb_cdc_update_high_watermark(uint16_t *high_watermark, uint32_t occupancy)
 {
     if (occupancy > *high_watermark) {
@@ -73,7 +75,7 @@ static void usb_cdc_update_high_watermark(uint16_t *high_watermark, uint32_t occ
 
 static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_t *line_coding)
 {
-    usb_cdc_pending_line_coding_t *pending = &usb_cdc_line_coding_pending[itf];
+    usb_cdc_pending_line_coding_t *pending = &usb_cdc_ports[itf].line_coding;
     bool was_pending = pending->pending;
     bool same_request = was_pending && (pending->line_coding.baud_rate == line_coding->baud_rate) &&
                         (pending->line_coding.data_bits == line_coding->data_bits) &&
@@ -102,9 +104,9 @@ static void usb_cdc_reject_line_coding(uint8_t itf)
 
 static void usb_cdc_apply_pending_line_coding(uint8_t itf)
 {
-    usb_cdc_pending_line_coding_t *pending = &usb_cdc_line_coding_pending[itf];
+    usb_cdc_pending_line_coding_t *pending = &usb_cdc_ports[itf].line_coding;
 
-    if (!pending->pending || ((usb_cdc_admission[itf] != USB_CDC_START_PENDING) &&
+    if (!pending->pending || ((usb_cdc_ports[itf].admission != USB_CDC_START_PENDING) &&
                              !uart_driver_port_is_ready((uart_port_id_t)itf))) {
         return;
     }
@@ -144,7 +146,7 @@ static void usb_cdc_bridge_usb_to_uart(uint8_t itf)
     uint32_t available;
 
     available = tud_cdc_n_available(itf);
-    usb_cdc_update_high_watermark(&usb_cdc_stats[itf].rx_fifo_high_watermark, available);
+    usb_cdc_update_high_watermark(&usb_cdc_ports[itf].stats.rx_fifo_high_watermark, available);
     if (available != 0u) {
         if (available > PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET) {
             available = PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET;
@@ -154,7 +156,7 @@ static void usb_cdc_bridge_usb_to_uart(uint8_t itf)
 
         if (drained != 0u) {
             service_load_note(0u);
-            usb_cdc_stats[itf].rx_bytes += (uint32_t)drained;
+            usb_cdc_ports[itf].stats.rx_bytes += (uint32_t)drained;
         }
     }
 }
@@ -167,10 +169,10 @@ static uint32_t usb_cdc_usb_writer(void *context, const uint8_t *data, uint32_t 
 
 static void usb_cdc_flush_if_due(uint8_t itf)
 {
-    if (usb_cdc_tx_flush_pending[itf] && time_reached(usb_cdc_tx_flush_deadline[itf])) {
+    if (usb_cdc_ports[itf].tx_flush_pending && time_reached(usb_cdc_ports[itf].tx_flush_deadline)) {
         service_load_note(0u);
         tud_cdc_n_write_flush(itf);
-        usb_cdc_tx_flush_pending[itf] = false;
+        usb_cdc_ports[itf].tx_flush_pending = false;
     }
 }
 
@@ -181,7 +183,7 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
 
     usb_cdc_flush_if_due(itf);
     writable = tud_cdc_n_write_available(itf);
-    usb_cdc_update_high_watermark(&usb_cdc_stats[itf].tx_fifo_high_watermark,
+    usb_cdc_update_high_watermark(&usb_cdc_ports[itf].stats.tx_fifo_high_watermark,
                                   PICO_UART_USB_CDC_TX_BUFFER_SIZE - writable);
 
     if (writable == 0u) {
@@ -199,15 +201,15 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
     written = uart_driver_drain_rx((uart_port_id_t)itf, writable, usb_cdc_usb_writer, &itf);
     if (written != 0u) {
         service_load_note(0u);
-        usb_cdc_stats[itf].tx_bytes += (uint32_t)written;
-        if (!usb_cdc_tx_flush_pending[itf]) {
-            usb_cdc_tx_flush_deadline[itf] = make_timeout_time_us(USB_CDC_FLUSH_LATENCY_US);
+        usb_cdc_ports[itf].stats.tx_bytes += (uint32_t)written;
+        if (!usb_cdc_ports[itf].tx_flush_pending) {
+            usb_cdc_ports[itf].tx_flush_deadline = make_timeout_time_us(USB_CDC_FLUSH_LATENCY_US);
         }
-        usb_cdc_tx_flush_pending[itf] = true;
+        usb_cdc_ports[itf].tx_flush_pending = true;
 
         if ((written >= PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET) || (tud_cdc_n_write_available(itf) == 0u)) {
             tud_cdc_n_write_flush(itf);
-            usb_cdc_tx_flush_pending[itf] = false;
+            usb_cdc_ports[itf].tx_flush_pending = false;
         }
     }
 }
@@ -216,8 +218,8 @@ void usb_cdc_init(void)
 {
     usb_cdc_poll_start_itf = 0u;
     for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
-        usb_cdc_tx_flush_pending[itf] = false;
-        usb_cdc_tx_flush_deadline[itf] = nil_time;
+        usb_cdc_ports[itf].tx_flush_pending = false;
+        usb_cdc_ports[itf].tx_flush_deadline = nil_time;
     }
     tusb_init();
 
@@ -235,18 +237,19 @@ void usb_cdc_init(void)
 void usb_cdc_reset_host_state(void)
 {
     for (uint8_t itf = 0u; itf < USB_CDC_PORT_COUNT; ++itf) {
-        if (usb_cdc_stats[itf].opened) {
+        usb_cdc_port_t *port = &usb_cdc_ports[itf];
+        if (port->stats.opened) {
             (void)uart_driver_request_channel_stop((uart_port_id_t)itf);
         }
         if (uart_driver_channel_stop_pending((uart_port_id_t)itf)) {
             uart_driver_channel_stop_usb_quiesced((uart_port_id_t)itf);
         }
-        usb_cdc_stats[itf].opened = false;
-        usb_cdc_admission[itf] = USB_CDC_START_PENDING;
-        usb_cdc_line_coding_pending[itf].pending = false;
-        usb_cdc_line_coding_pending[itf].deadline = nil_time;
-        usb_cdc_tx_flush_pending[itf] = false;
-        usb_cdc_tx_flush_deadline[itf] = nil_time;
+        port->stats.opened = false;
+        port->admission = USB_CDC_START_PENDING;
+        port->line_coding.pending = false;
+        port->line_coding.deadline = nil_time;
+        port->tx_flush_pending = false;
+        port->tx_flush_deadline = nil_time;
         uart_driver_reset_soft_pending((uart_port_id_t)itf);
     }
 }
@@ -283,12 +286,13 @@ void usb_cdc_poll(void)
 
     for (uint8_t offset = 0u; offset < USB_CDC_PORT_COUNT; ++offset) {
         uint8_t itf = (uint8_t)((start_itf + offset) % USB_CDC_PORT_COUNT);
+        usb_cdc_port_t *port = &usb_cdc_ports[itf];
 
         if (uart_driver_channel_stop_pending((uart_port_id_t)itf)) {
             if (!uart_driver_channel_stop_is_quiesced((uart_port_id_t)itf)) {
-                if (!usb_cdc_reset_rx_flushed[itf]) {
+                if (!port->reset_rx_flushed) {
                     tud_cdc_n_read_flush(itf);
-                    usb_cdc_reset_rx_flushed[itf] = true;
+                    port->reset_rx_flushed = true;
                 }
                 if (tud_cdc_n_write_clear(itf)) {
                     uart_driver_channel_stop_usb_quiesced((uart_port_id_t)itf);
@@ -297,34 +301,34 @@ void usb_cdc_poll(void)
             continue;
         }
 
-        if (!usb_cdc_stats[itf].opened) {
+        if (!port->stats.opened) {
             tud_cdc_n_read_flush(itf);
             continue;
         }
 
-        if (usb_cdc_admission[itf] == USB_CDC_START_PENDING) {
+        if (port->admission == USB_CDC_START_PENDING) {
             usb_cdc_apply_pending_line_coding(itf);
-            if (usb_cdc_line_coding_pending[itf].pending) {
+            if (port->line_coding.pending) {
                 continue;
             }
             if (!uart_driver_request_channel_start((uart_port_id_t)itf)) {
                 uart_driver_report_control_error((uart_port_id_t)itf);
                 continue;
             }
-            usb_cdc_admission[itf] = USB_CDC_STARTING;
+            port->admission = USB_CDC_STARTING;
         }
 
         if (!uart_driver_port_is_ready((uart_port_id_t)itf)) {
             continue;
         }
         usb_cdc_apply_pending_line_coding(itf);
-        if (usb_cdc_admission[itf] == USB_CDC_STARTING) {
+        if (port->admission == USB_CDC_STARTING) {
             if (uart_driver_port_status((uart_port_id_t)itf) &
                 (UART_DRIVER_PORT_STATUS_CONTROL_PENDING | UART_DRIVER_PORT_STATUS_CONTROL_ERROR |
                  UART_DRIVER_PORT_STATUS_INIT_FAILED)) {
                 continue;
             }
-            usb_cdc_admission[itf] = USB_CDC_RUNNING;
+            port->admission = USB_CDC_RUNNING;
         }
 
         usb_cdc_bridge_usb_to_uart(itf);
@@ -346,21 +350,22 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
     (void)rts;
 
     if (itf < USB_CDC_PORT_COUNT) {
-        was_open = usb_cdc_stats[itf].opened;
+        usb_cdc_port_t *port = &usb_cdc_ports[itf];
+        was_open = port->stats.opened;
         if (usb_cdc_dtr_close_should_stop_channel(was_open, dtr)) {
-            usb_cdc_admission[itf] = USB_CDC_START_PENDING;
-            usb_cdc_line_coding_pending[itf].pending = false;
-            usb_cdc_line_coding_pending[itf].deadline = nil_time;
-            usb_cdc_tx_flush_pending[itf] = false;
-            usb_cdc_tx_flush_deadline[itf] = nil_time;
+            port->admission = USB_CDC_START_PENDING;
+            port->line_coding.pending = false;
+            port->line_coding.deadline = nil_time;
+            port->tx_flush_pending = false;
+            port->tx_flush_deadline = nil_time;
             uart_driver_reset_soft_pending((uart_port_id_t)itf);
             if (uart_driver_request_channel_stop((uart_port_id_t)itf)) {
-                usb_cdc_reset_rx_flushed[itf] = false;
+                port->reset_rx_flushed = false;
             }
         } else if (!was_open && dtr) {
-            usb_cdc_admission[itf] = USB_CDC_START_PENDING;
+            port->admission = USB_CDC_START_PENDING;
         }
-        usb_cdc_stats[itf].opened = dtr;
+        port->stats.opened = dtr;
     }
 }
 
@@ -401,6 +406,6 @@ bool usb_cdc_port_stats(uint8_t itf, usb_cdc_port_stats_t *stats)
         return false;
     }
 
-    *stats = usb_cdc_stats[itf];
+    *stats = usb_cdc_ports[itf].stats;
     return true;
 }

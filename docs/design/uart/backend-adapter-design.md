@@ -47,6 +47,11 @@ Static topology is checked by host tests; peripheral initialization and DMA/stat
 Startup is all-or-nothing: if any configured backend fails, initialized backends are rolled back and the worker does not
 start. Runtime operations reject unavailable backends rather than accessing partially initialized state.
 
+The logical-port owner supplies fixed aligned RX storage with the same lifetime as the backend. Its allocation is
+separate from runtime metadata to avoid propagating DMA alignment through backend and port structs; the
+[ring-buffer design](ring-buffer-design.md#capacity) owns the storage contract. The `restart` operation stops and starts
+hardware and discards queued bytes; it is not just a software-buffer clear.
+
 Each DTR-open start seeds the complete initial baud/framing from its mailbox request, or from the last successfully
 applied metadata when no request is queued. Failed startup does not change applied metadata. A later retry reseeds all
 fields rather than inheriting unpublished settings left in the stopped backend; reported framing must match hardware

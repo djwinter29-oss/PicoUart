@@ -409,7 +409,8 @@ static void usb_hid_build_channel(uint8_t channel, uint8_t payload[USB_HID_CHANN
     payload[7] = (uint8_t)((driver_status & 0x0fu) | (cdc->opened ? USB_HID_CHANNEL_STATUS_CDC_OPEN : 0u) |
                            ((info.backend == UART_DRIVER_BACKEND_PIO) ? USB_HID_CHANNEL_STATUS_PIO_BACKEND : 0u) |
                            (history->health & 0xc0u));
-    payload[8] = (uint8_t)((ring_high_watermark + 15u) / 16u);
+    const uint32_t ring_blocks = (ring_high_watermark + 15u) / 16u;
+    payload[8] = ring_blocks > UINT8_MAX ? UINT8_MAX : (uint8_t)ring_blocks;
     for (size_t counter = 0u; counter < 4u; ++counter) {
         usb_hid_write_u32(payload + 9u + (4u * counter), (uint32_t)traffic->total[counter]);
     }

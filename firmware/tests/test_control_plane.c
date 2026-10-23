@@ -118,7 +118,7 @@ static bool test_start_backend(void *instance)
 }
 
 static const uart_backend_ops_t test_backend_ops = {
-    .reset_buffers = test_start_backend,
+    .restart = test_start_backend,
     .is_initialized = test_is_initialized,
     .tx_ring = test_tx_ring_for_backend,
     .line_coding_matches = test_line_coding_matches,

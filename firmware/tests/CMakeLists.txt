@@ -17,6 +17,8 @@ target_include_directories(unity PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/unity
 )
 
+add_library(pico_sdk_hooks STATIC stubs/pico_sdk_hooks.c)
+
 set(PICO_UART_HOST_TEST_TARGETS)
 
 function(pico_uart_add_unity_test target test_name)
@@ -24,7 +26,7 @@ function(pico_uart_add_unity_test target test_name)
     target_include_directories(${target} PRIVATE
         ${FIRMWARE_ROOT}/src
     )
-    target_link_libraries(${target} PRIVATE unity)
+    target_link_libraries(${target} PRIVATE unity pico_sdk_hooks)
     add_test(NAME ${test_name} COMMAND ${target})
     list(APPEND PICO_UART_HOST_TEST_TARGETS ${target})
     set(PICO_UART_HOST_TEST_TARGETS ${PICO_UART_HOST_TEST_TARGETS} PARENT_SCOPE)

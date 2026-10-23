@@ -50,8 +50,8 @@ extern const uart_driver_port_info_t uart_board_ports[UART_PORT_COUNT];
  * @brief Transport counters for one logical UART port.
  */
 typedef struct {
-    uint32_t uart_tx_bytes;                   /**< Bytes transmitted by the UART controller. */
-    uint32_t uart_rx_bytes;                   /**< Bytes received by the UART controller. */
+    uint32_t uart_tx_bytes;                   /**< Bytes handed to the UART peripheral/FIFO, not wire completion. */
+    uint32_t uart_rx_bytes;                   /**< DMA-received bytes published into the RX ring. */
     uint16_t tx_ring_high_watermark;         /**< Largest observed USB-to-UART ring occupancy. */
     uint16_t rx_ring_high_watermark;         /**< Largest observed UART-to-USB ring occupancy. */
     uint32_t tx_ring_overflow_count;         /**< Bytes rejected by the USB-to-UART ring. */

@@ -244,6 +244,33 @@ a normal fixed-rate qualification run. During a ceiling search, such a failure a
 stopping observation only when every lower rate passed and boundary traffic was actually attempted; retain and report
 the failed row and health evidence.
 
+## Concurrent Recovery And Profiling Coverage
+
+The normal performance sweep verifies USB-paced payloads; it does not by itself exercise the cases below. Run these
+as separate, explicitly authorized fixture procedures after flashing the exact image. Use bounded timeouts and record
+the board identity, artifact hash, rate, payload/burst size, stall duration, affected channels, and HID samples.
+These procedures are not automated by the normal performance runner.
+
+| Case | Exercise | Acceptance and evidence |
+| --- | --- | --- |
+| All six channels loaded | Run the concurrent fixture and collect both cores' service load, block latency, ring peaks, and faults during traffic; use optional timing instrumentation for service gaps. | Every stream verifies payloads with no new loss/errors at the qualified load. Retain uninstrumented acceptance separately; host pacing is not proof of wire saturation. |
+| Host drain stalled | With a bounded independently paced fixture source, pause host reads on one RX channel while the other channels continue; resume before the chosen capacity budget, then test a separate intentional-overflow interval. | Within budget, verify ordered bytes without loss. Beyond budget, require visible dropped-byte accounting and recovery, not lossless delivery; unaffected channels continue without new faults. |
+| TX backpressure | Pause a fixture peer with supported CTS in a separately qualified flow-control variant while host OUT writes fill the channel; then resume the peer. | Host writes block or time out explicitly rather than silently losing bytes; admitted bytes remain ordered and other channels continue. Without a supported fixture variant, mark this case not run. |
+| Close/reopen during traffic | Close one active channel while the other streams run, then reopen it with staged settings and require HID readiness before sending a fresh, distinguishable marker. | Do not require delivery of deliberately discarded queued bytes. No old-session payload may contaminate the fresh stream; applied settings match and unaffected channels keep passing. |
+| Session loss with pending control | Keep a supported line-coding request pending using an authorized controlled busy condition, confirm pending through HID, then unplug or issue a targeted USB bus reset. | Old handles terminate or time out explicitly; after remount all old sessions are closed. Reopen, verify applied settings and a fresh marker, and check that canceled work produces no late timeout. Repeat with all six channels active. |
+
+For line-coding experiments on crossed pairs, coordinate both ends or use an independent fixture peer; a deliberate
+framing mismatch is not an unexplained bridge failure. USB disconnect/reset affects the whole device, so other streams
+are expected to terminate in that case. Do not send reset commands or change connections on unrelated devices.
+If a pending window cannot be established and observed, report that case as not tested rather than claiming coverage
+from an ordinary reset. Preserve intentional overflow results separately from clean-health fixed-rate acceptance.
+
+Use the [buffer measurement procedure](../development/firmware-testing.md#buffer-capacity-measurement) before changing
+capacities and the [timing-profile procedure](../development/firmware-testing.md#optional-timing-profiles) before changing
+service budgets. Existing short-run evidence is in the
+[session/tuning record](records/2026-10-22-cdc-uart-session-validation.md); it does not establish every recovery case
+above or qualify the newly built image.
+
 ## Measured Six-Port Envelope
 
 The October 9 fixture sweeps establish these observed payload-integrity envelopes under USB-paced traffic for the

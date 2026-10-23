@@ -82,14 +82,14 @@ void pio_uart_driver_poll(void *context, bool tx_launch_allowed);
 void pio_uart_driver_deinit(void *context);
 
 /**
- * @brief Restart one initialized PIO UART and discard its queued bytes.
+ * @brief Stop and start one bound PIO UART, discarding its queued bytes.
  * @param context PIO UART runtime instance.
- * @return `true` when the state machines and DMA resources were reinitialized.
+ * @return `true` when the state machines and DMA resources were initialized again.
  *
  * The UART worker must own the instance and both bridge sides must be quiesced.
  * Applied line coding and cumulative counters are preserved.
  */
-bool pio_uart_driver_reset_buffers(void *context);
+bool pio_uart_driver_restart(void *context);
 
 /**
  * @brief Drop bring-up framing faults before the UART worker starts polling.

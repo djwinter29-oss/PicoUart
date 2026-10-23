@@ -107,7 +107,7 @@ static uint32_t hw_uart_driver_baud_rate(const void *context)
     return driver != NULL ? driver->baud_rate : 0u;
 }
 
-/** @brief Report hardware-completed bytes and receive errors. */
+/** @brief Report DMA handoff counts and observed receive errors, not wire completion. */
 static uart_backend_stats_t hw_uart_driver_stats(const void *context)
 {
     const hw_uart_driver_t *driver = context;
@@ -132,7 +132,7 @@ const uart_backend_ops_t uart_backend_hw_ops = {
     .line_coding_matches = hw_uart_driver_line_coding_matches,
     .line_coding_acceptable = hw_uart_driver_line_coding_acceptable,
     .set_line_coding = hw_uart_driver_set_line_coding,
-    .reset_buffers = hw_uart_driver_reset_buffers,
+    .restart = hw_uart_driver_restart,
     .rx_snapshot_is_current = hw_uart_driver_rx_snapshot_is_current,
     .clear_rx_error_baseline = hw_uart_driver_clear_rx_error_baseline,
     .baud_rate = hw_uart_driver_baud_rate,

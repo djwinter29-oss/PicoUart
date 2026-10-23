@@ -16,6 +16,8 @@ uart_inst_t hw_test_uart1;
 static pio_test_dma_hw_t dma_registers;
 pio_test_dma_hw_t *dma_hw = &dma_registers;
 static hw_uart_driver_t driver;
+static uint8_t rx_storage[PICO_UART_HW_UART_RX_BUFFER_SIZE]
+    __attribute__((aligned(PICO_UART_HW_UART_RX_BUFFER_SIZE)));
 static const uart_driver_port_info_t port = {
     .id = UART_PORT_0, .backend = UART_DRIVER_BACKEND_HW, .baud_rate = 115200u,
     .tx_pin = 0u, .rx_pin = 1u, .rts_pin = 3u, .cts_pin = 2u,
@@ -319,6 +321,7 @@ static void assert_rx_dma_rearmed_once(void)
 void setUp(void)
 {
     memset(&driver, 0, sizeof(driver));
+    driver.rx_storage = rx_storage;
     memset(&hw_test_uart0, 0, sizeof(hw_test_uart0));
     memset(&dma_registers, 0, sizeof(dma_registers));
     memset(settings, 0, sizeof(settings));
@@ -351,6 +354,18 @@ void setUp(void)
 }
 
 void tearDown(void) { TEST_ASSERT_TRUE(interrupts_enabled); }
+
+void test_start_rejects_missing_or_misaligned_rx_storage_before_claiming_dma(void)
+{
+    hw_uart_driver_deinit(&driver);
+    uint claims_before = claims;
+    driver.rx_storage = NULL;
+    TEST_ASSERT_FALSE(hw_uart_driver_start(&driver));
+    driver.rx_storage = rx_storage + 1u;
+    TEST_ASSERT_FALSE(hw_uart_driver_start(&driver));
+    TEST_ASSERT_EQUAL_UINT(claims_before, claims);
+    TEST_ASSERT_FALSE(driver.initialized);
+}
 
 void test_tx_commits_only_after_completion_and_relaunches_in_order(void)
 {
@@ -552,6 +567,7 @@ void test_closed_hw_backend_parks_tx_idle_high(void)
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_start_rejects_missing_or_misaligned_rx_storage_before_claiming_dma);
     RUN_TEST(test_closed_hw_backend_parks_tx_idle_high);
     RUN_TEST(test_tx_commits_only_after_completion_and_relaunches_in_order);
     RUN_TEST(test_empty_tx_queue_skips_uart_busy_register_read);
