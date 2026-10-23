@@ -145,17 +145,32 @@ def parse_telemetry(payload: bytes) -> dict[str, object]:
     }
 
 
-def parse_channel(payload: bytes) -> dict[str, object]:
+def parse_channel(
+    payload: bytes,
+    channel_id: int | None = None,
+    identity: dict[str, object] | None = None,
+    configuration: dict[str, object] | None = None,
+) -> dict[str, object]:
     """Decode independent lifecycle, measurement validity, applied settings, and traffic totals."""
     _layout(payload, CHANNEL_SIZE, "channel")
     _, state, measurement, baud, data_bits, stop_bits, parity, sequence, interval, *counters = struct.unpack(
         "<BBBIBBBHH4I", payload)
     if state >= len(CHANNEL_STATES) or measurement > 2:
         raise RuntimeError("invalid channel state or UART measurement state")
-    if baud and (not 5 <= data_bits <= 8 or stop_bits not in (1, 2) or parity > 2):
+    if baud and (not 50 <= baud <= 3_000_000
+                 or not 5 <= data_bits <= 8 or stop_bits not in (1, 2) or parity > 2):
         raise RuntimeError("invalid applied UART framing")
     if not baud and any((data_bits, stop_bits, parity)):
         raise RuntimeError("unavailable UART framing must be zero")
+    if channel_id is not None and (type(channel_id) is not int or not 0 <= channel_id < UART_CHANNEL_COUNT):
+        raise ValueError("channel index must be 0 through 5")
+    if channel_id is not None and configuration is not None:
+        if channel_id >= int(configuration["channel_count"]):
+            raise RuntimeError("channel index exceeds advertised channel count")
+    if baud and channel_id is not None and identity is not None and configuration is not None:
+        hardware_mask = int(identity["hardware_channel_mask"])
+        if not hardware_mask & (1 << channel_id) and (data_bits, stop_bits, parity) != (8, 1, 0):
+            raise RuntimeError("PIO UART channels only support 8N1 framing")
     if measurement == 0 and any(counters[:2]):
         raise RuntimeError("unavailable UART counters must be zero placeholders")
     return {

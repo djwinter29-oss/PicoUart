@@ -95,10 +95,15 @@ class PicoUartHid:
             raise ValueError("an injected device cannot be combined with a device selector")
         self._device = device if device is not None else open_device(serial_number, device_path)
         self._lock = threading.RLock()
+        self._transfer_state_lock = threading.Lock()
         self._closed = False
+        self._device_closed = False
+        self._deferred_close_error: OSError | None = None
         self._device_info: dict[str, object] | None = None
         self._configuration: dict[str, object] | None = None
         self._transfer_in_flight = False
+        self._transfer_idle = threading.Event()
+        self._transfer_idle.set()
         self._channels = [_empty_channel(index) for index in range(UART_CHANNEL_COUNT)]
         self._last_counters: list[dict[str, int] | None] = [None] * UART_CHANNEL_COUNT
         self._input_seen = [False] * UART_CHANNEL_COUNT
@@ -122,8 +127,11 @@ class PicoUartHid:
 
     def _bounded_transfer(self, operation: Callable[[], Any], timeout_s: float = COMMAND_TIMEOUT_S) -> Any:
         """Bound synchronous hidapi feature I/O and quarantine a call that returns late."""
-        if self._transfer_in_flight:
-            raise RuntimeError("a previous HID feature transfer is still in flight")
+        with self._transfer_state_lock:
+            if self._transfer_in_flight:
+                raise RuntimeError("a previous HID feature transfer is still in flight")
+            self._transfer_in_flight = True
+            self._transfer_idle.clear()
         completed = threading.Event()
         result: list[Any] = []
         failure: list[Exception] = []
@@ -134,18 +142,29 @@ class PicoUartHid:
             except Exception as error:
                 failure.append(error)
             finally:
-                completed.set()
+                with self._transfer_state_lock:
+                    self._transfer_in_flight = False
+                    if self._closed and not self._device_closed:
+                        self._close_device_after_transfer()
+                    self._transfer_idle.set()
+                    completed.set()
 
         worker = threading.Thread(target=run, name="pico-uart-hid-transfer", daemon=True)
-        worker.start()
+        try:
+            worker.start()
+        except RuntimeError:
+            with self._transfer_state_lock:
+                self._transfer_in_flight = False
+                self._transfer_idle.set()
+            raise
         if not completed.wait(max(0.0, timeout_s)):
-            self._transfer_in_flight = True
             raise RuntimeError("HID feature transfer timed out; outcome is unconfirmed")
         if failure:
             raise failure[0]
         return result[0]
 
     def _read_feature(self, report_id: int, payload_size: int, deadline: float | None = None) -> bytes:
+        self._read_device_info()
         remaining = COMMAND_TIMEOUT_S if deadline is None else min(COMMAND_TIMEOUT_S, deadline - time.monotonic())
         if remaining <= 0:
             raise RuntimeError("board-control operation timed out; outcome is unconfirmed")
@@ -220,20 +239,32 @@ class PicoUartHid:
             raise ValueError("channel index must be 0 through 5")
         with self._lock:
             payload = self._read_feature(REPORT_ID_DIAGNOSTIC_BASE + index, DIAGNOSTIC_SIZE)
-            return {"id": index, **parse_diagnostic(payload, self._configuration)}
+            configuration = self.read_configuration()
+            return {"id": index, **parse_diagnostic(payload, configuration)}
 
     def read_channel(self, index: int) -> dict[str, object]:
         """Read a non-consuming snapshot; never merge it into Input traffic accounting."""
         if type(index) is not int or not 0 <= index < UART_CHANNEL_COUNT:
             raise ValueError("channel index must be 0 through 5")
         with self._lock:
-            return {"id": index, **parse_channel(self._read_feature(REPORT_ID_CHANNEL_BASE + index, CHANNEL_SIZE))}
+            configuration = self.read_configuration()
+            return {
+                "id": index,
+                **parse_channel(
+                    self._read_feature(REPORT_ID_CHANNEL_BASE + index, CHANNEL_SIZE),
+                    index,
+                    self._read_device_info(),
+                    configuration,
+                ),
+            }
 
     def read_status(self, timeout_ms: int = 250) -> dict[str, object] | None:
         """Read one Input report, derive its counter increments, and return the latest channel snapshot."""
         if timeout_ms < 0:
             raise ValueError("timeout_ms must not be negative")
         with self._lock:
+            self._read_device_info()
+            configuration = self.read_configuration()
             report = self._require_open().read(CHANNEL_SIZE + 1, timeout_ms)
             if not report:
                 return None
@@ -242,7 +273,11 @@ class PicoUartHid:
             ):
                 raise RuntimeError("unexpected channel Input report ID or size")
             channel_id = report[0] - REPORT_ID_CHANNEL_BASE
-            self._apply_input(channel_id, parse_channel(bytes(report[1:])), time.monotonic())
+            self._apply_input(
+                channel_id,
+                parse_channel(bytes(report[1:]), channel_id, self._read_device_info(), configuration),
+                time.monotonic(),
+            )
             return {"channels": deepcopy(self._channels)}
 
     def wait_channels_ready(self, channels: dict[int, int], timeout_s: float = 3.0) -> dict[int, dict[str, object]]:
@@ -267,7 +302,14 @@ class PicoUartHid:
                     if remaining <= 0 or not self._lock.acquire(timeout=remaining):
                         raise TimeoutError("CDC readiness timed out waiting for HID lock")
                     try:
-                        sample = parse_channel(self._read_feature(REPORT_ID_CHANNEL_BASE + index, CHANNEL_SIZE, deadline))
+                        identity = self._read_device_info()
+                        configuration = self.read_configuration()
+                        sample = parse_channel(
+                            self._read_feature(REPORT_ID_CHANNEL_BASE + index, CHANNEL_SIZE, deadline),
+                            index,
+                            identity,
+                            configuration,
+                        )
                     finally:
                         self._lock.release()
                 except RuntimeError as error:
@@ -433,8 +475,22 @@ class PicoUartHid:
     def close(self) -> None:
         with self._lock:
             if not self._closed:
-                self._device.close()
                 self._closed = True
+                with self._transfer_state_lock:
+                    if not self._transfer_in_flight:
+                        self._device_closed = True
+                        self._device.close()
+            if self._deferred_close_error is not None:
+                raise self._deferred_close_error
+
+    def _close_device_after_transfer(self) -> None:
+        if self._device_closed:
+            return
+        self._device_closed = True
+        try:
+            self._device.close()
+        except OSError as error:
+            self._deferred_close_error = error
 
     def __enter__(self) -> "PicoUartHid":
         self._require_open()
@@ -454,6 +510,7 @@ def read_board_status(device: Any) -> dict[str, object]:
 
 def read_board_temperature(device: Any) -> float:
     """Read the internal RP2 sensor estimate in degrees Celsius."""
+    parse_device_info(read_feature(device, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE))
     return float(parse_telemetry(read_feature(device, REPORT_ID_TELEMETRY, TELEMETRY_SIZE))["temperature_celsius"])
 
 
@@ -473,6 +530,7 @@ def read_hardware_info(device: Any) -> dict[str, object]:
 
 
 def read_telemetry(device: Any) -> dict[str, object]:
+    parse_device_info(read_feature(device, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE))
     return parse_telemetry(read_feature(device, REPORT_ID_TELEMETRY, TELEMETRY_SIZE))
 
 

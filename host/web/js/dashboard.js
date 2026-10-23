@@ -25,10 +25,10 @@ let reportSample = null;
 let reportReceivedAt = 0;
 
 const directions = [
-  ["UART TX", "uart_tx_bytes", true],
-  ["UART RX", "uart_rx_bytes", true],
-  ["USB TX", "cdc_tx_bytes", false],
-  ["USB RX", "cdc_rx_bytes", false],
+  ["UART TX", "uart_tx", true],
+  ["UART RX", "uart_rx", true],
+  ["USB TX", "usb_tx", false],
+  ["USB RX", "usb_rx", false],
 ];
 const channelStates = ["closed", "starting", "ready", "configuring", "error"];
 const measurementStates = ["Unavailable", "Current", "Cached"];
@@ -78,6 +78,15 @@ function formatBytes(value) {
   return Number.isSafeInteger(value) && value >= 0 ? `${value.toLocaleString()} B` : "--";
 }
 
+function uptimeLabel(milliseconds) {
+  const seconds = Math.floor(milliseconds / 1000);
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor(seconds / 3600) % 24;
+  const minutes = Math.floor(seconds / 60) % 60;
+  const remainder = seconds % 60;
+  return `${days ? `${days}d ` : ""}${hours}h ${minutes}m ${remainder}s`;
+}
+
 function formatPin(value) {
   return Number.isInteger(value) && value >= 0 && value < 255 ? `GP${value}` : "--";
 }
@@ -92,7 +101,7 @@ function mcuName(value) {
 }
 
 function deviceUid(identity) {
-  const uid = identity?.device_uid;
+  const uid = identity?.device_uid ?? identity?.serial_number;
   if (Array.isArray(uid)) return uid.map(value => Number(value).toString(16).padStart(2, "0")).join("").toUpperCase();
   return typeof uid === "string" ? uid.toUpperCase() : "--";
 }
@@ -166,7 +175,7 @@ function currentRates(channel, now, data) {
   const id = channel.id;
   const identity = data.identity?.device_uid ?? data.identity?.serial_number;
   const uptime = data.runtime?.uptime_ms;
-  const totals = Object.fromEntries(directions.map(([, key]) => [key, channel[key]]));
+  const totals = Object.fromEntries(directions.map(([, key]) => [key, channel.totals?.[key]]));
   let history = channelHistory.get(id);
   if (!data.connected || !history || history.identity !== identity
     || (Number.isFinite(uptime) && Number.isFinite(history.uptime) && uptime < history.uptime)) {
@@ -349,7 +358,8 @@ function renderChannels(data) {
     const configuration = makeCell("uart-configuration", "");
     const settings = document.createElement("strong");
     settings.textContent = Number.isInteger(channel.baud_rate) && channel.baud_rate > 0
-      ? `${channel.baud_rate.toLocaleString()} ${channel.data_bits}${["N", "O", "E"][channel.parity] ?? "?"}${channel.stop_bits}`
+      ? `${channel.baud_rate.toLocaleString()} ${channel.data_bits}`
+        + `${({ none: "N", odd: "O", even: "E" })[channel.parity] ?? "?"}${channel.stop_bits}`
       : "--";
     const pins = document.createElement("small");
     const pin = data.configuration?.channel_pins?.[channel.id];
@@ -391,8 +401,8 @@ function renderChannels(data) {
         })} KB/s` : "-- KB/s";
       const total = document.createElement("span");
       total.className = "traffic-total";
-      total.textContent = formatBytes(channel[key]);
-      metric.title = `${label}: ${formatBytes(channel[key])} since firmware boot, modulo 2^32.`;
+      total.textContent = formatBytes(channel.totals?.[key]);
+      metric.title = `${label}: ${formatBytes(channel.totals?.[key])} since firmware boot, modulo 2^32.`;
       metric.append(direction, value, total);
       metrics.append(metric);
     });
@@ -414,8 +424,10 @@ function render(data) {
   latestData = data;
   connection.dataset.state = data.connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
-  document.querySelector("#mcu").textContent = mcuName(data.identity?.mcu);
-  document.querySelector("#board-model").textContent = boardModelName(data.identity?.board_model);
+  document.querySelector("#mcu").textContent = mcuName(data.identity?.mcu_id ?? data.identity?.mcu);
+  document.querySelector("#board-model").textContent = boardModelName(
+    data.identity?.board_model_id ?? data.identity?.board_model,
+  );
   const systemClock = data.telemetry?.system_clock_hz ?? data.hardware?.system_clock_hz;
   document.querySelector("#system-clock").textContent = Number.isFinite(systemClock)
     ? `${(systemClock / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz` : "--";

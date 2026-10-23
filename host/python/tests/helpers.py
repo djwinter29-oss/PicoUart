@@ -43,7 +43,11 @@ class FakeHidDevice:
     """Minimal stand-in for HID Feature and Input report operations."""
 
     def __init__(self, reports, inputs=None):
-        self.reports = reports
+        self.reports = {
+            hid.REPORT_ID_DEVICE_INFO: device_info_bytes(),
+            hid.REPORT_ID_CONFIGURATION: configuration_bytes(),
+            **reports,
+        }
         self.inputs = list(inputs or [])
         self.writes = []
         self.closed = False

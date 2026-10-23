@@ -49,13 +49,21 @@ class Element {
 
 function snapshot(serial, mcuId = 2, storedProfile = 2) {
   return { connected: true, identity: { product_name: "PicoUart", serial_number: serial,
-    capabilities: 7, clock_profile_mask: mcuId === 1 ? 15 : 31 },
-    updated_at: "2026-01-01T00:00:00Z", overflow_counts: Array(6).fill(0),
+    capabilities: 7, clock_profile_mask: mcuId === 1 ? 15 : 31, mcu_id: mcuId,
+    board_model_id: mcuId === 1 ? 1 : 3, firmware_version: "1.2.3", ram_total_bytes: 270336,
+    ram_reserved_bytes: 1024 },
+    updated_at: "2026-01-01T00:00:00Z", traffic_incomplete: false,
     hardware: { mcu: mcuId === 1 ? "RP2040" : "RP2350", mcu_id: mcuId, system_clock_hz: 150000000 },
-    configuration: { source: "stored", reason: "none", stored_profile: storedProfile, active_profile: storedProfile },
-    configuration_save: { status: 0, profile: null },
-    channels: Array.from({ length: 6 }, (_, id) => ({ id, health: 1, health_labels: ["ready"], cdc_open: false,
-      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } })),
+    runtime: { uptime_ms: 3723000, service_load_basis_points: [2500, 500], system_clock_hz: 150000000 },
+    configuration: { stored_profile: storedProfile, reset_cause: 1,
+      uart_tx_ring_capacity_bytes: 2048, uart_rx_ring_capacity_bytes: 2048,
+      cdc_tx_fifo_capacity_bytes: 1024, cdc_rx_fifo_capacity_bytes: 1024,
+      channel_pins: Array.from({ length: 6 }, () => ({ tx_pin: 0, rx_pin: 1, rts_pin: 255, cts_pin: 255 })) },
+    channels: Array.from({ length: 6 }, (_, id) => ({ id, state: "ready", uart_measurement_state: 1,
+      cdc_open: true, baud_rate: 115200, data_bits: 8, parity: "none", stop_bits: 1,
+      sequence: 1, interval_ms: 500, traffic_gaps: 0, traffic_incomplete: false,
+      totals: { uart_tx: 100 + id, uart_rx: 200 + id, usb_tx: 300 + id, usb_rx: 400 + id },
+      traffic: { uart_tx: null, uart_rx: null, usb_tx: null, usb_rx: null } })),
     led: { manual_on: false, output_on: false } };
 }
 
@@ -116,8 +124,20 @@ test("hosted pages select independently and render board labels as text", async 
   assert.equal(bob.element("serial").textContent, "--");
   assert.equal(bob.requests[0].url, "/api/status?board=B");
   await bob.respond(snapshot("second", 1, 1));
-  assert.ok(["second", "--"].includes(bob.element("serial").textContent));
-  assert.ok(["first", "--"].includes(alice.element("serial").textContent));
+  assert.ok(["SECOND", "--"].includes(bob.element("serial").textContent));
+  assert.ok(["FIRST", "--"].includes(alice.element("serial").textContent));
+});
+
+test("renders live v1 telemetry instead of leaving the startup waiting message", async () => {
+  const view = page();
+  await connect(view);
+  assert.equal(view.element("status-message").textContent, "HID telemetry is live");
+  assert.equal(view.element("serial").textContent, "FIRST");
+  assert.equal(view.element("uptime").textContent, "1h 2m 3s");
+  assert.equal(view.element("board-model").textContent, "Pico 2");
+  assert.match(view.element("channel-rows").children[0].textContent, /115,200 8N1/);
+  assert.match(view.element("channel-rows").children[0].textContent, /100 B/);
+  assert.match(view.element("channel-rows").children[0].textContent, /400 B/);
 });
 
 test("status polling follows bounded backend HID cadence and resets on board selection or errors", async () => {
@@ -182,7 +202,7 @@ test("switching clears history and ignores an earlier board's in-flight response
   await view.respond(snapshot("outdated-first"));
   assert.equal(view.element("serial").textContent, "--");
   await view.respond(snapshot("second"));
-  assert.ok(["second", "--"].includes(view.element("serial").textContent));
+  assert.ok(["SECOND", "--"].includes(view.element("serial").textContent));
 });
 
 test("rescan retains missing selection without silently choosing another board", async () => {

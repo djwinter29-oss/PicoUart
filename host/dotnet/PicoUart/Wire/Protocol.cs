@@ -90,7 +90,7 @@ public static class Protocol
         var stored = payload[1];
         var count = payload[2];
         Require(count == ChannelCount, "unsupported PicoUart channel count");
-        Require(stored == byte.MaxValue || IsProfileSupported(identity, stored), "invalid stored clock profile");
+        Require(stored == byte.MaxValue || stored <= 4, "invalid stored clock profile");
         Require((identity.HardwareChannelMask & ~((1 << count) - 1)) == 0,
             "hardware channel mask exceeds the channel count");
         var pins = new ChannelPins[count];
@@ -143,6 +143,8 @@ public static class Protocol
         var stopBits = payload[8];
         var parity = payload[9];
         Require(state <= 4 && measurement <= 2, "invalid channel or UART measurement state");
+        Require(measurement != 0 || (U32(payload, 14) == 0 && U32(payload, 18) == 0),
+            "unavailable UART counters must be zero placeholders");
         Require(baud == 0
                 ? dataBits == 0 && stopBits == 0 && parity == 0
                 : baud is >= 50 and <= 3_000_000 && dataBits is >= 5 and <= 8

@@ -6,9 +6,68 @@ namespace PicoUart.Hid;
 
 public sealed record HidBoard(string DevicePath, string? SerialNumber, string ProductName);
 
+internal sealed class HidStreamLifetime(Action dispose)
+{
+    private readonly object gate = new();
+    private int activeTransfers;
+    private bool disposeRequested;
+    private bool disposeStarted;
+
+    public T Transfer<T>(Func<T> transfer, int timeoutMs)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(timeoutMs);
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposeRequested, this);
+            activeTransfers++;
+        }
+
+        Task<T> operation;
+        try
+        {
+            operation = Task.Run(() =>
+            {
+                try { return transfer(); }
+                finally { CompleteTransfer(); }
+            });
+        }
+        catch
+        {
+            CompleteTransfer();
+            throw;
+        }
+        return operation.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)).GetAwaiter().GetResult();
+    }
+
+    public void Dispose()
+    {
+        bool disposeNow;
+        lock (gate)
+        {
+            disposeRequested = true;
+            disposeNow = activeTransfers == 0 && !disposeStarted;
+            if (disposeNow) disposeStarted = true;
+        }
+        if (disposeNow) dispose();
+    }
+
+    private void CompleteTransfer()
+    {
+        bool disposeNow;
+        lock (gate)
+        {
+            activeTransfers--;
+            disposeNow = disposeRequested && activeTransfers == 0 && !disposeStarted;
+            if (disposeNow) disposeStarted = true;
+        }
+        if (disposeNow) dispose();
+    }
+}
+
 public sealed class PicoUartHid : IDisposable
 {
     private readonly HidStream stream;
+    private readonly HidStreamLifetime streamLifetime;
     private readonly object gate = new();
     private BoardIdentity? identity;
     private ConfigurationStatus? configuration;
@@ -36,11 +95,13 @@ public sealed class PicoUartHid : IDisposable
         if (identityReports.Length != 1 || identityReports[0].Length < 4)
             throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
         stream = device.Open();
+        streamLifetime = new(stream.Dispose);
         try
         {
             stream.ReadTimeout = 250;
             stream.WriteTimeout = 3000;
-            var payload = ReadFeaturePayload(stream, Protocol.IdentityReportId, identityReports[0].Length - 1);
+            var payload = ReadFeaturePayload(stream, streamLifetime,
+                Protocol.IdentityReportId, identityReports[0].Length - 1);
             var prefix = Protocol.ParseIdentityPrefix(payload);
             if (prefix.ProductId != Protocol.ProductId)
                 throw new InvalidOperationException($"unsupported HID product (0x{prefix.ProductId:X4})");
@@ -53,7 +114,7 @@ public sealed class PicoUartHid : IDisposable
         }
         catch
         {
-            stream.Dispose();
+            streamLifetime.Dispose();
             throw;
         }
     }
@@ -70,17 +131,26 @@ public sealed class PicoUartHid : IDisposable
             .Where(report => report.ReportID == Protocol.IdentityReportId).ToArray();
         if (features.Length != 1 || features[0].Length < 4)
             throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
-        using var candidate = device.Open();
-        candidate.ReadTimeout = 3000;
-        candidate.WriteTimeout = 3000;
-        var payload = ReadFeaturePayload(candidate, Protocol.IdentityReportId, features[0].Length - 1);
-        var prefix = Protocol.ParseIdentityPrefix(payload);
-        var usbSerial = device.GetSerialNumber();
-        if (prefix.ProductId != Protocol.ProductId)
-            return new(device.DevicePath, usbSerial, $"Unknown product (0x{prefix.ProductId:X4})");
-        var identity = Protocol.ParseIdentity(payload);
-        ValidateUsbSerial(usbSerial, identity.DeviceUid);
-        return new(device.DevicePath, identity.DeviceUid, identity.ProductName);
+        var candidate = device.Open();
+        var lifetime = new HidStreamLifetime(candidate.Dispose);
+        try
+        {
+            candidate.ReadTimeout = 3000;
+            candidate.WriteTimeout = 3000;
+            var payload = ReadFeaturePayload(candidate, lifetime,
+                Protocol.IdentityReportId, features[0].Length - 1);
+            var prefix = Protocol.ParseIdentityPrefix(payload);
+            var usbSerial = device.GetSerialNumber();
+            if (prefix.ProductId != Protocol.ProductId)
+                return new(device.DevicePath, usbSerial, $"Unknown product (0x{prefix.ProductId:X4})");
+            var identity = Protocol.ParseIdentity(payload);
+            ValidateUsbSerial(usbSerial, identity.DeviceUid);
+            return new(device.DevicePath, identity.DeviceUid, identity.ProductName);
+        }
+        finally
+        {
+            lifetime.Dispose();
+        }
     }
 
     private static void ValidateUsbSerial(string? usbSerial, string deviceUid)
@@ -303,7 +373,7 @@ public sealed class PicoUartHid : IDisposable
             disposed = true;
             identity = null;
             configuration = null;
-            stream.Dispose();
+            streamLifetime.Dispose();
         }
     }
 
@@ -317,11 +387,7 @@ public sealed class PicoUartHid : IDisposable
     private T Transfer<T>(Func<T> transfer, int timeoutMs)
     {
         CheckConnection();
-        try
-        {
-            // HidSharp feature transfers have no portable cancellation; retire the connection after a deadline.
-            return Task.Run(transfer).WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)).GetAwaiter().GetResult();
-        }
+        try { return streamLifetime.Transfer(transfer, timeoutMs); }
         catch (TimeoutException)
         {
             transferUnconfirmed = true;
@@ -335,7 +401,7 @@ public sealed class PicoUartHid : IDisposable
         lock (gate)
         {
             CheckConnection();
-            try { return ReadFeaturePayload(stream, reportId, payloadSize, timeoutMs); }
+            try { return ReadFeaturePayload(stream, streamLifetime, reportId, payloadSize, timeoutMs); }
             catch (TimeoutException)
             {
                 transferUnconfirmed = true;
@@ -344,15 +410,14 @@ public sealed class PicoUartHid : IDisposable
         }
     }
 
-    private static byte[] ReadFeaturePayload(HidStream target, byte reportId, int payloadSize, int timeoutMs = 3000)
+    private static byte[] ReadFeaturePayload(HidStream target, HidStreamLifetime lifetime,
+        byte reportId, int payloadSize, int timeoutMs = 3000)
     {
         var prefixSize = OperatingSystem.IsLinux() ? 2 : 1;
         var report = new byte[Math.Max(payloadSize + prefixSize,
             target.Device.GetMaxFeatureReportLength() + prefixSize - 1)];
         report[0] = reportId;
-        var transferred = Task.Run(() => { target.GetFeature(report); return true; })
-            .WaitAsync(TimeSpan.FromMilliseconds(timeoutMs));
-        transferred.GetAwaiter().GetResult();
+        lifetime.Transfer(() => { target.GetFeature(report); return true; }, timeoutMs);
         return FeaturePayload(report, reportId, payloadSize, prefixSize);
     }
 

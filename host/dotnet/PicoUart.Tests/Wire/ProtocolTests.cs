@@ -81,6 +81,27 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void ConfigurationAcceptsRetained280MhzRequestOnRp2040()
+    {
+        var identity = Identity() with { McuId = 1, ClockProfileMask = 0x0f };
+        var data = ConfigurationPayload();
+        data[1] = 4;
+
+        var configuration = Protocol.ParseConfiguration(data, identity);
+
+        Assert.Equal((byte)4, configuration.StoredProfile);
+    }
+
+    [Fact]
+    public void ConfigurationRejectsUnassignedStoredProfile()
+    {
+        var data = ConfigurationPayload();
+        data[1] = 5;
+
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseConfiguration(data, Identity()));
+    }
+
+    [Fact]
     public void TelemetryParsesServiceLoadAndClock()
     {
         var data = new byte[20];
@@ -122,6 +143,26 @@ public sealed class ProtocolTests
         Assert.Equal((uint)115200, channel.BaudRate);
         Assert.Equal("none", channel.Parity);
         Assert.Equal((uint)400, channel.CdcRxBytes);
+    }
+
+    [Fact]
+    public void ChannelRequiresZeroUartCountersWhenMeasurementIsUnavailable()
+    {
+        var data = new byte[30];
+        data[0] = 1;
+        data[1] = 2;
+        data[2] = 0;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(3), 115200);
+        data[7] = 8; data[8] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(14), 1);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            Protocol.ParseChannel(10, data, Identity(), Configuration()));
+
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(14), 0);
+        var channel = Protocol.ParseChannel(10, data, Identity(), Configuration());
+        Assert.Equal((byte)0, channel.UartMeasurementState);
+        Assert.Equal((uint)0, channel.UartTxBytes);
     }
 
     [Fact]
