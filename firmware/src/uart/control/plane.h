@@ -39,6 +39,17 @@ typedef struct {
 } uart_control_plane_t;
 
 /**
+ * @brief Record a configuration failure while the caller holds the status lock.
+ * @param port Port whose boot-lifetime history is updated.
+ * @param reason Authoritative failure reason.
+ */
+static inline void uart_control_record_error(uart_runtime_port_t *port, uart_driver_control_error_t reason)
+{
+    port->control_history.reason = reason;
+    port->control_history.uptime_us = time_us_64();
+}
+
+/**
  * @brief Consume each port's mailbox request and service deferred line-coding changes.
  * @param control_plane Private runtime state.
  */

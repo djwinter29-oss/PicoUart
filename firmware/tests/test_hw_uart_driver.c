@@ -564,9 +564,19 @@ void test_closed_hw_backend_parks_tx_idle_high(void)
     TEST_ASSERT_FALSE(driver.initialized);
 }
 
+static void test_restart_baseline_preserves_observed_error_history(void)
+{
+    driver.rx_error_count = 7u;
+    hw_test_uart0.registers.rsr = 15u;
+    hw_uart_driver_clear_rx_error_baseline(&driver);
+    TEST_ASSERT_EQUAL_UINT32(7u, driver.rx_error_count);
+    TEST_ASSERT_EQUAL_UINT32(0u, hw_test_uart0.registers.rsr);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_restart_baseline_preserves_observed_error_history);
     RUN_TEST(test_start_rejects_missing_or_misaligned_rx_storage_before_claiming_dma);
     RUN_TEST(test_closed_hw_backend_parks_tx_idle_high);
     RUN_TEST(test_tx_commits_only_after_completion_and_relaunches_in_order);

@@ -24,6 +24,22 @@
 /** @brief Port status flag: ingress is paused while the worker applies a control change at a safe backend boundary. */
 #define UART_DRIVER_PORT_STATUS_CONTROL_PENDING (1u << 3)
 
+/** @brief Retained reason for the last authoritative line-configuration failure. */
+typedef enum {
+    UART_CONTROL_ERROR_NONE = 0,    /**< No failure recorded since boot. */
+    UART_CONTROL_ERROR_BAUD = 1,    /**< Unsupported baud request. */
+    UART_CONTROL_ERROR_FRAMING = 2, /**< Unsupported data/parity/stop format. */
+    UART_CONTROL_ERROR_BACKEND = 3, /**< Backend could not apply the configuration. */
+    UART_CONTROL_ERROR_TIMEOUT = 4, /**< Mailbox or backend apply deadline expired. */
+    UART_CONTROL_ERROR_OTHER = 5,   /**< Failure without a more specific reason. */
+} uart_driver_control_error_t;
+
+/** @brief Boot-lifetime configuration-error history protected by the driver status lock. */
+typedef struct {
+    uart_driver_control_error_t reason; /**< Last recorded failure, independent of current status. */
+    uint64_t uptime_us; /**< Monotonic observation time of that failure. */
+} uart_driver_control_history_t;
+
 /**
  * @brief Backend-neutral startup configuration and runtime view of one logical UART port.
  *
@@ -181,6 +197,7 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id, const uart_drive
 /**
  * @brief Mark one logical UART port as having failed its latest control request.
  * @param port_id Logical port identifier.
+ * @param reason Retained authoritative configuration-error reason.
  *
  * Used when USB CDC accepts a `SET_LINE_CODING` transfer that the firmware
  * cannot parse or apply, so hosts can observe @ref UART_DRIVER_PORT_STATUS_CONTROL_ERROR
@@ -189,18 +206,28 @@ bool uart_driver_line_coding_acceptable(uart_port_id_t port_id, const uart_drive
  * Advances the port control generation so a later completion from an older request
  * cannot clear this error. Does **not** clear @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING.
  */
-void uart_driver_report_control_error(uart_port_id_t port_id);
+void uart_driver_report_control_error(uart_port_id_t port_id, uart_driver_control_error_t reason);
 
 /**
  * @brief Report a CDC soft-pending failure without racing worker-owned control state.
  * @param port_id Logical port identifier.
  * @param control_generation Generation of the soft-pending request that failed.
+ * @param reason Retained authoritative configuration-error reason.
  *
  * Sets @ref UART_DRIVER_PORT_STATUS_CONTROL_ERROR and clears
  * @ref UART_DRIVER_PORT_STATUS_CONTROL_PENDING only when the worker has not
  * accepted the request for deferred application.
  */
-void uart_driver_report_soft_pending_error(uart_port_id_t port_id, uint32_t control_generation);
+void uart_driver_report_soft_pending_error(uart_port_id_t port_id, uint32_t control_generation,
+                                           uart_driver_control_error_t reason);
+
+/**
+ * @brief Capture retained configuration-error history without clearing it.
+ * @param port_id Logical port identifier.
+ * @param history Caller-owned output, unchanged on failure.
+ * @return True when captured under the status lock.
+ */
+bool uart_driver_control_history(uart_port_id_t port_id, uart_driver_control_history_t *history);
 
 /**
  * @brief Drop USB-core soft-pending ownership after host disconnect.
@@ -260,8 +287,9 @@ bool uart_driver_port_info(uart_port_id_t port_id, uart_driver_port_info_t *info
 /**
  * @brief Snapshot transport counters for one logical UART port.
  * @param port_id Logical port identifier.
- * @param stats Output storage for the counter snapshot.
+ * @param stats Output storage, unchanged on every failed acquisition.
  * @return `true` when @p stats was written, otherwise `false`.
+ * @note Initialized ring storage remains readable after backend stop; readiness is independent of validity.
  */
 bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *stats);
 

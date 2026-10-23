@@ -241,7 +241,6 @@ static void uart_driver_service_channel_lifecycle(void)
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
         } else if (lifecycle_ok) {
-            port->info.baud_rate = port->ops->baud_rate(&port->backend);
             uart_driver_state.status_flags[index] &= (uint8_t)~UART_DRIVER_PORT_STATUS_INIT_FAILED;
             uart_driver_state.status_flags[index] |= UART_DRIVER_PORT_STATUS_READY;
         } else {
@@ -306,7 +305,6 @@ static bool uart_driver_init_backends(void)
 
         uart_driver_clear_port_status_flag((uart_port_id_t)index,
                                            UART_DRIVER_PORT_STATUS_INIT_FAILED | UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
-        port->info.baud_rate = port->ops->baud_rate(&port->backend);
         uart_driver_set_port_status_flag((uart_port_id_t)index, UART_DRIVER_PORT_STATUS_READY);
     }
 
@@ -598,7 +596,7 @@ bool uart_driver_queue_line_coding(uart_port_id_t port_id, const uart_driver_lin
     }
 
     if (!uart_driver_line_coding_acceptable(port_id, line_coding)) {
-        uart_driver_report_control_error(port_id);
+        uart_driver_report_control_error(port_id, UART_CONTROL_ERROR_OTHER);
         return false;
     }
 
@@ -645,7 +643,7 @@ bool uart_driver_port_tx_is_blocked(uart_port_id_t port_id)
     return blocked;
 }
 
-void uart_driver_report_control_error(uart_port_id_t port_id)
+void uart_driver_report_control_error(uart_port_id_t port_id, uart_driver_control_error_t reason)
 {
     uint32_t save;
 
@@ -654,12 +652,14 @@ void uart_driver_report_control_error(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
+    uart_control_record_error(&uart_driver_state.ports[port_id], reason);
     uart_control_apply_reject_error(&uart_driver_state.control_generations[port_id],
                                     &uart_driver_state.status_flags[port_id], UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
     spin_unlock(uart_driver_state.status_lock, save);
 }
 
-void uart_driver_report_soft_pending_error(uart_port_id_t port_id, uint32_t control_generation)
+void uart_driver_report_soft_pending_error(uart_port_id_t port_id, uint32_t control_generation,
+                                           uart_driver_control_error_t reason)
 {
     uint32_t save;
 
@@ -668,6 +668,7 @@ void uart_driver_report_soft_pending_error(uart_port_id_t port_id, uint32_t cont
     }
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
+    uart_control_record_error(&uart_driver_state.ports[port_id], reason);
     uart_driver_state.soft_pending_controls[port_id] = false;
     if (uart_control_completion_is_current(control_generation, uart_driver_state.control_generations[port_id])) {
         uart_driver_state.status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
@@ -677,6 +678,17 @@ void uart_driver_report_soft_pending_error(uart_port_id_t port_id, uint32_t cont
         uart_driver_state.status_flags[port_id] &= (uint8_t)~UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     }
     spin_unlock(uart_driver_state.status_lock, save);
+}
+
+bool uart_driver_control_history(uart_port_id_t port_id, uart_driver_control_history_t *history)
+{
+    if (port_id >= UART_PORT_COUNT || history == NULL || uart_driver_state.status_lock == NULL) {
+        return false;
+    }
+    uint32_t save = spin_lock_blocking(uart_driver_state.status_lock);
+    *history = uart_driver_state.ports[port_id].control_history;
+    spin_unlock(uart_driver_state.status_lock, save);
+    return true;
 }
 
 uint32_t uart_driver_mark_control_pending(uart_port_id_t port_id)
@@ -771,7 +783,7 @@ bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *st
     uint32_t first_sequence;
     uint32_t second_sequence;
 
-    if ((stats == NULL) || !uart_driver_backend_is_initialized(port)) {
+    if ((stats == NULL) || port == NULL || port->ops == NULL) {
         return false;
     }
 
@@ -788,23 +800,26 @@ bool uart_driver_port_stats(uart_port_id_t port_id, uart_driver_port_stats_t *st
             continue;
         }
 
-        stats->uart_tx_bytes = 0u;
-        stats->uart_rx_bytes = 0u;
-        stats->tx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(tx_ring);
-        stats->rx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(rx_ring);
-        stats->tx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(tx_ring);
-        stats->rx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(rx_ring);
-        stats->rx_ring_pending_overflow_count = (uint32_t)ring_buffer_pending_overflow(rx_ring);
-        stats->rx_error_count = 0u;
+        if (rx_ring->storage == NULL || tx_ring->storage == NULL) {
+            return false;
+        }
+        uart_driver_port_stats_t candidate = {
+            .tx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(tx_ring),
+            .rx_ring_high_watermark = (uint16_t)ring_buffer_high_watermark(rx_ring),
+            .tx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(tx_ring),
+            .rx_ring_overflow_count = (uint32_t)ring_buffer_overflow_count(rx_ring),
+            .rx_ring_pending_overflow_count = (uint32_t)ring_buffer_pending_overflow(rx_ring),
+        };
 
         backend_stats = port->ops->stats(&port->backend);
-        stats->uart_tx_bytes = backend_stats.uart_tx_bytes;
-        stats->uart_rx_bytes = backend_stats.uart_rx_bytes;
-        stats->rx_error_count = backend_stats.rx_error_count;
+        candidate.uart_tx_bytes = backend_stats.uart_tx_bytes;
+        candidate.uart_rx_bytes = backend_stats.uart_rx_bytes;
+        candidate.rx_error_count = backend_stats.rx_error_count;
 
         __dmb();
         second_sequence = uart_driver_state.stats_sequence[port_id];
         if ((first_sequence == second_sequence) && ((second_sequence & 1u) == 0u)) {
+            *stats = candidate;
             return true;
         }
     }

@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from ..client import PicoUartHid
+from ..client import PicoUartHid, _empty_channel
 from ..protocol import UART_CHANNEL_COUNT
 
 
@@ -17,24 +17,6 @@ TRAFFIC_FIELDS = {
     "usb_tx": "cdc_tx_bytes",
     "usb_rx": "cdc_rx_bytes",
 }
-
-
-def _empty_channel(channel_id: int) -> dict[str, Any]:
-    return {
-        "id": channel_id,
-        "updated_at": None,
-        "sequence": None,
-        "observed_interval_ms": 0,
-        "traffic_gaps": 0,
-        "traffic_incomplete": False,
-        "health": None,
-        "health_labels": [],
-        "state": "unknown",
-        "cdc_open": False,
-        "ring_high_watermark": 0,
-        "traffic": {field: 0 for field in TRAFFIC_FIELDS},
-        "totals": {field: 0 for field in TRAFFIC_FIELDS},
-    }
 
 
 def empty_snapshot() -> dict[str, Any]:
@@ -100,13 +82,22 @@ class BoardMonitor:
     def save_configuration(self, profile: int, unsafe_overclock: bool) -> None:
         with self._lock:
             result = self._require_client().save_configuration(profile, unsafe_overclock)
-            self._snapshot["configuration_save"] = {
-                "status": result["status"],
-                "profile": result["requested_profile"],
-                "request_id": result["request_id"],
-                "error_reason": result["error_reason"],
-            }
+            self._snapshot["configuration_save"] = result
             self._snapshot["configuration_save_error"] = None
+
+    def read_diagnostics(self) -> dict[str, Any]:
+        """Refresh details only on explicit request, independently of Input cadence."""
+        with self._lock:
+            client = self._require_client()
+            try:
+                diagnostics = client.read_channel_diagnostics()
+            except (OSError, RuntimeError) as error:
+                self._snapshot["diagnostics_error"] = str(error)
+                raise
+            self._snapshot["channel_diagnostics"] = diagnostics
+            self._snapshot["diagnostics_error"] = None
+            self._snapshot["overflow_counts"] = [item["rx_overrun_count"] for item in diagnostics]
+            return deepcopy(self._snapshot)
 
     def close(self) -> None:
         self._stop.set()
@@ -169,8 +160,6 @@ class BoardMonitor:
         with self._lock:
             self._snapshot["connected"] = True
             self._snapshot["error"] = None
-            diagnostics = [None] * UART_CHANNEL_COUNT
-            prior = self._snapshot["channel_diagnostics"] or [None] * UART_CHANNEL_COUNT
             for source in status["channels"]:
                 if source["updated_at"] is None:
                     continue
@@ -184,29 +173,9 @@ class BoardMonitor:
                 if not sample_updated and not accounting_changed:
                     continue
                 interval = source.get("interval_ms")
-                if sample_updated and interval is not None and 0 < interval < 0xFFFFFFFF:
+                if sample_updated and interval is not None and 0 < interval < 65535:
                     self._snapshot["refresh_interval_ms"] = max(500, min(1000, interval))
-                self._snapshot["channels"][channel_id] = {
-                    key: deepcopy(source[key])
-                    for key in (
-                        "id", "updated_at", "sequence", "observed_interval_ms", "traffic_gaps",
-                        "traffic_incomplete", "health", "health_labels", "state", "cdc_open",
-                        "ring_high_watermark", "traffic", "totals",
-                    )
-                }
-                diagnostics[channel_id] = prior[channel_id]
-                if sample_updated:
-                    diagnostics[channel_id] = {
-                        "id": channel_id,
-                        "index": channel_id,
-                        **{
-                            key: deepcopy(source[key])
-                            for key in (
-                                "health", "baud_rate", "data_bits", "stop_bits", "parity", "tx_pin", "rx_pin",
-                                "faults", "last_fault_uptime_s",
-                            )
-                        },
-                    }
+                self._snapshot["channels"][channel_id] = deepcopy(source)
             channels = self._snapshot["channels"]
             self._snapshot["updated_at"] = max(
                 (channel["updated_at"] for channel in channels if channel["updated_at"] is not None),
@@ -216,16 +185,6 @@ class BoardMonitor:
                 channel["traffic_incomplete"] for channel in channels
             )
             self._snapshot["traffic_gaps"] = sum(channel["traffic_gaps"] for channel in channels)
-            if any(item is not None for item in diagnostics):
-                self._snapshot["channel_diagnostics"] = [
-                    diagnostics[index] if diagnostics[index] is not None else prior[index]
-                    for index in range(UART_CHANNEL_COUNT)
-                ]
-                self._snapshot["diagnostics_error"] = None
-            self._snapshot["overflow_counts"] = [
-                None if item is None else item["faults"]["rx_overrun"]["count"]
-                for item in self._snapshot["channel_diagnostics"] or [None] * UART_CHANNEL_COUNT
-            ]
 
     def _read_metadata(self, client: PicoUartHid) -> None:
         self._read_static(client)
@@ -278,32 +237,31 @@ class BoardMonitor:
 
     def _read_control(self, client: PicoUartHid) -> None:
         try:
+            configuration = client.read_configuration()
+        except (OSError, RuntimeError) as error:
+            with self._lock:
+                self._snapshot["configuration"] = None
+                self._snapshot["configuration_error"] = str(error)
+        else:
+            with self._lock:
+                self._snapshot["configuration"] = configuration
+                self._snapshot["configuration_error"] = None
+        try:
             result = client.read_control()
         except (OSError, RuntimeError) as error:
             with self._lock:
-                self._snapshot["configuration_error"] = str(error)
                 self._snapshot["configuration_save_error"] = str(error)
             return
-        configuration = {
-            key: result[key] for key in ("source", "reason", "stored_profile", "active_profile")
-        }
-        save = {
-            "status": result["status"],
-            "profile": result["requested_profile"],
-            "request_id": result["request_id"],
-            "error_reason": result["error_reason"],
-        }
+        save = result
         with self._lock:
             identity = self._snapshot["identity"]
             save_error = None
             if identity is None or not identity["capabilities"] & 4:
                 save = None
                 save_error = self._snapshot["identity_error"] or "configuration save capability is unavailable"
-            elif result["command"] != 5:
-                save = {"status": 0, "profile": None}
+            elif result["action"] != 4:
+                save = {"status": 0, "action": 0, "error_reason": 0, "error": "none"}
             self._snapshot.update(
-                configuration=configuration,
-                configuration_error=None,
                 configuration_save=save,
                 configuration_save_error=save_error,
             )

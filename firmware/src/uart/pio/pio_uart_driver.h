@@ -95,8 +95,8 @@ bool pio_uart_driver_restart(void *context);
  * @brief Drop bring-up framing faults before the UART worker starts polling.
  * @param context Driver instance whose startup RX errors should be discarded.
  *
- * Clears a sticky PIO RX stop-bit interrupt without counting it, then zeroes
- * the session framing counter. The first worker poll would otherwise report pin bring-up noise as HID health bit 7.
+ * Clears a sticky PIO RX stop-bit interrupt without counting pin bring-up noise.
+ * Previously observed framing errors remain in the boot-lifetime counter across restarts.
  */
 void pio_uart_driver_clear_rx_error_baseline(void *context);
 

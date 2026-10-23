@@ -41,9 +41,9 @@ def load_layout(build_dir: Path) -> dict:
 
 
 def check_profile(profile: str, family: str, unsafe: bool) -> None:
+    if family not in ("rp2040", "rp2350") or profile not in PROFILES:
+        raise ValueError(f"{profile} is not supported on {family}")
     if profile != "default":
-        if profile not in ("150mhz", "200mhz", "250mhz") and (profile != "280mhz" or family != "rp2350"):
-            raise ValueError(f"{profile} is not supported on {family}")
         if not unsafe:
             raise ValueError("non-default clocks require --unsafe-overclock")
 

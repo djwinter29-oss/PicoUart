@@ -14,6 +14,26 @@ typedef enum {
     HID_REPORT_TYPE_FEATURE = 3, /**< Control-pipe feature payload. */
 } hid_report_type_t;
 
+enum {
+    TUSB_REQ_TYPE_CLASS = 1, TUSB_DIR_OUT = 0, TUSB_DIR_IN = 1,
+    HID_REQ_CONTROL_GET_REPORT = 1, HID_REQ_CONTROL_SET_REPORT = 9,
+    CONTROL_STAGE_SETUP = 1, CONTROL_STAGE_DATA = 2, CONTROL_STAGE_ACK = 3,
+};
+
+typedef struct {
+    struct {
+        uint8_t recipient : 5;
+        uint8_t type : 2;
+        uint8_t direction : 1;
+    } bmRequestType_bit;
+    uint8_t bRequest;
+    uint16_t wValue;
+    uint16_t wIndex;
+    uint16_t wLength;
+} tusb_control_request_t;
+
+bool tud_control_xfer(uint8_t rhport, tusb_control_request_t const *request, void *buffer, uint16_t length);
+
 /** @brief Return whether the fixture can transmit an input payload. */
 bool tud_hid_ready(void);
 /** @brief Accept a fixture input payload. */

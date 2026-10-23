@@ -5,33 +5,12 @@ function makeCell(className, text) {
   return cell;
 }
 
-const channelHistory = new Map();
-let reportSample = null;
-let reportReceivedAt = 0;
-
-export function updateReportAge(data, now = Date.now()) {
-  const sample = Date.parse(data.updated_at);
-  const age = document.querySelector("#sample-time");
-  age.hidden = !data.connected;
-  if (!data.connected) reportSample = null;
-  if (data.connected && Number.isFinite(sample) && sample !== reportSample) {
-    reportSample = sample;
-    reportReceivedAt = now;
-  }
-  const seconds = Math.max(0, Math.floor((now - reportReceivedAt) / 1000));
-  const stale = Number.isFinite(sample) && now - reportReceivedAt > 3000;
-  age.textContent = Number.isFinite(sample)
-    ? `Report ${seconds} s ago${stale ? " (stale)" : ""}` : "Waiting for report";
-  age.dataset.stale = String(stale);
-}
-
-const directions = [["UART TX", "uart_tx"], ["UART RX", "uart_rx"], ["USB TX", "usb_tx"], ["USB RX", "usb_rx"]];
-const faultHelp = {
-  init_failed: "Initialization failure; check firmware resources and configuration.",
-  control_error: "UART configuration failure; check the applied settings.",
-  rx_overrun: "Dropped UART data recorded; check that the host is reading.",
-  rx_error: "Receive error recorded; check baud rate, framing and wiring.",
-};
+const directions = [
+  ["UART TX", "uart_tx"], ["UART RX", "uart_rx"], ["CDC TX", "usb_tx"], ["CDC RX", "usb_rx"],
+];
+const faultNames = ["Known RX bytes dropped", "RX controller error observations"];
+const faultReasonName = reason => reason?.last_configuration_error_reason
+  ? reason.last_configuration_error : "None recorded";
 
 function uptimeLabel(milliseconds) {
   const seconds = Math.floor(milliseconds / 1000);
@@ -40,101 +19,86 @@ function uptimeLabel(milliseconds) {
     .filter(([value, unit]) => value || unit === "s").map(([value, unit]) => `${value}${unit}`).join(" ");
 }
 
-export function channelPresentation(data, channel, now = Date.now()) {
-  const sample = Date.parse(channel.updated_at);
-  let history = channelHistory.get(channel.id);
-  if (!data.connected || !history || history.serial !== data.identity?.serial_number
-    || data.runtime?.uptime_ms < history.uptime) {
-    history = { serial: data.identity?.serial_number, uptime: data.runtime?.uptime_ms,
-      totals: { ...channel.totals }, sample, observedSample: sample, receivedAt: now,
-      interval: channel.observed_interval_ms, gaps: channel.traffic_gaps, rates: null };
-    channelHistory.set(channel.id, history);
-  }
-  const elapsed = channel.observed_interval_ms - history.interval;
-  if (channel.traffic_gaps !== history.gaps || elapsed < 0 || sample - history.sample > 3000) {
-    history.rates = null;
-    history.sample = sample;
-    history.totals = { ...channel.totals };
-    history.interval = channel.observed_interval_ms;
-    history.gaps = channel.traffic_gaps;
-  } else if (elapsed >= 1000) {
-    history.rates = Object.fromEntries(directions.map(([, key]) =>
-      [key, ((channel.totals[key] - history.totals[key]) >>> 0) * 1000 / elapsed]));
-    history.sample = sample;
-    history.totals = { ...channel.totals };
-    history.interval = channel.observed_interval_ms;
-  }
-  if (!Number.isFinite(history.sample) && Number.isFinite(sample)) {
-    history.sample = sample;
-    history.totals = { ...channel.totals };
-    history.interval = channel.observed_interval_ms;
-    history.rates = null;
-  }
-  if (data.runtime) history.uptime = data.runtime.uptime_ms;
-  if (Number.isFinite(sample) && sample !== history.observedSample) {
-    history.observedSample = sample;
-    history.receivedAt = now;
-  }
-  const fresh = data.connected && Number.isFinite(sample) && now - history.receivedAt >= 0
-    && now - history.receivedAt <= 3000;
-  const diagnostic = data.connected ? data.channel_diagnostics?.[channel.id] : null;
-  const faults = Object.keys(faultHelp).filter(name =>
-    channel.health_labels.includes(name) || diagnostic?.faults[name]?.count > 0);
-  const traffic = directions.some(([, key]) => (history.rates?.[key] ?? 0) > 0);
-  const state = !fresh || channel.health === null ? "unknown"
-    : faults.length ? "attention"
-    : !channel.health_labels.includes("ready") ? "initializing"
-    : !channel.cdc_open && !traffic ? "idle" : "ready";
-  return { diagnostic, faults, state, fresh, rates: fresh ? history.rates : null };
+function serviceLoad(value) {
+  return value === null ? "Warming up / unavailable" : `${(value / 100).toFixed(1)}%`;
+}
+
+export function updateReportAge(data, now = Date.now()) {
+  const sample = Date.parse(data.updated_at);
+  const age = document.querySelector("#sample-time");
+  age.hidden = !data.connected;
+  const seconds = Number.isFinite(sample) ? Math.max(0, Math.floor((now - sample) / 1000)) : null;
+  const stale = seconds !== null && seconds > 3;
+  age.textContent = seconds === null ? "Waiting for telemetry"
+    : `Telemetry ${seconds} s ago${stale ? " (stale)" : ""}`;
+  age.dataset.stale = String(stale);
+}
+
+function channelFresh(channel, now) {
+  const inputTime = Date.parse(channel.input_updated_at);
+  const featureTime = Date.parse(channel.feature_updated_at);
+  const sample = Number.isFinite(inputTime) ? inputTime : featureTime;
+  return Number.isFinite(sample) && now >= sample && now - sample <= 3000;
+}
+
+function displayPeak(value, capacity, unavailable) {
+  if (unavailable || value === undefined || value === null) return "--";
+  if (!capacity) return `${value.toLocaleString()} B`;
+  return `${value.toLocaleString()} / ${capacity.toLocaleString()} B (${(value / capacity * 100).toFixed(1)}%)`;
 }
 
 function renderChannels(data) {
-  const channelRows = document.querySelector("#channel-rows");
-  channelRows.replaceChildren();
-  data.channels.forEach((channel) => {
-    const view = channelPresentation(data, channel);
+  const body = document.querySelector("#channel-rows");
+  body.replaceChildren();
+  const now = Date.now();
+  const capacities = data.configuration?.capacities;
+  data.channels.forEach((channel, index) => {
+    const diagnostic = data.channel_diagnostics[index];
+    const fresh = data.connected && channelFresh(channel, now);
     const row = document.createElement("tr");
     const port = document.createElement("td");
-    const portName = document.createElement("span");
-    portName.className = "port-name";
-    const portIndex = document.createElement("span");
-    portIndex.className = "port-index";
-    portIndex.textContent = String(channel.id + 1).padStart(2, "0");
-    portName.append(portIndex, document.createTextNode(`CDC${channel.id}`));
-    port.append(portName);
+    const name = document.createElement("span");
+    name.className = "port-name";
+    const number = document.createElement("span");
+    number.className = "port-index";
+    number.textContent = String(index + 1).padStart(2, "0");
+    name.append(number, document.createTextNode(`CDC${index}`));
+    port.append(name);
     row.append(port);
-    row.append(makeCell(`cdc-state ${channel.cdc_open ? "cdc-open" : "cdc-closed"}`,
-      channel.cdc_open ? "Open" : "Closed"));
-    const configuration = makeCell("uart-configuration", "");
-    const settings = document.createElement("strong");
-    const diagnostic = view.diagnostic;
-    settings.textContent = diagnostic?.baud_rate
-      ? `${diagnostic.baud_rate} ${diagnostic.data_bits}${diagnostic.parity}${diagnostic.stop_bits}` : "--";
-    const pins = document.createElement("small");
-    pins.textContent = diagnostic
-      ? `TX ${diagnostic.tx_pin === null ? "--" : `GP${diagnostic.tx_pin}`} / `
-        + `RX ${diagnostic.rx_pin === null ? "--" : `GP${diagnostic.rx_pin}`}`
-      : "Firmware diagnostics unavailable";
-    configuration.title = diagnostic ? "Successfully applied UART settings, not the latest requested settings."
-      : data.diagnostics_error ?? "Connect a device with channel diagnostic reports.";
-    configuration.append(settings, pins);
-    row.append(configuration);
-    const health = document.createElement("td");
+
+    const lifecycle = document.createElement("td");
+    const stateName = fresh ? channel.channel_state_name : "Unknown";
+    const stateClass = stateName === "Error" ? "attention"
+      : ["Starting", "Configuring"].includes(stateName) ? "initializing"
+        : stateName === "Ready" ? "ready" : "idle";
     const state = document.createElement("span");
-    state.className = `state state-${view.state}`;
-    state.textContent = view.state;
-    health.append(state);
-    const flags = document.createElement("small");
-    flags.className = "health-flags";
-    flags.textContent = view.faults.map(name => {
-      const current = ["init_failed", "control_error"].includes(name) && channel.health_labels.includes(name);
-      return `${!view.fresh ? "Last reported" : current ? "Current" : "Recorded"}: ${name}`;
-    }).join("; ") || (view.state === "unknown" ? "Waiting for status"
-      : channel.health_labels.includes("control_pending") ? "Applying settings"
-      : view.state === "idle" ? "Receiver enabled" : "No active flags");
-    flags.title = view.faults.map(name => faultHelp[name]).join(" ");
-    health.append(flags);
-    row.append(health);
+    state.className = `state state-${stateClass}`;
+    state.textContent = stateName;
+    lifecycle.append(state);
+    const validity = document.createElement("small");
+    validity.className = "health-flags";
+    validity.textContent = fresh
+      ? `UART measurements: ${channel.uart_measurement_state_name}`
+      : channel.error ? `Snapshot unavailable: ${channel.error}` : "Waiting for a fresh Input snapshot";
+    lifecycle.append(validity);
+    row.append(lifecycle);
+
+    const applied = document.createElement("td");
+    const settings = document.createElement("strong");
+    settings.textContent = fresh && channel.baud_rate
+      ? `${channel.baud_rate.toLocaleString()} ${channel.data_bits}${channel.parity}${channel.stop_bits}`
+      : "--";
+    const pins = data.configuration?.pins[index];
+    const pinLabel = document.createElement("small");
+    pinLabel.textContent = pins
+      ? `TX ${pins.tx === 255 ? "--" : `GP${pins.tx}`} / RX ${pins.rx === 255 ? "--" : `GP${pins.rx}`}`
+      : "Board pin map unavailable";
+    applied.title = fresh && channel.channel_state === 0
+      ? "Last successfully applied UART setting; backend is stopped."
+      : "Last successfully applied UART setting, not the latest requested setting.";
+    applied.append(settings, pinLabel);
+    row.append(applied);
+
     const traffic = document.createElement("td");
     traffic.className = "traffic";
     const metrics = document.createElement("div");
@@ -142,81 +106,101 @@ function renderChannels(data) {
     directions.forEach(([label, key]) => {
       const metric = document.createElement("span");
       const direction = document.createElement("span");
-      const value = document.createElement("b");
       direction.className = "traffic-label";
       direction.textContent = label;
-      value.textContent = view.rates
-        ? `${(view.rates[key] / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB/s`
-        : "-- KB/s";
+      const rate = document.createElement("b");
+      rate.textContent = fresh && channel.rates?.[key] != null
+        ? `${(channel.rates[key] / 1000).toLocaleString(undefined,
+          { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB/s` : "-- KB/s";
       const total = document.createElement("span");
       total.className = "traffic-total";
-      total.textContent = `${channel.totals[key].toLocaleString()} B`;
-      metric.title = `${label}: ${channel.totals[key].toLocaleString()} B since firmware boot, modulo 2^32.`;
-      metric.append(direction, value, total);
+      const counter = channel.counters[key];
+      total.textContent = fresh && counter !== null ? `${counter.toLocaleString()} B` : "--";
+      metric.title = `${label}: bytes since firmware boot, modulo 2^32.`;
+      metric.append(direction, rate, total);
       metrics.append(metric);
     });
     traffic.append(metrics);
     row.append(traffic);
-    const overflow = data.overflow_counts[channel.id];
-    row.append(makeCell("overflow", overflow === null ? "--" : `${overflow} B`));
-    channelRows.append(row);
+
+    const history = document.createElement("td");
+    const faultValues = [
+      diagnostic && diagnostic.uart_measurement_state !== 0
+        ? `${faultNames[0]}: ${diagnostic.rx_dropped_bytes.toLocaleString()} B` : `${faultNames[0]}: --`,
+      diagnostic && diagnostic.uart_measurement_state !== 0
+        ? `${faultNames[1]}: ${diagnostic.rx_error_observations.toLocaleString()}` : `${faultNames[1]}: --`,
+      `Last configuration error: ${faultReasonName(diagnostic)}`,
+    ];
+    history.textContent = faultValues.join("; ");
+    history.title = diagnostic
+      ? `Diagnostic read ${Math.max(0, Math.floor((now - Date.parse(diagnostic.updated_at)) / 1000))} s ago.`
+      : data.diagnostics_errors[index] ?? "Channel diagnostics unavailable.";
+    row.append(history);
+
+    const peaks = document.createElement("td");
+    const diagnosticUnavailable = !diagnostic || diagnostic.uart_measurement_state === 0;
+    const peakRows = [
+      ["UART TX ring", "uart_tx", diagnosticUnavailable],
+      ["UART RX ring", "uart_rx", diagnosticUnavailable],
+      ["CDC TX FIFO", "cdc_tx", !diagnostic],
+      ["CDC RX FIFO", "cdc_rx", !diagnostic],
+    ];
+    peaks.textContent = diagnostic ? peakRows.map(([label, key, unavailable]) =>
+      `${label}: ${displayPeak(diagnostic.peaks[key], capacities?.[key], unavailable)}`).join("; ")
+      : "Diagnostics unavailable";
+    peaks.title = "Observed peak since boot; exact byte units. A peak is not current congestion or proof of loss.";
+    row.append(peaks);
+    body.append(row);
   });
 }
 
 export function renderDashboard(data) {
-  const connection = document.querySelector("#connection");
   const statusMessage = document.querySelector("#status-message");
-  connection.dataset.state = data.connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
-  document.querySelector("#mcu").textContent = data.identity?.mcu ?? data.hardware?.mcu ?? "--";
-  document.querySelector("#system-clock").textContent = data.hardware
-    ? `${(data.hardware.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
-    : "--";
-  document.querySelector("#firmware").textContent =
-    data.identity?.firmware_version ?? data.board?.firmware_version ?? "--";
   document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
+  document.querySelector("#mcu").textContent = data.identity?.mcu ?? "--";
+  document.querySelector("#board-model").textContent = data.identity?.board_model ?? "--";
+  document.querySelector("#firmware").textContent = data.identity?.firmware_version ?? "--";
   document.querySelector("#serial").textContent = data.identity?.serial_number ?? "--";
-  const runtime = data.runtime;
+  document.querySelector("#system-clock").textContent = data.telemetry
+    ? `${(data.telemetry.system_clock_hz / 1000000).toLocaleString(undefined, { maximumFractionDigits: 3 })} MHz`
+    : "--";
+  const runtime = data.telemetry?.runtime;
   document.querySelector("#uptime").textContent = runtime ? uptimeLabel(runtime.uptime_ms) : "--";
-  document.querySelector("#cpu-usage").textContent = runtime
-    ? runtime.cpu_usage_basis_points.map(value => value == null ? "--" : `${(value / 100).toFixed(1)}%`).join(" / ")
+  document.querySelector("#core0-service-load").textContent = runtime
+    ? serviceLoad(runtime.service_load_basis_points[0]) : "--";
+  document.querySelector("#core1-service-load").textContent = runtime
+    ? serviceLoad(runtime.service_load_basis_points[1]) : "--";
+  const identity = data.identity;
+  document.querySelector("#ram-usage").textContent = identity
+    ? `${(identity.ram_reserved_bytes / 1024).toFixed(1)} / ${(identity.ram_total_bytes / 1024).toFixed(0)} KiB`
+      + ` (${(identity.ram_reserved_bytes / identity.ram_total_bytes * 100).toFixed(1)}%)`
     : "--";
-  document.querySelector("#ram-usage").textContent = runtime
-    ? `${(runtime.ram_reserved_bytes / 1024).toFixed(1)} / ${(runtime.ram_total_bytes / 1024).toFixed(0)} KiB`
-      + ` (${(runtime.ram_reserved_bytes / runtime.ram_total_bytes * 100).toFixed(1)}%)`
-    : "--";
-  document.querySelector("#temperature").textContent = data.board
-    ? `${data.board.temperature_celsius.toFixed(1)} \u00b0C` : "--";
-  const led = data.connected ? data.led : null;
+  document.querySelector("#temperature").textContent = data.telemetry
+    ? `${data.telemetry.temperature_celsius.toFixed(1)} \u00b0C` : "--";
+  const led = data.connected ? data.telemetry?.led.output_on : null;
   const ledButton = document.querySelector("#toggle-led");
-  ledButton.textContent = `Board LED: ${led?.output_on == null ? "--" : led.output_on ? "On" : "Off"}`;
-  ledButton.dataset.state = led?.output_on == null ? "unknown" : led.output_on ? "on" : "off";
-  ledButton.title = led?.manual_on == null ? "Board identification LED state unavailable"
-    : `Set board identification LED ${led.manual_on ? "Off" : "On"}`;
+  ledButton.textContent = `Board LED: ${led == null ? "--" : led ? "On" : "Off"}`;
+  ledButton.dataset.state = led == null ? "unknown" : led ? "on" : "off";
+  ledButton.title = led == null ? "Board identification LED state unavailable"
+    : `Set board identification LED ${led ? "Off" : "On"}`;
   updateReportAge(data);
-  document.querySelector("#overflow-total").textContent = data.overflow_counts.every(value => value !== null)
-    ? `${data.overflow_counts.reduce((sum, count) => sum + count, 0)} B` : "--";
-  const resetButton = document.querySelector("#reset-board");
-  if (resetButton) resetButton.hidden = !data.board?.hid_reset_enabled;
-  const trafficNote = document.querySelector("#traffic-note");
-  trafficNote.hidden = !data.traffic_incomplete;
-  trafficNote.dataset.incomplete = String(data.traffic_incomplete);
-  trafficNote.textContent = data.traffic_incomplete
-    ? "Input report gaps detected; rate windows restart after a clean sample. Byte counters are modulo 2^32 since boot."
+  const action = data.action_result;
+  document.querySelector("#action-result").textContent = action
+    ? action.status_name === "Idle" ? "No recent action"
+      : `${action.status_name}${action.action ? ` — action ${action.action}` : ""}`
+        + (action.error_reason ? ` (reason ${action.error_reason})` : "")
+    : data.action_error ?? "--";
+  document.querySelector("#traffic-note").hidden = !data.traffic_incomplete;
+  document.querySelector("#traffic-note").textContent = data.traffic_incomplete
+    ? "Some traffic rates are unavailable after a sequence gap, stale stream, saturated interval, or cached UART sample. Totals remain modulo 2^32."
     : "";
   renderChannels(data);
-  statusMessage.textContent = data.error
-    || (data.metadata_error ? `Board metadata unavailable: ${data.metadata_error}` : null)
-    || (data.hardware_error ? `Hardware information unavailable: ${data.hardware_error}` : null)
-    || (data.configuration_error ? `Configuration diagnostics unavailable: ${data.configuration_error}` : null)
-    || (data.identity_error ? `Device identity unavailable: ${data.identity_error}` : null)
-    || (data.runtime_error ? `Runtime status unavailable: ${data.runtime_error}` : null)
-    || (data.led_error ? `LED state unavailable: ${data.led_error}` : null)
-    || (data.diagnostics_error ? `Channel diagnostics unavailable: ${data.diagnostics_error}` : null)
-    || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
-  statusMessage.parentElement.dataset.error = Boolean(
-    data.error || data.metadata_error || data.hardware_error || data.configuration_error
-      || data.identity_error || data.runtime_error
-      || data.led_error || data.diagnostics_error || !data.connected,
-  );
+  statusMessage.textContent = data.identity_error ? `Device identity unavailable: ${data.identity_error}`
+    : data.configuration_error ? `Board configuration unavailable: ${data.configuration_error}`
+      : data.telemetry_error ? `Live telemetry unavailable: ${data.telemetry_error}`
+        : data.action_error ? `Board action: ${data.action_error}`
+          : data.connected ? "HID status is available" : "Waiting for a PicoUart HID interface";
+  statusMessage.parentElement.dataset.error = String(Boolean(data.identity_error || data.configuration_error
+    || data.telemetry_error || data.action_error || !data.connected));
 }

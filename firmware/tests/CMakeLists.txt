@@ -219,7 +219,7 @@ pico_uart_add_unity_test(test_service_load service_load
 )
 target_compile_definitions(test_service_load PRIVATE PICO_UART_PROFILE_TIMING=1)
 
-foreach(_family IN ITEMS rp2040 rp2350)
+foreach(_family IN ITEMS rp2040 rp2350 rp2040_no_reset)
     pico_uart_add_unity_test(test_usb_hid_${_family} usb_hid_${_family}
         test_usb_hid.c
         ${FIRMWARE_ROOT}/src/platform/service_load.c
@@ -227,6 +227,8 @@ foreach(_family IN ITEMS rp2040 rp2350)
     target_include_directories(test_usb_hid_${_family} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
     target_compile_definitions(test_usb_hid_${_family} PRIVATE
         PICO_RP2350=$<STREQUAL:${_family},rp2350>
+        PICO_UART_BOARD_MODEL=$<IF:$<STREQUAL:${_family},rp2350>,3,1>
+        PICO_UART_ALLOW_HID_RESET=$<NOT:$<STREQUAL:${_family},rp2040_no_reset>>
     )
     target_compile_options(test_usb_hid_${_family} PRIVATE -ffunction-sections -fdata-sections -fno-pie)
     target_link_options(test_usb_hid_${_family} PRIVATE -Wl,--gc-sections -no-pie)

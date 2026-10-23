@@ -11,7 +11,7 @@ try
     if (options.Command is "help" or "--help" or "-h")
     {
         Console.WriteLine("PicoUart [--serial SERIAL | --device-path PATH] COMMAND [--port N] [--duration SECONDS] [--json]");
-        Console.WriteLine("Commands: status, monitor, overruns, hardware, config, temperature, version, toggle-led, reset, web");
+        Console.WriteLine("Commands: status, monitor, overruns, hardware, config, telemetry, temperature, version, toggle-led, reset, web");
         return 0;
     }
     if (options.Command == "web")
@@ -41,6 +41,7 @@ try
         case "overruns": WriteJson(client.ReadOverflowCounts()); break;
         case "hardware": WriteJson(client.ReadHardwareInfo()); break;
         case "config": WriteJson(client.ReadConfiguration()); break;
+        case "telemetry": WriteJson(client.ReadTelemetry()); break;
         case "temperature":
             Console.WriteLine(client.ReadBoardStatus().TemperatureCelsius.ToString(CultureInfo.InvariantCulture));
             break;

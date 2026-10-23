@@ -52,7 +52,7 @@ def test_metadata_polling_uses_hid_cadence_without_sleeping_between_input_reads(
 
 
 @pytest.mark.parametrize(("interval", "refresh"), [
-    (0, 500), (100, 500), (500, 500), (750, 750), (1000, 1000), (5000, 1000), (0xFFFFFFFF, 500),
+    (0, 500), (100, 500), (500, 500), (750, 750), (1000, 1000), (5000, 1000), (65535, 500),
 ])
 def test_input_snapshot_preserves_shared_fault_timestamp_without_category_timestamps(interval, refresh):
     service = object.__new__(BoardMonitor)
@@ -67,26 +67,16 @@ def test_input_snapshot_preserves_shared_fault_timestamp_without_category_timest
             "observed_interval_ms": 1000,
             "traffic_gaps": 1,
             "traffic_incomplete": True,
-            "health": 0x51,
-            "health_labels": ["ready", "cdc_open", "rx_overrun"],
-            "state": "attention",
+            "channel_state": 2,
+            "uart_measurement_state": 1,
+            "state": "ready",
             "cdc_open": True,
-            "ring_high_watermark": 32,
             "traffic": {"uart_tx": 4, "uart_rx": 5, "usb_tx": 6, "usb_rx": 7},
             "totals": {"uart_tx": 40, "uart_rx": 50, "usb_tx": 60, "usb_rx": 70},
             "baud_rate": 115200,
             "data_bits": 8,
             "stop_bits": 1,
             "parity": "none",
-            "tx_pin": 4,
-            "rx_pin": 5,
-            "faults": {
-                "init_failed": {"count": 0},
-                "control_error": {"count": 1},
-                "rx_overrun": {"count": 9},
-                "rx_error": {"count": 0},
-            },
-            "last_fault_uptime_s": 123,
         }],
     }
     service._apply_status(status)
@@ -100,17 +90,14 @@ def test_input_snapshot_preserves_shared_fault_timestamp_without_category_timest
     assert channel["sequence"] == 12
     assert channel["traffic_gaps"] == 1
     assert channel["traffic_incomplete"] is True
-    diagnostic = snapshot["channel_diagnostics"][2]
-    assert diagnostic["faults"]["rx_overrun"] == {"count": 9}
-    assert diagnostic["last_fault_uptime_s"] == 123
-    assert all("last_seen_ms" not in fault for fault in diagnostic["faults"].values())
+    assert snapshot["channel_diagnostics"] is None
     status["channels"][0]["interval_ms"] = 600
     service._apply_status(status)
     assert service.snapshot()["refresh_interval_ms"] == refresh
     status["channels"][0]["updated_at"] = "2026-10-22T12:00:00.500+00:00"
     service._apply_status(status)
     assert service.snapshot()["refresh_interval_ms"] == 600
-    for second, invalid in [(1, 0), (2, 0xFFFFFFFF)]:
+    for second, invalid in [(1, 0), (2, 65535)]:
         status["channels"][0].update(
             updated_at=f"2026-10-22T12:00:0{second}.000+00:00", interval_ms=invalid,
         )
@@ -147,16 +134,13 @@ def test_static_identity_masks_and_dynamic_clock_keep_their_own_report_sources()
 
         def read_control(self):
             return {
-                "command": 5,
+                "action": 4,
                 "status": 2,
-                "requested_profile": 2,
-                "request_id": 4,
                 "error_reason": 0,
-                "source": "stored",
-                "reason": "none",
-                "stored_profile": 2,
-                "active_profile": 2,
             }
+
+        def read_configuration(self):
+            return {"stored_profile": 2, "channel_count": 6}
 
     client = Client()
     service._read_static(client)
@@ -181,11 +165,14 @@ def test_non_save_control_result_is_idle_for_save_ui_and_capability_failure_is_e
 
     class Client:
         def read_control(self):
-            return parse_control(control_bytes(command=2, status=2, request_id=1))
+            return parse_control(control_bytes(action=2, status=2))
+
+        def read_configuration(self):
+            return {"stored_profile": None}
 
     service._snapshot["identity"] = {"capabilities": 4}
     service._read_control(Client())
-    assert service.snapshot()["configuration_save"] == {"status": 0, "profile": None}
+    assert service.snapshot()["configuration_save"] == {"status": 0, "action": 0, "error_reason": 0, "error": "none"}
     assert service.snapshot()["configuration_save_error"] is None
     service._snapshot["identity"] = {"capabilities": 0}
     service._read_control(Client())

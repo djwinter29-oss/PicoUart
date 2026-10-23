@@ -6,6 +6,8 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
+#include <stdint.h>
+
 /** @brief Watchdog timeout that covers USB poll plus a 1 s line-coding apply. */
 #ifndef PICO_UART_WATCHDOG_TIMEOUT_MS
 #define PICO_UART_WATCHDOG_TIMEOUT_MS 8000u
@@ -33,6 +35,12 @@ void system_watchdog_enable(void);
  * @brief Pet the watchdog from the USB poll loop when the UART worker is alive.
  */
 void system_watchdog_update(void);
+
+/**
+ * @brief Return the evidenced cause captured before watchdog initialization.
+ * @return HID reset cause: zero Unknown, or two Watchdog; power-on is not inferred.
+ */
+uint8_t system_reset_cause(void);
 
 /**
  * @brief Reboot the board immediately through the watchdog.

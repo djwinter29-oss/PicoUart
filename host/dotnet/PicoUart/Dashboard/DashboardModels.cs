@@ -5,31 +5,35 @@ namespace PicoUart.Dashboard;
 
 public sealed class Traffic
 {
-    public long UartTx { get; set; }
-    public long UartRx { get; set; }
-    public long UsbTx { get; set; }
-    public long UsbRx { get; set; }
+    public double? UartTx { get; set; }
+    public double? UartRx { get; set; }
+    public double? UsbTx { get; set; }
+    public double? UsbRx { get; set; }
 }
 
 public sealed class DashboardChannel(int id)
 {
     public int Id { get; } = id;
-    public byte? Health { get; set; }
-    public string[] HealthLabels { get; set; } = [];
     public string State { get; set; } = "unknown";
-    public bool CdcOpen { get; set; }
-    public int RingHighWatermark { get; set; }
+    public byte? UartMeasurementState { get; set; }
+    public uint BaudRate { get; set; }
+    public byte DataBits { get; set; }
+    public byte StopBits { get; set; }
+    public string? Parity { get; set; }
     public Traffic Traffic { get; set; } = new();
     public Traffic Totals { get; } = new();
     public DateTimeOffset? UpdatedAt { get; set; }
-    public ushort? Sequence { get; set; }
     public ulong ObservedIntervalMs { get; set; }
     public long TrafficGaps { get; set; }
     public bool TrafficIncomplete { get; set; }
+    internal ushort? Sequence { get; set; }
     internal Traffic? CounterBaseline { get; set; }
+    internal byte? MeasurementBaseline { get; set; }
     internal long LastInputTimestamp { get; set; }
     internal bool Stale { get; set; }
 }
+
+public sealed record BoardControlStatus(byte Action, byte Status, byte ErrorReason, string? Error);
 
 public sealed class DashboardSnapshot
 {
@@ -55,7 +59,7 @@ public sealed class DashboardSnapshot
     public ChannelDiagnostics?[] ChannelDiagnostics { get; } = new ChannelDiagnostics?[Protocol.ChannelCount];
     public string? DiagnosticsError { get; set; }
     public BoardStatus? Board { get; set; }
-    public uint?[] OverflowCounts { get; } = new uint?[Protocol.ChannelCount];
+    public BoardControlStatus? Control { get; set; }
     public DashboardChannel[] Channels { get; } = Enumerable.Range(0, Protocol.ChannelCount)
         .Select(index => new DashboardChannel(index)).ToArray();
 
@@ -65,15 +69,20 @@ public sealed class DashboardSnapshot
         RuntimeError = error;
     }
 
-    internal void ApplyControl(ControlResult control, BoardIdentity identity)
+    internal void ApplyAction(ActionResult result)
     {
-        Configuration = control.Configuration;
-        ConfigurationError = null;
-        ConfigurationSave = control.Command == 5 ? new(control.Status, control.RequestedProfile) : new(0, null);
-        ConfigurationSaveError = (identity.Capabilities & 4) != 0 ? null : "configuration save unavailable";
+        Control = new(result.Action, result.Status, result.ErrorReason,
+            result.Status is >= 3 and <= 6
+                ? $"board action {Protocol.ActionStatusName(result.Status)} (error {result.ErrorReason})"
+                : null);
+        if (result.Action == 4)
+        {
+            ConfigurationSave = new(result.Status, result.ErrorReason, null);
+            ConfigurationSaveError = Control.Error;
+        }
     }
 
-    /// <summary>Refresh on-demand state without advancing interrupt traffic or freshness.</summary>
+    /// <summary>Apply on-demand state without advancing interrupt traffic or freshness.</summary>
     public void ApplyFeature(ChannelStatus source) => ApplyState(source);
 
     public void Apply(ChannelStatus source)
@@ -94,15 +103,16 @@ public sealed class DashboardSnapshot
             MarkIncomplete(channel);
             return;
         }
+        var exact = source.IntervalMs is > 0 and < ushort.MaxValue;
         var gap = !first && (source.Sequence != (ushort)((channel.Sequence!.Value + 1) & 65535)
             || Stopwatch.GetElapsedTime(channel.LastInputTimestamp, now).TotalSeconds >= 3);
-        var exact = source.IntervalMs is > 0 and < uint.MaxValue;
+        var previous = channel.CounterBaseline;
+        var previousMeasurement = channel.MeasurementBaseline;
         if (!first && ((gap && !channel.Stale) || !exact))
             MarkIncomplete(channel);
         Connected = true;
         Error = null;
-        if (source.IntervalMs is > 0 and < uint.MaxValue)
-            RefreshIntervalMs = (int)Math.Clamp(source.IntervalMs, 500u, 1000u);
+        if (exact) RefreshIntervalMs = Math.Clamp((int)source.IntervalMs, 500, 1000);
         ApplyState(source);
         channel.Sequence = source.Sequence;
         channel.UpdatedAt = UpdatedAt = DateTimeOffset.UtcNow;
@@ -110,23 +120,31 @@ public sealed class DashboardSnapshot
         channel.Stale = false;
         var counters = new Traffic
         {
-            UartTx = source.UartTxBytes, UartRx = source.UartRxBytes,
-            UsbTx = source.CdcTxBytes, UsbRx = source.CdcRxBytes
+            UartTx = source.UartTxBytes,
+            UartRx = source.UartRxBytes,
+            UsbTx = source.CdcTxBytes,
+            UsbRx = source.CdcRxBytes
         };
-        var previous = channel.CounterBaseline;
-        channel.Traffic = previous is null ? new() : new()
+        channel.Totals.UartTx = source.UartTxBytes;
+        channel.Totals.UartRx = source.UartRxBytes;
+        channel.Totals.UsbTx = source.CdcTxBytes;
+        channel.Totals.UsbRx = source.CdcRxBytes;
+        channel.Traffic = new();
+        if (!first && !gap && exact && previous is not null)
         {
-            UartTx = Delta(source.UartTxBytes, previous.UartTx),
-            UartRx = Delta(source.UartRxBytes, previous.UartRx),
-            UsbTx = Delta(source.CdcTxBytes, previous.UsbTx),
-            UsbRx = Delta(source.CdcRxBytes, previous.UsbRx)
-        };
+            var uartCurrent = source.UartMeasurementState == 1 && previousMeasurement == 1;
+            var scale = 1000.0 / source.IntervalMs;
+            channel.Traffic = new()
+            {
+                UartTx = uartCurrent ? Delta(source.UartTxBytes, previous.UartTx) * scale : null,
+                UartRx = uartCurrent ? Delta(source.UartRxBytes, previous.UartRx) * scale : null,
+                UsbTx = Delta(source.CdcTxBytes, previous.UsbTx) * scale,
+                UsbRx = Delta(source.CdcRxBytes, previous.UsbRx) * scale
+            };
+            channel.ObservedIntervalMs += source.IntervalMs;
+        }
         channel.CounterBaseline = counters;
-        channel.Totals.UartTx = counters.UartTx;
-        channel.Totals.UartRx = counters.UartRx;
-        channel.Totals.UsbTx = counters.UsbTx;
-        channel.Totals.UsbRx = counters.UsbRx;
-        if (!first && !gap && exact) channel.ObservedIntervalMs += source.IntervalMs;
+        channel.MeasurementBaseline = source.UartMeasurementState;
     }
 
     public void MarkStale()
@@ -138,9 +156,7 @@ public sealed class DashboardSnapshot
                 || Stopwatch.GetElapsedTime(channel.LastInputTimestamp, now).TotalSeconds < 3) continue;
             channel.Stale = true;
             MarkIncomplete(channel);
-            channel.Health = null;
-            channel.HealthLabels = [];
-            channel.State = "stale";
+            channel.State = "unknown";
             channel.Traffic = new();
         }
     }
@@ -148,14 +164,12 @@ public sealed class DashboardSnapshot
     private void ApplyState(ChannelStatus source)
     {
         var channel = Channels[source.Id];
-        channel.Health = source.Health;
-        channel.HealthLabels = Protocol.DecodeHealth(source.Health);
-        channel.State = (source.Health & 0xC6) != 0 ? "attention"
-            : (source.Health & 1) != 0 ? "ready" : "initializing";
-        channel.CdcOpen = (source.Health & 0x10) != 0;
-        channel.RingHighWatermark = source.RingHighWatermark;
-        ChannelDiagnostics[source.Id] = source.Diagnostics;
-        OverflowCounts[source.Id] = source.Diagnostics.Faults["rx_overrun"].Count;
+        channel.State = source.State == "error" ? "error" : source.State;
+        channel.UartMeasurementState = source.UartMeasurementState;
+        channel.BaudRate = source.BaudRate;
+        channel.DataBits = source.DataBits;
+        channel.StopBits = source.StopBits;
+        channel.Parity = source.Parity;
     }
 
     private static void MarkIncomplete(DashboardChannel channel)
@@ -164,5 +178,6 @@ public sealed class DashboardSnapshot
         channel.TrafficGaps++;
     }
 
-    private static uint Delta(uint current, long previous) => unchecked(current - (uint)previous);
+    private static double Delta(uint current, double? previous) =>
+        unchecked(current - (uint)(previous ?? 0));
 }

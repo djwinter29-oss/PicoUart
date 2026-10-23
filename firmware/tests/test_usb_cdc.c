@@ -107,13 +107,16 @@ uint32_t uart_driver_mark_control_pending(uart_port_id_t port)
     flags[port] = UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
     return ++generation[port];
 }
-void uart_driver_report_control_error(uart_port_id_t port)
+void uart_driver_report_control_error(uart_port_id_t port, uart_driver_control_error_t reason)
 {
+    TEST_ASSERT_NOT_EQUAL(UART_CONTROL_ERROR_NONE, reason);
     ++generation[port];
     flags[port] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
 }
-void uart_driver_report_soft_pending_error(uart_port_id_t port, uint32_t request_generation)
+void uart_driver_report_soft_pending_error(uart_port_id_t port, uint32_t request_generation,
+                                           uart_driver_control_error_t reason)
 {
+    TEST_ASSERT_NOT_EQUAL(UART_CONTROL_ERROR_NONE, reason);
     if (request_generation == generation[port]) {
         flags[port] = UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
     }

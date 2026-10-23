@@ -1,4 +1,4 @@
-"""Report-2 configuration commands validate capabilities and correlate results."""
+"""Report-20 configuration actions validate capabilities and observe results."""
 
 from unittest.mock import patch
 
@@ -27,24 +27,17 @@ class ConfigDevice:
                 capabilities=self.capabilities,
                 profile_mask=0x1F if self.mcu == 2 else 0x0F,
             )]
-        assert report_id == REPORT_ID_CONTROL and length == 25
+        assert report_id == REPORT_ID_CONTROL and length == 5
         if not self.writes:
             return [report_id, *control_bytes(
-                command=5 if self.initial_status else 0,
+                action=4 if self.initial_status else 0,
                 status=self.initial_status,
-                request_id=1 if self.initial_status else 0,
-                requested=0 if self.initial_status else 0xFFFFFFFF,
             )]
-        command, flags = self.writes[-1][2:4]
-        profile = int.from_bytes(self.writes[-1][17:21], "little")
-        profile = self.result_profile if self.result_profile is not None else profile
+        command = self.writes[-1][2]
         error_reason = {3: 3, 4: 5, 5: 6, 6: 9}.get(self.status, 0)
         return [report_id, *control_bytes(
-            command=command,
-            flags=flags,
+            action=self.result_profile if self.result_profile is not None else command,
             status=self.status,
-            request_id=int.from_bytes(self.writes[-1][5:9], "little"),
-            requested=profile,
             error_reason=error_reason,
         )]
 
@@ -61,12 +54,9 @@ class ConfigDevice:
 def test_save_supported_profile_has_explicit_payload(mcu, profile, ack):
     device = ConfigDevice(mcu=mcu)
     result = PicoUartHid(device=device).save_configuration(profile, ack)
-    assert result["status"] == 2 and result["requested_profile"] == profile
+    assert result["status"] == 2 and result["action"] == 4
     report = device.writes[0]
-    assert report[0] == REPORT_ID_CONTROL and len(report) == 25
-    assert report[1:4] == [1, 5, int(ack)]
-    assert report[5:9] == [1, 0, 0, 0]
-    assert int.from_bytes(report[17:21], "little") == profile
+    assert report == [20, 1, 4, 3 if profile else 1, profile]
 
 
 @pytest.mark.parametrize("mcu,profile,ack", [
@@ -91,7 +81,7 @@ def test_save_errors_are_explicit(status, message):
 def test_partial_write_mismatch_and_timeout_are_not_success():
     with pytest.raises(RuntimeError, match="incomplete"):
         PicoUartHid(device=ConfigDevice(written=8)).save_configuration(0)
-    with pytest.raises(RuntimeError, match="requested profile"):
+    with pytest.raises(RuntimeError, match="does not match"):
         PicoUartHid(device=ConfigDevice(result_profile=1)).save_configuration(0)
     with patch("pico_uart.client.time.monotonic", side_effect=[0, 1, 4]), patch("pico_uart.client.time.sleep"):
         with pytest.raises(RuntimeError, match="timed out"):

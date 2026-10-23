@@ -6,7 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(PICO_BOARD pico CACHE STRING "Target board")
 set(PICO_UART_VERSION "0.0.0-dev" CACHE STRING "Firmware semantic version string")
-option(PICO_UART_ALLOW_HID_RESET "Enable the HID watchdog reset command (arm, then reset within 2 s)" ON)
+option(PICO_UART_ALLOW_HID_RESET "Enable the explicitly confirmed standalone HID reboot action" ON)
 if((DEFINED PICO_UART_SYSTEM_CLOCK_KHZ AND NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQUAL "") OR
    PICO_UART_ALLOW_UNSAFE_OVERCLOCK)
     message(FATAL_ERROR "Build-time clock overrides were removed; use tools/firmware/config.py to select a stored profile")
@@ -120,6 +120,13 @@ target_compile_definitions(pico_uart PRIVATE
     PICO_UART_BCD_DEVICE=${PICO_UART_BCD_DEVICE}u
     PICO_UART_ALLOW_HID_RESET=$<BOOL:${PICO_UART_ALLOW_HID_RESET}>
 )
+
+# Preserve SDK HID descriptor/idle handling while enforcing report transfers before status ACK.
+target_link_options(pico_uart PRIVATE -Wl,--wrap=hidd_control_xfer_cb)
+set(_hid_board_models pico pico_w pico2 pico2_w)
+list(FIND _hid_board_models "${PICO_BOARD}" _hid_board_index)
+math(EXPR _hid_board_model "${_hid_board_index} + 1")
+target_compile_definitions(pico_uart PRIVATE PICO_UART_BOARD_MODEL=${_hid_board_model}u)
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(pico_uart PRIVATE -Wall -Wextra -Wformat=2)

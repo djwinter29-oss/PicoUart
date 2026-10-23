@@ -2,7 +2,7 @@
 .status-line { align-items: baseline; }
 .status-line .status-mark { flex-shrink: 0; }
 #status-message { overflow-wrap: anywhere; }
-.summary.configuration-summary { grid-template-columns: minmax(0, 1fr); }
+.summary.configuration-summary { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .configuration-summary .summary-item { min-height: 62px; padding-block: 10px; }
 .configuration-summary label { color: var(--muted); font-size: 12px; }
 #configuration-profile {
@@ -36,6 +36,10 @@
 }
 .configuration-message:empty { display: none; }
 .configuration-message[data-error="true"] { color: var(--coral); }
+.static-map { margin-bottom: 12px; }
+.static-map table { min-width: 540px; table-layout: auto; }
+.static-map caption { padding: 10px 14px; color: var(--muted); text-align: left; font-size: 12px; }
+.static-map td { height: 40px; }
 @media (max-width: 720px) {
   #configuration-profile { width: 100%; }
   .actions #connect { min-width: 0; }

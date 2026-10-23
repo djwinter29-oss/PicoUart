@@ -59,20 +59,22 @@ def firmware_hid_constants(repo_root: Path) -> dict[str, int]:
     names = (
         "USB_HID_REPORT_VERSION",
         "USB_HID_REPORT_ID_DEVICE_INFO",
+        "USB_HID_REPORT_ID_CONFIGURATION",
         "USB_HID_REPORT_ID_CONTROL",
         "USB_HID_REPORT_ID_TELEMETRY",
         "USB_HID_REPORT_ID_CHANNEL_BASE",
+        "USB_HID_REPORT_ID_DIAGNOSTIC_BASE",
         "USB_HID_DEVICE_INFO_SIZE",
         "USB_HID_CONTROL_SIZE",
+        "USB_HID_CONFIGURATION_SIZE",
+        "USB_HID_DIAGNOSTIC_SIZE",
         "USB_HID_TELEMETRY_SIZE",
         "USB_HID_CHANNEL_SIZE",
         "USB_HID_CHANNEL_INTERVAL_MS",
         "USB_HID_COMMAND_LED_OFF",
         "USB_HID_COMMAND_LED_ON",
-        "USB_HID_COMMAND_ARM_REBOOT",
         "USB_HID_COMMAND_REBOOT",
         "USB_HID_COMMAND_SAVE_CONFIGURATION",
-        "USB_HID_RESET_ARM_WINDOW_MS",
     )
     constants = {name: parse_c_u_define(text, name) for name in names}
     return constants

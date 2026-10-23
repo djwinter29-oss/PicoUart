@@ -92,14 +92,14 @@ static void usb_cdc_arm_soft_pending(uint8_t itf, const uart_driver_line_coding_
     pending->control_generation = uart_driver_mark_control_pending((uart_port_id_t)itf);
 }
 
-static void usb_cdc_reject_line_coding(uint8_t itf)
+static void usb_cdc_reject_line_coding(uint8_t itf, uart_driver_control_error_t reason)
 {
     /*
      * Surface CONTROL_ERROR for the bad host request. A prior valid soft-pending
      * request remains armed, but its completion is stale and cannot clear this
      * newer failure.
      */
-    uart_driver_report_control_error((uart_port_id_t)itf);
+    uart_driver_report_control_error((uart_port_id_t)itf, reason);
 }
 
 static void usb_cdc_apply_pending_line_coding(uint8_t itf)
@@ -117,7 +117,8 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
     if (time_reached(pending->deadline)) {
         service_load_note(0u);
         pending->pending = false;
-        uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
+        uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation,
+                                               UART_CONTROL_ERROR_TIMEOUT);
         return;
     }
 
@@ -125,7 +126,8 @@ static void usb_cdc_apply_pending_line_coding(uint8_t itf)
     if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &pending->line_coding)) {
         service_load_note(0u);
         pending->pending = false;
-        uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation);
+        uart_driver_report_soft_pending_error((uart_port_id_t)itf, pending->control_generation,
+                                               UART_CONTROL_ERROR_OTHER);
         return;
     }
 
@@ -314,7 +316,7 @@ void usb_cdc_poll(void)
                 continue;
             }
             if (!uart_driver_request_channel_start((uart_port_id_t)itf)) {
-                uart_driver_report_control_error((uart_port_id_t)itf);
+                uart_driver_report_control_error((uart_port_id_t)itf, UART_CONTROL_ERROR_BACKEND);
                 continue;
             }
             port->admission = USB_CDC_STARTING;
@@ -389,13 +391,19 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
     if ((p_line_coding == NULL) ||
         !uart_line_coding_from_usb(p_line_coding->bit_rate, p_line_coding->stop_bits, p_line_coding->parity,
                                    p_line_coding->data_bits, &line_coding)) {
-        usb_cdc_reject_line_coding(itf);
+        usb_cdc_reject_line_coding(itf, p_line_coding == NULL ? UART_CONTROL_ERROR_OTHER :
+            (p_line_coding->bit_rate < UART_LINE_CODING_BAUD_MIN ||
+             p_line_coding->bit_rate > UART_LINE_CODING_BAUD_MAX) ?
+                UART_CONTROL_ERROR_BAUD : UART_CONTROL_ERROR_FRAMING);
         return;
     }
 
     /* Do not arm CDC soft-pending for permanent backend rejects (PIO 8N1/baud). */
     if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &line_coding)) {
-        usb_cdc_reject_line_coding(itf);
+        usb_cdc_reject_line_coding(itf,
+            (line_coding.data_bits != 8u || line_coding.stop_bits != 1u ||
+             line_coding.parity != UART_DRIVER_PARITY_NONE) ?
+                UART_CONTROL_ERROR_FRAMING : UART_CONTROL_ERROR_BAUD);
         return;
     }
 

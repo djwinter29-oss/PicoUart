@@ -6,9 +6,9 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PicoUart Diagnostics | WebHID</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/dashboard.css?v=10">
-  <link rel="stylesheet" href="css/webhid.css?v=5">
-  <script type="module" src="js/app.mjs?v=8"></script>
+  <link rel="stylesheet" href="css/dashboard.css?v=11">
+  <link rel="stylesheet" href="css/webhid.css?v=6">
+  <script type="module" src="js/app.mjs?v=9"></script>
 </head>
 <body>
   <header class="topbar">
@@ -29,23 +29,23 @@
 
   <main>
     <section class="page-heading">
-      <div>
-        <h1>Diagnostics</h1>
-      </div>
+      <div><h1>Diagnostics</h1></div>
     </section>
 
     <section aria-labelledby="identity-title">
       <div class="section-heading">
         <h2 id="identity-title">Device identity</h2>
-        <div class="actions" aria-label="Device connection and identification">
+        <div class="actions" aria-label="Connection and board controls">
           <button class="button button-led" id="toggle-led" type="button" data-state="unknown"
             title="Board identification LED state unavailable" disabled>Board LED: --</button>
+          <button class="button button-danger" id="reboot-board" type="button" hidden disabled>Reboot board</button>
           <button class="button button-secondary" id="connect" type="button" disabled>Connect</button>
         </div>
       </div>
       <div class="summary identity-summary">
         <div class="summary-item"><span>Product</span><strong id="product-name">--</strong></div>
         <div class="summary-item"><span>Microcontroller</span><strong id="mcu">--</strong></div>
+        <div class="summary-item"><span>Board model</span><strong id="board-model">--</strong></div>
         <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
         <div class="summary-item"><span>Firmware version</span><strong id="firmware">--</strong></div>
         <div class="summary-item"><span>Serial / UID</span><strong id="serial">--</strong></div>
@@ -55,71 +55,77 @@
     <section aria-labelledby="configuration-title">
       <div class="section-heading">
         <h2 id="configuration-title">Boot configuration</h2>
-        <div class="actions" aria-label="Configuration controls">
+        <div class="actions" aria-label="Boot configuration controls">
           <button class="button button-led" id="save-configuration" type="button" disabled>Save &amp; Reboot</button>
         </div>
       </div>
       <div class="summary configuration-summary">
+        <div class="summary-item"><span>Stored clock profile</span><strong id="configuration-state">--</strong></div>
+        <div class="summary-item"><span>Reset cause</span><strong id="reset-cause">--</strong></div>
+        <div class="summary-item"><span>Shared buffer capacities</span><strong id="buffer-capacities">--</strong></div>
         <div class="summary-item">
-          <label for="configuration-profile">System clock profile</label>
-          <select id="configuration-profile" disabled>
-            <option value="0">Default</option>
-          </select>
+          <label for="configuration-profile">Clock profile to save</label>
+          <select id="configuration-profile" disabled></select>
           <label class="configuration-acknowledgement" id="configuration-acknowledgement" hidden>
             <input id="configuration-unsafe-ack" type="checkbox" disabled>
-            <span>I understand this is an unsafe overclock.</span>
+            <span>I acknowledge the non-default overclock request.</span>
           </label>
         </div>
       </div>
+      <div class="table-scroll static-map">
+        <table>
+          <caption>Configured GPIO assignments (GP numbers, not physical header pins)</caption>
+          <thead><tr><th scope="col">Channel</th><th scope="col">TX</th><th scope="col">RX</th>
+            <th scope="col">RTS</th><th scope="col">CTS</th></tr></thead>
+          <tbody id="board-pins"></tbody>
+        </table>
+      </div>
       <p class="configuration-warning" id="configuration-warning" role="note">
-        Saving reboots the Pico and briefly disconnects USB. Close all CDC ports and stop UART traffic first.
+        Saving or rebooting is destructive: confirm each action, close all CDC ports, and stop external UART traffic.
+        A save automatically reboots; do not retry an unconfirmed action.
       </p>
       <p class="configuration-message" id="configuration-message" role="status" aria-live="polite"></p>
     </section>
 
     <section aria-labelledby="runtime-title">
-      <div class="section-heading">
-        <h2 id="runtime-title">Runtime status</h2>
-      </div>
+      <div class="section-heading"><h2 id="runtime-title">Runtime status</h2></div>
       <div class="summary runtime-summary">
         <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>
-        <div class="summary-item" title="Wall time of passes handling work over a one-second window; excludes empty polling">
-          <span>CPU load (core 0 / core 1)</span><strong id="cpu-usage">--</strong>
+        <div class="summary-item" title="Service-work wall time divided by the measurement window; not CPU utilization">
+          <span>USB service load · Core 0</span><strong id="core0-service-load">--</strong>
+        </div>
+        <div class="summary-item" title="UART service-work wall time divided by the measurement window; not CPU utilization">
+          <span>UART service load · Core 1</span><strong id="core1-service-load">--</strong>
         </div>
         <div class="summary-item" title="Linked static SRAM and reserved stacks; excludes live heap/stack occupancy">
-          <span>RAM (reserved / total)</span><strong id="ram-usage">--</strong>
+          <span>Firmware RAM reserved / total</span><strong id="ram-usage">--</strong>
         </div>
-        <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
-        <div class="summary-item"><span>Total RX overflow</span><strong id="overflow-total">--</strong></div>
+        <div class="summary-item"><span>Estimated die temperature</span><strong id="temperature">--</strong></div>
+        <div class="summary-item"><span>Latest board action</span><strong id="action-result">--</strong></div>
       </div>
     </section>
 
     <section class="channels-section" aria-labelledby="channels-title">
       <div class="section-heading">
-        <div>
-          <h2 id="channels-title">UART channels <span>01-06</span></h2>
-        </div>
+        <h2 id="channels-title">UART channels <span>CDC0–CDC5</span></h2>
+        <button class="button button-secondary" id="refresh-diagnostics" type="button" disabled>
+          Refresh channel diagnostics
+        </button>
       </div>
       <div class="table-scroll">
         <table>
           <colgroup>
-            <col class="port-column">
-            <col class="session-column">
-            <col class="configuration-column">
-            <col class="health-column">
-            <col class="throughput-column">
-            <col class="overflow-column">
+            <col class="port-column"><col class="health-column"><col class="configuration-column">
+            <col class="throughput-column"><col class="fault-column"><col class="peak-column">
           </colgroup>
-          <thead>
-            <tr>
-              <th scope="col">Port</th>
-              <th scope="col">Host session</th>
-              <th scope="col">UART configuration</th>
-              <th scope="col">Health</th>
-              <th scope="col">Throughput</th>
-              <th scope="col" class="overflow-heading">RX overflow</th>
-            </tr>
-          </thead>
+          <thead><tr>
+            <th scope="col">Port</th>
+            <th scope="col">Lifecycle / UART validity</th>
+            <th scope="col">Applied settings / pins</th>
+            <th scope="col">Traffic rates / totals</th>
+            <th scope="col">Recorded fault history</th>
+            <th scope="col">Observed peak since boot</th>
+          </tr></thead>
           <tbody id="channel-rows"></tbody>
         </table>
       </div>

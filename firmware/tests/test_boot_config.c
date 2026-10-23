@@ -177,10 +177,12 @@ static void test_profiles_are_exact_and_target_checked(void)
     for (uint32_t profile = 0; profile < 6; ++profile) {
         record(profile);
         boot_config_status_t status = boot_config_decode(sector, sizeof(sector), false);
-        bool supported = profile <= 3u || (PICO_RP2350 && profile == 4u);
+        bool supported = profile <= 4u;
         TEST_ASSERT_EQUAL(supported ? BOOT_CONFIG_OK : BOOT_CONFIG_INVALID_PROFILE, status.reason);
         TEST_ASSERT_EQUAL(supported ? BOOT_CONFIG_STORED : BOOT_CONFIG_DEFAULTS, status.source);
-        TEST_ASSERT_EQUAL(supported ? profile : 0, status.active_profile);
+        uint32_t active = !PICO_RP2350 && profile == 4u ? 3u : profile;
+        TEST_ASSERT_EQUAL(supported ? active : 0u, status.active_profile);
+        TEST_ASSERT_EQUAL_UINT32(supported ? profile : BOOT_CONFIG_PROFILE_UNAVAILABLE, status.stored_profile);
     }
 }
 

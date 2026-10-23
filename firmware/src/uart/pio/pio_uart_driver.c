@@ -665,7 +665,6 @@ void pio_uart_driver_clear_rx_error_baseline(void *context)
     if (pio_interrupt_get(driver->config->pio, driver->config->rx_state_machine)) {
         pio_interrupt_clear(driver->config->pio, driver->config->rx_state_machine);
     }
-    driver->rx_error_count = 0u;
 }
 
 bool pio_uart_driver_start(void *context)

@@ -54,6 +54,7 @@ _MOCK_WATCHDOG_H = """
 #include <stdbool.h>
 #include <stdint.h>
 extern bool g_watchdog_recovery;
+static inline bool watchdog_caused_reboot(void) { return g_watchdog_recovery; }
 static inline bool watchdog_enable_caused_reboot(void) { return g_watchdog_recovery; }
 static inline void watchdog_enable(uint32_t timeout_ms, bool pause_on_debug) {
     (void)timeout_ms; (void)pause_on_debug;
@@ -160,6 +161,7 @@ int main(void) {
         put_u32(12, fixture_crc32(protected, 32) ^ CORRUPT);
     }
     system_watchdog_enable();
+    assert(system_reset_cause() == (WATCHDOG_RECOVERY ? 2u : 0u));
     system_init_clock();
     const boot_config_status_t *config = boot_config_get_status();
     printf("%u %d %u %u\\n", g_requested_clock_khz, g_set_sys_clock_khz_calls,
@@ -172,7 +174,7 @@ int main(void) {
     unsigned profile = BOOT_CLOCK_250_MHZ;
     if (!PICO_RP2350) {
         settings.clock_profile = BOOT_CLOCK_280_MHZ;
-        assert(!boot_config_set(&settings));
+        assert(boot_config_set(&settings));
     }
     settings.clock_profile = (boot_clock_profile_t)profile;
     assert(boot_config_set(&settings));
@@ -244,7 +246,7 @@ def _read_nm_symbols(nm, artifact):
         (0, 3, 0, 0, 1, 250000, 0, 3),
         (1, 3, 0, 0, 1, 250000, 0, 3),
         (1, 4, 0, 0, 1, 280000, 0, 4),
-        (0, 4, 0, 0, 1, 0, 5, 0),
+        (0, 4, 0, 0, 1, 250000, 0, 3),
         (0, 3, 1, 0, 1, 0, 3, 0),
         (0, 3, 0, 1, 1, 0, 6, 0),
         (1, 3, 0, 1, 1, 0, 6, 0),

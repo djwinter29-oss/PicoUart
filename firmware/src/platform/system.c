@@ -12,6 +12,8 @@
 
 /** @brief Capture the SDK watchdog distinction before watchdog_enable replaces its scratch marker. */
 static bool watchdog_recovery;
+/** @brief Conservative startup cause; absence of watchdog evidence is Unknown. */
+static uint8_t reset_cause;
 
 /** @copydoc system_init_clock */
 void system_init_clock(void)
@@ -27,7 +29,13 @@ void system_init_clock(void)
 void system_watchdog_enable(void)
 {
     watchdog_recovery = watchdog_enable_caused_reboot();
+    reset_cause = watchdog_caused_reboot() ? 2u : 0u;
     watchdog_enable(PICO_UART_WATCHDOG_TIMEOUT_MS, true);
+}
+
+uint8_t system_reset_cause(void)
+{
+    return reset_cause;
 }
 
 /** @copydoc system_watchdog_update */

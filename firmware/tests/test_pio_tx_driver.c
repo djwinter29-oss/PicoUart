@@ -782,9 +782,17 @@ void test_production_resource_bindings_delegate_to_sdk(void)
     TEST_ASSERT_EQUAL_UINT(0u, claimed_dma_channels);
 }
 
+static void test_restart_baseline_preserves_observed_error_history(void)
+{
+    driver.rx_error_count = 7u;
+    pio_uart_driver_clear_rx_error_baseline(&driver);
+    TEST_ASSERT_EQUAL_UINT32(7u, driver.rx_error_count);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_restart_baseline_preserves_observed_error_history);
     RUN_TEST(test_production_resource_bindings_delegate_to_sdk);
     RUN_TEST(test_released_pio_backend_parks_tx_idle_high);
     RUN_TEST(test_fifo_launch_invalidates_probe_before_writing_bytes);

@@ -20,33 +20,39 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
         }
     }
 
-    public void Action(string action)
+    public BoardControlStatus Action(string action)
     {
         lock (gate)
         {
             var connection = client
                 ?? throw new InvalidOperationException(snapshot.Error ?? "PicoUart HID interface is not connected");
-            if (action == "toggle-led")
+            try
             {
-                try
+                var result = action switch
                 {
-                    connection.ToggleLed();
-                    ReadTelemetry(connection);
-                    ReadControl(connection);
-                }
-                catch
+                    "toggle-led" => connection.ToggleLed(),
+                    "reset" => connection.ResetBoard(),
+                    _ => throw new ArgumentException("unknown board action", nameof(action))
+                };
+                snapshot.ApplyAction(result);
+                if (action == "toggle-led") ReadTelemetry(connection);
+                return snapshot.Control!;
+            }
+            catch
+            {
+                if (connection.LastActionResult is not null)
+                    snapshot.ApplyAction(connection.LastActionResult);
+                if (action == "toggle-led")
                 {
                     snapshot.Led = null;
                     snapshot.LedError = "LED operation unconfirmed; reread telemetry";
-                    throw;
                 }
+                throw;
             }
-            else if (action == "reset") connection.ResetBoard();
-            else throw new ArgumentException("unknown board action", nameof(action));
         }
     }
 
-    public void SaveConfiguration(uint profile, bool unsafeOverclock)
+    public BoardControlStatus SaveConfiguration(uint profile, bool unsafeOverclock)
     {
         lock (gate)
         {
@@ -56,15 +62,42 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
             {
                 snapshot.ConfigurationSave = connection.SaveConfiguration(profile, unsafeOverclock);
                 snapshot.ConfigurationSaveError = null;
+                if (connection.LastActionResult is not null) snapshot.ApplyAction(connection.LastActionResult);
+                snapshot.ConfigurationSave = new(2, 0, profile);
+                return snapshot.Control!;
             }
             catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
             {
-                var result = connection.LastCommandResult;
-                snapshot.ConfigurationSave = result?.Command == 5
-                    ? new(result.Status, result.RequestedProfile) : null;
+                var result = connection.LastActionResult;
+                if (result?.Action == 4)
+                {
+                    snapshot.ApplyAction(result);
+                    snapshot.ConfigurationSave = new(result.Status, result.ErrorReason, profile);
+                }
                 snapshot.ConfigurationSaveError = error.Message;
                 throw;
             }
+        }
+    }
+
+    public string DiagnosticsJson()
+    {
+        lock (gate)
+        {
+            var connection = client
+                ?? throw new InvalidOperationException(snapshot.Error ?? "PicoUart HID interface is not connected");
+            var errors = new List<string>();
+            for (var index = 0; index < Protocol.ChannelCount; index++)
+            {
+                try { snapshot.ChannelDiagnostics[index] = connection.ReadChannelDiagnostic(index); }
+                catch (Exception error) when (HidErrors.IsDeviceError(error))
+                {
+                    snapshot.ChannelDiagnostics[index] = null;
+                    errors.Add($"CDC{index}: {error.Message}");
+                }
+            }
+            snapshot.DiagnosticsError = errors.Count == 0 ? null : string.Join("; ", errors);
+            return JsonSerializer.Serialize(snapshot.ChannelDiagnostics, Protocol.JsonOptions);
         }
     }
 
@@ -108,19 +141,16 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
             return false;
         }
         if (snapshot.Configuration is not null) return true;
-        ReadControl(connection);
-        return true;
-    }
-
-    private void ReadControl(PicoUartHid connection)
-    {
-        try { snapshot.ApplyControl(connection.ReadControl(), connection.ReadIdentity()); }
+        try
+        {
+            snapshot.Configuration = connection.ReadConfiguration();
+            snapshot.ConfigurationError = null;
+        }
         catch (Exception error) when (HidErrors.IsDeviceError(error))
         {
             snapshot.ConfigurationError = error.Message;
-            snapshot.ConfigurationSave = null;
-            snapshot.ConfigurationSaveError = error.Message;
         }
+        return true;
     }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.Run(async () =>
@@ -140,7 +170,6 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 var initialChannelsRead = false;
                 while (!stoppingToken.IsCancellationRequested)
                 {
-                    // Keep board operations and stream reads under the same lock order.
                     lock (gate)
                     {
                         if (Stopwatch.GetTimestamp() >= nextMetadataRead)
@@ -148,7 +177,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                             if (ReadStatic(connection))
                             {
                                 ReadTelemetry(connection);
-                                if (!initialChannelsRead)
+                                if (!initialChannelsRead && snapshot.Configuration is not null)
                                 {
                                     var failed = false;
                                     for (var index = 0; index < Protocol.ChannelCount; index++)
@@ -158,11 +187,9 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                                         {
                                             failed = true;
                                             snapshot.DiagnosticsError = error.Message;
-                                            snapshot.ChannelDiagnostics[index] = null;
                                         }
                                     }
                                     initialChannelsRead = !failed;
-                                    if (!failed) snapshot.DiagnosticsError = null;
                                 }
                             }
                             nextMetadataRead = Stopwatch.GetTimestamp()

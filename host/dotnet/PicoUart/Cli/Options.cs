@@ -40,7 +40,7 @@ internal sealed record Options(string Command, string? Serial, string? DevicePat
             throw new ArgumentException("--serial and --device-path cannot be used together");
         command ??= "help";
         if (command is not ("help" or "--help" or "-h" or "status" or "monitor" or "overruns" or "hardware" or "config"
-            or "temperature" or "version" or "toggle-led" or "reset" or "web"))
+            or "temperature" or "telemetry" or "version" or "toggle-led" or "reset" or "web"))
             throw new ArgumentException($"unknown command: {command}");
         return new(command, serial, devicePath, port, duration);
     }

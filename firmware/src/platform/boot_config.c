@@ -24,28 +24,13 @@ _Static_assert(PICO_UART_CONFIG_FLASH_OFFSET + BOOT_CONFIG_SECTOR_SIZE == PICO_F
 /** @brief Requested settings, separate from immutable boot diagnostics. */
 static boot_config_t boot_config_settings;
 
-/** @brief Target family selected by the SDK, never supplied by callers. */
-static const bool boot_config_rp2350 =
-#if defined(PICO_RP2350A) || defined(PICO_RP2350B) || (defined(PICO_RP2350) && PICO_RP2350)
-    true;
-#else
-    false;
-#endif
-
-/** @brief Frequency and supported targets for one clock-profile ID. */
-typedef struct {
-    uint32_t clock_khz; /**< Exact frequency request, or zero to retain the SDK clock. */
-    bool rp2040;       /**< Profile is permitted on RP2040 targets. */
-    bool rp2350;       /**< Profile is permitted on RP2350 targets. */
-} boot_clock_definition_t;
-
 /** @brief Profile definitions indexed by the settings/storage/HID enum. */
-static const boot_clock_definition_t boot_clock_definitions[] = {
-    [BOOT_CLOCK_DEFAULT] = {.clock_khz = 0u, .rp2040 = true, .rp2350 = true},
-    [BOOT_CLOCK_150_MHZ] = {.clock_khz = 150000u, .rp2040 = true, .rp2350 = true},
-    [BOOT_CLOCK_200_MHZ] = {.clock_khz = 200000u, .rp2040 = true, .rp2350 = true},
-    [BOOT_CLOCK_250_MHZ] = {.clock_khz = 250000u, .rp2040 = true, .rp2350 = true},
-    [BOOT_CLOCK_280_MHZ] = {.clock_khz = 280000u, .rp2040 = false, .rp2350 = true},
+static const uint32_t boot_clock_definitions[] = {
+    [BOOT_CLOCK_DEFAULT] = 0u,
+    [BOOT_CLOCK_150_MHZ] = 150000u,
+    [BOOT_CLOCK_200_MHZ] = 200000u,
+    [BOOT_CLOCK_250_MHZ] = 250000u,
+    [BOOT_CLOCK_280_MHZ] = 280000u,
 };
 
 /** @brief Boot decision cached for startup and read-only diagnostics. */
@@ -86,16 +71,13 @@ uint32_t boot_config_clock_khz(boot_clock_profile_t profile)
 {
     uint32_t index = (uint32_t)profile;
     return index < sizeof(boot_clock_definitions) / sizeof(boot_clock_definitions[0]) ?
-        boot_clock_definitions[index].clock_khz : 0u;
+        boot_clock_definitions[index] : 0u;
 }
 
 /** @copydoc boot_config_profile_supported */
 bool boot_config_profile_supported(uint32_t profile)
 {
-    if (profile >= sizeof(boot_clock_definitions) / sizeof(boot_clock_definitions[0])) {
-        return false;
-    }
-    return boot_config_rp2350 ? boot_clock_definitions[profile].rp2350 : boot_clock_definitions[profile].rp2040;
+    return profile < sizeof(boot_clock_definitions) / sizeof(boot_clock_definitions[0]);
 }
 
 /** @brief Encode a version-1 profile record without exposing its layout to callers. */
@@ -176,6 +158,11 @@ static boot_config_status_t boot_config_decode(const uint8_t *sector, size_t siz
     }
     status.stored_profile = profile;
     status.active_profile = (boot_clock_profile_t)profile;
+#if !PICO_RP2350
+    if (profile == BOOT_CLOCK_280_MHZ) {
+        status.active_profile = BOOT_CLOCK_250_MHZ;
+    }
+#endif
     status.source = BOOT_CONFIG_STORED;
     status.reason = BOOT_CONFIG_OK;
     if (recovery && profile != BOOT_CLOCK_DEFAULT) {

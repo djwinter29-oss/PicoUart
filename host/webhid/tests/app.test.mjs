@@ -32,6 +32,7 @@ function fixture(secure = true, hid = {}) {
     disconnect() { this.calls.push("disconnect"); }
     refresh() { this.calls.push("refresh"); }
     toggleLed() { this.calls.push("toggle-led"); }
+    setLed(on) { this.calls.push("toggle-led"); this.state.dashboard.led = { output_on: on, manual_on: on }; }
     saveConfiguration(profile, unsafeOverclock) { this.calls.push(["save-configuration", profile, unsafeOverclock]); }
     clearConfigurationSaveMessage() { this.state.configurationSaveMessage = ""; }
     phase(phase, error = null) {
@@ -45,6 +46,7 @@ function fixture(secure = true, hid = {}) {
   let agePolling;
   vm.runInNewContext(source, { document, navigator: { hid }, isSecureContext: secure,
     PicoUartWebHid: FakeClient, renderDashboard() {},
+    confirm: () => true,
     updateReportAge(data) { assert.equal(data, client.state.dashboard); },
     setInterval(callback, interval) {
       if (!polling) polling = { callback, interval };
@@ -70,7 +72,7 @@ test("one connection button belongs to Device identity, with no separate refresh
   assert.match(configuration, /id="configuration-unsafe-ack"/);
   assert.match(configuration, /role="status" aria-live="polite"/);
   assert.match(configuration, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[\s\S]*?<\/div>\s*<\/div>/);
-  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">System clock profile<\/label>\s*<select/);
+  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">Clock profile to save<\/label>\s*<select/);
   assert.doesNotMatch(configuration, /configuration-note|configuration-detail|configuration-status/);
 });
 
@@ -79,12 +81,13 @@ test("persistent configuration uses target profiles and gates unsafe saves", () 
   client.state.dashboard = { connected: true, hardware: { mcu_id: 2 },
     identity: { capabilities: 7, clock_profile_mask: 31 },
     configuration: { stored_profile: 2 }, configuration_save: { status: 0, profile: 2 },
-    channels: Array.from({ length: 6 }, () => ({ cdc_open: false })) };
+    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_updated_at: new Date().toISOString() })) };
   client.state.phase = "connected";
   client.render(client.state);
   const profile = get("configuration-profile");
   assert.deepEqual(profile.children.map(option => [option.value, option.textContent]), [
-    ["0", "SDK default (150 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz"], ["4", "280 MHz (RP2350)"],
+    ["0", "SDK default"], ["1", "Profile 1 — 150 MHz"], ["2", "Profile 2 — 200 MHz"],
+    ["3", "Profile 3 — 250 MHz"], ["4", "Profile 4 — 280 MHz"],
   ]);
   assert.equal(profile.value, "2");
   assert.equal(profile.disabled, false);
@@ -98,7 +101,7 @@ test("persistent configuration uses target profiles and gates unsafe saves", () 
   profile.value = "0";
   profile.change();
   assert.equal(get("configuration-acknowledgement").hidden, true);
-  client.state.dashboard.channels[3].cdc_open = true;
+  client.state.dashboard.channels[3].channel_state = 2;
   client.render(client.state);
   assert.equal(profile.disabled, true);
   assert.equal(get("configuration-unsafe-ack").disabled, true);
@@ -110,6 +113,7 @@ test("configuration read failures disable Save and remain visible without the re
   client.state.dashboard = { connected: true, hardware: { mcu_id: 1 },
     configuration: { stored_profile: null }, configuration_save: null, configuration_save_error: "Unsupported report",
     channels: Array.from({ length: 6 }, () => ({ cdc_open: false })) };
+  client.state.dashboard.configuration_error = "Unsupported report";
   client.phase("connected");
   assert.equal(get("save-configuration").disabled, true);
   assert.equal(get("configuration-acknowledgement").hidden, true);
@@ -147,7 +151,8 @@ test("connection button reflects lifecycle, routes clicks and recovers after fai
   assert.equal(button.textContent, "Disconnect");
   assert.match(button.className, /button-danger/);
   assert.equal(get("toggle-led").disabled, true);
-  client.state.dashboard.led = { manual_on: false, output_on: false };
+  client.state.dashboard.identity = { capabilities: 1 };
+  client.state.dashboard.telemetry = { led: { output_on: false } };
   client.phase("connected");
   assert.equal(get("toggle-led").disabled, false);
   button.click();

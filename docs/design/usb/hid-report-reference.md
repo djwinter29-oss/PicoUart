@@ -24,11 +24,6 @@ Reusing these ranges does not imply shared payload layouts. Hosts must identify 
 contract before decoding project-specific fields; matching report IDs and layout versions alone is insufficient
 across products. Common layouts may be shared explicitly where their meanings match.
 
-**Implementation status:** This is the selected pre-release design, not implemented firmware.
-Current firmware still uses 63-byte identity, combined 24-byte control/configuration, 24-byte telemetry with reserved
-RAM, and channel snapshots with TX/RX pins; reports 20 and 30-35 do not exist yet. This review changes documentation
-only. See [implementation requirements](#proposed-pre-release-revision).
-
 PicoUart exposes one vendor-defined USB HID interface named `Status Monitor`. HID provides device information,
 board controls, and diagnostics for the six UART bridges. UART data and line configuration remain on the matching
 USB CDC interface. DTR opens start the matching backend; bridging waits for readiness and initial configuration.
@@ -209,6 +204,8 @@ can distinguish all causes; verify mappings separately before implementation.
 Do not infer power-on from absence of a watchdog indication. Intentional reboot may use the watchdog: prefer an
 evidenced software-requested cause, otherwise known watchdog or Unknown. Software-requested does not prove which
 host action caused reset.
+Current firmware reports evidenced Watchdog or Unknown; it does not infer power-on or software-requested reset
+from missing SDK watchdog markers.
 
 ### Channel Hardware Map
 
@@ -240,6 +237,8 @@ overclock or probe stability by trial during boot. If no eligible frequency exis
 SDK defaults. Watchdog recovery may also select SDK defaults under the firmware's recovery policy.
 Profile 0 directly selects SDK defaults. SDK-default fallback is an explicit exception to the requested upper bound;
 it is not guaranteed to be lower than every request.
+The current build policy permits profile selection through 250 MHz on RP2040 and 280 MHz on RP2350; a stored
+280 MHz request on RP2040 is retained while selecting 250 MHz. This policy is not a hardware stability qualification.
 
 Display requested and running clocks separately. Save completion proves persistence, not achieved frequency or
 stability; non-default operating points require exact-board hardware qualification.
@@ -711,9 +710,11 @@ Invalid/error 3 status (report 20); no flash write or reboot:
 | Channel 0 sequence jumps from 10 to 12 while channel 1 advances normally | Recover channel 0's cumulative totals, discard its rate window, and leave channel 1 unaffected. |
 | Line coding changes during snapshot capture | Report either coherent old or coherent new applied configuration, never a mixture. |
 
-## Proposed Pre-Release Revision
+## Implementation and Integration
 
-Implementation requirements for the selected layouts above; not implemented, pending review.
+Required invariants for firmware and host implementations. Firmware tests cover production encoding and ownership
+paths, and each host client has its own protocol tests. Shared cross-client decoder conformance and physical
+qualification remain separate gates.
 
 ### Scope and Protocol Policy
 
@@ -760,8 +761,8 @@ captures; diagnostics never advance Input rate baselines.
 | `6`-`255` | Unassigned. |
 
 Update on each authoritative configuration-error event, even while the internal control-error flag remains asserted.
-Retain through success,
-close/reopen, and USB reconnect; clear at firmware initialization. Carry the reason through existing control ownership
+Retain through success, close/reopen, and USB reconnect; clear at firmware initialization.
+Carry the reason through existing control ownership
 and capture coherently; do not infer it from flags or statistics-read failure. Use Other/unknown for undistinguished
 errors. Display **Last configuration error**, not active failure or request correlation.
 Each recorded error also updates `last_fault_uptime_s`.

@@ -105,7 +105,7 @@ static bool test_set_line_coding(void *instance, const uart_driver_line_coding_t
 static uint32_t test_baud_rate(const void *instance)
 {
     (void)instance;
-    return applied_line_coding.baud_rate;
+    return applied_line_coding.baud_rate != 0u ? applied_line_coding.baud_rate - 1u : 0u;
 }
 
 static bool start_result = true;
@@ -262,6 +262,7 @@ void test_control_plane_waits_for_tx_boundary_before_applying(void)
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
     TEST_ASSERT_EQUAL_UINT32(1u, apply_count);
     TEST_ASSERT_EQUAL_UINT32(230400u, test_ports[UART_PORT_0].info.baud_rate);
+    TEST_ASSERT_EQUAL_UINT32(230399u, test_baud_rate(NULL));
     TEST_ASSERT_EQUAL_UINT8(8u, test_ports[UART_PORT_0].info.data_bits);
     TEST_ASSERT_EQUAL_UINT8(applied_line_coding.stop_bits, test_ports[UART_PORT_0].info.stop_bits);
     TEST_ASSERT_EQUAL_UINT8(applied_line_coding.parity, test_ports[UART_PORT_0].info.parity);
@@ -409,6 +410,7 @@ void test_control_plane_stops_immediately_when_backend_is_retired(void)
     uart_control_plane_service(&test_control_plane);
 
     TEST_ASSERT_FALSE(backend_alive);
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_BACKEND, test_ports[UART_PORT_0].control_history.reason);
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
     TEST_ASSERT_EQUAL_UINT32(0u, apply_count);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_INIT_FAILED, UART_DRIVER_PORT_STATUS_INIT_FAILED,
@@ -434,6 +436,8 @@ void test_control_plane_reports_error_after_apply_timeout(void)
     uart_control_plane_service(&test_control_plane);
 
     TEST_ASSERT_FALSE(test_pending_controls[UART_PORT_0].pending);
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_TIMEOUT, test_ports[UART_PORT_0].control_history.reason);
+    TEST_ASSERT_EQUAL_UINT64(1000000u, test_ports[UART_PORT_0].control_history.uptime_us);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_ERROR, UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
@@ -688,7 +692,9 @@ void test_failed_start_retry_reseeds_last_applied_framing(void)
     test_status_flags[UART_PORT_0] = 0u;
     start_result = true;
     TEST_ASSERT_TRUE(uart_control_plane_start_port(&test_control_plane, UART_PORT_0));
-    TEST_ASSERT_EQUAL_UINT32(test_ports[UART_PORT_0].info.baud_rate, test_baud_rate(NULL));
+    TEST_ASSERT_EQUAL_UINT32(115200u, test_ports[UART_PORT_0].info.baud_rate);
+    TEST_ASSERT_EQUAL_UINT32(115199u, test_baud_rate(NULL));
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_BACKEND, test_ports[UART_PORT_0].control_history.reason);
     TEST_ASSERT_EQUAL_UINT8(test_ports[UART_PORT_0].info.stop_bits, applied_line_coding.stop_bits);
     TEST_ASSERT_EQUAL_UINT8(test_ports[UART_PORT_0].info.parity, applied_line_coding.parity);
 }

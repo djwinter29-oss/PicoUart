@@ -50,11 +50,12 @@ UART settings. Board controls include explicit LED On/Off, capability-gated rese
 saving.
 A verified configuration save automatically reboots the board, independently of the optional reset-command capability;
 see the [save safety contract](hid-report-reference.md#save-and-reboot-safety) before using it.
-Exact report layouts, health bits, and command semantics are defined in the
-[HID Report Reference](hid-report-reference.md). The version-1 design uses report 1 for static device information,
-report 2 for board commands and boot configuration, report 3 for board telemetry, and reports 10-15 for combined
-per-channel traffic, settings, and compact fault history. Channel snapshots publish every 500 ms as Input reports;
-the same layout is available through read-only Feature reads.
+Exact layouts, lifecycle/measurement states, and action semantics are defined in the
+[HID Report Reference](hid-report-reference.md). Static identity/configuration, live board telemetry, routine channel
+snapshots, on-demand diagnostics, and board actions have separate reports. Channel snapshots publish nominally every
+500 ms as Input reports; the same layout is available through read-only Feature reads.
+Firmware, Python, .NET, and WebHID implement the selected report layouts; there is no legacy compatibility mode.
+Shared cross-client decoder conformance and physical USB/UART qualification remain separate validation gates.
 
 ## Typical Host Workflow
 

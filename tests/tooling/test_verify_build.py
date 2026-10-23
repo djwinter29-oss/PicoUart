@@ -25,11 +25,13 @@ def test_hid_descriptor_parser_recognizes_all_current_reports():
     body = re.search(r"hid_report_descriptor\[\]\s*=\s*\{(.*?)\};", source, re.DOTALL).group(1)
     descriptor = bytes(int(value, 16) for value in re.findall(r"0x([0-9A-Fa-f]+)", body))
     assert verifier._hid_reports(descriptor, len(descriptor)) == [{
-        (1, 11): (63, 8),
-        (2, 11): (24, 8),
-        (3, 11): (24, 8),
+        (1, 11): (27, 8),
+        (2, 11): (36, 8),
+        (3, 11): (20, 8),
+        (20, 11): (4, 8),
+        **{(report_id, 11): (24, 8) for report_id in range(30, 36)},
         **{
-            key: (54, 8)
+            key: (30, 8)
             for report_id in range(10, 16)
             for key in ((report_id, 8), (report_id, 11))
         },

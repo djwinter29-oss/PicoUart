@@ -38,6 +38,7 @@ static bool test_reset_fails;
 static bool test_close_during_start;
 static bool test_reopen_during_start;
 static bool test_reject_during_start;
+static bool test_stats_interference;
 
 const uart_driver_port_info_t uart_board_ports[UART_PORT_COUNT] = {
     [UART_PORT_0] = {.id = UART_PORT_0, .backend = UART_DRIVER_BACKEND_HW, .baud_rate = 115200u,
@@ -163,7 +164,7 @@ static bool test_startup_restart(void *instance)
         }
     }
     if (test_reject_during_start) {
-        uart_driver_report_control_error((uart_port_id_t)index);
+        uart_driver_report_control_error((uart_port_id_t)index, UART_CONTROL_ERROR_OTHER);
     }
     return (instance != NULL) && !test_reset_fails;
 }
@@ -191,7 +192,10 @@ static uart_backend_stats_t test_startup_stats(const void *instance)
 {
     (void)instance;
     ++test_stats_call_count;
-    return (uart_backend_stats_t){0};
+    if (test_stats_interference) {
+        test_worker_hooks->poll_io();
+    }
+    return (uart_backend_stats_t){.uart_tx_bytes = 123u, .uart_rx_bytes = 456u};
 }
 
 const uart_backend_ops_t uart_backend_hw_ops = {
@@ -401,6 +405,7 @@ void setUp(void)
     test_close_during_start = false;
     test_reopen_during_start = false;
     test_reject_during_start = false;
+    test_stats_interference = false;
 #ifdef PICO_UART_CDC_INTEGRATION
     test_usb_mounted = true;
     test_usb_received = 0u;
@@ -454,8 +459,8 @@ void test_uart_driver_handles_valid_ports_before_initialization(void)
     TEST_ASSERT_EQUAL_UINT8(0u, uart_driver_port_status(UART_PORT_0));
     TEST_ASSERT_EQUAL_UINT32(0u, uart_driver_mark_control_pending(UART_PORT_0));
 
-    uart_driver_report_control_error(UART_PORT_0);
-    uart_driver_report_soft_pending_error(UART_PORT_0, 1u);
+    uart_driver_report_control_error(UART_PORT_0, UART_CONTROL_ERROR_OTHER);
+    uart_driver_report_soft_pending_error(UART_PORT_0, 1u, UART_CONTROL_ERROR_TIMEOUT);
     uart_driver_reset_soft_pending(UART_PORT_0);
 
     TEST_ASSERT_EQUAL_UINT8(0u, uart_driver_port_status(UART_PORT_0));
@@ -611,7 +616,7 @@ void test_close_completion_preserves_reopened_control_state(void)
     uart_driver_channel_stop_usb_quiesced(UART_PORT_2);
     TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_2));
     TEST_ASSERT_EQUAL_UINT32(old_generation + 2u, uart_driver_mark_control_pending(UART_PORT_2));
-    uart_driver_report_control_error(UART_PORT_2);
+    uart_driver_report_control_error(UART_PORT_2, UART_CONTROL_ERROR_FRAMING);
     test_worker_hooks->service_control();
 
     TEST_ASSERT_BITS_HIGH(UART_DRIVER_PORT_STATUS_CONTROL_PENDING | UART_DRIVER_PORT_STATUS_CONTROL_ERROR,
@@ -669,6 +674,47 @@ void test_idle_lifecycle_sweep_requires_one_lock_per_port(void)
     TEST_ASSERT_EQUAL_UINT32(UART_PORT_COUNT, idle_unlock_count);
 }
 
+void test_rejected_stats_preserve_output_and_stopped_stats_remain_coherent(void)
+{
+    TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_0));
+    test_worker_hooks->service_control();
+    uart_driver_port_stats_t stats;
+    memset(&stats, 0xa5, sizeof(stats));
+    uart_driver_port_stats_t original = stats;
+    test_stats_interference = true;
+    TEST_ASSERT_FALSE(uart_driver_port_stats(UART_PORT_0, &stats));
+    TEST_ASSERT_EQUAL_MEMORY(&original, &stats, sizeof(stats));
+    TEST_ASSERT_EQUAL_UINT(3u, test_stats_call_count);
+    test_stats_interference = false;
+    TEST_ASSERT_TRUE(uart_driver_port_stats(UART_PORT_0, &stats));
+    TEST_ASSERT_EQUAL_UINT32(123u, stats.uart_tx_bytes);
+    TEST_ASSERT_TRUE(uart_driver_request_channel_stop(UART_PORT_0));
+    uart_driver_channel_stop_usb_quiesced(UART_PORT_0);
+    test_worker_hooks->service_control();
+    TEST_ASSERT_FALSE(uart_driver_port_is_ready(UART_PORT_0));
+    TEST_ASSERT_TRUE(uart_driver_port_stats(UART_PORT_0, &stats));
+    TEST_ASSERT_EQUAL_UINT32(456u, stats.uart_rx_bytes);
+}
+
+void test_control_history_records_repeated_errors_and_survives_success(void)
+{
+    uart_driver_control_history_t history;
+    pico_test_time_us = 1000000u;
+    uart_driver_report_control_error(UART_PORT_0, UART_CONTROL_ERROR_BAUD);
+    TEST_ASSERT_TRUE(uart_driver_control_history(UART_PORT_0, &history));
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_BAUD, history.reason);
+    TEST_ASSERT_EQUAL_UINT64(1000000u, history.uptime_us);
+    pico_test_time_us = 2000000u;
+    uart_driver_report_control_error(UART_PORT_0, UART_CONTROL_ERROR_FRAMING);
+    (void)uart_driver_mark_control_pending(UART_PORT_0);
+    uart_driver_reset_soft_pending(UART_PORT_0);
+    TEST_ASSERT_TRUE(uart_driver_control_history(UART_PORT_0, &history));
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_FRAMING, history.reason);
+    TEST_ASSERT_EQUAL_UINT64(2000000u, history.uptime_us);
+    TEST_ASSERT_FALSE(uart_driver_control_history(UART_PORT_COUNT, &history));
+    TEST_ASSERT_FALSE(uart_driver_control_history(UART_PORT_0, NULL));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -694,6 +740,8 @@ int main(void)
     RUN_TEST(test_start_completion_preserves_a_newer_control_rejection);
     RUN_TEST(test_channel_stop_wait_does_not_block_another_start_or_control_service);
     RUN_TEST(test_idle_lifecycle_sweep_requires_one_lock_per_port);
+    RUN_TEST(test_rejected_stats_preserve_output_and_stopped_stats_remain_coherent);
+    RUN_TEST(test_control_history_records_repeated_errors_and_survives_success);
 #endif
     return UNITY_END();
 }

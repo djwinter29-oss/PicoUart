@@ -61,8 +61,9 @@ retain the memory-region and reserved-stack information from the map when assess
 
 For runtime evidence, use the [concurrent fixture plan](../tests/hil-fixture-test-plan.md) on the identified board and
 exact flashed image. Collect all six channels' peaks and dropped/error counters during the run, not just after close.
-HID's ring peak combines RX/TX and rounds to 16-byte blocks; it cannot establish independent RX, TX, or CDC FIFO peaks.
-Use authorized, non-halting SWD snapshots of the individual rings and CDC statistics when that distinction is needed.
+The new HID diagnostics encode separate UART RX/TX and CDC FIFO observed peaks in bytes. Host/HIL clients still
+require migration before collecting them; see the [HID implementation status](../design/usb/hid-report-reference.md).
+Until then, use authorized, non-halting SWD snapshots of the individual rings and CDC statistics.
 Peaks are boot-lifetime values, so use a fresh boot per workload rather than attributing an old maximum to a new rate.
 
 Include bounded host stalls and burst traffic, not only the USB-paced write/read workload. At 8N1, an RX capacity of

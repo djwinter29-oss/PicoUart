@@ -83,10 +83,12 @@ public sealed class DashboardBoards : IHostedService, IDisposable
     public string SnapshotJson(string? boardId) => boardId is null
         ? JsonSerializer.Serialize(new DashboardSnapshot(), Protocol.JsonOptions) : Reader(boardId).SnapshotJson();
 
-    public void Action(string? boardId, string action) => Reader(boardId).Action(action);
+    public BoardControlStatus Action(string? boardId, string action) => Reader(boardId).Action(action);
 
-    public void SaveConfiguration(string? boardId, uint profile, bool unsafeOverclock) =>
+    public BoardControlStatus SaveConfiguration(string? boardId, uint profile, bool unsafeOverclock) =>
         Reader(boardId).SaveConfiguration(profile, unsafeOverclock);
+
+    public string DiagnosticsJson(string? boardId) => Reader(boardId).DiagnosticsJson();
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

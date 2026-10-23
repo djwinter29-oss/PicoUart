@@ -399,8 +399,16 @@ def main() -> int:
     constants = firmware_hid_constants(args.repo_root)
     expected_reports = {
         (constants["USB_HID_REPORT_ID_DEVICE_INFO"], 11): (constants["USB_HID_DEVICE_INFO_SIZE"], 8),
+        (constants["USB_HID_REPORT_ID_CONFIGURATION"], 11): (constants["USB_HID_CONFIGURATION_SIZE"], 8),
         (constants["USB_HID_REPORT_ID_CONTROL"], 11): (constants["USB_HID_CONTROL_SIZE"], 8),
         (constants["USB_HID_REPORT_ID_TELEMETRY"], 11): (constants["USB_HID_TELEMETRY_SIZE"], 8),
+        **{
+            (report_id, 11): (constants["USB_HID_DIAGNOSTIC_SIZE"], 8)
+            for report_id in range(
+                constants["USB_HID_REPORT_ID_DIAGNOSTIC_BASE"],
+                constants["USB_HID_REPORT_ID_DIAGNOSTIC_BASE"] + 6,
+            )
+        },
         **{
             key: (constants["USB_HID_CHANNEL_SIZE"], 8)
             for report_id in range(

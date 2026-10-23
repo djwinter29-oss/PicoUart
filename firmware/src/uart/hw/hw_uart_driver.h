@@ -87,7 +87,8 @@ void hw_uart_driver_enable_rx_dma_irq(void);
  * @param context Initialized hardware UART backend to baseline.
  *
  * Call after every configured backend has started so transient startup line
- * activity is not reported as a runtime receive error.
+ * activity is not reported as a runtime receive error. Previously observed
+ * errors remain in the boot-lifetime counter across restarts.
  */
 void hw_uart_driver_clear_rx_error_baseline(void *context);
 

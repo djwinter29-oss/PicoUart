@@ -145,7 +145,6 @@ void hw_uart_driver_clear_rx_error_baseline(void *context)
     }
 
     uart_get_hw(driver->config->instance)->rsr = 0u;
-    driver->rx_error_count = 0u;
 }
 
 static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)

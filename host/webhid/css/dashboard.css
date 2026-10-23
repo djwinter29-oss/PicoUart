@@ -116,13 +116,13 @@ h2 span { margin-left: 9px; color: var(--muted); font: 500 12px var(--mono); }
 .button-danger:hover:not(:disabled) { background: #fff3ef; }
 
 .table-scroll { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-top: 3px solid var(--ink); border-radius: 10px; box-shadow: 0 4px 16px #17332e0a; }
-table { width: 100%; min-width: 1350px; table-layout: fixed; border-collapse: collapse; text-align: left; }
+table { width: 100%; min-width: 1600px; table-layout: fixed; border-collapse: collapse; text-align: left; }
 col.port-column { width: 100px; }
-col.session-column { width: 110px; }
-col.configuration-column { width: 200px; }
-col.health-column { width: 220px; }
-col.throughput-column { width: 560px; }
-col.overflow-column { width: 160px; }
+col.configuration-column { width: 190px; }
+col.health-column { width: 205px; }
+col.throughput-column { width: 365px; }
+col.fault-column { width: 290px; }
+col.peak-column { width: 390px; }
 th { height: 40px; padding: 0 16px; background: #f0f4f2; color: #53666a; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.055em; }
 td { height: 64px; padding: 10px 16px; border-top: 1px solid var(--line); vertical-align: middle; }
 tbody tr { transition: background-color 120ms ease; }
@@ -141,10 +141,11 @@ tbody tr:hover { background: #f0f7f5; }
 .overflow-heading, .overflow { padding-inline: 20px; border-left: 1px solid var(--line); text-align: right; white-space: nowrap; }
 .cdc-open { color: var(--teal-dark); }
 .cdc-closed { color: var(--muted); }
-.traffic-metrics { display: grid; grid-template-columns: 7ch 11ch minmax(14ch, 1fr) calc(7ch + 16px) 11ch minmax(14ch, 1fr); gap: 6px 8px; color: #53666a; font: 12px var(--mono); }
+.traffic-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 8px; color: #53666a; font: 12px var(--mono); }
 .traffic-metrics > span { display: contents; }
-.traffic-metrics > span:nth-child(even) .traffic-label { padding-left: 16px; border-left: 1px solid var(--line); }
-.traffic-label { white-space: nowrap; }
+.traffic-label { grid-column: 1; white-space: nowrap; }
+.traffic-metrics b { grid-column: 2; }
+.traffic-total { grid-column: 3; }
 .uart-configuration { font: 13px var(--mono); white-space: nowrap; }
 .uart-configuration small { display: block; margin-top: 6px; color: var(--muted); font: 12px var(--sans); }
 .state-idle { color: var(--muted); }
@@ -153,6 +154,8 @@ tbody tr:hover { background: #f0f7f5; }
 .traffic-note { margin: 12px 2px 0; color: var(--muted); font-size: 11px; }
 .traffic-note[data-incomplete="true"] { color: var(--coral); }
 .health-flags { display: block; min-width: 170px; max-width: 220px; margin-top: 3px; color: #53666a; font: 12px/1.5 var(--mono); }
+td small, .fault-column { overflow-wrap: anywhere; }
+tbody td:nth-child(5), tbody td:nth-child(6) { font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .status-line { min-height: 46px; margin-top: 22px; padding: 0 14px; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; background: #eaf0ee; border: 1px solid var(--line); border-radius: 8px; }
 .status-mark { width: 7px; height: 7px; background: var(--teal); }
 .status-line[data-error="true"] .status-mark { background: var(--coral); }

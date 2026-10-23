@@ -45,10 +45,8 @@ def test_runtime_telemetry_uses_board_total_from_static_report():
     client.read_identity()
     assert client.read_runtime() == {
         "uptime_ms": 2**32,
-        "cpu_usage_basis_points": [2500, None],
-        "ram_reserved_bytes": 65536,
+        "service_load_basis_points": [2500, None],
         "system_clock_hz": 250000000,
-        "ram_total_bytes": 270336,
     }
 
 
