@@ -291,6 +291,83 @@ preserve CTS stalls, byte ordering, old-format boundary drain, and physical shif
 Native lock-count regressions prove reduced software work, not an on-wire throughput or latency improvement.
 Without authorized hardware testing, these experiments remain pending and no performance improvement is qualified.
 
+## Repeatable Recovery Checks
+
+After flashing and verifying the selected image, use the existing CDC1 and CDC5 loopbacks for bounded development
+regressions. Close all six CDC sessions first. The command validates both Linux sysfs endpoint identities against the
+explicit USB serial before opening either port. It never resets or flashes the board:
+
+```sh
+tools/hil/.venv/bin/pico-uart-hil recovery \
+  --serial <usb-serial> --cdc1 /dev/serial/by-id/<cdc1> --cdc5 /dev/serial/by-id/<cdc5> \
+  --artifact /path/to/flashed/pico_uart.elf --output build/recovery.json
+```
+
+The default `--mode all` runs configuration churn with sibling payload verification, five close/reopen cycles with
+distinct old/fresh payloads, a 2048-byte read stall with sibling traffic for at least 250 ms, then an intentional
+16384-byte overflow with sibling traffic for at least two seconds. `--mode churn|reopen|stall|overflow` selects one.
+Serial payload operations have bounded phase deadlines. HID and host serial setup still depend on OS device calls;
+use an outer process deadline in unattended automation, as with the other serial runners.
+
+Acceptance requires verified payloads, current diagnostics, zero unexpected RX/configuration faults on all six ports,
+and successful endpoint teardown. During intentional overflow, only CDC1's drop counter may be nonzero: retained
+bytes plus drops must equal the transmitted input, retained bytes must be an ordered subsequence, fresh markers must
+pass after draining device backlog to quiescence, and recovery must cause no further drops. Host `tcflush` is not
+device-backlog recovery. Overflow deliberately leaves retained loss history; reflash before subsequent clean-health
+acceptance tests.
+
+The new JSON path is reserved before hardware access and never overwritten. Evidence retains the supplied ELF hash,
+live hardware/configuration/version, partial checks, diagnostics, and errors. These are USB-paced loopback tests, not
+external-source capacity or CTS qualification. Run the combined functional/performance acceptance separately.
+
+## Startup Observations
+
+Use a separate observation for each authorized cold-power-on, SWD reset, watchdog recovery, or USB reset:
+
+```sh
+tools/hil/.venv/bin/pico-uart-hil startup \
+  --serial <usb-serial> --event swd-reset --artifact /path/to/flashed/pico_uart.elf \
+  --timeout 20 --output build/startup-swd-01.json
+```
+
+This read-only command neither triggers the event nor opens CDC. For a reset, invoke it immediately after the
+independently performed event; for manual power-on, start observation before applying power. Record the event's
+actual time and method alongside the JSON. The event label is operator supplied, not proof of a reset.
+
+Each attempt has a subprocess timeout of at most two seconds or the remaining observation deadline. Errors, stderr,
+attempt start/end times, and successful hardware/configuration/runtime/channel snapshots are retained. `PASS` requires
+a positive live clock and all six channels closed throughout a 12-second observation window (`--stable-seconds`),
+within the overall deadline. After the first closed observation, a failed sample or an uptime discontinuity fails
+the run rather than retrying into success. Uptime advance from the first sample must match host elapsed time within
+one second, allowing 32-bit rollover; this detects observed resets/stalls, not every possible event between samples.
+It does not establish initial UART readiness, fault-free traffic, or the expected reset cause. Time is measured from
+observer startup, not the physical power/reset edge. A blocked or late HID attempt cannot turn a missed deadline
+into a pass.
+OS process creation/termination can add latency; this is not a hard real-time host deadline.
+
+Repeat each event type and retain failures as well as successes. Compare uptime/reset cause against elapsed time and
+the independently recorded event. Do not increase firmware sleeps or retry windows to conceal unexplained resets.
+Cold-start/SWD behavior remains unqualified until the event series and subsequent functional tests pass.
+
+## Optimization Decision Gates
+
+Retain the [reviewed production policies](records/2026-10-23-uart-cdc-review-validation.md) unless a workload justifies
+another experiment. Do not merge HW/PIO ordering, cache lifecycle readiness, remove control generations, or replace
+DMA snapshot ownership checks merely to shorten source. Keep current buffer sizes, bridge budgets, and thresholds.
+
+If small-message PIO throughput matters, repeat the isolated FIFO-admission candidate using interleaved baseline and
+candidate images. As a proposed development gate, require at least 5% improvement in the declared target workload
+across at least five matched pairs, with no more than 5% regression in p99 or maximum host block latency, no
+payload/diagnostic faults, and passing session/configuration recovery. Record block-size/rate distributions and
+sample counts; the current benchmark's maximum/mean fields alone do not establish p99. Repeat on both boards before
+changing a shared default. Hardware TX pipelining additionally requires the CTS and shifter-idle gates above.
+These are experiment criteria, not claims that a candidate has passed them.
+
+Unresolved physical gates remain independently paced ingress during USB stalls/configuration churn, CTS behavior,
+RP2350 physical coverage, safe DMA re-arm/full-countdown endurance, and event-specific startup reliability. More
+USB-loopback runs cannot close them. Provision the required fixture/source and retain exact-artifact evidence under
+the [release matrix](../deployment/releasing.md#required-hil-matrix).
+
 ## Measured Six-Port Envelope
 
 The October 9 fixture sweeps establish these observed payload-integrity envelopes under USB-paced traffic for the

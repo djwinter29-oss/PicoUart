@@ -26,12 +26,30 @@ def _clean_snapshot():
     }
 
 
+def test_health_retries_keep_explicit_board_selection(monkeypatch) -> None:
+    health = _load_health()
+    calls = []
+
+    def sample(serial):
+        calls.append(serial)
+        return {**_clean_snapshot(), "error": "not current" if len(calls) < 3 else None}
+
+    monkeypatch.setattr(health, "_collect_hid_health_once", sample)
+    monkeypatch.setattr(health.time, "sleep", lambda _seconds: None)
+    assert health.health_is_clean(health.collect_hid_health("selected"))
+    assert calls == ["selected"] * 3
+
+
 @pytest.mark.parametrize("measurement", [0, 1, 2])
-def test_collects_six_channel_health_and_overruns(monkeypatch, measurement) -> None:
+@pytest.mark.parametrize("serial", [None, "selected"])
+def test_collects_six_channel_health_and_overruns(monkeypatch, measurement, serial) -> None:
     health = _load_health()
     calls = []
 
     class Board:
+        def __init__(self, **options):
+            calls.append(options)
+
         def __enter__(self):
             return self
 
@@ -53,15 +71,19 @@ def test_collects_six_channel_health_and_overruns(monkeypatch, measurement) -> N
     monkeypatch.setattr(health, "PicoUartHid", Board)
     monkeypatch.setattr(health.time, "sleep", lambda _seconds: None)
 
-    snapshot = health._collect_hid_health_once()
+    snapshot = health._collect_hid_health_once(serial)
 
     assert snapshot["channels"] == {index: "ready" for index in range(6)}
     assert snapshot["overruns"] == {index: index for index in range(6)}
     assert snapshot["firmware_version"] == "1.2.3"
     assert snapshot["error"] == (None if measurement == 1 else "CDC5 UART diagnostics are not current")
     diagnostic_reads = 1 if measurement == 1 else 3
-    assert calls == [item for index in range(6)
-                     for item in [("channel", index)] + [("diagnostic", index)] * diagnostic_reads] + ["close"]
+    assert calls == (
+        [{"serial_number": serial} if serial is not None else {}]
+        + [item for index in range(6)
+           for item in [("channel", index)] + [("diagnostic", index)] * diagnostic_reads]
+        + ["close"]
+    )
 
 
 def test_hid_command_uses_checkout_and_host_source_path(monkeypatch) -> None:

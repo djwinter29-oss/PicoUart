@@ -27,11 +27,11 @@ def _run_hid(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _collect_hid_health_once() -> dict:
+def _collect_hid_health_once(serial_number: str | None = None) -> dict:
     """Read all six non-consuming Feature snapshots; never parse human console output."""
     snapshot = {"channels": {}, "overruns": {}, "diagnostics": {}, "firmware_version": None, "error": None}
     try:
-        with PicoUartHid() as board:
+        with (PicoUartHid(serial_number=serial_number) if serial_number is not None else PicoUartHid()) as board:
             snapshot["firmware_version"] = board.read_firmware_version()
             for index in range(6):
                 snapshot["channels"][index] = board.read_channel(index)["state"]
@@ -50,14 +50,14 @@ def _collect_hid_health_once() -> dict:
     return snapshot
 
 
-def collect_hid_health() -> dict:
+def collect_hid_health(serial_number: str | None = None) -> dict:
     """Collect HID health, retrying bounded snapshot contention and post-reset enumeration failures."""
-    snapshot = _collect_hid_health_once()
+    snapshot = _collect_hid_health_once(serial_number) if serial_number is not None else _collect_hid_health_once()
     for _ in range(2):
         if not snapshot.get("error"):
             break
         time.sleep(0.5)
-        snapshot = _collect_hid_health_once()
+        snapshot = _collect_hid_health_once(serial_number) if serial_number is not None else _collect_hid_health_once()
     return snapshot
 
 

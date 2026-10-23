@@ -148,3 +148,80 @@ closed. These are two short soak observations, not long-duration or full release
 Both firmware targets build and pass compiled USB contracts. Native firmware targets pass 31/31 normally and under
 ASan/UBSan; firmware/host contract tests and firmware static analysis pass. Profiling and intentional-fault runs
 do not qualify the final image by themselves.
+
+## Repository Recovery and Startup Follow-Up
+
+The later review requested repeatable checks rather than another speculative data-path rewrite. The existing HIL
+entry point now provides `recovery` and `startup`; their commands, acceptance, and limitations live in the
+[fixture plan](../hil-fixture-test-plan.md#repeatable-recovery-checks).
+No firmware data-path, mailbox ownership, buffers, budgets, or TX gates changed in this follow-up.
+
+### Recovery Regression
+
+The repository command's `--mode all` passed on the same identified RP2040, 125 MHz, baseline ELF/hash above,
+starting at `2026-10-23T18:10:29Z`. The image was freshly flashed and verified, then allowed 15 seconds before
+setup. This settling condition is recorded, not proposed as a fix for startup reliability.
+
+| Repository check | Observed result |
+| --- | --- |
+| Configuration isolation | Twelve CDC5 changes across 115200/230400/460800, with verified markers; CDC1 simultaneously verified 52224 bytes over its five-second stream. |
+| Session isolation | Five CDC5 close/reopen cycles queued distinct old payloads, then verified fresh markers on CDC5 and CDC1. |
+| Bounded stall | CDC1 recovered all 2048 known bytes after reads were held while CDC5 verified 2688 bytes for at least 250 ms. |
+| Intentional overflow | CDC1 retained 10160 bytes and reported exactly 6224 drops, accounting for all 16384 input bytes. Retained bytes passed the ordered-subsequence check. |
+| Overflow recovery/isolation | CDC5 verified 21376 bytes during the two-second read stall; fresh markers passed on both loopbacks after draining device backlog. No further drops occurred. |
+| Diagnostics/teardown | Current six-channel diagnostics, zero unexpected RX/configuration faults, and no endpoint cleanup error. Only intentional CDC1 drops were permitted. |
+
+Unlike the earlier session-only harness, these checks are repository-runnable and retain partial results, exact image
+hash, selected serial, and explicit failures in a new JSON file. Endpoint identities are checked before opening either
+port. The overflow run is intentionally not a clean-health baseline for another test.
+
+### Startup Finding Remains Open
+
+Immediate-post-SWD CDC readiness failed again; it is not resolved by the tooling. Two bounded diagnostic attempts
+observed CDC1 `starting`, with DTR open and uptime around 4.2 seconds. Core-1 service-load data was unavailable in
+those samples. Follow-up debugger register capture failed; this does not establish a firmware root cause.
+The normal image was reflashed after debugger work. No guessed flash override, host service change, firmware sleep,
+or watchdog-policy change was used.
+
+An initial first-snapshot observer at `18:04:34Z` saw two discovery/permission failures, then all channels closed
+after 0.753 seconds. A subsequent CDC1 open still timed out. Consequently the delivered observer requires a
+continuous closed-state window and uptime continuity, not just one successful snapshot.
+
+The stability observation starting `18:08:59Z` retained 65 attempts, including 32 failures. Its first closed
+observation arrived at 8.838 seconds, reporting uptime 910 ms and watchdog reset cause. It exhausted the 20-second
+deadline before completing the required 12-second window; this is `FAIL`, not qualified startup. The final shortened
+HID attempt hit the overall deadline. Uptime in the successful samples advanced normally; no later reset is inferred
+from that deadline failure. Earlier discovery failures and observed watchdog recovery remain evidence to investigate,
+not proof of whether firmware, the debugger/reset sequence, or the host caused the initial interruption.
+
+The observer records each attempt and bounds potentially blocked HID operations in subprocesses. Tests cover
+deadline exhaustion, post-readiness disconnect, reset/stalled uptime, rollover, invalid input, and preservation of
+existing evidence. These improve failure visibility; they do not establish cold-power-on or SWD-reset reliability.
+
+### Remaining Review Disposition
+
+- Configuration settling remains synchronous: the measured gaps do not justify a new state machine. Independently
+  paced ingress is still required before claiming capacity under churn.
+- HW refill remains rejected; PIO refill remains an optional small-message experiment, not a production optimization.
+  The fixture plan now declares repeated throughput/latency and recovery gates before changing a shared default.
+- Readiness caching, mailbox-generation removal, shared HW/PIO sequencing, and buffer/threshold tuning remain
+  intentionally excluded: they lack a demonstrated benefit or weaken existing ownership/freshness contracts.
+- No RP2350 board, independent UART source, or CTS fixture was available. Those physical checks, safe DMA re-arm/
+  full-countdown endurance, and event-specific startup reliability remain open. Longer USB-paced tests cannot replace
+  the missing equipment or establish the startup root cause.
+
+Raw recovery/startup JSON and debugger transcripts remain local development evidence. The measured results and
+failed attempts above are retained here; do not treat local paths or this development record as release qualification.
+
+### Extended Acceptance and Software Checks
+
+After the intentional overflow and diagnostic work, the ordinary baseline was freshly flashed and verified again.
+The [extended acceptance record](2026-10-23-182232Z-pico-125mhz-hil.md) passed all four fixture stages and all six
+streams for 300 seconds per rate at 115200 and 460800, using the exact baseline ELF/hash above. All per-rate and
+final diagnostics were current, with zero RX drops/errors or configuration fault history. This extends the earlier
+60-second observations; it remains a single-board, USB-paced workload, not long-duration release qualification.
+
+The current HIL tooling suite passes 234 hardware-free tests, including the newly repository-run recovery and
+startup commands. Both actual CLI help paths and directly affected documentation link targets were checked.
+No firmware source changed, so the earlier firmware builds/native/sanitizer results apply to the unchanged baseline;
+they were not rerun as new firmware qualification in this follow-up.

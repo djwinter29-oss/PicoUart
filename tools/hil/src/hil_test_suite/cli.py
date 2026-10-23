@@ -14,6 +14,8 @@ COMMAND_MODULES = {
     "bridge": "serial.bridge",
     "stress": "serial.stress",
     "pair": "serial.pair",
+    "recovery": "workflows.recovery",
+    "startup": "workflows.startup",
 }
 
 
