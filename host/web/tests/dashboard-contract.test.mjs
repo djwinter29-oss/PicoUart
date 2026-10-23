@@ -50,6 +50,11 @@ test("diagnostics are requested on demand rather than at snapshot cadence", () =
 });
 
 test("dashboard presents lifecycle, static configuration, and honest service-load labels", () => {
+  const identity = markup.match(/<div class="summary identity-summary">([\s\S]*?)<\/div>\s*<\/section>/)?.[1] ?? "";
+  const configuration = markup.match(/<div class="summary configuration-summary">([\s\S]*?)<\/div>\s*<details class="pin-map-disclosure">/)?.[1] ?? "";
+  assert.equal((identity.match(/class="summary-item"/g) ?? []).length, 6);
+  assert.doesNotMatch(identity, /Microcontroller/);
+  assert.equal((configuration.match(/class="summary-item"/g) ?? []).length, 6);
   assert.match(markup, /<th scope="col">Lifecycle<\/th>/);
   assert.match(markup, /<th scope="col">Diagnostics<\/th>/);
   assert.match(markup, /<th scope="col">Traffic<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
@@ -68,4 +73,10 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(stylesheet, /\.traffic b \{[^}]*text-align: right;/);
   assert.match(stylesheet, /\.traffic-total \{[^}]*text-align: right;/);
   assert.match(stylesheet, /\.traffic b \{[^}]*font-size: 10px;/);
+  assert.match(stylesheet, /\.summary\.identity-summary \{ grid-template-columns: repeat\(6, minmax\(0, 1fr\)\); \}/);
+  assert.match(stylesheet, /\.summary\.identity-summary \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
+  assert.match(stylesheet, /\.summary\.identity-summary \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+  assert.match(stylesheet, /\.summary\.configuration-summary \{ grid-template-columns: repeat\(6, minmax\(0, 1fr\)\); \}/);
+  assert.match(stylesheet, /\.summary\.configuration-summary \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
+  assert.match(stylesheet, /\.summary\.configuration-summary \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
 });

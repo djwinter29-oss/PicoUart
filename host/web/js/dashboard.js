@@ -104,10 +104,6 @@ function boardModelName(value) {
     ?? (value == null ? "--" : `Unknown board model (${value})`);
 }
 
-function mcuName(value) {
-  return ({ 1: "RP2040", 2: "RP2350" })[value] ?? (value == null ? "--" : `Unknown MCU (${value})`);
-}
-
 function deviceUid(identity) {
   const uid = identity?.device_uid ?? identity?.serial_number;
   if (Array.isArray(uid)) return uid.map(value => Number(value).toString(16).padStart(2, "0")).join("").toUpperCase();
@@ -414,7 +410,6 @@ function render(data) {
   latestData = data;
   connection.dataset.state = data.connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
-  document.querySelector("#mcu").textContent = mcuName(data.identity?.mcu_id ?? data.identity?.mcu);
   document.querySelector("#board-model").textContent = boardModelName(
     data.identity?.board_model_id ?? data.identity?.board_model,
   );
