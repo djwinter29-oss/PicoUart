@@ -14,10 +14,13 @@
 
 absolute_time_t pico_test_time_us;
 static bool ready[UART_PORT_COUNT];
+static uint32_t readiness_queries;
 static bool stopping[UART_PORT_COUNT];
 static bool quiesced[UART_PORT_COUNT];
 static uint8_t flags[UART_PORT_COUNT];
 static uint32_t generation[UART_PORT_COUNT];
+static uart_driver_control_error_t last_rejection;
+static bool reject_baud;
 static bool accept_request;
 static uint32_t applied_count;
 static uart_driver_line_coding_t applied;
@@ -84,7 +87,7 @@ bool tud_cdc_n_write_clear(uint8_t itf)
 void service_load_note(unsigned int core) { TEST_ASSERT_EQUAL_UINT(0u, core); }
 void usb_hid_reset_host_state(void) {}
 
-bool uart_driver_port_is_ready(uart_port_id_t port) { return ready[port]; }
+bool uart_driver_port_is_ready(uart_port_id_t port) { ++readiness_queries; return ready[port]; }
 uint8_t uart_driver_port_status(uart_port_id_t port) { return flags[port]; }
 bool uart_driver_channel_stop_pending(uart_port_id_t port) { return stopping[port]; }
 bool uart_driver_channel_stop_is_quiesced(uart_port_id_t port) { return stopping[port] && quiesced[port]; }
@@ -110,6 +113,7 @@ uint32_t uart_driver_mark_control_pending(uart_port_id_t port)
 void uart_driver_report_control_error(uart_port_id_t port, uart_driver_control_error_t reason)
 {
     TEST_ASSERT_NOT_EQUAL(UART_CONTROL_ERROR_NONE, reason);
+    last_rejection = reason;
     ++generation[port];
     flags[port] |= UART_DRIVER_PORT_STATUS_CONTROL_ERROR;
 }
@@ -122,7 +126,13 @@ void uart_driver_report_soft_pending_error(uart_port_id_t port, uint32_t request
     }
 }
 bool uart_driver_line_coding_acceptable(uart_port_id_t port, const uart_driver_line_coding_t *coding)
-{ (void)port; return coding != NULL && coding->data_bits == 8u; }
+{ (void)port; return !reject_baud && coding != NULL && coding->data_bits == 8u; }
+bool uart_driver_port_info(uart_port_id_t port, uart_driver_port_info_t *info)
+{
+    *info = (uart_driver_port_info_t){.backend = port < UART_PORT_2 ?
+        UART_DRIVER_BACKEND_HW : UART_DRIVER_BACKEND_PIO};
+    return true;
+}
 
 static void complete_request(uart_port_id_t port)
 {
@@ -190,10 +200,13 @@ void setUp(void)
 {
     usb_cdc_reset_host_state();
     memset(ready, 0, sizeof(ready));
+    readiness_queries = 0u;
     memset(stopping, 0, sizeof(stopping));
     memset(quiesced, 0, sizeof(quiesced));
     memset(flags, 0, sizeof(flags));
     memset(generation, 0, sizeof(generation));
+    last_rejection = UART_CONTROL_ERROR_NONE;
+    reject_baud = false;
     applied_count = 0u;
     applied = (uart_driver_line_coding_t){0};
     accept_request = true;
@@ -835,9 +848,39 @@ void test_simultaneous_initial_requests_keep_independent_mailboxes(void)
     }
 }
 
+void test_backend_rejection_distinguishes_hardware_framing_from_pio_limit(void)
+{
+    cdc_line_coding_t coding = {.bit_rate = 50u, .data_bits = 7u, .parity = 2u};
+    reject_baud = true;
+    tud_cdc_line_coding_cb(0u, &coding);
+    TEST_ASSERT_EQUAL_UINT(UART_CONTROL_ERROR_BAUD, last_rejection);
+    tud_cdc_line_coding_cb(2u, &coding);
+    TEST_ASSERT_EQUAL_UINT(UART_CONTROL_ERROR_FRAMING, last_rejection);
+    coding.data_bits = 8u;
+    coding.parity = 0u;
+    tud_cdc_line_coding_cb(2u, &coding);
+    TEST_ASSERT_EQUAL_UINT(UART_CONTROL_ERROR_BAUD, last_rejection);
+    coding.stop_bits = 1u;
+    tud_cdc_line_coding_cb(0u, &coding);
+    TEST_ASSERT_EQUAL_UINT(UART_CONTROL_ERROR_FRAMING, last_rejection);
+}
+
+void test_live_pending_staging_reuses_poll_readiness_check(void)
+{
+    open_ready();
+    request_baud(230400u);
+    readiness_queries = 0u;
+    usb_cdc_poll();
+    TEST_ASSERT_EQUAL_UINT32(1u, readiness_queries);
+    TEST_ASSERT_EQUAL_UINT32(230400u, applied.baud_rate);
+    TEST_ASSERT_BITS_LOW(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, flags[0]);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_backend_rejection_distinguishes_hardware_framing_from_pio_limit);
+    RUN_TEST(test_live_pending_staging_reuses_poll_readiness_check);
     RUN_TEST(test_closed_ports_skip_empty_flushes_but_discard_repeated_late_out_data);
     RUN_TEST(test_six_ports_preserve_bytes_through_repeated_pressure_and_ring_wrap);
     RUN_TEST(test_repeated_close_reopen_discards_queued_data_without_stalling_other_ports);

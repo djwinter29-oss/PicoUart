@@ -68,17 +68,44 @@ void test_separate_mailbox_slots_accept_concurrent_requests(void)
     TEST_ASSERT_FALSE(uart_control_mailbox_has_pending_port(&mailboxes[1], 0u));
 }
 
-void test_publish_wraps_request_sequence(void)
+void test_slot_reuse_preserves_generation_and_reset_cancels_request(void)
 {
     uart_control_mailbox_t mailbox;
-    uart_control_mailbox_request_t request = {0};
+    uart_control_mailbox_request_t request = {.control_generation = UINT32_MAX};
+    uart_control_mailbox_request_t received;
 
     uart_control_mailbox_reset(&mailbox);
-    mailbox.request_sequence = UINT32_MAX;
-    mailbox.response_sequence = UINT32_MAX;
-
     TEST_ASSERT_TRUE(uart_control_mailbox_publish(&mailbox, &request));
-    TEST_ASSERT_EQUAL_UINT32(0u, mailbox.request_sequence);
+    TEST_ASSERT_TRUE(uart_control_mailbox_take(&mailbox, &received));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, received.control_generation);
+    request.control_generation = 0u;
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&mailbox, &request));
+    TEST_ASSERT_TRUE(uart_control_mailbox_take(&mailbox, &received));
+    TEST_ASSERT_EQUAL_UINT32(0u, received.control_generation);
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&mailbox, &request));
+    uart_control_mailbox_reset(&mailbox);
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&mailbox));
+    TEST_ASSERT_FALSE(uart_control_mailbox_take(&mailbox, &received));
+}
+
+void test_null_operations_do_not_consume_or_overwrite_a_request(void)
+{
+    uart_control_mailbox_t mailbox;
+    uart_control_mailbox_request_t request = {.control_generation = 9u};
+    uart_control_mailbox_request_t received = {0};
+
+    uart_control_mailbox_reset(NULL);
+    TEST_ASSERT_FALSE(uart_control_mailbox_can_publish(NULL));
+    TEST_ASSERT_FALSE(uart_control_mailbox_publish(NULL, &request));
+    TEST_ASSERT_FALSE(uart_control_mailbox_take(NULL, &received));
+    TEST_ASSERT_FALSE(uart_control_mailbox_has_pending_port(NULL, 0u));
+    uart_control_mailbox_reset(&mailbox);
+    TEST_ASSERT_FALSE(uart_control_mailbox_publish(&mailbox, NULL));
+    TEST_ASSERT_TRUE(uart_control_mailbox_can_publish(&mailbox));
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&mailbox, &request));
+    TEST_ASSERT_FALSE(uart_control_mailbox_take(&mailbox, NULL));
+    TEST_ASSERT_TRUE(uart_control_mailbox_take(&mailbox, &received));
+    TEST_ASSERT_EQUAL_UINT32(9u, received.control_generation);
 }
 
 int main(void)
@@ -86,6 +113,7 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_publish_and_take_preserve_request_payload);
     RUN_TEST(test_separate_mailbox_slots_accept_concurrent_requests);
-    RUN_TEST(test_publish_wraps_request_sequence);
+    RUN_TEST(test_slot_reuse_preserves_generation_and_reset_cancels_request);
+    RUN_TEST(test_null_operations_do_not_consume_or_overwrite_a_request);
     return UNITY_END();
 }

@@ -51,6 +51,8 @@ sequenceDiagram
 
 CDC hosts cannot rely on the USB control transfer result alone. TinyUSB may have already completed the request before
 firmware applies or rejects it. Hosts must watch HID health bit 2 (`control_error`) and bit 3 (`control_pending`).
+Permanent rejection reasons distinguish malformed framing from clock-infeasible baud. PIO rejects non-8N1 framing;
+hardware UARTs do not report valid non-8N1 framing as the cause of a baud-divider rejection.
 
 ## Ownership States
 

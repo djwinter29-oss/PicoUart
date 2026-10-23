@@ -1,6 +1,6 @@
 /**
  * @file control_mailbox.h
- * @brief Single-producer/single-consumer UART control mailbox.
+ * @brief Status-lock-owned UART control mailbox.
  */
 
 #ifndef UART_CONTROL_MAILBOX_H
@@ -25,15 +25,17 @@ typedef struct {
  * @brief One request slot shared by a core 0 producer and a core 1 consumer.
  *
  * Firmware keeps one instance per UART port. A busy slot blocks only that port.
+ * Every operation requires the shared status lock, except initialization before
+ * the worker starts. Taking a request and registering worker ownership must
+ * occur in the same critical section.
  */
 typedef struct {
-    volatile uint32_t request_sequence;              /**< Monotonic sequence published by core 0. */
-    volatile uint32_t response_sequence;             /**< Latest sequence completed by core 1. */
-    volatile uart_control_mailbox_request_t request; /**< Payload associated with request_sequence. */
+    bool occupied;                         /**< True until the worker takes or resets the request. */
+    uart_control_mailbox_request_t request; /**< Payload owned by this slot while occupied. */
 } uart_control_mailbox_t;
 
 /**
- * @brief Reset an empty mailbox before the worker starts.
+ * @brief Discard the mailbox request under the status lock, or initialize before worker startup.
  * @param mailbox Mailbox to reset.
  */
 void uart_control_mailbox_reset(uart_control_mailbox_t *mailbox);

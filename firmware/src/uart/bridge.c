@@ -18,6 +18,7 @@ size_t uart_bridge_drain_rx(ring_buffer_t *rx_ring, size_t capacity,
                             void *snapshot_context, volatile uint32_t *stats_sequence)
 {
     size_t total_written = 0u;
+    /* ponytail: one non-reentrant core-0 caller shares scratch across ports; concurrent callers need own storage. */
     static uint8_t snapshot[UART_BRIDGE_RX_SNAPSHOT_SIZE];
 
     if ((rx_ring == NULL) || (writer == NULL) || (snapshot_is_current == NULL) || (stats_sequence == NULL)) {

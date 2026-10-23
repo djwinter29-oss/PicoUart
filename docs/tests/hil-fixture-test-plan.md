@@ -258,6 +258,7 @@ These procedures are not automated by the normal performance runner.
 | TX backpressure | Pause a fixture peer with supported CTS in a separately qualified flow-control variant while host OUT writes fill the channel; then resume the peer. | Host writes block or time out explicitly rather than silently losing bytes; admitted bytes remain ordered and other channels continue. Without a supported fixture variant, mark this case not run. |
 | Close/reopen during traffic | Close one active channel while the other streams run, then reopen it with staged settings and require HID readiness before sending a fresh, distinguishable marker. | Do not require delivery of deliberately discarded queued bytes. No old-session payload may contaminate the fresh stream; applied settings match and unaffected channels keep passing. |
 | Session loss with pending control | Keep a supported line-coding request pending using an authorized controlled busy condition, confirm pending through HID, then unplug or issue a targeted USB bus reset. | Old handles terminate or time out explicitly; after remount all old sessions are closed. Reopen, verify applied settings and a fresh marker, and check that canceled work produces no late timeout. Repeat with all six channels active. |
+| Concurrent configuration | Repeatedly change supported settings on other channels while an independently paced channel receives verified traffic. Coordinate both ends of changed links. | Record maximum unaffected-port service gap and both cores' maximum pass times, not just average throughput. Require bounded completion or explicit timeout and no new faults on the unaffected stream. |
 
 For line-coding experiments on crossed pairs, coordinate both ends or use an independent fixture peer; a deliberate
 framing mismatch is not an unexplained bridge failure. USB disconnect/reset affects the whole device, so other streams
@@ -270,6 +271,20 @@ capacities and the [timing-profile procedure](../development/firmware-testing.md
 service budgets. Existing short-run evidence is in the
 [session/tuning record](records/2026-10-22-cdc-uart-session-validation.md); it does not establish every recovery case
 above or qualify the newly built image.
+
+### Optimization Acceptance
+
+Compare baseline and candidate images on both board targets with the same clock, wiring, payload sizes, rates,
+durations, and host. Flash and identify each image separately. Change one policy at a time, repeat the baseline to
+estimate variation, and retain hashes and raw samples. Include small-payload round trips as well as six-stream
+throughput, maximum service gaps, ring peaks, fault deltas, and configuration/reopen behavior. Instrumentation changes
+timing; repeat payload acceptance on uninstrumented firmware.
+
+Keep current TX idle/FIFO admission gates, CDC bridge budgets, and PIO DMA thresholds unless a candidate demonstrates
+a repeatable improvement beyond baseline variation without correctness regressions. TX pipelining must additionally
+preserve CTS stalls, byte ordering, old-format boundary drain, and physical shifter-idle checks before reconfiguration.
+Native lock-count regressions prove reduced software work, not an on-wire throughput or latency improvement.
+Without authorized hardware testing, these experiments remain pending and no performance improvement is qualified.
 
 ## Measured Six-Port Envelope
 

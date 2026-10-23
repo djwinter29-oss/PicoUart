@@ -102,12 +102,12 @@ static void usb_cdc_reject_line_coding(uint8_t itf, uart_driver_control_error_t 
     uart_driver_report_control_error((uart_port_id_t)itf, reason);
 }
 
+/** @brief Stage pending settings after the caller establishes startup eligibility or live readiness. */
 static void usb_cdc_apply_pending_line_coding(uint8_t itf)
 {
     usb_cdc_pending_line_coding_t *pending = &usb_cdc_ports[itf].line_coding;
 
-    if (!pending->pending || ((usb_cdc_ports[itf].admission != USB_CDC_START_PENDING) &&
-                             !uart_driver_port_is_ready((uart_port_id_t)itf))) {
+    if (!pending->pending) {
         return;
     }
 
@@ -400,10 +400,15 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
 
     /* Do not arm CDC soft-pending for permanent backend rejects (PIO 8N1/baud). */
     if (!uart_driver_line_coding_acceptable((uart_port_id_t)itf, &line_coding)) {
-        usb_cdc_reject_line_coding(itf,
-            (line_coding.data_bits != 8u || line_coding.stop_bits != 1u ||
-             line_coding.parity != UART_DRIVER_PARITY_NONE) ?
-                UART_CONTROL_ERROR_FRAMING : UART_CONTROL_ERROR_BAUD);
+        uart_driver_port_info_t info;
+        uart_driver_control_error_t reason = UART_CONTROL_ERROR_OTHER;
+        if (uart_driver_port_info((uart_port_id_t)itf, &info)) {
+            reason = info.backend == UART_DRIVER_BACKEND_PIO &&
+                     (line_coding.data_bits != 8u || line_coding.stop_bits != 1u ||
+                      line_coding.parity != UART_DRIVER_PARITY_NONE) ?
+                         UART_CONTROL_ERROR_FRAMING : UART_CONTROL_ERROR_BAUD;
+        }
+        usb_cdc_reject_line_coding(itf, reason);
         return;
     }
 

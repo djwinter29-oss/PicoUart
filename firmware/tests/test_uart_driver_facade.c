@@ -674,6 +674,23 @@ void test_idle_lifecycle_sweep_requires_one_lock_per_port(void)
     TEST_ASSERT_EQUAL_UINT32(UART_PORT_COUNT, idle_unlock_count);
 }
 
+void test_support_check_uses_immutable_backend_without_status_lock(void)
+{
+    const uart_driver_line_coding_t coding = {
+        .baud_rate = 115200u, .data_bits = 8u, .stop_bits = 1u, .parity = UART_DRIVER_PARITY_NONE,
+    };
+    uart_driver_line_coding_t invalid = coding;
+    invalid.baud_rate = 0u;
+    idle_unlock_count = 0u;
+    test_spin_unlock_hook = count_idle_unlock;
+    TEST_ASSERT_TRUE(uart_driver_line_coding_acceptable(UART_PORT_0, &coding));
+    TEST_ASSERT_FALSE(uart_driver_line_coding_acceptable(UART_PORT_COUNT, &coding));
+    TEST_ASSERT_FALSE(uart_driver_line_coding_acceptable(UART_PORT_0, &invalid));
+    TEST_ASSERT_FALSE(uart_driver_line_coding_acceptable(UART_PORT_0, NULL));
+    test_spin_unlock_hook = NULL;
+    TEST_ASSERT_EQUAL_UINT32(0u, idle_unlock_count);
+}
+
 void test_rejected_stats_preserve_output_and_stopped_stats_remain_coherent(void)
 {
     TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_0));
@@ -740,6 +757,7 @@ int main(void)
     RUN_TEST(test_start_completion_preserves_a_newer_control_rejection);
     RUN_TEST(test_channel_stop_wait_does_not_block_another_start_or_control_service);
     RUN_TEST(test_idle_lifecycle_sweep_requires_one_lock_per_port);
+    RUN_TEST(test_support_check_uses_immutable_backend_without_status_lock);
     RUN_TEST(test_rejected_stats_preserve_output_and_stopped_stats_remain_coherent);
     RUN_TEST(test_control_history_records_repeated_errors_and_survives_success);
 #endif

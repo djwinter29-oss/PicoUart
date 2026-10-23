@@ -34,14 +34,6 @@ void test_only_dtr_open_to_closed_requests_channel_reset(void)
     TEST_ASSERT_TRUE(usb_cdc_dtr_close_should_stop_channel(true, false));
 }
 
-void test_mailbox_acceptance_and_sequence_wrap(void)
-{
-    TEST_ASSERT_TRUE(uart_control_mailbox_is_empty(4u, 4u));
-    TEST_ASSERT_FALSE(uart_control_mailbox_is_empty(5u, 4u));
-    TEST_ASSERT_EQUAL_UINT32(5u, uart_control_mailbox_next_sequence(4u));
-    TEST_ASSERT_EQUAL_UINT32(0u, uart_control_mailbox_next_sequence(UINT32_MAX));
-}
-
 void test_worker_completion_keeps_newer_control_pending_owner(void)
 {
     TEST_ASSERT_FALSE(uart_control_pending_should_clear(true, false, false));
@@ -117,7 +109,6 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_deadline_retained_only_for_identical_retry);
     RUN_TEST(test_only_dtr_open_to_closed_requests_channel_reset);
-    RUN_TEST(test_mailbox_acceptance_and_sequence_wrap);
     RUN_TEST(test_worker_completion_keeps_newer_control_pending_owner);
     RUN_TEST(test_mailbox_completion_keeps_successor_mailbox_owner);
     RUN_TEST(test_every_control_owner_blocks_tx_ingress);

@@ -39,6 +39,13 @@ static uart_driver_rx_storage_t uart_driver_rx_storage[UART_PORT_COUNT];
 _Static_assert(_Alignof(uart_runtime_port_t) < _Alignof(uart_driver_rx_storage_t),
                "Logical-port metadata must not inherit DMA ring alignment");
 
+/** @brief Per-port lifecycle requests protected by the shared status lock. */
+typedef struct {
+    bool stop_pending;  /**< Stop requested; takes precedence over a queued start. */
+    bool usb_quiesced;  /**< Core 0 stopped bridging and cleared the old CDC FIFOs. */
+    bool start_pending; /**< Start requested by core 0; consumed once by the worker. */
+} uart_driver_lifecycle_t;
+
 /** @brief Driver-owned backend storage, lifecycle requests, and shared control/telemetry state. */
 typedef struct {
     uart_runtime_port_t ports[UART_PORT_COUNT];                /**< Backend storage and public metadata. */
@@ -49,9 +56,7 @@ typedef struct {
     spin_lock_t *status_lock;                                 /**< Lock protecting shared status and generations. */
     uart_control_pending_t pending_controls[UART_PORT_COUNT];  /**< Worker-owned control state. */
     bool soft_pending_controls[UART_PORT_COUNT];               /**< Core-0 mailbox wait state. */
-    bool channel_stop_pending[UART_PORT_COUNT];                /**< Core-0 requested a fresh CDC/UART channel. */
-    bool channel_stop_usb_quiesced[UART_PORT_COUNT];            /**< Core-0 stopped bridging and cleared CDC FIFOs. */
-    bool channel_start_pending[UART_PORT_COUNT];               /**< Core-0 requested a channel start on DTR open. */
+    uart_driver_lifecycle_t lifecycle[UART_PORT_COUNT];        /**< Independent per-port start/stop handshakes. */
     uint32_t control_generations[UART_PORT_COUNT];              /**< Latest host generation per port. */
     volatile uint32_t stats_sequence[UART_PORT_COUNT];         /**< Coherent stats snapshot sequence. */
     size_t poll_start_index;                                  /**< First port of the next worker step. */
@@ -180,12 +185,12 @@ static void uart_driver_service_channel_lifecycle(void)
         uint32_t save;
 
         save = spin_lock_blocking(uart_driver_state.status_lock);
-        reset_pending = uart_driver_state.channel_stop_pending[index];
-        if (!reset_pending && !uart_driver_state.channel_start_pending[index]) {
+        reset_pending = uart_driver_state.lifecycle[index].stop_pending;
+        if (!reset_pending && !uart_driver_state.lifecycle[index].start_pending) {
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
         }
-        if (reset_pending && !uart_driver_state.channel_stop_usb_quiesced[index]) {
+        if (reset_pending && !uart_driver_state.lifecycle[index].usb_quiesced) {
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
         }
@@ -203,8 +208,8 @@ static void uart_driver_service_channel_lifecycle(void)
             save = spin_lock_blocking(uart_driver_state.status_lock);
             uart_control_mailbox_reset(&uart_driver_state.mailboxes[index]);
             uart_driver_state.pending_controls[index] = (uart_control_pending_t){0};
-            uart_driver_state.channel_stop_pending[index] = false;
-            uart_driver_state.channel_stop_usb_quiesced[index] = false;
+            uart_driver_state.lifecycle[index].stop_pending = false;
+            uart_driver_state.lifecycle[index].usb_quiesced = false;
             uart_driver_state.status_flags[index] &=
                 (uint8_t)~(UART_DRIVER_PORT_STATUS_READY | UART_DRIVER_PORT_STATUS_INIT_FAILED);
             if (!uart_driver_state.soft_pending_controls[index]) {
@@ -214,15 +219,15 @@ static void uart_driver_service_channel_lifecycle(void)
         }
 
         save = spin_lock_blocking(uart_driver_state.status_lock);
-        if (!uart_driver_state.channel_start_pending[index]) {
+        if (!uart_driver_state.lifecycle[index].start_pending) {
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
         }
-        if (uart_driver_state.channel_stop_pending[index]) {
+        if (uart_driver_state.lifecycle[index].stop_pending) {
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
         }
-        uart_driver_state.channel_start_pending[index] = false;
+        uart_driver_state.lifecycle[index].start_pending = false;
         spin_unlock(uart_driver_state.status_lock, save);
 
         if ((port->ops == NULL) || (port->ops->restart == NULL)) {
@@ -237,7 +242,7 @@ static void uart_driver_service_channel_lifecycle(void)
         }
 
         save = spin_lock_blocking(uart_driver_state.status_lock);
-        if (uart_driver_state.channel_stop_pending[index] || uart_driver_state.channel_start_pending[index]) {
+        if (uart_driver_state.lifecycle[index].stop_pending || uart_driver_state.lifecycle[index].start_pending) {
             spin_unlock(uart_driver_state.status_lock, save);
             continue;
         } else if (lifecycle_ok) {
@@ -375,9 +380,7 @@ bool uart_driver_init(void)
         for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
             uart_driver_state.status_flags[index] = 0u;
             uart_driver_state.soft_pending_controls[index] = false;
-            uart_driver_state.channel_stop_pending[index] = false;
-            uart_driver_state.channel_stop_usb_quiesced[index] = false;
-            uart_driver_state.channel_start_pending[index] = false;
+            uart_driver_state.lifecycle[index] = (uart_driver_lifecycle_t){0};
             uart_driver_state.control_generations[index] = 0u;
             uart_driver_state.stats_sequence[index] = 0u;
             uart_driver_state.pending_controls[index] = (uart_control_pending_t){
@@ -440,16 +443,16 @@ bool uart_driver_request_channel_stop(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
-    uart_driver_state.channel_start_pending[port_id] = false;
+    uart_driver_state.lifecycle[port_id].start_pending = false;
     uart_driver_state.control_generations[port_id] += 1u;
     uart_driver_state.soft_pending_controls[port_id] = false;
     uart_driver_state.status_flags[port_id] &=
         (uint8_t)~(UART_DRIVER_PORT_STATUS_READY | UART_DRIVER_PORT_STATUS_INIT_FAILED |
                    UART_DRIVER_PORT_STATUS_CONTROL_ERROR);
     uart_driver_state.status_flags[port_id] |= UART_DRIVER_PORT_STATUS_CONTROL_PENDING;
-    if (!uart_driver_state.channel_stop_pending[port_id]) {
-        uart_driver_state.channel_stop_pending[port_id] = true;
-        uart_driver_state.channel_stop_usb_quiesced[port_id] = false;
+    if (!uart_driver_state.lifecycle[port_id].stop_pending) {
+        uart_driver_state.lifecycle[port_id].stop_pending = true;
+        uart_driver_state.lifecycle[port_id].usb_quiesced = false;
         queued = true;
     }
     spin_unlock(uart_driver_state.status_lock, save);
@@ -466,7 +469,7 @@ bool uart_driver_request_channel_start(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
-    uart_driver_state.channel_start_pending[port_id] = true;
+    uart_driver_state.lifecycle[port_id].start_pending = true;
     spin_unlock(uart_driver_state.status_lock, save);
     return true;
 }
@@ -481,7 +484,7 @@ bool uart_driver_channel_start_pending(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
-    pending = uart_driver_state.channel_start_pending[port_id];
+    pending = uart_driver_state.lifecycle[port_id].start_pending;
     spin_unlock(uart_driver_state.status_lock, save);
     return pending;
 }
@@ -496,7 +499,7 @@ bool uart_driver_channel_stop_pending(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
-    pending = uart_driver_state.channel_stop_pending[port_id];
+    pending = uart_driver_state.lifecycle[port_id].stop_pending;
     spin_unlock(uart_driver_state.status_lock, save);
     return pending;
 }
@@ -510,8 +513,8 @@ void uart_driver_channel_stop_usb_quiesced(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
-    if (uart_driver_state.channel_stop_pending[port_id]) {
-        uart_driver_state.channel_stop_usb_quiesced[port_id] = true;
+    if (uart_driver_state.lifecycle[port_id].stop_pending) {
+        uart_driver_state.lifecycle[port_id].usb_quiesced = true;
     }
     spin_unlock(uart_driver_state.status_lock, save);
 }
@@ -526,7 +529,7 @@ bool uart_driver_channel_stop_is_quiesced(uart_port_id_t port_id)
     }
 
     save = spin_lock_blocking(uart_driver_state.status_lock);
-    ready = uart_driver_state.channel_stop_pending[port_id] && uart_driver_state.channel_stop_usb_quiesced[port_id];
+    ready = uart_driver_state.lifecycle[port_id].stop_pending && uart_driver_state.lifecycle[port_id].usb_quiesced;
     spin_unlock(uart_driver_state.status_lock, save);
     return ready;
 }
@@ -573,14 +576,13 @@ size_t uart_driver_fill_tx(uart_port_id_t port_id, size_t capacity,
 
 bool uart_driver_line_coding_acceptable(uart_port_id_t port_id, const uart_driver_line_coding_t *line_coding)
 {
-    uart_driver_port_info_t port_info;
+    const uart_runtime_port_t *port = uart_driver_port(port_id);
 
-    if (!uart_driver_port_info(port_id, &port_info) || !uart_line_coding_is_valid(line_coding)) {
+    if ((port == NULL) || (uart_driver_state.status_lock == NULL) || !uart_line_coding_is_valid(line_coding)) {
         return false;
     }
 
-    return uart_driver_state.ports[port_id].ops != NULL &&
-           uart_driver_state.ports[port_id].ops->line_coding_acceptable(line_coding);
+    return (port->ops != NULL) && port->ops->line_coding_acceptable(line_coding);
 }
 
 bool uart_driver_queue_line_coding(uart_port_id_t port_id, const uart_driver_line_coding_t *line_coding,
