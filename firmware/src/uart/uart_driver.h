@@ -142,10 +142,13 @@ bool uart_driver_channel_stop_is_quiesced(uart_port_id_t port_id);
  * @param capacity Maximum byte count to drain across contiguous RX spans.
  * @param writer Caller callback that writes some or all of the offered bytes.
  * @param context Opaque caller context passed to @p writer.
+ * @param snapshot Caller-owned storage for a stable RX copy.
+ * @param snapshot_capacity Size of @p snapshot in bytes.
  * @return Number of bytes committed from the RX ring.
  */
 size_t uart_driver_drain_rx(uart_port_id_t port_id, size_t capacity,
-                            uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length), void *context);
+                            uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length), void *context,
+                            uint8_t *snapshot, size_t snapshot_capacity);
 
 /**
  * @brief Advance RX overrun recovery for one logical UART port without draining.

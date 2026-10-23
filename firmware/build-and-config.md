@@ -64,6 +64,13 @@ PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/pico:$PWD/build/pico2" \
 Use your completed build directories. The check detects SDK automatic voltage adjustment and regulator writes in the
 startup object/ELF; it does not measure physical voltage, thermal margin, or hardware stability.
 
+PR and release firmware builds also run
+[`check-firmware-budget.py`](../tools/release/check-firmware-budget.py). It counts allocated SRAM sections from the
+linked ELF, including linker-reserved heap and stack sections, and checks the binary image against the flash space
+before the reserved configuration sector. Static SRAM allocation is capped at 192 KiB of 264 KiB on RP2040 and
+384 KiB of 520 KiB on RP2350, leaving at least 72 KiB and 136 KiB respectively outside linked sections. These are
+allocation limits, not stack high-water or CPU-latency measurements.
+
 Changing board, SDK path, generator, firmware version, or HID-reset option causes the build wrapper to reset stale
 CMake cache state before reconfiguring. Standalone HID reboot is built in by default; pass `--disable-hid-reset` to
 remove that action, not the separately confirmed save-and-reboot capability.

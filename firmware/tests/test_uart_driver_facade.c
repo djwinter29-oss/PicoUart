@@ -444,7 +444,7 @@ void test_uart_driver_rejects_invalid_port_operations(void)
     TEST_ASSERT_FALSE(uart_driver_port_info(UART_PORT_COUNT, &info));
     TEST_ASSERT_FALSE(uart_driver_port_stats(UART_PORT_COUNT, &stats));
     TEST_ASSERT_FALSE(uart_driver_line_coding_acceptable(UART_PORT_COUNT, NULL));
-    TEST_ASSERT_EQUAL_UINT(0u, uart_driver_drain_rx(UART_PORT_COUNT, 1u, NULL, NULL));
+    TEST_ASSERT_EQUAL_UINT(0u, uart_driver_drain_rx(UART_PORT_COUNT, 1u, NULL, NULL, NULL, 0u));
     TEST_ASSERT_EQUAL_UINT(0u, uart_driver_recover_rx(UART_PORT_COUNT));
     TEST_ASSERT_EQUAL_UINT(0u, uart_driver_fill_tx(UART_PORT_COUNT, 1u, NULL, &byte));
 }

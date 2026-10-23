@@ -537,17 +537,19 @@ bool uart_driver_channel_stop_is_quiesced(uart_port_id_t port_id)
 }
 
 size_t uart_driver_drain_rx(uart_port_id_t port_id, size_t capacity,
-                            uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length), void *context)
+                            uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length), void *context,
+                            uint8_t *snapshot, size_t snapshot_capacity)
 {
     uart_runtime_port_t *port = uart_driver_port(port_id);
     ring_buffer_t *rx_ring = uart_driver_rx_ring(port);
 
-    if ((rx_ring == NULL) || !uart_driver_backend_is_initialized(port) || (writer == NULL)) {
+    if ((rx_ring == NULL) || !uart_driver_backend_is_initialized(port) || (writer == NULL) || (snapshot == NULL) ||
+        (snapshot_capacity == 0u)) {
         return 0u;
     }
 
-    return uart_bridge_drain_rx(rx_ring, capacity, writer, context, uart_driver_rx_snapshot_is_current, port,
-                                &uart_driver_state.stats_sequence[port_id]);
+    return uart_bridge_drain_rx(rx_ring, capacity, writer, context, snapshot, snapshot_capacity,
+                                uart_driver_rx_snapshot_is_current, port, &uart_driver_state.stats_sequence[port_id]);
 }
 
 size_t uart_driver_recover_rx(uart_port_id_t port_id)

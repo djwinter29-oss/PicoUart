@@ -6,6 +6,7 @@
 #include "usb/usb_cdc.h"
 
 #include "config/capacity_config.h"
+#include "uart/bridge.h"
 #include "uart/line_coding.h"
 #include "uart/uart_driver.h"
 #include "usb/cdc_soft_pending.h"
@@ -43,6 +44,8 @@ typedef struct {
 
 /** @brief Interface serviced first on the next bounded CDC bridge pass. */
 static uint8_t usb_cdc_poll_start_itf;
+/** @brief Core-0 scratch for serialized CDC RX draining; bridge callers own their own storage. */
+static uint8_t usb_cdc_rx_snapshot[UART_BRIDGE_RX_SNAPSHOT_SIZE];
 /** @brief True while the current TinyUSB configuration owns the CDC session state. */
 static bool usb_cdc_session_active;
 
@@ -200,7 +203,8 @@ static void usb_cdc_bridge_uart_to_usb(uint8_t itf)
         writable = PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET;
     }
 
-    written = uart_driver_drain_rx((uart_port_id_t)itf, writable, usb_cdc_usb_writer, &itf);
+    written = uart_driver_drain_rx((uart_port_id_t)itf, writable, usb_cdc_usb_writer, &itf, usb_cdc_rx_snapshot,
+                                   sizeof(usb_cdc_rx_snapshot));
     if (written != 0u) {
         service_load_note(0u);
         usb_cdc_ports[itf].stats.tx_bytes += (uint32_t)written;

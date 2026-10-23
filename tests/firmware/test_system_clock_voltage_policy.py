@@ -53,6 +53,9 @@ _MOCK_WATCHDOG_H = """
 #define MOCK_HARDWARE_WATCHDOG_H
 #include <stdbool.h>
 #include <stdint.h>
+typedef struct { volatile uint32_t scratch[8]; } watchdog_hw_t;
+extern watchdog_hw_t g_watchdog_hw;
+#define watchdog_hw (&g_watchdog_hw)
 extern bool g_watchdog_recovery;
 static inline bool watchdog_caused_reboot(void) { return g_watchdog_recovery; }
 static inline bool watchdog_enable_caused_reboot(void) { return g_watchdog_recovery; }
@@ -89,8 +92,10 @@ _MOCK_RUNTIME_C = """
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
+#include "hardware/watchdog.h"
 uint8_t g_sector[4096];
 bool g_watchdog_recovery = WATCHDOG_RECOVERY;
+watchdog_hw_t g_watchdog_hw;
 uint32_t g_requested_clock_khz;
 int g_set_sys_clock_khz_calls;
 int g_flash_calls;
@@ -123,6 +128,7 @@ _MAIN_C = """
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include "hardware/watchdog.h"
 #include "platform/system.h"
 #include "platform/boot_config.h"
 extern uint8_t g_sector[4096];
@@ -160,8 +166,12 @@ int main(void) {
         memcpy(protected+12, g_sector+16, 20);
         put_u32(12, fixture_crc32(protected, 32) ^ CORRUPT);
     }
+    if (HARDFAULT_RECOVERY) system_note_hardfault();
     system_watchdog_enable();
-    assert(system_reset_cause() == (WATCHDOG_RECOVERY ? 2u : 0u));
+    assert(system_reset_cause() == (WATCHDOG_RECOVERY ?
+           (HARDFAULT_RECOVERY ? SYSTEM_RESET_CAUSE_HARDFAULT : SYSTEM_RESET_CAUSE_WATCHDOG) :
+           SYSTEM_RESET_CAUSE_UNKNOWN));
+    assert(g_watchdog_hw.scratch[0] == 0u);
     system_init_clock();
     const boot_config_status_t *config = boot_config_get_status();
     printf("%u %d %u %u\\n", g_requested_clock_khz, g_set_sys_clock_khz_calls,
@@ -232,6 +242,7 @@ def _read_nm_symbols(nm, artifact):
     shutil.which("gcc") is None and shutil.which("cc") is None,
     reason="native C compiler required to exercise real system.c",
 )
+@pytest.mark.parametrize("hardfault_recovery", [False, True])
 @pytest.mark.parametrize(
     ("rp2350", "profile", "corrupt", "recovery", "available", "clock_khz", "reason", "active"),
     [
@@ -254,7 +265,17 @@ def _read_nm_symbols(nm, artifact):
     ],
 )
 def test_system_init_clock_never_writes_voltage(
-    repo_root, tmp_path, rp2350, profile, corrupt, recovery, available, clock_khz, reason, active
+    repo_root,
+    tmp_path,
+    rp2350,
+    profile,
+    corrupt,
+    recovery,
+    available,
+    clock_khz,
+    reason,
+    active,
+    hardfault_recovery,
 ):
     mock_sdk = tmp_path / "mock_sdk"
     _write(mock_sdk / "pico" / "stdlib.h", _MOCK_STDLIB_H)
@@ -286,6 +307,7 @@ def test_system_init_clock_never_writes_voltage(
         f"-DPROFILE={profile}",
         f"-DCORRUPT={corrupt}",
         f"-DWATCHDOG_RECOVERY={recovery}",
+        f"-DHARDFAULT_RECOVERY={int(hardfault_recovery)}",
         f"-DCLOCK_AVAILABLE={available}",
         "-DPICO_FLASH_SIZE_BYTES=4096",
         "-DPICO_UART_CONFIG_FLASH_SIZE=4096",

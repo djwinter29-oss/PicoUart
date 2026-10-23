@@ -199,13 +199,15 @@ can distinguish all causes; verify mappings separately before implementation.
 | `1` | Power-on, when reliably identified by the platform. |
 | `2` | Watchdog reset, without a reliably established software-requested cause. |
 | `3` | Software-requested reset, when reliably established by firmware/platform evidence. |
-| `4`-`255` | Unassigned. |
+| `4` | Watchdog recovery after firmware recorded a HardFault in watchdog scratch storage. |
+| `5`-`255` | Unassigned. |
 
 Do not infer power-on from absence of a watchdog indication. Intentional reboot may use the watchdog: prefer an
 evidenced software-requested cause, otherwise known watchdog or Unknown. Software-requested does not prove which
 host action caused reset.
-Current firmware reports evidenced Watchdog or Unknown; it does not infer power-on or software-requested reset
-from missing SDK watchdog markers.
+Current firmware reports evidenced Watchdog, a recorded HardFault followed by watchdog reset, or Unknown; it does not
+infer power-on or software-requested reset from missing SDK watchdog markers. The HardFault marker is volatile
+watchdog-scratch metadata, not a persisted fault address or a record of the crashing instruction.
 
 ### Channel Hardware Map
 

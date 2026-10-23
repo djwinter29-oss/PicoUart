@@ -169,11 +169,12 @@ static bool snapshot_is_current(void *context, uint32_t consumer_sequence)
 }
 
 size_t uart_driver_drain_rx(uart_port_id_t port, size_t capacity,
-                            uint32_t (*writer)(void *, const uint8_t *, uint32_t), void *context)
+                            uint32_t (*writer)(void *, const uint8_t *, uint32_t), void *context,
+                            uint8_t *snapshot, size_t snapshot_capacity)
 {
     ++rx_bridge_calls;
-    return uart_bridge_drain_rx(&uart_rx[port], capacity, writer, context, snapshot_is_current, NULL,
-                                &stats_sequence[port]);
+    return uart_bridge_drain_rx(&uart_rx[port], capacity, writer, context, snapshot, snapshot_capacity,
+                                snapshot_is_current, NULL, &stats_sequence[port]);
 }
 size_t uart_driver_recover_rx(uart_port_id_t port)
 {
