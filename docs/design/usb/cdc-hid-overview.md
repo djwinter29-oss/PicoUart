@@ -29,14 +29,18 @@ lifecycle. On an open-to-closed transition, firmware clears that interface's CDC
 deinitializes the backend; queued bytes are discarded while applied line coding and boot-lifetime counters are
 preserved. No UART bridge traffic is processed while the channel is closed. On the next open, the worker starts the
 backend and applies any deferred line-coding request before bridging resumes. A USB packet already in flight may still
-complete. Hardware UARTs support the broader validated line-coding set; PIO UARTs are 8N1-only.
+complete. Closed interfaces discard received OUT bytes on polling without repeatedly flushing an empty FIFO; the
+explicit close/quiescence flush remains unconditional. Hardware UARTs support the broader validated line-coding set;
+PIO UARTs are 8N1-only.
 
 TinyUSB may complete a line-coding request before firmware applies or rejects it. Hosts must monitor HID health for the
 result; request ownership and deferred application are described in [Control Plane Design](../control-plane-design.md).
 
 The native [CDC tests](../../../firmware/tests/test_usb_cdc.c) exercise transport pressure and concurrent control
 requests using production ring bridging with bounded USB FIFO and per-port mailbox mocks. TinyUSB's transfer-completion
-flush is modeled, not executed. USB scheduling and DMA timing still require the
+flush and backend stop completion are modeled, not executed. Repeated pressure/recovery checks verify exact payloads,
+counter deltas, and bounded progress across ring-storage wraps and channel close/reopen cycles.
+USB scheduling and DMA timing still require the
 [HIL plan](../../tests/hil-fixture-test-plan.md).
 
 ## HID Behavior

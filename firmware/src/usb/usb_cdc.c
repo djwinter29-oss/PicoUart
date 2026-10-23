@@ -302,7 +302,9 @@ void usb_cdc_poll(void)
         }
 
         if (!port->stats.opened) {
-            tud_cdc_n_read_flush(itf);
+            if (tud_cdc_n_available(itf) != 0u) {
+                tud_cdc_n_read_flush(itf);
+            }
             continue;
         }
 
