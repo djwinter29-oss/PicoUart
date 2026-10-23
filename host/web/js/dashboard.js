@@ -1,7 +1,16 @@
 const token = document.querySelector('meta[name="csrf-token"]').content;
 const connection = document.querySelector("#connection");
 const channelRows = document.querySelector("#channel-rows");
+const diagnosticsDialog = document.querySelector("#diagnostics-dialog");
+const diagnosticsContent = document.querySelector("#diagnostics-content");
 const statusMessage = document.querySelector("#status-message");
+document.querySelector("#close-diagnostics").addEventListener("click", () => diagnosticsDialog.close());
+document.querySelector("#refresh-diagnostics").addEventListener("click", async () => {
+  diagnosticData = null;
+  diagnosticError = null;
+  renderDiagnosticContent(diagnosticsContent, Number(diagnosticsContent.dataset.channel));
+  await loadDiagnostics();
+});
 const actionButtons = [...document.querySelectorAll(".actions button")];
 const boardSelect = document.querySelector("#board-select");
 const rescanButton = document.querySelector("#rescan-boards");
@@ -20,15 +29,14 @@ let diagnosticData = null;
 let diagnosticError = null;
 let diagnosticRequest = null;
 const channelHistory = new Map();
-const expandedChannels = new Set();
 let reportSample = null;
 let reportReceivedAt = 0;
 
 const directions = [
   ["UART TX", "uart_tx", true],
   ["UART RX", "uart_rx", true],
-  ["USB TX", "usb_tx", false],
   ["USB RX", "usb_rx", false],
+  ["USB TX", "usb_tx", false],
 ];
 const channelStates = ["closed", "starting", "ready", "configuring", "error"];
 const measurementStates = ["Unavailable", "Current", "Cached"];
@@ -231,7 +239,7 @@ function peakValue(bytes, capacity) {
 function renderDiagnosticContent(container, id) {
   container.replaceChildren();
   if (!diagnosticData && !diagnosticError) {
-    container.textContent = "Open diagnostics to read channel fault history.";
+    container.textContent = "Loading channel diagnostics...";
     return;
   }
   if (diagnosticError) {
@@ -294,8 +302,7 @@ async function loadDiagnostics() {
     } finally {
       diagnosticRequest = null;
       if (version === selectionVersion) {
-        document.querySelectorAll(".diagnostics-content").forEach(container =>
-          renderDiagnosticContent(container, Number(container.dataset.channel)));
+        renderDiagnosticContent(diagnosticsContent, Number(diagnosticsContent.dataset.channel));
       }
     }
   })();
@@ -304,33 +311,19 @@ async function loadDiagnostics() {
 
 function buildDiagnosticsCell(channel) {
   const cell = document.createElement("td");
-  const details = document.createElement("details");
-  details.className = "channel-diagnostics";
-  const summary = document.createElement("summary");
-  summary.textContent = "Diagnostics";
-  details.open = expandedChannels.has(channel.id);
-  const content = document.createElement("div");
-  content.className = "diagnostics-content";
-  content.dataset.channel = String(channel.id);
-  const refresh = document.createElement("button");
-  refresh.className = "button button-small";
-  refresh.type = "button";
-  refresh.textContent = "Refresh diagnostics";
-  refresh.addEventListener("click", async () => {
-    diagnosticData = null;
-    diagnosticError = null;
-    await loadDiagnostics();
+  const button = document.createElement("button");
+  button.className = "button button-small diagnostics-action";
+  button.type = "button";
+  button.textContent = "Diagnostics";
+  button.disabled = !latestData?.connected;
+  button.addEventListener("click", async () => {
+    diagnosticsDialog.querySelector("h2").textContent = `CDC${channel.id} diagnostics`;
+    diagnosticsContent.dataset.channel = String(channel.id);
+    renderDiagnosticContent(diagnosticsContent, channel.id);
+    diagnosticsDialog.showModal();
+    if (diagnosticBoard !== selectedBoard || (!diagnosticData && !diagnosticError)) await loadDiagnostics();
   });
-  details.addEventListener("toggle", () => {
-    if (details.open) expandedChannels.add(channel.id);
-    else expandedChannels.delete(channel.id);
-    if (!details.open) return;
-    renderDiagnosticContent(content, channel.id);
-    if (diagnosticBoard !== selectedBoard || (!diagnosticData && !diagnosticError)) loadDiagnostics();
-  });
-  details.append(summary, content, refresh);
-  if (details.open) renderDiagnosticContent(content, channel.id);
-  cell.append(details);
+  cell.append(button);
   return cell;
 }
 
@@ -383,7 +376,6 @@ function renderChannels(data) {
       lifecycle.append(measurement);
     }
     row.append(lifecycle);
-    row.append(buildDiagnosticsCell(channel));
 
     const traffic = document.createElement("td");
     traffic.className = "traffic";
@@ -396,9 +388,7 @@ function renderChannels(data) {
       direction.className = "traffic-label";
       direction.textContent = label;
       value.textContent = view.rates?.[key] != null
-        ? `${(view.rates[key] / 1000).toLocaleString(undefined, {
-          minimumFractionDigits: 1, maximumFractionDigits: 1,
-        })} KB/s` : "-- KB/s";
+        ? `${(view.rates[key] / 1000).toFixed(1)} KB/s` : "-- KB/s";
       const total = document.createElement("span");
       total.className = "traffic-total";
       total.textContent = formatBytes(channel.totals?.[key]);
@@ -408,6 +398,7 @@ function renderChannels(data) {
     });
     traffic.append(metrics);
     row.append(traffic);
+    row.append(buildDiagnosticsCell(channel));
     channelRows.append(row);
   });
 }
@@ -419,7 +410,6 @@ function render(data) {
     diagnosticBoard = null;
     diagnosticData = null;
     diagnosticError = null;
-    expandedChannels.clear();
   }
   latestData = data;
   connection.dataset.state = data.connected ? "connected" : "disconnected";
@@ -515,7 +505,7 @@ function selectBoard(id, label) {
   diagnosticBoard = null;
   diagnosticData = null;
   diagnosticError = null;
-  expandedChannels.clear();
+  diagnosticsDialog.close();
   render({
     connected: false,
     channels: Array.from({ length: 6 }, (_, id) => ({ id, state: "unknown" })),

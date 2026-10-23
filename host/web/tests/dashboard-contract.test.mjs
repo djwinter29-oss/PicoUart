@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const dashboard = await readFile(new URL("../js/dashboard.js", import.meta.url), "utf8");
+const stylesheet = await readFile(new URL("../css/dashboard.css", import.meta.url), "utf8");
 const markup = await readFile(new URL("../index.html", import.meta.url), "utf8");
 
 test("dashboard uses the HID snapshot and diagnostic contract fields", () => {
@@ -41,7 +42,8 @@ test("dashboard uses the HID snapshot and diagnostic contract fields", () => {
 
 test("diagnostics are requested on demand rather than at snapshot cadence", () => {
   assert.match(dashboard, /fetch\(`\/api\/diagnostics\?board=/);
-  assert.match(dashboard, /details\.addEventListener\("toggle",[\s\S]*?if \(!details\.open\) return;[\s\S]*?loadDiagnostics\(\)/);
+  assert.match(dashboard, /diagnosticsDialog\.showModal\(\)[\s\S]*?loadDiagnostics\(\)/);
+  assert.match(dashboard, /#refresh-diagnostics[\s\S]*?await loadDiagnostics\(\)/);
   const refresh = dashboard.match(/async function refresh\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
   assert.ok(refresh.includes("/api/status"));
   assert.ok(!refresh.includes("/api/diagnostics"));
@@ -50,8 +52,20 @@ test("diagnostics are requested on demand rather than at snapshot cadence", () =
 test("dashboard presents lifecycle, static configuration, and honest service-load labels", () => {
   assert.match(markup, /<th scope="col">Lifecycle<\/th>/);
   assert.match(markup, /<th scope="col">Diagnostics<\/th>/);
+  assert.match(markup, /<th scope="col">Traffic<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
+  assert.match(markup, /<dialog class="diagnostics-dialog" id="diagnostics-dialog"/);
   assert.match(markup, /Stored boot profile/);
   assert.match(markup, /Reset cause/);
   assert.match(markup, /Service load \(USB core 0 \/ UART core 1\)/);
   assert.doesNotMatch(markup, /CPU load|unsafe overclock|Save &amp; Reboot/);
+  assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Channel pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
+  assert.match(markup, /Uptime[\s\S]*?Board temperature[\s\S]*?Service load \(USB core 0 \/ UART core 1\)/);
+  assert.match(dashboard, /total\.textContent = formatBytes\(channel\.totals\?\.\[key\]\)/);
+  assert.match(dashboard, /\(view\.rates\[key\] \/ 1000\)\.toFixed\(1\)/);
+  assert.match(dashboard, /\["UART TX", "uart_tx", true\],[\s\S]*?\["UART RX", "uart_rx", true\],[\s\S]*?\["USB RX", "usb_rx", false\],[\s\S]*?\["USB TX", "usb_tx", false\]/);
+  assert.match(stylesheet, /\.traffic-metrics \{[^}]*grid-template-columns: max-content max-content;[^}]*grid-template-rows: repeat\(2, auto\);[^}]*grid-auto-flow: column;/);
+  assert.match(stylesheet, /\.traffic-metrics > span \{[^}]*grid-template-columns: max-content 11ch 15ch;/);
+  assert.match(stylesheet, /\.traffic b \{[^}]*text-align: right;/);
+  assert.match(stylesheet, /\.traffic-total \{[^}]*text-align: right;/);
+  assert.match(stylesheet, /\.traffic b \{[^}]*font-size: 10px;/);
 });
