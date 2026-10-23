@@ -24,36 +24,14 @@ typedef enum {
 
 /**
  * @brief Return whether a hardware UART is idle enough to apply line format.
- * @param tx_occupancy_nonzero Retained for a common backend call shape; queued
- * bytes may wait in the ring while the format changes.
  * @param tx_dma_active True while a TX DMA transfer is in flight.
  * @param uart_busy True when UARTFR.BUSY is set.
  * @param rx_fifo_readable True when the UART RX FIFO still holds unread bytes.
  * @return `true` when the worker may pause RX DMA and reconfigure.
  */
-static inline bool uart_hw_line_format_idle(bool tx_occupancy_nonzero, bool tx_dma_active, bool uart_busy,
-                                            bool rx_fifo_readable)
+static inline bool uart_hw_line_format_idle(bool tx_dma_active, bool uart_busy, bool rx_fifo_readable)
 {
-    (void)tx_occupancy_nonzero;
     return !tx_dma_active && !uart_busy && !rx_fifo_readable;
-}
-
-/**
- * @brief Return whether a PIO UART is idle enough to start a baud-change pause.
- * @param tx_dma_active True while a TX DMA transfer is in flight.
- * @param tx_occupancy_nonzero Retained for a common backend call shape; queued
- * bytes may wait in the ring while the baud changes.
- * @param tx_fifo_empty True when the PIO TX FIFO is empty.
- * @param tx_shifter_idle True when TXSTALL has re-asserted after write-clear.
- * @param rx_fifo_empty True when the PIO RX FIFO is empty.
- * @param rx_line_idle Driver-provided result of the configured RX idle policy.
- * @return `true` when the worker may pause RX DMA and change baud.
- */
-static inline bool uart_pio_baud_change_idle(bool tx_dma_active, bool tx_occupancy_nonzero, bool tx_fifo_empty,
-                                             bool tx_shifter_idle, bool rx_fifo_empty, bool rx_line_idle)
-{
-    (void)tx_occupancy_nonzero;
-    return !tx_dma_active && tx_fifo_empty && tx_shifter_idle && rx_fifo_empty && rx_line_idle;
 }
 
 /**

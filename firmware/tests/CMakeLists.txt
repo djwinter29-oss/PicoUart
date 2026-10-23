@@ -140,6 +140,8 @@ pico_uart_add_unity_test(test_usb_cdc usb_cdc
     test_usb_cdc.c
     ${FIRMWARE_ROOT}/src/usb/usb_cdc.c
     ${FIRMWARE_ROOT}/src/uart/line_coding.c
+    ${FIRMWARE_ROOT}/src/uart/bridge.c
+    ${FIRMWARE_ROOT}/src/uart/ring_buffer/ring_buffer.c
 )
 target_include_directories(test_usb_cdc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs)
 

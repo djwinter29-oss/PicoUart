@@ -735,6 +735,25 @@ void test_baud_change_waits_for_fresh_txstall_across_calls(void)
     assert_rx_preserved_and_resumed();
 }
 
+void test_busy_tx_does_not_consume_txstall_probe(void)
+{
+    seed_baud_change();
+    driver.txstall_waiting = false;
+    uint32_t sticky_txstall = config.pio->fdebug;
+    driver.tx_dma_active = dma_busy = true;
+    TEST_ASSERT_FALSE(pio_uart_driver_apply_baud_rate(&driver, 230400u));
+    TEST_ASSERT_FALSE(driver.txstall_waiting);
+    TEST_ASSERT_EQUAL_UINT32(sticky_txstall, config.pio->fdebug);
+
+    driver.tx_dma_active = dma_busy = false;
+    fifo_level = 1u;
+    TEST_ASSERT_FALSE(pio_uart_driver_apply_baud_rate(&driver, 230400u));
+    TEST_ASSERT_FALSE(driver.txstall_waiting);
+    TEST_ASSERT_EQUAL_UINT32(sticky_txstall, config.pio->fdebug);
+    TEST_ASSERT_EQUAL_UINT(0u, pause_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, divider_calls);
+}
+
 void test_released_pio_backend_parks_tx_idle_high(void)
 {
     parked_tx_high = false;
@@ -777,5 +796,6 @@ int main(void)
     RUN_TEST(test_late_rx_or_fifo_activity_restores_service_without_changing_baud);
     RUN_TEST(test_baud_change_rejects_busy_tx_or_nonidle_rx_before_pausing_dma);
     RUN_TEST(test_baud_change_waits_for_fresh_txstall_across_calls);
+    RUN_TEST(test_busy_tx_does_not_consume_txstall_probe);
     return UNITY_END();
 }

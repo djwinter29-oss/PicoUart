@@ -34,6 +34,11 @@ complete. Hardware UARTs support the broader validated line-coding set; PIO UART
 TinyUSB may complete a line-coding request before firmware applies or rejects it. Hosts must monitor HID health for the
 result; request ownership and deferred application are described in [Control Plane Design](../control-plane-design.md).
 
+The native [CDC tests](../../../firmware/tests/test_usb_cdc.c) exercise transport pressure and concurrent control
+requests using production ring bridging with bounded USB FIFO and per-port mailbox mocks. TinyUSB's transfer-completion
+flush is modeled, not executed. USB scheduling and DMA timing still require the
+[HIL plan](../../tests/hil-fixture-test-plan.md).
+
 ## HID Behavior
 
 HID carries no UART data and cannot select UART pins or backends. It reports bridge health, board metadata, and applied

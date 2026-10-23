@@ -870,9 +870,8 @@ static bool pio_uart_driver_prepare_baud_change(pio_uart_driver_t *driver)
     pio_uart_driver_poll_tx_dma(driver);
 
     /*
-     * Short-circuit before TXSTALL W1C. The boolean table is
-     * uart_pio_baud_change_idle(); evaluating that helper here would clear
-     * sticky TXSTALL while DMA still owns the port.
+     * Short-circuit before TXSTALL W1C so sticky TXSTALL is not cleared while
+     * DMA still owns the port or bytes remain in the TX FIFO.
      */
     if (driver->tx_dma_active || !pio_sm_is_tx_fifo_empty(driver->config->pio, driver->config->tx_state_machine) ||
         !pio_uart_driver_tx_shifter_idle(driver) ||

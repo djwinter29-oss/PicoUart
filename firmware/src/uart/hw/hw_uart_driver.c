@@ -567,7 +567,7 @@ bool hw_uart_driver_apply_line_format(void *context, uint32_t baud_rate, uint8_t
      * defer the apply without stalling the UART worker's RX publish loop.
      * The worker's 1 s deferred-apply deadline fails the request if BUSY sticks.
      */
-    if (!uart_hw_line_format_idle(ring_buffer_occupancy(&driver->tx_ring) != 0u, driver->tx_active,
+    if (!uart_hw_line_format_idle(driver->tx_active,
                                   (uart_get_hw(driver->config->instance)->fr & UART_UARTFR_BUSY_BITS) != 0u,
                                   uart_is_readable(driver->config->instance))) {
         return false;

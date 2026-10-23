@@ -47,6 +47,10 @@ Static topology is checked by host tests; peripheral initialization and DMA/stat
 Startup is all-or-nothing: if any configured backend fails, initialized backends are rolled back and the worker does not
 start. Runtime operations reject unavailable backends rather than accessing partially initialized state.
 
+Each active backend holds one RX and one TX DMA channel until it stops. Six active UARTs therefore require 12 DMA
+channels, exhausting the RP2040 DMA channel budget. Future DMA-using features must account for that limit rather than
+assuming spare channels; the current design does not dynamically share channels between active ports.
+
 The logical-port owner supplies fixed aligned RX storage with the same lifetime as the backend. Its allocation is
 separate from runtime metadata to avoid propagating DMA alignment through backend and port structs; the
 [ring-buffer design](ring-buffer-design.md#capacity) owns the storage contract. The `restart` operation stops and starts
