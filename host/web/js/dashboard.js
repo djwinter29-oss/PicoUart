@@ -4,6 +4,13 @@ const channelRows = document.querySelector("#channel-rows");
 const diagnosticsDialog = document.querySelector("#diagnostics-dialog");
 const diagnosticsContent = document.querySelector("#diagnostics-content");
 const statusMessage = document.querySelector("#status-message");
+const clockProfile = document.querySelector("#clock-profile");
+const saveConfigurationButton = document.querySelector("#save-configuration");
+const configurationDialog = document.querySelector("#configuration-dialog");
+const configurationDialogProfile = document.querySelector("#configuration-dialog-profile");
+const confirmConfigurationButton = document.querySelector("#confirm-configuration");
+const overclockAcknowledgement = document.querySelector("#overclock-ack");
+const overclockAcknowledgementLabel = document.querySelector("#overclock-acknowledgement");
 document.querySelector("#close-diagnostics").addEventListener("click", () => diagnosticsDialog.close());
 document.querySelector("#refresh-diagnostics").addEventListener("click", async () => {
   diagnosticData = null;
@@ -18,6 +25,8 @@ let actionBusy = false;
 let latestData = null;
 let selectedBoard = null;
 let selectedLabel = "";
+let configurationProfileDirty = false;
+let configurationSavePending = false;
 let selectionVersion = 0;
 let refreshing = null;
 let scanning = false;
@@ -40,7 +49,6 @@ const directions = [
 ];
 const channelStates = ["closed", "starting", "ready", "configuring", "error"];
 const measurementStates = ["Unavailable", "Current", "Cached"];
-const profileNames = ["SDK default", "150 MHz", "200 MHz", "250 MHz", "280 MHz"];
 const resetCauses = ["Unknown", "Power-on", "Watchdog", "Software-requested"];
 const errorReasons = [
   "None recorded",
@@ -114,15 +122,21 @@ function resetCauseName(value) {
   return resetCauses[value] ?? (value == null ? "--" : `Unknown (${value})`);
 }
 
-function storedProfileName(value) {
-  if (value === 255) return "Unavailable";
-  return profileNames[value] ?? (value == null ? "--" : `Unknown profile (${value})`);
-}
-
 function renderStaticConfiguration(data) {
   const identity = data.identity;
   const configuration = data.configuration;
-  document.querySelector("#stored-profile").textContent = storedProfileName(configuration?.stored_profile);
+  const profileMask = identity?.clock_profile_mask ?? 0;
+  for (const option of clockProfile.options) {
+    option.disabled = !(profileMask & (1 << Number(option.value)));
+  }
+  if (configurationProfileDirty && configuration?.stored_profile === Number(clockProfile.value)) {
+    configurationProfileDirty = false;
+    configurationSavePending = false;
+    overclockAcknowledgement.checked = false;
+  }
+  if (!configurationProfileDirty && Number.isInteger(configuration?.stored_profile)) {
+    clockProfile.value = String(configuration.stored_profile);
+  }
   document.querySelector("#reset-cause").textContent = resetCauseName(configuration?.reset_cause);
   document.querySelector("#uart-tx-capacity").textContent = formatBytes(configuration?.uart_tx_ring_capacity_bytes);
   document.querySelector("#uart-rx-capacity").textContent = formatBytes(configuration?.uart_rx_ring_capacity_bytes);
@@ -173,6 +187,20 @@ function renderStaticConfiguration(data) {
     ? `${(reserved / 1024).toFixed(1)} / ${(total / 1024).toFixed(0)} KiB`
       + ` (${(reserved / total * 100).toFixed(1)}%)`
     : "--";
+}
+
+function updateConfigurationControls(data) {
+  const identity = data?.identity;
+  const capabilities = identity?.capabilities ?? 0;
+  const profile = Number(clockProfile.value);
+  const profileSupported = Number.isInteger(profile) && Boolean((identity?.clock_profile_mask ?? 0) & (1 << profile));
+  const storedProfile = data?.configuration?.stored_profile;
+  const available = Boolean(data?.connected && (capabilities & 4) && Number.isInteger(storedProfile));
+  const profileChanged = available && profile !== storedProfile;
+  clockProfile.disabled = actionBusy || configurationSavePending || !available;
+  saveConfigurationButton.hidden = !(capabilities & 4);
+  saveConfigurationButton.disabled = actionBusy || configurationSavePending || !available
+    || !profileChanged || !profileSupported;
 }
 
 function currentRates(channel, now, data) {
@@ -420,6 +448,7 @@ function render(data) {
   document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
   document.querySelector("#serial").textContent = deviceUid(data.identity);
   renderStaticConfiguration(data);
+  updateConfigurationControls(data);
   const runtime = data.runtime;
   document.querySelector("#uptime").textContent = Number.isFinite(runtime?.uptime_ms)
     ? uptimeLabel(runtime.uptime_ms) : "--";
@@ -491,6 +520,9 @@ async function refresh() {
 
 function selectBoard(id, label) {
   if (selectedBoard === id) return;
+  configurationProfileDirty = false;
+  configurationSavePending = false;
+  overclockAcknowledgement.checked = false;
   selectedBoard = id;
   setRefreshInterval(500);
   selectedLabel = label;
@@ -584,11 +616,76 @@ async function runAction(action) {
     document.querySelector("#toggle-led").disabled = !latestData?.connected
       || !(latestData.identity?.capabilities & 1) || ledOutput == null;
     document.querySelector("#reset-board").disabled = !latestData?.connected;
+    updateConfigurationControls(latestData);
+  }
+}
+
+function openConfigurationConfirmation() {
+  if (saveConfigurationButton.disabled) return;
+  const profile = Number(clockProfile.value);
+  const requiresAcknowledgement = profile !== 0;
+  const profileLabel = clockProfile.selectedOptions[0]?.textContent ?? "selected clock profile";
+  configurationDialogProfile.textContent = `Selected profile: ${profileLabel}.`;
+  overclockAcknowledgement.checked = false;
+  overclockAcknowledgement.disabled = !requiresAcknowledgement;
+  overclockAcknowledgementLabel.hidden = !requiresAcknowledgement;
+  confirmConfigurationButton.disabled = requiresAcknowledgement;
+  configurationDialog.showModal();
+}
+
+async function saveConfiguration() {
+  const profile = Number(clockProfile.value);
+  const unsafeOverclock = profile !== 0;
+  if (!configurationDialog.open || !selectedBoard || actionBusy || saveConfigurationButton.disabled
+    || (unsafeOverclock && !overclockAcknowledgement.checked)) return;
+  const profileLabel = clockProfile.selectedOptions[0]?.textContent ?? "selected clock profile";
+  configurationDialog.close();
+
+  const board = selectedBoard;
+  actionBusy = true;
+  boardSelect.disabled = true;
+  actionButtons.forEach(button => { button.disabled = true; });
+  try {
+    const response = await fetch(`/api/configuration?board=${encodeURIComponent(board)}`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ profile, unsafe_overclock: unsafeOverclock }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Configuration save failed (${response.status})`);
+    configurationProfileDirty = true;
+    configurationSavePending = true;
+    statusMessage.textContent = `Saved ${profileLabel}; board is rebooting.`;
+    statusMessage.parentElement.dataset.error = "false";
+  } catch (error) {
+    statusMessage.textContent = error.message;
+    statusMessage.parentElement.dataset.error = "true";
+  } finally {
+    actionBusy = false;
+    boardSelect.disabled = !boardSelect.value;
+    rescanButton.disabled = scanning;
+    const ledOutput = latestData?.telemetry?.led_flags == null
+      ? latestData?.led?.output_on : Boolean(latestData.telemetry.led_flags & 1);
+    document.querySelector("#toggle-led").disabled = !latestData?.connected
+      || !(latestData.identity?.capabilities & 1) || ledOutput == null;
+    document.querySelector("#reset-board").disabled = !latestData?.connected;
+    updateConfigurationControls(latestData);
   }
 }
 
 document.querySelector("#toggle-led").addEventListener("click", () => runAction("toggle-led"));
 document.querySelector("#reset-board").addEventListener("click", () => runAction("reset"));
+clockProfile.addEventListener("change", () => {
+  configurationProfileDirty = true;
+  overclockAcknowledgement.checked = false;
+  updateConfigurationControls(latestData);
+});
+saveConfigurationButton.addEventListener("click", openConfigurationConfirmation);
+document.querySelector("#cancel-configuration").addEventListener("click", () => configurationDialog.close());
+confirmConfigurationButton.addEventListener("click", saveConfiguration);
+overclockAcknowledgement.addEventListener("change", () => {
+  confirmConfigurationButton.disabled = !overclockAcknowledgement.checked;
+});
 boardSelect.addEventListener("change", () => {
   if (actionBusy) return;
   selectBoard(boardSelect.value || null, boardSelect.selectedOptions[0]?.textContent || "");

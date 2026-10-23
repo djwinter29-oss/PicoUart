@@ -35,7 +35,6 @@ test("dashboard uses the HID snapshot and diagnostic contract fields", () => {
     "control_pending",
     "cpu_usage_basis_points",
     "configuration_save",
-    "unsafe_overclock",
     "active_profile",
   ]) assert.ok(!dashboard.includes(legacy), `legacy field remains: ${legacy}`);
 });
@@ -51,18 +50,40 @@ test("diagnostics are requested on demand rather than at snapshot cadence", () =
 
 test("dashboard presents lifecycle, static configuration, and honest service-load labels", () => {
   const identity = markup.match(/<div class="summary identity-summary">([\s\S]*?)<\/div>\s*<\/section>/)?.[1] ?? "";
+  const identitySection = markup.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)?.[1] ?? "";
   const configuration = markup.match(/<div class="summary configuration-summary">([\s\S]*?)<\/div>\s*<details class="pin-map-disclosure">/)?.[1] ?? "";
+  const configurationSection = markup.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)?.[1] ?? "";
+  const configurationDialog = markup.match(/<dialog class="configuration-dialog" id="configuration-dialog"[^>]*>([\s\S]*?)<\/dialog>/)?.[1] ?? "";
   assert.equal((identity.match(/class="summary-item"/g) ?? []).length, 6);
   assert.doesNotMatch(identity, /Microcontroller/);
+  assert.match(identity, /Product[\s\S]*?Board model[\s\S]*?Serial \/ UID[\s\S]*?System clock[\s\S]*?Firmware RAM reserved \/ total[\s\S]*?Firmware version/);
   assert.equal((configuration.match(/class="summary-item"/g) ?? []).length, 6);
+  assert.match(identitySection, /id="rescan-boards"/);
+  assert.doesNotMatch(identitySection, /clock-profile|save-configuration/);
+  for (const id of ["clock-profile", "save-configuration", "overclock-ack"]) {
+    assert.equal((markup.match(new RegExp(`id="${id}"`, "g")) ?? []).length, 1, `${id} must appear once`);
+  }
   assert.match(markup, /<th scope="col">Lifecycle<\/th>/);
   assert.match(markup, /<th scope="col">Diagnostics<\/th>/);
+  assert.match(configuration, /<select id="clock-profile" disabled>/);
+  assert.doesNotMatch(configuration, /overclock-ack/);
+  assert.match(configurationSection, /<button class="button button-secondary" id="save-configuration" type="button" hidden disabled>/);
+  assert.match(configurationDialog, /id="overclock-ack" type="checkbox" disabled/);
+  assert.match(configurationDialog, /id="cancel-configuration"/);
+  assert.match(configurationDialog, /id="confirm-configuration"/);
+  assert.match(dashboard, /fetch\(`\/api\/configuration\?board=/);
+  assert.match(dashboard, /JSON\.stringify\(\{ profile, unsafe_overclock: unsafeOverclock \}\)/);
+  assert.match(dashboard, /configurationDialog\.showModal\(\)/);
+  assert.match(dashboard, /saveConfigurationButton\.addEventListener\("click", openConfigurationConfirmation\)/);
+  assert.match(dashboard, /confirmConfigurationButton\.addEventListener\("click", saveConfiguration\)/);
+  assert.match(dashboard, /configurationSavePending = true/);
+  assert.match(dashboard, /configurationSavePending \|\| !available/);
   assert.match(markup, /<th scope="col">Traffic<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
   assert.match(markup, /<dialog class="diagnostics-dialog" id="diagnostics-dialog"/);
   assert.match(markup, /Stored boot profile/);
   assert.match(markup, /Reset cause/);
   assert.match(markup, /Service load \(USB core 0 \/ UART core 1\)/);
-  assert.doesNotMatch(markup, /CPU load|unsafe overclock|Save &amp; Reboot/);
+  assert.doesNotMatch(markup, /CPU load|unsafe overclock/);
   assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Channel pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
   assert.match(markup, /Uptime[\s\S]*?Board temperature[\s\S]*?Service load \(USB core 0 \/ UART core 1\)/);
   assert.match(dashboard, /total\.textContent = formatBytes\(channel\.totals\?\.\[key\]\)/);

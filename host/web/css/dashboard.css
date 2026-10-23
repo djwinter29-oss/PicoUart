@@ -106,6 +106,12 @@ h2 span { margin-left: 9px; color: var(--muted); font: 500 12px var(--mono); }
   font: 12px var(--mono);
 }
 #board-select:focus-visible { outline: 3px solid var(--lime); outline-offset: 2px; }
+#clock-profile { width: 100%; min-height: 36px; padding: 0 8px; border: 1px solid #cbd6d3; border-radius: 6px; background: var(--paper); color: var(--ink); font: 12px var(--mono); }
+#clock-profile:focus-visible { outline: 3px solid var(--lime); outline-offset: 2px; }
+#clock-profile:disabled { opacity: 0.6; }
+.configuration-acknowledgement { display: flex; align-items: start; gap: 8px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.configuration-acknowledgement[hidden] { display: none; }
+.configuration-acknowledgement input { flex: 0 0 auto; margin: 1px 0 0; }
 #rescan-boards { min-width: auto; }
 #rescan-boards::before { content: none; }
 .button {
@@ -170,6 +176,13 @@ tbody tr:hover { background: #f0f7f5; }
 .diagnostics-action { margin-top: 0; }
 .diagnostics-dialog { width: min(620px, calc(100% - 32px)); max-height: min(80vh, 760px); padding: 20px; overflow: auto; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-top: 3px solid var(--teal); border-radius: 10px; box-shadow: 0 16px 48px #102d2b40; }
 .diagnostics-dialog::backdrop { background: #102d2b70; }
+.configuration-dialog { width: min(520px, calc(100% - 32px)); padding: 24px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-top: 3px solid var(--teal); border-radius: 10px; box-shadow: 0 16px 48px #102d2b40; }
+.configuration-dialog::backdrop { background: #102d2b70; }
+.configuration-dialog h2 { margin-bottom: 12px; }
+.configuration-dialog p { margin-bottom: 12px; }
+.configuration-warning { color: var(--muted); font-size: 13px; }
+.dialog-actions { margin-top: 20px; display: flex; justify-content: end; gap: 8px; }
+.dialog-actions .button { flex: 0 0 auto; }
 .dialog-heading { margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .diagnostics-content { padding: 6px 0 16px; color: #53666a; font-size: 13px; }
 .diagnostics-content dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; margin: 0; }

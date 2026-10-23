@@ -6,8 +6,8 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css?v=22">
-  <script src="/js/dashboard.js?v=15" defer></script>
+  <link rel="stylesheet" href="/css/dashboard.css?v=25">
+  <script src="/js/dashboard.js?v=19" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -28,9 +28,7 @@
 
   <main>
     <section class="page-heading">
-      <div>
-        <h1>Diagnostics</h1>
-      </div>
+      <div><h1>Diagnostics</h1></div>
     </section>
 
     <section aria-labelledby="identity-title">
@@ -48,10 +46,10 @@
       <div class="summary identity-summary">
         <div class="summary-item"><span>Product</span><strong id="product-name">--</strong></div>
         <div class="summary-item"><span>Board model</span><strong id="board-model">--</strong></div>
-        <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
-        <div class="summary-item"><span>Firmware version</span><strong id="firmware">--</strong></div>
         <div class="summary-item"><span>Serial / UID</span><strong id="serial">--</strong></div>
+        <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
         <div class="summary-item"><span>Firmware RAM reserved / total</span><strong id="ram-usage">--</strong></div>
+        <div class="summary-item"><span>Firmware version</span><strong id="firmware">--</strong></div>
       </div>
     </section>
 
@@ -59,6 +57,9 @@
       <div class="section-heading">
         <h2 id="configuration-title">Board configuration</h2>
         <div class="actions" aria-label="Board controls">
+          <button class="button button-secondary" id="save-configuration" type="button" hidden disabled>
+            Save &amp; Reboot
+          </button>
           <button class="button button-danger" id="reset-board" type="button"
             title="Reboot the board; USB serial ports will disconnect briefly" hidden>
             Reboot
@@ -66,7 +67,16 @@
         </div>
       </div>
       <div class="summary configuration-summary">
-        <div class="summary-item"><span>Stored boot profile</span><strong id="stored-profile">--</strong></div>
+        <div class="summary-item">
+          <label for="clock-profile">Stored boot profile</label>
+          <select id="clock-profile" disabled>
+            <option value="0">SDK default</option>
+            <option value="1">150 MHz</option>
+            <option value="2">200 MHz</option>
+            <option value="3">250 MHz</option>
+            <option value="4">280 MHz</option>
+          </select>
+        </div>
         <div class="summary-item"><span>Reset cause</span><strong id="reset-cause">--</strong></div>
         <div class="summary-item"><span>UART TX ring capacity</span><strong id="uart-tx-capacity">--</strong></div>
         <div class="summary-item"><span>UART RX ring capacity</span><strong id="uart-rx-capacity">--</strong></div>
@@ -78,6 +88,25 @@
         <div class="pin-map" id="pin-map" aria-label="Static UART GPIO assignments"></div>
       </details>
     </section>
+
+    <dialog class="configuration-dialog" id="configuration-dialog" aria-labelledby="configuration-dialog-title">
+      <h2 id="configuration-dialog-title">Save clock profile?</h2>
+      <p id="configuration-dialog-profile"></p>
+      <p class="configuration-warning">
+        Flash programming pauses servicing, then automatically reboots and briefly disconnects USB.
+        Close all CDC ports and stop external UART traffic first.
+      </p>
+      <label class="configuration-acknowledgement" id="overclock-acknowledgement" hidden>
+        <input id="overclock-ack" type="checkbox" disabled>
+        <span>I acknowledge the non-default overclock request.</span>
+      </label>
+      <div class="dialog-actions">
+        <button class="button button-led" id="cancel-configuration" type="button">Cancel</button>
+        <button class="button button-danger" id="confirm-configuration" type="button" disabled>
+          Save &amp; Reboot
+        </button>
+      </div>
+    </dialog>
 
     <section aria-labelledby="runtime-title">
       <div class="section-heading">
