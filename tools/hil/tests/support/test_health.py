@@ -13,8 +13,12 @@ def _load_health():
 
 def _clean_snapshot():
     return {
-        "channels": {index: 1 for index in range(6)},
+        "channels": {index: "ready" for index in range(6)},
         "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {index: {
+            "uart_measurement_state": 1, "rx_overrun_count": 0, "rx_error_count": 0,
+            "last_control_error_reason": 0,
+        } for index in range(6)},
         "firmware_version": "1.2.3",
         "error": None,
     }
@@ -22,34 +26,35 @@ def _clean_snapshot():
 
 def test_collects_six_channel_health_and_overruns(monkeypatch) -> None:
     health = _load_health()
-    monitor = "\n".join(f"cdc{index} health=0x1[ready]" for index in range(6))
-    overruns = "\n".join(f"cdc{index}={index}" for index in range(6))
-    responses = iter(
-        [
-            subprocess.CompletedProcess([], 0, monitor, ""),
-            subprocess.CompletedProcess([], 0, overruns, ""),
-            subprocess.CompletedProcess([], 0, "1.2.3\n", ""),
-        ]
-    )
     calls = []
 
-    def run_hid(*arguments):
-        calls.append(arguments)
-        return next(responses)
+    class Board:
+        def __enter__(self):
+            return self
 
-    monkeypatch.setattr(health, "_run_hid", run_hid)
+        def __exit__(self, *_arguments):
+            calls.append("close")
+
+        def read_firmware_version(self):
+            return "1.2.3"
+
+        def read_channel(self, index):
+            calls.append(("channel", index))
+            return {"state": "ready"}
+
+        def read_channel_diagnostic(self, index):
+            calls.append(("diagnostic", index))
+            return {**_clean_snapshot()["diagnostics"][index], "rx_overrun_count": index}
+
+    monkeypatch.setattr(health, "PicoUartHid", Board)
 
     snapshot = health._collect_hid_health_once()
 
-    assert snapshot["channels"] == {index: 1 for index in range(6)}
+    assert snapshot["channels"] == {index: "ready" for index in range(6)}
     assert snapshot["overruns"] == {index: index for index in range(6)}
     assert snapshot["firmware_version"] == "1.2.3"
     assert snapshot["error"] is None
-    assert calls == [
-        ("monitor", "--duration", "1"),
-        ("overruns",),
-        ("version",),
-    ]
+    assert calls == [item for index in range(6) for item in (("channel", index), ("diagnostic", index))] + ["close"]
 
 
 def test_hid_command_uses_checkout_and_host_source_path(monkeypatch) -> None:
@@ -86,21 +91,15 @@ def test_reads_live_system_clock_from_hardware_json(monkeypatch) -> None:
 
 def test_health_collection_reports_command_and_sample_errors(monkeypatch) -> None:
     health = _load_health()
-    responses = iter(
-        [
-            subprocess.CompletedProcess([], 1, "", "monitor unavailable"),
-            subprocess.CompletedProcess([], 2, "", "overruns unavailable"),
-            subprocess.CompletedProcess([], 3, "", "version unavailable"),
-        ]
-    )
-    monkeypatch.setattr(health, "_run_hid", lambda *_arguments: next(responses))
+    def unavailable():
+        raise OSError("device unavailable")
+
+    monkeypatch.setattr(health, "PicoUartHid", unavailable)
 
     snapshot = health._collect_hid_health_once()
 
-    assert "HID monitor failed" in snapshot["error"]
-    assert "HID overflow query failed" in snapshot["error"]
-    assert "HID version query failed" in snapshot["error"]
-    assert "returned 0/6" in snapshot["error"]
+    assert "HID health query failed: device unavailable" == snapshot["error"]
+    assert not health.health_is_clean(snapshot)
 
 
 def test_health_collection_retries_a_transient_failure(monkeypatch) -> None:
@@ -115,30 +114,25 @@ def test_health_collection_retries_a_transient_failure(monkeypatch) -> None:
     assert sleeps == [0.5]
 
 
-def test_health_cleanliness_checks_flags_and_overrun_baseline() -> None:
+def test_health_cleanliness_checks_states_diagnostics_and_overrun_baseline() -> None:
     health = _load_health()
     baseline = _clean_snapshot()
 
     assert health.health_is_clean(baseline, baseline)
-    closed = {**baseline, "channels": {index: (0x20 if index >= 2 else 0) for index in range(6)}}
+    closed = {**baseline, "channels": {index: "closed" for index in range(6)}}
     assert health.health_is_clean(closed)
-    closed_pending = {**closed, "channels": {index: flags | health.CONTROL_PENDING_BIT
-                                                 for index, flags in closed["channels"].items()}}
-    assert health.health_is_clean(closed_pending)
-    starting = {**closed, "channels": {**closed["channels"], 0: health.CDC_OPEN_BIT}}
-    assert not health.health_is_clean(starting)
-    open_pending = {
-        **baseline,
-        "channels": {**baseline["channels"], 0: 1 | health.CDC_OPEN_BIT | health.CONTROL_PENDING_BIT},
-    }
-    assert not health.health_is_clean(open_pending)
+    for state in ("starting", "configuring", "error", "unknown"):
+        assert not health.health_is_clean({**baseline, "channels": {**baseline["channels"], 0: state}})
     assert not health.health_is_clean(None)
     assert not health.health_is_clean({**baseline, "error": "query failed"})
-    assert not health.health_is_clean({**baseline, "channels": {0: 1}})
+    assert not health.health_is_clean({**baseline, "channels": {0: "ready"}})
+    assert not health.health_is_clean({**baseline, "diagnostics": {}})
 
-    unhealthy = _clean_snapshot()
-    unhealthy["channels"][2] |= health.BAD_HEALTH_BITS
-    assert not health.health_is_clean(unhealthy)
+    for field, value in (("uart_measurement_state", 0), ("uart_measurement_state", 2),
+                         ("rx_error_count", 1), ("rx_overrun_count", 1), ("last_control_error_reason", 1)):
+        unhealthy = _clean_snapshot()
+        unhealthy["diagnostics"][2][field] = value
+        assert not health.health_is_clean(unhealthy)
 
     changed_overruns = _clean_snapshot()
     changed_overruns["overruns"][3] = 1
@@ -151,8 +145,8 @@ def test_health_text_helpers_cover_missing_and_error_snapshots() -> None:
 
     assert health.health_summary(None) == "not collected"
     assert health.health_summary({"error": "query failed"}) == "ERROR: query failed"
-    assert "cdc0=0x01" in health.health_summary(snapshot)
+    assert "cdc0=ready" in health.health_summary(snapshot)
     assert health.health_evidence(None) == "HID health: not collected\n"
-    evidence = health.health_evidence({**snapshot, "monitor_output": "monitor raw\n"})
+    evidence = health.health_evidence(snapshot)
     assert "HID health summary:" in evidence
-    assert "monitor raw" in evidence
+    assert '"rx_error_count": 0' in evidence

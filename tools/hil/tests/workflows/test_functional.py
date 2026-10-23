@@ -75,8 +75,10 @@ def test_single_successful_stage_is_recorded_partial() -> None:
         payload_bytes=64,
     )
     clean = {
-        "channels": {index: 1 for index in range(6)},
+        "channels": {index: "ready" for index in range(6)},
         "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {index: {"uart_measurement_state": 1, "rx_overrun_count": 0,
+                               "rx_error_count": 0, "last_control_error_reason": 0} for index in range(6)},
         "error": None,
     }
 
@@ -104,8 +106,10 @@ def test_main_returns_stage_status_without_hardware(monkeypatch, stage_status, e
     arguments.continue_on_failure = False
     arguments.no_record = True
     snapshot = {
-        "channels": {index: 1 for index in range(6)},
+        "channels": {index: "ready" for index in range(6)},
         "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {index: {"uart_measurement_state": 1, "rx_overrun_count": 0,
+                               "rx_error_count": 0, "last_control_error_reason": 0} for index in range(6)},
         "firmware_version": "1.2.3",
         "error": None,
     }

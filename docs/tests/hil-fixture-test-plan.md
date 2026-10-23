@@ -99,6 +99,9 @@ rate; later configured rates are reported as `NOT RUN`, not as failures or missi
 The standalone performance workflow and combined runner require clean HID health before and after each rate,
 including unchanged overrun counts. A health failure blocks traffic or fails the completed rate even if payload
 verification passed. Raw `stress` invocations opt into these same checks with `--check-hid-health`.
+Health collection uses the host API's non-consuming per-channel Feature snapshots and diagnostics, not console
+monitor text. Every channel must be closed or ready with current diagnostics and zero recorded RX/configuration
+faults; missing reports and HID failures block acceptance. Raw diagnostics, including buffer peaks, are retained.
 Each rate reopens the endpoints, configures line coding, settles, flushes host TTY queues, and then collects its health
 baseline.
 

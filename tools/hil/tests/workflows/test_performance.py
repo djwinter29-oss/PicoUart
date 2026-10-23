@@ -148,11 +148,13 @@ def test_incremental_report_shows_only_attempted_rates_and_highest_supported() -
         )
     output = "\n".join(output_lines)
     health_before = {
-        "channels": {index: 1 for index in range(6)},
+        "channels": {index: "ready" for index in range(6)},
         "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {index: {"uart_measurement_state": 1, "rx_overrun_count": 0,
+                               "rx_error_count": 0, "last_control_error_reason": 0} for index in range(6)},
         "error": None,
     }
-    health_after = {**health_before, "channels": {0: 0x81, **{index: 1 for index in range(1, 6)}}}
+    health_after = {**health_before, "channels": {**health_before["channels"], 0: "error"}}
 
     report = performance.format_result_entry(
         arguments, "2026-10-08T00:00:00+00:00", 0, output, health_before, health_after
@@ -178,7 +180,7 @@ def test_incremental_pre_rate_health_abort_is_not_a_ceiling() -> None:
     output_lines.extend(f"PASS {label}: 100 bytes, 20.0 B/s" for label in labels)
     output_lines.extend(["Incremental rate: 128000 baud", "Benchmarking all six HIL fixture streams at 128000 baud"])
     output_lines.extend(f"FAIL {label}: HID health not clean before rate; no traffic sent" for label in labels)
-    clean = {"channels": {index: 1 for index in range(6)}, "overruns": {index: 0 for index in range(6)}}
+    clean = {"channels": {index: "ready" for index in range(6)}, "overruns": {index: 0 for index in range(6)}}
 
     assert not performance.incremental_ceiling_found(
         arguments, 0, "\n".join(output_lines), clean, clean
@@ -217,8 +219,10 @@ def test_main_combines_benchmark_and_health_status(monkeypatch, command_status, 
     arguments.artifact = None
     arguments.no_record = True
     clean = {
-        "channels": {index: 1 for index in range(6)},
+        "channels": {index: "ready" for index in range(6)},
         "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {index: {"uart_measurement_state": 1, "rx_overrun_count": 0,
+                               "rx_error_count": 0, "last_control_error_reason": 0} for index in range(6)},
         "firmware_version": "1.2.3",
         "error": None,
     }
@@ -247,12 +251,14 @@ def test_main_accepts_expected_incremental_boundary_failure(monkeypatch, capsys)
     arguments.firmware_commit = "abc1234"
     arguments.no_record = True
     clean = {
-        "channels": {index: 1 for index in range(6)},
+        "channels": {index: "ready" for index in range(6)},
         "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {index: {"uart_measurement_state": 1, "rx_overrun_count": 0,
+                               "rx_error_count": 0, "last_control_error_reason": 0} for index in range(6)},
         "firmware_version": "1.2.3",
         "error": None,
     }
-    boundary_health = {**clean, "channels": {0: 0x81, **{index: 1 for index in range(1, 6)}}}
+    boundary_health = {**clean, "channels": {**clean["channels"], 0: "error"}}
     labels = [
         "cdc0-to-cdc2", "cdc2-to-cdc0", "cdc3-to-cdc4", "cdc4-to-cdc3", "cdc1-loopback", "cdc5-loopback",
     ]
