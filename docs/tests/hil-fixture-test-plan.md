@@ -330,7 +330,7 @@ tools/hil/.venv/bin/pico-uart-hil startup \
   --timeout 20 --output build/startup-swd-01.json
 ```
 
-This read-only command neither triggers the event nor opens CDC. For a reset, invoke it immediately after the
+By default this read-only command neither triggers the event nor opens CDC. For a reset, invoke it immediately after the
 independently performed event; for manual power-on, start observation before applying power. Record the event's
 actual time and method alongside the JSON. The event label is operator supplied, not proof of a reset.
 
@@ -348,6 +348,20 @@ OS process creation/termination can add latency; this is not a hard real-time ho
 Repeat each event type and retain failures as well as successes. Compare uptime/reset cause against elapsed time and
 the independently recorded event. Do not increase firmware sleeps or retry windows to conceal unexplained resets.
 Cold-start/SWD behavior remains unqualified until the event series and subsequent functional tests pass.
+
+To exercise worker startup rather than only observe closed channels, explicitly add
+`--cdc1 /dev/serial/by-id/<cdc1>` on the fixed HW UART1 loopback fixture. This option changes CDC settings and transmits
+UART data; it is not read-only. After the first valid closed-channel snapshot, a subprocess checks that the endpoint
+is CDC1 on the selected board, opens it at 115200 8N1, awaits the existing HID readiness contract, verifies a 154-byte
+loopback payload, and closes/restores the port. The probe runs once, with at most eight seconds or the remaining overall
+deadline; any probe error fails the observation immediately rather than retrying into success. The ordinary closed-state
+and uptime-stability observations must still pass afterward. Uptime comparisons use timestamps tied to the HID
+snapshots rather than probe completion, so a slow probe is not mistaken for a reset.
+
+Use this active variant for startup acceptance; a closed-only pass does not prove that UART worker admission works.
+Reserve the default passive variant for diagnosing enumeration or cases where UART transmission is not authorized.
+Probe failures retain stderr and partial snapshots. A subprocess deadline may interrupt teardown; on failure inspect
+the selected board and reflash before a separate physical test rather than assuming cleanup or a clean session.
 
 ## Optimization Decision Gates
 

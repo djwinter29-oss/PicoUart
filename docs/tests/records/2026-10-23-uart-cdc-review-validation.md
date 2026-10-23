@@ -7,8 +7,9 @@ Development validation of the reviewed six-CDC/six-UART design on Pico/RP2040 se
 No Pico 2 was attached. This is not packaged-release qualification, a baud ceiling, or a losslessness guarantee.
 
 Firmware source baseline is `da0b1e722b794cf7a0a81d14dcd9bbf5e47624b5`, including the reviewed mailbox,
-lifecycle, readiness-query, and rejection-diagnostic fixes. Subsequent retained changes repair HIL tooling, not the
-firmware data path. The experimental changes below were removed after comparison.
+lifecycle, readiness-query, and rejection-diagnostic fixes. The initial retained follow-ups repair HIL tooling, not the
+firmware data path. The later [worker startup correction](#explicit-core-1-reset-follow-up) changes the core-launch
+precondition. The refill experiments below were removed after comparison.
 
 Each physical workload used a freshly flashed selected image. Upstream OpenOCD `0.12.0+dev-g46d9b60` identified
 the BY25Q16ES flash normally and reported `Verified OK`; no capacity override was used. The distribution OpenOCD
@@ -175,7 +176,7 @@ Unlike the earlier session-only harness, these checks are repository-runnable an
 hash, selected serial, and explicit failures in a new JSON file. Endpoint identities are checked before opening either
 port. The overflow run is intentionally not a clean-health baseline for another test.
 
-### Startup Finding Remains Open
+### Startup Finding Before The Core-1 Reset Correction
 
 Immediate-post-SWD CDC readiness failed again; it is not resolved by the tooling. Two bounded diagnostic attempts
 observed CDC1 `starting`, with DTR open and uptime around 4.2 seconds. Core-1 service-load data was unavailable in
@@ -225,3 +226,97 @@ The current HIL tooling suite passes 234 hardware-free tests, including the newl
 startup commands. Both actual CLI help paths and directly affected documentation link targets were checked.
 No firmware source changed, so the earlier firmware builds/native/sanitizer results apply to the unchanged baseline;
 they were not rerun as new firmware qualification in this follow-up.
+
+## Explicit Core-1 Reset Follow-Up
+
+### Cause And Retained Change
+
+The driver launched core 1 without explicitly establishing the Pico SDK's reset-before-launch precondition.
+`multicore_launch_core1()` requires core 1 to have been reset by system reset or `multicore_reset_core1()`; it does
+not perform that reset itself. The retained firmware change calls `multicore_reset_core1()` immediately before launch,
+after all backend checks and teardown succeed. It adds no firmware delay, retry, watchdog change, or transport policy.
+Native regressions require reset before launch, no reset/launch on backend-check failure, and no reset/relaunch on
+repeated initialization of a running worker.
+
+This establishes the missing SDK precondition and resolves the observed post-SWD case in the trials below. It does
+not prove a particular internal OpenOCD race or qualify every possible reset event. A failed baseline capture found
+core 1 at a ROM address; a healthy capture found it in firmware. These snapshots alone do not establish the full
+failure sequence.
+
+An apparent core0-only programming improvement did not survive repetition: later trials failed startup or flash
+verification. The loader remains unchanged and uses its normal SMP target. Subsequent SWD instability included
+verification/reset failures and an all-`0xff` readback; those attempts are not accepted flashes. Normal verified
+programming returned only after the user physically disconnected and reconnected both board and probe, confirming
+their LEDs went off. No flash-capacity override or host service change was used.
+
+### Active Startup Comparison
+
+The startup command now optionally verifies CDC1 readiness and a 154-byte 115200 8N1 loopback before accepting the
+closed-state/uptime-stability window. A valid closed snapshot alone previously missed the worker failure. The probe
+runs once; a failure cannot retry into a pass. See the [fixture plan](../hil-fixture-test-plan.md#startup-observations)
+for authorization, identity checks, deadlines, and teardown limitations.
+
+Each trial below immediately followed a fresh, verified flash using the same normal loader, selected probe, and
+100 kHz SWD speed. No 15-second settling delay was used. Times are from observer startup, not the physical reset edge.
+Every passing row verified the payload and at least 12 seconds of closed-state observations with continuous uptime.
+The failed rows reported closed channels but timed out awaiting active CDC readiness.
+
+| Trial, in order | Image | Result | First valid snapshot uptime, ms | Observer completion, s |
+| --- | --- | --- | ---: | ---: |
+| Initial reproduction | Baseline | `FAIL` | 839 | 3.814 |
+| Initial candidate | Explicit reset | `PASS` | 843 | 12.863 |
+| Interleaved baseline A | Baseline | `FAIL` | 547 | 3.517 |
+| Interleaved candidate A | Explicit reset | `PASS` | 857 | 12.867 |
+| Interleaved baseline B | Baseline | `FAIL` | 546 | 3.481 |
+| Interleaved candidate B | Explicit reset | `PASS` | 544 | 12.508 |
+| Interleaved candidate C | Explicit reset | `PASS` | 859 | 12.883 |
+| Final rebuilt image | Explicit reset | `PASS` | 827 | 13.037 |
+
+Three baseline failures and five candidate passes support retaining the explicit reset, not a statistical reliability
+guarantee. These are RP2040 post-SWD development observations, not cold-power-on or RP2350 qualification.
+
+| Image under `build/` | ELF SHA-256 | Scope |
+| --- | --- | --- |
+| `review-explicit-core1-reset/pico_uart.elf` | `a8ae67b9cf7ca92049f69d22afd3a3f3be3e56e319c157870584c4b87edf0124` | First four candidate startup passes |
+| `review-startup-fixed-pico/pico_uart.elf` | `e0f2fb2b41318894bb664c0cbc19a658a28dfecef7d39a66e8df5f78cc504657` | Final startup, recovery, and concurrent acceptance image |
+| `review-startup-fixed-pico2/pico_uart.elf` | `4c9c9c944d35bab01c7bc097f8adcf3c4653bba451170f7d1358c27b21405353` | RP2350 build/USB checks only; no attached board |
+
+Both candidate images have the same functional firmware delta from baseline: explicit core-1 reset. The final build
+also includes the explanatory source comment and was rebuilt separately; hashes, not Git metadata alone, identify
+the tested artifacts.
+
+### Final-Image Recovery And Host Validation
+
+The final-image repository recovery command passed `--mode all` starting at `19:06:41Z`:
+
+- Twelve CDC5 settings changes passed while CDC1 verified 53120 bytes over its five-second stream.
+- Five CDC5 reopen cycles passed fresh-marker checks on both loopbacks.
+- The bounded stall recovered all 2048 CDC1 bytes while CDC5 verified 2688 bytes during the 250 ms stall.
+- Intentional overflow accounted for all 16384 input bytes: 10168 retained and 6216 reported drops.
+  CDC5 verified 21248 bytes during the two-second stall; fresh markers passed after draining the backlog.
+- Current diagnostics had no unexpected RX/configuration faults or cleanup error. A separate first invocation
+  started before CDC re-enumeration and failed endpoint identity validation before opening a port; it remains a
+  failed setup, not a passing workload. The accepted run freshly flashed again and verified enumeration first.
+
+The new firmware passes 31/31 native targets normally and under ASan/UBSan. Both Pico and Pico 2 builds and their
+compiled six-CDC/one-HID contracts pass. Firmware static analysis passes. The HIL tooling suite passes 240 tests;
+targeted firmware, clock/version-policy, and artifact-verifier Python checks pass 316 tests with one skip.
+The first contract-test invocation used the HIL-only environment and failed collection for missing `tomlkit`;
+the accepted run used the existing host developer environment without dependency changes.
+
+### Final-Image Concurrent Acceptance
+
+After another fresh verified flash, the [final reset-corrected HIL record](2026-10-23-191806Z-pico-125mhz-hil.md)
+passed all four functional stages and all six concurrent streams at 115200 and 460800 baud for 300 seconds per rate.
+Every per-rate and final diagnostic was current, with zero RX drops/errors or configuration fault history. This run
+used the final RP2040 ELF/hash above. Its Git fields truthfully name the parent commit and dirty worktree used during
+testing; they do not imply that the parent commit alone contains the reset correction.
+
+The board was left running this uninstrumented 125 MHz image. A final read-only HID check confirmed the identified
+RP2040 and all six CDC sessions closed. These single-board USB-paced observations are not long-duration or complete
+release-matrix qualification.
+
+The six-CDC/six-UART mapping, ownership/generations, TX gates, buffers, budgets, and hardware-specific sequencing
+remain unchanged. Earlier measured decisions to reject speculative refill tuning still apply. Independent ingress,
+CTS, RP2350 physical coverage, safe DMA re-arm/full-countdown endurance, and other event-specific startup series
+remain separate physical gates; the reset correction does not qualify them.

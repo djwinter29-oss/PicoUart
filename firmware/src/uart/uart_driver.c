@@ -414,6 +414,8 @@ bool uart_driver_init(void)
             }
         }
 
+        /* SDK launch requires core 1 in its reset state, including after a debugger restart. */
+        multicore_reset_core1();
         multicore_launch_core1(uart_driver_worker_core_main);
         uart_driver_state.worker_started = true;
     }

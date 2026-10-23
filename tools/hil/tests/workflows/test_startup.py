@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 
 import pytest
 
@@ -14,7 +15,8 @@ def arguments(tmp_path):
     artifact = tmp_path / "image.elf"
     artifact.write_bytes(b"test firmware")
     return argparse.Namespace(serial="selected", artifact=artifact, output=tmp_path / "startup.json",
-                              event="swd-reset", timeout=5.0, interval=0.01, stable_seconds=0.01, sample=False)
+                              event="swd-reset", timeout=5.0, interval=0.01, stable_seconds=0.01,
+                              sample=False, probe=False, cdc1=None)
 
 
 def sample(state="closed", clock=125000000):
@@ -159,3 +161,93 @@ def test_uptime_rollover_is_not_a_reset(arguments, monkeypatch):
 
     monkeypatch.setattr(startup.subprocess, "run", run)
     assert startup.observe(arguments)["result"] == "PASS"
+
+
+def test_active_probe_runs_once_before_stability(arguments, monkeypatch):
+    arguments.cdc1 = "/fixture/cdc1"
+    arguments.timeout = 20.0
+    calls = []
+    now = [0.0]
+    monkeypatch.setattr(startup.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(startup.time, "sleep", lambda seconds: None)
+
+    def run(command, **options):
+        calls.append((command, options))
+        if "--probe" in command:
+            now[0] += 2
+            return subprocess.CompletedProcess(command, 0, json.dumps(
+                {"channel": 1, "baud": 115200, "verified_bytes": 154},
+            ))
+        now[0] += 0.1
+        return subprocess.CompletedProcess(command, 0, json.dumps(
+            {**sample(), "runtime": {"uptime_ms": int(now[0] * 1000)}},
+        ))
+
+    monkeypatch.setattr(startup.subprocess, "run", run)
+    evidence = startup.observe(arguments)
+    assert evidence["result"] == "PASS"
+    assert evidence["first_closed_observation_s"] == 0.1
+    assert evidence["attempts"][0]["probe"]["verified_bytes"] == 154
+    assert len([command for command, _options in calls if "--probe" in command]) == 1
+    assert all(options["timeout"] <= arguments.timeout for _command, options in calls)
+    assert calls[1][1]["timeout"] == 8.0
+    assert calls[1][0][-2:] == ["--cdc1", "/fixture/cdc1"]
+
+
+def test_probe_failure_cannot_retry_into_success(arguments, monkeypatch):
+    arguments.cdc1 = "/fixture/cdc1"
+    calls = []
+
+    def run(command, **options):
+        calls.append(command)
+        if "--probe" in command:
+            raise subprocess.CalledProcessError(1, command, stderr="CDC readiness timed out")
+        return subprocess.CompletedProcess(command, 0, json.dumps(sample()))
+
+    monkeypatch.setattr(startup.subprocess, "run", run)
+    evidence = startup.observe(arguments)
+    assert evidence["result"] == "FAIL"
+    assert evidence["error"] == "CDC1 startup readiness/payload probe failed"
+    assert evidence["attempts"][0]["stderr"] == "CDC readiness timed out"
+    assert len(calls) == 2
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux sysfs/termios endpoint checks")
+def test_probe_validates_identity_before_opening(monkeypatch):
+    from hil_test_suite.serial import config
+    monkeypatch.setattr(config, "pico_uart_endpoint", lambda path: ("other-board", 1))
+    monkeypatch.setattr(config, "configure_port", lambda *args: pytest.fail("must not open a port"))
+    with pytest.raises(ValueError, match="not CDC1"):
+        startup.probe_channel("selected", "/unrelated")
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux sysfs/termios endpoint checks")
+@pytest.mark.parametrize("failure", [None, "payload", "cleanup"])
+def test_probe_verifies_payload_and_always_closes(monkeypatch, failure):
+    from hil_test_suite.serial import config, stress
+    closed = []
+    sent = []
+    monkeypatch.setattr(config, "pico_uart_endpoint", lambda path: ("selected", 1))
+    monkeypatch.setattr(config, "configure_port", lambda path, baud: (42, []))
+    monkeypatch.setattr(stress, "write_all", lambda descriptor, payload, deadline: sent.append(payload))
+
+    def read(descriptor, expected, deadline):
+        assert descriptor == 42 and expected == sent[0]
+        if failure == "payload":
+            raise ValueError("payload mismatch")
+
+    def close(ports):
+        closed.extend(ports)
+        return OSError("close failed") if failure == "cleanup" else None
+
+    monkeypatch.setattr(stress, "read_exact", read)
+    monkeypatch.setattr(stress, "close_ports", close)
+    if failure:
+        with pytest.raises((ValueError, OSError), match="mismatch|close failed"):
+            startup.probe_channel("selected", "/fixture")
+    else:
+        assert startup.probe_channel("selected", "/fixture") == {
+            "channel": 1, "baud": 115200, "verified_bytes": len(sent[0]),
+        }
+        assert len(sent[0]) == 154
+    assert closed == [(42, [])]

@@ -27,6 +27,7 @@ static size_t test_startup_init_calls;
 static size_t test_startup_deinit_calls;
 static size_t test_startup_baseline_calls;
 static size_t test_multicore_launch_calls;
+static size_t test_multicore_reset_calls;
 static size_t test_startup_fail_at;
 static ring_buffer_t test_startup_rings[UART_PORT_COUNT];
 static uint8_t test_startup_storage[UART_PORT_COUNT][128];
@@ -234,9 +235,16 @@ const uart_backend_ops_t uart_backend_pio_ops = {
     .stats = test_startup_stats,
 };
 
+static void test_record_multicore_reset(void)
+{
+    TEST_ASSERT_EQUAL_UINT(0u, test_multicore_launch_calls);
+    ++test_multicore_reset_calls;
+}
+
 static void test_record_multicore_launch(pico_test_core_entry_t entry)
 {
     TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_EQUAL_UINT(1u, test_multicore_reset_calls);
     ++test_multicore_launch_calls;
     entry();
 }
@@ -401,6 +409,7 @@ void setUp(void)
 {
     test_stats_call_count = 0u;
     test_multicore_launch_hook = NULL;
+    test_multicore_reset_hook = NULL;
     test_reset_fails = false;
     test_close_during_start = false;
     test_reopen_during_start = false;
@@ -483,14 +492,17 @@ void test_startup_rolls_back_partial_backend_init_and_retries(void)
     test_startup_deinit_calls = 0u;
     test_startup_baseline_calls = 0u;
     test_multicore_launch_calls = 0u;
+    test_multicore_reset_calls = 0u;
     test_startup_fail_at = 3u;
     test_multicore_launch_hook = test_record_multicore_launch;
+    test_multicore_reset_hook = test_record_multicore_reset;
 
     TEST_ASSERT_FALSE(uart_driver_init());
     TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT, test_startup_init_calls);
     TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT - 1u, test_startup_deinit_calls);
     TEST_ASSERT_EQUAL_UINT(0u, test_startup_baseline_calls);
     TEST_ASSERT_EQUAL_UINT(0u, test_multicore_launch_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, test_multicore_reset_calls);
     TEST_ASSERT_FALSE(uart_driver_worker_is_running());
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
         TEST_ASSERT_FALSE(test_startup_initialized[index]);
@@ -506,6 +518,7 @@ void test_startup_rolls_back_partial_backend_init_and_retries(void)
     TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT, test_startup_deinit_calls);
     TEST_ASSERT_EQUAL_UINT(UART_PORT_COUNT, test_startup_baseline_calls);
     TEST_ASSERT_EQUAL_UINT(1u, test_multicore_launch_calls);
+    TEST_ASSERT_EQUAL_UINT(1u, test_multicore_reset_calls);
     TEST_ASSERT_TRUE(uart_driver_worker_is_running());
     for (size_t index = 0u; index < UART_PORT_COUNT; ++index) {
         TEST_ASSERT_FALSE(test_startup_initialized[index]);
@@ -514,6 +527,7 @@ void test_startup_rolls_back_partial_backend_init_and_retries(void)
 
     TEST_ASSERT_TRUE(uart_driver_init());
     TEST_ASSERT_EQUAL_UINT(1u, test_multicore_launch_calls);
+    TEST_ASSERT_EQUAL_UINT(1u, test_multicore_reset_calls);
 
     TEST_ASSERT_TRUE(uart_driver_request_channel_start(UART_PORT_2));
     TEST_ASSERT_TRUE(uart_driver_channel_start_pending(UART_PORT_2));

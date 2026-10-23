@@ -51,8 +51,9 @@ establish functional or recovery coverage, and requested baud is not independent
 
 | Record | Recorded Result | Scope And Limitations |
 | --- | --- | --- |
+| [2026-10-23 Pico reset-corrected acceptance](2026-10-23-191806Z-pico-125mhz-hil.md) | `PASS` | Explicit core1-reset image; four fixture stages and six streams at 115200/460800, 300 seconds per rate with clean current diagnostics. Active startup/recovery comparisons are in the review validation record; other hardware/reset-event gates remain open. |
 | [2026-10-23 Pico extended acceptance](2026-10-23-182232Z-pico-125mhz-hil.md) | `PASS` | Fresh ordinary image; four fixture stages and six streams at 115200/460800, 300 seconds per rate with clean current diagnostics. Does not resolve startup reliability or qualify missing hardware variants. |
-| [2026-10-23 UART/CDC review validation](2026-10-23-uart-cdc-review-validation.md) | Scoped development checks | Exact-image RP2040 refill comparisons, configuration isolation, overflow, session-loss, and watchdog checks. Candidates removed; RP2350/CTS/full-countdown qualification remains pending. |
+| [2026-10-23 UART/CDC review validation](2026-10-23-uart-cdc-review-validation.md) | Scoped development checks | Exact-image RP2040 refill comparisons and recovery; explicit reset-before-core1-launch corrects reproduced post-SWD startup failure in repeated active-probe trials. Refill candidates removed; other reset events and RP2350/CTS/full-countdown qualification remain pending. |
 | [2026-10-23 Pico final acceptance](2026-10-23-174031Z-pico-125mhz-hil.md) | `PASS` | Ordinary reviewed image; four functional stages and six streams at 115200/460800, 60 seconds per rate, with current diagnostics and zero faults. Not long-duration qualification. |
 | [2026-10-08 Pico 2](2026-10-08-173102Z-pico2-hil.md) | `PARTIAL` | Performance only, above the current default sweep, at low achieved load. Its historical “supported rate” label is not a general baud-capability claim. |
 | [2026-10-08 Pico](2026-10-08-183203Z-pico-hil.md) | `FAIL` | Missing stream results and incomplete performance evidence; functional success does not override the overall failure. |

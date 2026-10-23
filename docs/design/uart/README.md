@@ -38,6 +38,14 @@ dispatch, not physical signal flow.
 
 Board pin configuration remains separate from transport and lifecycle code.
 
+## Worker Startup
+
+After all backend startup checks succeed and the backends are quiescent, core 0 explicitly resets core 1 with
+`multicore_reset_core1()` before `multicore_launch_core1()`. This establishes the Pico SDK launch precondition rather
+than relying on a preceding power-on or debugger reset to have left core 1 in the expected state. An already running
+worker is neither reset nor relaunched by repeated driver initialization. Failed backend startup still rolls back
+without launching the worker.
+
 ## Focused Designs
 
 - [Backend Adapter Design](backend-adapter-design.md): shared HW/PIO backend contract.
