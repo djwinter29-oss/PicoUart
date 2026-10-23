@@ -36,15 +36,22 @@ def _collect_hid_health_once() -> dict:
             for index in range(6):
                 snapshot["channels"][index] = board.read_channel(index)["state"]
                 diagnostic = board.read_channel_diagnostic(index)
+                for _ in range(2):
+                    if diagnostic["uart_measurement_state"] == 1:
+                        break
+                    time.sleep(0.05)
+                    diagnostic = board.read_channel_diagnostic(index)
                 snapshot["diagnostics"][index] = diagnostic
                 snapshot["overruns"][index] = diagnostic["rx_overrun_count"]
+                if diagnostic["uart_measurement_state"] != 1:
+                    snapshot["error"] = f"CDC{index} UART diagnostics are not current"
     except (OSError, RuntimeError) as error:
         snapshot["error"] = f"HID health query failed: {error}"
     return snapshot
 
 
 def collect_hid_health() -> dict:
-    """Collect HID health, retrying transient post-reset enumeration failures."""
+    """Collect HID health, retrying bounded snapshot contention and post-reset enumeration failures."""
     snapshot = _collect_hid_health_once()
     for _ in range(2):
         if not snapshot.get("error"):
@@ -100,8 +107,13 @@ def health_summary(snapshot: dict | None) -> str:
         return "ERROR: " + snapshot["error"]
     channels = ", ".join(f"cdc{index}={state}" for index, state in sorted(snapshot["channels"].items()))
     overruns = ", ".join(f"cdc{index}={count}" for index, count in sorted(snapshot["overruns"].items()))
+    diagnostics = ", ".join(
+        f"cdc{index}=m{sample['uart_measurement_state']}/rxerr{sample['rx_error_count']}"
+        f"/ctl{sample['last_control_error_reason']}"
+        for index, sample in sorted(snapshot["diagnostics"].items())
+    )
     firmware_version = snapshot.get("firmware_version") or "unknown"
-    return f"health [{channels}]; overruns [{overruns}]; firmware={firmware_version}"
+    return f"health [{channels}]; overruns [{overruns}]; diagnostics [{diagnostics}]; firmware={firmware_version}"
 
 
 def health_evidence(snapshot: dict | None) -> str:

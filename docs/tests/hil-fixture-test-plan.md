@@ -102,6 +102,8 @@ verification passed. Raw `stress` invocations opt into these same checks with `-
 Health collection uses the host API's non-consuming per-channel Feature snapshots and diagnostics, not console
 monitor text. Every channel must be closed or ready with current diagnostics and zero recorded RX/configuration
 faults; missing reports and HID failures block acceptance. Raw diagnostics, including buffer peaks, are retained.
+Transient stale diagnostic captures receive bounded per-channel retries; an exhausted retry remains an explicit
+health-query failure, not a clean sample. Retained per-rate summaries include measurement validity and fault history.
 Each rate reopens the endpoints, configures line coding, settles, flushes host TTY queues, and then collects its health
 baseline.
 

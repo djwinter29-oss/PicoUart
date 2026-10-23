@@ -5,6 +5,8 @@ import json
 import os
 import subprocess
 
+import pytest
+
 
 def _load_health():
     module = importlib.import_module("hil_test_suite.support.health")
@@ -24,7 +26,8 @@ def _clean_snapshot():
     }
 
 
-def test_collects_six_channel_health_and_overruns(monkeypatch) -> None:
+@pytest.mark.parametrize("measurement", [0, 1, 2])
+def test_collects_six_channel_health_and_overruns(monkeypatch, measurement) -> None:
     health = _load_health()
     calls = []
 
@@ -44,17 +47,21 @@ def test_collects_six_channel_health_and_overruns(monkeypatch) -> None:
 
         def read_channel_diagnostic(self, index):
             calls.append(("diagnostic", index))
-            return {**_clean_snapshot()["diagnostics"][index], "rx_overrun_count": index}
+            return {**_clean_snapshot()["diagnostics"][index], "rx_overrun_count": index,
+                    "uart_measurement_state": measurement}
 
     monkeypatch.setattr(health, "PicoUartHid", Board)
+    monkeypatch.setattr(health.time, "sleep", lambda _seconds: None)
 
     snapshot = health._collect_hid_health_once()
 
     assert snapshot["channels"] == {index: "ready" for index in range(6)}
     assert snapshot["overruns"] == {index: index for index in range(6)}
     assert snapshot["firmware_version"] == "1.2.3"
-    assert snapshot["error"] is None
-    assert calls == [item for index in range(6) for item in (("channel", index), ("diagnostic", index))] + ["close"]
+    assert snapshot["error"] == (None if measurement == 1 else "CDC5 UART diagnostics are not current")
+    diagnostic_reads = 1 if measurement == 1 else 3
+    assert calls == [item for index in range(6)
+                     for item in [("channel", index)] + [("diagnostic", index)] * diagnostic_reads] + ["close"]
 
 
 def test_hid_command_uses_checkout_and_host_source_path(monkeypatch) -> None:
