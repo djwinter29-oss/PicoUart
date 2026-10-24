@@ -17,6 +17,8 @@ static pio_test_dma_hw_t dma_registers;
 pio_test_dma_hw_t *dma_hw = &dma_registers;
 
 static pio_uart_driver_t driver;
+static uint8_t rx_storage[PICO_UART_PIO_UART_RX_BUFFER_SIZE]
+    __attribute__((aligned(PICO_UART_PIO_UART_RX_BUFFER_SIZE)));
 static const uart_driver_port_info_t port = {
     .id = UART_PORT_2, .backend = UART_DRIVER_BACKEND_PIO, .baud_rate = 115200u,
     .tx_pin = 8u, .rx_pin = 9u, .data_bits = 8u, .stop_bits = 1u, .parity = UART_DRIVER_PARITY_NONE,
@@ -58,6 +60,11 @@ static bool rx_dma_busy;
 static bool rx_fifo_empty;
 static bool rx_high;
 static bool progress_settles;
+static bool parked_tx_high;
+static bool parked_tx_output;
+static uint parked_tx_function;
+static uint claimed_state_machines;
+static uint claimed_dma_channels;
 static uint rx_pc;
 /** @brief Hardware activity injected after RX is paused for the critical recheck. */
 typedef enum {
@@ -74,6 +81,44 @@ void service_load_note(unsigned int core)
 {
     TEST_ASSERT_EQUAL_UINT(1u, core);
     ++service_notes;
+}
+
+bool pio_sm_is_claimed(PIO selected, uint sm)
+{
+    TEST_ASSERT_EQUAL_PTR(config.pio, selected);
+    TEST_ASSERT_TRUE(sm == config.tx_state_machine || sm == config.rx_state_machine);
+    return (claimed_state_machines & (1u << sm)) != 0u;
+}
+
+void pio_sm_claim(PIO selected, uint sm)
+{
+    TEST_ASSERT_FALSE(pio_sm_is_claimed(selected, sm));
+    claimed_state_machines |= 1u << sm;
+}
+
+void pio_sm_unclaim(PIO selected, uint sm)
+{
+    TEST_ASSERT_TRUE(pio_sm_is_claimed(selected, sm));
+    claimed_state_machines &= ~(1u << sm);
+}
+
+int dma_claim_unused_channel(bool required)
+{
+    TEST_ASSERT_FALSE(required);
+    for (uint channel = 2u; channel < 4u; ++channel) {
+        if ((claimed_dma_channels & (1u << channel)) == 0u) {
+            claimed_dma_channels |= 1u << channel;
+            return (int)channel;
+        }
+    }
+    return -1;
+}
+
+void dma_channel_unclaim(uint channel)
+{
+    TEST_ASSERT_TRUE(channel == 2u || channel == 3u);
+    TEST_ASSERT_BITS_HIGH(1u << channel, claimed_dma_channels);
+    claimed_dma_channels &= ~(1u << channel);
 }
 
 uint pio_get_dreq(PIO selected, uint sm, bool tx)
@@ -307,9 +352,32 @@ bool gpio_get(uint pin) { TEST_ASSERT_EQUAL_UINT(port.rx_pin, pin); return rx_hi
 
 void gpio_put(uint pin, bool value)
 {
-    (void)pin;
-    (void)value;
-    TEST_FAIL_MESSAGE("RTS is disabled in this fixture");
+    TEST_ASSERT_EQUAL_UINT(port.tx_pin, pin);
+    parked_tx_high = value;
+}
+
+void gpio_set_dir(uint pin, bool output)
+{
+    TEST_ASSERT_EQUAL_UINT(port.tx_pin, pin);
+    parked_tx_output = output;
+}
+
+void gpio_set_function(uint pin, uint function)
+{
+    TEST_ASSERT_EQUAL_UINT(port.tx_pin, pin);
+    parked_tx_function = function;
+}
+
+void gpio_deinit(uint pin)
+{
+    TEST_ASSERT_EQUAL_UINT(port.rx_pin, pin);
+}
+
+void pio_set_input_sync_bypass_with_mask(PIO selected, uint32_t value, uint32_t mask)
+{
+    TEST_ASSERT_EQUAL_PTR(config.pio, selected);
+    TEST_ASSERT_EQUAL_UINT32(0u, value);
+    TEST_ASSERT_EQUAL_UINT32(1u << port.rx_pin, mask);
 }
 
 bool pio_interrupt_get(PIO selected, uint irq)
@@ -439,7 +507,10 @@ static void assert_fresh_idle_is_required(void)
 
 void setUp(void)
 {
+    claimed_state_machines = 0u;
+    claimed_dma_channels = 0u;
     memset(&driver, 0, sizeof(driver));
+    driver.rx_storage = rx_storage;
     memset(&pio_tx_test_pio0, 0, sizeof(pio_tx_test_pio0));
     memset(&dma_registers, 0, sizeof(dma_registers));
     memset(pio_uart_program_state, 0, sizeof(pio_uart_program_state));
@@ -453,7 +524,7 @@ void setUp(void)
     driver.initialized = true;
     driver.tx_dma_channel = 3;
     driver.rx_dma_channel = 2;
-    TEST_ASSERT_TRUE(ring_buffer_init(&driver.rx_ring, driver.rx_storage, sizeof(driver.rx_storage)));
+    TEST_ASSERT_TRUE(ring_buffer_init(&driver.rx_ring, driver.rx_storage, sizeof(rx_storage)));
     TEST_ASSERT_TRUE(ring_buffer_init(&driver.tx_ring, driver.tx_storage, sizeof(driver.tx_storage)));
     fifo_level = 0u;
     fifo_writes = 0u;
@@ -664,9 +735,66 @@ void test_baud_change_waits_for_fresh_txstall_across_calls(void)
     assert_rx_preserved_and_resumed();
 }
 
+void test_busy_tx_does_not_consume_txstall_probe(void)
+{
+    seed_baud_change();
+    driver.txstall_waiting = false;
+    uint32_t sticky_txstall = config.pio->fdebug;
+    driver.tx_dma_active = dma_busy = true;
+    TEST_ASSERT_FALSE(pio_uart_driver_apply_baud_rate(&driver, 230400u));
+    TEST_ASSERT_FALSE(driver.txstall_waiting);
+    TEST_ASSERT_EQUAL_UINT32(sticky_txstall, config.pio->fdebug);
+
+    driver.tx_dma_active = dma_busy = false;
+    fifo_level = 1u;
+    TEST_ASSERT_FALSE(pio_uart_driver_apply_baud_rate(&driver, 230400u));
+    TEST_ASSERT_FALSE(driver.txstall_waiting);
+    TEST_ASSERT_EQUAL_UINT32(sticky_txstall, config.pio->fdebug);
+    TEST_ASSERT_EQUAL_UINT(0u, pause_calls);
+    TEST_ASSERT_EQUAL_UINT(0u, divider_calls);
+}
+
+void test_released_pio_backend_parks_tx_idle_high(void)
+{
+    parked_tx_high = false;
+    parked_tx_output = false;
+    parked_tx_function = 99u;
+    pio_uart_driver_release_gpio(&driver);
+    TEST_ASSERT_TRUE(parked_tx_high);
+    TEST_ASSERT_TRUE(parked_tx_output);
+    TEST_ASSERT_EQUAL_UINT(GPIO_FUNC_SIO, parked_tx_function);
+}
+
+void test_production_resource_bindings_delegate_to_sdk(void)
+{
+    const pio_uart_resource_claim_ops_t *ops = &pio_uart_resource_claim_ops_default;
+
+    TEST_ASSERT_FALSE(ops->sm_is_claimed(config.pio, config.tx_state_machine));
+    ops->sm_claim(config.pio, config.tx_state_machine);
+    TEST_ASSERT_TRUE(ops->sm_is_claimed(config.pio, config.tx_state_machine));
+    ops->sm_unclaim(config.pio, config.tx_state_machine);
+    TEST_ASSERT_FALSE(ops->sm_is_claimed(config.pio, config.tx_state_machine));
+    TEST_ASSERT_EQUAL_INT(2, ops->claim_dma_channel(false));
+    TEST_ASSERT_EQUAL_INT(3, ops->claim_dma_channel(false));
+    TEST_ASSERT_EQUAL_INT(-1, ops->claim_dma_channel(false));
+    ops->unclaim_dma_channel(3u);
+    ops->unclaim_dma_channel(2u);
+    TEST_ASSERT_EQUAL_UINT(0u, claimed_dma_channels);
+}
+
+static void test_restart_baseline_preserves_observed_error_history(void)
+{
+    driver.rx_error_count = 7u;
+    pio_uart_driver_clear_rx_error_baseline(&driver);
+    TEST_ASSERT_EQUAL_UINT32(7u, driver.rx_error_count);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_restart_baseline_preserves_observed_error_history);
+    RUN_TEST(test_production_resource_bindings_delegate_to_sdk);
+    RUN_TEST(test_released_pio_backend_parks_tx_idle_high);
     RUN_TEST(test_fifo_launch_invalidates_probe_before_writing_bytes);
     RUN_TEST(test_empty_and_full_fifo_paths_do_not_invalidate_probe);
     RUN_TEST(test_dma_completion_relaunch_preserves_order_and_requires_fresh_idle);
@@ -676,5 +804,6 @@ int main(void)
     RUN_TEST(test_late_rx_or_fifo_activity_restores_service_without_changing_baud);
     RUN_TEST(test_baud_change_rejects_busy_tx_or_nonidle_rx_before_pausing_dma);
     RUN_TEST(test_baud_change_waits_for_fresh_txstall_across_calls);
+    RUN_TEST(test_busy_tx_does_not_consume_txstall_probe);
     return UNITY_END();
 }

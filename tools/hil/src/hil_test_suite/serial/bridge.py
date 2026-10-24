@@ -10,12 +10,26 @@ import sys
 import termios
 import time
 
-from .config import BAUD_RATES, STANDARD_BAUD_RATES, configure_port
+from .config import (
+    BAUD_RATES,
+    STANDARD_BAUD_RATES,
+    configure_port,
+    deassert_dtr,
+    open_port,
+    set_port_line_coding,
+    wait_ports_ready,
+)
 
 
 def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
     """Restore and close every configured port, returning the first cleanup error."""
     first_error = None
+    for file_descriptor, _settings in ports:
+        try:
+            deassert_dtr(file_descriptor)
+        except OSError as error:
+            if first_error is None:
+                first_error = error
     for file_descriptor, settings in ports:
         try:
             termios.tcsetattr(file_descriptor, termios.TCSANOW, settings)
@@ -29,6 +43,24 @@ def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
                 if first_error is None:
                     first_error = error
     return first_error
+
+
+def configure_ports(paths: list[str], baud_rate: int) -> list[tuple[int, list]]:
+    """Open all linked endpoints before setting either line coding."""
+    ports = []
+    try:
+        for path in paths:
+            ports.append(open_port(path, baud_rate))
+        for file_descriptor, _settings in ports:
+            set_port_line_coding(file_descriptor, baud_rate)
+        wait_ports_ready([(path, descriptor) for path, (descriptor, _settings) in zip(paths, ports, strict=True)],
+                 baud_rate)
+        for file_descriptor, _settings in ports:
+            termios.tcflush(file_descriptor, termios.TCIOFLUSH)
+        return ports
+    except BaseException:
+        close_ports(ports)
+        raise
 
 
 def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
@@ -288,7 +320,7 @@ def run_flood_test(arguments: argparse.Namespace, baud_rate: int) -> int:
                 "HID monitor for rx_overrun / rx_error claims."
             )
             result = 0
-    except OSError as error:
+    except (OSError, RuntimeError) as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
         result = 2
     finally:
@@ -313,14 +345,17 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
     result = 2
 
     try:
-        pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
         if arguments.loopback:
+            pico_fd, pico_settings = configure_port(arguments.pico_port, baud_rate)
             time.sleep(arguments.settle_seconds)
             print(f"Testing {arguments.label} loopback at {baud_rate} baud")
             passed = test_direction(pico_fd, pico_fd, "pico-loopback", arguments.payload_bytes, arguments.timeout)
             result = 0 if passed else 1
         else:
-            peer_fd, peer_settings = configure_port(arguments.peer_port, baud_rate)
+            peer_fd, peer_settings = -1, None
+            ports = configure_ports([arguments.pico_port, arguments.peer_port], baud_rate)
+            pico_fd, pico_settings = ports[0]
+            peer_fd, peer_settings = ports[1]
             time.sleep(arguments.settle_seconds)
             print(f"Testing {arguments.label} at {baud_rate} baud")
             pico_to_peer = test_direction(pico_fd, peer_fd, "pico-to-peer", arguments.payload_bytes, arguments.timeout)
@@ -331,10 +366,10 @@ def run_test(arguments: argparse.Namespace, baud_rate: int) -> int:
         result = 2
     finally:
         ports = []
-        if pico_fd >= 0 and pico_settings is not None:
-            ports.append((pico_fd, pico_settings))
         if peer_fd >= 0 and peer_settings is not None:
             ports.append((peer_fd, peer_settings))
+        if pico_fd >= 0 and pico_settings is not None:
+            ports.append((pico_fd, pico_settings))
         cleanup_error = close_ports(ports)
         if cleanup_error is not None:
             print(f"Serial cleanup failed: {cleanup_error}", file=sys.stderr)

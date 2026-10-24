@@ -66,7 +66,7 @@ pico-uart monitor --duration 60 > uart-traffic.log
 pico-uart overruns > uart-dropped-bytes.txt
 ```
 
-Monitor output includes per-channel health flags, UART/CDC byte deltas, and ring-buffer peaks. The Input stream carries
+Monitor output includes per-channel lifecycle, UART measurement validity, and UART/CDC byte deltas. The Input stream carries
 each channel's independently sequenced 500 ms measurement interval. Status JSON includes cumulative observed totals,
 the sum of valid observed intervals, sequence-gap counts, and sticky incompleteness indicators. Dropped-byte counts
 from `overruns` and buffer peaks are cumulative since boot, not per-test totals; account for resets and saturation.
@@ -74,7 +74,7 @@ from `overruns` and buffer peaks are cumulative since boot, not per-test totals;
 `status` exits non-zero if its timeout expires without a valid report. `monitor` exits non-zero if it receives no valid
 reports during its duration; it can succeed after one report even if later reads time out. Both exit non-zero on device
 errors. Success does not prove continuous reporting or healthy channels: your runner must evaluate report availability,
-flags, and values. Only `status` supports `--json`; `monitor` produces text. Missing reports or saturated values prevent
+states, and values. Only `status` supports `--json`; `monitor` produces text. Missing reports or saturated values prevent
 exact traffic accounting.
 
 ## Python API
@@ -93,7 +93,17 @@ print(status["channels"])
 whose Input report arrived. Device access failures may raise `OSError` or `RuntimeError`. Use
 `PicoUartHid(serial_number="ABC123")` to select a board. Static identity and capability data come from
 `read_identity()` / `read_board_status()`. Live board values come from `read_telemetry()`; channel Feature snapshots
-are available through `read_channel_diagnostic(index)` and do not contribute to Input traffic totals.
+are available through `read_channel(index)` and do not contribute to Input traffic totals.
+`read_configuration()` caches boot-time pins, capacities, stored profile, and reset cause.
+`read_channel_diagnostic(index)` reads independent on-demand RX fault history, last configuration-error reason,
+measurement age, and observed buffer peaks; `read_channel_diagnostics()` reads all six. These reads never advance
+Input rate baselines. Unavailable or cached UART measurements cannot establish a clean current UART rate.
+After opening and configuring all selected CDC TTYs and asserting DTR, use
+`board.wait_channels_ready({0: 115200, 2: 115200}, timeout_s=3.0)` before transmitting. This waits for open, ready
+channels with applied 8N1 settings within 3% of the requested baud and no pending control. It raises `OSError` for
+current initialization/configuration failures, `TimeoutError` on expiry, and propagates HID access errors. Historical
+fault counters do not fail readiness. Select the HID board by the same USB serial number as the TTY endpoints;
+this helper does not open or configure TTYs and does not change generic POSIX `open()` behavior.
 `read_runtime()`, `read_led()`, `read_overflow_counts()`, `read_hardware_info()`, and `read_configuration()` remain
 convenience methods.
 
@@ -114,10 +124,12 @@ which is enabled by default. The API exposes equivalent `toggle_led()` and `rese
 The API's `save_configuration(profile, unsafe_overclock=False)` writes a supported boot-time clock profile;
 `read_configuration_save()` reads the save result. A verified save automatically reboots the board, independently of
 the optional reset command. Close all CDC ports and stop external UART traffic first; non-default profiles require
-explicit unsafe-overclock acknowledgement. After reconnecting, inspect the active profile and fallback reason rather
+explicit unsafe-overclock acknowledgement. After reconnecting, inspect the stored request and live system clock rather
 than assuming the requested clock became active. A verified save does not establish overclock stability. See the
 [HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
 for compatibility, save semantics, and overclock precautions before changing configuration.
+Actions use one serialized controlling host. Timeout or disconnect means the outcome is unconfirmed; never
+automatically retry reboot or save. There is no request ID or multi-client ownership guarantee.
 
 ## Troubleshooting
 

@@ -61,48 +61,53 @@ def test_hid_layout_and_command_constants_match_firmware(repo_root):
     fw = firmware_hid_constants(repo_root)
     assert fw["USB_HID_REPORT_VERSION"] == 1
     assert fw["USB_HID_REPORT_ID_DEVICE_INFO"] == 1
-    assert fw["USB_HID_REPORT_ID_CONTROL"] == 2
+    assert fw["USB_HID_REPORT_ID_CONFIGURATION"] == 2
+    assert fw["USB_HID_REPORT_ID_CONTROL"] == 20
     assert fw["USB_HID_REPORT_ID_TELEMETRY"] == 3
     assert fw["USB_HID_REPORT_ID_CHANNEL_BASE"] == 10
-    assert fw["USB_HID_DEVICE_INFO_SIZE"] == 63
-    assert fw["USB_HID_CONTROL_SIZE"] == 24
-    assert fw["USB_HID_TELEMETRY_SIZE"] == 24
-    assert fw["USB_HID_CHANNEL_SIZE"] == 54
+    assert fw["USB_HID_REPORT_ID_DIAGNOSTIC_BASE"] == 30
+    assert fw["USB_HID_DEVICE_INFO_SIZE"] == 27
+    assert fw["USB_HID_CONFIGURATION_SIZE"] == 36
+    assert fw["USB_HID_CONTROL_SIZE"] == 4
+    assert fw["USB_HID_TELEMETRY_SIZE"] == 20
+    assert fw["USB_HID_CHANNEL_SIZE"] == 30
+    assert fw["USB_HID_DIAGNOSTIC_SIZE"] == 24
     assert fw["USB_HID_CHANNEL_INTERVAL_MS"] == 500
     assert fw["USB_HID_COMMAND_LED_OFF"] == 1
     assert fw["USB_HID_COMMAND_LED_ON"] == 2
-    assert fw["USB_HID_COMMAND_ARM_REBOOT"] == 3
-    assert fw["USB_HID_COMMAND_REBOOT"] == 4
-    assert fw["USB_HID_COMMAND_SAVE_CONFIGURATION"] == 5
-    assert fw["USB_HID_RESET_ARM_WINDOW_MS"] == 2000
-    assert all(size + 1 <= 64 for size in (63, 24, 24, 54))
+    assert fw["USB_HID_COMMAND_REBOOT"] == 3
+    assert fw["USB_HID_COMMAND_SAVE_CONFIGURATION"] == 4
+    assert all(size + 1 <= 64 for size in (27, 36, 20, 30, 4, 24))
 
 
 def test_hid_descriptor_status_report_count_matches_host_payload(repo_root):
-    assert firmware_hid_report_count(repo_root, 1) == 63
+    assert firmware_hid_report_count(repo_root, 1) == 27
 
 
 def test_hid_descriptor_board_status_report_count_matches_host_payload(repo_root):
-    assert firmware_hid_report_count(repo_root, 2) == 24
-    assert firmware_hid_report_count(repo_root, 3) == 24
+    assert firmware_hid_report_count(repo_root, 2) == 36
+    assert firmware_hid_report_count(repo_root, 3) == 20
 
 
 def test_hid_descriptor_command_report_count_matches_host_payload(repo_root):
-    assert firmware_hid_report_count(repo_root, 10) == 54
-    assert firmware_hid_report_count(repo_root, 15) == 54
+    assert firmware_hid_report_count(repo_root, 20) == 4
+    assert firmware_hid_report_count(repo_root, 10) == 30
+    assert firmware_hid_report_count(repo_root, 15) == 30
+    assert firmware_hid_report_count(repo_root, 30) == 24
+    assert firmware_hid_report_count(repo_root, 35) == 24
 
 
 def test_legacy_hid_reports_are_absent(repo_root):
     fw = firmware_hid_constants(repo_root)
     assert fw["USB_HID_REPORT_ID_TELEMETRY"] == 3
     assert fw["USB_HID_REPORT_ID_CHANNEL_BASE"] == 10
-    assert firmware_hid_report_count(repo_root, 1) == 63
-    assert firmware_hid_report_count(repo_root, 2) == 24
-    assert firmware_hid_report_count(repo_root, 3) == 24
-    assert [firmware_hid_report_count(repo_root, report_id) for report_id in range(10, 16)] == [54] * 6
+    assert firmware_hid_report_count(repo_root, 1) == 27
+    assert firmware_hid_report_count(repo_root, 2) == 36
+    assert firmware_hid_report_count(repo_root, 3) == 20
+    assert [firmware_hid_report_count(repo_root, report_id) for report_id in range(10, 16)] == [30] * 6
 
 
-@pytest.mark.parametrize("retired_report_id", [*range(4, 10), *range(16, 256)])
+@pytest.mark.parametrize("retired_report_id", [*range(4, 10), *range(16, 20), *range(21, 30), *range(36, 256)])
 def test_retired_reports_are_absent_from_the_descriptor(repo_root, retired_report_id):
     with pytest.raises(ValueError):
         firmware_hid_report_count(repo_root, retired_report_id)

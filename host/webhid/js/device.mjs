@@ -1,144 +1,319 @@
 export const DEVICE_FILTER = Object.freeze({
   vendorId: 0xcafe,
   productId: 0x4010,
-  usagePage: 0xff00,
-  usage: 0x01,
 });
 
-const TRAFFIC_FIELDS = ["uart_tx", "uart_rx", "usb_tx", "usb_rx"];
-const HEALTH_LABELS = ["ready", "init_failed", "control_error", "control_pending",
-  "cdc_open", "pio", "rx_overrun", "rx_error"];
-const FAULT_NAMES = ["init_failed", "control_error", "rx_overrun", "rx_error"];
-const UNAVAILABLE = 0xffffffff;
+const PRODUCT_ID_PICOUART = 1;
+const CHANNEL_COUNT = 6;
+const MIN_TRAFFIC_RATE_WINDOW_MS = 1000;
+const TRAFFIC_RATE_WINDOW_MS = 5000;
+const MAX_RATE_ELAPSED_MS = 8000;
+const MAX_REPORT_AGE_MS = 3000;
+const ACTION_DEADLINE_MS = 3000;
+const ACTION_POLL_MS = 50;
+const UINT32_MAX = 0xffffffff;
+const IDENTITY_REPORT_LENGTH = 27;
+const CLOCK_PROFILES = new Map([
+  [0, "SDK default"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"], [4, "280 MHz"],
+]);
+const CONFIGURATION_ERRORS = [
+  "None", "Unsupported baud setting", "Unsupported framing", "Backend configuration failed",
+  "Control operation timed out", "Other or unknown configuration error",
+];
+const ACTION_STATUS = ["Idle", "Pending", "Completed", "Invalid", "Unsupported", "Busy", "Failed"];
 
-function featurePayload(report, reportId, size) {
-  if (!(report instanceof DataView) || report.byteLength < size + 1 || report.getUint8(0) !== reportId) {
-    throw new Error("Unexpected feature report ID or size");
+function payload(report, expectedLength, reportName, reportId = null) {
+  if (report instanceof DataView && reportId !== null && report.byteLength === expectedLength + 1
+    && report.getUint8(0) === reportId) {
+    return new DataView(report.buffer, report.byteOffset + 1, expectedLength);
   }
-  for (let index = size + 1; index < report.byteLength; index++) {
-    if (report.getUint8(index) !== 0) throw new Error("Unexpected feature report padding");
+  if (!(report instanceof DataView) || report.byteLength !== expectedLength) {
+    const received = report instanceof DataView ? report.byteLength : "non-DataView";
+    throw new Error(`${reportName} must contain exactly ${expectedLength} payload bytes (received ${received})`);
   }
-  return new DataView(report.buffer, report.byteOffset + 1, size);
+  return new DataView(report.buffer, report.byteOffset, report.byteLength);
+}
+
+export function identityDiscoveryLength() {
+  return IDENTITY_REPORT_LENGTH;
+}
+
+export function decodeIdentityPrefix(report, declaredLength) {
+  const data = payload(report, declaredLength, "Identity Feature report");
+  if (data.byteLength < 3) throw new Error("Identity report is missing its product/layout prefix");
+  return { layout_version: data.getUint8(0), product_id: data.getUint16(1, true) };
 }
 
 export function decodeDeviceInformation(report) {
-  const data = featurePayload(report, 1, 63);
-  if (data.getUint8(0) !== 1) throw new Error("Unsupported device-information version");
-  const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  const product = bytes.subarray(1, 33), end = product.indexOf(0);
-  const serial = String.fromCharCode(...bytes.subarray(33, 49));
-  if (end <= 0 || product.subarray(0, end).some(byte => byte < 32 || byte > 126)
-    || product.subarray(end).some(byte => byte !== 0) || !/^[0-9a-f]{16}$/i.test(serial)) {
-    throw new Error("Invalid HID product or serial identity");
+  const data = payload(report, 27, "Identity Feature report");
+  if (data.getUint8(0) !== 1) throw new Error("Unsupported PicoUart identity layout");
+  const productId = data.getUint16(1, true);
+  if (productId !== PRODUCT_ID_PICOUART) throw new Error(`Unsupported PicoUart product ID 0x${productId.toString(16).padStart(4, "0")}`);
+  const uid = Array.from({ length: 8 }, (_, index) => data.getUint8(3 + index).toString(16).padStart(2, "0"))
+    .join("").toUpperCase();
+  const mcuId = data.getUint8(14);
+  const modelId = data.getUint8(15);
+  const channels = data.getUint8(16);
+  const capabilities = data.getUint8(17);
+  const profiles = data.getUint8(18);
+  const ramTotal = data.getUint32(19, true);
+  const ramReserved = data.getUint32(23, true);
+  if (channels & ~0x3f || capabilities & ~0x07 || !(profiles & 1) || profiles & ~0x1f
+    || !ramTotal || ramReserved > ramTotal) {
+    throw new Error("Invalid PicoUart identity capabilities or RAM accounting");
   }
-  const hw = data.getUint8(54), pio = data.getUint8(55), capabilities = data.getUint16(56, true);
-  const profiles = data.getUint8(58), ram = data.getUint32(59, true);
-  if (data.getUint8(53) !== 6 || (hw & pio) || (hw | pio) !== 63 || (capabilities & ~7)
-    || !(profiles & 1) || (profiles & ~31) || !ram) throw new Error("Invalid static device capabilities");
-  const mcuId = data.getUint8(52);
-  return { product_name: String.fromCharCode(...product.subarray(0, end)), serial_number: serial,
-    firmware_version: `${data.getUint8(49)}.${data.getUint8(50)}.${data.getUint8(51)}`,
-    mcu_id: mcuId, mcu: { 1: "RP2040", 2: "RP2350" }[mcuId] ?? `Unknown MCU (${mcuId})`,
-    channel_count: 6, hardware_channel_mask: hw, pio_channel_mask: pio,
-    capabilities, clock_profile_mask: profiles, ram_total_bytes: ram };
+  return {
+    product_id: productId,
+    product_name: "PicoUart",
+    serial_number: uid,
+    firmware_version: `${data.getUint8(11)}.${data.getUint8(12)}.${data.getUint8(13)}`,
+    mcu_id: mcuId,
+    mcu: { 1: "RP2040", 2: "RP2350" }[mcuId] ?? `Unknown MCU (${mcuId})`,
+    board_model_id: modelId,
+    board_model: { 0: "Unknown", 1: "Pico", 2: "Pico W", 3: "Pico 2", 4: "Pico 2 W" }[modelId]
+      ?? `Unknown board model (${modelId})`,
+    hardware_channel_mask: channels,
+    capabilities,
+    clock_profile_mask: profiles,
+    ram_total_bytes: ramTotal,
+    ram_reserved_bytes: ramReserved,
+  };
 }
 
-export function decodeControlReport(report) {
-  const data = featurePayload(report, 2, 24);
-  if (data.getUint8(0) !== 1) throw new Error("Unsupported board-control version");
-  const command = data.getUint8(1), flags = data.getUint8(2), status = data.getUint8(3);
-  const requestId = data.getUint32(4, true), stored = data.getUint32(8, true);
-  const active = data.getUint32(12, true), profile = data.getUint32(16, true);
-  const source = data.getUint8(20), reason = data.getUint8(21), error = data.getUint8(22);
-  const sources = ["defaults", "stored", "recovery"];
-  const reasons = ["none", "erased", "invalid_header", "crc_failed", "unsupported_version",
-    "invalid_profile", "watchdog_recovery", "clock_unavailable"];
-  const expectedStatuses = [null, 3, 3, 3, 3, 4, 5, 6, 6, 6];
-  if (status > 6 || error > 9 || data.getUint8(23) !== 0 || source > 2 || reason > 7
-    || active > 4 || (stored > 4 && stored !== UNAVAILABLE) || (profile > 4 && profile !== UNAVAILABLE)
-    || (source === 1 && (reason !== 0 || stored !== active)) || (source === 2 && reason === 0)
-    || (status <= 2 ? error !== 0 : expectedStatuses[error] !== status)) {
-    throw new Error("Invalid board-control result or boot configuration");
-  }
-  const unidentified = command === 0 && requestId === 0 && flags === 0 && profile === UNAVAILABLE;
-  if (status === 0 ? !unidentified
-    : !requestId ? !(unidentified && status === 3 && error === 1)
-    : ((command < 1 || command > 5) && ![3, 4].includes(status))
-      || ((command < 1 || command > 5) && ![1, 5].includes(error))
-      || ((flags & ~1) && !(status === 3 && error === 1))
-      || (command !== 5 && flags && ![1, 5].includes(error))
-      || (command !== 5 && profile !== UNAVAILABLE)
-      || (status <= 2 && command === 5 && (profile === UNAVAILABLE || (profile !== 0 && !(flags & 1))))) {
-    throw new Error("Invalid echoed board-control fields");
-  }
-  return { command, flags, status, request_id: requestId, error_reason: error,
-    profile: profile === UNAVAILABLE ? null : profile,
-    configuration: { source: sources[source], reason: reasons[reason],
-      stored_profile: stored === UNAVAILABLE ? null : stored, active_profile: active } };
+function validateProfile(profile) {
+  return profile <= 4 || profile === 255;
 }
 
-export function decodeTelemetryReport(report, information) {
-  const data = featurePayload(report, 3, 24);
-  if (data.getUint8(0) !== 1) throw new Error("Unsupported telemetry version");
-  const flags = data.getUint8(1), uptime = data.getBigUint64(4, true);
-  const cpu = [data.getUint16(12, true), data.getUint16(14, true)];
-  const reserved = data.getUint32(16, true), clock = data.getUint32(20, true);
-  if ((flags & ~1) || uptime > BigInt(Number.MAX_SAFE_INTEGER) || !clock
-    || cpu.some(value => value > 10000 && value !== 65535)
-    || reserved > information.ram_total_bytes || (!(information.capabilities & 1) && flags)) {
+export function decodeBoardConfiguration(report, identity) {
+  const data = payload(report, 36, "Board Configuration Feature report");
+  if (data.getUint8(0) !== 1) throw new Error("Unsupported board-configuration layout");
+  const storedProfile = data.getUint8(1);
+  const channelCount = data.getUint8(2);
+  const pins = Array.from({ length: 6 }, (_, channel) =>
+    Array.from({ length: 4 }, (_, signal) => data.getUint8(3 + channel * 4 + signal)));
+  const resetCause = data.getUint8(27);
+  const capacities = {
+    uart_tx: data.getUint16(28, true),
+    uart_rx: data.getUint16(30, true),
+    cdc_tx: data.getUint16(32, true),
+    cdc_rx: data.getUint16(34, true),
+  };
+  if (!validateProfile(storedProfile) || channelCount !== CHANNEL_COUNT || resetCause > 4
+    || pins.some(channel => channel.some(pin => pin > 47 && pin !== 255))
+    || Object.values(capacities).some(capacity => capacity === 0)
+    || identity && identity.hardware_channel_mask >>> channelCount) {
+    throw new Error("Invalid board-configuration fields");
+  }
+  return {
+    stored_profile: storedProfile === 255 ? null : storedProfile,
+    channel_count: channelCount,
+    pins: pins.map(([tx, rx, rts, cts]) => ({ tx, rx, rts, cts })),
+    reset_cause: resetCause,
+    capacities,
+  };
+}
+
+export function decodeTelemetryReport(report, identity) {
+  const data = payload(report, 20, "Board Telemetry Feature report");
+  if (data.getUint8(0) !== 1) throw new Error("Unsupported board-telemetry layout");
+  const ledFlags = data.getUint8(1);
+  const temperature = data.getInt16(2, true);
+  const uptime = data.getBigUint64(4, true);
+  const serviceLoad = [data.getUint16(12, true), data.getUint16(14, true)];
+  const systemClock = data.getUint32(16, true);
+  if (ledFlags & ~1 || uptime > BigInt(Number.MAX_SAFE_INTEGER) || !systemClock
+    || serviceLoad.some(load => load > 10000 && load !== 65535)
+    || !(identity.capabilities & 1) && ledFlags) {
     throw new Error("Invalid board telemetry");
   }
-  const led = information.capabilities & 1 ? Boolean(flags & 1) : null;
-  return { led: { manual_on: led, output_on: led },
-    temperature_celsius: data.getInt16(2, true) / 100, system_clock_hz: clock,
-    runtime: { uptime_ms: Number(uptime), cpu_usage_basis_points: cpu.map(v => v === 65535 ? null : v),
-      ram_reserved_bytes: reserved, ram_total_bytes: information.ram_total_bytes } };
+  const outputOn = identity.capabilities & 1 ? Boolean(ledFlags & 1) : null;
+  return {
+    temperature_celsius: temperature / 100,
+    system_clock_hz: systemClock,
+    runtime: {
+      uptime_ms: Number(uptime),
+      service_load_basis_points: serviceLoad.map(load => load === 65535 ? null : load),
+    },
+    led: { output_on: outputOn },
+  };
 }
 
-export function decodeChannelSnapshot(data, reportId) {
-  if (reportId < 10 || reportId > 15 || !(data instanceof DataView) || data.byteLength !== 54) {
-    throw new Error("Unexpected channel report ID or size");
+const CHANNEL_STATES = ["Closed", "Starting", "Ready", "Configuring", "Error"];
+const MEASUREMENT_STATES = ["Unavailable", "Current", "Cached"];
+const PARITY_NAMES = ["N", "O", "E"];
+
+export function decodeChannelSnapshot(report, reportId, identity, configuration) {
+  if (!Number.isInteger(reportId) || reportId < 10 || reportId > 15) {
+    throw new Error("Unexpected channel snapshot report ID");
   }
-  if (data.getUint8(0) !== 1) throw new Error("Unsupported channel snapshot version");
-  const health = data.getUint8(7), baud = data.getUint32(25, true);
-  const bits = data.getUint8(29), stop = data.getUint8(30), parity = data.getUint8(31);
-  const tx = data.getUint8(32), rx = data.getUint8(33);
-  if (baud ? (baud < 50 || baud > 3000000 || bits < 5 || bits > 8 || ![1, 2].includes(stop) || parity > 2
-    || ((health & 32) && (bits !== 8 || stop !== 1 || parity !== 0))) : (bits || stop || parity)) {
-    throw new Error("Invalid applied UART framing");
+  const data = payload(report, 30, `Channel ${reportId - 10} snapshot`);
+  const version = data.getUint8(0);
+  const state = data.getUint8(1);
+  const measurementState = data.getUint8(2);
+  const baud = data.getUint32(3, true);
+  const dataBits = data.getUint8(7);
+  const stopBits = data.getUint8(8);
+  const parityId = data.getUint8(9);
+  const sequence = data.getUint16(10, true);
+  const interval = data.getUint16(12, true);
+  const counters = {
+    uart_tx: data.getUint32(14, true),
+    uart_rx: data.getUint32(18, true),
+    usb_tx: data.getUint32(22, true),
+    usb_rx: data.getUint32(26, true),
+  };
+  const pio = Boolean(identity && configuration
+    && !(identity.hardware_channel_mask & (1 << (reportId - 10))));
+  if (version !== 1 || state > 4 || measurementState > 2
+    || (baud ? baud < 50 || baud > 3000000 || dataBits < 5 || dataBits > 8
+      || ![1, 2].includes(stopBits) || parityId > 2
+      || pio && (dataBits !== 8 || stopBits !== 1 || parityId !== 0)
+      : dataBits !== 0 || stopBits !== 0 || parityId !== 0)
+    || measurementState === 0 && (counters.uart_tx !== 0 || counters.uart_rx !== 0)) {
+    throw new Error("Invalid channel snapshot fields");
   }
-  if ([tx, rx].some(pin => pin > 47 && pin !== 255)) throw new Error("Invalid UART GPIO");
-  const counts = FAULT_NAMES.map((_, index) => data.getUint32(34 + index * 4, true));
-  const lastFault = data.getUint32(50, true);
-  if ((!counts.some(Boolean) && lastFault) || Boolean(counts[2]) !== Boolean(health & 64)
-    || Boolean(counts[3]) !== Boolean(health & 128)) throw new Error("Inconsistent channel fault history");
-  return { id: reportId - 10, sequence: data.getUint16(1, true), interval_ms: data.getUint32(3, true),
-    health, health_labels: HEALTH_LABELS.filter((_, bit) => health & (1 << bit)),
-    cdc_open: Boolean(health & 16), ring_high_watermark: data.getUint8(8) * 16,
-    traffic: Object.fromEntries(TRAFFIC_FIELDS.map((field, index) => [field, data.getUint32(9 + index * 4, true)])),
-    baud_rate: baud, data_bits: bits, stop_bits: stop, parity: baud ? "NOE"[parity] : null,
-    tx_pin: tx === 255 ? null : tx, rx_pin: rx === 255 ? null : rx,
-    faults: Object.fromEntries(FAULT_NAMES.map((name, index) => [name, { count: counts[index] }])),
-    last_fault_uptime_s: lastFault };
+  return {
+    id: reportId - 10,
+    channel_state: state,
+    channel_state_name: CHANNEL_STATES[state],
+    uart_measurement_state: measurementState,
+    uart_measurement_state_name: MEASUREMENT_STATES[measurementState],
+    baud_rate: baud,
+    data_bits: dataBits,
+    stop_bits: stopBits,
+    parity: baud ? PARITY_NAMES[parityId] : null,
+    sequence,
+    interval_ms: interval,
+    counters,
+  };
+}
+
+export function decodeChannelDiagnostics(report, reportId, configuration) {
+  if (!Number.isInteger(reportId) || reportId < 30 || reportId > 35) {
+    throw new Error("Unexpected channel-diagnostics report ID");
+  }
+  const data = payload(report, 24, `Channel ${reportId - 30} diagnostics`);
+  const measurementState = data.getUint8(1);
+  const sampleAge = data.getUint8(2);
+  const lastConfigurationError = data.getUint8(3);
+  const rxDroppedBytes = data.getUint32(4, true);
+  const rxErrorObservations = data.getUint32(8, true);
+  const lastFaultUptime = data.getUint32(12, true);
+  const peaks = {
+    uart_tx: data.getUint16(16, true),
+    uart_rx: data.getUint16(18, true),
+    cdc_tx: data.getUint16(20, true),
+    cdc_rx: data.getUint16(22, true),
+  };
+  const unavailable = measurementState === 0;
+  const noHistory = rxDroppedBytes === 0 && rxErrorObservations === 0 && lastConfigurationError === 0;
+  if (data.getUint8(0) !== 1 || measurementState > 2
+    || measurementState === 0 && sampleAge !== 255
+    || measurementState === 1 && sampleAge !== 0
+    || lastConfigurationError > 5 || noHistory && lastFaultUptime !== 0
+    || unavailable && (rxDroppedBytes !== 0 || rxErrorObservations !== 0
+      || peaks.uart_tx !== 0 || peaks.uart_rx !== 0)
+    || configuration && Object.entries(peaks).some(([name, value]) => value > configuration.capacities[name])) {
+    throw new Error("Invalid channel diagnostics");
+  }
+  return {
+    id: reportId - 30,
+    uart_measurement_state: measurementState,
+    uart_measurement_state_name: MEASUREMENT_STATES[measurementState],
+    uart_sample_age_100ms: sampleAge,
+    last_configuration_error_reason: lastConfigurationError,
+    last_configuration_error: CONFIGURATION_ERRORS[lastConfigurationError],
+    rx_dropped_bytes: rxDroppedBytes,
+    rx_error_observations: rxErrorObservations,
+    last_fault_uptime_s: lastFaultUptime,
+    peaks,
+  };
+}
+
+function expectedActionStatus(status, error) {
+  if (error === 0) return status <= 2;
+  if (error >= 1 && error <= 4) return status === 3;
+  if (error === 5) return status === 4;
+  if (error === 6) return status === 5;
+  return error >= 7 && error <= 9 && status === 6;
+}
+
+export function decodeActionResult(report) {
+  const data = payload(report, 4, "Board Action & Result Feature report");
+  const version = data.getUint8(0);
+  const action = data.getUint8(1);
+  const status = data.getUint8(2);
+  const error = data.getUint8(3);
+  const validIdle = status === 0 && action === 0 && error === 0;
+  const validUnknownRejection = action === 0 && (status === 3 && error === 1 || status === 4 && error === 5);
+  if (version !== 1 || status > 6 || error > 9 || !expectedActionStatus(status, error)
+    || status === 0 && !validIdle
+    || status > 0 && (action < 1 || action > 4) && !validUnknownRejection
+    || action === 0 && status > 0 && !validUnknownRejection
+    || status === 5 && action !== 4
+    || status === 6 && action < 1) {
+    throw new Error("Invalid board-action result");
+  }
+  return { action, status, status_name: ACTION_STATUS[status], error_reason: error };
+}
+
+export function encodeActionRequest(action, profile = 0, flags = 0) {
+  const request = new Uint8Array(4);
+  const data = new DataView(request.buffer);
+  data.setUint8(0, 1);
+  data.setUint8(1, action);
+  data.setUint8(2, flags);
+  data.setUint8(3, profile);
+  return request;
+}
+
+function emptyChannel(id) {
+  return {
+    id,
+    channel_state: null,
+    channel_state_name: null,
+    uart_measurement_state: null,
+    uart_measurement_state_name: null,
+    baud_rate: 0,
+    data_bits: 0,
+    stop_bits: 0,
+    parity: null,
+    sequence: null,
+    interval_ms: null,
+    counters: Object.fromEntries(["uart_tx", "uart_rx", "usb_tx", "usb_rx"].map(name => [name, null])),
+    deltas: null,
+    rates: null,
+    rate_samples: [],
+    input_updated_at: null,
+    feature_updated_at: null,
+    diagnostics: null,
+    error: null,
+    traffic_gaps: 0,
+  };
 }
 
 function emptyDashboard() {
-  return { connected: false, error: null, metadata_error: null, hardware_error: null, hardware: null,
-    configuration: null, configuration_error: null, configuration_save: null, configuration_save_error: null,
-    identity: null, identity_error: null, runtime: null, runtime_error: null, led: null, led_error: null,
-    channel_diagnostics: Array(6).fill(null), diagnostics_error: null, traffic_gaps: 0,
-    board: null, overflow_counts: Array(6).fill(null), updated_at: null, traffic_incomplete: false,
-    channels: Array.from({ length: 6 }, (_, id) => ({ id, health: null, health_labels: [], cdc_open: false,
-      ring_high_watermark: 0, sequence: null, updated_at: null, observed_interval_ms: 0,
-      traffic_gaps: 0, traffic_incomplete: false,
-      traffic: Object.fromEntries(TRAFFIC_FIELDS.map(field => [field, 0])),
-      totals: Object.fromEntries(TRAFFIC_FIELDS.map(field => [field, 0])) })) };
+  return {
+    connected: false,
+    identity: null,
+    identity_error: null,
+    configuration: null,
+    configuration_error: null,
+    telemetry: null,
+    telemetry_error: null,
+    action_result: null,
+    action_error: null,
+    channel_diagnostics: Array(CHANNEL_COUNT).fill(null),
+    diagnostics_errors: Array(CHANNEL_COUNT).fill(null),
+    channels: Array.from({ length: CHANNEL_COUNT }, (_, id) => emptyChannel(id)),
+    traffic_gaps: 0,
+    traffic_incomplete: false,
+    updated_at: null,
+  };
 }
 
 export function matchesPicoUart(device) {
-  return device.vendorId === DEVICE_FILTER.vendorId && device.productId === DEVICE_FILTER.productId
-    && device.collections.some(collection => collection.usagePage === DEVICE_FILTER.usagePage
-      && collection.usage === DEVICE_FILTER.usage);
+  return device?.vendorId === DEVICE_FILTER.vendorId && device?.productId === DEVICE_FILTER.productId;
 }
 
 export class PicoUartWebHid {
@@ -149,30 +324,30 @@ export class PicoUartWebHid {
     this.pendingDevice = null;
     this.generation = 0;
     this.information = null;
-    this.nextRequestId = 1;
+    this.actionInFlight = false;
+    this.transferActive = false;
+    this.transferToken = 0;
     this.ioBlocked = false;
-    this.channelErrors = Array(6).fill(null);
-    this.state = { phase: hid ? "disconnected" : "unsupported",
+    this.pendingTransfers = new WeakSet();
+    this.inputListener = null;
+    this.retryAfter = new Map();
+    this.state = {
+      phase: hid ? "disconnected" : "unsupported",
       message: hid ? "No device selected" : "WebHID is unavailable in this browser or context",
-      error: null, configurationSaveMessage: "", hardware: null, deviceName: null, updatedAt: null,
-      dashboard: emptyDashboard() };
-    this.onInputReport = event => {
-      if (event.device !== this.device || event.reportId < 10 || event.reportId > 15) return;
-      try {
-        this.applyChannel(decodeChannelSnapshot(event.data, event.reportId), true);
-      } catch (error) {
-        this.failChannel(event.reportId - 10, error.message);
-      }
+      error: null,
+      dashboard: emptyDashboard(),
     };
     this.onDisconnect = event => {
       if (event.device !== this.device && event.device !== this.pendingDevice) return;
       this.generation++;
-      event.device.removeEventListener("inputreport", this.onInputReport);
+      this.removeInputListener(event.device);
       this.device = null;
       this.pendingDevice = null;
       this.information = null;
-      this.update({ phase: "disconnected", message: "Device unplugged", hardware: null, deviceName: null,
-        updatedAt: null, error: null, configurationSaveMessage: "", dashboard: emptyDashboard() });
+      this.update({
+        phase: "disconnected", message: "Device unplugged", error: null,
+        dashboard: emptyDashboard(),
+      });
     };
     hid?.addEventListener("disconnect", this.onDisconnect);
   }
@@ -182,99 +357,400 @@ export class PicoUartWebHid {
     this.onChange(this.state);
   }
 
+  isCurrent(generation, device) {
+    return generation === this.generation && device === this.device;
+  }
+
+  addInputListener(device, generation) {
+    this.removeInputListener(device);
+    this.inputListener = event => {
+      if (event.device !== device || !this.isCurrent(generation, device)
+        || event.reportId < 10 || event.reportId > 15) return;
+      try {
+        const report = payload(event.data, 30, `Channel ${event.reportId - 10} snapshot`, event.reportId);
+        const snapshot = decodeChannelSnapshot(report, event.reportId, this.information,
+          this.state.dashboard.configuration);
+        this.applyInputSnapshot(snapshot);
+      } catch (error) {
+        this.failChannel(event.reportId - 10, error.message);
+      }
+    };
+    device.addEventListener("inputreport", this.inputListener);
+  }
+
+  removeInputListener(device) {
+    if (device && this.inputListener) device.removeEventListener("inputreport", this.inputListener);
+    this.inputListener = null;
+  }
+
   async transfer(operation, timeout = 3000) {
-    if (this.ioBlocked) throw new Error("HID operation timed out; disconnect before continuing.");
+    const device = this.device;
     const generation = this.generation;
+    if (!device || this.ioBlocked || this.transferActive || this.pendingTransfers.has(device)) {
+      throw new Error("A HID transfer is still active or unconfirmed; disconnect before continuing.");
+    }
+    this.transferActive = true;
+    const token = ++this.transferToken;
     let timer;
+    const pending = Promise.resolve().then(operation);
+    this.pendingTransfers.add(device);
+    pending.finally(() => this.pendingTransfers.delete(device)).catch(() => {});
     try {
-      const result = await Promise.race([operation(), new Promise((_, reject) => {
-        timer = globalThis.setTimeout(() => {
-          if (generation === this.generation) this.ioBlocked = true;
-          reject(new Error("HID operation timed out; outcome is unconfirmed. Disconnect before continuing."));
-        }, timeout);
+      const result = await Promise.race([pending, new Promise((_, reject) => {
+        timer = globalThis.setTimeout(() => reject(new Error("HID operation timed out")), timeout);
       })]);
-      if (generation !== this.generation) throw new Error("HID connection changed during operation");
+      if (!this.isCurrent(generation, device) || token !== this.transferToken) {
+        throw new Error("HID connection changed during operation");
+      }
       return result;
+    } catch (error) {
+      if (error.message === "HID operation timed out" && this.isCurrent(generation, device)) {
+        this.ioBlocked = true;
+        this.transferToken++;
+        throw new Error("HID operation timed out; outcome is unconfirmed. Disconnect before continuing.");
+      }
+      throw error;
     } finally {
       globalThis.clearTimeout(timer);
+      if (token === this.transferToken) this.transferActive = false;
     }
   }
 
-  applyChannel(snapshot, input) {
-    const dashboard = this.state.dashboard, id = snapshot.id;
-    const previous = dashboard.channels[id];
-    const channels = [...dashboard.channels], diagnostics = [...dashboard.channel_diagnostics];
-    const overflow = [...dashboard.overflow_counts];
-    this.channelErrors[id] = null;
-    diagnostics[id] = snapshot;
-    overflow[id] = snapshot.faults.rx_overrun.count;
-    let gap = false;
-    if (input) {
-      const expired = previous.sequence !== null
-        && (!previous.updated_at || Date.now() - Date.parse(previous.updated_at) > 3000);
-      const first = previous.sequence === null || expired;
-      const advance = first ? 1 : (snapshot.sequence - previous.sequence + 65536) % 65536;
-      if (!first && (advance === 0 || advance >= 32768)) {
-        channels[id] = { ...previous, traffic_gaps: previous.traffic_gaps + 1, traffic_incomplete: true };
-        this.update({ dashboard: { ...dashboard, channels, traffic_gaps: dashboard.traffic_gaps + 1,
-          traffic_incomplete: true } });
-        return;
-      }
-      gap = expired || (!first && snapshot.sequence !== (previous.sequence + 1) % 65536);
-      gap ||= snapshot.interval_ms === 0 || snapshot.interval_ms === UNAVAILABLE
-      const traffic = Object.fromEntries(TRAFFIC_FIELDS.map(field => [field,
-        first ? 0 : (snapshot.traffic[field] - previous.totals[field]) >>> 0]));
-      channels[id] = { ...snapshot, updated_at: new Date().toISOString(),
-        traffic, totals: { ...snapshot.traffic },
-        observed_interval_ms: previous.observed_interval_ms + (first || gap ? 0 : snapshot.interval_ms),
-        traffic_gaps: previous.traffic_gaps + Number(gap),
-        traffic_incomplete: previous.traffic_incomplete || gap };
-    } else if (previous.sequence === null) {
-      // Feature deltas overlap the Input stream and never establish its sequence or freshness.
-      channels[id] = { ...previous, health: snapshot.health, health_labels: snapshot.health_labels,
-        cdc_open: snapshot.cdc_open, ring_high_watermark: snapshot.ring_high_watermark };
+  async readFeature(reportId, length, timeout = 3000) {
+    const device = this.device;
+    const data = await this.transfer(() => device.receiveFeatureReport(reportId), timeout);
+    return payload(data, length, `Feature report ${reportId}`, reportId);
+  }
+
+  async discoverIdentity() {
+    const declaredLength = identityDiscoveryLength(this.device);
+    const identityReport = await this.readFeature(1, declaredLength);
+    const prefix = decodeIdentityPrefix(identityReport, declaredLength);
+    if (prefix.product_id !== PRODUCT_ID_PICOUART) {
+      const productId = prefix.product_id;
+      this.update({ dashboard: { ...this.state.dashboard, identity: {
+        product_id: productId,
+        product_name: `Unknown product (0x${productId.toString(16).padStart(4, "0")})`,
+        layout_version: prefix.layout_version,
+      }, identity_error: "No supported report contract for this product" } });
+      return false;
     }
-    this.update({ dashboard: { ...dashboard, channels, channel_diagnostics: diagnostics, overflow_counts: overflow,
-      error: null, diagnostics_error: this.channelErrors.find(Boolean) ?? null,
-      updated_at: input ? channels[id].updated_at : dashboard.updated_at,
-      traffic_gaps: dashboard.traffic_gaps + Number(gap), traffic_incomplete: dashboard.traffic_incomplete || gap } });
+    if (prefix.layout_version !== 1) {
+      throw new Error(`Unsupported PicoUart identity layout version ${prefix.layout_version}`);
+    }
+    const identity = decodeDeviceInformation(identityReport);
+    this.information = identity;
+    this.update({ dashboard: { ...this.state.dashboard, identity, identity_error: null } });
+    return true;
+  }
+
+  updateChannel(index, changes) {
+    const channels = [...this.state.dashboard.channels];
+    channels[index] = { ...channels[index], ...changes };
+    this.update({ dashboard: { ...this.state.dashboard, channels } });
+  }
+
+  applyFeatureSnapshot(snapshot) {
+    const previous = this.state.dashboard.channels[snapshot.id];
+    this.updateChannel(snapshot.id, {
+      ...snapshot,
+      counters: snapshot.counters,
+      feature_updated_at: new Date().toISOString(),
+      error: null,
+      rates: previous.rates,
+      deltas: previous.deltas,
+      input_updated_at: previous.input_updated_at,
+      traffic_gaps: previous.traffic_gaps,
+    });
+  }
+
+  applyInputSnapshot(snapshot) {
+    const dashboard = this.state.dashboard;
+    const previous = dashboard.channels[snapshot.id];
+    const now = Date.now();
+    const previousTime = Date.parse(previous.input_updated_at);
+    const stale = previous.sequence !== null
+      && (!Number.isFinite(previousTime) || now - previousTime > MAX_REPORT_AGE_MS);
+    const first = previous.sequence === null || stale;
+    const advance = first ? null : (snapshot.sequence - previous.sequence + 65536) % 65536;
+    if (!first && (advance === 0 || advance >= 32768)) return;
+    const sequenceGap = !first && advance !== 1;
+    const intervalValid = snapshot.interval_ms > 0 && snapshot.interval_ms < 65535;
+    const continuous = !first && !sequenceGap && intervalValid;
+    const elapsed = Number.isFinite(previousTime) ? now - previousTime : 0;
+    const rateSamples = first ? [] : [...previous.rate_samples];
+    rateSamples.push({ receivedAt: now, counters: snapshot.counters,
+      measurement: snapshot.uart_measurement_state });
+    const cutoff = now - TRAFFIC_RATE_WINDOW_MS;
+    while (rateSamples.length > 2 && rateSamples[1].receivedAt <= cutoff) rateSamples.shift();
+    const baseline = rateSamples[0];
+    const rateElapsed = now - baseline.receivedAt;
+    const rateWindowValid = rateSamples.length > 1 && rateElapsed > 0 && rateElapsed <= MAX_RATE_ELAPSED_MS;
+    const deltas = Object.fromEntries(Object.keys(snapshot.counters).map(name => [
+      name,
+      continuous ? (snapshot.counters[name] - previous.counters[name]) >>> 0 : null,
+    ]));
+    const rates = Object.fromEntries(Object.entries(snapshot.counters).map(([name, counter]) => {
+      const uart = name === "uart_tx" || name === "uart_rx";
+      const samples = uart ? rateSamples.filter(sample => sample.measurement !== 0) : rateSamples;
+      const rateBaseline = samples[0];
+      const latest = samples.at(-1);
+      const elapsed = rateBaseline && latest ? latest.receivedAt - rateBaseline.receivedAt : 0;
+      const delta = rateBaseline && latest ? (counter - rateBaseline.counters[name]) >>> 0 : 0;
+      return [name, elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS && elapsed <= MAX_RATE_ELAPSED_MS
+        ? delta * 1000 / elapsed : null];
+    }));
+    const channelGaps = previous.traffic_gaps + Number(sequenceGap || stale);
+    const channels = [...dashboard.channels];
+    channels[snapshot.id] = {
+      ...snapshot,
+      counters: snapshot.counters,
+      deltas,
+      rates,
+      rate_samples: rateSamples,
+      input_updated_at: new Date(now).toISOString(),
+      feature_updated_at: previous.feature_updated_at,
+      error: null,
+      traffic_gaps: channelGaps,
+    };
+    const incomplete = sequenceGap || stale || !intervalValid
+      || snapshot.uart_measurement_state !== 1
+      || previous.sequence !== null && previous.uart_measurement_state !== 1;
+    this.update({ dashboard: {
+      ...dashboard,
+      channels,
+      traffic_gaps: dashboard.traffic_gaps + Number(sequenceGap || stale),
+      traffic_incomplete: dashboard.traffic_incomplete || incomplete,
+    } });
   }
 
   failChannel(id, message) {
-    const dashboard = this.state.dashboard, channels = [...dashboard.channels];
-    const diagnostics = [...dashboard.channel_diagnostics], overflow = [...dashboard.overflow_counts];
-    this.channelErrors[id] = message;
-    diagnostics[id] = null;
-    overflow[id] = null;
-    channels[id] = { ...channels[id], health: null, health_labels: [], updated_at: null,
-      traffic_gaps: channels[id].traffic_gaps + 1, traffic_incomplete: true };
-    this.update({ dashboard: { ...dashboard, channels, channel_diagnostics: diagnostics, overflow_counts: overflow,
-      diagnostics_error: this.channelErrors.find(Boolean), traffic_gaps: dashboard.traffic_gaps + 1,
-      traffic_incomplete: true } });
+    const dashboard = this.state.dashboard;
+    const channels = [...dashboard.channels];
+    channels[id] = {
+      ...channels[id],
+      channel_state: null,
+      channel_state_name: null,
+      rates: null,
+      error: message,
+      input_updated_at: null,
+      feature_updated_at: null,
+    };
+    this.update({ dashboard: { ...dashboard, channels } });
   }
 
-  applyControl(result) {
-    this.update({ dashboard: { ...this.state.dashboard, configuration: result.configuration,
-      configuration_error: null,
-      configuration_save: { status: result.command === 5 ? result.status : 0,
-        profile: result.command === 5 ? result.profile : null },
-      configuration_save_error: this.information?.capabilities & 4 ? null : "Configuration save unavailable" } });
+  async readConfiguration() {
+    const configuration = decodeBoardConfiguration(
+      await this.readFeature(2, 36), this.information);
+    this.update({ dashboard: { ...this.state.dashboard, configuration, configuration_error: null } });
+  }
+
+  async readTelemetry() {
+    const telemetry = decodeTelemetryReport(await this.readFeature(3, 20), this.information);
+    this.update({ dashboard: { ...this.state.dashboard, telemetry, telemetry_error: null,
+      updated_at: new Date().toISOString() } });
+  }
+
+  async readActionResult() {
+    const result = decodeActionResult(await this.readFeature(20, 4));
+    this.update({ dashboard: { ...this.state.dashboard, action_result: result, action_error: null } });
+  }
+
+  async readChannelDetails() {
+    for (let channel = 0; channel < CHANNEL_COUNT; channel++) {
+      if (!this.device || this.ioBlocked) return;
+      try {
+        const snapshot = decodeChannelSnapshot(
+          await this.readFeature(10 + channel, 30), 10 + channel,
+          this.information, this.state.dashboard.configuration);
+        this.applyFeatureSnapshot(snapshot);
+      } catch (error) {
+        if (this.device) this.failChannel(channel, error.message);
+        if (this.ioBlocked) return;
+      }
+    }
+    for (let channel = 0; channel < CHANNEL_COUNT; channel++) {
+      if (!this.device || this.ioBlocked) return;
+      try {
+        const diagnostic = decodeChannelDiagnostics(
+          await this.readFeature(30 + channel, 24), 30 + channel,
+          this.state.dashboard.configuration);
+        const diagnostics = [...this.state.dashboard.channel_diagnostics];
+        const errors = [...this.state.dashboard.diagnostics_errors];
+        diagnostics[channel] = { ...diagnostic, updated_at: new Date().toISOString() };
+        errors[channel] = null;
+        this.update({ dashboard: { ...this.state.dashboard,
+          channel_diagnostics: diagnostics, diagnostics_errors: errors } });
+      } catch (error) {
+        if (!this.device) return;
+        const diagnostics = [...this.state.dashboard.channel_diagnostics];
+        const errors = [...this.state.dashboard.diagnostics_errors];
+        diagnostics[channel] = null;
+        errors[channel] = error.message;
+        this.update({ dashboard: { ...this.state.dashboard,
+          channel_diagnostics: diagnostics, diagnostics_errors: errors } });
+        if (this.ioBlocked) return;
+      }
+    }
+  }
+
+  async refresh(initial = false) {
+    const device = this.device;
+    const generation = this.generation;
+    if (!device || this.actionInFlight || this.state.phase !== "connected"
+      || this.ioBlocked || this.refreshInFlight) return;
+    this.refreshInFlight = true;
+    let finishRefresh;
+    this.refreshComplete = new Promise(resolve => { finishRefresh = resolve; });
+    this.update({ message: "Reading HID status", error: null });
+    try {
+      if (!this.information) {
+        try {
+          if (!await this.discoverIdentity()) return;
+        } catch (error) {
+          if (!this.isCurrent(generation, device)) return;
+          this.update({ dashboard: { ...this.state.dashboard,
+            identity: null, identity_error: error.message } });
+          return;
+        }
+      }
+      if (!this.state.dashboard.configuration) {
+        try {
+          await this.readConfiguration();
+        } catch (error) {
+          if (!this.isCurrent(generation, device)) return;
+          this.update({ dashboard: { ...this.state.dashboard, configuration: null,
+            configuration_error: error.message } });
+        }
+      }
+      if (!this.state.dashboard.action_result) {
+        try {
+          await this.readActionResult();
+        } catch (error) {
+          if (!this.isCurrent(generation, device)) return;
+          this.update({ dashboard: { ...this.state.dashboard, action_error: error.message } });
+        }
+      }
+      try {
+        await this.readTelemetry();
+      } catch (error) {
+        if (!this.isCurrent(generation, device)) return;
+        this.update({ dashboard: { ...this.state.dashboard, telemetry: null, telemetry_error: error.message } });
+      }
+      if (initial) await this.readChannelDetails();
+      if (!this.isCurrent(generation, device)) return;
+      this.update({ message: "HID status received",
+        error: this.state.dashboard.identity_error ?? this.state.dashboard.configuration_error
+          ?? this.state.dashboard.telemetry_error ?? this.state.dashboard.action_error });
+    } finally {
+      this.refreshInFlight = false;
+      finishRefresh();
+    }
+  }
+
+  async refreshDiagnostics() {
+    const generation = this.generation, device = this.device;
+    await this.refreshComplete;
+    if (!device || !this.isCurrent(generation, device)
+      || this.actionInFlight || this.state.phase !== "connected") return;
+    this.update({ phase: "reading", message: "Refreshing channel diagnostics", error: null });
+    try {
+      if (!this.state.dashboard.configuration && this.information) await this.readConfiguration();
+      await this.readChannelDetails();
+    } finally {
+      if (this.isCurrent(generation, device)) this.update({ phase: "connected" });
+    }
+  }
+
+  async performAction(action, { profile = 0, acknowledgeOverclock = false, confirmed = false } = {}) {
+    const device = this.device, generation = this.generation;
+    await this.refreshComplete;
+    if (!device || !this.isCurrent(generation, device)
+      || this.state.phase !== "connected" || this.actionInFlight) return;
+    const identity = this.information;
+    if (!identity) throw new Error("Read a supported device identity before sending commands.");
+    const capability = action <= 2 ? 1 : action === 3 ? 2 : 4;
+    if (!(identity.capabilities & capability)) throw new Error("Board-action capability unavailable.");
+    if (action === 3 && !confirmed || action === 4 && !confirmed) {
+      throw new Error("Confirm the destructive board action before continuing.");
+    }
+    if (action === 4 && (!Number.isInteger(profile) || profile < 0 || profile > 4
+      || !(identity.clock_profile_mask & (1 << profile))
+      || typeof acknowledgeOverclock !== "boolean"
+      || profile === 0 && acknowledgeOverclock || profile !== 0 && !acknowledgeOverclock)) {
+      throw new Error("Choose an advertised profile and acknowledge non-default overclocking.");
+    }
+    this.actionInFlight = true;
+    this.update({ phase: "writing", message: "Sending board action", error: null });
+    try {
+      await this.readActionResult();
+      const previous = this.state.dashboard.action_result;
+      if (previous.status === 1 || previous.status === 2 && [3, 4].includes(previous.action)) {
+        throw new Error("A board action is pending or awaiting reboot.");
+      }
+      const flags = action === 3 ? 1 : action === 4 ? 1 | (profile === 0 ? 0 : 2) : 0;
+      const request = encodeActionRequest(action, action === 4 ? profile : 0, flags);
+      await this.transfer(() => device.sendFeatureReport(20, request), 3000);
+      const deadline = Date.now() + ACTION_DEADLINE_MS;
+      while (Date.now() < deadline) {
+        if (!this.isCurrent(generation, device)) {
+          throw new Error("HID connection changed during action; outcome is unconfirmed.");
+        }
+        const remaining = deadline - Date.now();
+        const result = decodeActionResult(await this.readFeature(20, 4, remaining));
+        this.update({ dashboard: { ...this.state.dashboard, action_result: result, action_error: null } });
+        if (result.action !== action) {
+          throw new Error("Latest board-action result does not match; outcome is unconfirmed.");
+        }
+        if (result.status === 2) return result;
+        if (result.status !== 1) {
+          throw new Error(`Board action ${result.status_name.toLowerCase()} (reason ${result.error_reason}).`);
+        }
+        await new Promise(resolve => globalThis.setTimeout(resolve, Math.min(ACTION_POLL_MS,
+          Math.max(0, deadline - Date.now()))));
+      }
+      throw new Error("Timed out awaiting board action; outcome is unconfirmed.");
+    } catch (error) {
+      if (this.isCurrent(generation, device)) {
+        this.update({ dashboard: { ...this.state.dashboard, action_error: error.message } });
+      }
+      throw error;
+    } finally {
+      this.actionInFlight = false;
+      if (this.isCurrent(generation, device)) this.update({ phase: "connected" });
+    }
+  }
+
+  async setLed(on) {
+    if (typeof on !== "boolean") throw new Error("LED state must be explicit.");
+    const result = await this.performAction(on ? 2 : 1);
+    await this.refresh();
+    return result;
+  }
+
+  async reboot(confirmed) {
+    return this.performAction(3, { confirmed });
+  }
+
+  async saveConfiguration(profile, acknowledgeOverclock, confirmed) {
+    return this.performAction(4, { profile, acknowledgeOverclock, confirmed });
   }
 
   async connect() {
     if (!this.hid || this.state.phase !== "disconnected") return;
     const generation = ++this.generation;
-    this.update({ phase: "connecting", message: "Selecting device", error: null, configurationSaveMessage: "" });
+    this.update({ phase: "connecting", message: "Selecting PicoUart HID interface", error: null,
+      dashboard: emptyDashboard() });
     let selected;
     try {
-      const devices = await this.hid.requestDevice({ filters: [{ ...DEVICE_FILTER }] });
+      const devices = await this.hid.requestDevice({ filters: [{ vendorId: DEVICE_FILTER.vendorId }] });
       if (generation !== this.generation) return;
       if (!devices.length) {
-        this.update({ phase: "disconnected", message: "No device selected. Connect PicoUart USB to this browser." });
+        this.update({ phase: "disconnected", message: "No device selected" });
         return;
       }
       if (devices.length !== 1 || !matchesPicoUart(devices[0])) {
-        throw new Error("Select one PicoUart vendor HID interface");
+        throw new Error("Select one PicoUart vendor HID interface.");
       }
       selected = devices[0];
       this.pendingDevice = selected;
@@ -286,16 +762,15 @@ export class PicoUartWebHid {
       this.pendingDevice = null;
       this.device = selected;
       this.information = null;
-      this.nextRequestId = 1;
       this.ioBlocked = false;
-      this.channelErrors = Array(6).fill(null);
-      selected.addEventListener("inputreport", this.onInputReport);
-      this.update({ phase: "connected", deviceName: selected.productName || "PicoUart",
-        message: "Device connected", dashboard: { ...emptyDashboard(), connected: true } });
-      await this.refresh();
+      this.retryAfter.clear();
+      this.update({ phase: "connected", message: "Device connected",
+        dashboard: { ...emptyDashboard(), connected: true } });
+      this.addInputListener(selected, generation);
+      await this.refresh(true);
     } catch (error) {
       if (selected?.opened) {
-        selected.removeEventListener("inputreport", this.onInputReport);
+        this.removeInputListener(selected);
         try {
           await selected.close();
         } catch (closeError) {
@@ -306,175 +781,32 @@ export class PicoUartWebHid {
       this.device = null;
       this.pendingDevice = null;
       this.update({ phase: "disconnected", message: "Connection failed", error: error.message,
-        hardware: null, deviceName: null, updatedAt: null, dashboard: emptyDashboard() });
-    }
-  }
-
-  async refresh() {
-    const device = this.device, generation = this.generation;
-    if (!device || this.state.phase !== "connected" || this.ioBlocked) return;
-    this.update({ phase: "reading", message: "Reading diagnostics", error: null });
-    const stale = () => generation !== this.generation || device !== this.device;
-    try {
-      if (!this.information) {
-        this.information = decodeDeviceInformation(await this.transfer(() => device.receiveFeatureReport(1)));
-        this.update({ dashboard: { ...this.state.dashboard, identity: this.information, identity_error: null } });
-      }
-    } catch (error) {
-      if (stale()) return;
-      this.update({ phase: "connected", error: error.message, dashboard: { ...this.state.dashboard,
-        identity: null, identity_error: error.message, board: null, led: null, runtime: null } });
-      return;
-    }
-    try {
-      const telemetry = decodeTelemetryReport(
-        await this.transfer(() => device.receiveFeatureReport(3)), this.information);
-      const hardware = { mcu: this.information.mcu, mcu_id: this.information.mcu_id,
-        system_clock_hz: telemetry.system_clock_hz, clock_profile_mask: this.information.clock_profile_mask };
-      this.update({ hardware, updatedAt: new Date().toISOString(), dashboard: { ...this.state.dashboard,
-        hardware, hardware_error: null, metadata_error: null, runtime_error: null, led_error: null,
-        led: telemetry.led, runtime: telemetry.runtime,
-        board: { firmware_version: this.information.firmware_version,
-          temperature_celsius: telemetry.temperature_celsius,
-          hid_reset_enabled: Boolean(this.information.capabilities & 2) } } });
-    } catch (error) {
-      if (stale()) return;
-      this.update({ hardware: null, dashboard: { ...this.state.dashboard, hardware: null, hardware_error: error.message,
-        board: null, metadata_error: error.message, runtime: null, runtime_error: error.message,
-        led: null, led_error: error.message } });
-    }
-    try {
-      if (!this.state.dashboard.configuration || this.state.dashboard.configuration_error) {
-        this.applyControl(decodeControlReport(await this.transfer(() => device.receiveFeatureReport(2))));
-      }
-    } catch (error) {
-      if (stale()) return;
-      this.update({ dashboard: { ...this.state.dashboard, configuration: null, configuration_error: error.message,
-        configuration_save: null, configuration_save_error: error.message } });
-    }
-    for (let id = 10; id <= 15 && !this.ioBlocked; id++) {
-      if (this.state.dashboard.channel_diagnostics[id - 10]) continue;
-      try {
-        const data = featurePayload(await this.transfer(() => device.receiveFeatureReport(id)), id, 54);
-        this.applyChannel(decodeChannelSnapshot(data, id), false);
-      } catch (error) {
-        if (stale()) return;
-        this.failChannel(id - 10, error.message);
-      }
-    }
-    if (stale()) return;
-    this.update({ phase: "connected", message: "Diagnostics received",
-      error: this.state.dashboard.identity_error ?? this.state.dashboard.metadata_error
-        ?? this.state.dashboard.configuration_error ?? this.state.dashboard.diagnostics_error });
-  }
-
-  async command(command, profile = 0, flags = 0) {
-    const device = this.device, generation = this.generation;
-    if (!device || !this.information) throw new Error("Read device capabilities before sending commands.");
-    const needed = command <= 2 ? 1 : command <= 4 ? 2 : 4;
-    if (!(this.information.capabilities & needed)) throw new Error("Board control capability unavailable.");
-    const latest = decodeControlReport(await this.transfer(() => device.receiveFeatureReport(2)));
-    this.applyControl(latest);
-    if (latest.status === 1 || (latest.status === 2 && [4, 5].includes(latest.command))) {
-      throw new Error("A board operation is pending or awaiting reboot.");
-    }
-    if (this.nextRequestId === latest.request_id) this.nextRequestId++;
-    if (this.nextRequestId > UNAVAILABLE) throw new Error("Request IDs exhausted; reconnect before continuing.");
-    const id = this.nextRequestId++;
-    const request = new Uint8Array(24), view = new DataView(request.buffer);
-    view.setUint8(0, 1);
-    view.setUint8(1, command);
-    view.setUint8(2, flags);
-    view.setUint32(4, id, true);
-    view.setUint32(16, profile, true);
-    await this.transfer(() => device.sendFeatureReport(2, request));
-    const deadline = Date.now() + 3000;
-    while (Date.now() < deadline) {
-      if (generation !== this.generation || device !== this.device) {
-        throw new Error("HID connection changed during command; outcome is unconfirmed.");
-      }
-      const result = decodeControlReport(await this.transfer(() => device.receiveFeatureReport(2),
-        Math.max(1, deadline - Date.now())));
-      this.applyControl(result);
-      if (result.request_id !== id || result.command !== command || result.flags !== flags) {
-        throw new Error("Board command result does not match; outcome is unconfirmed.");
-      }
-      if (result.status === 2) {
-        if (command === 5 && result.profile !== profile) throw new Error("Firmware saved a different profile.");
-        return result;
-      }
-      if (result.status !== 1) {
-        throw new Error(`Board command rejected: status ${result.status}, reason ${result.error_reason}.`);
-      }
-      await new Promise(resolve => globalThis.setTimeout(resolve, 50));
-    }
-    throw new Error("Timed out awaiting board command; outcome is unconfirmed.");
-  }
-
-  async toggleLed() {
-    if (!this.device || this.state.phase !== "connected") return;
-    const generation = this.generation;
-    this.update({ phase: "writing", message: "Setting board LED", error: null });
-    try {
-      if (this.state.dashboard.led?.output_on == null) throw new Error("Read LED state before changing it.");
-      await this.command(this.state.dashboard.led.output_on ? 1 : 2);
-      this.update({ phase: "connected" });
-      await this.refresh();
-    } catch (error) {
-      if (generation !== this.generation) return;
-      this.update({ phase: "connected", message: "LED command failed", error: error.message,
-        dashboard: { ...this.state.dashboard, led: null, led_error: error.message } });
-    }
-  }
-
-  clearConfigurationSaveMessage() {
-    if (this.state.configurationSaveMessage) this.update({ configurationSaveMessage: "" });
-  }
-
-  async saveConfiguration(profile, unsafeOverclock) {
-    if (!this.device || this.state.phase !== "connected") return;
-    const generation = this.generation;
-    this.update({ phase: "writing", message: "Saving persistent configuration",
-      configurationSaveMessage: "Saving configuration...", error: null });
-    try {
-      if (!Number.isInteger(profile) || profile < 0 || profile > 4
-        || !(this.information?.clock_profile_mask & (1 << profile))
-        || typeof unsafeOverclock !== "boolean" || (profile !== 0 && !unsafeOverclock)
-        || (profile === 0 && unsafeOverclock)) {
-        throw new Error("Select a supported profile and acknowledge overclocking.");
-      }
-      if (this.state.dashboard.channels.some(channel => channel.health === null || channel.cdc_open)) {
-        throw new Error("Close all CDC ports and stop UART traffic before saving.");
-      }
-      await this.command(5, profile, unsafeOverclock ? 1 : 0);
-      this.update({ phase: "connected", message: "Configuration saved",
-        configurationSaveMessage: "Saved. Pico is rebooting; USB will reconnect shortly." });
-    } catch (error) {
-      if (generation !== this.generation) return;
-      this.update({ phase: "connected", message: "Configuration save failed", error: null,
-        configurationSaveMessage: error.message });
+        dashboard: emptyDashboard() });
     }
   }
 
   async disconnect() {
     if (!this.hid) return;
-    const device = this.device ?? this.pendingDevice, generation = ++this.generation;
+    const device = this.device ?? this.pendingDevice;
+    const generation = ++this.generation;
+    this.transferToken++;
     this.device = null;
     this.pendingDevice = device;
-    device?.removeEventListener("inputreport", this.onInputReport);
-    this.update({ phase: "disconnecting", message: "Closing device" });
+    this.removeInputListener(device);
+    this.update({ phase: "disconnecting", message: "Closing HID interface" });
     try {
       if (device?.opened) await device.close();
       if (generation !== this.generation) return;
       this.pendingDevice = null;
       this.information = null;
-      this.update({ phase: "disconnected", message: "Device disconnected", hardware: null,
-        deviceName: null, updatedAt: null, error: null, configurationSaveMessage: "", dashboard: emptyDashboard() });
+      this.ioBlocked = false;
+      this.update({ phase: "disconnected", message: "Device disconnected",
+        dashboard: emptyDashboard() });
     } catch (error) {
       if (generation !== this.generation) return;
       this.device = device;
       this.pendingDevice = null;
-      device?.addEventListener("inputreport", this.onInputReport);
+      this.addInputListener(device, generation);
       this.update({ phase: "connected", message: "Disconnect failed", error: error.message });
     }
   }

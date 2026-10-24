@@ -6,8 +6,8 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css?v=12">
-  <script src="/js/dashboard.js?v=10" defer></script>
+  <link rel="stylesheet" href="/css/dashboard.css?v=35">
+  <script src="/js/dashboard.js?v=34" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -28,9 +28,7 @@
 
   <main>
     <section class="page-heading">
-      <div>
-        <h1>Diagnostics</h1>
-      </div>
+      <div><h1>Diagnostics</h1></div>
     </section>
 
     <section aria-labelledby="identity-title">
@@ -47,42 +45,80 @@
       </div>
       <div class="summary identity-summary">
         <div class="summary-item"><span>Product</span><strong id="product-name">--</strong></div>
-        <div class="summary-item"><span>Microcontroller</span><strong id="mcu">--</strong></div>
-        <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
-        <div class="summary-item"><span>Firmware version</span><strong id="firmware">--</strong></div>
+        <div class="summary-item"><span>Board model</span><strong id="board-model">--</strong></div>
         <div class="summary-item"><span>Serial / UID</span><strong id="serial">--</strong></div>
+        <div class="summary-item"><span>System clock</span><strong id="system-clock">--</strong></div>
+        <div class="summary-item"><span>Firmware RAM reserved / total</span><strong id="ram-usage">--</strong></div>
+        <div class="summary-item"><span>Firmware version</span><strong id="firmware">--</strong></div>
       </div>
     </section>
 
     <section aria-labelledby="configuration-title">
       <div class="section-heading">
-        <h2 id="configuration-title">Boot configuration</h2>
-        <div class="actions" aria-label="Configuration and reboot controls">
-          <button class="button button-led" id="save-configuration" type="button" disabled>Save &amp; Reboot</button>
-          <button class="button button-danger" id="reset-board" type="button"
-            title="Reboot without saving configuration; USB serial ports will disconnect briefly" hidden>
-            Reboot only
+        <h2 id="configuration-title">Board configuration</h2>
+        <div class="actions" aria-label="Board controls">
+          <button class="button button-secondary" id="save-configuration" type="button" hidden disabled>
+            Save &amp; Reboot
+          </button>
+          <button class="button button-secondary" id="reset-board" type="button"
+            title="Reboot the board; USB serial ports will disconnect briefly" hidden>
+            Reboot
           </button>
         </div>
       </div>
       <div class="summary configuration-summary">
         <div class="summary-item">
-          <label for="configuration-profile">System clock profile</label>
-          <select id="configuration-profile" disabled>
-            <option value="0">Default</option>
+          <label for="clock-profile">Stored boot profile</label>
+          <select id="clock-profile" disabled>
+            <option value="0">SDK default</option>
+            <option value="1">150 MHz</option>
+            <option value="2">200 MHz</option>
+            <option value="3">250 MHz</option>
+            <option value="4">280 MHz</option>
           </select>
-          <label class="configuration-acknowledgement" id="configuration-acknowledgement" hidden>
-            <input id="configuration-unsafe-ack" type="checkbox" disabled>
-            <span>I understand this is an unsafe overclock.</span>
-          </label>
         </div>
+        <div class="summary-item"><span>Reset cause</span><strong id="reset-cause">--</strong></div>
+        <div class="summary-item"><span>UART TX ring capacity</span><strong id="uart-tx-capacity">--</strong></div>
+        <div class="summary-item"><span>UART RX ring capacity</span><strong id="uart-rx-capacity">--</strong></div>
+        <div class="summary-item"><span>CDC TX FIFO capacity</span><strong id="cdc-tx-capacity">--</strong></div>
+        <div class="summary-item"><span>CDC RX FIFO capacity</span><strong id="cdc-rx-capacity">--</strong></div>
       </div>
-      <p class="configuration-warning" id="configuration-warning" role="note">
-        Saving reboots the Pico and briefly disconnects USB, as does Reboot only. Close all CDC ports and stop UART
+      <details class="pin-map-disclosure">
+        <summary>Channel pin mapping</summary>
+        <div class="pin-map" id="pin-map" aria-label="Static UART GPIO assignments"></div>
+      </details>
+    </section>
+
+    <dialog class="confirmation-dialog" id="configuration-dialog" aria-labelledby="configuration-dialog-title">
+      <h2 id="configuration-dialog-title">Save clock profile?</h2>
+      <p id="configuration-dialog-profile"></p>
+      <p class="configuration-warning">
+        Flash programming pauses servicing, then automatically reboots and briefly disconnects USB.
+        Close all CDC ports and stop external UART traffic first.
+      </p>
+      <label class="configuration-acknowledgement" id="overclock-acknowledgement" hidden>
+        <input id="overclock-ack" type="checkbox" disabled>
+        <span>I acknowledge the non-default overclock request.</span>
+      </label>
+      <div class="dialog-actions">
+        <button class="button button-cancel" id="cancel-configuration" type="button">Cancel</button>
+        <button class="button button-danger" id="confirm-configuration" type="button" disabled>
+          Save &amp; Reboot
+        </button>
+      </div>
+    </dialog>
+
+    <dialog class="confirmation-dialog" id="reboot-dialog" aria-labelledby="reboot-dialog-title">
+      <h2 id="reboot-dialog-title">Reboot board?</h2>
+      <p class="configuration-warning">
+        This immediately reboots the board and briefly disconnects USB. Close all CDC ports and stop external UART
         traffic first.
       </p>
-      <p class="configuration-message" id="configuration-message" role="status" aria-live="polite"></p>
-    </section>
+      <div class="dialog-actions">
+        <button class="button button-cancel" id="cancel-reboot" type="button">Cancel</button>
+        <button class="button button-danger" id="confirm-reboot" type="button">Reboot</button>
+      </div>
+    </dialog>
 
     <section aria-labelledby="runtime-title">
       <div class="section-heading">
@@ -90,14 +126,10 @@
       </div>
       <div class="summary runtime-summary">
         <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>
-        <div class="summary-item" title="Wall time of passes handling work over a one-second window; excludes empty polling">
-          <span>CPU load (core 0 / core 1)</span><strong id="cpu-usage">--</strong>
-        </div>
-        <div class="summary-item" title="Linked static SRAM and reserved stacks; excludes live heap/stack occupancy">
-          <span>RAM (reserved / total)</span><strong id="ram-usage">--</strong>
-        </div>
         <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
-        <div class="summary-item"><span>Total RX overflow</span><strong id="overflow-total">--</strong></div>
+        <div class="summary-item" title="Service-pass workload proxies, not CPU utilization">
+          <span>Service load (Core 0 / Core 1)</span><strong id="service-load">--</strong>
+        </div>
       </div>
     </section>
 
@@ -112,27 +144,36 @@
         <table>
           <colgroup>
             <col class="port-column">
-            <col class="session-column">
+            <col class="lifecycle-column">
             <col class="configuration-column">
-            <col class="health-column">
             <col class="throughput-column">
-            <col class="overflow-column">
+            <col class="diagnostics-column">
           </colgroup>
           <thead>
             <tr>
               <th scope="col">Port</th>
-              <th scope="col">Host session</th>
+              <th scope="col">Channel status</th>
               <th scope="col">UART configuration</th>
-              <th scope="col">Health</th>
-              <th scope="col">Throughput</th>
-              <th scope="col" class="overflow-heading">RX overflow</th>
+              <th class="traffic-heading" scope="col" title="Rates ramp from a one-second to a five-second average as samples arrive.">
+                <span class="traffic-heading-title">Traffic</span>
+                <span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB</span>
+              </th>
+              <th scope="col">Diagnostics</th>
             </tr>
           </thead>
           <tbody id="channel-rows"></tbody>
         </table>
       </div>
-      <p class="traffic-note" id="traffic-note" hidden></p>
     </section>
+
+    <dialog class="diagnostics-dialog" id="diagnostics-dialog" aria-labelledby="diagnostics-dialog-title">
+      <div class="dialog-heading">
+        <h2 id="diagnostics-dialog-title">Channel diagnostics</h2>
+        <button class="button button-secondary" id="close-diagnostics" type="button">Close</button>
+      </div>
+      <div class="diagnostics-content" id="diagnostics-content"></div>
+      <button class="button button-small" id="refresh-diagnostics" type="button">Refresh diagnostics</button>
+    </dialog>
 
     <footer class="status-line" role="status" aria-live="polite">
       <span class="status-mark" aria-hidden="true"></span>

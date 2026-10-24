@@ -12,6 +12,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/** @brief Maximum RX bytes copied before handing a span to its writer. */
+#define UART_BRIDGE_RX_SNAPSHOT_SIZE 1024u
+
 /**
  * @brief Check whether an RX span remains valid after copying it to a snapshot.
  * @param context Caller-owned backend context.
@@ -21,11 +24,13 @@
 typedef bool (*uart_bridge_rx_snapshot_is_current_t)(void *context, uint32_t consumer_sequence);
 
 /**
- * @brief Drain a DMA-backed RX ring through a caller-owned writer.
+ * @brief Drain a DMA-backed RX ring through a caller-owned writer and snapshot.
  * @param rx_ring UART-to-USB ring.
  * @param capacity Maximum bytes to commit, or zero for no limit.
  * @param writer Callback that accepts bytes from a private snapshot.
  * @param writer_context Opaque context passed to @p writer.
+ * @param snapshot Caller-owned storage used to isolate bytes from live DMA writes.
+ * @param snapshot_capacity Size of @p snapshot in bytes.
  * @param snapshot_is_current Backend check for live DMA progress.
  * @param snapshot_context Opaque context passed to @p snapshot_is_current.
  * @param stats_sequence Worker-owned sequence counter protecting backend state.
@@ -33,8 +38,9 @@ typedef bool (*uart_bridge_rx_snapshot_is_current_t)(void *context, uint32_t con
  */
 size_t uart_bridge_drain_rx(ring_buffer_t *rx_ring, size_t capacity,
                             uint32_t (*writer)(void *context, const uint8_t *data, uint32_t length),
-                            void *writer_context, uart_bridge_rx_snapshot_is_current_t snapshot_is_current,
-                            void *snapshot_context, volatile uint32_t *stats_sequence);
+                            void *writer_context, uint8_t *snapshot, size_t snapshot_capacity,
+                            uart_bridge_rx_snapshot_is_current_t snapshot_is_current, void *snapshot_context,
+                            volatile uint32_t *stats_sequence);
 
 /**
  * @brief Retire unread RX bytes already overwritten by the live producer.

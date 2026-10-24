@@ -56,29 +56,15 @@ thread implementation. Ring ownership and DMA snapshot validation remain separat
 
 ### Control Mailbox Ordering
 
-Each UART port has its own single-producer/core-0 and single-consumer/core-1 mailbox slot. One port's unpublished
-response does not block another port:
+Each UART port has one mailbox slot with a payload and occupied flag. All concurrent operations, including inspection
+and reset, require the shared status lock; initialization before launching the worker needs no lock. Core 0 publishes
+the payload and marks the slot occupied under that lock. Core 1 copies it, clears occupancy, and registers worker
+ownership in one critical section. Lock release/acquisition provides publication ordering; a second mailbox sequence
+protocol and mailbox-local barriers are unnecessary. Host request generations remain independent of slot occupancy.
 
-```mermaid
-sequenceDiagram
-  participant C0 as "Core 0 producer"
-  participant M as "Mailbox payload + sequence"
-  participant C1 as "Core 1 consumer"
-
-  C0->>M: Write request payload
-  C0->>M: DMB
-  C0->>M: Publish request sequence
-  C1->>M: Read request sequence
-  C1->>M: DMB
-  C1->>M: Copy request payload
-  C1->>M: DMB
-  C1->>M: Publish matching acknowledgement sequence
-```
-
-A mailbox slot remains owned until core 1 copies the request and publishes the matching acknowledgement sequence.
-Acknowledgement releases the slot; it does not mean backend reconfiguration has finished. Core 1 can retain worker
+Taking a request releases the slot; it does not mean backend reconfiguration has finished. Core 1 can retain worker
 ownership while waiting for a safe apply boundary, so `CONTROL_PENDING` and TX blocking may remain asserted after the
-mailbox is empty. The handoff to worker ownership is coordinated under the status lock to avoid an unowned interval.
+mailbox is empty. One port's occupied slot does not block another port.
 The complete pending-state and TX-blocking rules belong to [Control Plane Design](control-plane-design.md).
 
 ### Status Lock and Generations
@@ -86,6 +72,8 @@ The complete pending-state and TX-blocking rules belong to [Control Plane Design
 The status lock protects core-0-visible flags, control ownership, generations, and metadata. It does not protect ring
 cursors, which use SPSC ownership and barriers; keeping the mechanisms separate prevents status reads from becoming a
 global data-path lock. Per-request generation behavior is described in [Control Plane Design](control-plane-design.md).
+Backend support checks use immutable operations bound before worker startup and do not copy lock-protected applied
+metadata. Runtime readiness, lifecycle handshakes, and control completion still require their existing synchronization.
 
 ### Telemetry Sequence Counters
 
@@ -109,6 +97,8 @@ IRQ, and multicore timing require [hardware-in-the-loop testing](../tests/hil-fi
 - PIO UARTs support 8N1; hardware UARTs support the broader CDC line-coding set.
 - Aggregate throughput depends on USB full-speed bandwidth and host drain rate; see the
   [HIL fixture plan](../tests/hil-fixture-test-plan.md) for measured results and test limits.
+  For example, six full-duplex 3 Mbaud 8N1 streams require 3.6 MB/s of UART payload, beyond the 12 Mbit/s USB link
+  even before USB overhead; an accepted per-port baud setting is not an aggregate-throughput guarantee.
 - Flow control is disabled by default. HID reset is enabled by default and can be removed at build time; see the
   [CDC/HID overview](usb/cdc-hid-overview.md) for interface behavior.
 

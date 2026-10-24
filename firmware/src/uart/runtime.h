@@ -24,6 +24,7 @@ typedef struct {
     uart_driver_port_info_t info;    /**< Public metadata for the logical port. */
     const uart_backend_ops_t *ops;   /**< Operations for the active backend storage. */
     uart_backend_instance_t backend; /**< Backend storage owned by the logical port. */
+    uart_driver_control_history_t control_history; /**< Retained configuration failure under the status lock. */
 } uart_runtime_port_t;
 
 #endif

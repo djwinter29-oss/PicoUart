@@ -67,6 +67,9 @@ extern pio_test_dma_hw_t *dma_hw;
 static inline void __dmb(void) {}
 
 uint32_t clock_get_hz(uint clock);
+int dma_claim_unused_channel(bool required);
+bool pio_sm_is_claimed(PIO pio, uint sm);
+void pio_sm_claim(PIO pio, uint sm);
 uint32_t save_and_disable_interrupts(void);
 void restore_interrupts(uint32_t state);
 void hw_clear_bits(volatile uint32_t *address, uint32_t mask);

@@ -1,78 +1,133 @@
-import { PicoUartWebHid } from "./device.mjs?v=6";
-import { renderDashboard, updateReportAge } from "./view.mjs?v=7";
+import { PicoUartWebHid } from "./device.mjs?v=21";
+import { renderDashboard, updateReportAge } from "./view.mjs?v=21";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");
+const rebootButton = document.querySelector("#reboot-board");
 const connection = document.querySelector("#connection");
 const statusMessage = document.querySelector("#status-message");
-const configurationProfile = document.querySelector("#configuration-profile");
-const configurationUnsafeAck = document.querySelector("#configuration-unsafe-ack");
-const saveConfigurationButton = document.querySelector("#save-configuration");
+const profileSelect = document.querySelector("#configuration-profile");
+const unsafeAcknowledgement = document.querySelector("#configuration-unsafe-ack");
+const saveButton = document.querySelector("#save-configuration");
+const configurationDialog = document.querySelector("#configuration-dialog");
+const rebootDialog = document.querySelector("#reboot-dialog");
+const configurationDialogProfile = document.querySelector("#configuration-dialog-profile");
+const acknowledgementLabel = document.querySelector("#configuration-acknowledgement");
+const confirmConfigurationButton = document.querySelector("#confirm-configuration");
 const configurationMessage = document.querySelector("#configuration-message");
-let configurationDraft = null;
-let selectedSerial = null;
-let previousPhase = null;
+const diagnosticsButton = document.querySelector("#refresh-diagnostics");
+document.querySelector("#close-channel-diagnostics").addEventListener("click", () =>
+  document.querySelector("#channel-diagnostics-dialog").close());
+let selectedProfile = null;
+let saveMessage = "";
 
-function resetConfigurationDraft(state) {
-  configurationDraft = null;
-  selectedSerial = state.dashboard.identity?.serial_number ?? null;
-  configurationUnsafeAck.checked = false;
-  client?.clearConfigurationSaveMessage();
+function resetConfigurationDraft() {
+  if (configurationDialog.open) configurationDialog.close();
+  if (rebootDialog.open) rebootDialog.close();
+  selectedProfile = null;
+  unsafeAcknowledgement.checked = false;
+  saveMessage = "";
 }
 
 function renderConfiguration(state) {
-  const dashboard = state.dashboard;
-  const hardwareId = dashboard.hardware?.mcu_id;
-  const options = (hardwareId === 1 ? [[0, "SDK default (125 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"]]
-    : hardwareId === 2 ? [[0, "SDK default (150 MHz)"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"],
-      [4, "280 MHz (RP2350)"]] : []).filter(([value]) => dashboard.identity?.clock_profile_mask & (1 << value));
-  const configurationReady = dashboard.configuration || dashboard.configuration_error
-    || dashboard.configuration_save || dashboard.configuration_save_error;
-  if (configurationDraft === null && options.length && configurationReady) {
-    const saved = dashboard.configuration_save?.status === 2 ? dashboard.configuration_save.profile : null;
-    const stored = dashboard.configuration?.stored_profile;
-    configurationDraft = options.some(([value]) => value === saved) ? saved
-      : options.some(([value]) => value === stored) ? stored : 0;
+  const { dashboard } = state;
+  const identity = dashboard.identity;
+  const options = identity
+    ? [...Array(5).keys()].filter(profile => identity.clock_profile_mask & (1 << profile))
+      .map(profile => [profile, ["SDK default", "150 MHz", "200 MHz", "250 MHz", "280 MHz"][profile]])
+    : [];
+  const baselineProfile = dashboard.configuration?.stored_profile ?? options[0]?.[0] ?? null;
+  if (selectedProfile === null) {
+    selectedProfile = baselineProfile;
   }
-  if (configurationProfile.children.length !== options.length
-    || options.some(([value], index) => configurationProfile.children[index]?.value !== String(value))) {
-    configurationProfile.replaceChildren();
-    for (const [value, label] of options) {
+  if (profileSelect.children.length !== options.length
+    || options.some(([profile], index) => profileSelect.children[index]?.value !== String(profile))) {
+    profileSelect.replaceChildren();
+    for (const [profile, label] of options) {
       const option = document.createElement("option");
-      option.value = String(value);
+      option.value = String(profile);
       option.textContent = label;
-      configurationProfile.append(option);
+      profileSelect.append(option);
     }
   }
-  configurationProfile.value = String(configurationDraft ?? 0);
-  const capabilityAvailable = Boolean(dashboard.identity?.capabilities & 4)
-    && dashboard.configuration_save != null && !dashboard.configuration_save_error;
-  const cdcOpen = !Array.isArray(dashboard.channels) || dashboard.channels.length !== 6
-    || dashboard.channels.some(channel => channel.cdc_open || channel.health === null);
-  const enabled = state.phase === "connected" && options.length > 0 && capabilityAvailable && !cdcOpen;
-  configurationProfile.disabled = !enabled;
-  document.querySelector("#configuration-acknowledgement").hidden = !configurationDraft;
-  configurationUnsafeAck.disabled = !enabled || configurationDraft === 0;
-  saveConfigurationButton.disabled = !enabled
-    || (configurationDraft !== 0 && !configurationUnsafeAck.checked);
-  configurationMessage.textContent = state.configurationSaveMessage
-    || (dashboard.connected ? dashboard.configuration_save_error : "") || "";
-  configurationMessage.dataset.error = String(Boolean(!state.configurationSaveMessage
-    && dashboard.connected && dashboard.configuration_save_error) || Boolean(state.configurationSaveMessage
-    && state.configurationSaveMessage !== "Saving configuration..."
-    && state.configurationSaveMessage !== "Saved. Pico is rebooting; USB will reconnect shortly."));
+  profileSelect.value = selectedProfile === null ? "" : String(selectedProfile);
+  const channels = Array.isArray(dashboard.channels) ? dashboard.channels : [];
+  const channelsReady = channels.length === 6 && channels.every(channel =>
+    channel?.channel_state === 0 && channel?.input_updated_at
+      && Date.now() - Date.parse(channel.input_updated_at) <= 3000);
+  const saveAvailable = Boolean(identity?.capabilities & 4) && dashboard.configuration !== null;
+  const enabled = state.phase === "connected" && saveAvailable && channelsReady;
+  const profileChanged = saveAvailable && selectedProfile !== baselineProfile;
+  profileSelect.disabled = !enabled;
+  unsafeAcknowledgement.disabled = !enabled || selectedProfile === 0;
+  saveButton.hidden = !Boolean(identity?.capabilities & 4);
+  saveButton.disabled = !enabled || !profileChanged;
+  document.querySelector("#reset-cause").textContent = dashboard.configuration
+    ? ["Unknown", "Power-on", "Watchdog reset", "Software-requested reset", "Unassigned"][dashboard.configuration.reset_cause]
+    : "--";
+  document.querySelector("#board-pins").replaceChildren();
+  const pinRows = dashboard.configuration?.pins ?? dashboard.configuration?.channel_pins ?? [];
+  pinRows.forEach((pins, index) => {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.textContent = `CDC${index}`;
+    row.append(cell);
+    for (const signal of ["tx", "rx", "rts", "cts"]) {
+      const pin = document.createElement("td");
+      const value = pins[signal] ?? pins[`${signal}_pin`];
+      pin.textContent = value == null || value === 255 ? "--" : `GP${value}`;
+      row.append(pin);
+    }
+    document.querySelector("#board-pins").append(row);
+  });
+  const capacity = dashboard.configuration?.capacities;
+  for (const [id, key] of [["uart-tx-capacity", "uart_tx"], ["uart-rx-capacity", "uart_rx"],
+    ["cdc-tx-capacity", "cdc_tx"], ["cdc-rx-capacity", "cdc_rx"]]) {
+    const value = capacity?.[key];
+    document.querySelector(`#${id}`).textContent = Number.isSafeInteger(value) ? `${value.toLocaleString()} B` : "--";
+  }
+  configurationMessage.textContent = saveMessage || dashboard.configuration_error || "";
+  configurationMessage.dataset.error = String(Boolean(!saveMessage && dashboard.configuration_error)
+    || Boolean(saveMessage && !saveMessage.includes("rebooting")));
+}
+
+function profileName(profile) {
+  return ["SDK default", "150 MHz", "200 MHz", "250 MHz", "280 MHz"][profile] ?? "Unknown profile";
+}
+
+function openConfigurationDialog() {
+  if (saveButton.disabled) return;
+  const nonDefault = selectedProfile !== 0;
+  configurationDialogProfile.textContent = `Selected profile: ${profileName(selectedProfile)}.`;
+  unsafeAcknowledgement.checked = false;
+  unsafeAcknowledgement.disabled = !nonDefault;
+  acknowledgementLabel.hidden = !nonDefault;
+  confirmConfigurationButton.disabled = nonDefault;
+  configurationDialog.showModal();
+}
+
+async function saveConfiguration() {
+  const profile = selectedProfile;
+  const nonDefault = profile !== 0;
+  if (!configurationDialog.open || saveButton.disabled || nonDefault && !unsafeAcknowledgement.checked) return;
+  const description = profileName(profile);
+  configurationDialog.close();
+  saveMessage = "Saving profile; do not retry if the result is unconfirmed.";
+  renderConfiguration(client.state);
+  try {
+    await client.saveConfiguration(profile, unsafeAcknowledgement.checked, true);
+    saveMessage = `Saved ${description}; Pico is rebooting. Reconnect manually to verify its boot configuration.`;
+    renderConfiguration(client.state);
+  } catch (error) {
+    saveMessage = error.message;
+    renderConfiguration(client.state);
+  }
 }
 
 function render(state) {
-  if (state.phase === "connecting" && previousPhase !== "connecting"
-    || state.phase === "disconnected" && previousPhase !== "disconnected") {
-    resetConfigurationDraft(state);
-  }
-  const serial = state.dashboard.identity?.serial_number ?? null;
-  if (serial && selectedSerial && serial !== selectedSerial) resetConfigurationDraft(state);
-  if (serial) selectedSerial = serial;
-  previousPhase = state.phase;
-  renderDashboard(state.dashboard);
+  const dashboard = state.dashboard;
+  if (state.phase === "connecting" || state.phase === "disconnected") resetConfigurationDraft();
+  renderDashboard(dashboard);
   renderConfiguration(state);
   const connected = ["connected", "reading", "writing"].includes(state.phase);
   const busy = ["connecting", "reading", "writing", "disconnecting"].includes(state.phase);
@@ -83,7 +138,11 @@ function render(state) {
     : state.phase === "disconnecting" ? "Disconnecting..." : connected ? "Disconnect" : "Connect";
   connectButton.className = `button ${connected ? "button-danger" : "button-secondary"}`;
   connectButton.disabled = !["disconnected", "connected", "reading"].includes(state.phase);
-  toggleLedButton.disabled = !connected || busy || state.dashboard.led?.output_on == null;
+  const led = dashboard.telemetry?.led.output_on;
+  toggleLedButton.disabled = !connected || busy || led == null || !(dashboard.identity?.capabilities & 1);
+  rebootButton.hidden = !(dashboard.identity?.capabilities & 2);
+  rebootButton.disabled = !connected || busy;
+  diagnosticsButton.disabled = !connected || busy || !dashboard.identity;
   if (!connected || state.error) {
     statusMessage.textContent = state.error ?? state.message;
     statusMessage.parentElement.dataset.error = String(Boolean(state.error) || state.phase === "unsupported");
@@ -95,19 +154,46 @@ const client = new PicoUartWebHid(hid, render);
 render(client.state);
 connectButton.addEventListener("click", () =>
   client.state.phase === "disconnected" ? client.connect() : client.disconnect());
-toggleLedButton.addEventListener("click", () => client.toggleLed());
-configurationProfile.addEventListener("change", () => {
-  configurationDraft = Number(configurationProfile.value);
-  configurationUnsafeAck.checked = false;
-  client.clearConfigurationSaveMessage();
+toggleLedButton.addEventListener("click", async () => {
+  const on = client.state.dashboard.telemetry?.led.output_on;
+  if (on == null) return;
+  try {
+    await client.setLed(!on);
+  } catch (error) {
+    if (client.state.phase !== "disconnected") client.update({ error: error.message });
+  }
+});
+rebootButton.addEventListener("click", () => {
+  if (!rebootButton.disabled) rebootDialog.showModal();
+});
+document.querySelector("#cancel-reboot").addEventListener("click", () => rebootDialog.close());
+document.querySelector("#confirm-reboot").addEventListener("click", async () => {
+  if (!rebootDialog.open || rebootButton.disabled) return;
+  rebootDialog.close();
+  try {
+    await client.reboot(true);
+  } catch (error) {
+    if (client.state.phase !== "disconnected") client.update({ error: error.message });
+  }
+});
+profileSelect.addEventListener("change", () => {
+  selectedProfile = Number(profileSelect.value);
+  unsafeAcknowledgement.checked = false;
+  saveMessage = "";
   renderConfiguration(client.state);
 });
-configurationUnsafeAck.addEventListener("change", () => {
-  client.clearConfigurationSaveMessage();
-  renderConfiguration(client.state);
+saveButton.addEventListener("click", openConfigurationDialog);
+document.querySelector("#cancel-configuration").addEventListener("click", () => configurationDialog.close());
+unsafeAcknowledgement.addEventListener("change", () => {
+  confirmConfigurationButton.disabled = !unsafeAcknowledgement.checked;
 });
-saveConfigurationButton.addEventListener("click", () => {
-  client.saveConfiguration(Number(configurationProfile.value), configurationUnsafeAck.checked);
+confirmConfigurationButton.addEventListener("click", saveConfiguration);
+diagnosticsButton.addEventListener("click", async () => {
+  try {
+    await client.refreshDiagnostics();
+  } catch (error) {
+    if (client.state.phase !== "disconnected") client.update({ error: error.message });
+  }
 });
 globalThis.setInterval(() => client.refresh(), 1000);
 globalThis.setInterval(() => updateReportAge(client.state.dashboard), 1000);

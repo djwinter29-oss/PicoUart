@@ -381,9 +381,32 @@ void test_overflow_recovery_wraps_across_uint32_boundary(void)
     TEST_ASSERT_EQUAL_UINT(2u, ring_buffer_overflow_count(&ring));
 }
 
+void test_clear_preserves_lifetime_telemetry_and_discards_reservations(void)
+{
+    uint8_t storage[8];
+    const uint8_t payload[] = {1u, 2u, 3u};
+    ring_buffer_t ring;
+    TEST_ASSERT_TRUE(ring_buffer_init(&ring, storage, sizeof(storage)));
+    TEST_ASSERT_EQUAL_UINT(3u, ring_buffer_write(&ring, payload, sizeof(payload)));
+    ring.overflow_count = 7u;
+    (void)ring_buffer_read_span(&ring);
+    (void)ring_buffer_write_span(&ring);
+
+    ring_buffer_clear(&ring);
+
+    TEST_ASSERT_EQUAL_UINT(0u, ring_buffer_occupancy(&ring));
+    TEST_ASSERT_EQUAL_UINT32(3u, ring.high_watermark);
+    TEST_ASSERT_EQUAL_UINT32(7u, ring.overflow_count);
+    TEST_ASSERT_EQUAL_PTR(storage, ring.storage);
+    TEST_ASSERT_FALSE(ring_buffer_commit_consumed(&ring, 1u));
+    TEST_ASSERT_FALSE(ring_buffer_commit_produced(&ring, 1u));
+    ring_buffer_clear(NULL);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_clear_preserves_lifetime_telemetry_and_discards_reservations);
     RUN_TEST(test_init_rejects_null_and_non_power_of_two);
     RUN_TEST(test_write_read_round_trip);
     RUN_TEST(test_contiguous_spans_wrap);

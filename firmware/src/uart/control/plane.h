@@ -39,10 +39,30 @@ typedef struct {
 } uart_control_plane_t;
 
 /**
+ * @brief Record a configuration failure while the caller holds the status lock.
+ * @param port Port whose boot-lifetime history is updated.
+ * @param reason Authoritative failure reason.
+ */
+static inline void uart_control_record_error(uart_runtime_port_t *port, uart_driver_control_error_t reason)
+{
+    port->control_history.reason = reason;
+    port->control_history.uptime_us = time_us_64();
+}
+
+/**
  * @brief Consume each port's mailbox request and service deferred line-coding changes.
  * @param control_plane Private runtime state.
  */
 void uart_control_plane_service(uart_control_plane_t *control_plane);
+
+/**
+ * @brief Start a stopped port with its queued initial settings before enabling reception.
+ * @param control_plane Bound worker-owned control context.
+ * @param port_id Logical port whose stop/quiescence handshake has completed.
+ * @return `true` when the backend started; queued configuration completion is generation-aware.
+ * @note Caller brackets backend changes with its telemetry sequence and publishes lifecycle READY afterward.
+ */
+bool uart_control_plane_start_port(uart_control_plane_t *control_plane, uart_port_id_t port_id);
 
 /**
  * @brief Return whether a port may launch new TX bytes during worker polling.

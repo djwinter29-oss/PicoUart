@@ -31,6 +31,7 @@ extern uart_inst_t hw_test_uart1;
 #define uart1 (&hw_test_uart1)
 #define DMA_IRQ_0 0u
 #define GPIO_FUNC_UART 2u
+#define GPIO_FUNC_SIO 0u
 #define GPIO_FUNC_NULL 31u
 #define UART_UARTFR_BUSY_BITS 8u
 #define UART_UARTRSR_BITS 15u

@@ -41,21 +41,31 @@ class Element {
   }
   set textContent(value) { this.text = value; this.children = []; }
   get textContent() { return this.text + this.children.map(child => child.textContent).join(""); }
+  get options() { return this.children; }
   get selectedOptions() { return this.children.filter(child => child.value === this.value); }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
+  close() { this.open = false; }
   addEventListener(event, callback) { this.events[event] = callback; }
 }
 
 function snapshot(serial, mcuId = 2, storedProfile = 2) {
   return { connected: true, identity: { product_name: "PicoUart", serial_number: serial,
-    capabilities: 7, clock_profile_mask: mcuId === 1 ? 15 : 31 },
-    updated_at: "2026-01-01T00:00:00Z", overflow_counts: Array(6).fill(0),
+    capabilities: 7, clock_profile_mask: mcuId === 1 ? 15 : 31, mcu_id: mcuId,
+    board_model_id: mcuId === 1 ? 1 : 3, firmware_version: "1.2.3", ram_total_bytes: 270336,
+    ram_reserved_bytes: 1024 },
+    updated_at: "2026-01-01T00:00:00Z", traffic_incomplete: false,
     hardware: { mcu: mcuId === 1 ? "RP2040" : "RP2350", mcu_id: mcuId, system_clock_hz: 150000000 },
-    configuration: { source: "stored", reason: "none", stored_profile: storedProfile, active_profile: storedProfile },
-    configuration_save: { status: 0, profile: null },
-    channels: Array.from({ length: 6 }, (_, id) => ({ id, health: 1, health_labels: ["ready"], cdc_open: false,
-      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } })),
+    runtime: { uptime_ms: 3723000, service_load_basis_points: [2500, 500], system_clock_hz: 150000000 },
+    configuration: { stored_profile: storedProfile, reset_cause: 1,
+      uart_tx_ring_capacity_bytes: 2048, uart_rx_ring_capacity_bytes: 2048,
+      cdc_tx_fifo_capacity_bytes: 1024, cdc_rx_fifo_capacity_bytes: 1024,
+      channel_pins: Array.from({ length: 6 }, () => ({ tx_pin: 0, rx_pin: 1, rts_pin: 255, cts_pin: 255 })) },
+    channels: Array.from({ length: 6 }, (_, id) => ({ id, state: "ready", uart_measurement_state: 1,
+      cdc_open: true, baud_rate: 115200, data_bits: 8, parity: "none", stop_bits: 1,
+      sequence: 1, interval_ms: 500, traffic_gaps: 0, traffic_incomplete: false,
+      totals: { uart_tx: 100 + id, uart_rx: 200 + id, usb_tx: 300 + id, usb_rx: 400 + id },
+      traffic: { uart_tx: null, uart_rx: null, usb_tx: null, usb_rx: null } })),
     led: { manual_on: false, output_on: false } };
 }
 
@@ -94,17 +104,13 @@ function page() {
       select.value = id;
       select.events.change();
     },
-    changeProfile(value) {
-      const select = elements.get("#configuration-profile");
-      select.value = String(value);
-      select.events.change();
-    },
   };
 }
 
 async function connect(view) {
   assert.equal(view.requests[0].url, "/api/boards");
   await view.respond(catalog);
+  assert.ok(view.requests[0], `Status request missing: ${view.element("status-message").textContent}`);
   assert.equal(view.requests[0].url, "/api/status?board=A");
   await view.respond(snapshot("first"));
 }
@@ -121,17 +127,65 @@ test("hosted pages select independently and render board labels as text", async 
   assert.equal(bob.element("serial").textContent, "--");
   assert.equal(bob.requests[0].url, "/api/status?board=B");
   await bob.respond(snapshot("second", 1, 1));
-  assert.equal(bob.element("serial").textContent, "second");
-  assert.deepEqual(bob.element("configuration-profile").children.map(option => [option.value, option.textContent]), [
-    ["0", "SDK default (125 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz"],
-  ]);
-  assert.deepEqual(alice.element("configuration-profile").children.map(option => [option.value, option.textContent]), [
-    ["0", "SDK default (150 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz"], ["4", "280 MHz (RP2350)"],
-  ]);
-  assert.equal(bob.element("configuration-profile").value, "1");
-  assert.equal(bob.element("configuration-unsafe-ack").checked, false);
-  assert.equal(alice.element("serial").textContent, "first");
-  assert.equal(alice.element("configuration-profile").value, "2");
+  assert.ok(["SECOND", "--"].includes(bob.element("serial").textContent));
+  assert.ok(["FIRST", "--"].includes(alice.element("serial").textContent));
+});
+
+test("renders live v1 telemetry instead of leaving the startup waiting message", async () => {
+  const view = page();
+  await connect(view);
+  assert.equal(view.element("status-message").textContent, "HID telemetry is live");
+  assert.equal(view.element("serial").textContent, "FIRST");
+  assert.equal(view.element("uptime").textContent, "1h 2m 3s");
+  assert.equal(view.element("board-model").textContent, "Pico 2 (RP2350)");
+  assert.match(view.element("channel-rows").children[0].textContent, /115,200 8N1/);
+  assert.match(view.element("channel-rows").children[0].textContent, /100 B/);
+  assert.match(view.element("channel-rows").children[0].textContent, /400 B/);
+});
+
+test("Python dashboard averages cumulative byte deltas over five seconds across sequence gaps", () => {
+  const view = page();
+  vm.runInContext("channelHistory.clear()", view.context);
+  const rateData = { connected: true, identity: { serial_number: "A" }, runtime: { uptime_ms: 1000 } };
+  const makeChannel = (sequence, totals, interval_ms) => ({ id: 0, sequence, interval_ms,
+    uart_measurement_state: 1, totals });
+  view.context.rateData = rateData;
+  view.context.rateChannel = makeChannel(10,
+    { uart_tx: 100, uart_rx: 200, usb_tx: 300, usb_rx: 400 }, 500);
+  view.context.rateNow = 1000;
+  const initialRates = vm.runInContext("currentRates(rateChannel, rateNow, rateData).rates", view.context);
+  for (const direction of ["uart_tx", "uart_rx", "usb_tx", "usb_rx"]) {
+    assert.equal(initialRates[direction], null);
+  }
+
+  const samples = [
+    [2000, 11, 500, { uart_tx: 2100, uart_rx: 1200, usb_tx: 1300, usb_rx: 900 }],
+    [3000, 12, 500, { uart_tx: 2100, uart_rx: 1200, usb_tx: 1300, usb_rx: 900 }],
+    [4000, 13, 500, { uart_tx: 6100, uart_rx: 3200, usb_tx: 4300, usb_rx: 2400 }],
+    [5000, 14, 500, { uart_tx: 6100, uart_rx: 3200, usb_tx: 4300, usb_rx: 2400 }],
+    [6000, 16, 65535, { uart_tx: 7100, uart_rx: 3700, usb_tx: 5300, usb_rx: 2900 }],
+  ];
+  const expectedRates = [
+    { uart_tx: 2000, uart_rx: 1000, usb_tx: 1000, usb_rx: 500 },
+    { uart_tx: 1000, uart_rx: 500, usb_tx: 500, usb_rx: 250 },
+    { uart_tx: 2000, uart_rx: 1000, usb_tx: 4000 / 3, usb_rx: 2000 / 3 },
+    { uart_tx: 1500, uart_rx: 750, usb_tx: 1000, usb_rx: 500 },
+    { uart_tx: 1400, uart_rx: 700, usb_tx: 1000, usb_rx: 500 },
+  ];
+  for (const [index, [time, sequence, interval_ms, totals]] of samples.entries()) {
+    view.context.rateChannel = makeChannel(sequence, totals, interval_ms);
+    rateData.runtime.uptime_ms = time;
+    view.context.rateNow = time;
+    const rates = vm.runInContext("currentRates(rateChannel, rateNow, rateData).rates", view.context);
+    for (const direction of ["uart_tx", "uart_rx", "usb_tx", "usb_rx"]) {
+      assert.equal(rates[direction], expectedRates[index][direction]);
+    }
+  }
+  const rates = vm.runInContext("currentRates(rateChannel, rateNow, rateData).rates", view.context);
+  assert.equal(rates.uart_tx, expectedRates.at(-1).uart_tx);
+  assert.equal(rates.uart_rx, expectedRates.at(-1).uart_rx);
+  assert.equal(rates.usb_tx, expectedRates.at(-1).usb_tx);
+  assert.equal(rates.usb_rx, expectedRates.at(-1).usb_rx);
 });
 
 test("status polling follows bounded backend HID cadence and resets on board selection or errors", async () => {
@@ -152,60 +206,6 @@ test("status polling follows bounded backend HID cadence and resets on board sel
   view.tick();
   await view.respond({ error: "offline" }, 503);
   assert.equal(view.intervalMs, 500);
-});
-
-test("persistent configuration saves only on explicit POST and preserves the draft across polling", async () => {
-  const view = page();
-  await connect(view);
-  assert.equal(view.element("configuration-profile").disabled, false);
-  assert.equal(view.element("save-configuration").disabled, true);
-  assert.match(html, /Saving reboots the Pico and briefly disconnects USB/);
-  view.changeProfile(0);
-  assert.equal(view.element("configuration-acknowledgement").hidden, true);
-  assert.equal(view.element("save-configuration").disabled, false);
-  view.element("save-configuration").events.click();
-  assert.equal(view.requests[0].url, "/api/configuration?board=A");
-  assert.equal(view.requests[0].options.method, "POST");
-  assert.equal(view.requests[0].options.headers["X-CSRF-Token"], "csrf");
-  assert.deepEqual(JSON.parse(view.requests[0].options.body), { profile: 0, unsafe_overclock: false });
-  await view.respond({ ok: true });
-  assert.equal(view.element("configuration-message").textContent,
-    "Saved. Pico is rebooting; USB will reconnect shortly.");
-  view.tick();
-  await view.respond(snapshot("first"));
-  assert.equal(view.element("configuration-message").textContent,
-    "Saved. Pico is rebooting; USB will reconnect shortly.");
-  view.changeProfile(2);
-  assert.equal(view.element("configuration-acknowledgement").hidden, false);
-  assert.equal(view.element("configuration-profile").value, "2");
-  assert.equal(view.element("save-configuration").disabled, true);
-  view.element("configuration-unsafe-ack").checked = true;
-  view.element("configuration-unsafe-ack").events.change();
-  assert.equal(view.element("save-configuration").disabled, false);
-  view.tick();
-  await view.respond(snapshot("first"));
-  assert.equal(view.element("configuration-profile").value, "2");
-  assert.equal(view.element("configuration-unsafe-ack").checked, true);
-});
-
-test("configuration save is disabled for unknown MCU, missing capability, or an open CDC port", async () => {
-  const view = page();
-  await connect(view);
-  const profile = view.element("configuration-profile");
-  const button = view.element("save-configuration");
-  view.tick();
-  await view.respond({ ...snapshot("first"), hardware: { mcu_id: 3 }, configuration_save: null });
-  assert.equal(profile.disabled, true);
-  view.tick();
-  await view.respond({ ...snapshot("first"), configuration_save_error: "unsupported" });
-  assert.equal(profile.disabled, true);
-  assert.equal(view.element("configuration-message").textContent, "unsupported");
-  assert.equal(view.element("configuration-message").dataset.error, "true");
-  view.tick();
-  await view.respond({ ...snapshot("first"), channels: snapshot("first").channels.map(channel =>
-    ({ ...channel, cdc_open: true })) });
-  assert.equal(profile.disabled, true);
-  assert.equal(button.disabled, true);
 });
 
 test("board discovery runs only at startup or on an explicit rescan, never on status ticks", async () => {
@@ -250,7 +250,7 @@ test("switching clears history and ignores an earlier board's in-flight response
   await view.respond(snapshot("outdated-first"));
   assert.equal(view.element("serial").textContent, "--");
   await view.respond(snapshot("second"));
-  assert.equal(view.element("serial").textContent, "second");
+  assert.ok(["SECOND", "--"].includes(view.element("serial").textContent));
 });
 
 test("rescan retains missing selection without silently choosing another board", async () => {

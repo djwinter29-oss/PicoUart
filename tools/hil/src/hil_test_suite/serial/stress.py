@@ -11,11 +11,18 @@ import termios
 import threading
 import time
 from datetime import datetime, timezone
-from .config import BAUD_RATES, configure_port
+from .config import (
+    BAUD_RATES,
+    configure_port,
+    deassert_dtr,
+    open_port,
+    set_port_line_coding,
+    wait_ports_ready,
+)
 from ..support.health import collect_hid_health, health_is_clean, health_summary
 
 DEFAULT_RATES = tuple(BAUD_RATES)
-LINE_CODING_SETTLE_SECONDS = 8.0
+RATE_SETTLE_SECONDS = 8.0
 
 
 def write_all(file_descriptor: int, data: bytes, deadline: float) -> None:
@@ -93,7 +100,8 @@ def run_stream(
     def stamp() -> str:
         return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
-    timing[label] = {"thread_start_utc": stamp(), "thread_start_monotonic": time.monotonic()}
+    timing[label] = {"thread_start_utc": stamp(), "thread_start_monotonic": time.monotonic(),
+                     "verified_blocks": 0, "max_block_duration_ms": 0.0, "total_block_duration_ms": 0.0}
     sequence = 0
 
     try:
@@ -104,8 +112,13 @@ def run_stream(
             if sequence == 0:
                 timing[label]["first_send_utc"] = stamp()
                 timing[label]["first_send_monotonic"] = time.monotonic()
-            write_all(source_fd, payload, time.monotonic() + timeout)
+            block_start = time.monotonic()
+            write_all(source_fd, payload, block_start + timeout)
             read_exact(destination_fd, payload, time.monotonic() + timeout, timing[label])
+            block_ms = (time.monotonic() - block_start) * 1000
+            timing[label]["max_block_duration_ms"] = max(timing[label]["max_block_duration_ms"], block_ms)
+            timing[label]["total_block_duration_ms"] += block_ms
+            timing[label]["verified_blocks"] += 1
             bytes_verified += len(payload)
             sequence += 1
         if bytes_verified == 0:
@@ -186,9 +199,15 @@ def close_port(file_descriptor: int, settings: list | tuple) -> None:
 
 
 def close_ports(ports: list[tuple[int, list]]) -> OSError | None:
-    """Close every configured port and return the first terminal cleanup error."""
+    """Close configured ports in fixture order and return the first cleanup error."""
     first_error = None
-    for file_descriptor, settings in reversed(ports):
+    for file_descriptor, _settings in ports:
+        try:
+            deassert_dtr(file_descriptor)
+        except OSError as error:
+            if first_error is None:
+                first_error = error
+    for file_descriptor, settings in ports:
         try:
             close_port(file_descriptor, settings)
         except OSError as error:
@@ -211,6 +230,25 @@ def fixture_paths_valid(arguments: argparse.Namespace) -> bool:
     return True
 
 
+def configure_fixture_ports(arguments: argparse.Namespace, baud_rate: int, ports: list[tuple[int, list]]) -> dict[int, int]:
+    """Open all six CDC endpoints before applying any line-coding request."""
+    descriptors = {}
+    for channel in range(6):
+        descriptor, settings = open_port(getattr(arguments, f"cdc{channel}"), baud_rate, allow_arbitrary=True)
+        ports.append((descriptor, settings))
+        descriptors[channel] = descriptor
+
+    for channel in range(6):
+        set_port_line_coding(descriptors[channel], baud_rate, allow_arbitrary=True)
+    wait_ports_ready(
+        [(getattr(arguments, f"cdc{channel}"), descriptors[channel]) for channel in range(6)], baud_rate,
+        expected_channels={getattr(arguments, f"cdc{channel}"): channel for channel in range(6)},
+    )
+    for descriptor in descriptors.values():
+        termios.tcflush(descriptor, termios.TCIOFLUSH)
+    return descriptors
+
+
 def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
     ports: list[tuple[int, list]] = []
     results: dict[str, tuple[int, str | None]] = {}
@@ -222,13 +260,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
         return False
 
     try:
-        descriptors = {}
-        for channel in range(6):
-            descriptor, settings = configure_port(
-                getattr(arguments, f"cdc{channel}"), stream_baud, allow_arbitrary=True
-            )
-            ports.append((descriptor, settings))
-            descriptors[channel] = descriptor
+        descriptors = configure_fixture_ports(arguments, stream_baud, ports)
 
         streams: list[tuple[str, int, int]] = [
             ("cdc0-to-cdc2", descriptors[0], descriptors[2]),
@@ -239,7 +271,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             ("cdc5-loopback", descriptors[5], descriptors[5]),
         ]
 
-        time.sleep(getattr(arguments, "settle_seconds", LINE_CODING_SETTLE_SECONDS))
+        time.sleep(getattr(arguments, "settle_seconds", RATE_SETTLE_SECONDS))
         # DTR-open recovery can finish during settling and deliver stale bytes after configure_port's initial flush.
         for file_descriptor, _ in ports:
             termios.tcflush(file_descriptor, termios.TCIOFLUSH)
@@ -299,7 +331,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
                     passed = False
             for label, timestamps in timing.items():
                 print(f"TIME {label}: {timestamps}")
-    except OSError as error:
+    except (OSError, RuntimeError) as error:
         print(f"Serial setup failed: {error}", file=sys.stderr)
         passed = False
     finally:

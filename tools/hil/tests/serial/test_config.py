@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import struct
 import sys
 from pathlib import Path
 
@@ -35,6 +36,44 @@ def test_configure_port_sets_and_verifies_standard_baud(monkeypatch):
     assert original[4:6] == [serial_port.termios.B9600, serial_port.termios.B9600]
     assert current[4:6] == [serial_port.termios.B115200, serial_port.termios.B115200]
     assert closes == []
+
+
+def test_configure_port_waits_for_readiness_after_line_coding(monkeypatch):
+    serial_port = _load_serial_config()
+    events = []
+    current = [0, 0, 0, 0, serial_port.termios.B9600, serial_port.termios.B9600, [0] * 32]
+    monkeypatch.setattr(serial_port.os, "open", lambda *_args: events.append("open") or 17)
+    monkeypatch.setattr(serial_port.os, "close", lambda *_args: None)
+    monkeypatch.setattr(serial_port.termios, "tcgetattr", lambda _fd: current.copy())
+    monkeypatch.setattr(
+        serial_port.termios,
+        "tcsetattr",
+        lambda _fd, _when, settings: (events.append("line coding"), current.__setitem__(slice(None), settings)),
+    )
+    monkeypatch.setattr(serial_port, "verify_line_speed", lambda *_args: events.append("verify"))
+    monkeypatch.setattr(serial_port, "wait_ports_ready", lambda *_args, **_kwargs: events.append("ready"))
+    monkeypatch.setattr(serial_port, "time", type("Clock", (), {"sleep": lambda seconds: events.append(seconds)}))
+    monkeypatch.setattr(serial_port.termios, "tcflush", lambda *_args: events.append("flush"))
+
+    serial_port.configure_port("/dev/fake", 115200)
+
+    assert events == [
+        "open",
+        "line coding",
+        "verify",
+        "ready",
+        "flush",
+    ]
+
+
+def test_deassert_dtr_clears_modem_bit(monkeypatch):
+    serial_port = _load_serial_config()
+    calls = []
+    monkeypatch.setattr(serial_port.fcntl, "ioctl", lambda *arguments: calls.append(arguments))
+
+    serial_port.deassert_dtr(17)
+
+    assert calls == [(17, serial_port.termios.TIOCMBIC, struct.pack("I", serial_port.termios.TIOCM_DTR))]
 
 
 def test_configure_port_closes_if_readback_does_not_match(monkeypatch):
@@ -145,3 +184,72 @@ def test_verify_line_speed_accepts_readback_within_fifty_percent(monkeypatch):
     monkeypatch.setattr(serial_port.termios, "tcgetattr", lambda _fd: settings)
 
     serial_port.verify_line_speed(17, 1000000)
+
+
+def test_readiness_requires_an_identified_pico(monkeypatch):
+    serial_port = _load_serial_config()
+    monkeypatch.setattr(serial_port, "pico_uart_endpoint", lambda _path: None)
+    with pytest.raises(OSError, match="no PicoUart"):
+        serial_port.wait_ports_ready([("/dev/peer", 17)], 115200)
+
+
+def test_readiness_groups_and_selects_the_matching_board(monkeypatch):
+    import pico_uart
+    serial_port = _load_serial_config()
+    events = []
+    endpoints = {"pico0": ("SERIAL-A", 0), "pico2": ("SERIAL-A", 2), "peer": None}
+    monkeypatch.setattr(serial_port, "pico_uart_endpoint", endpoints.get)
+    monkeypatch.setattr(serial_port.fcntl, "ioctl", lambda *args: events.append(("dtr", args[0])))
+    class Board:
+        def __init__(self, serial_number):
+            events.append(("select", serial_number))
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            events.append(("close",))
+        def wait_channels_ready(self, channels, timeout_s):
+            assert 0 < timeout_s <= 3
+            events.append(("ready", channels))
+    monkeypatch.setattr(pico_uart, "PicoUartHid", Board)
+    serial_port.wait_ports_ready([("pico0", 17), ("peer", 18), ("pico2", 19)], 115200)
+    assert events == [("dtr", 17), ("dtr", 19), ("select", "SERIAL-A"),
+                      ("ready", {0: 115200, 2: 115200}), ("close",)]
+
+
+def test_readiness_rejects_duplicate_channels(monkeypatch):
+    serial_port = _load_serial_config()
+    monkeypatch.setattr(serial_port, "pico_uart_endpoint", lambda _path: ("SERIAL-A", 0))
+    with pytest.raises(ValueError, match="duplicate"):
+        serial_port.wait_ports_ready([("pico0", 17), ("alias", 18)], 115200)
+
+
+@pytest.mark.parametrize("endpoints, message", [
+    ({"cdc0": ("BOARD-A", 0), "cdc1": None}, "not PicoUart"),
+    ({"cdc0": ("BOARD-A", 1), "cdc1": ("BOARD-A", 0)}, "expected CDC"),
+    ({"cdc0": ("BOARD-A", 0), "cdc1": ("BOARD-B", 1)}, "one PicoUart"),
+])
+def test_fixture_readiness_rejects_unidentified_swapped_or_mixed_board_endpoints(monkeypatch, endpoints, message):
+    serial_port = _load_serial_config()
+    monkeypatch.setattr(serial_port, "pico_uart_endpoint", endpoints.get)
+    monkeypatch.setattr(serial_port.fcntl, "ioctl", lambda *_args: pytest.fail("DTR asserted before validation"))
+    with pytest.raises(OSError, match=message):
+        serial_port.wait_ports_ready([("cdc0", 17), ("cdc1", 18)], 115200,
+                                    expected_channels={"cdc0": 0, "cdc1": 1})
+
+
+@pytest.mark.parametrize("vendor, interface_number, expected", [("cafe", "04", ("BOARD-SERIAL", 2)),
+                                                               ("1234", "04", None)])
+def test_pico_endpoint_uses_usb_interface_not_tty_ordinal(monkeypatch, tmp_path, vendor, interface_number, expected):
+    serial_port = _load_serial_config()
+    usb = tmp_path / "usb-device"
+    interface = usb / "interface"
+    interface.mkdir(parents=True)
+    (usb / "idVendor").write_text(vendor)
+    (usb / "idProduct").write_text("4010")
+    (usb / "serial").write_text("BOARD-SERIAL\n")
+    (interface / "bInterfaceNumber").write_text(interface_number)
+    tty = tmp_path / "tty" / "ttyACM7"
+    tty.mkdir(parents=True)
+    (tty / "device").symlink_to(interface, target_is_directory=True)
+    monkeypatch.setattr(serial_port, "Path", lambda path: tmp_path / "tty" if path == "/sys/class/tty" else Path(path))
+    assert serial_port.pico_uart_endpoint("/dev/ttyACM7") == expected

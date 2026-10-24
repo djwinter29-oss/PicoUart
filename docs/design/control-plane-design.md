@@ -51,6 +51,8 @@ sequenceDiagram
 
 CDC hosts cannot rely on the USB control transfer result alone. TinyUSB may have already completed the request before
 firmware applies or rejects it. Hosts must watch HID health bit 2 (`control_error`) and bit 3 (`control_pending`).
+Permanent rejection reasons distinguish malformed framing from clock-infeasible baud. PIO rejects non-8N1 framing;
+hardware UARTs do not report valid non-8N1 framing as the cause of a baud-divider rejection.
 
 ## Ownership States
 
@@ -61,6 +63,24 @@ bytes. Clear it only after all owners have completed; a newer reject must not un
 
 Mailbox acknowledgement releases the slot, not the worker's deferred apply. Backend reconfiguration can still be
 pending after the mailbox becomes empty.
+
+The owners below are independent, not mutually exclusive states: a newer request may wait while an older request is
+still worker-owned. The table describes transitions, not a replacement for the generation and locking rules.
+
+| Event | Ownership transition | Required ordering and result |
+| --- | --- | --- |
+| Valid CDC request | Core 0 retains soft-pending ownership | Publish the new generation and pending status; block new TX ingress. Closed ports defer without consuming the staging timeout. |
+| Mailbox submission | Soft-pending to mailbox ownership | Publish settings, generation, and captured TX boundary before releasing soft-pending ownership. |
+| Worker takes mailbox | Mailbox to worker ownership | Acknowledge and register worker ownership in one status-lock hold; never expose an ownerless pending interval. |
+| Deferred apply | Worker retains ownership | Drain the captured old-format TX boundary, require backend quiescence, and check the apply deadline before touching hardware. |
+| Completion or timeout | Release the completing owner only | Publish applied metadata on success; clear pending only when no owner remains. Update error status only for the current generation. |
+| Newer rejected request | Existing owners remain | Advance the generation and report error; an older valid apply may finish but cannot erase the newer error. |
+| DTR close or USB session loss | Invalidate old-session ownership | Stop ingress, quiesce USB, then let the worker stop the backend and cancel old work. Preserve newer reopened requests. |
+
+Native coverage lives in [control-plane tests](../../firmware/tests/test_control_plane.c),
+[CDC callback tests](../../firmware/tests/test_usb_cdc.c), and the real CDC/driver/control integration target in
+[facade tests](../../firmware/tests/test_uart_driver_facade.c). These inject handoff and lifecycle boundaries but do not
+simulate concurrent cores or physical USB reset timing.
 
 ## Generations and Stale Completions
 
@@ -74,17 +94,51 @@ erase the newer error.
 ## Timeouts
 
 Soft-pending and worker application use separate bounded per-port deadlines; one busy port does not consume another
-port's timeout. Repeating the same request does not extend its deadline indefinitely, while a distinct replacement gets
-a new deadline. Timeout reports `CONTROL_ERROR`; the configured duration is maintained in the control-plane
-implementation.
+port's timeout. A valid request received while DTR is low remains deferred without consuming the mailbox timeout.
+For startup, staging becomes eligible after the old stop handshake completes; hardware need not be active yet. Live
+changes wait for backend readiness before mailbox submission. Repeating the
+same eligible request does not extend its deadline indefinitely; a distinct replacement gets a new deadline. Timeout
+reports `CONTROL_ERROR`; the configured duration is maintained in the control-plane implementation.
 
 ## USB Mount and Unmount Reset
 
 USB mount and unmount clear host-facing CDC state, cancel soft-pending requests, and reset HID scheduling and reset-arm
-state. Canceled requests must not later produce timeout errors. Separately, a CDC DTR closed-to-open edge requests a
-per-port buffered-channel reset: USB core clears that interface's CDC FIFOs and pauses its bridge, then the UART worker
-restarts only that backend. The reset discards queued bytes, preserves applied line coding and cumulative counters, and
-does not reboot the board. Any new line-coding request is applied after the reset completes.
+state and stop backends belonging to old sessions. Polling detects lost TinyUSB mounted state because bus reset need
+not invoke the unmount callback; remount cleanup also works without a prior unmount. Canceled requests must not later
+produce timeout errors. Separately, a CDC DTR open-to-closed edge requests a
+per-port close: USB core clears that interface's CDC FIFOs and pauses its bridge, then the UART worker deinitializes
+only that backend. Queued bytes are discarded; applied line coding and cumulative counters are preserved, and the board
+does not reboot. On the next open, the worker starts that backend and applies any deferred line-coding request before
+the bridge resumes. Initial line coding is staged through the normal mailbox before the start request, so the worker
+seeds baud/framing while stopped and enables the receiver using those settings, not the previous session's format.
+
+## Lifecycle Invariants
+
+- USB core owns DTR and byte admission. An old USB session loses ownership on close, unplug, bus reset, or remount.
+- UART worker alone starts/stops backends. Stop completion requires USB quiescence; a newer lifecycle request wins.
+- Mailbox take and worker ownership are atomic under the status lock, for startup as well as live changes.
+- `READY` means the backend is active and its applied baud/framing metadata agrees with hardware. Startup failure
+  leaves `READY` clear and prior applied metadata intact; a retry seeds a complete known configuration.
+- USB startup admission progresses from `START_PENDING` through `STARTING` to `RUNNING`. Initial control errors or
+  pending settings block both directions; live reconfiguration retains RX draining while TX ingress is blocked.
+- Backend caches on stopped instances are staged values, not independently authoritative applied telemetry.
+- The HID readiness deadline includes shared-lock acquisition and feature reads. Lock/transport failure cannot return
+  success or leak the lock.
+
+Close invalidates older control generations. Worker close completion preserves control requests received after reopen,
+and a start completion cannot overwrite a newer close/open request or clear a newer control error. Each open makes one
+backend start attempt; failure publishes `INIT_FAILED` instead of retrying indefinitely and blocking other ports' control
+processing. Close and reopen to retry. Startup is serviced on the next worker sweep without a fixed DTR debounce,
+cross-channel barrier, or fixture-specific startup order. Closed backends park TX idle-high, including hardware-UART
+configuration-failure cleanup. Control service skips channels without `READY`, and idle channels avoid a second lock
+pass and telemetry sequence-counter updates. One channel's startup or close cannot hold another channel's configuration.
+
+CDC callbacks remain asynchronous. POSIX TTY `open()` does not guarantee backend initialization or applied line coding.
+After opening and configuring a group, hosts can use Python `wait_channels_ready()` on the matching HID device to wait
+for `READY`, DTR open, no `CONTROL_PENDING`, no current initialization/configuration error, and applied 8N1 settings
+within 3% of the requested baud. The wait uses a shared deadline (3 seconds by default), reports current errors
+immediately, propagates transport failures, and raises `TimeoutError` if readiness or matching settings never arrive.
+Historical fault counters are not current configuration failures and do not by themselves fail this handshake.
 
 ## Host-Visible Rules
 
@@ -96,7 +150,11 @@ does not reboot the board. Any new line-coding request is applied after the rese
 
 ## Test Coverage
 
-Host tests cover mailbox ownership, deadlines, stale completions, and TX blocking, including modeled cancellation and
-deadline-reset behavior for USB lifecycle events. These checks do not establish real TinyUSB bus lifecycle behavior,
-backend quiescence, or physical timing under load; those require hardware validation. See the
+Host tests cover mailbox ownership, deadlines, stale completions, and TX blocking. CDC integration tests execute the
+production callbacks with simulated time and UART/TinyUSB calls: delayed closed configuration, startup readiness,
+identical retries, replacement requests, close/reopen, disconnect, and stale errors. A separate integrated build of the
+existing facade harness links real CDC, driver, mailbox, and control-plane code against mocked backend/SDK edges; it
+checks framing metadata before RX admission, startup failure followed by a mailbox-free retry, board-default startup,
+and USB reset discarding old RX. These checks do not establish real
+USB bus behavior, backend quiescence, or physical timing under load; those require hardware validation. See the
 [HIL fixture plan](../tests/hil-fixture-test-plan.md).

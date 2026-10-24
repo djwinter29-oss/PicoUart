@@ -82,21 +82,21 @@ void pio_uart_driver_poll(void *context, bool tx_launch_allowed);
 void pio_uart_driver_deinit(void *context);
 
 /**
- * @brief Restart one initialized PIO UART and discard its queued bytes.
+ * @brief Stop and start one bound PIO UART, discarding its queued bytes.
  * @param context PIO UART runtime instance.
- * @return `true` when the state machines and DMA resources were reinitialized.
+ * @return `true` when the state machines and DMA resources were initialized again.
  *
  * The UART worker must own the instance and both bridge sides must be quiesced.
  * Applied line coding and cumulative counters are preserved.
  */
-bool pio_uart_driver_reset_buffers(void *context);
+bool pio_uart_driver_restart(void *context);
 
 /**
  * @brief Drop bring-up framing faults before the UART worker starts polling.
  * @param context Driver instance whose startup RX errors should be discarded.
  *
- * Clears a sticky PIO RX stop-bit interrupt without counting it, then zeroes
- * the session framing counter. The first worker poll would otherwise report pin bring-up noise as HID health bit 7.
+ * Clears a sticky PIO RX stop-bit interrupt without counting pin bring-up noise.
+ * Previously observed framing errors remain in the boot-lifetime counter across restarts.
  */
 void pio_uart_driver_clear_rx_error_baseline(void *context);
 

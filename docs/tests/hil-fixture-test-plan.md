@@ -77,6 +77,20 @@ process comma-separated rates sequentially in one process; they reopen and recon
 interval before testing each rate. After settling, the runner flushes all host TTY queues so bytes arriving during
 CDC re-enumeration or DTR-triggered channel reset cannot contaminate the next rate's first payload.
 
+For each paired functional test, the bridge runner opens both endpoints before applying either line coding. For each
+concurrent rate, the stress runner opens all six CDC endpoints first. Identified PicoUart endpoints hold DTR low during
+configuration. Setup applies line coding without fixed setup sleeps, then asserts DTR for the configured group and
+requires a bounded HID readiness handshake before returning descriptors or transmitting. Linux sysfs associates each
+selected TTY with its USB serial number and CDC interface. The six-port runner requires every endpoint to match its
+declared CDC index on the same board; unidentified, swapped, duplicate, or mixed-board endpoints fail setup before
+group DTR assertion. Paired bridge tests still permit a generic external UART peer. HID auto-discovery of an unrelated
+board is not used for readiness.
+The handshake contract and timeout are defined in [Control Plane Design](../design/control-plane-design.md#usb-mount-and-unmount-reset).
+Failure closes all opened endpoints and prevents payload transmission. After traffic, closing deinitializes each
+backend; teardown deasserts DTR before restoring saved TTY settings. The runner then retains the configured rate-settle
+interval (8 seconds by default) and flushes once more before health sampling or traffic. These delays are setup time,
+not time removed from the payload duration, and are not a substitute for readiness verification.
+
 The standalone performance runner and combined runner default to this concurrent six-port sweep, in order:
 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, and 3000000 baud. The default sweep
 does not test above 3 Mbaud. Use `--rates` to select a different list. Concurrent sweeps stop at the first failed
@@ -85,8 +99,18 @@ rate; later configured rates are reported as `NOT RUN`, not as failures or missi
 The standalone performance workflow and combined runner require clean HID health before and after each rate,
 including unchanged overrun counts. A health failure blocks traffic or fails the completed rate even if payload
 verification passed. Raw `stress` invocations opt into these same checks with `--check-hid-health`.
+Health collection uses the host API's non-consuming per-channel Feature snapshots and diagnostics, not console
+monitor text. Every channel must be closed or ready with current diagnostics and zero recorded RX/configuration
+faults; missing reports and HID failures block acceptance. Raw diagnostics, including buffer peaks, are retained.
+Transient stale diagnostic captures receive bounded per-channel retries; an exhausted retry remains an explicit
+health-query failure, not a clean sample. Retained per-rate summaries include measurement validity and fault history.
 Each rate reopens the endpoints, configures line coding, settles, flushes host TTY queues, and then collects its health
 baseline.
+
+For controlled budget/threshold experiments, use the
+[optional timing-profile procedure](../development/firmware-testing.md#optional-timing-profiles). Keep one variable
+different per variant and preserve the ordinary uninstrumented HIL gate. Dated results and limits are recorded in the
+[session/tuning check](records/2026-10-22-cdc-uart-session-validation.md), not as universal baud or timing guarantees.
 After a failure, reset or reflash the intended image and verify clean health before running a different rate in
 a separate invocation. Do not interpret later measurements from older continue-after-failure sweeps as isolated
 clean-start results. The runners never reset, reflash, or change regulator voltage automatically.
@@ -182,6 +206,21 @@ intentional phase-only checks; the combined record is then `PARTIAL`, even if th
 Likewise, a single-stage functional success is not a full-fixture pass. Inspect the recorded scope and result, not only
 the process exit code. Continue-after-failure options are diagnostic, not a way to qualify a failed run.
 
+### Six-Port Ceiling Search
+
+When the goal is to find the highest tested rate that passes on all six ports, use the same combined command with
+`--incremental-performance` instead of `--rates`. Start at a recently verified all-stream passing rate, choose a
+practical step and maximum for the board/clock, and refine the passing/failing bracket with a smaller step if needed.
+Each rate includes the configured settling period, so keep the duration and sweep size practical.
+
+The runner stops at the first boundary rate where actual traffic fails. The run is an overall `PASS` for ceiling
+measurement only if initial HID health is clean, every lower attempted rate passed on every stream, all six streams
+were attempted at the boundary, and final HID sampling succeeded. The boundary row remains `FAIL` and the record says the failure was
+expected for the search; report the highest passing tested rate and first failed tested rate. Do not claim an exact
+hardware limit or label the overall record `FAIL` for that expected boundary. A dirty HID check before traffic,
+serial-setup failure, missing stream outcome, or failure at the first tested rate means no ceiling was measured and
+must remain an overall `FAIL`.
+
 The benchmark prints one `TIME <label>: {...}` line per stream with host thread-start, first-send-attempt, and
 first-nonempty-read UTC and monotonic timestamps. These are not wire-level first-byte times and are not parsed by
 `pico-uart-hil performance`. `--duration` stops starting new blocks; the last in-flight block can finish afterward. A
@@ -205,7 +244,143 @@ runs.
 
 Record every tested rate, including failures. A rate is stable only if every direction and stream passes repeatedly.
 Full-speed USB bandwidth limits aggregate throughput; a concurrent failure does not by itself establish a single-UART
-baud limit. A data mismatch, unexplained loss, unexpected reset, persistent disconnect, or new RX error is a failure.
+baud limit. A data mismatch, unexplained loss, unexpected reset, persistent disconnect, or new RX error is a failure in
+a normal fixed-rate qualification run. During a ceiling search, such a failure at the first boundary rate is the expected
+stopping observation only when every lower rate passed and boundary traffic was actually attempted; retain and report
+the failed row and health evidence.
+
+## Concurrent Recovery And Profiling Coverage
+
+The normal performance sweep verifies USB-paced payloads; it does not by itself exercise the cases below. Run these
+as separate, explicitly authorized fixture procedures after flashing the exact image. Use bounded timeouts and record
+the board identity, artifact hash, rate, payload/burst size, stall duration, affected channels, and HID samples.
+These procedures are not automated by the normal performance runner.
+
+| Case | Exercise | Acceptance and evidence |
+| --- | --- | --- |
+| All six channels loaded | Run the concurrent fixture and collect both cores' service load, block latency, ring peaks, and faults during traffic; use optional timing instrumentation for service gaps. | Every stream verifies payloads with no new loss/errors at the qualified load. Retain uninstrumented acceptance separately; host pacing is not proof of wire saturation. |
+| Host drain stalled | With a bounded independently paced fixture source, pause host reads on one RX channel while the other channels continue; resume before the chosen capacity budget, then test a separate intentional-overflow interval. | Within budget, verify ordered bytes without loss. Beyond budget, require visible dropped-byte accounting and recovery, not lossless delivery; unaffected channels continue without new faults. |
+| TX backpressure | Pause a fixture peer with supported CTS in a separately qualified flow-control variant while host OUT writes fill the channel; then resume the peer. | Host writes block or time out explicitly rather than silently losing bytes; admitted bytes remain ordered and other channels continue. Without a supported fixture variant, mark this case not run. |
+| Close/reopen during traffic | Close one active channel while the other streams run, then reopen it with staged settings and require HID readiness before sending a fresh, distinguishable marker. | Do not require delivery of deliberately discarded queued bytes. No old-session payload may contaminate the fresh stream; applied settings match and unaffected channels keep passing. |
+| Session loss with pending control | Keep a supported line-coding request pending using an authorized controlled busy condition, confirm pending through HID, then unplug or issue a targeted USB bus reset. | Old handles terminate or time out explicitly; after remount all old sessions are closed. Reopen, verify applied settings and a fresh marker, and check that canceled work produces no late timeout. Repeat with all six channels active. |
+| Concurrent configuration | Repeatedly change supported settings on other channels while an independently paced channel receives verified traffic. Coordinate both ends of changed links. | Record maximum unaffected-port service gap and both cores' maximum pass times, not just average throughput. Require bounded completion or explicit timeout and no new faults on the unaffected stream. |
+
+For line-coding experiments on crossed pairs, coordinate both ends or use an independent fixture peer; a deliberate
+framing mismatch is not an unexplained bridge failure. USB disconnect/reset affects the whole device, so other streams
+are expected to terminate in that case. Do not send reset commands or change connections on unrelated devices.
+If a pending window cannot be established and observed, report that case as not tested rather than claiming coverage
+from an ordinary reset. Preserve intentional overflow results separately from clean-health fixed-rate acceptance.
+
+Use the [buffer measurement procedure](../development/firmware-testing.md#buffer-capacity-measurement) before changing
+capacities and the [timing-profile procedure](../development/firmware-testing.md#optional-timing-profiles) before changing
+service budgets. Existing short-run evidence is in the
+[session/tuning record](records/2026-10-22-cdc-uart-session-validation.md); it does not establish every recovery case
+above or qualify the newly built image.
+
+### Optimization Acceptance
+
+Compare baseline and candidate images on both board targets with the same clock, wiring, payload sizes, rates,
+durations, and host. Flash and identify each image separately. Change one policy at a time, repeat the baseline to
+estimate variation, and retain hashes and raw samples. Include small-payload round trips as well as six-stream
+throughput, maximum service gaps, ring peaks, fault deltas, and configuration/reopen behavior. Instrumentation changes
+timing; repeat payload acceptance on uninstrumented firmware.
+
+Keep current TX idle/FIFO admission gates, CDC bridge budgets, and PIO DMA thresholds unless a candidate demonstrates
+a repeatable improvement beyond baseline variation without correctness regressions. TX pipelining must additionally
+preserve CTS stalls, byte ordering, old-format boundary drain, and physical shifter-idle checks before reconfiguration.
+Native lock-count regressions prove reduced software work, not an on-wire throughput or latency improvement.
+Without authorized hardware testing, these experiments remain pending and no performance improvement is qualified.
+
+## Repeatable Recovery Checks
+
+After flashing and verifying the selected image, use the existing CDC1 and CDC5 loopbacks for bounded development
+regressions. Close all six CDC sessions first. The command validates both Linux sysfs endpoint identities against the
+explicit USB serial before opening either port. It never resets or flashes the board:
+
+```sh
+tools/hil/.venv/bin/pico-uart-hil recovery \
+  --serial <usb-serial> --cdc1 /dev/serial/by-id/<cdc1> --cdc5 /dev/serial/by-id/<cdc5> \
+  --artifact /path/to/flashed/pico_uart.elf --output build/recovery.json
+```
+
+The default `--mode all` runs configuration churn with sibling payload verification, five close/reopen cycles with
+distinct old/fresh payloads, a 2048-byte read stall with sibling traffic for at least 250 ms, then an intentional
+16384-byte overflow with sibling traffic for at least two seconds. `--mode churn|reopen|stall|overflow` selects one.
+Serial payload operations have bounded phase deadlines. HID and host serial setup still depend on OS device calls;
+use an outer process deadline in unattended automation, as with the other serial runners.
+
+Acceptance requires verified payloads, current diagnostics, zero unexpected RX/configuration faults on all six ports,
+and successful endpoint teardown. During intentional overflow, only CDC1's drop counter may be nonzero: retained
+bytes plus drops must equal the transmitted input, retained bytes must be an ordered subsequence, fresh markers must
+pass after draining device backlog to quiescence, and recovery must cause no further drops. Host `tcflush` is not
+device-backlog recovery. Overflow deliberately leaves retained loss history; reflash before subsequent clean-health
+acceptance tests.
+
+The new JSON path is reserved before hardware access and never overwritten. Evidence retains the supplied ELF hash,
+live hardware/configuration/version, partial checks, diagnostics, and errors. These are USB-paced loopback tests, not
+external-source capacity or CTS qualification. Run the combined functional/performance acceptance separately.
+
+## Startup Observations
+
+Use a separate observation for each authorized cold-power-on, SWD reset, watchdog recovery, or USB reset:
+
+```sh
+tools/hil/.venv/bin/pico-uart-hil startup \
+  --serial <usb-serial> --event swd-reset --artifact /path/to/flashed/pico_uart.elf \
+  --timeout 20 --output build/startup-swd-01.json
+```
+
+By default this read-only command neither triggers the event nor opens CDC. For a reset, invoke it immediately after the
+independently performed event; for manual power-on, start observation before applying power. Record the event's
+actual time and method alongside the JSON. The event label is operator supplied, not proof of a reset.
+
+Each attempt has a subprocess timeout of at most two seconds or the remaining observation deadline. Errors, stderr,
+attempt start/end times, and successful hardware/configuration/runtime/channel snapshots are retained. `PASS` requires
+a positive live clock and all six channels closed throughout a 12-second observation window (`--stable-seconds`),
+within the overall deadline. After the first closed observation, a failed sample or an uptime discontinuity fails
+the run rather than retrying into success. Uptime advance from the first sample must match host elapsed time within
+one second, allowing 32-bit rollover; this detects observed resets/stalls, not every possible event between samples.
+It does not establish initial UART readiness, fault-free traffic, or the expected reset cause. Time is measured from
+observer startup, not the physical power/reset edge. A blocked or late HID attempt cannot turn a missed deadline
+into a pass.
+OS process creation/termination can add latency; this is not a hard real-time host deadline.
+
+Repeat each event type and retain failures as well as successes. Compare uptime/reset cause against elapsed time and
+the independently recorded event. Do not increase firmware sleeps or retry windows to conceal unexplained resets.
+Cold-start/SWD behavior remains unqualified until the event series and subsequent functional tests pass.
+
+To exercise worker startup rather than only observe closed channels, explicitly add
+`--cdc1 /dev/serial/by-id/<cdc1>` on the fixed HW UART1 loopback fixture. This option changes CDC settings and transmits
+UART data; it is not read-only. After the first valid closed-channel snapshot, a subprocess checks that the endpoint
+is CDC1 on the selected board, opens it at 115200 8N1, awaits the existing HID readiness contract, verifies a 154-byte
+loopback payload, and closes/restores the port. The probe runs once, with at most eight seconds or the remaining overall
+deadline; any probe error fails the observation immediately rather than retrying into success. The ordinary closed-state
+and uptime-stability observations must still pass afterward. Uptime comparisons use timestamps tied to the HID
+snapshots rather than probe completion, so a slow probe is not mistaken for a reset.
+
+Use this active variant for startup acceptance; a closed-only pass does not prove that UART worker admission works.
+Reserve the default passive variant for diagnosing enumeration or cases where UART transmission is not authorized.
+Probe failures retain stderr and partial snapshots. A subprocess deadline may interrupt teardown; on failure inspect
+the selected board and reflash before a separate physical test rather than assuming cleanup or a clean session.
+
+## Optimization Decision Gates
+
+Retain the [reviewed production policies](records/2026-10-23-uart-cdc-review-validation.md) unless a workload justifies
+another experiment. Do not merge HW/PIO ordering, cache lifecycle readiness, remove control generations, or replace
+DMA snapshot ownership checks merely to shorten source. Keep current buffer sizes, bridge budgets, and thresholds.
+
+If small-message PIO throughput matters, repeat the isolated FIFO-admission candidate using interleaved baseline and
+candidate images. As a proposed development gate, require at least 5% improvement in the declared target workload
+across at least five matched pairs, with no more than 5% regression in p99 or maximum host block latency, no
+payload/diagnostic faults, and passing session/configuration recovery. Record block-size/rate distributions and
+sample counts; the current benchmark's maximum/mean fields alone do not establish p99. Repeat on both boards before
+changing a shared default. Hardware TX pipelining additionally requires the CTS and shifter-idle gates above.
+These are experiment criteria, not claims that a candidate has passed them.
+
+Unresolved physical gates remain independently paced ingress during USB stalls/configuration churn, CTS behavior,
+RP2350 physical coverage, safe DMA re-arm/full-countdown endurance, and event-specific startup reliability. More
+USB-loopback runs cannot close them. Provision the required fixture/source and retain exact-artifact evidence under
+the [release matrix](../deployment/releasing.md#required-hil-matrix).
 
 ## Measured Six-Port Envelope
 

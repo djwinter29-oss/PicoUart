@@ -147,15 +147,44 @@ def test_incremental_report_shows_only_attempted_rates_and_highest_supported() -
             for label in streams
         )
     output = "\n".join(output_lines)
+    health_before = {
+        "channels": {index: "ready" for index in range(6)},
+        "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {index: {"uart_measurement_state": 1, "rx_overrun_count": 0,
+                               "rx_error_count": 0, "last_control_error_reason": 0} for index in range(6)},
+        "error": None,
+    }
+    health_after = {**health_before, "channels": {**health_before["channels"], 0: "error"}}
 
-    report = performance.format_result_entry(arguments, "2026-10-08T00:00:00+00:00", 0, output)
+    report = performance.format_result_entry(
+        arguments, "2026-10-08T00:00:00+00:00", 0, output, health_before, health_after
+    )
 
+    assert "**Result:** `PASS`" in report
+    assert "Ceiling search:** `PASS (boundary failure expected)`" in report
     assert "460800 | cdc0-to-cdc2 | PASS" in report
     assert "560800 | cdc0-to-cdc2 | PASS" in report
     assert "660800 | cdc0-to-cdc2 | FAIL" in report
-    assert "Highest supported concurrent rate:** `560800`" in report
+    assert "Highest passing tested concurrent rate:** `560800`" in report
     assert "First failed tested rate:** `660800`" in report
     assert "760800" not in report
+
+
+def test_incremental_pre_rate_health_abort_is_not_a_ceiling() -> None:
+    performance = _load_performance()
+    arguments = SimpleNamespace(incremental=True)
+    labels = [
+        "cdc0-to-cdc2", "cdc2-to-cdc0", "cdc3-to-cdc4", "cdc4-to-cdc3", "cdc1-loopback", "cdc5-loopback",
+    ]
+    output_lines = ["Incremental rate: 115200 baud", "Benchmarking all six HIL fixture streams at 115200 baud"]
+    output_lines.extend(f"PASS {label}: 100 bytes, 20.0 B/s" for label in labels)
+    output_lines.extend(["Incremental rate: 128000 baud", "Benchmarking all six HIL fixture streams at 128000 baud"])
+    output_lines.extend(f"FAIL {label}: HID health not clean before rate; no traffic sent" for label in labels)
+    clean = {"channels": {index: "ready" for index in range(6)}, "overruns": {index: 0 for index in range(6)}}
+
+    assert not performance.incremental_ceiling_found(
+        arguments, 0, "\n".join(output_lines), clean, clean
+    )
 
 
 def test_report_marks_unattempted_rates_and_preserves_rate_health() -> None:
@@ -190,8 +219,10 @@ def test_main_combines_benchmark_and_health_status(monkeypatch, command_status, 
     arguments.artifact = None
     arguments.no_record = True
     clean = {
-        "channels": {index: 1 for index in range(6)},
+        "channels": {index: "ready" for index in range(6)},
         "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {index: {"uart_measurement_state": 1, "rx_overrun_count": 0,
+                               "rx_error_count": 0, "last_control_error_reason": 0} for index in range(6)},
         "firmware_version": "1.2.3",
         "error": None,
     }
@@ -209,3 +240,51 @@ def test_main_combines_benchmark_and_health_status(monkeypatch, command_status, 
     )
 
     assert performance.main(arguments) == expected
+
+
+def test_main_accepts_expected_incremental_boundary_failure(monkeypatch, capsys) -> None:
+    performance = _load_performance()
+    endpoints = [item for channel in range(6) for item in (f"--cdc{channel}", f"cdc{channel}")]
+    arguments = performance.parse_arguments(endpoints + ["--incremental"])
+    arguments.board = "pico"
+    arguments.firmware_version = "1.2.3"
+    arguments.firmware_commit = "abc1234"
+    arguments.no_record = True
+    clean = {
+        "channels": {index: "ready" for index in range(6)},
+        "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {index: {"uart_measurement_state": 1, "rx_overrun_count": 0,
+                               "rx_error_count": 0, "last_control_error_reason": 0} for index in range(6)},
+        "firmware_version": "1.2.3",
+        "error": None,
+    }
+    boundary_health = {**clean, "channels": {**clean["channels"], 0: "error"}}
+    labels = [
+        "cdc0-to-cdc2", "cdc2-to-cdc0", "cdc3-to-cdc4", "cdc4-to-cdc3", "cdc1-loopback", "cdc5-loopback",
+    ]
+    output_lines = []
+    for rate, status in ((115200, "PASS"), (128000, "FAIL")):
+        output_lines.extend(
+            [f"Incremental rate: {rate} baud", f"Benchmarking all six HIL fixture streams at {rate} baud"]
+        )
+        output_lines.extend(
+            f"PASS {label}: 100 bytes, 20.0 B/s"
+            if status == "PASS"
+            else f"FAIL {label}: received 0 of 1024 bytes"
+            for label in labels
+        )
+    output = "\n".join(output_lines)
+    snapshots = iter([clean, boundary_health])
+    monkeypatch.setattr(performance, "artifact_metadata", lambda _artifact: {"path": "none", "sha256": "none"})
+    monkeypatch.setattr(performance, "git_metadata", lambda: ("commit", "clean"))
+    monkeypatch.setattr(performance, "build_command", lambda _arguments: ["stress"])
+    monkeypatch.setattr(performance, "collect_hid_health", lambda: next(snapshots))
+    monkeypatch.setattr(performance, "health_evidence", lambda _snapshot: "")
+    monkeypatch.setattr(
+        performance.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout=output),
+    )
+
+    assert performance.main(arguments) == 0
+    assert "CEILING SEARCH PASS:" in capsys.readouterr().out

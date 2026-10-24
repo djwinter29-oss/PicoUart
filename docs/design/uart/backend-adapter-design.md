@@ -25,8 +25,9 @@ An incomplete operation table or unknown backend selection fails safely. Callbac
 driver's runtime storage. The native entry points have matching signatures, without function-pointer casts or wrapper
 dispatch. Concrete backends own hardware resources, parity conversion, baud matching, and counter reporting.
 
-Both backends reject malformed or clock-infeasible requests before hardware application. Match/apply operations require
-initialized instances; configuration binding refuses active-instance rebinding and accepts only the selected backend's
+Both backends reject malformed or clock-infeasible requests before hardware application. Matching requires an
+initialized instance. Setters stage valid settings on a bound stopped instance without touching hardware, or safely
+apply them to an active instance. Configuration binding refuses active-instance rebinding and accepts only the selected backend's
 immutable board-table entry. Failed binding leaves the existing configuration and applied settings unchanged.
 Null-context queries return neutral results: false readiness/matching, null rings, zero baud, and zero counters.
 Non-null contexts must be correctly typed instances for the selected backend. Queries may inspect inactive state;
@@ -45,6 +46,25 @@ Static topology is checked by host tests; peripheral initialization and DMA/stat
 
 Startup is all-or-nothing: if any configured backend fails, initialized backends are rolled back and the worker does not
 start. Runtime operations reject unavailable backends rather than accessing partially initialized state.
+
+Each active backend holds one RX and one TX DMA channel until it stops. Six active UARTs therefore require 12 DMA
+channels, exhausting the RP2040 DMA channel budget. Future DMA-using features must account for that limit rather than
+assuming spare channels; the current design does not dynamically share channels between active ports.
+
+The logical-port owner supplies fixed aligned RX storage with the same lifetime as the backend. Its allocation is
+separate from runtime metadata to avoid propagating DMA alignment through backend and port structs; the
+[ring-buffer design](ring-buffer-design.md#capacity) owns the storage contract. The `restart` operation stops and starts
+hardware and discards queued bytes; it is not just a software-buffer clear.
+
+Each DTR-open start seeds the complete initial baud/framing from its mailbox request, or from the last successfully
+applied metadata when no request is queued. Failed startup does not change applied metadata. A later retry reseeds all
+fields rather than inheriting unpublished settings left in the stopped backend; reported framing must match hardware
+whenever lifecycle `READY` is published.
+
+Traffic/error counters belong to the lifetime of the zero-initialized backend storage, not one hardware start.
+Restart clears only transient hardware state and queued ring bytes/reservations. Ring watermark and overflow counts
+are preserved by `ring_buffer_clear()` after producer, consumer, and DMA quiesce; cold `ring_buffer_init()` resets
+those counters. Backend restart therefore does not need to save and restore telemetry field by field.
 
 ## Line Coding
 

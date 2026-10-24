@@ -79,6 +79,9 @@ class BoardRegistry:
     def save_configuration(self, board_id: str | None, profile: int, unsafe_overclock: bool) -> None:
         self._monitor(board_id).save_configuration(profile, unsafe_overclock)
 
+    def read_diagnostics(self, board_id: str | None) -> dict[str, Any]:
+        return self._monitor(board_id).read_diagnostics()
+
     def close(self) -> None:
         with self._lock:
             if self._closed:

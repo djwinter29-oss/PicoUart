@@ -6,13 +6,13 @@
 #ifndef USB_HID_H
 #define USB_HID_H
 
-/** @brief Initialize version-1 HID command, channel traffic, and fault-history state. */
+/** @brief Initialize static HID reports, action results, channel accounting, and fault history. */
 void usb_hid_init(void);
 
-/** @brief Harvest telemetry and publish one due per-channel Input snapshot when ready. */
+/** @brief Execute deferred actions, harvest statistics, and publish one due Input snapshot when ready. */
 void usb_hid_poll(void);
 
-/** @brief Revoke reboot authorization and restart per-channel traffic baselines on USB reset/disconnect. */
+/** @brief Restart Input sequence/intervals on USB reset without clearing lifetime history or accepted actions. */
 void usb_hid_reset_host_state(void);
 
 #endif

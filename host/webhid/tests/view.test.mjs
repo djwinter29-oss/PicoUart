@@ -2,414 +2,230 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
-import { renderDashboard, channelPresentation, updateReportAge } from "../js/view.mjs";
+import { renderDashboard, updateReportAge } from "../js/view.mjs";
 
 class Element {
   constructor(tag = "") {
     this.tag = tag;
     this.children = [];
     this.dataset = {};
-    this.events = {};
     this.parentElement = { dataset: {} };
     this.text = "";
+    this.hidden = false;
+    this.disabled = false;
+    this.className = "";
+    this.title = "";
+    this.value = "";
+    this.events = {};
+    this.open = false;
   }
   set textContent(value) { this.text = value; this.children = []; }
   get textContent() { return this.text + this.children.map(child => child.textContent).join(""); }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
-  addEventListener(type, callback) { this.events[type] = callback; }
+  contains(target) { return this.children.some(child => child === target || child.contains?.(target)); }
+  addEventListener(event, callback) { this.events[event] = callback; }
+  click() { this.events.click?.(); }
+  showModal() { this.open = true; }
+  close() { this.open = false; }
 }
 
 function fixture(html) {
-  const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [
-    `#${id}`, new Element(),
-  ]));
+  const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [`#${id}`, new Element()]));
   return {
     querySelector: selector => {
       if (selector.startsWith("meta")) return { content: "token" };
-      if (selector === "#reset-board" && !elements.has(selector)) return null;
       assert.ok(elements.has(selector), `Missing HTML element ${selector}`);
       return elements.get(selector);
     },
     querySelectorAll: () => [],
     createElement: tag => new Element(tag),
-    createTextNode: text => { const node = new Element(); node.textContent = text; return node; },
+    createTextNode: text => {
+      const node = new Element();
+      node.textContent = text;
+      return node;
+    },
   };
 }
 
-function descendants(element) {
-  return [element, ...element.children.flatMap(descendants)];
-}
-
-for (const frontend of ["webhid", "web"]) {
-  test(`${frontend} shows relative report age beside connection and detects stale reports`, () => {
-    const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
-    assert.match(html, /id="connection"[\s\S]*?id="sample-time"[\s\S]*?<\/header>/);
-    const document = fixture(html);
-    let update;
-    if (frontend === "webhid") {
-      globalThis.document = document;
-      update = updateReportAge;
-    } else {
-      const context = vm.createContext({ document, fetch: () => new Promise(() => {}),
-        window: { setInterval() {} } });
-      vm.runInContext(readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8"), context);
-      update = (data, now) => {
-        context.data = data;
-        context.now = now;
-        vm.runInContext("updateReportAge(data, now)", context);
-      };
-    }
-    try {
-      const data = { connected: true, updated_at: "2026-01-01T00:00:00.000Z" };
-      const age = document.querySelector("#sample-time");
-      update({ connected: false }, 10000);
-      assert.equal(age.hidden, true);
-      update(data, 10000);
-      assert.equal(age.textContent, "Report 0 s ago");
-      update(data, 12000);
-      assert.equal(age.textContent, "Report 2 s ago");
-      assert.equal(age.dataset.stale, "false");
-      update(data, 14000);
-      assert.equal(age.textContent, "Report 4 s ago (stale)");
-      assert.equal(age.dataset.stale, "true");
-      update({ ...data, updated_at: "2026-01-01T00:00:01.000Z" }, 14000);
-      assert.equal(age.textContent, "Report 0 s ago");
-      update({ connected: true, updated_at: null }, 14000);
-      assert.equal(age.textContent, "Waiting for report");
-      update({ connected: false }, 14000);
-      assert.equal(age.hidden, true);
-    } finally {
-      delete globalThis.document;
-    }
-  });
-
-  function setup(document) {
-    if (frontend === "webhid") {
-      globalThis.document = document;
-      return { render: renderDashboard, present: channelPresentation };
-    }
-    const context = vm.createContext({ document, fetch: () => new Promise(() => {}),
-      window: { setInterval() {} } });
-    vm.runInContext(readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8"), context);
-    return {
-      render: data => { context.data = data; vm.runInContext("render(data)", context); },
-      present: (data, channel, now) => {
-        Object.assign(context, { data, channel, now });
-        return vm.runInContext("channelPresentation(data, channel, now)", context);
-      },
-    };
+test("webhid report age text tracks freshness", () => {
+  const html = readFileSync(new URL("../../webhid/index.html", import.meta.url), "utf8");
+  const document = fixture(html);
+  globalThis.document = document;
+  try {
+    const age = document.querySelector("#sample-time");
+    updateReportAge({ connected: false }, 10000);
+    assert.equal(age.hidden, true);
+    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:00.000Z"));
+    assert.equal(age.textContent, "Telemetry 0 s ago");
+    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:05.000Z"));
+    assert.equal(age.textContent, "Telemetry 5 s ago (stale)");
+    assert.equal(age.dataset.stale, "true");
+    updateReportAge({ connected: true, updated_at: null }, Date.parse("2026-01-01T00:00:05.000Z"));
+    assert.equal(age.textContent, "Waiting for telemetry");
+  } finally {
+    delete globalThis.document;
   }
+});
 
-  test(`${frontend} measures rates, suppresses gaps/staleness and resets on reboot`, () => {
-    const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
-    const { present } = setup(document);
-    const channel = { id: 0, health: 1, health_labels: ["ready"], cdc_open: false,
-      updated_at: null, observed_interval_ms: 0, traffic_gaps: 0,
-      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
-    const data = { connected: true, identity: { serial_number: "rate-test" }, traffic_gaps: 0,
-      updated_at: new Date(100000).toISOString(), runtime: { uptime_ms: 5000 } };
-    try {
-      assert.equal(present({ ...data, updated_at: null }, channel, 99999).rates, null);
-      channel.updated_at = data.updated_at;
-      channel.totals.uart_tx = 100;
-      assert.equal(present(data, channel, 100000).rates, null);
-      assert.equal(present(data, channel, 100000).state, "idle");
-      data.updated_at = new Date(100999).toISOString();
-      channel.updated_at = data.updated_at;
-      channel.observed_interval_ms = 999;
-      assert.equal(present(data, channel, 100999).rates, null);
-      data.updated_at = new Date(101000).toISOString();
-      channel.updated_at = data.updated_at;
-      channel.observed_interval_ms = 1000;
-      channel.totals = { uart_tx: 1100, uart_rx: 2000, usb_tx: 3000, usb_rx: 4000 };
-      let result = present(data, channel, 101000);
-      assert.deepEqual({ ...result.rates }, { uart_tx: 1000, uart_rx: 2000, usb_tx: 3000, usb_rx: 4000 });
-      assert.equal(result.state, "ready");
-      assert.equal(present(data, channel, 104001).rates, null);
-      channel.traffic_gaps++;
-      data.updated_at = new Date(102000).toISOString();
-      channel.updated_at = data.updated_at;
-      channel.observed_interval_ms = 2000;
-      assert.equal(present(data, channel, 102000).rates, null);
-      data.updated_at = new Date(103000).toISOString();
-      channel.updated_at = data.updated_at;
-      channel.observed_interval_ms = 3000;
-      result = present(data, channel, 103000);
-      assert.equal(result.rates.uart_tx, 0);
-      assert.equal(result.state, "idle");
-      data.runtime.uptime_ms = 1;
-      assert.equal(present(data, channel, 103000).rates, null);
-      data.connected = false;
-      assert.equal(present(data, channel, 103000).state, "unknown");
-    } finally {
-      delete globalThis.document;
-    }
-  });
-
-  test(`${frontend} computes throughput across a 32-bit boot-counter wrap`, () => {
-    const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
-    const { present } = setup(document);
-    const channel = { id: 5, health: 1, health_labels: ["ready"], cdc_open: true,
-      updated_at: new Date(100000).toISOString(), observed_interval_ms: 0, traffic_gaps: 0,
-      totals: { uart_tx: 0xfffffff0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
-    const data = { connected: true, identity: { serial_number: "counter-wrap-test" }, traffic_gaps: 0,
-      runtime: { uptime_ms: 5000 } };
-    try {
-      assert.equal(present({ ...data, updated_at: channel.updated_at }, channel, 100000).rates, null);
-      channel.totals.uart_tx = 32;
-      channel.observed_interval_ms = 1000;
-      channel.updated_at = new Date(101000).toISOString();
-      const result = present({ ...data, updated_at: channel.updated_at }, channel, 101000);
-      assert.equal(result.rates.uart_tx, 48);
-    } finally {
-      delete globalThis.document;
-    }
-  });
-
-  test(`${frontend} renders settings and simple read-only fault flags`, () => {
-    const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
-    assert.ok(!html.includes("Backend</th>") && !html.includes("Ring peak"));
-    assert.ok(html.includes("UART configuration") && html.includes("Throughput"));
-    assert.ok(!html.includes('id="configuration-status"') && !html.includes('id="configuration-detail"'));
-    assert.deepEqual([...html.matchAll(/<th scope="col"(?: class="[^"]+")?>([^<]+)<\/th>/g)].map(match => match[1]),
-      ["Port", "Host session", "UART configuration", "Health", "Throughput", "RX overflow"]);
-    const document = fixture(html);
-    const { render } = setup(document);
-    const diagnostic = { baud_rate: 115200, data_bits: 8, stop_bits: 1, parity: "N", tx_pin: 0, rx_pin: 1,
-      faults: { rx_error: { count: 3, last_seen_ms: 5000 } } };
-    const channel = { id: 0, health: 0x81, state: "attention", health_labels: ["ready", "rx_error"], cdc_open: false,
-      updated_at: new Date().toISOString(), observed_interval_ms: 0, traffic_gaps: 0,
-      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
-    const data = { connected: true, identity: { serial_number: "fault-test" }, updated_at: new Date().toISOString(),
-      traffic_gaps: 0, channels: [channel], channel_diagnostics: [diagnostic],
-      configuration: { source: "defaults", reason: "crc_failed", stored_profile: null, active_profile: 1 },
-      overflow_counts: [0, 0, 0, 0, 0, 0] };
-    try {
-      render(data);
-      if (frontend === "web") {
-        const resetButton = document.querySelector("#reset-board");
-        assert.equal(resetButton.hidden, true);
-        data.board = { hid_reset_enabled: true, temperature_celsius: 25.3 };
-        render(data);
-        assert.equal(resetButton.hidden, false);
-      }
-      let rows = document.querySelector("#channel-rows");
-      assert.equal(rows.children[0].children.length, 6);
-      assert.equal(rows.children[0].children[1].textContent, "Closed");
-      assert.equal(rows.children[0].children[2].className, "uart-configuration");
-      assert.equal(rows.children[0].children[4].className, "traffic");
-      assert.equal(rows.children[0].children[5].className, "overflow");
-      assert.match(rows.textContent, /115200 8N1TX GP0 \/ RX GP1/);
-      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "Recorded: rx_error");
-      assert.ok(descendants(rows).some(node =>
-        node.title === "Receive error recorded; check baud rate, framing and wiring."));
-      assert.ok(!/last detected|events|expand|rx_error \(/.test(rows.textContent));
-      assert.equal(descendants(rows).filter(node => ["details", "summary", "button"].includes(node.tag)).length, 0);
-      assert.match(rows.textContent, /attention/);
-      assert.ok(!rows.textContent.includes(">="));
-      assert.ok(descendants(rows).some(node => node.title?.includes("0 B since firmware boot")));
-      assert.equal(descendants(rows).filter(node => node.tag === "button").length, 0);
-      assert.ok(!rows.textContent.includes("(acknowledged)"));
-      channel.health_labels = ["ready"];
-      render(data);
-      assert.match(rows.textContent, /attention/);
-      assert.match(rows.textContent, /rx_error/);
-      diagnostic.faults.rx_error = { count: 4, last_seen_ms: 6000 };
-      render(data);
-      assert.match(rows.textContent, /attention/);
-      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "Recorded: rx_error");
-      diagnostic.faults = {};
-      render(data);
-      assert.match(rows.textContent, /idle/);
-      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent, "Receiver enabled");
-      channel.health_labels.push("control_error");
-      render(data);
-      assert.match(rows.textContent, /attention/);
-      channel.health_labels.push("rx_error", "control_pending");
-      diagnostic.faults.rx_error = { count: 4, last_seen_ms: 6000 };
-      render(data);
-      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
-        "Current: control_error; Recorded: rx_error");
-      diagnostic.faults.control_error = { count: 1, last_seen_ms: 6000 };
-      channel.health_labels = ["ready"];
-      render(data);
-      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
-        "Recorded: control_error; Recorded: rx_error");
-      channel.updated_at = null;
-      render(data);
-      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
-        "Last reported: control_error; Last reported: rx_error");
-      const metrics = descendants(rows).find(node => node.className === "traffic-metrics");
-      assert.deepEqual(metrics.children.map(metric => metric.children[0].textContent),
-        ["UART TX", "UART RX", "USB TX", "USB RX"]);
-      assert.ok(metrics.children.every(metric => metric.children[1].tag === "b"));
-      channel.health_labels = ["ready", "control_error", "rx_error"];
-      channel.updated_at = data.updated_at;
-      render({ ...data, channel_diagnostics: null, diagnostics_error: "Firmware upgrade required" });
-      assert.match(rows.textContent, /Firmware diagnostics unavailable/);
-      assert.equal(descendants(rows).find(node => node.className === "health-flags").textContent,
-        "Current: control_error; Recorded: rx_error");
-      assert.ok(descendants(rows).some(node => node.title === "Firmware upgrade required"));
-      assert.equal(descendants(rows).filter(node => node.textContent === "Clear flags").length, 0);
-    } finally {
-      delete globalThis.document;
-    }
-  });
-
-  test(`${frontend} shows KB/s rates and exact byte totals`, () => {
-    const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
-    const { render } = setup(document);
-    const channel = { id: 0, health: 1, health_labels: ["ready"], cdc_open: true,
-      updated_at: null, observed_interval_ms: 0, traffic_gaps: 0,
-      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
-    const start = Date.now() - 1000;
-    channel.updated_at = new Date(start).toISOString();
-    const data = { connected: true, identity: { serial_number: "totals-test" }, traffic_gaps: 0,
-      updated_at: new Date(start).toISOString(), channels: [channel], channel_diagnostics: null,
-      overflow_counts: [0, 0, 0, 0, 0, 0] };
-    try {
-      render(data);
-      channel.totals = { uart_tx: 12345, uart_rx: 0, usb_tx: 1234567, usb_rx: 999 };
-      channel.updated_at = new Date(start + 1000).toISOString();
-      channel.observed_interval_ms = 1000;
-      render({ ...data, updated_at: new Date(start + 1000).toISOString() });
-      const cells = descendants(document.querySelector("#channel-rows"))
-        .filter(node => node.className === "traffic-total" || node.tag === "b").map(node => node.textContent);
-      assert.deepEqual(cells, ["12.3 KB/s", "12,345 B", "0.0 KB/s", "0 B",
-        "1,234.6 KB/s", "1,234,567 B", "1.0 KB/s", "999 B"]);
-    } finally {
-      delete globalThis.document;
-    }
-  });
-
-  test(`${frontend} weights device intervals independently of arrival time and other-channel gaps`, () => {
-    const document = fixture(readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8"));
-    const { present } = setup(document);
-    const channel = { id: 1, health: 1, health_labels: ["ready"], cdc_open: true,
-      updated_at: new Date(100000).toISOString(), observed_interval_ms: 0, traffic_gaps: 0,
-      totals: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 } };
-    const data = { connected: true, identity: { serial_number: "device-window-test" }, traffic_gaps: 0 };
-    try {
-      assert.equal(present(data, channel, 100000).rates, null);
-      channel.updated_at = new Date(101000).toISOString();
-      channel.observed_interval_ms = 2000;
-      channel.totals.uart_tx = 4000;
-      data.traffic_gaps = 1;
-      assert.equal(present(data, channel, 101000).rates.uart_tx, 2000);
-      channel.updated_at = new Date(102000).toISOString();
-      channel.observed_interval_ms = 3000;
-      channel.traffic_gaps = 1;
-      assert.equal(present(data, channel, 102000).rates, null);
-    } finally {
-      delete globalThis.document;
-    }
-  });
-
-  test(`${frontend} separates identity/runtime and renders real board fields and unavailable states`, () => {
-    const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
-    const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
-    assert.ok(html.includes(frontend === "webhid"
-      ? "<title>PicoUart Diagnostics | WebHID</title>"
-      : "<title>PicoUart Diagnostics | {{ dashboard_type }}</title>"));
-    const runtime = html.match(/<section aria-labelledby="runtime-title">([\s\S]*?)<\/section>/)[1];
-    assert.ok(runtime.includes("CPU load (core 0 / core 1)"));
-    assert.ok(runtime.includes("RAM (reserved / total)"));
-    assert.ok(!html.includes('id="sequence"'));
-    assert.ok(identity.includes('id="toggle-led"'));
-    assert.ok(!html.includes('id="led-state"'));
-    assert.ok(!runtime.includes('id="toggle-led"'));
-    assert.ok(!html.includes("LIVE REPORT") && !html.includes("LIVE HEALTH AND TRAFFIC"));
-    const css = readFileSync(new URL(`../../${frontend}/css/dashboard.css`, import.meta.url), "utf8");
-    assert.match(css, /\.button-led\[data-state="on"\].*border-color: var\(--teal\)/);
-    assert.match(css, /\.button-led\[data-state="unknown"\].*border-style: dashed/);
-    assert.ok(!html.match(/<section class="channels-section"[\s\S]*?<\/section>/)[0].includes('id="toggle-led"'));
-    for (const id of ["product-name", "mcu", "system-clock", "firmware", "serial"]) {
-      assert.ok(identity.includes(`id="${id}"`));
-      assert.ok(!runtime.includes(`id="${id}"`));
-    }
-    assert.ok(!html.includes("traffic-summary"));
-    assert.equal([...html.matchAll(/id="overflow-total"/g)].length, 1);
-    for (const id of ["uptime", "cpu-usage", "ram-usage", "temperature", "overflow-total"]) {
-      assert.ok(runtime.includes(`id="${id}"`));
-      assert.ok(!identity.includes(`id="${id}"`));
-    }
-    const document = fixture(html);
-    const data = {
-      connected: true, identity: { product_name: "PicoUart", serial_number: "0123456789ABCDEF" },
-      hardware: { mcu: "RP2350", system_clock_hz: 150000000 },
-      board: { firmware_version: "1.2.3", temperature_celsius: 22.92 },
-      runtime: { uptime_ms: 90061000, cpu_usage_basis_points: [10000, null],
-        ram_reserved_bytes: 65536, ram_total_bytes: 524288 },
-      overflow_counts: [0, 0, 0, 0, 0, 0], channels: [],
-      led: { manual_on: false, output_on: true },
+test("webhid render updates live cells without replacing diagnostics buttons", () => {
+  const html = readFileSync(new URL("../../webhid/index.html", import.meta.url), "utf8");
+  const document = fixture(html);
+  globalThis.document = document;
+  try {
+    const dashboard = {
+      connected: true,
+      updated_at: new Date().toISOString(),
+      identity: {
+        product_name: "PicoUart",
+        serial_number: "ABC123",
+        mcu: "RP2350",
+        board_model: "Pico 2",
+        firmware_version: "1.2.3",
+        ram_reserved_bytes: 65536,
+        ram_total_bytes: 524288,
+      },
+      telemetry: {
+        system_clock_hz: 150000000,
+        temperature_celsius: 24.1,
+        runtime: { uptime_ms: 9000, service_load_basis_points: [1250, 500] },
+        led: { output_on: true },
+      },
+      configuration: {
+        stored_profile_name: "150 MHz",
+        reset_reason_name: "none",
+        capacities: { uart_tx: 4096, uart_rx: 4096, cdc_tx: 2048, cdc_rx: 2048 },
+        pins: Array.from({ length: 6 }, () => ({ tx: 0, rx: 1, rts: 255, cts: 255 })),
+      },
+      channels: Array.from({ length: 6 }, (_, id) => ({
+        id,
+        channel_state: 2,
+        channel_state_name: "Ready",
+        uart_measurement_state_name: "Current",
+        baud_rate: 115200,
+        data_bits: 8,
+        parity: "N",
+        stop_bits: 1,
+        counters: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 },
+        rates: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 },
+        input_updated_at: new Date().toISOString(),
+        feature_updated_at: null,
+      })),
+      channel_diagnostics: Array.from({ length: 6 }, () => ({
+        updated_at: new Date().toISOString(),
+        uart_measurement_state: 1,
+        uart_measurement_state_name: "Current",
+        uart_sample_age_100ms: 0,
+        rx_dropped_bytes: 0,
+        rx_error_observations: 0,
+        last_configuration_error_reason: 0,
+        last_configuration_error: "None recorded",
+        last_fault_uptime_s: 0,
+        peaks: { uart_tx: 0, uart_rx: 1, cdc_tx: 0, cdc_rx: 0 },
+      })),
     };
-    let render;
-    if (frontend === "webhid") {
-      globalThis.document = document;
-      render = renderDashboard;
-    } else {
-      const context = vm.createContext({ document, fetch: () => new Promise(() => {}),
-        window: { setInterval() {} } });
-      vm.runInContext(readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8"), context);
-      render = value => { context.data = value; vm.runInContext("render(data)", context); };
-    }
-    try {
-      render(data);
-      const text = id => document.querySelector(`#${id}`).textContent;
-      assert.equal(text("product-name"), "PicoUart");
-      assert.equal(text("serial"), "0123456789ABCDEF");
-      assert.equal(text("uptime"), "1d 1h 1m 1s");
-      for (const [uptime_ms, expected] of [[0, "0s"], [5000, "5s"], [305000, "5m 5s"],
-        [3600000, "1h 0s"], [86400000, "1d 0s"]]) {
-        render({ ...data, runtime: { ...data.runtime, uptime_ms } });
-        assert.equal(text("uptime"), expected);
-      }
-      render(data);
-      assert.equal(text("cpu-usage"), "100.0% / --");
-      assert.equal(text("ram-usage"), "64.0 / 512 KiB (12.5%)");
-      assert.equal(text("temperature"), "22.9 \u00b0C");
-      assert.equal(text("overflow-total"), "0 B");
-      assert.equal(document.querySelector("#traffic-note").hidden, true);
-      assert.equal(text("traffic-note"), "");
-      render({ ...data, traffic_incomplete: true });
-      assert.equal(document.querySelector("#traffic-note").hidden, false);
-      assert.equal(text("traffic-note"),
-        "Input report gaps detected; rate windows restart after a clean sample. Byte counters are modulo 2^32 since boot.");
-      render(data);
-      assert.equal(document.querySelector("#traffic-note").hidden, true);
-      render({ ...data, overflow_counts: [1, 2, 3, 4, 5, 6] });
-      assert.equal(text("overflow-total"), "21 B");
-      render({ ...data, overflow_counts: [null, 0, 0, 0, 0, 0] });
-      assert.equal(text("overflow-total"), "--");
-      render(data);
-      assert.equal(text("toggle-led"), "Board LED: On");
-      assert.equal(document.querySelector("#toggle-led").dataset.state, "on");
-      render({ ...data, led: { manual_on: false, output_on: false } });
-      assert.equal(text("toggle-led"), "Board LED: Off");
-      assert.equal(document.querySelector("#toggle-led").dataset.state, "off");
-      render({ ...data, led: null, led_error: "LED unsupported" });
-      assert.equal(text("toggle-led"), "Board LED: --");
-      assert.equal(document.querySelector("#toggle-led").dataset.state, "unknown");
-      assert.match(text("status-message"), /LED unsupported/);
-      render({ ...data, connected: false });
-      assert.equal(text("toggle-led"), "Board LED: --");
-      assert.equal(document.querySelector("#toggle-led").dataset.state, "unknown");
-      if (frontend === "web") {
-        render({ ...data, led: null });
-        assert.equal(document.querySelector("#toggle-led").disabled, true);
-        render({ ...data, led: { manual_on: null, output_on: null } });
-        assert.equal(document.querySelector("#toggle-led").disabled, true);
-        render({ ...data, connected: false });
-        assert.equal(document.querySelector("#toggle-led").disabled, true);
-      }
-      render({ ...data, identity: null, runtime: null, runtime_error: "Firmware upgrade required" });
-      for (const id of ["product-name", "serial", "uptime", "cpu-usage", "ram-usage"]) {
-        assert.equal(text(id), "--");
-      }
-      assert.match(text("status-message"), /Firmware upgrade required/);
-    } finally {
-      delete globalThis.document;
-    }
+    renderDashboard(dashboard);
+    assert.equal(document.querySelector("#product-name").textContent, "PicoUart");
+    assert.equal(document.querySelector("#board-model").textContent, "Pico 2 (RP2350)");
+    assert.equal(document.querySelector("#serial").textContent, "ABC123");
+    assert.equal(document.querySelector("#firmware").textContent, "1.2.3");
+    assert.equal(document.querySelector("#service-load").textContent, "12.5% / 5.0%");
+    assert.equal(document.querySelector("#toggle-led").textContent, "Board LED: On");
+    assert.equal(document.querySelector("#toggle-led").dataset.state, "on");
+    renderDashboard({ ...dashboard, telemetry: { ...dashboard.telemetry, led: { output_on: false } } });
+    assert.equal(document.querySelector("#toggle-led").textContent, "Board LED: Off");
+    assert.equal(document.querySelector("#toggle-led").dataset.state, "off");
+    assert.doesNotMatch(html, /<span>Microcontroller<\/span>/);
+    assert.equal(document.querySelector("#channel-rows").children[0].children[2].children.length, 1);
+    const lifecycle = document.querySelector("#channel-rows").children[0].children[1];
+    assert.equal(lifecycle.children[1].className, "health-flags");
+    assert.equal(lifecycle.className, "channel-status");
+    assert.equal(lifecycle.children[0].textContent, "Ready");
+    assert.equal(lifecycle.children[0].hidden, false);
+    assert.equal(lifecycle.children[1].textContent, "LIVE");
+    const cachedDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
+      ({ ...channel, uart_measurement_state_name: "Cached" })) };
+    renderDashboard(cachedDashboard);
+    assert.equal(lifecycle.children[1].textContent, "CACHED");
+    const staleDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
+      ({ ...channel, input_updated_at: new Date(Date.now() - 5000).toISOString() })) };
+    renderDashboard(staleDashboard);
+    assert.equal(lifecycle.children[0].hidden, true);
+    assert.equal(lifecycle.children[1].textContent, "— Unavailable");
+    renderDashboard(dashboard);
+    const traffic = document.querySelector("#channel-rows").children[0].children[3].children[0];
+    assert.deepEqual(traffic.children.map(metric => metric.children[0].textContent), [
+      "UART TX", "UART RX", "USB RX", "USB TX",
+    ]);
+    assert.equal(traffic.children[0].children[1].textContent, "0.0 KB/s");
+    const rows = document.querySelector("#channel-rows");
+    const initialRow = rows.children[0];
+    const diagnosticsButton = initialRow.children[4].children[0];
+    const pointerUpdate = { ...dashboard, channels: dashboard.channels.map((channel, index) =>
+      index === 0 ? { ...channel, baud_rate: 57600 } : channel) };
+    renderDashboard(pointerUpdate);
+    assert.equal(rows.children[0], initialRow);
+    assert.equal(rows.children[0].children[4].children[0], diagnosticsButton);
+    assert.equal(rows.children[0].children[2].children[0].textContent,
+      `${(57600).toLocaleString()} 8N1`);
+
+    const focusUpdate = { ...pointerUpdate, channels: pointerUpdate.channels.map((channel, index) =>
+      index === 0 ? { ...channel, baud_rate: 38400 } : channel) };
+    renderDashboard(focusUpdate);
+    assert.equal(rows.children[0], initialRow);
+    assert.equal(rows.children[0].children[4].children[0], diagnosticsButton);
+    assert.equal(rows.children[0].children[2].children[0].textContent,
+      `${(38400).toLocaleString()} 8N1`);
+
+    assert.equal(diagnosticsButton.textContent, "Diagnostics");
+    diagnosticsButton.click();
+    assert.equal(document.querySelector("#channel-diagnostics-dialog").open, true);
+    assert.equal(document.querySelector("#channel-diagnostics-title").textContent, "CDC0 diagnostics");
+    const diagnostics = document.querySelector("#channel-diagnostics-content").children[0].children;
+    assert.equal(diagnostics.length, 20);
+    assert.deepEqual(diagnostics.filter((_, index) => index % 2 === 0).map(term => term.textContent), [
+      "UART measurement", "UART sample age", "Known RX bytes dropped", "RX controller error observations",
+      "Last configuration error", "Last fault observed", "UART TX ring observed peak since boot",
+      "UART RX ring observed peak since boot", "CDC TX FIFO observed peak since boot",
+      "CDC RX FIFO observed peak since boot",
+    ]);
+    assert.equal(diagnostics[1].textContent, "Current");
+    assert.equal(diagnostics[3].textContent, "0.0 s");
+    assert.equal(diagnostics[11].textContent, "None recorded");
+    assert.equal(diagnostics[13].textContent, "0 B (0.0%)");
+    assert.equal(diagnostics[15].textContent, "1 B (0.0%)");
+
+    renderDashboard({ ...dashboard, connected: false, channels: dashboard.channels.map(channel => ({
+      ...channel, input_updated_at: null, uart_measurement_state_name: null,
+    })) });
+    assert.equal(lifecycle.children[0].hidden, true);
+    assert.equal(lifecycle.children[1].textContent, "— Unavailable");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("host web runtime section reflects service-load terminology", () => {
+  const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
+  const runtime = html.match(/<section aria-labelledby="runtime-title">([\s\S]*?)<\/section>/)[1];
+  assert.ok(runtime.includes("Service load (Core 0 / Core 1)"));
+  assert.ok(runtime.includes("Board temperature"));
+  assert.ok(!runtime.includes("CPU load (core 0 / core 1)"));
+});
+
+test("host web updateReportAge keeps telemetry wording", () => {
+  const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
+  const document = fixture(html);
+  const context = vm.createContext({
+    document,
+    fetch: () => new Promise(() => {}),
+    window: { setInterval() {}, clearInterval() {} },
   });
-}
+  vm.runInContext(readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8"), context);
+  context.data = { connected: true, updated_at: "2026-01-01T00:00:00.000Z" };
+  context.now = Date.parse("2026-01-01T00:00:00.000Z");
+  vm.runInContext("updateReportAge(data, now)", context);
+  context.now = Date.parse("2026-01-01T00:00:04.000Z");
+  vm.runInContext("updateReportAge(data, now)", context);
+  assert.equal(document.querySelector("#sample-time").textContent, "Report 4 s ago (stale)");
+});

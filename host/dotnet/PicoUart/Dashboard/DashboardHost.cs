@@ -86,6 +86,19 @@ internal static class DashboardHost
                 return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);
             }
         });
+        app.MapGet("/api/diagnostics", async (HttpContext context, DashboardBoards dashboard) =>
+        {
+            await context.Session.LoadAsync();
+            try
+            {
+                return Results.Content(
+                    dashboard.DiagnosticsJson(context.Request.Query["board"]), "application/json");
+            }
+            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            {
+                return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);
+            }
+        });
         app.MapPost("/api/actions/{action}", (string action, HttpContext context, DashboardBoards dashboard) =>
         {
             var token = context.Session.GetString("csrf_token");
@@ -95,12 +108,14 @@ internal static class DashboardHost
                 return Results.Json(new { error = "request token missing or invalid" }, statusCode: 403);
             if (action is not ("toggle-led" or "reset"))
                 return Results.Json(new { error = "unknown action" }, statusCode: 404);
-            try { dashboard.Action(context.Request.Query["board"], action); }
+            try
+            {
+                return Results.Json(dashboard.Action(context.Request.Query["board"], action), Protocol.JsonOptions);
+            }
             catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
                 return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);
             }
-            return Results.Json(new { ok = true });
         });
         app.MapPost("/api/configuration", async (HttpContext context, DashboardBoards dashboard) =>
         {
@@ -116,8 +131,9 @@ internal static class DashboardHost
                 using var body = await JsonDocument.ParseAsync(context.Request.Body,
                     cancellationToken: context.RequestAborted);
                 var request = ConfigurationSaveRequest.Parse(body.RootElement);
-                dashboard.SaveConfiguration(context.Request.Query["board"], request.Profile, request.UnsafeOverclock);
-                return Results.Json(new { ok = true });
+                var result = dashboard.SaveConfiguration(
+                    context.Request.Query["board"], request.Profile, request.UnsafeOverclock);
+                return Results.Json(result, Protocol.JsonOptions);
             }
             catch (Exception error) when (error is JsonException or ArgumentException
                 || HidErrors.IsDeviceError(error))

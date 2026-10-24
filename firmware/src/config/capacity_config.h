@@ -21,7 +21,13 @@
 /** @brief USB CDC endpoint transfer capacity in bytes per CDC interface. */
 #define PICO_UART_USB_CDC_ENDPOINT_BUFFER_SIZE 64u
 /** @brief Maximum bytes moved per CDC interface and direction in one bridge pass. */
+#ifndef PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET
 #define PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET 1024u
+#endif
+_Static_assert(PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET > 0u &&
+                   PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET <= PICO_UART_USB_CDC_RX_BUFFER_SIZE &&
+                   PICO_UART_USB_CDC_BRIDGE_PASS_BUDGET <= PICO_UART_USB_CDC_TX_BUFFER_SIZE,
+               "CDC bridge budget must fit its endpoint FIFOs");
 /** @brief USB HID endpoint transfer capacity in bytes. */
 #define PICO_UART_USB_HID_ENDPOINT_BUFFER_SIZE 64u
 
@@ -42,7 +48,12 @@ _Static_assert(PICO_UART_HW_UART_RX_BUFFER_SIZE == (1u << PICO_UART_HW_UART_RX_D
 /** @brief PIO UART RX DMA ring selector bits for the receive-ring capacity. */
 #define PICO_UART_PIO_UART_RX_DMA_RING_BITS 12u
 /** @brief PIO UART TX backlog in bytes that starts DMA transmission. */
+#ifndef PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD
 #define PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD 64u
+#endif
+_Static_assert(PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD > 0u &&
+                   PICO_UART_PIO_UART_TX_DMA_START_THRESHOLD <= PICO_UART_PIO_UART_TX_BUFFER_SIZE,
+               "PIO TX DMA threshold must fit its ring");
 
 _Static_assert(PICO_UART_PIO_UART_RX_BUFFER_SIZE == (1u << PICO_UART_PIO_UART_RX_DMA_RING_BITS),
                "PIO UART RX DMA ring bits must match its buffer size");

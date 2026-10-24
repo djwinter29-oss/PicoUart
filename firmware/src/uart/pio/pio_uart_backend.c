@@ -32,10 +32,17 @@ bool pio_uart_driver_load_port_config(void *context, const uart_driver_port_info
 
 bool pio_uart_driver_set_line_coding(void *context, const uart_driver_line_coding_t *line_coding)
 {
-    const pio_uart_driver_t *driver = context;
-    if ((driver == NULL) || !driver->initialized || !uart_line_coding_is_valid(line_coding) ||
+    pio_uart_driver_t *driver = context;
+    if ((driver == NULL) || !uart_line_coding_is_valid(line_coding) ||
         !uart_line_coding_pio_supported(line_coding, clock_get_hz(clk_sys))) {
         return false;
+    }
+    if (!driver->initialized) {
+        if (driver->config == NULL) {
+            return false;
+        }
+        driver->baud_rate = line_coding->baud_rate;
+        return true;
     }
     return pio_uart_driver_apply_baud_rate(context, line_coding->baud_rate);
 }
@@ -105,7 +112,7 @@ const uart_backend_ops_t uart_backend_pio_ops = {
     .line_coding_matches = pio_uart_driver_line_coding_matches,
     .line_coding_acceptable = pio_uart_driver_line_coding_acceptable,
     .set_line_coding = pio_uart_driver_set_line_coding,
-    .reset_buffers = pio_uart_driver_reset_buffers,
+    .restart = pio_uart_driver_restart,
     .rx_snapshot_is_current = pio_uart_driver_rx_snapshot_is_current,
     .clear_rx_error_baseline = pio_uart_driver_clear_rx_error_baseline,
     .baud_rate = pio_uart_driver_baud_rate,

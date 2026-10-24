@@ -31,6 +31,16 @@ Each port has fixed RX and TX capacities. Sizes must remain powers of two, and D
 backend's alignment requirements. Capacity changes affect reserved RAM and the rate at which overflow or backpressure
 occurs; they do not change the ownership or loss policy.
 
+The logical-port owner allocates fixed, size-aligned RX storage separately from backend runtime metadata and TX arrays.
+Each backend retains a lifetime pointer to its port's RX storage and owns the corresponding ring and DMA operations.
+Only the RX allocation carries DMA ring alignment; the backend union and logical-port array must not inherit it.
+Startup rejects null or misaligned RX storage before claiming hardware resources.
+
+Payload capacity is not the complete allocation cost. Runtime metadata, alignment, and TinyUSB endpoint storage still
+contribute. Measure linked symbols and the map rather than treating the sum of buffer macros as total RAM usage.
+The [buffer measurement procedure](../../development/firmware-testing.md#buffer-capacity-measurement) defines the evidence
+needed before reducing capacities.
+
 ## Overflow and Backpressure Policy
 
 RX is a live stream, not an archival logger. On overrun, the consumer advances past overwritten bytes, preserves newer

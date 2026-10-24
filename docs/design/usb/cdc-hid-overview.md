@@ -20,14 +20,28 @@ Each CDC port maps to one target-side UART channel. The GPIO pinout is defined i
 
 ## CDC Behavior
 
-CDC carries serial bytes and `SET_LINE_CODING` requests for the matching UART. DTR is reported for monitoring but does
-not gate data transfer. A DTR closed-to-open transition requests a fresh state for only that CDC/UART channel: firmware
-clears that interface's CDC FIFOs and the worker restarts its UART backend, discarding queued bytes while preserving
-applied line coding and boot-lifetime counters. A USB packet already in flight may still complete. Hardware UARTs
-support the broader validated line-coding set; PIO UARTs are 8N1-only.
+Core 0 owns one state record per CDC interface: DTR and cumulative statistics, startup admission, deferred line coding,
+close-flush progress, and the partial-IN flush deadline. Session cleanup updates only transient fields; it does not
+zero the record or reset boot-lifetime counters. USB mount ownership and round-robin scheduling remain device-wide.
+
+CDC carries serial bytes and `SET_LINE_CODING` requests for the matching UART. DTR controls the per-channel backend
+lifecycle. On an open-to-closed transition, firmware clears that interface's CDC FIFOs and the UART worker
+deinitializes the backend; queued bytes are discarded while applied line coding and boot-lifetime counters are
+preserved. No UART bridge traffic is processed while the channel is closed. On the next open, the worker starts the
+backend and applies any deferred line-coding request before bridging resumes. A USB packet already in flight may still
+complete. Closed interfaces discard received OUT bytes on polling without repeatedly flushing an empty FIFO; the
+explicit close/quiescence flush remains unconditional. Hardware UARTs support the broader validated line-coding set;
+PIO UARTs are 8N1-only.
 
 TinyUSB may complete a line-coding request before firmware applies or rejects it. Hosts must monitor HID health for the
 result; request ownership and deferred application are described in [Control Plane Design](../control-plane-design.md).
+
+The native [CDC tests](../../../firmware/tests/test_usb_cdc.c) exercise transport pressure and concurrent control
+requests using production ring bridging with bounded USB FIFO and per-port mailbox mocks. TinyUSB's transfer-completion
+flush and backend stop completion are modeled, not executed. Repeated pressure/recovery checks verify exact payloads,
+counter deltas, and bounded progress across ring-storage wraps and channel close/reopen cycles.
+USB scheduling and DMA timing still require the
+[HIL plan](../../tests/hil-fixture-test-plan.md).
 
 ## HID Behavior
 
@@ -36,11 +50,12 @@ UART settings. Board controls include explicit LED On/Off, capability-gated rese
 saving.
 A verified configuration save automatically reboots the board, independently of the optional reset-command capability;
 see the [save safety contract](hid-report-reference.md#save-and-reboot-safety) before using it.
-Exact report layouts, health bits, and command semantics are defined in the
-[HID Report Reference](hid-report-reference.md). The version-1 design uses report 1 for static device information,
-report 2 for board commands and boot configuration, report 3 for board telemetry, and reports 10-15 for combined
-per-channel traffic, settings, and compact fault history. Channel snapshots publish every 500 ms as Input reports;
-the same layout is available through read-only Feature reads.
+Exact layouts, lifecycle/measurement states, and action semantics are defined in the
+[HID Report Reference](hid-report-reference.md). Static identity/configuration, live board telemetry, routine channel
+snapshots, on-demand diagnostics, and board actions have separate reports. Channel snapshots publish nominally every
+500 ms as Input reports; the same layout is available through read-only Feature reads.
+Firmware, Python, .NET, and WebHID implement the selected report layouts; there is no legacy compatibility mode.
+Shared cross-client decoder conformance and physical USB/UART qualification remain separate validation gates.
 
 ## Typical Host Workflow
 

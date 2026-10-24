@@ -5,7 +5,7 @@
 
 #include "unity.h"
 #include "uart/backend/policy.h"
-#include "uart/worker_health.h"
+#include "uart/worker.h"
 
 void setUp(void)
 {
@@ -17,22 +17,10 @@ void tearDown(void)
 
 void test_hw_line_format_idle_requires_all_clear(void)
 {
-    TEST_ASSERT_TRUE(uart_hw_line_format_idle(false, false, false, false));
-    TEST_ASSERT_TRUE(uart_hw_line_format_idle(true, false, false, false));
-    TEST_ASSERT_FALSE(uart_hw_line_format_idle(false, true, false, false));
-    TEST_ASSERT_FALSE(uart_hw_line_format_idle(false, false, true, false));
-    TEST_ASSERT_FALSE(uart_hw_line_format_idle(false, false, false, true));
-}
-
-void test_pio_baud_change_idle_requires_all_clear(void)
-{
-    TEST_ASSERT_TRUE(uart_pio_baud_change_idle(false, false, true, true, true, true));
-    TEST_ASSERT_FALSE(uart_pio_baud_change_idle(true, false, true, true, true, true));
-    TEST_ASSERT_TRUE(uart_pio_baud_change_idle(false, true, true, true, true, true));
-    TEST_ASSERT_FALSE(uart_pio_baud_change_idle(false, false, false, true, true, true));
-    TEST_ASSERT_FALSE(uart_pio_baud_change_idle(false, false, true, false, true, true));
-    TEST_ASSERT_FALSE(uart_pio_baud_change_idle(false, false, true, true, false, true));
-    TEST_ASSERT_FALSE(uart_pio_baud_change_idle(false, false, true, true, true, false));
+    TEST_ASSERT_TRUE(uart_hw_line_format_idle(false, false, false));
+    TEST_ASSERT_FALSE(uart_hw_line_format_idle(true, false, false));
+    TEST_ASSERT_FALSE(uart_hw_line_format_idle(false, true, false));
+    TEST_ASSERT_FALSE(uart_hw_line_format_idle(false, false, true));
 }
 
 void test_rx_dma_poll_rearm_only_when_countdown_exhausted(void)
@@ -144,7 +132,6 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_hw_line_format_idle_requires_all_clear);
-    RUN_TEST(test_pio_baud_change_idle_requires_all_clear);
     RUN_TEST(test_rts_hysteresis_reflects_occupancy_on_reconfigure);
     RUN_TEST(test_rx_dma_poll_rearm_only_when_countdown_exhausted);
     RUN_TEST(test_pio_tx_action_prefers_dma_above_threshold);

@@ -22,9 +22,6 @@
 
 #include <stddef.h>
 
-_Static_assert((offsetof(hw_uart_driver_t, rx_storage) % PICO_UART_HW_UART_RX_BUFFER_SIZE) == 0u,
-               "HW RX DMA ring storage must be size-aligned for channel_config_set_ring");
-
 /** @brief Shared DMA IRQ used for HW UART RX transfer-count re-arm. */
 #define HW_UART_DRIVER_RX_DMA_IRQ_INDEX 0
 /** @brief Target maximum wire time represented by one TX DMA launch. */
@@ -34,6 +31,12 @@ _Static_assert((offsetof(hw_uart_driver_t, rx_storage) % PICO_UART_HW_UART_RX_BU
 static hw_uart_driver_t *hw_uart_driver_rx_irq_owners[NUM_DMA_CHANNELS];
 /** @brief True after the shared DMA IRQ0 handler has been installed once. */
 static bool hw_uart_driver_rx_dma_irq_installed;
+
+/** @copydoc hw_uart_driver_dma_claim_ops_default */
+const hw_uart_dma_claim_ops_t hw_uart_driver_dma_claim_ops_default = {
+    .claim_channel = dma_claim_unused_channel,
+    .unclaim_channel = dma_channel_unclaim,
+};
 
 static bool hw_uart_driver_configure_uart(hw_uart_driver_t *driver)
 {
@@ -142,7 +145,6 @@ void hw_uart_driver_clear_rx_error_baseline(void *context)
     }
 
     uart_get_hw(driver->config->instance)->rsr = 0u;
-    driver->rx_error_count = 0u;
 }
 
 static void hw_uart_driver_start_rx_dma(hw_uart_driver_t *driver)
@@ -423,11 +425,26 @@ void hw_uart_driver_poll(void *context, bool tx_launch_allowed)
     }
 }
 
+/** @brief Disconnect the backend while keeping TX idle-high on normal and failed shutdown. */
+static void hw_uart_driver_park_pins(const hw_uart_driver_t *driver)
+{
+    gpio_put(driver->config->port->tx_pin, true);
+    gpio_set_dir(driver->config->port->tx_pin, GPIO_OUT);
+    gpio_set_function(driver->config->port->tx_pin, GPIO_FUNC_SIO);
+    gpio_set_function(driver->config->port->rx_pin, GPIO_FUNC_NULL);
+    if (driver->config->hardware_flow_control) {
+        gpio_set_function(driver->config->port->rts_pin, GPIO_FUNC_NULL);
+        gpio_set_function(driver->config->port->cts_pin, GPIO_FUNC_NULL);
+        gpio_disable_pulls(driver->config->port->cts_pin);
+    }
+}
+
 bool hw_uart_driver_start(void *context)
 {
     hw_uart_driver_t *driver = context;
     if ((driver == NULL) || (driver->config == NULL) || (driver->config->port == NULL) ||
-        (driver->config->instance == NULL)) {
+        (driver->config->instance == NULL) || (driver->rx_storage == NULL) ||
+        (((uintptr_t)driver->rx_storage % PICO_UART_HW_UART_RX_BUFFER_SIZE) != 0u)) {
         return false;
     }
 
@@ -443,18 +460,19 @@ bool hw_uart_driver_start(void *context)
     driver->tx_dma_bytes_in_flight = 0u;
     driver->tx_active = false;
     driver->rx_rts_asserted = false;
-    driver->uart_tx_bytes = 0u;
-    driver->uart_rx_bytes = 0u;
-    driver->rx_error_count = 0u;
     driver->rx_dma_last_progress = 0u;
 
-    if (!ring_buffer_init(&driver->rx_ring, driver->rx_storage, sizeof(driver->rx_storage))) {
+    if ((driver->rx_ring.storage == NULL) &&
+        !ring_buffer_init(&driver->rx_ring, driver->rx_storage, PICO_UART_HW_UART_RX_BUFFER_SIZE)) {
         return false;
     }
 
-    if (!ring_buffer_init(&driver->tx_ring, driver->tx_storage, sizeof(driver->tx_storage))) {
+    if ((driver->tx_ring.storage == NULL) &&
+        !ring_buffer_init(&driver->tx_ring, driver->tx_storage, sizeof(driver->tx_storage))) {
         return false;
     }
+    ring_buffer_clear(&driver->rx_ring);
+    ring_buffer_clear(&driver->tx_ring);
 
     /*
      * Use required=false so DMA-channel exhaustion is reported and rolled
@@ -489,12 +507,7 @@ bool hw_uart_driver_start(void *context)
     }
     if (!hw_uart_driver_configure_uart(driver)) {
         hw_uart_driver_release_dma(driver);
-        gpio_set_function(driver->config->port->tx_pin, GPIO_FUNC_NULL);
-        gpio_set_function(driver->config->port->rx_pin, GPIO_FUNC_NULL);
-        if (driver->config->hardware_flow_control) {
-            gpio_set_function(driver->config->port->cts_pin, GPIO_FUNC_NULL);
-            gpio_disable_pulls(driver->config->port->cts_pin);
-        }
+        hw_uart_driver_park_pins(driver);
         return false;
     }
     hw_uart_driver_configure_tx_dma(driver);
@@ -515,28 +528,14 @@ void hw_uart_driver_deinit(void *context)
     /* Publish while the RX channel is still claimed. release_dma aborts it. */
     hw_uart_driver_publish_rx(driver);
     hw_uart_driver_release_dma(driver);
+    hw_uart_driver_park_pins(driver);
     uart_deinit(driver->config->instance);
-    gpio_set_function(driver->config->port->tx_pin, GPIO_FUNC_NULL);
-    gpio_set_function(driver->config->port->rx_pin, GPIO_FUNC_NULL);
-    if (driver->config->hardware_flow_control) {
-        gpio_set_function(driver->config->port->rts_pin, GPIO_FUNC_NULL);
-        gpio_set_function(driver->config->port->cts_pin, GPIO_FUNC_NULL);
-        gpio_disable_pulls(driver->config->port->cts_pin);
-    }
     driver->initialized = false;
 }
 
-bool hw_uart_driver_reset_buffers(void *context)
+bool hw_uart_driver_restart(void *context)
 {
     hw_uart_driver_t *driver = context;
-    uint32_t uart_tx_bytes;
-    uint32_t uart_rx_bytes;
-    uint32_t rx_error_count;
-    uint32_t rx_high_watermark;
-    uint32_t tx_high_watermark;
-    uint32_t rx_overflow_count;
-    uint32_t tx_overflow_count;
-    bool initialized;
 
     if ((driver == NULL) || (driver->config == NULL)) {
         return false;
@@ -544,24 +543,7 @@ bool hw_uart_driver_reset_buffers(void *context)
 
     hw_uart_driver_deinit(driver);
     (void)ring_buffer_recover_overflow(&driver->rx_ring);
-    uart_tx_bytes = driver->uart_tx_bytes;
-    uart_rx_bytes = driver->uart_rx_bytes;
-    rx_error_count = driver->rx_error_count;
-    rx_high_watermark = driver->rx_ring.high_watermark;
-    tx_high_watermark = driver->tx_ring.high_watermark;
-    rx_overflow_count = driver->rx_ring.overflow_count;
-    tx_overflow_count = driver->tx_ring.overflow_count;
-
-    initialized = hw_uart_driver_start(driver);
-
-    driver->uart_tx_bytes = uart_tx_bytes;
-    driver->uart_rx_bytes = uart_rx_bytes;
-    driver->rx_error_count = rx_error_count;
-    driver->rx_ring.high_watermark = rx_high_watermark;
-    driver->tx_ring.high_watermark = tx_high_watermark;
-    driver->rx_ring.overflow_count = rx_overflow_count;
-    driver->tx_ring.overflow_count = tx_overflow_count;
-    return initialized;
+    return hw_uart_driver_start(driver);
 }
 
 bool hw_uart_driver_apply_line_format(void *context, uint32_t baud_rate, uint8_t data_bits, uint8_t stop_bits,
@@ -584,7 +566,7 @@ bool hw_uart_driver_apply_line_format(void *context, uint32_t baud_rate, uint8_t
      * defer the apply without stalling the UART worker's RX publish loop.
      * The worker's 1 s deferred-apply deadline fails the request if BUSY sticks.
      */
-    if (!uart_hw_line_format_idle(ring_buffer_occupancy(&driver->tx_ring) != 0u, driver->tx_active,
+    if (!uart_hw_line_format_idle(driver->tx_active,
                                   (uart_get_hw(driver->config->instance)->fr & UART_UARTFR_BUSY_BITS) != 0u,
                                   uart_is_readable(driver->config->instance))) {
         return false;
@@ -643,13 +625,7 @@ bool hw_uart_driver_apply_line_format(void *context, uint32_t baud_rate, uint8_t
         /* Both the new format and the previous format failed after uart_deinit.
          * Drop the port so poll does not touch a stopped PL011. */
         hw_uart_driver_release_dma(driver);
-        gpio_set_function(driver->config->port->tx_pin, GPIO_FUNC_NULL);
-        gpio_set_function(driver->config->port->rx_pin, GPIO_FUNC_NULL);
-        if (driver->config->hardware_flow_control) {
-            gpio_set_function(driver->config->port->rts_pin, GPIO_FUNC_NULL);
-            gpio_set_function(driver->config->port->cts_pin, GPIO_FUNC_NULL);
-            gpio_disable_pulls(driver->config->port->cts_pin);
-        }
+        hw_uart_driver_park_pins(driver);
         driver->initialized = false;
         return false;
     }

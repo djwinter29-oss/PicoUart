@@ -25,15 +25,45 @@ def test_hid_descriptor_parser_recognizes_all_current_reports():
     body = re.search(r"hid_report_descriptor\[\]\s*=\s*\{(.*?)\};", source, re.DOTALL).group(1)
     descriptor = bytes(int(value, 16) for value in re.findall(r"0x([0-9A-Fa-f]+)", body))
     assert verifier._hid_reports(descriptor, len(descriptor)) == [{
-        (1, 11): (63, 8),
-        (2, 11): (24, 8),
-        (3, 11): (24, 8),
+        (1, 11): (27, 8),
+        (2, 11): (36, 8),
+        (3, 11): (20, 8),
+        (20, 11): (4, 8),
+        **{(report_id, 11): (24, 8) for report_id in range(30, 36)},
         **{
-            key: (54, 8)
+            key: (30, 8)
             for report_id in range(10, 16)
             for key in ((report_id, 8), (report_id, 11))
         },
     }]
+
+
+def test_hid_descriptor_assigns_usage_to_every_nonconstant_main_item():
+    source = (VERIFY_BUILD.parents[2] / "firmware/src/usb/usb_descriptors.c").read_text()
+    body = re.search(r"hid_report_descriptor\[\]\s*=\s*\{(.*?)\};", source, re.DOTALL).group(1)
+    descriptor = bytes(int(value, 16) for value in re.findall(r"0x([0-9A-Fa-f]+)", body))
+    item_sizes = (0, 1, 2, 4)
+    offset = 0
+    has_usage = False
+    while offset < len(descriptor):
+        prefix = descriptor[offset]
+        assert prefix != 0xFE, "Long HID items are not used by this report descriptor"
+        size = item_sizes[prefix & 0x03]
+        item_type = (prefix >> 2) & 0x03
+        tag = (prefix >> 4) & 0x0F
+        value = int.from_bytes(descriptor[offset + 1:offset + 1 + size], "little")
+        offset += 1 + size
+
+        if item_type == 2 and tag == 0:
+            has_usage = True
+        elif item_type == 0:
+            if tag == 10:
+                assert has_usage, "HID Collection is missing its Usage item"
+            elif tag in (8, 9, 11) and not value & 1:
+                assert has_usage, f"Non-constant HID main item {tag} is missing its Usage item"
+            has_usage = False
+
+    assert offset == len(descriptor)
 
 
 def _uf2_block(

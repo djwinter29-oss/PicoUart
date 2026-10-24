@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 /**
- * @brief Runtime state for one PIO UART instance.
+ * @brief Runtime state for one PIO UART instance, with externally owned aligned RX storage.
  */
 struct pio_uart_driver {
     const pio_uart_driver_config_t *config; /**< Immutable backend descriptor and board wiring. */
@@ -28,19 +28,14 @@ struct pio_uart_driver {
     bool rx_rts_asserted;            /**< True while manual RTS permits the peer to transmit. */
     bool tx_cts_enabled;             /**< True when the TX state machine waits for active-low CTS between frames. */
     size_t tx_dma_bytes_in_flight;   /**< Bytes currently owned by the active TX DMA transfer. */
-    size_t tx_polled_bytes;          /**< Bytes sent through the direct FIFO polling path. */
-    size_t tx_dma_bytes;             /**< Bytes sent through the TX DMA path. */
+    size_t tx_polled_bytes;          /**< Bytes handed directly to the TX FIFO. */
+    size_t tx_dma_bytes;             /**< Bytes handed to the TX FIFO by completed DMA transfers. */
     uint32_t uart_rx_bytes;          /**< Valid received bytes published into the RX ring. */
     uint32_t rx_error_count;         /**< Framing (stop-bit) errors observed since initialization. */
     volatile uint32_t rx_dma_last_progress; /**< Last published RX DMA progress (`max - remaining`). */
     ring_buffer_t rx_ring;                  /**< PIO RX producer ring shared with the USB bridge. */
     ring_buffer_t tx_ring;                  /**< USB-core TX producer ring drained by core-1 PIO polling. */
-    /**
-     * DMA ring mode wraps WRITE_ADDR on the lower RING_BITS; storage must be
-     * size-aligned so hardware wrap matches the software ring indices.
-     */
-    uint8_t rx_storage[PICO_UART_PIO_UART_RX_BUFFER_SIZE]
-        __attribute__((aligned(PICO_UART_PIO_UART_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
+    uint8_t *rx_storage; /**< Size-aligned RX storage supplied by the logical-port owner for its lifetime. */
     uint8_t tx_storage[PICO_UART_PIO_UART_TX_BUFFER_SIZE];           /**< TX ring storage. */
 };
 

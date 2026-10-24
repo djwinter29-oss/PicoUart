@@ -81,7 +81,7 @@ void pio_uart_driver_deinit(void *context)
     TEST_FAIL_MESSAGE("unexpected PIO deinitialization");
 }
 
-bool hw_uart_driver_reset_buffers(void *context)
+bool hw_uart_driver_restart(void *context)
 {
     if (context == NULL) {
         return false;
@@ -90,7 +90,7 @@ bool hw_uart_driver_reset_buffers(void *context)
     return false;
 }
 
-bool pio_uart_driver_reset_buffers(void *context)
+bool pio_uart_driver_restart(void *context)
 {
     if (context == NULL) {
         return false;
@@ -340,7 +340,7 @@ void test_null_api_inputs_return_neutral_results_without_hardware_access(void)
         TEST_ASSERT_FALSE(ops->line_coding_acceptable(NULL));
         TEST_ASSERT_FALSE(ops->set_line_coding(NULL, &request));
         TEST_ASSERT_FALSE(ops->set_line_coding(NULL, NULL));
-        TEST_ASSERT_FALSE(ops->reset_buffers(NULL));
+        TEST_ASSERT_FALSE(ops->restart(NULL));
     }
     hardware.initialized = true;
     pio.initialized = true;
@@ -473,9 +473,29 @@ void test_real_callbacks_return_driver_rings_rates_and_counters(void)
     TEST_ASSERT_EQUAL_UINT32(3u, stats.rx_error_count);
 }
 
+void test_stopped_backends_stage_settings_before_hardware_start(void)
+{
+    hw_uart_driver_t hardware = {0};
+    pio_uart_driver_t pio = {0};
+    uart_driver_line_coding_t coding = {
+        .baud_rate = 230400u, .data_bits = 8u, .stop_bits = 1u, .parity = UART_DRIVER_PARITY_NONE,
+    };
+    TEST_ASSERT_FALSE(uart_backend_hw_ops.set_line_coding(&hardware, &coding));
+    TEST_ASSERT_FALSE(uart_backend_pio_ops.set_line_coding(&pio, &coding));
+    TEST_ASSERT_TRUE(uart_backend_hw_ops.load_config(&hardware, &uart_board_ports[UART_PORT_0]));
+    TEST_ASSERT_TRUE(uart_backend_pio_ops.load_config(&pio, &uart_board_ports[UART_PORT_2]));
+    TEST_ASSERT_TRUE(uart_backend_hw_ops.set_line_coding(&hardware, &coding));
+    TEST_ASSERT_TRUE(uart_backend_pio_ops.set_line_coding(&pio, &coding));
+    TEST_ASSERT_EQUAL_UINT32(230400u, hardware.baud_rate);
+    TEST_ASSERT_EQUAL_UINT32(230400u, pio.baud_rate);
+    TEST_ASSERT_FALSE(hardware.initialized);
+    TEST_ASSERT_FALSE(pio.initialized);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_stopped_backends_stage_settings_before_hardware_start);
     RUN_TEST(test_real_tables_are_complete_and_selected);
     RUN_TEST(test_pio_reinitialization_preserves_resource_ownership_and_state);
     RUN_TEST(test_hw_reinitialization_preserves_resource_ownership_and_state);

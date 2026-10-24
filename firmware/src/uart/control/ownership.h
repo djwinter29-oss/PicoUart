@@ -10,27 +10,6 @@
 #include <stdint.h>
 
 /**
- * @brief Return whether one mailbox slot can accept a new request.
- * @param request_sequence Sequence most recently published by the producer.
- * @param response_sequence Sequence most recently completed by the worker.
- * @return `true` when the mailbox slot is empty.
- */
-static inline bool uart_control_mailbox_is_empty(uint32_t request_sequence, uint32_t response_sequence)
-{
-    return request_sequence == response_sequence;
-}
-
-/**
- * @brief Advance a mailbox request sequence with defined unsigned wraparound.
- * @param request_sequence Current producer sequence.
- * @return Next producer sequence.
- */
-static inline uint32_t uart_control_mailbox_next_sequence(uint32_t request_sequence)
-{
-    return request_sequence + 1u;
-}
-
-/**
  * @brief Decide whether a control completion may clear CONTROL_PENDING.
  * @param soft_pending True while core 0 has a request waiting for the mailbox.
  * @param mailbox_pending True while the mailbox contains a request for this port.

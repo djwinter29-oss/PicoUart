@@ -15,6 +15,21 @@ extern absolute_time_t pico_test_time_us;
 
 #define nil_time ((absolute_time_t)0)
 
+static inline bool is_nil_time(absolute_time_t value)
+{
+    return value == nil_time;
+}
+
+static inline absolute_time_t make_timeout_time_us(uint64_t timeout_us)
+{
+    return pico_test_time_us + (absolute_time_t)timeout_us;
+}
+
+static inline void sleep_ms(uint32_t milliseconds)
+{
+    pico_test_time_us += (absolute_time_t)milliseconds * 1000;
+}
+
 static inline uint32_t time_us_32(void)
 {
     return (uint32_t)pico_test_time_us;

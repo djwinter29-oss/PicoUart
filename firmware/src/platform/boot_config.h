@@ -1,6 +1,6 @@
 /**
  * @file boot_config.h
- * @brief Versioned persistent boot settings and target-checked clock profiles.
+ * @brief Versioned persistent boot requests and deterministic board clock selection.
  */
 #ifndef BOOT_CONFIG_H
 #define BOOT_CONFIG_H
@@ -14,10 +14,10 @@
 /** @brief Predefined clock profiles ordered by frequency and shared by settings, storage, and HID. */
 typedef enum {
     BOOT_CLOCK_DEFAULT = 0, /**< Leave the SDK-selected startup clock unchanged. */
-    BOOT_CLOCK_150_MHZ = 1, /**< Exactly 150 MHz on RP2040 or RP2350. */
-    BOOT_CLOCK_200_MHZ = 2, /**< Exactly 200 MHz on RP2040 or RP2350. */
-    BOOT_CLOCK_250_MHZ = 3, /**< Exactly 250 MHz on RP2040 or RP2350. */
-    BOOT_CLOCK_280_MHZ = 4, /**< Exactly 280 MHz on RP2350 only. */
+    BOOT_CLOCK_150_MHZ = 1, /**< Request up to 150 MHz, subject to board policy. */
+    BOOT_CLOCK_200_MHZ = 2, /**< Request up to 200 MHz, subject to board policy. */
+    BOOT_CLOCK_250_MHZ = 3, /**< Request up to 250 MHz, subject to board policy. */
+    BOOT_CLOCK_280_MHZ = 4, /**< Request up to 280 MHz; RP2040 currently selects 250 MHz. */
 } boot_clock_profile_t;
 
 /** @brief Requested settings, independent of storage format and boot diagnostics. */
@@ -39,7 +39,7 @@ typedef enum {
     BOOT_CONFIG_INVALID_HEADER = 2,      /**< Signature, length or reserved fields are invalid. */
     BOOT_CONFIG_CRC_FAILED = 3,          /**< Record checksum mismatch. */
     BOOT_CONFIG_UNSUPPORTED_VERSION = 4, /**< Unknown record version. */
-    BOOT_CONFIG_INVALID_PROFILE = 5,     /**< Unknown or target-incompatible clock profile. */
+    BOOT_CONFIG_INVALID_PROFILE = 5,     /**< Unknown clock profile request. */
     BOOT_CONFIG_WATCHDOG_RECOVERY = 6,   /**< Previous watchdog timeout bypassed the stored clock. */
     BOOT_CONFIG_CLOCK_UNAVAILABLE = 7,   /**< SDK cannot synthesize the requested frequency. */
 } boot_config_reason_t;
@@ -73,7 +73,7 @@ void boot_config_load(bool recovery);
 const boot_config_t *boot_config_get(void);
 
 /**
- * @brief Stage target-supported settings without changing clocks, diagnostics, or storage.
+ * @brief Stage a defined clock request without changing clocks, diagnostics, or storage.
  * @param config Requested settings; null or unsupported values leave the cache unchanged.
  * @return True when the settings were accepted.
  */
@@ -93,9 +93,9 @@ void boot_config_clock_unavailable(void);
 uint32_t boot_config_clock_khz(boot_clock_profile_t profile);
 
 /**
- * @brief Check a predefined profile ID against the target family.
+ * @brief Check whether a profile request is defined, independently of achieved frequency.
  * @param profile Untrusted profile ID.
- * @return True for SDK default or the family's supported overclock profile.
+ * @return True for each defined request on both supported MCU families.
  */
 bool boot_config_profile_supported(uint32_t profile);
 

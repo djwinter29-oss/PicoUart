@@ -39,8 +39,11 @@ The scripts honor an exported `PICO_SDK_PATH`; otherwise they use the pinned rep
 
 Clock profile selection moved to persistent board configuration in the final flash sector. Build-time clock overrides
 are intentionally rejected so the same firmware image can boot with SDK defaults or a stored overclock profile.
-After flashing, use the dashboards' [Persistent configuration](../docs/development/host-tools.md#persistent-configuration)
-section to select and save a profile over HID, then reboot manually. SDK default does not reconfigure the clock.
+The new firmware HID contract uses a confirmed save-and-reboot action; it does not require a second reboot command.
+The existing dashboards still need migration before they can use these layouts; see the
+[HID implementation status](../docs/design/usb/hid-report-reference.md#report-id-allocation).
+SDK default does not reconfigure the clock. Defined requests share meanings across MCU families; firmware may select
+a lower eligible clock without changing the stored request.
 The [SWD configuration tool](../tools/firmware/config.py) remains available to read, set, or erase the profile,
 including recovery when USB is unavailable.
 Any invalid configuration record reverts to SDK/board defaults.
@@ -61,8 +64,16 @@ PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/pico:$PWD/build/pico2" \
 Use your completed build directories. The check detects SDK automatic voltage adjustment and regulator writes in the
 startup object/ELF; it does not measure physical voltage, thermal margin, or hardware stability.
 
+PR and release firmware builds also run
+[`check-firmware-budget.py`](../tools/release/check-firmware-budget.py). It counts allocated SRAM sections from the
+linked ELF, including linker-reserved heap and stack sections, and checks the binary image against the flash space
+before the reserved configuration sector. Static SRAM allocation is capped at 192 KiB of 264 KiB on RP2040 and
+384 KiB of 520 KiB on RP2350, leaving at least 72 KiB and 136 KiB respectively outside linked sections. These are
+allocation limits, not stack high-water or CPU-latency measurements.
+
 Changing board, SDK path, generator, firmware version, or HID-reset option causes the build wrapper to reset stale
-CMake cache state before reconfiguring. HID reboot is built in by default; pass `--disable-hid-reset` to remove it.
+CMake cache state before reconfiguring. Standalone HID reboot is built in by default; pass `--disable-hid-reset` to
+remove that action, not the separately confirmed save-and-reboot capability.
 Dependency build caches and external-tool stamps are reset together; the
 wrapper also detects a leftover picotool configure stamp whose dependency cache is missing.
 

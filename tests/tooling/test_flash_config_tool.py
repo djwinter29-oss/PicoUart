@@ -67,14 +67,13 @@ def test_common_profiles_require_acknowledgement_and_decode_on_both_targets(prof
     assert tool.decode_sector(tool.encode_sector(profile), family)["clock_profile"] == profile
 
 
-def test_unknown_and_wrong_family_profiles_rejected():
+def test_unknown_profiles_rejected_and_shared_requests_preserved():
     sector = bytearray(tool.encode_sector("default"))
     struct.pack_into("<I", sector, 32, 5)
     struct.pack_into("<I", sector, 12, zlib.crc32(sector[:12] + sector[16:36]))
     with pytest.raises(ValueError, match="unknown"):
         tool.decode_sector(sector, "rp2040")
-    with pytest.raises(ValueError, match="not supported"):
-        tool.decode_sector(tool.encode_sector("280mhz"), "rp2040")
+    assert tool.decode_sector(tool.encode_sector("280mhz"), "rp2040")["clock_profile"] == "280mhz"
     with pytest.raises(ValueError, match="complete"):
         tool.decode_sector(b"\xff" * 36, "rp2040")
 
@@ -105,9 +104,9 @@ def test_missing_layout(build_dir, monkeypatch):
     assert tool.main(arguments(build_dir, "read")) == 1
 
 
-@pytest.mark.parametrize("profile,unsafe", [("250mhz", False), ("280mhz", False), ("280mhz", True),
+@pytest.mark.parametrize("profile,unsafe", [("250mhz", False), ("280mhz", False),
                                           ("200mhz", False), ("150mhz", False)])
-def test_unsafe_or_wrong_family_never_contacts_probe(build_dir, monkeypatch, profile, unsafe):
+def test_unacknowledged_overclock_never_contacts_probe(build_dir, monkeypatch, profile, unsafe):
     monkeypatch.setattr(tool.subprocess, "run", lambda *a, **kw: pytest.fail("probe contacted"))
     command = ["set-clock", profile] + (["--unsafe-overclock"] if unsafe else [])
     assert tool.main(arguments(build_dir, *command)) == 1
@@ -116,6 +115,7 @@ def test_unsafe_or_wrong_family_never_contacts_probe(build_dir, monkeypatch, pro
 @pytest.mark.parametrize("command,expected", [
     (["set-clock", "default"], "default"),
     (["set-clock", "250mhz", "--unsafe-overclock"], "250mhz"),
+    (["set-clock", "280mhz", "--unsafe-overclock"], "280mhz"),
     (["erase"], "default"),
     (["read"], "default"),
 ])
@@ -176,8 +176,7 @@ def test_rp2350_layout_and_target_names(build_dir):
     assert tool.load_layout(build_dir) == layout
     tool.check_profile("280mhz", "rp2350", True)
     tool.check_profile("250mhz", "rp2350", True)
-    with pytest.raises(ValueError, match="not supported"):
-        tool.check_profile("280mhz", "rp2040", True)
+    tool.check_profile("280mhz", "rp2040", True)
     script = tool.operation_script(layout, "erase", build_dir / "page", build_dir / "readback")
     assert "targets rp2350.cm0\nhalt" in script and "targets rp2350.cm1\nhalt" in script
     assert "flash erase_address 0x103ff000 4096" in script

@@ -13,7 +13,7 @@ reusable host validation run in parallel; firmware builds do not wait for host t
 flowchart TD
   Event["Pull request or push to main"] --> Firmware["Firmware matrix: pico and pico2"]
   Event --> Host["Reusable Host Validation"]
-  Firmware --> Contracts["Build and binary contracts<br/>Real-SDK voltage-policy check<br/>Pico-only stamped-version smoke check"]
+  Firmware --> Contracts["Build, binary, and memory-budget checks<br/>Real-SDK voltage-policy check<br/>Pico-only stamped-version smoke check"]
   Host --> HostDone["All shared host checks pass"]
   Contracts --> Passed["PR Check succeeds"]
   HostDone --> Passed
@@ -48,7 +48,7 @@ The Pico-only stamped-version check is a conditional step inside the PR firmware
 
 | Check | Environment And Dependencies | What It Establishes |
 | --- | --- | --- |
-| Firmware matrix | Linux; Arm toolchain, pinned Pico SDK, CMake/Ninja, host C++ compiler, Python | Both board targets compile/link and satisfy binary USB/version contracts; real-build regulator policy is inspected, not physically measured |
+| Firmware matrix | Linux; Arm toolchain, pinned Pico SDK, CMake/Ninja, host C++ compiler, Python | Pico and Pico 2 compile/link and satisfy binary contracts plus target-specific static SRAM/flash budgets; real-build regulator policy is inspected, not physically measured |
 | Firmware policy check | Python and `requirements-voltage-lock.txt` | Minimal pytest environment for inspection of the actual SDK build artifacts |
 | Host application matrix | Linux, macOS, Windows; Python 3.12, .NET 10 SDK, `requirements-lock.txt` | .NET unit tests, repository Python tests, and installed/published host contracts; Windows also runs native C tests |
 | Linux host tools | Python 3.12, development lock, native C toolchain, CMake/Ninja, cppcheck | Syntax, ASan/UBSan native tests, static analysis, and CLI smoke checks |

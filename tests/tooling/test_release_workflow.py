@@ -438,12 +438,21 @@ def test_publication_does_not_accept_an_older_success(monkeypatch, status, concl
 def test_publication_requires_tests_for_the_exact_commit_and_tag(monkeypatch, sha, tag, success):
     import json
 
+    commands = []
     run = {"head_sha": "abc", "event": "push", "head_branch": "v1.2.3", "run_number": 1, "run_attempt": 1,
            "status": "completed", "conclusion": "success", "html_url": "https://example.test/1"}
-    monkeypatch.setattr(require_release_checks.subprocess, "run", lambda *args, **kwargs:
-                        subprocess.CompletedProcess(args, 0, stdout=json.dumps([{"workflow_runs": [run]}])))
+    def gh_api(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps([{"workflow_runs": [run]}]))
+
+    monkeypatch.setattr(require_release_checks.subprocess, "run", gh_api)
     if success:
         require_release_checks.require_successful_run("owner/repo", "release.yml", sha, tag)
+        assert commands[0][-1] == "repos/owner/repo/actions/workflows/release.yml/runs"
+        first_filter = commands[0].index("-F")
+        assert commands[0][first_filter:first_filter + 2] == ["-F", f"head_sha={sha}"]
+        page_size = commands[0].index("-F", first_filter + 1)
+        assert commands[0][page_size:page_size + 2] == ["-F", "per_page=100"]
     else:
         with pytest.raises(RuntimeError, match="no required test run"):
             require_release_checks.require_successful_run("owner/repo", "release.yml", sha, tag)

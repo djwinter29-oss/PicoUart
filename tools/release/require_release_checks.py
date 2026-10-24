@@ -13,8 +13,9 @@ from urllib.parse import quote
 def require_successful_run(repository: str, workflow: str, sha: str, tag: str | None = None) -> None:
     """Require the latest matching run, including its latest attempt, to have succeeded."""
     result = subprocess.run(
-        ["gh", "api", "--paginate", "--slurp",
-         f"repos/{repository}/actions/workflows/{workflow}/runs?head_sha={sha}&per_page=100"],
+        ["gh", "api", "--paginate", "--slurp", "-X", "GET",
+         "-F", f"head_sha={sha}", "-F", "per_page=100",
+         f"repos/{repository}/actions/workflows/{workflow}/runs"],
         check=True, capture_output=True, text=True,
     )
     runs = [run for page in json.loads(result.stdout) for run in page["workflow_runs"]

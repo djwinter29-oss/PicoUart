@@ -16,6 +16,8 @@ uart_inst_t hw_test_uart1;
 static pio_test_dma_hw_t dma_registers;
 pio_test_dma_hw_t *dma_hw = &dma_registers;
 static hw_uart_driver_t driver;
+static uint8_t rx_storage[PICO_UART_HW_UART_RX_BUFFER_SIZE]
+    __attribute__((aligned(PICO_UART_HW_UART_RX_BUFFER_SIZE)));
 static const uart_driver_port_info_t port = {
     .id = UART_PORT_0, .backend = UART_DRIVER_BACKEND_HW, .baud_rate = 115200u,
     .tx_pin = 0u, .rx_pin = 1u, .rts_pin = 3u, .cts_pin = 2u,
@@ -39,6 +41,9 @@ static uint launches;
 static uint uart_reads;
 static uint gpio_put_calls;
 static bool gpio_put_value;
+static uint tx_gpio_function;
+static bool tx_gpio_output;
+static bool tx_gpio_high;
 static uint clock_calls;
 static uint init_calls;
 static uint deinit_calls;
@@ -50,16 +55,11 @@ static bool rx_arrives_after_abort;
 static bool reject_new_clock;
 static bool reject_restore_clock;
 
-static int claim_channel(bool required)
+int dma_claim_unused_channel(bool required)
 {
     TEST_ASSERT_FALSE(required);
     return (int)(2u + claims++);
 }
-
-const hw_uart_dma_claim_ops_t hw_uart_driver_dma_claim_ops_default = {
-    .claim_channel = claim_channel,
-    .unclaim_channel = dma_channel_unclaim,
-};
 
 void service_load_note(unsigned int core)
 {
@@ -132,18 +132,18 @@ void uart_set_fifo_enabled(uart_inst_t *uart, bool enabled)
     TEST_ASSERT_TRUE(enabled);
 }
 
-void gpio_set_function(uint pin, uint function) { (void)pin; (void)function; }
+void gpio_set_function(uint pin, uint function) { if (pin == port.tx_pin) tx_gpio_function = function; }
 void gpio_set_slew_rate(uint pin, uint rate) { (void)pin; (void)rate; }
 void gpio_set_drive_strength(uint pin, uint strength) { (void)pin; (void)strength; }
 void gpio_pull_down(uint pin) { (void)pin; }
 void gpio_disable_pulls(uint pin) { (void)pin; }
 void gpio_put(uint pin, bool value)
 {
-    (void)pin;
+    if (pin == port.tx_pin) tx_gpio_high = value;
     gpio_put_value = value;
     ++gpio_put_calls;
 }
-void gpio_set_dir(uint pin, bool output) { (void)pin; (void)output; }
+void gpio_set_dir(uint pin, bool output) { if (pin == port.tx_pin) tx_gpio_output = output; }
 
 uint32_t save_and_disable_interrupts(void)
 {
@@ -321,6 +321,7 @@ static void assert_rx_dma_rearmed_once(void)
 void setUp(void)
 {
     memset(&driver, 0, sizeof(driver));
+    driver.rx_storage = rx_storage;
     memset(&hw_test_uart0, 0, sizeof(hw_test_uart0));
     memset(&dma_registers, 0, sizeof(dma_registers));
     memset(settings, 0, sizeof(settings));
@@ -353,6 +354,18 @@ void setUp(void)
 }
 
 void tearDown(void) { TEST_ASSERT_TRUE(interrupts_enabled); }
+
+void test_start_rejects_missing_or_misaligned_rx_storage_before_claiming_dma(void)
+{
+    hw_uart_driver_deinit(&driver);
+    uint claims_before = claims;
+    driver.rx_storage = NULL;
+    TEST_ASSERT_FALSE(hw_uart_driver_start(&driver));
+    driver.rx_storage = rx_storage + 1u;
+    TEST_ASSERT_FALSE(hw_uart_driver_start(&driver));
+    TEST_ASSERT_EQUAL_UINT(claims_before, claims);
+    TEST_ASSERT_FALSE(driver.initialized);
+}
 
 void test_tx_commits_only_after_completion_and_relaunches_in_order(void)
 {
@@ -488,6 +501,9 @@ void test_failure_to_restore_releases_channels_and_disables_port(void)
     TEST_ASSERT_EQUAL_UINT(1u, unclaim_calls[3]);
     TEST_ASSERT_NULL(hw_uart_driver_rx_irq_owners[2]);
     TEST_ASSERT_FALSE(irq_enabled[2]);
+    TEST_ASSERT_EQUAL_UINT(GPIO_FUNC_SIO, tx_gpio_function);
+    TEST_ASSERT_TRUE(tx_gpio_output);
+    TEST_ASSERT_TRUE(tx_gpio_high);
 }
 
 void test_unsettled_rx_resumes_without_abort_or_publication(void)
@@ -536,9 +552,33 @@ void test_rx_dma_poll_fallback_acknowledges_before_delayed_irq(void)
     TEST_ASSERT_EQUAL_UINT(1u, rx_rearm_calls);
 }
 
+void test_closed_hw_backend_parks_tx_idle_high(void)
+{
+    tx_gpio_function = GPIO_FUNC_UART;
+    tx_gpio_output = false;
+    tx_gpio_high = false;
+    hw_uart_driver_deinit(&driver);
+    TEST_ASSERT_EQUAL_UINT(GPIO_FUNC_SIO, tx_gpio_function);
+    TEST_ASSERT_TRUE(tx_gpio_output);
+    TEST_ASSERT_TRUE(tx_gpio_high);
+    TEST_ASSERT_FALSE(driver.initialized);
+}
+
+static void test_restart_baseline_preserves_observed_error_history(void)
+{
+    driver.rx_error_count = 7u;
+    hw_test_uart0.registers.rsr = 15u;
+    hw_uart_driver_clear_rx_error_baseline(&driver);
+    TEST_ASSERT_EQUAL_UINT32(7u, driver.rx_error_count);
+    TEST_ASSERT_EQUAL_UINT32(0u, hw_test_uart0.registers.rsr);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_restart_baseline_preserves_observed_error_history);
+    RUN_TEST(test_start_rejects_missing_or_misaligned_rx_storage_before_claiming_dma);
+    RUN_TEST(test_closed_hw_backend_parks_tx_idle_high);
     RUN_TEST(test_tx_commits_only_after_completion_and_relaunches_in_order);
     RUN_TEST(test_empty_tx_queue_skips_uart_busy_register_read);
     RUN_TEST(test_rts_runtime_updates_use_hysteresis_and_only_write_on_transition);

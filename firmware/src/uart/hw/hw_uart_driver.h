@@ -28,7 +28,7 @@ typedef struct {
 extern const hw_uart_driver_config_t hw_uart_driver_configs[UART_PORT_COUNT];
 
 /**
- * @brief Runtime state for one hardware UART instance.
+ * @brief Runtime state for one hardware UART instance, with externally owned aligned RX storage.
  */
 typedef struct {
     const hw_uart_driver_config_t *config; /**< Immutable backend descriptor and board wiring. */
@@ -42,14 +42,13 @@ typedef struct {
     size_t tx_dma_bytes_in_flight;          /**< Bytes currently owned by the active TX DMA transfer. */
     bool tx_active;                         /**< True while a TX DMA transfer is still in flight. */
     bool rx_rts_asserted;                   /**< True while manual RTS permits the peer to transmit. */
-    uint32_t uart_tx_bytes;                 /**< Bytes completed by the UART TX DMA engine. */
+    uint32_t uart_tx_bytes;                 /**< Bytes handed to the UART by completed DMA transfers. */
     uint32_t uart_rx_bytes;                 /**< Bytes accepted by the UART RX DMA engine. */
     uint32_t rx_error_count;                /**< Hardware UART receive-status events observed since initialization. */
     volatile uint32_t rx_dma_last_progress; /**< Last current-transfer RX DMA progress used for accounting. */
     ring_buffer_t rx_ring;                  /**< UART-to-USB receive ring. */
     ring_buffer_t tx_ring;                  /**< USB-to-UART transmit ring. */
-    uint8_t rx_storage[PICO_UART_HW_UART_RX_BUFFER_SIZE]
-        __attribute__((aligned(PICO_UART_HW_UART_RX_BUFFER_SIZE))); /**< DMA-owned RX ring storage. */
+    uint8_t *rx_storage; /**< Size-aligned RX storage supplied by the logical-port owner for its lifetime. */
     uint8_t tx_storage[PICO_UART_HW_UART_TX_BUFFER_SIZE];           /**< TX ring storage. */
 } hw_uart_driver_t;
 
@@ -88,7 +87,8 @@ void hw_uart_driver_enable_rx_dma_irq(void);
  * @param context Initialized hardware UART backend to baseline.
  *
  * Call after every configured backend has started so transient startup line
- * activity is not reported as a runtime receive error.
+ * activity is not reported as a runtime receive error. Previously observed
+ * errors remain in the boot-lifetime counter across restarts.
  */
 void hw_uart_driver_clear_rx_error_baseline(void *context);
 
@@ -106,14 +106,14 @@ void hw_uart_driver_poll(void *context, bool tx_launch_allowed);
 void hw_uart_driver_deinit(void *context);
 
 /**
- * @brief Restart one initialized HW UART and discard its queued bytes.
+ * @brief Stop and start one bound HW UART, discarding its queued bytes.
  * @param context HW UART runtime instance.
- * @return `true` when the UART and DMA resources were reinitialized.
+ * @return `true` when the UART and DMA resources were initialized again.
  *
  * The UART worker must own the instance and both bridge sides must be quiesced.
  * Applied line coding and cumulative counters are preserved.
  */
-bool hw_uart_driver_reset_buffers(void *context);
+bool hw_uart_driver_restart(void *context);
 
 /**
  * @brief Reconfigure the full UART line format for one hardware UART backend.

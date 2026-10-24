@@ -14,8 +14,8 @@
  */
 typedef struct {
     bool opened;                     /**< True after the host asserts DTR for the interface. */
-    uint32_t tx_bytes;               /**< Bytes completed from the controller to the USB host. */
-    uint32_t rx_bytes;               /**< Bytes read from the USB host for the controller. */
+    uint32_t tx_bytes;               /**< UART RX bytes accepted by TinyUSB, not host receipt acknowledgements. */
+    uint32_t rx_bytes;               /**< Host bytes consumed from TinyUSB into the UART TX ring. */
     uint16_t rx_fifo_high_watermark; /**< Largest observed USB OUT FIFO occupancy. */
     uint16_t tx_fifo_high_watermark; /**< Largest observed USB IN FIFO occupancy. */
 } usb_cdc_port_stats_t;

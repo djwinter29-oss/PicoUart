@@ -13,8 +13,9 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from ..support.results import artifact_metadata
+from ..support.health import read_system_clock_hz
 from ..support.paths import REPO_ROOT
+from ..support.results import artifact_metadata
 from ..support.repository import git_metadata
 from .performance import DEFAULT_RATES, RATE_PATTERN, parse_benchmark_output_by_rate
 
@@ -99,6 +100,19 @@ def final_health_summary(*results: tuple[int, str] | None) -> str:
             if summaries:
                 return summaries[-1]
     return "not reported"
+
+
+def format_system_clock(clock_hz: int | None) -> str:
+    if clock_hz is None or clock_hz <= 0:
+        return "unavailable"
+    return f"{clock_hz / 1_000_000:g} MHz"
+
+
+def system_clock_filename_token(clock_hz: int | None) -> str:
+    if clock_hz is None or clock_hz <= 0:
+        return "clock-unknown"
+    megahertz = f"{clock_hz / 1_000_000:g}".replace(".", "p")
+    return f"{megahertz}mhz"
 
 
 def build_functional_command(arguments: argparse.Namespace) -> list[str]:
@@ -237,6 +251,7 @@ def format_result_entry(
         f"- **Tester:** {arguments.tester}",
         f"- **Firmware:** `{arguments.firmware_version}`",
         f"- **Firmware commit:** `{arguments.firmware_commit}`",
+        f"- **System clock:** `{format_system_clock(getattr(arguments, 'system_clock_hz', None))}`",
         f"- **Runner Git commit:** `{getattr(arguments, 'runner_git_commit', 'unknown')}`",
         f"- **Runner worktree:** `{getattr(arguments, 'runner_worktree', 'unknown')}`",
         f"- **Artifact:** {getattr(arguments, 'artifact_path', 'not supplied')}",
@@ -266,6 +281,8 @@ def format_result_entry(
             "| ---: | --- | --- | ---: | --- |",
         ]
     )
+    if performance is not None and "CEILING SEARCH PASS:" in performance[1]:
+        lines.extend(["**Ceiling search:** `PASS (boundary failure expected)`", ""])
     performance_rates = getattr(arguments, "rates", "")
     if getattr(arguments, "incremental_performance", False):
         attempted_rates = RATE_PATTERN.findall(performance[1]) if performance is not None else []
@@ -291,7 +308,7 @@ def format_result_entry(
         lines.extend(
             [
                 "",
-                f"**Highest supported concurrent rate:** `{highest}`",
+                f"**Highest passing tested concurrent rate:** `{highest}`",
                 f"**First failed tested rate:** `{first_failed}`",
             ]
         )
@@ -315,11 +332,14 @@ def format_result_entry(
     return "\n".join(lines)
 
 
-def write_hil_record(record_dir: Path, run_at: dt.datetime, board: str, content: str) -> Path:
+def write_hil_record(
+    record_dir: Path, run_at: dt.datetime, board: str, content: str, system_clock_hz: int | None = None
+) -> Path:
     """Write one uniquely named UTC HIL record without overwriting earlier runs."""
     record_dir.mkdir(parents=True, exist_ok=True)
     board_token = re.sub(r"[^a-z0-9]+", "-", board.lower()).strip("-") or "unknown"
-    stem = f"{run_at.strftime('%Y-%m-%d-%H%M%SZ')}-{board_token}-hil"
+    clock_token = system_clock_filename_token(system_clock_hz)
+    stem = f"{run_at.strftime('%Y-%m-%d-%H%M%SZ')}-{board_token}-{clock_token}-hil"
     suffix = 1
     while True:
         numbered_stem = stem if suffix == 1 else f"{stem}-{suffix:02d}"
@@ -348,7 +368,7 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser.add_argument(
         "--incremental-performance",
         action="store_true",
-        help="Increase the concurrent rate until failure",
+        help="Search for the six-port rate ceiling; a traffic failure after passing rates marks the boundary",
     )
     parser.add_argument("--incremental-start-rate", type=int, default=460800)
     parser.add_argument("--incremental-rate-step", type=int, default=100000)
@@ -383,6 +403,8 @@ def main(arguments: argparse.Namespace | None = None) -> int:
     if arguments.skip_functional and arguments.skip_performance:
         print("at least one test phase must run", file=sys.stderr)
         return 2
+    arguments.system_clock_hz = read_system_clock_hz()
+    print(f"HIL system clock: {format_system_clock(arguments.system_clock_hz)}")
     arguments.full_fixture = True
 
     functional = None
@@ -401,7 +423,9 @@ def main(arguments: argparse.Namespace | None = None) -> int:
     timestamp = run_at.isoformat()
     entry = format_result_entry(arguments, timestamp, functional, performance)
     if not arguments.no_record:
-        record_path = write_hil_record(arguments.record_dir.resolve(), run_at, arguments.board, entry)
+        record_path = write_hil_record(
+            arguments.record_dir.resolve(), run_at, arguments.board, entry, arguments.system_clock_hz
+        )
         print(f"Recorded HIL run in {record_path}")
 
     codes = [code for result in (functional, performance) if result is not None for code in [result[0]]]

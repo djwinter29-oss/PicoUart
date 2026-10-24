@@ -25,9 +25,18 @@ typedef struct {
 /** @brief Independent, single-writer windows for the two service cores. */
 static service_load_core_t cores[2];
 
+#if PICO_UART_PROFILE_TIMING
+volatile uint32_t service_load_max_pass_us[2];
+volatile uint32_t service_load_max_gap_us[2];
+#endif
+
 void service_load_init(void)
 {
     for (unsigned int core = 0; core < 2u; ++core) {
+    #if PICO_UART_PROFILE_TIMING
+        service_load_max_pass_us[core] = 0u;
+        service_load_max_gap_us[core] = 0u;
+    #endif
         cores[core].started = false;
         cores[core].measuring = false;
         cores[core].worked = false;
@@ -40,6 +49,12 @@ void service_load_begin(unsigned int core, uint32_t now_us)
 {
     assert(core < 2u);
     service_load_core_t *state = &cores[core];
+#if PICO_UART_PROFILE_TIMING
+    if (state->started) {
+        uint32_t gap = now_us - state->pass_start;
+        if (gap > service_load_max_gap_us[core]) service_load_max_gap_us[core] = gap;
+    }
+#endif
     if (!state->started) {
         state->window_start = now_us;
         state->started = true;
@@ -61,6 +76,12 @@ void service_load_end(unsigned int core, uint32_t now_us)
 {
     assert(core < 2u);
     service_load_core_t *state = &cores[core];
+#if PICO_UART_PROFILE_TIMING
+    if (state->measuring) {
+        uint32_t duration = now_us - state->pass_start;
+        if (duration > service_load_max_pass_us[core]) service_load_max_pass_us[core] = duration;
+    }
+#endif
     if (state->worked) {
         state->busy_us += (uint32_t)(now_us - state->pass_start);
     }

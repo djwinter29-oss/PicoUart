@@ -7,9 +7,11 @@ function fixture(secure = true, hid = {}) {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [
     `#${id}`, { textContent: "", dataset: {}, parentElement: { dataset: {} },
-      children: [], value: "", checked: false, disabled: false,
+      children: [], value: "", checked: false, disabled: false, open: false,
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
+      showModal() { this.open = true; },
+      close() { this.open = false; },
       addEventListener(event, handler) { this[event] = handler; } },
   ]));
   const document = { querySelector(selector) {
@@ -32,7 +34,9 @@ function fixture(secure = true, hid = {}) {
     disconnect() { this.calls.push("disconnect"); }
     refresh() { this.calls.push("refresh"); }
     toggleLed() { this.calls.push("toggle-led"); }
+    setLed(on) { this.calls.push("toggle-led"); this.state.dashboard.led = { output_on: on, manual_on: on }; }
     saveConfiguration(profile, unsafeOverclock) { this.calls.push(["save-configuration", profile, unsafeOverclock]); }
+    reboot(confirmed) { this.calls.push(["reboot", confirmed]); }
     clearConfigurationSaveMessage() { this.state.configurationSaveMessage = ""; }
     phase(phase, error = null) {
       this.state = { ...this.state, phase, error };
@@ -66,11 +70,15 @@ test("one connection button belongs to Device identity, with no separate refresh
   assert.ok(!html.includes("USB identity"));
   const configuration = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
   assert.match(html, /id="identity-title"[\s\S]*?<section aria-labelledby="configuration-title">[\s\S]*?<section aria-labelledby="runtime-title">/);
+  assert.match(configuration, /<h2 id="configuration-title">Board configuration<\/h2>/);
   assert.match(configuration, /id="configuration-profile"/);
-  assert.match(configuration, /id="configuration-unsafe-ack"/);
+  assert.doesNotMatch(configuration, /configuration-unsafe-ack/);
+  assert.match(html, /<dialog class="confirmation-dialog"[^>]*>[\s\S]*?id="configuration-unsafe-ack"/);
   assert.match(configuration, /role="status" aria-live="polite"/);
   assert.match(configuration, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[\s\S]*?<\/div>\s*<\/div>/);
-  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">System clock profile<\/label>\s*<select/);
+  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">Stored boot profile<\/label>\s*<select/);
+  assert.match(configuration, /id="uart-tx-capacity"[\s\S]*?id="uart-rx-capacity"[\s\S]*?id="cdc-tx-capacity"[\s\S]*?id="cdc-rx-capacity"/);
+  assert.match(html, /<details class="pin-map-disclosure">[\s\S]*?id="board-pins"/);
   assert.doesNotMatch(configuration, /configuration-note|configuration-detail|configuration-status/);
 });
 
@@ -79,30 +87,59 @@ test("persistent configuration uses target profiles and gates unsafe saves", () 
   client.state.dashboard = { connected: true, hardware: { mcu_id: 2 },
     identity: { capabilities: 7, clock_profile_mask: 31 },
     configuration: { stored_profile: 2 }, configuration_save: { status: 0, profile: 2 },
-    channels: Array.from({ length: 6 }, () => ({ cdc_open: false })) };
+    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_updated_at: new Date().toISOString() })) };
   client.state.phase = "connected";
   client.render(client.state);
   const profile = get("configuration-profile");
   assert.deepEqual(profile.children.map(option => [option.value, option.textContent]), [
-    ["0", "SDK default (150 MHz)"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz"], ["4", "280 MHz (RP2350)"],
+    ["0", "SDK default"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz"], ["4", "280 MHz"],
   ]);
   assert.equal(profile.value, "2");
   assert.equal(profile.disabled, false);
-  assert.equal(get("configuration-acknowledgement").hidden, false);
   assert.equal(get("save-configuration").disabled, true);
-  get("configuration-unsafe-ack").checked = true;
-  get("configuration-unsafe-ack").change();
+  profile.value = "1";
+  profile.change();
   assert.equal(get("save-configuration").disabled, false);
   get("save-configuration").click();
-  assert.deepEqual(client.calls.at(-1), ["save-configuration", 2, true]);
+  assert.equal(get("configuration-dialog").open, true);
+  assert.equal(get("configuration-acknowledgement").hidden, false);
+  assert.equal(get("confirm-configuration").disabled, true);
+  get("configuration-unsafe-ack").checked = true;
+  get("configuration-unsafe-ack").change();
+  assert.equal(get("confirm-configuration").disabled, false);
+  get("confirm-configuration").click();
+  assert.deepEqual(client.calls.at(-1), ["save-configuration", 1, true]);
+  assert.equal(get("configuration-dialog").open, false);
   profile.value = "0";
   profile.change();
+  get("save-configuration").click();
   assert.equal(get("configuration-acknowledgement").hidden, true);
-  client.state.dashboard.channels[3].cdc_open = true;
+  assert.equal(get("confirm-configuration").disabled, false);
+  get("cancel-configuration").click();
+  client.state.dashboard.channels[3].channel_state = 2;
   client.render(client.state);
   assert.equal(profile.disabled, true);
   assert.equal(get("configuration-unsafe-ack").disabled, true);
   assert.equal(get("save-configuration").disabled, true);
+});
+
+test("Save & Reboot stays disabled until the selected profile differs from its baseline", () => {
+  const { client, get } = fixture();
+  client.state.dashboard = { identity: { capabilities: 4, clock_profile_mask: 31 },
+    configuration: { stored_profile: null },
+    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_updated_at: new Date().toISOString() })) };
+  client.state.phase = "connected";
+  client.render(client.state);
+  const profile = get("configuration-profile");
+  const saveButton = get("save-configuration");
+  assert.equal(profile.value, "0");
+  assert.equal(saveButton.disabled, true);
+  profile.value = "1";
+  profile.change();
+  assert.equal(saveButton.disabled, false);
+  profile.value = "0";
+  profile.change();
+  assert.equal(saveButton.disabled, true);
 });
 
 test("configuration read failures disable Save and remain visible without the removed summary", () => {
@@ -110,11 +147,32 @@ test("configuration read failures disable Save and remain visible without the re
   client.state.dashboard = { connected: true, hardware: { mcu_id: 1 },
     configuration: { stored_profile: null }, configuration_save: null, configuration_save_error: "Unsupported report",
     channels: Array.from({ length: 6 }, () => ({ cdc_open: false })) };
+  client.state.dashboard.configuration_error = "Unsupported report";
   client.phase("connected");
   assert.equal(get("save-configuration").disabled, true);
-  assert.equal(get("configuration-acknowledgement").hidden, true);
+  assert.equal(get("configuration-dialog").open, false);
   assert.equal(get("configuration-message").textContent, "Unsupported report");
   assert.equal(get("configuration-message").dataset.error, "true");
+});
+
+test("board reboot uses the shared confirmation modal and requires explicit confirmation", () => {
+  const { client, get } = fixture();
+  client.state.phase = "connected";
+  client.state.dashboard.identity = { capabilities: 2 };
+  client.render(client.state);
+  const rebootButton = get("reboot-board");
+  assert.equal(rebootButton.hidden, false);
+  assert.equal(rebootButton.disabled, false);
+  rebootButton.click();
+  assert.equal(get("reboot-dialog").open, true);
+  assert.deepEqual(client.calls, []);
+  get("cancel-reboot").click();
+  assert.equal(get("reboot-dialog").open, false);
+  assert.deepEqual(client.calls, []);
+  rebootButton.click();
+  get("confirm-reboot").click();
+  assert.equal(get("reboot-dialog").open, false);
+  assert.deepEqual(client.calls, [["reboot", true]]);
 });
 
 test("metadata continues refreshing automatically every second", () => {
@@ -147,7 +205,8 @@ test("connection button reflects lifecycle, routes clicks and recovers after fai
   assert.equal(button.textContent, "Disconnect");
   assert.match(button.className, /button-danger/);
   assert.equal(get("toggle-led").disabled, true);
-  client.state.dashboard.led = { manual_on: false, output_on: false };
+  client.state.dashboard.identity = { capabilities: 1 };
+  client.state.dashboard.telemetry = { led: { output_on: false } };
   client.phase("connected");
   assert.equal(get("toggle-led").disabled, false);
   button.click();

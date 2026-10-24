@@ -109,6 +109,7 @@ jobs:
             cp "$SRC/pico_uart.$ext" "$OUT/pico_uart-v${VERSION}-${LABEL}.$ext"
           done
           python3 tools/release/verify-build.py --build-dir "$SRC" --board "$BOARD" --version "$VERSION"
+          python3 tools/release/check-firmware-budget.py --build-dir "$SRC" --board "$BOARD"
           (cd "$OUT" && sha256sum pico_uart-v${VERSION}-${LABEL}.* > "SHA256SUMS-${LABEL}.txt")
           ls -la "$OUT"
 

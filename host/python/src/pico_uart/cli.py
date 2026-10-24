@@ -7,7 +7,6 @@ import sys
 import time
 
 from .client import PicoUartHid
-from .protocol import decode_health
 
 
 def print_status(status: dict[str, object]) -> None:
@@ -15,13 +14,11 @@ def print_status(status: dict[str, object]) -> None:
     channels = " ".join(
         f"cdc{channel['id']} "
         + (
-            f"health=0x{channel['health']:02x}"
-            f"[{','.join(decode_health(channel['health'])) or '-'}] "
+            f"state={channel['state']} measurement={channel['uart_measurement_state']} "
             f"seq={channel['sequence']} "
             f"uart_tx/rx={channel['traffic']['uart_tx']}/{channel['traffic']['uart_rx']} "
-            f"cdc_tx/rx={channel['traffic']['usb_tx']}/{channel['traffic']['usb_rx']} "
-            f"ring_peak={channel['ring_high_watermark']}"
-            if channel["health"] is not None else "waiting-for-input"
+            f"cdc_tx/rx={channel['traffic']['usb_tx']}/{channel['traffic']['usb_rx']}"
+            if channel["sequence"] is not None else "waiting-for-input"
         )
         for channel in status["channels"]
     )
@@ -63,7 +60,7 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     commands.add_parser("toggle-led", help="toggle the board's default LED")
     commands.add_parser(
         "reset",
-        help="arm then reset the board (requires firmware HID reset support)",
+        help="request a confirmed board reboot (requires firmware HID reset support)",
     )
     web_parser = commands.add_parser("web", help="start the local Flask diagnostics dashboard")
     web_parser.add_argument("--port", type=int, default=5000, help="local web server port")

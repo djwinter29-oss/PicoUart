@@ -75,6 +75,15 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
         except OSError:
             return jsonify(error="service temporarily unavailable"), 503
 
+    @app.get("/api/diagnostics")
+    def diagnostics():
+        try:
+            return jsonify(dashboard.read_diagnostics(request.args.get("board")))
+        except RuntimeError:
+            return jsonify(error="diagnostic read could not be completed"), 409
+        except OSError:
+            return jsonify(error="service temporarily unavailable"), 503
+
     @app.post("/api/configuration")
     def save_configuration():
         token = session.get("csrf_token", "")

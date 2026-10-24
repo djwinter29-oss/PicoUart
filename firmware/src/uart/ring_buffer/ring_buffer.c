@@ -20,12 +20,13 @@ static bool ring_buffer_size_is_valid(size_t size)
     return (size != 0u) && (size <= UINT32_MAX) && ((size & (size - 1u)) == 0u);
 }
 
-static void ring_buffer_reset(ring_buffer_t *ring)
+void ring_buffer_clear(ring_buffer_t *ring)
 {
+    if (ring == NULL) {
+        return;
+    }
     ring->producer = 0u;
     ring->consumer = 0u;
-    ring->high_watermark = 0u;
-    ring->overflow_count = 0u;
     ring->producer_reserved_sequence = 0u;
     ring->producer_reserved_count = 0u;
     ring->consumer_reserved_sequence = 0u;
@@ -73,7 +74,9 @@ bool ring_buffer_init(ring_buffer_t *ring, uint8_t *storage, size_t size)
     ring->storage = storage;
     ring->size = (uint32_t)size;
     ring->mask = (uint32_t)(size - 1u);
-    ring_buffer_reset(ring);
+    ring->high_watermark = 0u;
+    ring->overflow_count = 0u;
+    ring_buffer_clear(ring);
     return true;
 }
 

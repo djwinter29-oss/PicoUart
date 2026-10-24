@@ -57,7 +57,7 @@ Reference boards, not PicoUart-specific assemblies. Pico photo by Misael Resénd
 | **Test-automation friendly** | Save `pico-uart status --json` snapshots and `pico-uart monitor` logs next to each test run's results. |
 | **Dashboards when you need them** | Watch all six UARTs live in the browser, local Python, or .NET app during bring-up and debugging. |
 
-![Current WebHID dashboard showing device identity, runtime status, and six UART channels.](docs/assets/pico-uart-dashboard.png)
+![WebHID dashboard with simulated device identity, board configuration, runtime status, and six-channel UART/USB traffic.](docs/assets/pico-uart-dashboard.png)
 
 _Current WebHID layout with simulated telemetry; illustrative, not a live hardware result._
 

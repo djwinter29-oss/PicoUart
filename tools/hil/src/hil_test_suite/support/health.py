@@ -3,19 +3,16 @@
 
 from __future__ import annotations
 
+import json
 import os
-import re
 import subprocess
 import sys
 import time
+from pico_uart import PicoUartHid
 from .paths import REPO_ROOT
 
 HOST_PYTHON_SRC = REPO_ROOT / "host/python/src"
 HID_MODULE = "pico_uart"
-HEALTH_PATTERN = re.compile(r"cdc([0-5]) health=0x([0-9a-fA-F]+)\[[^]]*\]")
-OVERRUN_PATTERN = re.compile(r"cdc([0-5])=([0-9]+)")
-READY_BIT = 1 << 0
-BAD_HEALTH_BITS = 0xCE  # init_failed, control_error, control_pending, rx_overrun, rx_error
 
 
 def _run_hid(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -30,59 +27,69 @@ def _run_hid(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _collect_hid_health_once() -> dict:
-    """Collect one HID monitor sample and overflow snapshot."""
-    monitor = _run_hid("monitor", "--duration", "1")
-    overruns = _run_hid("overruns")
-    version = _run_hid("version")
-    output = monitor.stdout + monitor.stderr
-    overflow_output = overruns.stdout + overruns.stderr
-    channels = {int(index): int(flags, 16) for index, flags in HEALTH_PATTERN.findall(output)}
-    overflow_counts = {int(index): int(value) for index, value in OVERRUN_PATTERN.findall(overflow_output)}
-    errors = []
-    if monitor.returncode != 0:
-        errors.append(f"HID monitor failed: {output.strip()}")
-    if overruns.returncode != 0:
-        errors.append(f"HID overflow query failed: {overflow_output.strip()}")
-    if version.returncode != 0:
-        errors.append(f"HID version query failed: {(version.stdout + version.stderr).strip()}")
-    if len(channels) != 6:
-        errors.append(f"HID monitor returned {len(channels)}/6 channel samples")
-    if len(overflow_counts) != 6:
-        errors.append(f"HID overflow query returned {len(overflow_counts)}/6 channels")
-    return {
-        "channels": channels,
-        "overruns": overflow_counts,
-        "firmware_version": version.stdout.strip() if version.returncode == 0 else None,
-        "monitor_returncode": monitor.returncode,
-        "overruns_returncode": overruns.returncode,
-        "version_returncode": version.returncode,
-        "monitor_output": output,
-        "overruns_output": overflow_output,
-        "version_output": version.stdout + version.stderr,
-        "error": "; ".join(errors) if errors else None,
-    }
+def _collect_hid_health_once(serial_number: str | None = None) -> dict:
+    """Read all six non-consuming Feature snapshots; never parse human console output."""
+    snapshot = {"channels": {}, "overruns": {}, "diagnostics": {}, "firmware_version": None, "error": None}
+    try:
+        with (PicoUartHid(serial_number=serial_number) if serial_number is not None else PicoUartHid()) as board:
+            snapshot["firmware_version"] = board.read_firmware_version()
+            for index in range(6):
+                snapshot["channels"][index] = board.read_channel(index)["state"]
+                diagnostic = board.read_channel_diagnostic(index)
+                for _ in range(2):
+                    if diagnostic["uart_measurement_state"] == 1:
+                        break
+                    time.sleep(0.05)
+                    diagnostic = board.read_channel_diagnostic(index)
+                snapshot["diagnostics"][index] = diagnostic
+                snapshot["overruns"][index] = diagnostic["rx_overrun_count"]
+                if diagnostic["uart_measurement_state"] != 1:
+                    snapshot["error"] = f"CDC{index} UART diagnostics are not current"
+    except (OSError, RuntimeError) as error:
+        snapshot["error"] = f"HID health query failed: {error}"
+    return snapshot
 
 
-def collect_hid_health() -> dict:
-    """Collect HID health, retrying transient post-reset enumeration failures."""
-    snapshot = _collect_hid_health_once()
+def collect_hid_health(serial_number: str | None = None) -> dict:
+    """Collect HID health, retrying bounded snapshot contention and post-reset enumeration failures."""
+    snapshot = _collect_hid_health_once(serial_number) if serial_number is not None else _collect_hid_health_once()
     for _ in range(2):
         if not snapshot.get("error"):
             break
         time.sleep(0.5)
-        snapshot = _collect_hid_health_once()
+        snapshot = _collect_hid_health_once(serial_number) if serial_number is not None else _collect_hid_health_once()
     return snapshot
+
+
+def read_system_clock_hz() -> int | None:
+    """Read the live system clock through the board's read-only HID command."""
+    result = _run_hid("hardware")
+    if result.returncode != 0:
+        return None
+    try:
+        hardware = json.loads(result.stdout)
+    except (TypeError, ValueError):
+        return None
+    clock_hz = hardware.get("system_clock_hz") if isinstance(hardware, dict) else None
+    if isinstance(clock_hz, int) and not isinstance(clock_hz, bool) and clock_hz > 0:
+        return clock_hz
+    return None
 
 
 def health_is_clean(snapshot: dict | None, baseline: dict | None = None) -> bool:
     """Return true when HID is available and no health/overflow criteria failed."""
     if snapshot is None or snapshot.get("error"):
         return False
-    if len(snapshot["channels"]) != 6 or len(snapshot["overruns"]) != 6:
+    indices = set(range(6))
+    if any(set(snapshot.get(field, {})) != indices for field in ("channels", "overruns", "diagnostics")):
         return False
-    if any(not flags & READY_BIT or flags & BAD_HEALTH_BITS for flags in snapshot["channels"].values()):
-        return False
+    for index, state in snapshot["channels"].items():
+        if state not in ("closed", "ready"):
+            return False
+        diagnostic = snapshot["diagnostics"][index]
+        if (diagnostic["uart_measurement_state"] != 1 or diagnostic["rx_overrun_count"] != 0
+                or diagnostic["rx_error_count"] != 0 or diagnostic["last_control_error_reason"] != 0):
+            return False
     if baseline is not None:
         if baseline.get("error"):
             return False
@@ -98,10 +105,15 @@ def health_summary(snapshot: dict | None) -> str:
         return "not collected"
     if snapshot.get("error"):
         return "ERROR: " + snapshot["error"]
-    channels = ", ".join(f"cdc{index}=0x{flags:02x}" for index, flags in sorted(snapshot["channels"].items()))
+    channels = ", ".join(f"cdc{index}={state}" for index, state in sorted(snapshot["channels"].items()))
     overruns = ", ".join(f"cdc{index}={count}" for index, count in sorted(snapshot["overruns"].items()))
+    diagnostics = ", ".join(
+        f"cdc{index}=m{sample['uart_measurement_state']}/rxerr{sample['rx_error_count']}"
+        f"/ctl{sample['last_control_error_reason']}"
+        for index, sample in sorted(snapshot["diagnostics"].items())
+    )
     firmware_version = snapshot.get("firmware_version") or "unknown"
-    return f"health [{channels}]; overruns [{overruns}]; firmware={firmware_version}"
+    return f"health [{channels}]; overruns [{overruns}]; diagnostics [{diagnostics}]; firmware={firmware_version}"
 
 
 def health_evidence(snapshot: dict | None) -> str:
@@ -110,10 +122,5 @@ def health_evidence(snapshot: dict | None) -> str:
         return "HID health: not collected\n"
     return (
         f"HID health summary: {health_summary(snapshot)}\n"
-        f"HID monitor exit={snapshot.get('monitor_returncode')}\n"
-        f"{snapshot.get('monitor_output', '')}"
-        f"HID overruns exit={snapshot.get('overruns_returncode')}\n"
-        f"{snapshot.get('overruns_output', '')}"
-        f"HID version exit={snapshot.get('version_returncode')}\n"
-        f"{snapshot.get('version_output', '')}"
+        f"HID Feature snapshots: {json.dumps(snapshot, sort_keys=True)}\n"
     )

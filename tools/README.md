@@ -38,6 +38,8 @@ tools/validation/validate.sh --skip-build
 tools/hil/setup.sh
 tools/hil/.venv/bin/python -m pytest tools/hil/tests
 tools/hil/runner/full.sh --help
+tools/hil/.venv/bin/pico-uart-hil recovery --help
+tools/hil/.venv/bin/pico-uart-hil startup --help
 
 # Release artifact verification
 python3 tools/release/verify-build.py --help

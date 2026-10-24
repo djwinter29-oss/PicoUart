@@ -6,16 +6,75 @@ namespace PicoUart.Hid;
 
 public sealed record HidBoard(string DevicePath, string? SerialNumber, string ProductName);
 
+internal sealed class HidStreamLifetime(Action dispose)
+{
+    private readonly object gate = new();
+    private int activeTransfers;
+    private bool disposeRequested;
+    private bool disposeStarted;
+
+    public T Transfer<T>(Func<T> transfer, int timeoutMs)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(timeoutMs);
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposeRequested, this);
+            activeTransfers++;
+        }
+
+        Task<T> operation;
+        try
+        {
+            operation = Task.Run(() =>
+            {
+                try { return transfer(); }
+                finally { CompleteTransfer(); }
+            });
+        }
+        catch
+        {
+            CompleteTransfer();
+            throw;
+        }
+        return operation.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)).GetAwaiter().GetResult();
+    }
+
+    public void Dispose()
+    {
+        bool disposeNow;
+        lock (gate)
+        {
+            disposeRequested = true;
+            disposeNow = activeTransfers == 0 && !disposeStarted;
+            if (disposeNow) disposeStarted = true;
+        }
+        if (disposeNow) dispose();
+    }
+
+    private void CompleteTransfer()
+    {
+        bool disposeNow;
+        lock (gate)
+        {
+            activeTransfers--;
+            disposeNow = disposeRequested && activeTransfers == 0 && !disposeStarted;
+            if (disposeNow) disposeStarted = true;
+        }
+        if (disposeNow) dispose();
+    }
+}
+
 public sealed class PicoUartHid : IDisposable
 {
     private readonly HidStream stream;
+    private readonly HidStreamLifetime streamLifetime;
     private readonly object gate = new();
     private BoardIdentity? identity;
-    private ulong nextRequestId = 1;
+    private ConfigurationStatus? configuration;
     private bool disposed;
     private bool transferUnconfirmed;
     private bool rebootScheduled;
-    internal ControlResult? LastCommandResult { get; private set; }
+    internal ActionResult? LastActionResult { get; private set; }
 
     public PicoUartHid(string? serialNumber = null, string? devicePath = null)
     {
@@ -29,22 +88,76 @@ public sealed class PicoUartHid : IDisposable
             throw new InvalidOperationException("PicoUart HID interface not found with the expected usage metadata");
         if (devices.Length != 1)
             throw new InvalidOperationException("multiple PicoUart HID interfaces matched; use --serial or --device-path");
-        var descriptor = devices[0].GetReportDescriptor();
-        ValidateReports(descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
-                .Select(report => ((byte)report.ReportID, report.Length)),
-            descriptor.DeviceItems.SelectMany(item => item.InputReports)
-                .Select(report => ((byte)report.ReportID, report.Length)));
-        stream = devices[0].Open();
-        stream.ReadTimeout = 250;
-        stream.WriteTimeout = 3000;
+        var device = devices[0];
+        var descriptor = device.GetReportDescriptor();
+        var identityReports = descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
+            .Where(report => report.ReportID == Protocol.IdentityReportId).ToArray();
+        if (identityReports.Length != 1 || identityReports[0].Length < 4)
+            throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
+        stream = device.Open();
+        streamLifetime = new(stream.Dispose);
+        try
+        {
+            stream.ReadTimeout = 250;
+            stream.WriteTimeout = 3000;
+            var payload = ReadFeaturePayload(stream, streamLifetime,
+                Protocol.IdentityReportId, identityReports[0].Length - 1);
+            var prefix = Protocol.ParseIdentityPrefix(payload);
+            if (prefix.ProductId != Protocol.ProductId)
+                throw new InvalidOperationException($"unsupported HID product (0x{prefix.ProductId:X4})");
+            identity = Protocol.ParseIdentity(payload);
+            ValidateUsbSerial(device.GetSerialNumber(), identity.DeviceUid);
+            ValidateReports(descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
+                    .Select(report => ((byte)report.ReportID, report.Length)),
+                descriptor.DeviceItems.SelectMany(item => item.InputReports)
+                    .Select(report => ((byte)report.ReportID, report.Length)));
+        }
+        catch
+        {
+            streamLifetime.Dispose();
+            throw;
+        }
     }
 
     private static IEnumerable<HidDevice> MatchingDevices() => DeviceList.Local.GetHidDevices(0xCAFE, 0x4010)
         .Where(device => device.GetReportDescriptor().DeviceItems
             .Any(item => item.Usages.GetAllValues().Contains(0xFF000001u)));
 
-    public static HidBoard[] Discover() => MatchingDevices().Select(device =>
-        new HidBoard(device.DevicePath, device.GetSerialNumber(), device.GetProductName())).ToArray();
+    public static HidBoard[] Discover() => MatchingDevices().Select(DiscoverDevice).ToArray();
+
+    private static HidBoard DiscoverDevice(HidDevice device)
+    {
+        var features = device.GetReportDescriptor().DeviceItems.SelectMany(item => item.FeatureReports)
+            .Where(report => report.ReportID == Protocol.IdentityReportId).ToArray();
+        if (features.Length != 1 || features[0].Length < 4)
+            throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
+        var candidate = device.Open();
+        var lifetime = new HidStreamLifetime(candidate.Dispose);
+        try
+        {
+            candidate.ReadTimeout = 3000;
+            candidate.WriteTimeout = 3000;
+            var payload = ReadFeaturePayload(candidate, lifetime,
+                Protocol.IdentityReportId, features[0].Length - 1);
+            var prefix = Protocol.ParseIdentityPrefix(payload);
+            var usbSerial = device.GetSerialNumber();
+            if (prefix.ProductId != Protocol.ProductId)
+                return new(device.DevicePath, usbSerial, $"Unknown product (0x{prefix.ProductId:X4})");
+            var identity = Protocol.ParseIdentity(payload);
+            ValidateUsbSerial(usbSerial, identity.DeviceUid);
+            return new(device.DevicePath, identity.DeviceUid, identity.ProductName);
+        }
+        finally
+        {
+            lifetime.Dispose();
+        }
+    }
+
+    private static void ValidateUsbSerial(string? usbSerial, string deviceUid)
+    {
+        if (usbSerial is not null && !string.Equals(usbSerial, deviceUid, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("HID identity UID does not match the USB serial number");
+    }
 
     internal static void ValidateReports(IEnumerable<(byte Id, int Length)> features,
         IEnumerable<(byte Id, int Length)> inputs)
@@ -52,15 +165,18 @@ public sealed class PicoUartHid : IDisposable
         (byte Id, int Length)[] expectedFeatures =
         [
             (Protocol.IdentityReportId, Protocol.IdentitySize + 1),
-            (Protocol.ControlReportId, Protocol.ControlSize + 1),
+            (Protocol.ConfigurationReportId, Protocol.ConfigurationSize + 1),
             (Protocol.TelemetryReportId, Protocol.TelemetrySize + 1),
+            (Protocol.ActionReportId, Protocol.ActionSize + 1),
             .. Enumerable.Range(0, Protocol.ChannelCount)
-                .Select(index => ((byte)(Protocol.ChannelReportId + index), Protocol.ChannelSize + 1))
+                .Select(index => ((byte)(Protocol.ChannelReportId + index), Protocol.ChannelSize + 1)),
+            .. Enumerable.Range(0, Protocol.ChannelCount)
+                .Select(index => ((byte)(Protocol.DiagnosticsReportId + index), Protocol.DiagnosticsSize + 1))
         ];
         var expectedInputs = Enumerable.Range(0, Protocol.ChannelCount)
             .Select(index => ((byte)(Protocol.ChannelReportId + index), Protocol.ChannelSize + 1));
-        if (!features.OrderBy(report => report.Id).SequenceEqual(expectedFeatures)
-            || !inputs.OrderBy(report => report.Id).SequenceEqual(expectedInputs))
+        if (!features.OrderBy(report => report.Item1).SequenceEqual(expectedFeatures.OrderBy(report => report.Item1))
+            || !inputs.OrderBy(report => report.Item1).SequenceEqual(expectedInputs.OrderBy(report => report.Item1)))
             throw new InvalidOperationException("unsupported HID report descriptor; consolidated v1 reports required");
     }
 
@@ -70,6 +186,7 @@ public sealed class PicoUartHid : IDisposable
         lock (gate)
         {
             CheckConnection();
+            if (timeoutMs == 0) return null;
             stream.ReadTimeout = timeoutMs;
             var report = new byte[stream.Device.GetMaxInputReportLength()];
             int count;
@@ -77,7 +194,9 @@ public sealed class PicoUartHid : IDisposable
             catch (TimeoutException) { return null; }
             if (count != Protocol.ChannelSize + 1)
                 throw new InvalidOperationException("unexpected HID channel report size");
-            return Protocol.ParseChannel(report[0], report.AsSpan(1, count - 1));
+            var info = ReadIdentity();
+            var config = ReadConfiguration();
+            return Protocol.ParseChannel(report[0], report.AsSpan(1, count - 1), info, config);
         }
     }
 
@@ -87,6 +206,16 @@ public sealed class PicoUartHid : IDisposable
         {
             CheckConnection();
             return identity ??= Protocol.ParseIdentity(ReadFeature(Protocol.IdentityReportId, Protocol.IdentitySize));
+        }
+    }
+
+    public ConfigurationStatus ReadConfiguration()
+    {
+        lock (gate)
+        {
+            var info = ReadIdentity();
+            return configuration ??= Protocol.ParseConfiguration(
+                ReadFeature(Protocol.ConfigurationReportId, Protocol.ConfigurationSize), info);
         }
     }
 
@@ -104,7 +233,8 @@ public sealed class PicoUartHid : IDisposable
         lock (gate)
         {
             var info = ReadIdentity();
-            return new(ReadTelemetry().TemperatureCelsius, info.FirmwareVersion,
+            var telemetry = ReadTelemetry();
+            return new(telemetry.TemperatureCelsius, info.FirmwareVersion,
                 info.FirmwareMajor, info.FirmwareMinor, info.FirmwarePatch, (info.Capabilities & 2) != 0);
         }
     }
@@ -118,87 +248,90 @@ public sealed class PicoUartHid : IDisposable
         }
     }
 
-    public ControlResult ReadControl(int timeoutMs = 3000)
-    {
-        lock (gate)
-        {
-            var info = ReadIdentity();
-            return Protocol.ParseControl(ReadFeature(Protocol.ControlReportId, Protocol.ControlSize, timeoutMs), info);
-        }
-    }
+    public ActionResult ReadActionResult(int timeoutMs = 3000) =>
+        ReadActionResultCore(timeoutMs);
 
-    public ConfigurationStatus ReadConfiguration() => ReadControl().Configuration;
+    public ConfigurationStatus ReadBootConfiguration() => ReadConfiguration();
     public RuntimeStatus ReadRuntime() => ReadTelemetry().Runtime;
     public LedStatus ReadLed() => ReadTelemetry().Led;
     public uint[] ReadOverflowCounts() => ReadChannelDiagnostics()
-        .Select(channel => channel.Faults["rx_overrun"].Count).ToArray();
+        .Select(channel => channel.RxOverrunCount).ToArray();
 
     /// <summary>Non-consuming Feature sample; never add its traffic to interrupt totals.</summary>
     public ChannelStatus ReadChannel(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Protocol.ChannelCount);
-        var id = (byte)(Protocol.ChannelReportId + index);
-        return Protocol.ParseChannel(id, ReadFeature(id, Protocol.ChannelSize));
+        lock (gate)
+        {
+            var id = (byte)(Protocol.ChannelReportId + index);
+            return Protocol.ParseChannel(id, ReadFeature(id, Protocol.ChannelSize),
+                ReadIdentity(), ReadConfiguration());
+        }
     }
 
-    public ChannelDiagnostics ReadChannelDiagnostic(int index) => ReadChannel(index).Diagnostics;
-    public ChannelDiagnostics[] ReadChannelDiagnostics() => Enumerable.Range(0, Protocol.ChannelCount)
-        .Select(ReadChannelDiagnostic).ToArray();
+    public ChannelDiagnostics ReadChannelDiagnostic(int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Protocol.ChannelCount);
+        lock (gate)
+        {
+            var id = (byte)(Protocol.DiagnosticsReportId + index);
+            return Protocol.ParseDiagnostics(id, ReadFeature(id, Protocol.DiagnosticsSize), ReadConfiguration());
+        }
+    }
 
-    public void ToggleLed()
+    public ChannelDiagnostics[] ReadChannelDiagnostics() =>
+        Enumerable.Range(0, Protocol.ChannelCount).Select(ReadChannelDiagnostic).ToArray();
+
+    public ActionResult ToggleLed()
     {
         lock (gate)
         {
             var output = ReadLed().OutputOn
                 ?? throw new InvalidOperationException("board identification LED unavailable");
-            SendCommand(output ? (byte)1 : (byte)2);
+            var result = SendAction(output ? (byte)1 : (byte)2);
             ReadTelemetry();
+            return result;
         }
     }
 
-    public void ResetBoard()
+    public ActionResult ResetBoard()
     {
-        lock (gate)
-        {
-            SendCommand(3);
-            SendCommand(4);
-        }
+        lock (gate) return SendAction(3);
     }
 
-    /// <summary>Return only after verified completion has scheduled the automatic reboot.</summary>
+    /// <summary>Return only after report 20 confirms the save and automatic reboot schedule.</summary>
     public ConfigurationSaveStatus SaveConfiguration(uint profile, bool unsafeOverclock)
     {
         lock (gate)
         {
-            var result = SendCommand(5, profile, unsafeOverclock);
-            return new(result.Status, result.RequestedProfile);
+            var result = SendAction(4, profile, unsafeOverclock);
+            return new(result.Status, result.ErrorReason, profile);
         }
     }
 
-    private ControlResult SendCommand(byte command, uint profile = 0, bool unsafeOverclock = false)
+    private ActionResult SendAction(byte action, uint profile = 0, bool unsafeOverclock = false)
     {
         CheckConnection();
         if (rebootScheduled) throw new InvalidOperationException("board reboot already scheduled; reconnect");
         var info = ReadIdentity();
-        var latest = ReadControl();
-        if (latest.Status == 1 || (latest.Status == 2 && latest.Command is 4 or 5))
-            throw new InvalidOperationException("a board command is pending or reboot is already scheduled; reconnect");
-        var id = AllocateRequestId(ref nextRequestId, latest.RequestId);
-        var payload = Protocol.BuildCommand(command, id, info, profile, unsafeOverclock);
-        byte[] report = [Protocol.ControlReportId, .. payload];
-        LastCommandResult = null;
+        LastActionResult = null;
+        var prior = ReadActionResultCore(3000);
+        if (prior.Status == 1 || (prior.Status == 2 && prior.Action is 3 or 4))
+            throw new InvalidOperationException("a board action is pending or reboot is already scheduled; reconnect");
+        var payload = Protocol.BuildAction(action, info, profile, unsafeOverclock);
+        byte[] report = [Protocol.ActionReportId, .. payload];
         try
         {
             Transfer(() => { stream.SetFeature(report); return true; }, 3000);
-            var result = WaitForCommand(command, payload[2], id, command == 5 ? profile : null, timeout =>
+            var result = WaitForAction(action, timeout =>
             {
-                var observed = ReadControl(timeout);
-                if (observed.Command == command && observed.RequestId == id && observed.Flags == payload[2])
-                    LastCommandResult = observed;
+                var observed = ReadActionResultCore(timeout);
+                LastActionResult = observed;
                 return observed;
             });
-            rebootScheduled = command is 4 or 5;
+            rebootScheduled = action is 3 or 4;
             return result;
         }
         catch (Exception error) when (error is TimeoutException or IOException)
@@ -208,35 +341,26 @@ public sealed class PicoUartHid : IDisposable
         }
     }
 
-    internal static uint AllocateRequestId(ref ulong next, uint latest)
+    internal static ActionResult WaitForAction(byte action, Func<int, ActionResult> read, int timeoutMs = 3000)
     {
-        if (next == latest) next++;
-        if (next > uint.MaxValue)
-            throw new InvalidOperationException("control request ID space exhausted; reconnect");
-        return (uint)next++;
-    }
-
-    internal static ControlResult WaitForCommand(byte command, byte flags, uint requestId, uint? profile,
-        Func<int, ControlResult> read, int timeoutMs = 3000)
-    {
-        var elapsed = Stopwatch.StartNew();
+        var timer = Stopwatch.StartNew();
         while (true)
         {
-            var remaining = timeoutMs - (int)elapsed.ElapsedMilliseconds;
-            if (remaining <= 0) throw new TimeoutException("board command outcome unconfirmed; reconnect and inspect configuration");
+            var remaining = timeoutMs - (int)timer.ElapsedMilliseconds;
+            if (remaining <= 0) throw Unconfirmed("board action outcome unconfirmed; reconnect before further I/O");
             var result = read(remaining);
-            if (elapsed.ElapsedMilliseconds >= timeoutMs)
-                throw new TimeoutException("board command outcome unconfirmed; reconnect and inspect configuration");
-            if (result.RequestId != requestId || result.Command != command || result.Flags != flags)
-                throw new IOException("board command outcome unconfirmed: result belongs to another request");
-            if (result.Status is 1 or 2 && result.RequestedProfile != profile)
-                throw new IOException("board command outcome unconfirmed: requested profile mismatch");
+            if (timer.ElapsedMilliseconds >= timeoutMs)
+                throw Unconfirmed("board action outcome unconfirmed; reconnect before further I/O");
+            if (result.Action != action)
+                throw Unconfirmed("board action outcome unconfirmed: result belongs to another action");
             if (result.Status == 2) return result;
-            if (result.Status >= 3)
-                throw new InvalidOperationException($"board command rejected: status {result.Status}, error {result.ErrorReason}"
+            if (result.Status is >= 3 and <= 6)
+                throw new InvalidOperationException(
+                    $"board action rejected: status {result.Status}, error {result.ErrorReason}"
                     + (result.Status == 5 ? "; stop UART traffic and close all CDC ports" : ""));
-            if (result.Status != 1) throw new IOException("board command outcome unconfirmed: idle result");
-            remaining = timeoutMs - (int)elapsed.ElapsedMilliseconds;
+            if (result.Status != 1)
+                throw Unconfirmed("board action outcome unconfirmed: no matching result");
+            remaining = timeoutMs - (int)timer.ElapsedMilliseconds;
             if (remaining > 0) Thread.Sleep(Math.Min(50, remaining));
         }
     }
@@ -248,7 +372,8 @@ public sealed class PicoUartHid : IDisposable
             if (disposed) return;
             disposed = true;
             identity = null;
-            stream.Dispose();
+            configuration = null;
+            streamLifetime.Dispose();
         }
     }
 
@@ -262,11 +387,7 @@ public sealed class PicoUartHid : IDisposable
     private T Transfer<T>(Func<T> transfer, int timeoutMs)
     {
         CheckConnection();
-        try
-        {
-            // HidSharp feature transfers have no portable cancellation; retire the connection after a deadline.
-            return Task.Run(transfer).WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)).GetAwaiter().GetResult();
-        }
+        try { return streamLifetime.Transfer(transfer, timeoutMs); }
         catch (TimeoutException)
         {
             transferUnconfirmed = true;
@@ -276,16 +397,28 @@ public sealed class PicoUartHid : IDisposable
 
     private byte[] ReadFeature(byte reportId, int payloadSize, int timeoutMs = 3000)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(timeoutMs);
         lock (gate)
         {
             CheckConnection();
-            var prefixSize = OperatingSystem.IsLinux() ? 2 : 1;
-            var report = new byte[Math.Max(payloadSize + prefixSize,
-                stream.Device.GetMaxFeatureReportLength() + prefixSize - 1)];
-            report[0] = reportId;
-            Transfer(() => { stream.GetFeature(report); return true; }, timeoutMs);
-            return FeaturePayload(report, reportId, payloadSize, prefixSize);
+            try { return ReadFeaturePayload(stream, streamLifetime, reportId, payloadSize, timeoutMs); }
+            catch (TimeoutException)
+            {
+                transferUnconfirmed = true;
+                throw;
+            }
         }
+    }
+
+    private static byte[] ReadFeaturePayload(HidStream target, HidStreamLifetime lifetime,
+        byte reportId, int payloadSize, int timeoutMs = 3000)
+    {
+        var prefixSize = OperatingSystem.IsLinux() ? 2 : 1;
+        var report = new byte[Math.Max(payloadSize + prefixSize,
+            target.Device.GetMaxFeatureReportLength() + prefixSize - 1)];
+        report[0] = reportId;
+        lifetime.Transfer(() => { target.GetFeature(report); return true; }, timeoutMs);
+        return FeaturePayload(report, reportId, payloadSize, prefixSize);
     }
 
     internal static byte[] FeaturePayload(byte[] report, byte reportId, int payloadSize, int prefixSize)
@@ -295,4 +428,9 @@ public sealed class PicoUartHid : IDisposable
             throw new InvalidOperationException("unexpected HID feature report ID or size");
         return report.AsSpan(prefixSize, payloadSize).ToArray();
     }
+
+    private ActionResult ReadActionResultCore(int timeoutMs) =>
+        Protocol.ParseActionResult(ReadFeature(Protocol.ActionReportId, Protocol.ActionSize, timeoutMs));
+
+    private static IOException Unconfirmed(string message) => new(message);
 }

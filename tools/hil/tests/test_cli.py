@@ -26,6 +26,8 @@ def test_help_lists_available_commands(capsys) -> None:
     assert "functional" in output
     assert "performance" in output
     assert "bridge" in output
+    assert "recovery" in output
+    assert "startup" in output
 
 
 @requires_linux_serial
@@ -47,6 +49,19 @@ def test_subcommand_help_uses_command_arguments(capsys) -> None:
     output = capsys.readouterr().out
     assert "--pico-cdc0" in output
     assert "--stage" in output
+
+
+@requires_linux_serial
+@pytest.mark.parametrize("command", ["recovery", "startup"])
+def test_review_commands_require_selected_board_and_evidence(capsys, command) -> None:
+    cli = _load_cli()
+    with pytest.raises(SystemExit) as error:
+        cli.main([command, "--help"])
+    assert error.value.code == 0
+    output = capsys.readouterr().out
+    assert "--serial" in output
+    assert "--artifact" in output
+    assert "--output" in output
 
 
 def test_dispatches_parsed_subcommand_namespace(monkeypatch) -> None:
