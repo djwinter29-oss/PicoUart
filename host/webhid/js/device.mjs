@@ -7,6 +7,7 @@ export const DEVICE_FILTER = Object.freeze({
 
 const PRODUCT_ID_PICOUART = 1;
 const CHANNEL_COUNT = 6;
+const MIN_TRAFFIC_RATE_WINDOW_MS = 1000;
 const TRAFFIC_RATE_WINDOW_MS = 5000;
 const MAX_RATE_ELAPSED_MS = 8000;
 const MAX_REPORT_AGE_MS = 3000;
@@ -534,9 +535,13 @@ export class PicoUartWebHid {
     ]));
     const rates = Object.fromEntries(Object.entries(snapshot.counters).map(([name, counter]) => {
       const uart = name === "uart_tx" || name === "uart_rx";
-      const validMeasurements = !uart || rateSamples.every(sample => sample.measurement === 1);
-      const delta = (counter - baseline.counters[name]) >>> 0;
-      return [name, rateWindowValid && validMeasurements ? delta * 1000 / rateElapsed : null];
+      const samples = uart ? rateSamples.filter(sample => sample.measurement !== 0) : rateSamples;
+      const rateBaseline = samples[0];
+      const latest = samples.at(-1);
+      const elapsed = rateBaseline && latest ? latest.receivedAt - rateBaseline.receivedAt : 0;
+      const delta = rateBaseline && latest ? (counter - rateBaseline.counters[name]) >>> 0 : 0;
+      return [name, elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS && elapsed <= MAX_RATE_ELAPSED_MS
+        ? delta * 1000 / elapsed : null];
     }));
     const channelGaps = previous.traffic_gaps + Number(sequenceGap || stale);
     const channels = [...dashboard.channels];

@@ -153,7 +153,10 @@ test("Python dashboard averages cumulative byte deltas over five seconds across 
   view.context.rateChannel = makeChannel(10,
     { uart_tx: 100, uart_rx: 200, usb_tx: 300, usb_rx: 400 }, 500);
   view.context.rateNow = 1000;
-  assert.equal(vm.runInContext("currentRates(rateChannel, rateNow, rateData).rates", view.context), null);
+  const initialRates = vm.runInContext("currentRates(rateChannel, rateNow, rateData).rates", view.context);
+  for (const direction of ["uart_tx", "uart_rx", "usb_tx", "usb_rx"]) {
+    assert.equal(initialRates[direction], null);
+  }
 
   const samples = [
     [2000, 11, 500, { uart_tx: 2100, uart_rx: 1200, usb_tx: 1300, usb_rx: 900 }],
@@ -162,17 +165,27 @@ test("Python dashboard averages cumulative byte deltas over five seconds across 
     [5000, 14, 500, { uart_tx: 6100, uart_rx: 3200, usb_tx: 4300, usb_rx: 2400 }],
     [6000, 16, 65535, { uart_tx: 7100, uart_rx: 3700, usb_tx: 5300, usb_rx: 2900 }],
   ];
-  for (const [time, sequence, interval_ms, totals] of samples) {
+  const expectedRates = [
+    { uart_tx: 2000, uart_rx: 1000, usb_tx: 1000, usb_rx: 500 },
+    { uart_tx: 1000, uart_rx: 500, usb_tx: 500, usb_rx: 250 },
+    { uart_tx: 2000, uart_rx: 1000, usb_tx: 4000 / 3, usb_rx: 2000 / 3 },
+    { uart_tx: 1500, uart_rx: 750, usb_tx: 1000, usb_rx: 500 },
+    { uart_tx: 1400, uart_rx: 700, usb_tx: 1000, usb_rx: 500 },
+  ];
+  for (const [index, [time, sequence, interval_ms, totals]] of samples.entries()) {
     view.context.rateChannel = makeChannel(sequence, totals, interval_ms);
     rateData.runtime.uptime_ms = time;
     view.context.rateNow = time;
-    vm.runInContext("currentRates(rateChannel, rateNow, rateData)", view.context);
+    const rates = vm.runInContext("currentRates(rateChannel, rateNow, rateData).rates", view.context);
+    for (const direction of ["uart_tx", "uart_rx", "usb_tx", "usb_rx"]) {
+      assert.equal(rates[direction], expectedRates[index][direction]);
+    }
   }
   const rates = vm.runInContext("currentRates(rateChannel, rateNow, rateData).rates", view.context);
-  assert.equal(rates.uart_tx, 1400);
-  assert.equal(rates.uart_rx, 700);
-  assert.equal(rates.usb_tx, 1000);
-  assert.equal(rates.usb_rx, 500);
+  assert.equal(rates.uart_tx, expectedRates.at(-1).uart_tx);
+  assert.equal(rates.uart_rx, expectedRates.at(-1).uart_rx);
+  assert.equal(rates.usb_tx, expectedRates.at(-1).usb_tx);
+  assert.equal(rates.usb_rx, expectedRates.at(-1).usb_rx);
 });
 
 test("status polling follows bounded backend HID cadence and resets on board selection or errors", async () => {

@@ -107,7 +107,9 @@ def test_published_dotnet_serves_the_canonical_frontend(server, host_version, pa
         b"{{ dashboard_type }}", b".NET").replace(b"{{ host_version }}", expected_version)
     assert b"<title>PicoUart Diagnostics | .NET</title>" in page
     assert b'rel="icon" type="image/svg+xml" href="/favicon.svg"' in page
-    assert b'id="mcu"' in page
+    assert b'id="board-model"' in page
+    assert b"Board model" in page
+    assert b'id="mcu"' not in page
     assert b'id="system-clock"' in page
     assert "httponly" in headers["Set-Cookie"].lower()
     assert "samesite=strict" in headers["Set-Cookie"].lower()

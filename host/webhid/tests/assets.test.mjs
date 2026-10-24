@@ -30,7 +30,7 @@ for (const frontend of ["web", "webhid"]) {
       assert.match(html, /<dialog class="diagnostics-dialog"[^>]*id="channel-diagnostics-dialog"/);
       assert.match(html, /<details class="pin-map-disclosure">[\s\S]*?id="board-pins"/);
       assert.match(section, /id="configuration-message" role="status" aria-live="polite"/);
-      assert.match(html, /title="Rates are averaged over approximately the last five seconds\./);
+      assert.match(html, /title="Rates ramp from a one-second to a five-second average as samples arrive\./);
     } else {
       assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
       assert.match(section, /id="save-configuration"/);

@@ -38,6 +38,7 @@ let diagnosticData = null;
 let diagnosticError = null;
 let diagnosticRequest = null;
 const channelHistory = new Map();
+const MIN_TRAFFIC_RATE_WINDOW_MS = 1000;
 const TRAFFIC_RATE_WINDOW_MS = 5000;
 const MAX_RATE_ELAPSED_MS = 8000;
 let reportSample = null;
@@ -225,41 +226,37 @@ function currentRates(channel, now, data) {
   if (!data.connected || !history || history.identity !== identity
     || (Number.isFinite(uptime) && Number.isFinite(history.uptime) && uptime < history.uptime)) {
     history = { identity, uptime, sequence: channel.sequence, measurement: channel.uart_measurement_state,
-      totals, rates: null, sequenceReceivedAt: now,
-      samples: [{ receivedAt: now, totals, measurement: channel.uart_measurement_state }] };
+      sequenceReceivedAt: now, samples: [] };
     channelHistory.set(id, history);
+  }
+  if (Number.isInteger(channel.sequence) && !Number.isInteger(history.sequence)) {
+    history.sequence = channel.sequence;
+    history.sequenceReceivedAt = now;
   } else if (Number.isInteger(channel.sequence) && Number.isInteger(history.sequence)
     && channel.sequence !== history.sequence) {
     const sequenceDelta = (channel.sequence - history.sequence + 65536) % 65536;
-    if (sequenceDelta < 32768) {
-      const samples = history.samples;
-      samples.push({ receivedAt: now, totals, measurement: channel.uart_measurement_state });
-      const cutoff = now - TRAFFIC_RATE_WINDOW_MS;
-      while (samples.length > 2 && samples[1].receivedAt <= cutoff) samples.shift();
-      const baseline = samples[0];
-      const elapsed = now - baseline.receivedAt;
-      const elapsedValid = samples.length > 1 && elapsed > 0 && elapsed <= MAX_RATE_ELAPSED_MS;
-      const rates = {};
-      for (const [, key, uart] of directions) {
-        const current = totals[key];
-        const previous = baseline.totals[key];
-        const measurementValid = !uart || samples.every(sample => sample.measurement === 1);
-        rates[key] = elapsedValid && measurementValid
-          && Number.isInteger(current) && Number.isInteger(previous)
-          ? ((current - previous) >>> 0) * 1000 / elapsed : null;
-      }
-      history.rates = elapsedValid ? rates : null;
-      history.samples = samples;
+    if (sequenceDelta > 0 && sequenceDelta < 32768) {
       history.sequence = channel.sequence;
-      history.measurement = channel.uart_measurement_state;
-      history.totals = totals;
       history.sequenceReceivedAt = now;
-      history.baselineReady = Number.isInteger(channel.sequence);
     }
+  }
+  if (data.connected && Object.values(totals).every(Number.isSafeInteger)) {
+    history.samples.push({ receivedAt: now, totals, measurement: channel.uart_measurement_state });
+    const cutoff = now - TRAFFIC_RATE_WINDOW_MS;
+    while (history.samples.length > 2 && history.samples[1].receivedAt <= cutoff) history.samples.shift();
+  }
+  const rates = {};
+  for (const [, key, uart] of directions) {
+    const samples = uart ? history.samples.filter(sample => sample.measurement !== 0) : history.samples;
+    const baseline = samples[0];
+    const latest = samples.at(-1);
+    const elapsed = latest && baseline ? latest.receivedAt - baseline.receivedAt : 0;
+    rates[key] = elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS && elapsed <= MAX_RATE_ELAPSED_MS
+      ? ((latest.totals[key] - baseline.totals[key]) >>> 0) * 1000 / elapsed : null;
   }
   history.uptime = uptime;
   const fresh = data.connected && now - history.sequenceReceivedAt <= 3000;
-  return { rates: fresh ? history.rates : null, fresh };
+  return { rates, fresh };
 }
 
 function measurementLabel(value) {
