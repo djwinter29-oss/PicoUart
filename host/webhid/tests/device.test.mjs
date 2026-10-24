@@ -18,6 +18,16 @@ test("WebHID rejects reported descriptor lengths that conflict with the protocol
   assert.throws(() => validatePicoUartDescriptor(device), /invalid Feature report 1 length/);
 });
 
+test("identity report uses its 27-byte protocol length when Windows reports 26 bytes", () => {
+  const device = { collections: [{
+    featureReports: [{ reportId: 1, items: [{ reportSize: 8, reportCount: 26 }] }],
+    inputReports: [],
+    children: [],
+  }] };
+  assert.equal(identityDiscoveryLength(device), 27);
+  assert.doesNotThrow(() => validatePicoUartDescriptor(device, new Set([1])));
+});
+
 test("WebHID discovery filters by PicoUart VID/PID and leaves descriptor validation to connection", () => {
   assert.deepEqual(DEVICE_FILTER, { vendorId: 0xcafe, productId: 0x4010 });
   assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4010, collections: [] }), true);

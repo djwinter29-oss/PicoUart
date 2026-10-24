@@ -504,7 +504,19 @@ static tusb_control_request_t transfer(uint8_t id, hid_report_type_t type, bool 
 
 static void test_control_adapter_pre_ack_results_protected_writes_and_failed_gets(void)
 {
-    tusb_control_request_t request = transfer(20u, HID_REPORT_TYPE_FEATURE, false, 5u);
+    tusb_control_request_t request = transfer(1u, HID_REPORT_TYPE_FEATURE, true, 28u);
+    TEST_ASSERT_TRUE(__wrap_hidd_control_xfer_cb(0u, CONTROL_STAGE_SETUP, &request));
+    TEST_ASSERT_EQUAL_UINT16(28u, transfer_length);
+    TEST_ASSERT_EQUAL_UINT8(1u, ((uint8_t *)transfer_buffer)[0]);
+    TEST_ASSERT_EQUAL_UINT8(1u, ((uint8_t *)transfer_buffer)[1]);
+    TEST_ASSERT_EQUAL_UINT8(1u, ((uint8_t *)transfer_buffer)[2]);
+    TEST_ASSERT_EQUAL_UINT8(0u, ((uint8_t *)transfer_buffer)[3]);
+    request.wLength = 10u;
+    TEST_ASSERT_TRUE(__wrap_hidd_control_xfer_cb(0u, CONTROL_STAGE_SETUP, &request));
+    TEST_ASSERT_EQUAL_UINT16(10u, transfer_length);
+    TEST_ASSERT_EQUAL_UINT8(1u, ((uint8_t *)transfer_buffer)[0]);
+
+    request = transfer(20u, HID_REPORT_TYPE_FEATURE, false, 5u);
     TEST_ASSERT_TRUE(__wrap_hidd_control_xfer_cb(0u, CONTROL_STAGE_SETUP, &request));
     TEST_ASSERT_EQUAL_UINT16(5u, transfer_length);
     const uint8_t save[] = {20u, 1u, 4u, 1u, 0u};

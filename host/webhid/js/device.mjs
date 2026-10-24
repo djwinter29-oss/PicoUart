@@ -57,10 +57,10 @@ function reportInfo(device, type, reportId) {
   return lengths[0];
 }
 
-export function validatePicoUartDescriptor(device) {
+export function validatePicoUartDescriptor(device, verifiedFeatureReports = new Set()) {
   for (const [reportId, length] of FEATURE_LENGTHS) {
     const reportedLength = reportInfo(device, "feature", reportId);
-    if (reportedLength !== null && reportedLength !== length) {
+    if (reportedLength !== null && reportedLength !== length && !verifiedFeatureReports.has(reportId)) {
       throw new Error(`HID descriptor has an invalid Feature report ${reportId} length`);
     }
   }
@@ -74,9 +74,9 @@ export function validatePicoUartDescriptor(device) {
 
 export function identityDiscoveryLength(device) {
   const length = reportInfo(device, "feature", 1);
-  const identityLength = length ?? FEATURE_LENGTHS.get(1);
-  if (identityLength < 3) throw new Error("Identity Feature report is too short for product discovery");
-  return identityLength;
+  const protocolLength = FEATURE_LENGTHS.get(1);
+  if (length !== null && length < 3) throw new Error("Identity Feature report is too short for product discovery");
+  return protocolLength;
 }
 
 export function decodeIdentityPrefix(report, declaredLength) {
@@ -479,7 +479,7 @@ export class PicoUartWebHid {
     if (prefix.layout_version !== 1) {
       throw new Error(`Unsupported PicoUart identity layout version ${prefix.layout_version}`);
     }
-    validatePicoUartDescriptor(this.device);
+    validatePicoUartDescriptor(this.device, new Set([1]));
     const identity = decodeDeviceInformation(identityReport);
     this.information = identity;
     this.update({ dashboard: { ...this.state.dashboard, identity, identity_error: null } });

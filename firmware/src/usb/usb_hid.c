@@ -579,10 +579,21 @@ bool __wrap_hidd_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_req
             return false;
         }
         if (stage == CONTROL_STAGE_SETUP) {
-            usb_hid_control_buffer[0] = id;
-            uint16_t length = tud_hid_get_report_cb(0u, id, type, usb_hid_control_buffer + 1u,
-                                                   sizeof(usb_hid_control_buffer) - 1u);
-            return length != 0u && tud_control_xfer(rhport, request, usb_hid_control_buffer, length + 1u);
+            uint16_t request_length = request->wLength < sizeof(usb_hid_control_buffer)
+                ? request->wLength : (uint16_t)sizeof(usb_hid_control_buffer);
+            uint8_t *report = usb_hid_control_buffer;
+            uint16_t transfer_length = 0u;
+            if (id != 0u && request_length > 1u) {
+                *report++ = id;
+                --request_length;
+                ++transfer_length;
+            }
+            uint16_t payload_length = tud_hid_get_report_cb(0u, id, type, report, request_length);
+            if (payload_length == 0u) {
+                return false;
+            }
+            transfer_length = (uint16_t)(transfer_length + payload_length);
+            return tud_control_xfer(rhport, request, usb_hid_control_buffer, transfer_length);
         }
         return true;
     }
