@@ -18,25 +18,32 @@ test("HTML references only WebHID-owned assets", () => {
 });
 
 for (const frontend of ["web", "webhid"]) {
-  test(`${frontend} keeps boot configuration as a compact summary with a heading action`, () => {
+  test(`${frontend} keeps board configuration in a compact summary with a heading action`, () => {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     const section = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
     if (frontend === "webhid") {
-      assert.match(section, /<h2 id="configuration-title">Boot configuration<\/h2>/);
+      assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
       assert.match(section, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[^>]*>Save &amp; Reboot<\/button>[\s\S]*?<\/div>\s*<\/div>/);
-      assert.match(section, /class="summary configuration-summary">[\s\S]*?<label for="configuration-profile">Clock profile to save<\/label>\s*<select/);
-      assert.match(section, /id="configuration-acknowledgement" hidden/);
+      assert.match(section, /class="summary configuration-summary">[\s\S]*?<label for="configuration-profile">Stored boot profile<\/label>\s*<select/);
+      assert.match(html, /<dialog class="configuration-dialog"[^>]*>[\s\S]*?id="configuration-acknowledgement" hidden/);
+      assert.match(html, /<th scope="col"(?: title="[^"]+")?>Traffic<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
+      assert.match(html, /<dialog class="diagnostics-dialog"[^>]*id="channel-diagnostics-dialog"/);
+      assert.match(html, /<details class="pin-map-disclosure">[\s\S]*?id="board-pins"/);
       assert.match(section, /id="configuration-message" role="status" aria-live="polite"/);
+      assert.match(html, /title="Rates are averaged over approximately the last five seconds\./);
     } else {
       assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
-      assert.doesNotMatch(section, /save-configuration|configuration-profile|configuration-unsafe-ack/);
+      assert.match(section, /id="save-configuration"/);
+      assert.match(section, /<label for="clock-profile">Stored boot profile<\/label>/);
     }
     assert.doesNotMatch(section, /configuration-panel|configuration-note|configuration-status|configuration-detail/);
     const styles = readFileSync(new URL(`../../${frontend}/css/${frontend === "web" ? "dashboard" : "webhid"}.css`,
       import.meta.url), "utf8");
     if (frontend === "webhid") {
-      assert.match(styles, /#configuration-profile\s*\{\s*width:\s*20%;/);
-      assert.match(styles, /#configuration-profile\s*\{\s*width:\s*100%;\s*\}/);
+      const sharedStyles = readFileSync(new URL("../css/dashboard.css", import.meta.url), "utf8");
+      assert.match(styles, /#configuration-profile\s*\{[^}]*width:\s*100%;/);
+      assert.match(sharedStyles, /\.summary\.configuration-summary\s*\{\s*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\);\s*\}/);
+      assert.match(sharedStyles, /\.traffic-metrics\s*\{[^}]*grid-auto-flow:\s*column;/);
     }
   });
 }

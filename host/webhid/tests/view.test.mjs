@@ -16,12 +16,17 @@ class Element {
     this.className = "";
     this.title = "";
     this.value = "";
+    this.events = {};
+    this.open = false;
   }
   set textContent(value) { this.text = value; this.children = []; }
   get textContent() { return this.text + this.children.map(child => child.textContent).join(""); }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
-  addEventListener() {}
+  addEventListener(event, callback) { this.events[event] = callback; }
+  click() { this.events.click?.(); }
+  showModal() { this.open = true; }
+  close() { this.open = false; }
 }
 
 function fixture(html) {
@@ -116,11 +121,27 @@ test("webhid render shows identity and runtime summaries", () => {
       })),
     });
     assert.equal(document.querySelector("#product-name").textContent, "PicoUart");
+    assert.equal(document.querySelector("#board-model").textContent, "Pico 2 (RP2350)");
     assert.equal(document.querySelector("#serial").textContent, "ABC123");
     assert.equal(document.querySelector("#firmware").textContent, "1.2.3");
-    assert.equal(document.querySelector("#core0-service-load").textContent, "12.5%");
-    assert.equal(document.querySelector("#core1-service-load").textContent, "5.0%");
+    assert.equal(document.querySelector("#service-load").textContent, "12.5% / 5.0%");
     assert.equal(document.querySelector("#toggle-led").textContent, "Board LED: On");
+    assert.doesNotMatch(html, /<span>Microcontroller<\/span>/);
+    assert.equal(document.querySelector("#channel-rows").children[0].children[2].children.length, 1);
+    const lifecycle = document.querySelector("#channel-rows").children[0].children[1];
+    assert.equal(lifecycle.children[1].className, "health-flags");
+    assert.equal(lifecycle.children[1].textContent, "UART Valid");
+    const traffic = document.querySelector("#channel-rows").children[0].children[3].children[0];
+    assert.deepEqual(traffic.children.map(metric => metric.children[0].textContent), [
+      "UART TX", "UART RX", "USB RX", "USB TX",
+    ]);
+    assert.equal(traffic.children[0].children[1].textContent, "0.0 KB/s");
+    const diagnosticsButton = document.querySelector("#channel-rows").children[0].children[4].children[0];
+    assert.equal(diagnosticsButton.textContent, "Diagnostics");
+    diagnosticsButton.click();
+    assert.equal(document.querySelector("#channel-diagnostics-dialog").open, true);
+    assert.equal(document.querySelector("#channel-diagnostics-title").textContent, "CDC0 diagnostics");
+    assert.match(document.querySelector("#channel-diagnostics-content").textContent, /UART TX ring peak/);
   } finally {
     delete globalThis.document;
   }

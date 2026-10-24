@@ -2,12 +2,10 @@
 .status-line { align-items: baseline; }
 .status-line .status-mark { flex-shrink: 0; }
 #status-message { overflow-wrap: anywhere; }
-.summary.configuration-summary { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .configuration-summary .summary-item { min-height: 62px; padding-block: 10px; }
 .configuration-summary label { color: var(--muted); font-size: 12px; }
 #configuration-profile {
-  width: 20%;
-  min-width: 240px;
+  width: 100%;
   max-width: 100%;
   min-height: 38px;
   min-width: 0;
@@ -22,10 +20,8 @@
   outline: 3px solid var(--lime);
   outline-offset: 2px;
 }
-.configuration-acknowledgement { display: flex; align-items: center; gap: 8px; }
-.configuration-acknowledgement[hidden] { display: none; }
-.configuration-acknowledgement input { width: 16px; height: 16px; accent-color: var(--teal); }
-.configuration-warning { margin: -12px 0 8px; color: var(--amber); font-size: 12px; }
+.configuration-acknowledgement input { width: 16px; height: 16px; }
+.configuration-warning { margin: 0 0 12px; }
 .configuration-message {
   margin: 0 0 20px;
   font-size: 12px;
@@ -36,11 +32,9 @@
 }
 .configuration-message:empty { display: none; }
 .configuration-message[data-error="true"] { color: var(--coral); }
-.static-map { margin-bottom: 12px; }
 .static-map table { min-width: 540px; table-layout: auto; }
 .static-map caption { padding: 10px 14px; color: var(--muted); text-align: left; font-size: 12px; }
 .static-map td { height: 40px; }
 @media (max-width: 720px) {
-  #configuration-profile { width: 100%; }
   .actions #connect { min-width: 0; }
 }

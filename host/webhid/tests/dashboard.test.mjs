@@ -41,9 +41,11 @@ class Element {
   }
   set textContent(value) { this.text = value; this.children = []; }
   get textContent() { return this.text + this.children.map(child => child.textContent).join(""); }
+  get options() { return this.children; }
   get selectedOptions() { return this.children.filter(child => child.value === this.value); }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
+  close() { this.open = false; }
   addEventListener(event, callback) { this.events[event] = callback; }
 }
 
@@ -108,6 +110,7 @@ function page() {
 async function connect(view) {
   assert.equal(view.requests[0].url, "/api/boards");
   await view.respond(catalog);
+  assert.ok(view.requests[0], `Status request missing: ${view.element("status-message").textContent}`);
   assert.equal(view.requests[0].url, "/api/status?board=A");
   await view.respond(snapshot("first"));
 }
@@ -134,10 +137,42 @@ test("renders live v1 telemetry instead of leaving the startup waiting message",
   assert.equal(view.element("status-message").textContent, "HID telemetry is live");
   assert.equal(view.element("serial").textContent, "FIRST");
   assert.equal(view.element("uptime").textContent, "1h 2m 3s");
-  assert.equal(view.element("board-model").textContent, "Pico 2");
+  assert.equal(view.element("board-model").textContent, "Pico 2 (RP2350)");
   assert.match(view.element("channel-rows").children[0].textContent, /115,200 8N1/);
   assert.match(view.element("channel-rows").children[0].textContent, /100 B/);
   assert.match(view.element("channel-rows").children[0].textContent, /400 B/);
+});
+
+test("Python dashboard averages cumulative byte deltas over five seconds across sequence gaps", () => {
+  const view = page();
+  vm.runInContext("channelHistory.clear()", view.context);
+  const rateData = { connected: true, identity: { serial_number: "A" }, runtime: { uptime_ms: 1000 } };
+  const makeChannel = (sequence, totals, interval_ms) => ({ id: 0, sequence, interval_ms,
+    uart_measurement_state: 1, totals });
+  view.context.rateData = rateData;
+  view.context.rateChannel = makeChannel(10,
+    { uart_tx: 100, uart_rx: 200, usb_tx: 300, usb_rx: 400 }, 500);
+  view.context.rateNow = 1000;
+  assert.equal(vm.runInContext("currentRates(rateChannel, rateNow, rateData).rates", view.context), null);
+
+  const samples = [
+    [2000, 11, 500, { uart_tx: 2100, uart_rx: 1200, usb_tx: 1300, usb_rx: 900 }],
+    [3000, 12, 500, { uart_tx: 2100, uart_rx: 1200, usb_tx: 1300, usb_rx: 900 }],
+    [4000, 13, 500, { uart_tx: 6100, uart_rx: 3200, usb_tx: 4300, usb_rx: 2400 }],
+    [5000, 14, 500, { uart_tx: 6100, uart_rx: 3200, usb_tx: 4300, usb_rx: 2400 }],
+    [6000, 16, 65535, { uart_tx: 7100, uart_rx: 3700, usb_tx: 5300, usb_rx: 2900 }],
+  ];
+  for (const [time, sequence, interval_ms, totals] of samples) {
+    view.context.rateChannel = makeChannel(sequence, totals, interval_ms);
+    rateData.runtime.uptime_ms = time;
+    view.context.rateNow = time;
+    vm.runInContext("currentRates(rateChannel, rateNow, rateData)", view.context);
+  }
+  const rates = vm.runInContext("currentRates(rateChannel, rateNow, rateData).rates", view.context);
+  assert.equal(rates.uart_tx, 1400);
+  assert.equal(rates.uart_rx, 700);
+  assert.equal(rates.usb_tx, 1000);
+  assert.equal(rates.usb_rx, 500);
 });
 
 test("status polling follows bounded backend HID cadence and resets on board selection or errors", async () => {

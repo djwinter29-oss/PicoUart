@@ -38,6 +38,8 @@ let diagnosticData = null;
 let diagnosticError = null;
 let diagnosticRequest = null;
 const channelHistory = new Map();
+const TRAFFIC_RATE_WINDOW_MS = 5000;
+const MAX_RATE_ELAPSED_MS = 8000;
 let reportSample = null;
 let reportReceivedAt = 0;
 
@@ -110,6 +112,17 @@ function formatPin(value) {
 function boardModelName(value) {
   return ({ 0: "Unknown / unspecified", 1: "Pico", 2: "Pico W", 3: "Pico 2", 4: "Pico 2 W" })[value]
     ?? (value == null ? "--" : `Unknown board model (${value})`);
+}
+
+function microcontrollerName(value) {
+  if (typeof value === "string") return value;
+  return ({ 1: "RP2040", 2: "RP2350" })[value] ?? (value == null ? "--" : `Unknown MCU (${value})`);
+}
+
+function boardIdentityName(board, microcontroller) {
+  const boardName = boardModelName(board);
+  const mcuName = microcontrollerName(microcontroller);
+  return boardName === "--" || mcuName === "--" ? boardName : `${boardName} (${mcuName})`;
 }
 
 function deviceUid(identity) {
@@ -212,30 +225,37 @@ function currentRates(channel, now, data) {
   if (!data.connected || !history || history.identity !== identity
     || (Number.isFinite(uptime) && Number.isFinite(history.uptime) && uptime < history.uptime)) {
     history = { identity, uptime, sequence: channel.sequence, measurement: channel.uart_measurement_state,
-      totals, rates: null, sequenceReceivedAt: now, baselineReady: Number.isInteger(channel.sequence)
-        && channel.sequence !== 0 };
+      totals, rates: null, sequenceReceivedAt: now,
+      samples: [{ receivedAt: now, totals, measurement: channel.uart_measurement_state }] };
     channelHistory.set(id, history);
-  } else if (channel.sequence !== history.sequence) {
+  } else if (Number.isInteger(channel.sequence) && Number.isInteger(history.sequence)
+    && channel.sequence !== history.sequence) {
     const sequenceDelta = (channel.sequence - history.sequence + 65536) % 65536;
-    const contiguous = sequenceDelta === 1;
-    const interval = channel.interval_ms;
-    const intervalValid = Number.isInteger(interval) && interval > 0 && interval < 65535;
-    const rates = {};
-    for (const [, key, uart] of directions) {
-      const current = channel[key];
-      const previous = history.totals[key];
-      const measurementValid = !uart
-        || (channel.uart_measurement_state === 1 && history.measurement === 1);
-      rates[key] = contiguous && intervalValid && measurementValid
-        && Number.isInteger(current) && Number.isInteger(previous)
-        ? ((current - previous) >>> 0) * 1000 / interval : null;
+    if (sequenceDelta < 32768) {
+      const samples = history.samples;
+      samples.push({ receivedAt: now, totals, measurement: channel.uart_measurement_state });
+      const cutoff = now - TRAFFIC_RATE_WINDOW_MS;
+      while (samples.length > 2 && samples[1].receivedAt <= cutoff) samples.shift();
+      const baseline = samples[0];
+      const elapsed = now - baseline.receivedAt;
+      const elapsedValid = samples.length > 1 && elapsed > 0 && elapsed <= MAX_RATE_ELAPSED_MS;
+      const rates = {};
+      for (const [, key, uart] of directions) {
+        const current = totals[key];
+        const previous = baseline.totals[key];
+        const measurementValid = !uart || samples.every(sample => sample.measurement === 1);
+        rates[key] = elapsedValid && measurementValid
+          && Number.isInteger(current) && Number.isInteger(previous)
+          ? ((current - previous) >>> 0) * 1000 / elapsed : null;
+      }
+      history.rates = elapsedValid ? rates : null;
+      history.samples = samples;
+      history.sequence = channel.sequence;
+      history.measurement = channel.uart_measurement_state;
+      history.totals = totals;
+      history.sequenceReceivedAt = now;
+      history.baselineReady = Number.isInteger(channel.sequence);
     }
-    history.rates = history.baselineReady ? rates : null;
-    history.sequence = channel.sequence;
-    history.measurement = channel.uart_measurement_state;
-    history.totals = totals;
-    history.sequenceReceivedAt = now;
-    history.baselineReady = Number.isInteger(channel.sequence) && channel.sequence !== 0;
   }
   history.uptime = uptime;
   const fresh = data.connected && now - history.sequenceReceivedAt <= 3000;
@@ -378,12 +398,8 @@ function renderChannels(data) {
       ? `${channel.baud_rate.toLocaleString()} ${channel.data_bits}`
         + `${({ none: "N", odd: "O", even: "E" })[channel.parity] ?? "?"}${channel.stop_bits}`
       : "--";
-    const pins = document.createElement("small");
-    const pin = data.configuration?.channel_pins?.[channel.id];
-    pins.textContent = `TX ${formatPin(pin?.tx_pin)} / RX ${formatPin(pin?.rx_pin)}`
-      + ` · UART ${measurementLabel(channel.uart_measurement_state)}`;
     configuration.title = "Applied baud and framing; GPIO assignments are static board configuration.";
-    configuration.append(settings, pins);
+    configuration.append(settings);
     row.append(configuration);
 
     const lifecycle = document.createElement("td");
@@ -392,13 +408,13 @@ function renderChannels(data) {
     const stateName = stale ? "unknown" : channelStates[channel.state] ?? channel.state;
     state.className = `state state-${stateName === "error" ? "attention" : stateName}`;
     state.textContent = stateName === "error" ? "Attention" : stateName;
-    lifecycle.append(state);
-    if (channel.uart_measurement_state !== 1) {
-      const measurement = document.createElement("small");
-      measurement.className = "health-flags";
-      measurement.textContent = `UART sample ${measurementLabel(channel.uart_measurement_state).toLowerCase()}`;
-      lifecycle.append(measurement);
-    }
+    const measurement = document.createElement("small");
+    measurement.className = "health-flags";
+    measurement.textContent = stale ? "Waiting for sample"
+      : `UART ${measurementLabel(channel.uart_measurement_state).toLowerCase()}`;
+    measurement.title = stale ? "Waiting for a fresh UART sample."
+      : `UART sample ${measurementLabel(channel.uart_measurement_state).toLowerCase()}.`;
+    lifecycle.append(state, measurement);
     row.append(lifecycle);
 
     const traffic = document.createElement("td");
@@ -438,8 +454,9 @@ function render(data) {
   latestData = data;
   connection.dataset.state = data.connected ? "connected" : "disconnected";
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
-  document.querySelector("#board-model").textContent = boardModelName(
+  document.querySelector("#board-model").textContent = boardIdentityName(
     data.identity?.board_model_id ?? data.identity?.board_model,
+    data.identity?.mcu_id ?? data.identity?.mcu,
   );
   const systemClock = data.telemetry?.system_clock_hz ?? data.hardware?.system_clock_hz;
   document.querySelector("#system-clock").textContent = Number.isFinite(systemClock)

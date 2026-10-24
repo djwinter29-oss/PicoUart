@@ -7,6 +7,8 @@ export const DEVICE_FILTER = Object.freeze({
 
 const PRODUCT_ID_PICOUART = 1;
 const CHANNEL_COUNT = 6;
+const TRAFFIC_RATE_WINDOW_MS = 5000;
+const MAX_RATE_ELAPSED_MS = 8000;
 const MAX_REPORT_AGE_MS = 3000;
 const ACTION_DEADLINE_MS = 3000;
 const ACTION_POLL_MS = 50;
@@ -321,6 +323,7 @@ function emptyChannel(id) {
     counters: Object.fromEntries(["uart_tx", "uart_rx", "usb_tx", "usb_rx"].map(name => [name, null])),
     deltas: null,
     rates: null,
+    rate_samples: [],
     input_updated_at: null,
     feature_updated_at: null,
     diagnostics: null,
@@ -516,15 +519,24 @@ export class PicoUartWebHid {
     const sequenceGap = !first && advance !== 1;
     const intervalValid = snapshot.interval_ms > 0 && snapshot.interval_ms < 65535;
     const continuous = !first && !sequenceGap && intervalValid;
+    const elapsed = Number.isFinite(previousTime) ? now - previousTime : 0;
+    const rateSamples = first ? [] : [...previous.rate_samples];
+    rateSamples.push({ receivedAt: now, counters: snapshot.counters,
+      measurement: snapshot.uart_measurement_state });
+    const cutoff = now - TRAFFIC_RATE_WINDOW_MS;
+    while (rateSamples.length > 2 && rateSamples[1].receivedAt <= cutoff) rateSamples.shift();
+    const baseline = rateSamples[0];
+    const rateElapsed = now - baseline.receivedAt;
+    const rateWindowValid = rateSamples.length > 1 && rateElapsed > 0 && rateElapsed <= MAX_RATE_ELAPSED_MS;
     const deltas = Object.fromEntries(Object.keys(snapshot.counters).map(name => [
       name,
       continuous ? (snapshot.counters[name] - previous.counters[name]) >>> 0 : null,
     ]));
-    const rates = Object.fromEntries(Object.entries(deltas).map(([name, delta]) => {
+    const rates = Object.fromEntries(Object.entries(snapshot.counters).map(([name, counter]) => {
       const uart = name === "uart_tx" || name === "uart_rx";
-      const validMeasurements = !uart || previous.uart_measurement_state === 1
-        && snapshot.uart_measurement_state === 1;
-      return [name, delta !== null && validMeasurements ? delta * 1000 / snapshot.interval_ms : null];
+      const validMeasurements = !uart || rateSamples.every(sample => sample.measurement === 1);
+      const delta = (counter - baseline.counters[name]) >>> 0;
+      return [name, rateWindowValid && validMeasurements ? delta * 1000 / rateElapsed : null];
     }));
     const channelGaps = previous.traffic_gaps + Number(sequenceGap || stale);
     const channels = [...dashboard.channels];
@@ -533,6 +545,7 @@ export class PicoUartWebHid {
       counters: snapshot.counters,
       deltas,
       rates,
+      rate_samples: rateSamples,
       input_updated_at: new Date(now).toISOString(),
       feature_updated_at: previous.feature_updated_at,
       error: null,

@@ -78,7 +78,8 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(dashboard, /confirmConfigurationButton\.addEventListener\("click", saveConfiguration\)/);
   assert.match(dashboard, /configurationSavePending = true/);
   assert.match(dashboard, /configurationSavePending \|\| !available/);
-  assert.match(markup, /<th scope="col">Traffic<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
+  assert.match(markup, /<th scope="col"(?: title="[^"]+")?>Traffic<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
+  assert.match(markup, /title="Rates are averaged over approximately the last five seconds\./);
   assert.match(markup, /<dialog class="diagnostics-dialog" id="diagnostics-dialog"/);
   assert.match(markup, /Stored boot profile/);
   assert.match(markup, /Reset cause/);
@@ -87,6 +88,12 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Channel pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
   assert.match(markup, /Uptime[\s\S]*?Board temperature[\s\S]*?Service load \(USB core 0 \/ UART core 1\)/);
   assert.match(dashboard, /total\.textContent = formatBytes\(channel\.totals\?\.\[key\]\)/);
+  assert.match(dashboard, /\(\(current - previous\) >>> 0\) \* 1000 \/ elapsed/);
+  assert.match(dashboard, /boardIdentityName\([\s\S]*?data\.identity\?\.mcu_id \?\? data\.identity\?\.mcu/);
+  assert.match(dashboard, /measurement\.textContent = stale \? "Waiting for sample"/);
+  assert.match(dashboard, /configuration\.append\(settings\)/);
+  assert.doesNotMatch(dashboard, /pins\.textContent/);
+  assert.match(stylesheet, /\.health-flags \{[^}]*height: 2\.8em;[^}]*overflow: hidden;/);
   assert.match(dashboard, /\(view\.rates\[key\] \/ 1000\)\.toFixed\(1\)/);
   assert.match(dashboard, /\["UART TX", "uart_tx", true\],[\s\S]*?\["UART RX", "uart_rx", true\],[\s\S]*?\["USB RX", "usb_rx", false\],[\s\S]*?\["USB TX", "usb_tx", false\]/);
   assert.match(stylesheet, /\.traffic-metrics \{[^}]*grid-template-columns: max-content max-content;[^}]*grid-template-rows: repeat\(2, auto\);[^}]*grid-auto-flow: column;/);

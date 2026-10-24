@@ -7,9 +7,11 @@ function fixture(secure = true, hid = {}) {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [
     `#${id}`, { textContent: "", dataset: {}, parentElement: { dataset: {} },
-      children: [], value: "", checked: false, disabled: false,
+      children: [], value: "", checked: false, disabled: false, open: false,
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
+      showModal() { this.open = true; },
+      close() { this.open = false; },
       addEventListener(event, handler) { this[event] = handler; } },
   ]));
   const document = { querySelector(selector) {
@@ -68,11 +70,15 @@ test("one connection button belongs to Device identity, with no separate refresh
   assert.ok(!html.includes("USB identity"));
   const configuration = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
   assert.match(html, /id="identity-title"[\s\S]*?<section aria-labelledby="configuration-title">[\s\S]*?<section aria-labelledby="runtime-title">/);
+  assert.match(configuration, /<h2 id="configuration-title">Board configuration<\/h2>/);
   assert.match(configuration, /id="configuration-profile"/);
-  assert.match(configuration, /id="configuration-unsafe-ack"/);
+  assert.doesNotMatch(configuration, /configuration-unsafe-ack/);
+  assert.match(html, /<dialog class="configuration-dialog"[^>]*>[\s\S]*?id="configuration-unsafe-ack"/);
   assert.match(configuration, /role="status" aria-live="polite"/);
   assert.match(configuration, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[\s\S]*?<\/div>\s*<\/div>/);
-  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">Clock profile to save<\/label>\s*<select/);
+  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">Stored boot profile<\/label>\s*<select/);
+  assert.match(configuration, /id="uart-tx-capacity"[\s\S]*?id="uart-rx-capacity"[\s\S]*?id="cdc-tx-capacity"[\s\S]*?id="cdc-rx-capacity"/);
+  assert.match(html, /<details class="pin-map-disclosure">[\s\S]*?id="board-pins"/);
   assert.doesNotMatch(configuration, /configuration-note|configuration-detail|configuration-status/);
 });
 
@@ -86,21 +92,30 @@ test("persistent configuration uses target profiles and gates unsafe saves", () 
   client.render(client.state);
   const profile = get("configuration-profile");
   assert.deepEqual(profile.children.map(option => [option.value, option.textContent]), [
-    ["0", "SDK default"], ["1", "Profile 1 — 150 MHz"], ["2", "Profile 2 — 200 MHz"],
-    ["3", "Profile 3 — 250 MHz"], ["4", "Profile 4 — 280 MHz"],
+    ["0", "SDK default"], ["1", "150 MHz"], ["2", "200 MHz"], ["3", "250 MHz"], ["4", "280 MHz"],
   ]);
   assert.equal(profile.value, "2");
   assert.equal(profile.disabled, false);
-  assert.equal(get("configuration-acknowledgement").hidden, false);
   assert.equal(get("save-configuration").disabled, true);
-  get("configuration-unsafe-ack").checked = true;
-  get("configuration-unsafe-ack").change();
+  profile.value = "1";
+  profile.change();
   assert.equal(get("save-configuration").disabled, false);
   get("save-configuration").click();
-  assert.deepEqual(client.calls.at(-1), ["save-configuration", 2, true]);
+  assert.equal(get("configuration-dialog").open, true);
+  assert.equal(get("configuration-acknowledgement").hidden, false);
+  assert.equal(get("confirm-configuration").disabled, true);
+  get("configuration-unsafe-ack").checked = true;
+  get("configuration-unsafe-ack").change();
+  assert.equal(get("confirm-configuration").disabled, false);
+  get("confirm-configuration").click();
+  assert.deepEqual(client.calls.at(-1), ["save-configuration", 1, true]);
+  assert.equal(get("configuration-dialog").open, false);
   profile.value = "0";
   profile.change();
+  get("save-configuration").click();
   assert.equal(get("configuration-acknowledgement").hidden, true);
+  assert.equal(get("confirm-configuration").disabled, false);
+  get("cancel-configuration").click();
   client.state.dashboard.channels[3].channel_state = 2;
   client.render(client.state);
   assert.equal(profile.disabled, true);
@@ -116,7 +131,7 @@ test("configuration read failures disable Save and remain visible without the re
   client.state.dashboard.configuration_error = "Unsupported report";
   client.phase("connected");
   assert.equal(get("save-configuration").disabled, true);
-  assert.equal(get("configuration-acknowledgement").hidden, true);
+  assert.equal(get("configuration-dialog").open, false);
   assert.equal(get("configuration-message").textContent, "Unsupported report");
   assert.equal(get("configuration-message").dataset.error, "true");
 });
