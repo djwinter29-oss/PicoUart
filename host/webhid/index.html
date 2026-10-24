@@ -6,8 +6,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PicoUart Diagnostics | WebHID</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/dashboard.css?v=21">
-  <link rel="stylesheet" href="css/webhid.css?v=7">
+  <link rel="stylesheet" href="css/dashboard.css?v=26">
+  <link rel="stylesheet" href="css/webhid.css?v=8">
   <script type="module" src="js/app.mjs?v=16"></script>
 </head>
 <body>
@@ -118,7 +118,7 @@
         <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>
         <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
         <div class="summary-item" title="Service-work wall time divided by the measurement window; not CPU utilization">
-          <span>Service load (USB core 0 / UART core 1)</span><strong id="service-load">--</strong>
+          <span>Service load (Core 0 / Core 1)</span><strong id="service-load">--</strong>
         </div>
       </div>
     </section>
@@ -135,9 +135,12 @@
           </colgroup>
           <thead><tr>
             <th scope="col">Port</th>
-            <th scope="col">Lifecycle / UART validity</th>
-            <th scope="col">Applied settings / pins</th>
-            <th scope="col" title="Rates ramp from a one-second to a five-second average as samples arrive.">Traffic</th>
+            <th scope="col">Channel status</th>
+            <th scope="col">UART configuration</th>
+            <th class="traffic-heading" scope="col" title="Rates ramp from a one-second to a five-second average as samples arrive.">
+              <span class="traffic-heading-title">Traffic</span>
+              <span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB</span>
+            </th>
             <th scope="col">Diagnostics</th>
           </tr></thead>
           <tbody id="channel-rows"></tbody>

@@ -60,7 +60,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(identity, /Product[\s\S]*?Board model[\s\S]*?Serial \/ UID[\s\S]*?System clock[\s\S]*?Firmware RAM reserved \/ total[\s\S]*?Firmware version/);
   assert.equal((configuration.match(/class="summary-item"/g) ?? []).length, 6);
   assert.doesNotMatch(markup, /Host session/);
-  assert.match(markup, /<th scope="col">Port<\/th>\s*<th scope="col">Lifecycle<\/th>\s*<th scope="col">UART configuration<\/th>/);
+  assert.match(markup, /<th scope="col">Port<\/th>\s*<th scope="col">Channel status<\/th>\s*<th scope="col">UART configuration<\/th>/);
   assert.doesNotMatch(markup, /id="traffic-note"/);
   assert.doesNotMatch(dashboard, /querySelector\("#traffic-note"\)/);
   assert.match(identitySection, /id="rescan-boards"/);
@@ -68,7 +68,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   for (const id of ["clock-profile", "save-configuration", "overclock-ack"]) {
     assert.equal((markup.match(new RegExp(`id="${id}"`, "g")) ?? []).length, 1, `${id} must appear once`);
   }
-  assert.match(markup, /<th scope="col">Lifecycle<\/th>/);
+  assert.match(markup, /<th scope="col">Channel status<\/th>/);
   assert.match(markup, /<th scope="col">Diagnostics<\/th>/);
   assert.match(configuration, /<select id="clock-profile" disabled>/);
   assert.doesNotMatch(configuration, /overclock-ack/);
@@ -88,15 +88,15 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(dashboard, /confirmConfigurationButton\.addEventListener\("click", saveConfiguration\)/);
   assert.match(dashboard, /configurationSavePending = true/);
   assert.match(dashboard, /configurationSavePending \|\| !available/);
-  assert.match(markup, /<th scope="col"(?: title="[^"]+")?>Traffic<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
+  assert.match(markup, /<th class="traffic-heading" scope="col" title="[^"]+">\s*<span class="traffic-heading-title">Traffic<\/span>\s*<span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB<\/span>\s*<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
   assert.match(markup, /title="Rates ramp from a one-second to a five-second average as samples arrive\./);
   assert.match(markup, /<dialog class="diagnostics-dialog" id="diagnostics-dialog"/);
   assert.match(markup, /Stored boot profile/);
   assert.match(markup, /Reset cause/);
-  assert.match(markup, /Service load \(USB core 0 \/ UART core 1\)/);
+  assert.match(markup, /Service load \(Core 0 \/ Core 1\)/);
   assert.doesNotMatch(markup, /CPU load|unsafe overclock/);
   assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Channel pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
-  assert.match(markup, /Uptime[\s\S]*?Board temperature[\s\S]*?Service load \(USB core 0 \/ UART core 1\)/);
+  assert.match(markup, /Uptime[\s\S]*?Board temperature[\s\S]*?Service load \(Core 0 \/ Core 1\)/);
   assert.match(dashboard, /total\.textContent = formatBytes\(channel\.totals\?\.\[key\]\)/);
   assert.match(dashboard, /latest\.totals\[key\] - baseline\.totals\[key\]/);
   assert.match(dashboard, /elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS/);
@@ -105,18 +105,23 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(dashboard, /view\.diagnosticsButton\.disabled = !data\.connected/);
   assert.doesNotMatch(dashboard, /channelRows\.replaceChildren\(\)/);
   assert.match(dashboard, /boardIdentityName\([\s\S]*?data\.identity\?\.mcu_id \?\? data\.identity\?\.mcu/);
-  assert.match(dashboard, /measurement\.textContent = stale \? "Waiting for sample"/);
+  assert.match(dashboard, /function measurementStatus\(value\)/);
+  assert.match(dashboard, /view\.state\.hidden = stale/);
+  assert.match(dashboard, /view\.measurement\.textContent = stale \? "— Unavailable" : measurementStatus\(channel\.uart_measurement_state\)/);
   assert.match(dashboard, /configuration\.append\(settings\)/);
   assert.doesNotMatch(dashboard, /pins\.textContent/);
   assert.match(stylesheet, /\.health-flags \{[^}]*height: 2\.8em;[^}]*overflow: hidden;/);
   assert.match(dashboard, /\(rates\.rates\[key\] \/ 1000\)\.toFixed\(1\)/);
   assert.match(dashboard, /\["UART TX", "uart_tx", true\],[\s\S]*?\["UART RX", "uart_rx", true\],[\s\S]*?\["USB RX", "usb_rx", false\],[\s\S]*?\["USB TX", "usb_tx", false\]/);
   assert.match(stylesheet, /\.traffic-metrics \{[^}]*grid-template-columns: max-content max-content;[^}]*grid-template-rows: repeat\(2, auto\);[^}]*grid-auto-flow: column;/);
-  assert.match(stylesheet, /\.traffic-metrics > span \{[^}]*grid-template-columns: max-content 11ch 15ch;/);
-  assert.match(stylesheet, /col\.lifecycle-column \{ width: 16%; \}/);
-  assert.match(stylesheet, /col\.configuration-column \{ width: 19%; \}/);
-  assert.match(stylesheet, /col\.throughput-column \{ width: 43%; \}/);
+  assert.match(stylesheet, /\.traffic-metrics > span \{[^}]*grid-template-columns: max-content 11ch 16ch;/);
+  assert.match(stylesheet, /col\.port-column \{ width: 10%; \}/);
+  assert.match(stylesheet, /col\.lifecycle-column \{ width: 14%; \}/);
+  assert.match(stylesheet, /col\.configuration-column \{ width: 12%; \}/);
+  assert.match(stylesheet, /col\.throughput-column \{ width: 54%; \}/);
   assert.match(stylesheet, /col\.diagnostics-column \{ width: 10%; \}/);
+  assert.match(stylesheet, /\.channels-section table \{ min-width: 1080px; \}/);
+  assert.match(stylesheet, /#clock-profile \{[^}]*min-height: 38px;[^}]*border-radius: 7px;[^}]*font: 600 14px var\(--mono\); \}/);
   assert.match(stylesheet, /\.channels-section tbody td:last-child \{ padding-inline: 6px; \}/);
   assert.match(stylesheet, /\.traffic b \{[^}]*text-align: right;/);
   assert.match(stylesheet, /\.traffic-total \{[^}]*text-align: right;/);

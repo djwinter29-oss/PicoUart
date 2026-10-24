@@ -101,7 +101,7 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
         id,
         channel_state: 2,
         channel_state_name: "Ready",
-        uart_measurement_state_name: "Valid",
+        uart_measurement_state_name: "Current",
         baud_rate: 115200,
         data_bits: 8,
         parity: "N",
@@ -139,7 +139,20 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     assert.equal(document.querySelector("#channel-rows").children[0].children[2].children.length, 1);
     const lifecycle = document.querySelector("#channel-rows").children[0].children[1];
     assert.equal(lifecycle.children[1].className, "health-flags");
-    assert.equal(lifecycle.children[1].textContent, "UART Valid");
+    assert.equal(lifecycle.className, "channel-status");
+    assert.equal(lifecycle.children[0].textContent, "Ready");
+    assert.equal(lifecycle.children[0].hidden, false);
+    assert.equal(lifecycle.children[1].textContent, "LIVE");
+    const cachedDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
+      ({ ...channel, uart_measurement_state_name: "Cached" })) };
+    renderDashboard(cachedDashboard);
+    assert.equal(lifecycle.children[1].textContent, "CACHED");
+    const staleDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
+      ({ ...channel, input_updated_at: new Date(Date.now() - 5000).toISOString() })) };
+    renderDashboard(staleDashboard);
+    assert.equal(lifecycle.children[0].hidden, true);
+    assert.equal(lifecycle.children[1].textContent, "— Unavailable");
+    renderDashboard(dashboard);
     const traffic = document.querySelector("#channel-rows").children[0].children[3].children[0];
     assert.deepEqual(traffic.children.map(metric => metric.children[0].textContent), [
       "UART TX", "UART RX", "USB RX", "USB TX",
@@ -181,6 +194,12 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     assert.equal(diagnostics[11].textContent, "None recorded");
     assert.equal(diagnostics[13].textContent, "0 B (0.0%)");
     assert.equal(diagnostics[15].textContent, "1 B (0.0%)");
+
+    renderDashboard({ ...dashboard, connected: false, channels: dashboard.channels.map(channel => ({
+      ...channel, input_updated_at: null, uart_measurement_state_name: null,
+    })) });
+    assert.equal(lifecycle.children[0].hidden, true);
+    assert.equal(lifecycle.children[1].textContent, "— Unavailable");
   } finally {
     delete globalThis.document;
   }
@@ -189,7 +208,7 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
 test("host web runtime section reflects service-load terminology", () => {
   const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
   const runtime = html.match(/<section aria-labelledby="runtime-title">([\s\S]*?)<\/section>/)[1];
-  assert.ok(runtime.includes("Service load (USB core 0 / UART core 1)"));
+  assert.ok(runtime.includes("Service load (Core 0 / Core 1)"));
   assert.ok(runtime.includes("Board temperature"));
   assert.ok(!runtime.includes("CPU load (core 0 / core 1)"));
 });

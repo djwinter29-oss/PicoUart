@@ -265,6 +265,11 @@ function measurementLabel(value) {
   return measurementStates[value] ?? "Unknown";
 }
 
+function measurementStatus(value) {
+  const state = measurementLabel(value).toLowerCase();
+  return state === "current" ? "LIVE" : state === "cached" ? "CACHED" : "— Unavailable";
+}
+
 function diagnosticEntry(id) {
   if (Array.isArray(diagnosticData)) return diagnosticData.find(item => item.id === id) ?? diagnosticData[id] ?? null;
   if (diagnosticData && typeof diagnosticData === "object") {
@@ -383,6 +388,7 @@ function createChannelRow(id) {
   row.append(port);
 
   const lifecycle = document.createElement("td");
+  lifecycle.className = "channel-status";
   const state = document.createElement("span");
   const measurement = document.createElement("small");
   measurement.className = "health-flags";
@@ -444,10 +450,10 @@ function renderChannels(data) {
     const stateName = stale ? "unknown" : channelStates[channel.state] ?? channel.state;
     view.state.className = `state state-${stateName === "error" ? "attention" : stateName}`;
     view.state.textContent = stateName === "error" ? "Attention" : stateName;
-    view.measurement.textContent = stale ? "Waiting for sample"
-      : `UART ${measurementLabel(channel.uart_measurement_state).toLowerCase()}`;
-    view.measurement.title = stale ? "Waiting for a fresh UART sample."
-      : `UART sample ${measurementLabel(channel.uart_measurement_state).toLowerCase()}.`;
+    view.state.hidden = stale;
+    view.measurement.textContent = stale ? "— Unavailable" : measurementStatus(channel.uart_measurement_state);
+    view.measurement.title = stale ? "Channel snapshot unavailable or stale."
+      : `Measurement status: ${measurementLabel(channel.uart_measurement_state).toLowerCase()}.`;
     directions.forEach(([label, key]) => {
       const metric = view.metrics.get(key);
       metric.rate.textContent = rates.rates?.[key] != null

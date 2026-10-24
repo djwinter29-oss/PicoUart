@@ -99,6 +99,7 @@ function createChannelRow(id) {
   row.append(port);
 
   const lifecycle = document.createElement("td");
+    lifecycle.className = "channel-status";
   const state = document.createElement("span");
   const validity = document.createElement("small");
   validity.className = "health-flags";
@@ -169,10 +170,13 @@ function renderChannels(data) {
         : stateName === "Ready" ? "ready" : "idle";
     view.state.className = `state state-${stateClass}`;
     view.state.textContent = stateName;
-    view.validity.textContent = fresh
-      ? `UART ${channel.uart_measurement_state_name}` : "Waiting for sample";
-    view.validity.title = fresh ? `UART measurements: ${channel.uart_measurement_state_name}.`
-      : channel.error ?? "Waiting for a fresh Input snapshot.";
+    const measurementState = String(channel.uart_measurement_state_name ?? "unavailable").toLowerCase();
+    view.state.hidden = !fresh;
+    view.validity.textContent = !fresh || measurementState === "unavailable" ? "— Unavailable"
+      : measurementState === "cached" ? "CACHED" : measurementState === "current" ? "LIVE" : "— Unavailable";
+    view.validity.title = !fresh ? "Channel snapshot unavailable or stale."
+      : measurementState === "unavailable" ? "Measurement data unavailable."
+        : `Measurement status: ${measurementState}.`;
     view.settings.textContent = fresh && channel.baud_rate
       ? `${channel.baud_rate.toLocaleString()} ${channel.data_bits}${channel.parity}${channel.stop_bits}`
       : "--";

@@ -13,7 +13,7 @@
   border-radius: 7px;
   background: var(--paper);
   color: var(--ink);
-  font: 12px var(--mono);
+  font: 600 14px var(--mono);
 }
 #configuration-profile:focus-visible, #configuration-unsafe-ack:focus-visible {
   outline: 3px solid var(--lime);

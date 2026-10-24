@@ -6,8 +6,8 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css?v=30">
-  <script src="/js/dashboard.js?v=31" defer></script>
+  <link rel="stylesheet" href="/css/dashboard.css?v=35">
+  <script src="/js/dashboard.js?v=34" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -128,7 +128,7 @@
         <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>
         <div class="summary-item"><span>Board temperature</span><strong id="temperature">--</strong></div>
         <div class="summary-item" title="Service-pass workload proxies, not CPU utilization">
-          <span>Service load (USB core 0 / UART core 1)</span><strong id="service-load">--</strong>
+          <span>Service load (Core 0 / Core 1)</span><strong id="service-load">--</strong>
         </div>
       </div>
     </section>
@@ -152,9 +152,12 @@
           <thead>
             <tr>
               <th scope="col">Port</th>
-              <th scope="col">Lifecycle</th>
+              <th scope="col">Channel status</th>
               <th scope="col">UART configuration</th>
-              <th scope="col" title="Rates ramp from a one-second to a five-second average as samples arrive.">Traffic</th>
+              <th class="traffic-heading" scope="col" title="Rates ramp from a one-second to a five-second average as samples arrive.">
+                <span class="traffic-heading-title">Traffic</span>
+                <span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB</span>
+              </th>
               <th scope="col">Diagnostics</th>
             </tr>
           </thead>
