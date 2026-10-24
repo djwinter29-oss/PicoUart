@@ -6,8 +6,8 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css?v=28">
-  <script src="/js/dashboard.js?v=29" defer></script>
+  <link rel="stylesheet" href="/css/dashboard.css?v=30">
+  <script src="/js/dashboard.js?v=31" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -144,18 +144,16 @@
         <table>
           <colgroup>
             <col class="port-column">
-            <col class="session-column">
-            <col class="configuration-column">
             <col class="lifecycle-column">
+            <col class="configuration-column">
             <col class="throughput-column">
             <col class="diagnostics-column">
           </colgroup>
           <thead>
             <tr>
               <th scope="col">Port</th>
-              <th scope="col">Host session</th>
-              <th scope="col">UART configuration</th>
               <th scope="col">Lifecycle</th>
+              <th scope="col">UART configuration</th>
               <th scope="col" title="Rates ramp from a one-second to a five-second average as samples arrive.">Traffic</th>
               <th scope="col">Diagnostics</th>
             </tr>

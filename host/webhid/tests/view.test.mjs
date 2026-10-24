@@ -68,7 +68,7 @@ test("webhid report age text tracks freshness", () => {
   }
 });
 
-test("webhid render shows identity and runtime summaries", async () => {
+test("webhid render updates live cells without replacing diagnostics buttons", () => {
   const html = readFileSync(new URL("../../webhid/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   globalThis.document = document;
@@ -94,7 +94,7 @@ test("webhid render shows identity and runtime summaries", async () => {
       configuration: {
         stored_profile_name: "150 MHz",
         reset_reason_name: "none",
-        capacities: { uart_tx_ring: 4096, uart_rx_ring: 4096, cdc_tx_fifo: 2048, cdc_rx_fifo: 2048 },
+        capacities: { uart_tx: 4096, uart_rx: 4096, cdc_tx: 2048, cdc_rx: 2048 },
         pins: Array.from({ length: 6 }, () => ({ tx: 0, rx: 1, rts: 255, cts: 255 })),
       },
       channels: Array.from({ length: 6 }, (_, id) => ({
@@ -114,11 +114,14 @@ test("webhid render shows identity and runtime summaries", async () => {
       channel_diagnostics: Array.from({ length: 6 }, () => ({
         updated_at: new Date().toISOString(),
         uart_measurement_state: 1,
+        uart_measurement_state_name: "Current",
+        uart_sample_age_100ms: 0,
         rx_dropped_bytes: 0,
         rx_error_observations: 0,
         last_configuration_error_reason: 0,
         last_configuration_error: "None recorded",
-        peaks: { tx_ring: 0, rx_ring: 0, cdc_tx: 0, cdc_rx: 0 },
+        last_fault_uptime_s: 0,
+        peaks: { uart_tx: 0, uart_rx: 1, cdc_tx: 0, cdc_rx: 0 },
       })),
     };
     renderDashboard(dashboard);
@@ -144,35 +147,40 @@ test("webhid render shows identity and runtime summaries", async () => {
     assert.equal(traffic.children[0].children[1].textContent, "0.0 KB/s");
     const rows = document.querySelector("#channel-rows");
     const initialRow = rows.children[0];
-    rows.events.pointerenter();
+    const diagnosticsButton = initialRow.children[4].children[0];
     const pointerUpdate = { ...dashboard, channels: dashboard.channels.map((channel, index) =>
       index === 0 ? { ...channel, baud_rate: 57600 } : channel) };
     renderDashboard(pointerUpdate);
     assert.equal(rows.children[0], initialRow);
-    rows.events.pointerleave();
-    assert.notEqual(rows.children[0], initialRow);
+    assert.equal(rows.children[0].children[4].children[0], diagnosticsButton);
     assert.equal(rows.children[0].children[2].children[0].textContent,
       `${(57600).toLocaleString()} 8N1`);
 
-    const focusedRow = rows.children[0];
-    document.activeElement = focusedRow.children[4].children[0];
     const focusUpdate = { ...pointerUpdate, channels: pointerUpdate.channels.map((channel, index) =>
       index === 0 ? { ...channel, baud_rate: 38400 } : channel) };
     renderDashboard(focusUpdate);
-    assert.equal(rows.children[0], focusedRow);
-    document.activeElement = null;
-    rows.events.focusout();
-    await new Promise(resolve => setTimeout(resolve, 0));
-    assert.notEqual(rows.children[0], focusedRow);
+    assert.equal(rows.children[0], initialRow);
+    assert.equal(rows.children[0].children[4].children[0], diagnosticsButton);
     assert.equal(rows.children[0].children[2].children[0].textContent,
       `${(38400).toLocaleString()} 8N1`);
 
-    const diagnosticsButton = rows.children[0].children[4].children[0];
     assert.equal(diagnosticsButton.textContent, "Diagnostics");
     diagnosticsButton.click();
     assert.equal(document.querySelector("#channel-diagnostics-dialog").open, true);
     assert.equal(document.querySelector("#channel-diagnostics-title").textContent, "CDC0 diagnostics");
-    assert.match(document.querySelector("#channel-diagnostics-content").textContent, /UART TX ring peak/);
+    const diagnostics = document.querySelector("#channel-diagnostics-content").children[0].children;
+    assert.equal(diagnostics.length, 20);
+    assert.deepEqual(diagnostics.filter((_, index) => index % 2 === 0).map(term => term.textContent), [
+      "UART measurement", "UART sample age", "Known RX bytes dropped", "RX controller error observations",
+      "Last configuration error", "Last fault observed", "UART TX ring observed peak since boot",
+      "UART RX ring observed peak since boot", "CDC TX FIFO observed peak since boot",
+      "CDC RX FIFO observed peak since boot",
+    ]);
+    assert.equal(diagnostics[1].textContent, "Current");
+    assert.equal(diagnostics[3].textContent, "0.0 s");
+    assert.equal(diagnostics[11].textContent, "None recorded");
+    assert.equal(diagnostics[13].textContent, "0 B (0.0%)");
+    assert.equal(diagnostics[15].textContent, "1 B (0.0%)");
   } finally {
     delete globalThis.document;
   }

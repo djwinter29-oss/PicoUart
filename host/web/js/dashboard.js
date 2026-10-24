@@ -39,6 +39,7 @@ let diagnosticData = null;
 let diagnosticError = null;
 let diagnosticRequest = null;
 const channelHistory = new Map();
+const channelRowViews = new Map();
 const MIN_TRAFFIC_RATE_WINDOW_MS = 1000;
 const TRAFFIC_RATE_WINDOW_MS = 5000;
 const MAX_RATE_ELAPSED_MS = 8000;
@@ -51,9 +52,6 @@ const directions = [
   ["USB RX", "usb_rx", false],
   ["USB TX", "usb_tx", false],
 ];
-let channelPointerInside = false;
-let pendingChannelData = null;
-let channelRowsTracked = false;
 const channelStates = ["closed", "starting", "ready", "configuring", "error"];
 const measurementStates = ["Unavailable", "Current", "Cached"];
 const resetCauses = ["Unknown", "Power-on", "Watchdog", "Software-requested"];
@@ -263,27 +261,6 @@ function currentRates(channel, now, data) {
   return { rates, fresh };
 }
 
-function channelInteractionActive() {
-  if (!channelRowsTracked) {
-    channelRowsTracked = true;
-    channelRows.addEventListener("pointerenter", () => { channelPointerInside = true; });
-    channelRows.addEventListener("pointerleave", () => {
-      channelPointerInside = false;
-      flushPendingChannelData();
-    });
-    channelRows.addEventListener("focusout", () => globalThis.setTimeout(flushPendingChannelData, 0));
-  }
-  return channelPointerInside || Boolean(document.activeElement && channelRows.contains(document.activeElement));
-}
-
-function flushPendingChannelData() {
-  if (!pendingChannelData || channelPointerInside
-    || document.activeElement && channelRows.contains(document.activeElement)) return;
-  const data = pendingChannelData;
-  pendingChannelData = null;
-  renderChannels(data);
-}
-
 function measurementLabel(value) {
   return measurementStates[value] ?? "Unknown";
 }
@@ -393,85 +370,99 @@ function buildDiagnosticsCell(channel) {
   return cell;
 }
 
-function renderChannels(data) {
-  if (channelInteractionActive()) {
-    if (Array.isArray(data.channels)) {
-      const now = Date.now();
-      data.channels.forEach(channel => currentRates(channel, now, data));
-    }
-    pendingChannelData = data;
-    return;
-  }
-  pendingChannelData = null;
-  channelRows.replaceChildren();
-  if (!Array.isArray(data.channels)) return;
-  const now = Date.now();
-  data.channels.forEach(channel => {
-    const view = currentRates(channel, now, data);
-    const row = document.createElement("tr");
-    const port = document.createElement("td");
-    const portName = document.createElement("span");
-    portName.className = "port-name";
-    const portIndex = document.createElement("span");
-    portIndex.className = "port-index";
-    portIndex.textContent = String(channel.id + 1).padStart(2, "0");
-    portName.append(portIndex, document.createTextNode(`CDC${channel.id}`));
-    port.append(portName);
-    row.append(port);
-    row.append(makeCell(
-      `cdc-state ${channel.state === "closed" ? "cdc-closed" : "cdc-open"}`,
-      channel.state === "closed" ? "Closed" : channel.state === "unknown" ? "Unknown" : "Open",
-    ));
+function createChannelRow(id) {
+  const row = document.createElement("tr");
+  const port = document.createElement("td");
+  const portName = document.createElement("span");
+  portName.className = "port-name";
+  const portIndex = document.createElement("span");
+  portIndex.className = "port-index";
+  portIndex.textContent = String(id + 1).padStart(2, "0");
+  portName.append(portIndex, document.createTextNode(`CDC${id}`));
+  port.append(portName);
+  row.append(port);
 
-    const configuration = makeCell("uart-configuration", "");
-    const settings = document.createElement("strong");
-    settings.textContent = Number.isInteger(channel.baud_rate) && channel.baud_rate > 0
+  const lifecycle = document.createElement("td");
+  const state = document.createElement("span");
+  const measurement = document.createElement("small");
+  measurement.className = "health-flags";
+  lifecycle.append(state, measurement);
+  row.append(lifecycle);
+
+  const configuration = document.createElement("td");
+  configuration.className = "uart-configuration";
+  configuration.title = "Applied baud and framing; GPIO assignments are static board configuration.";
+  const settings = document.createElement("strong");
+  configuration.append(settings);
+  row.append(configuration);
+
+  const traffic = document.createElement("td");
+  traffic.className = "traffic";
+  const metrics = new Map();
+  const metricGrid = document.createElement("div");
+  metricGrid.className = "traffic-metrics";
+  directions.forEach(([label, key]) => {
+    const metric = document.createElement("span");
+    const direction = document.createElement("span");
+    direction.className = "traffic-label";
+    direction.textContent = label;
+    const rate = document.createElement("b");
+    const total = document.createElement("span");
+    total.className = "traffic-total";
+    metric.append(direction, rate, total);
+    metricGrid.append(metric);
+    metrics.set(key, { metric, rate, total });
+  });
+  traffic.append(metricGrid);
+  row.append(traffic);
+
+  const diagnostics = buildDiagnosticsCell({ id });
+  row.append(diagnostics);
+  return { row, configuration, settings, state, measurement, metrics,
+    diagnosticsButton: diagnostics.children[0] };
+}
+
+function renderChannels(data) {
+  const channels = Array.isArray(data.channels) ? data.channels : [];
+  const now = Date.now();
+  const activeIds = new Set();
+  channels.forEach(channel => {
+    const id = channel.id;
+    activeIds.add(id);
+    let view = channelRowViews.get(id);
+    if (!view) {
+      view = createChannelRow(id);
+      channelRowViews.set(id, view);
+      channelRows.append(view.row);
+    }
+    const rates = currentRates(channel, now, data);
+    view.settings.textContent = Number.isInteger(channel.baud_rate) && channel.baud_rate > 0
       ? `${channel.baud_rate.toLocaleString()} ${channel.data_bits}`
         + `${({ none: "N", odd: "O", even: "E" })[channel.parity] ?? "?"}${channel.stop_bits}`
       : "--";
-    configuration.title = "Applied baud and framing; GPIO assignments are static board configuration.";
-    configuration.append(settings);
-    row.append(configuration);
-
-    const lifecycle = document.createElement("td");
-    const state = document.createElement("span");
-    const stale = !view.fresh;
+    const stale = !rates.fresh;
     const stateName = stale ? "unknown" : channelStates[channel.state] ?? channel.state;
-    state.className = `state state-${stateName === "error" ? "attention" : stateName}`;
-    state.textContent = stateName === "error" ? "Attention" : stateName;
-    const measurement = document.createElement("small");
-    measurement.className = "health-flags";
-    measurement.textContent = stale ? "Waiting for sample"
+    view.state.className = `state state-${stateName === "error" ? "attention" : stateName}`;
+    view.state.textContent = stateName === "error" ? "Attention" : stateName;
+    view.measurement.textContent = stale ? "Waiting for sample"
       : `UART ${measurementLabel(channel.uart_measurement_state).toLowerCase()}`;
-    measurement.title = stale ? "Waiting for a fresh UART sample."
+    view.measurement.title = stale ? "Waiting for a fresh UART sample."
       : `UART sample ${measurementLabel(channel.uart_measurement_state).toLowerCase()}.`;
-    lifecycle.append(state, measurement);
-    row.append(lifecycle);
-
-    const traffic = document.createElement("td");
-    traffic.className = "traffic";
-    const metrics = document.createElement("div");
-    metrics.className = "traffic-metrics";
     directions.forEach(([label, key]) => {
-      const metric = document.createElement("span");
-      const direction = document.createElement("span");
-      const value = document.createElement("b");
-      direction.className = "traffic-label";
-      direction.textContent = label;
-      value.textContent = view.rates?.[key] != null
-        ? `${(view.rates[key] / 1000).toFixed(1)} KB/s` : "-- KB/s";
-      const total = document.createElement("span");
-      total.className = "traffic-total";
-      total.textContent = formatBytes(channel.totals?.[key]);
-      metric.title = `${label}: ${formatBytes(channel.totals?.[key])} since firmware boot, modulo 2^32.`;
-      metric.append(direction, value, total);
-      metrics.append(metric);
+      const metric = view.metrics.get(key);
+      metric.rate.textContent = rates.rates?.[key] != null
+        ? `${(rates.rates[key] / 1000).toFixed(1)} KB/s` : "-- KB/s";
+      metric.total.textContent = formatBytes(channel.totals?.[key]);
+      metric.metric.title = `${label}: ${formatBytes(channel.totals?.[key])} since firmware boot, modulo 2^32.`;
     });
-    traffic.append(metrics);
-    row.append(traffic);
-    row.append(buildDiagnosticsCell(channel));
-    channelRows.append(row);
+    view.diagnosticsButton.disabled = !data.connected;
   });
+  for (const [id, view] of channelRowViews) {
+    if (!activeIds.has(id)) {
+      view.row.remove();
+      channelRowViews.delete(id);
+    }
+  }
 }
 
 function render(data) {

@@ -40,10 +40,10 @@ function channelFresh(channel, now) {
   return Number.isFinite(sample) && now >= sample && now - sample <= 3000;
 }
 
-function displayPeak(value, capacity, unavailable) {
-  if (unavailable || value === undefined || value === null) return "--";
-  if (!capacity) return `${value.toLocaleString()} B`;
-  return `${value.toLocaleString()} / ${capacity.toLocaleString()} B (${(value / capacity * 100).toFixed(1)}%)`;
+function displayPeak(value, capacity) {
+  const formatted = Number.isSafeInteger(value) && value >= 0 ? `${value.toLocaleString()} B` : "--";
+  return Number.isSafeInteger(value) && Number.isSafeInteger(capacity) && capacity > 0 && value <= capacity
+    ? `${formatted} (${(value / capacity * 100).toFixed(1)}%)` : formatted;
 }
 
 function showChannelDiagnostics(id, channel, diagnostic, capacities, data) {
@@ -56,16 +56,21 @@ function showChannelDiagnostics(id, channel, diagnostic, capacities, data) {
     dialog.showModal();
     return;
   }
-  const uartUnavailable = diagnostic.uart_measurement_state === 0;
   const values = [
-    ["UART measurement", channel.uart_measurement_state_name],
-    ["Known RX bytes dropped", uartUnavailable ? "--" : `${diagnostic.rx_dropped_bytes.toLocaleString()} B`],
-    ["RX controller error observations", uartUnavailable ? "--" : diagnostic.rx_error_observations.toLocaleString()],
+    ["UART measurement", diagnostic.uart_measurement_state_name],
+    ["UART sample age", diagnostic.uart_measurement_state === 0 ? "Unavailable"
+      : diagnostic.uart_sample_age_100ms === 255 ? "At least 25.5 s"
+        : `${(diagnostic.uart_sample_age_100ms / 10).toFixed(1)} s`],
+    ["Known RX bytes dropped", `${diagnostic.rx_dropped_bytes.toLocaleString()} B`],
+    ["RX controller error observations", diagnostic.rx_error_observations.toLocaleString()],
     ["Last configuration error", faultReasonName(diagnostic)],
-    ["UART TX ring peak", displayPeak(diagnostic.peaks.tx_ring, capacities?.uart_tx, uartUnavailable)],
-    ["UART RX ring peak", displayPeak(diagnostic.peaks.rx_ring, capacities?.uart_rx, uartUnavailable)],
-    ["CDC TX FIFO peak", displayPeak(diagnostic.peaks.cdc_tx, capacities?.cdc_tx, false)],
-    ["CDC RX FIFO peak", displayPeak(diagnostic.peaks.cdc_rx, capacities?.cdc_rx, false)],
+    ["Last fault observed", diagnostic.last_fault_uptime_s === 0 && diagnostic.rx_dropped_bytes === 0
+      && diagnostic.rx_error_observations === 0 && diagnostic.last_configuration_error_reason === 0
+      ? "None recorded" : `${diagnostic.last_fault_uptime_s.toLocaleString()} s uptime`],
+    ["UART TX ring observed peak since boot", displayPeak(diagnostic.peaks.uart_tx, capacities?.uart_tx)],
+    ["UART RX ring observed peak since boot", displayPeak(diagnostic.peaks.uart_rx, capacities?.uart_rx)],
+    ["CDC TX FIFO observed peak since boot", displayPeak(diagnostic.peaks.cdc_tx, capacities?.cdc_tx)],
+    ["CDC RX FIFO observed peak since boot", displayPeak(diagnostic.peaks.cdc_rx, capacities?.cdc_rx)],
   ];
   const list = document.createElement("dl");
   for (const [label, value] of values) {
@@ -79,122 +84,120 @@ function showChannelDiagnostics(id, channel, diagnostic, capacities, data) {
   dialog.showModal();
 }
 
-let channelPointerInside = false;
-let pendingChannelData = null;
-let trackedChannelBody = null;
+const channelRowViews = new Map();
 
-function channelInteractionActive(body) {
-  if (trackedChannelBody !== body) {
-    trackedChannelBody = body;
-    body.addEventListener("pointerenter", () => { channelPointerInside = true; });
-    body.addEventListener("pointerleave", () => {
-      channelPointerInside = false;
-      flushPendingChannelData();
-    });
-    body.addEventListener("focusout", () => globalThis.setTimeout(flushPendingChannelData, 0));
-  }
-  return channelPointerInside || Boolean(document.activeElement && body.contains(document.activeElement));
-}
+function createChannelRow(id) {
+  const row = document.createElement("tr");
+  const port = document.createElement("td");
+  const name = document.createElement("span");
+  name.className = "port-name";
+  const number = document.createElement("span");
+  number.className = "port-index";
+  number.textContent = String(id + 1).padStart(2, "0");
+  name.append(number, document.createTextNode(`CDC${id}`));
+  port.append(name);
+  row.append(port);
 
-function flushPendingChannelData() {
-  if (!pendingChannelData || channelPointerInside
-    || document.activeElement && trackedChannelBody?.contains(document.activeElement)) return;
-  const data = pendingChannelData;
-  pendingChannelData = null;
-  renderChannels(data);
+  const lifecycle = document.createElement("td");
+  const state = document.createElement("span");
+  const validity = document.createElement("small");
+  validity.className = "health-flags";
+  lifecycle.append(state, validity);
+  row.append(lifecycle);
+
+  const applied = document.createElement("td");
+  const settings = document.createElement("strong");
+  applied.append(settings);
+  row.append(applied);
+
+  const traffic = document.createElement("td");
+  traffic.className = "traffic";
+  const metrics = new Map();
+  const metricGrid = document.createElement("div");
+  metricGrid.className = "traffic-metrics";
+  directions.forEach(([label, key]) => {
+    const metric = document.createElement("span");
+    const direction = document.createElement("span");
+    direction.className = "traffic-label";
+    direction.textContent = label;
+    const rate = document.createElement("b");
+    const total = document.createElement("span");
+    total.className = "traffic-total";
+    metric.append(direction, rate, total);
+    metricGrid.append(metric);
+    metrics.set(key, { metric, rate, total });
+  });
+  traffic.append(metricGrid);
+  row.append(traffic);
+
+  const diagnostics = document.createElement("td");
+  const diagnosticsButton = document.createElement("button");
+  diagnosticsButton.className = "button button-small diagnostics-action";
+  diagnosticsButton.type = "button";
+  diagnosticsButton.textContent = "Diagnostics";
+  diagnostics.append(diagnosticsButton);
+  row.append(diagnostics);
+
+  const view = { row, state, validity, applied, settings, metrics, diagnosticsButton,
+    channel: null, diagnostic: null, capacities: null, data: null };
+  diagnosticsButton.addEventListener("click", () => {
+    if (!view.channel || !view.data) return;
+    showChannelDiagnostics(id, view.channel, view.diagnostic, view.capacities, view.data);
+  });
+  return view;
 }
 
 function renderChannels(data) {
   const body = document.querySelector("#channel-rows");
-  if (channelInteractionActive(body)) {
-    pendingChannelData = data;
-    return;
-  }
-  pendingChannelData = null;
-  body.replaceChildren();
   const now = Date.now();
   const capacities = data.configuration?.capacities;
+  const activeIds = new Set();
   data.channels.forEach((channel, index) => {
+    const id = channel.id;
+    activeIds.add(id);
+    let view = channelRowViews.get(id);
+    if (!view) {
+      view = createChannelRow(id);
+      channelRowViews.set(id, view);
+      body.append(view.row);
+    }
     const diagnostic = data.channel_diagnostics[index];
     const fresh = data.connected && channelFresh(channel, now);
-    const row = document.createElement("tr");
-    const port = document.createElement("td");
-    const name = document.createElement("span");
-    name.className = "port-name";
-    const number = document.createElement("span");
-    number.className = "port-index";
-    number.textContent = String(index + 1).padStart(2, "0");
-    name.append(number, document.createTextNode(`CDC${index}`));
-    port.append(name);
-    row.append(port);
-
-    const lifecycle = document.createElement("td");
     const stateName = fresh ? channel.channel_state_name : "Unknown";
     const stateClass = stateName === "Error" ? "attention"
       : ["Starting", "Configuring"].includes(stateName) ? "initializing"
         : stateName === "Ready" ? "ready" : "idle";
-    const state = document.createElement("span");
-    state.className = `state state-${stateClass}`;
-    state.textContent = stateName;
-    lifecycle.append(state);
-    const validity = document.createElement("small");
-    validity.className = "health-flags";
-    validity.textContent = fresh
+    view.state.className = `state state-${stateClass}`;
+    view.state.textContent = stateName;
+    view.validity.textContent = fresh
       ? `UART ${channel.uart_measurement_state_name}` : "Waiting for sample";
-    validity.title = fresh ? `UART measurements: ${channel.uart_measurement_state_name}.`
+    view.validity.title = fresh ? `UART measurements: ${channel.uart_measurement_state_name}.`
       : channel.error ?? "Waiting for a fresh Input snapshot.";
-    lifecycle.append(validity);
-    row.append(lifecycle);
-
-    const applied = document.createElement("td");
-    const settings = document.createElement("strong");
-    settings.textContent = fresh && channel.baud_rate
+    view.settings.textContent = fresh && channel.baud_rate
       ? `${channel.baud_rate.toLocaleString()} ${channel.data_bits}${channel.parity}${channel.stop_bits}`
       : "--";
-    applied.title = fresh && channel.channel_state === 0
+    view.applied.title = fresh && channel.channel_state === 0
       ? "Last successfully applied UART setting; backend is stopped."
       : "Last successfully applied UART setting, not the latest requested setting.";
-    applied.append(settings);
-    row.append(applied);
-
-    const traffic = document.createElement("td");
-    traffic.className = "traffic";
-    const metrics = document.createElement("div");
-    metrics.className = "traffic-metrics";
     directions.forEach(([label, key]) => {
-      const metric = document.createElement("span");
-      const direction = document.createElement("span");
-      direction.className = "traffic-label";
-      direction.textContent = label;
-      const rate = document.createElement("b");
-      rate.textContent = fresh && channel.rates?.[key] != null
+      const metric = view.metrics.get(key);
+      metric.rate.textContent = fresh && channel.rates?.[key] != null
         ? `${(channel.rates[key] / 1000).toFixed(1)} KB/s` : "-- KB/s";
-      const total = document.createElement("span");
-      total.className = "traffic-total";
       const counter = channel.counters[key];
-      total.textContent = fresh && counter !== null ? `${counter.toLocaleString()} B` : "--";
-      metric.title = `${label}: bytes since firmware boot, modulo 2^32.`;
-      metric.append(direction, rate, total);
-      metrics.append(metric);
+      metric.total.textContent = fresh && counter !== null ? `${counter.toLocaleString()} B` : "--";
+      metric.metric.title = `${label}: bytes since firmware boot, modulo 2^32.`;
     });
-    traffic.append(metrics);
-    row.append(traffic);
-
-    const diagnostics = document.createElement("td");
-    const diagnosticsButton = document.createElement("button");
-    diagnosticsButton.className = "button button-small diagnostics-action";
-    diagnosticsButton.type = "button";
-    diagnosticsButton.textContent = "Diagnostics";
-    diagnosticsButton.addEventListener("click", () => {
-      const current = pendingChannelData ?? data;
-      showChannelDiagnostics(index, current.channels[index] ?? channel,
-        current.channel_diagnostics?.[index] ?? diagnostic,
-        current.configuration?.capacities ?? capacities, current);
-    });
-    diagnostics.append(diagnosticsButton);
-    row.append(diagnostics);
-    body.append(row);
+    view.channel = channel;
+    view.diagnostic = diagnostic;
+    view.capacities = capacities;
+    view.data = data;
   });
+  for (const [id, view] of channelRowViews) {
+    if (!activeIds.has(id)) {
+      view.row.remove();
+      channelRowViews.delete(id);
+    }
+  }
 }
 
 export function renderDashboard(data) {

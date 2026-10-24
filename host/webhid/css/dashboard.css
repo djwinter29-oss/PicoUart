@@ -132,8 +132,8 @@ table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: collaps
 col.port-column { width: 8%; }
 col.health-column { width: 16%; }
 col.configuration-column { width: 19%; }
-col.throughput-column { width: 42%; }
-col.diagnostics-column { width: 15%; }
+col.throughput-column { width: 47%; }
+col.diagnostics-column { width: 10%; }
 th { height: 40px; padding: 0 16px; background: #f0f4f2; color: #53666a; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.055em; }
 td { height: 64px; padding: 10px 16px; border-top: 1px solid var(--line); vertical-align: middle; }
 tbody tr { transition: background-color 120ms ease; }
@@ -185,6 +185,8 @@ tbody tr:hover { background: #f0f7f5; }
 .pin-map-disclosure > summary:focus-visible { outline: 3px solid var(--lime); outline-offset: -3px; }
 .pin-map-disclosure[open] > summary { border-bottom: 1px solid var(--line); }
 .pin-map-disclosure .static-map { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+.channels-section tbody td:last-child { padding-inline: 6px; }
+.diagnostics-action { padding-inline: 6px; white-space: nowrap; }
 .health-flags { display: -webkit-box; min-width: 0; max-width: 220px; height: 2.8em; margin-top: 3px; overflow: hidden; color: #53666a; font: 11px/1.4 var(--mono); -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 td small, .fault-column { overflow-wrap: anywhere; }
 tbody td:nth-child(5), tbody td:nth-child(6) { font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }

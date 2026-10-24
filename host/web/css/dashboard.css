@@ -148,11 +148,10 @@ h2 span { margin-left: 9px; color: var(--muted); font: 500 12px var(--mono); }
 .table-scroll { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-top: 3px solid var(--ink); border-radius: 10px; box-shadow: 0 4px 16px #17332e0a; }
 table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: collapse; text-align: left; }
 col.port-column { width: 8%; }
-col.session-column { width: 9%; }
-col.configuration-column { width: 20%; }
-col.lifecycle-column { width: 10%; }
-col.throughput-column { width: 40%; }
-col.diagnostics-column { width: 13%; }
+col.lifecycle-column { width: 16%; }
+col.configuration-column { width: 19%; }
+col.throughput-column { width: 43%; }
+col.diagnostics-column { width: 10%; }
 th { height: 40px; padding: 0 16px; background: #f0f4f2; color: #53666a; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.055em; }
 td { height: 64px; padding: 10px 16px; border-top: 1px solid var(--line); vertical-align: middle; }
 tbody tr { transition: background-color 120ms ease; }
@@ -180,7 +179,8 @@ tbody tr:hover { background: #f0f7f5; }
 .traffic b { color: var(--ink); font-size: 10px; font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .traffic-total { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .health-flags { display: -webkit-box; min-width: 0; max-width: 220px; height: 2.8em; margin-top: 3px; overflow: hidden; color: #53666a; font: 11px/1.4 var(--mono); -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
-.diagnostics-action { margin-top: 0; }
+.channels-section tbody td:last-child { padding-inline: 6px; }
+.diagnostics-action { margin-top: 0; padding-inline: 6px; white-space: nowrap; }
 .diagnostics-dialog { width: min(620px, calc(100% - 32px)); max-height: min(80vh, 760px); padding: 20px; overflow: auto; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-top: 3px solid var(--teal); border-radius: 10px; box-shadow: 0 16px 48px #102d2b40; }
 .diagnostics-dialog::backdrop { background: #102d2b70; }
 .confirmation-dialog { width: min(520px, calc(100% - 32px)); padding: 24px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-top: 3px solid var(--teal); border-radius: 10px; box-shadow: 0 16px 48px #102d2b40; }

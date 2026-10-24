@@ -86,7 +86,7 @@ public sealed class ConfigurationEndpointTests
             var stylesheet = await http.GetStringAsync("/css/dashboard.css");
             Assert.Contains("#toggle-led[data-state=\"off\"]", stylesheet);
             var script = await http.GetStringAsync("/js/dashboard.js");
-            Assert.Contains("channelRows.addEventListener(\"pointerenter\"", script);
+            Assert.Contains("const channelRowViews = new Map()", script);
             Assert.NotNull(handler.CookieContainer.GetCookies(http.BaseAddress!)[$"PicoUart.Session.{port}"]);
             var token = Regex.Match(page, "[A-F0-9]{64}").Value;
             Assert.Equal(64, token.Length);

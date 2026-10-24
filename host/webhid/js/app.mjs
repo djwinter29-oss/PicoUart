@@ -1,5 +1,5 @@
 import { PicoUartWebHid } from "./device.mjs?v=21";
-import { renderDashboard, updateReportAge } from "./view.mjs?v=15";
+import { renderDashboard, updateReportAge } from "./view.mjs?v=17";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");

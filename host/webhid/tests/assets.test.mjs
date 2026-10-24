@@ -60,6 +60,9 @@ for (const frontend of ["web", "webhid"]) {
       assert.match(sharedStyles, /#toggle-led\[data-state="on"\]\s*\{[^}]*background:\s*var\(--teal\);[^}]*color:\s*#fff;/);
       assert.match(sharedStyles, /#toggle-led, #connect\s*\{[^}]*width:\s*136px;[^}]*min-width:\s*136px;[^}]*display:\s*inline-flex;/);
       assert.match(sharedStyles, /@media \(max-width: 720px\)[\s\S]*#toggle-led, #connect\s*\{\s*width:\s*auto; min-width:\s*0;/);
+      assert.match(sharedStyles, /col\.throughput-column \{ width: 47%; \}/);
+      assert.match(sharedStyles, /col\.diagnostics-column \{ width: 10%; \}/);
+      assert.match(sharedStyles, /\.channels-section tbody td:last-child \{ padding-inline: 6px; \}/);
       assert.match(sharedStyles, /\.summary\.configuration-summary\s*\{\s*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\);\s*\}/);
       assert.match(sharedStyles, /\.traffic-metrics\s*\{[^}]*grid-auto-flow:\s*column;/);
     }
