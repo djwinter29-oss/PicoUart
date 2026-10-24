@@ -1,5 +1,5 @@
-import { PicoUartWebHid } from "./device.mjs?v=20";
-import { renderDashboard, updateReportAge } from "./view.mjs?v=14";
+import { PicoUartWebHid } from "./device.mjs?v=21";
+import { renderDashboard, updateReportAge } from "./view.mjs?v=15";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");
@@ -10,6 +10,7 @@ const profileSelect = document.querySelector("#configuration-profile");
 const unsafeAcknowledgement = document.querySelector("#configuration-unsafe-ack");
 const saveButton = document.querySelector("#save-configuration");
 const configurationDialog = document.querySelector("#configuration-dialog");
+const rebootDialog = document.querySelector("#reboot-dialog");
 const configurationDialogProfile = document.querySelector("#configuration-dialog-profile");
 const acknowledgementLabel = document.querySelector("#configuration-acknowledgement");
 const confirmConfigurationButton = document.querySelector("#confirm-configuration");
@@ -22,6 +23,7 @@ let saveMessage = "";
 
 function resetConfigurationDraft() {
   if (configurationDialog.open) configurationDialog.close();
+  if (rebootDialog.open) rebootDialog.close();
   selectedProfile = null;
   unsafeAcknowledgement.checked = false;
   saveMessage = "";
@@ -34,9 +36,9 @@ function renderConfiguration(state) {
     ? [...Array(5).keys()].filter(profile => identity.clock_profile_mask & (1 << profile))
       .map(profile => [profile, ["SDK default", "150 MHz", "200 MHz", "250 MHz", "280 MHz"][profile]])
     : [];
+  const baselineProfile = dashboard.configuration?.stored_profile ?? options[0]?.[0] ?? null;
   if (selectedProfile === null) {
-    selectedProfile = dashboard.configuration?.stored_profile
-      ?? options[0]?.[0] ?? null;
+    selectedProfile = baselineProfile;
   }
   if (profileSelect.children.length !== options.length
     || options.some(([profile], index) => profileSelect.children[index]?.value !== String(profile))) {
@@ -55,7 +57,7 @@ function renderConfiguration(state) {
       && Date.now() - Date.parse(channel.input_updated_at) <= 3000);
   const saveAvailable = Boolean(identity?.capabilities & 4) && dashboard.configuration !== null;
   const enabled = state.phase === "connected" && saveAvailable && channelsReady;
-  const profileChanged = saveAvailable && selectedProfile !== dashboard.configuration.stored_profile;
+  const profileChanged = saveAvailable && selectedProfile !== baselineProfile;
   profileSelect.disabled = !enabled;
   unsafeAcknowledgement.disabled = !enabled || selectedProfile === 0;
   saveButton.hidden = !Boolean(identity?.capabilities & 4);
@@ -161,8 +163,13 @@ toggleLedButton.addEventListener("click", async () => {
     if (client.state.phase !== "disconnected") client.update({ error: error.message });
   }
 });
-rebootButton.addEventListener("click", async () => {
-  if (!globalThis.confirm("Reboot this PicoUart board now?")) return;
+rebootButton.addEventListener("click", () => {
+  if (!rebootButton.disabled) rebootDialog.showModal();
+});
+document.querySelector("#cancel-reboot").addEventListener("click", () => rebootDialog.close());
+document.querySelector("#confirm-reboot").addEventListener("click", async () => {
+  if (!rebootDialog.open || rebootButton.disabled) return;
+  rebootDialog.close();
   try {
     await client.reboot(true);
   } catch (error) {

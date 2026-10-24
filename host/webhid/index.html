@@ -6,9 +6,9 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PicoUart Diagnostics | WebHID</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/dashboard.css?v=15">
+  <link rel="stylesheet" href="css/dashboard.css?v=20">
   <link rel="stylesheet" href="css/webhid.css?v=7">
-  <script type="module" src="js/app.mjs?v=13"></script>
+  <script type="module" src="js/app.mjs?v=16"></script>
 </head>
 <body>
   <header class="topbar">
@@ -84,7 +84,7 @@
       <p class="configuration-message" id="configuration-message" role="status" aria-live="polite"></p>
     </section>
 
-    <dialog class="configuration-dialog" id="configuration-dialog" aria-labelledby="configuration-dialog-title">
+    <dialog class="confirmation-dialog" id="configuration-dialog" aria-labelledby="configuration-dialog-title">
       <h2 id="configuration-dialog-title">Save clock profile?</h2>
       <p id="configuration-dialog-profile"></p>
       <p class="configuration-warning">
@@ -96,8 +96,19 @@
         <span>I acknowledge the non-default overclock request.</span>
       </label>
       <div class="dialog-actions">
-        <button class="button button-led" id="cancel-configuration" type="button">Cancel</button>
+        <button class="button button-cancel" id="cancel-configuration" type="button">Cancel</button>
         <button class="button button-danger" id="confirm-configuration" type="button" disabled>Save &amp; Reboot</button>
+      </div>
+    </dialog>
+
+    <dialog class="confirmation-dialog" id="reboot-dialog" aria-labelledby="reboot-dialog-title">
+      <h2 id="reboot-dialog-title">Reboot board?</h2>
+      <p class="configuration-warning">
+        This immediately restarts the board. Close all CDC ports and stop external UART traffic first.
+      </p>
+      <div class="dialog-actions">
+        <button class="button button-cancel" id="cancel-reboot" type="button">Cancel</button>
+        <button class="button button-danger" id="confirm-reboot" type="button">Reboot board</button>
       </div>
     </dialog>
 
@@ -115,9 +126,6 @@
     <section class="channels-section" aria-labelledby="channels-title">
       <div class="section-heading">
         <h2 id="channels-title">UART channels <span>CDC0–CDC5</span></h2>
-        <button class="button button-secondary" id="refresh-diagnostics" type="button" disabled>
-          Refresh channel diagnostics
-        </button>
       </div>
       <div class="table-scroll">
         <table>
@@ -140,9 +148,12 @@
     <dialog class="diagnostics-dialog" id="channel-diagnostics-dialog" aria-labelledby="channel-diagnostics-title">
       <div class="dialog-heading">
         <h2 id="channel-diagnostics-title">Channel diagnostics</h2>
-        <button class="button button-led" id="close-channel-diagnostics" type="button">Close</button>
+        <button class="button button-secondary" id="close-channel-diagnostics" type="button">Close</button>
       </div>
       <div class="diagnostics-content" id="channel-diagnostics-content"></div>
+      <button class="button button-small" id="refresh-diagnostics" type="button" disabled>
+        Refresh diagnostics
+      </button>
     </dialog>
 
     <footer class="status-line" role="status" aria-live="polite">

@@ -36,6 +36,7 @@ function fixture(secure = true, hid = {}) {
     toggleLed() { this.calls.push("toggle-led"); }
     setLed(on) { this.calls.push("toggle-led"); this.state.dashboard.led = { output_on: on, manual_on: on }; }
     saveConfiguration(profile, unsafeOverclock) { this.calls.push(["save-configuration", profile, unsafeOverclock]); }
+    reboot(confirmed) { this.calls.push(["reboot", confirmed]); }
     clearConfigurationSaveMessage() { this.state.configurationSaveMessage = ""; }
     phase(phase, error = null) {
       this.state = { ...this.state, phase, error };
@@ -48,7 +49,6 @@ function fixture(secure = true, hid = {}) {
   let agePolling;
   vm.runInNewContext(source, { document, navigator: { hid }, isSecureContext: secure,
     PicoUartWebHid: FakeClient, renderDashboard() {},
-    confirm: () => true,
     updateReportAge(data) { assert.equal(data, client.state.dashboard); },
     setInterval(callback, interval) {
       if (!polling) polling = { callback, interval };
@@ -73,7 +73,7 @@ test("one connection button belongs to Device identity, with no separate refresh
   assert.match(configuration, /<h2 id="configuration-title">Board configuration<\/h2>/);
   assert.match(configuration, /id="configuration-profile"/);
   assert.doesNotMatch(configuration, /configuration-unsafe-ack/);
-  assert.match(html, /<dialog class="configuration-dialog"[^>]*>[\s\S]*?id="configuration-unsafe-ack"/);
+  assert.match(html, /<dialog class="confirmation-dialog"[^>]*>[\s\S]*?id="configuration-unsafe-ack"/);
   assert.match(configuration, /role="status" aria-live="polite"/);
   assert.match(configuration, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[\s\S]*?<\/div>\s*<\/div>/);
   assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">Stored boot profile<\/label>\s*<select/);
@@ -123,6 +123,25 @@ test("persistent configuration uses target profiles and gates unsafe saves", () 
   assert.equal(get("save-configuration").disabled, true);
 });
 
+test("Save & Reboot stays disabled until the selected profile differs from its baseline", () => {
+  const { client, get } = fixture();
+  client.state.dashboard = { identity: { capabilities: 4, clock_profile_mask: 31 },
+    configuration: { stored_profile: null },
+    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_updated_at: new Date().toISOString() })) };
+  client.state.phase = "connected";
+  client.render(client.state);
+  const profile = get("configuration-profile");
+  const saveButton = get("save-configuration");
+  assert.equal(profile.value, "0");
+  assert.equal(saveButton.disabled, true);
+  profile.value = "1";
+  profile.change();
+  assert.equal(saveButton.disabled, false);
+  profile.value = "0";
+  profile.change();
+  assert.equal(saveButton.disabled, true);
+});
+
 test("configuration read failures disable Save and remain visible without the removed summary", () => {
   const { client, get } = fixture();
   client.state.dashboard = { connected: true, hardware: { mcu_id: 1 },
@@ -134,6 +153,26 @@ test("configuration read failures disable Save and remain visible without the re
   assert.equal(get("configuration-dialog").open, false);
   assert.equal(get("configuration-message").textContent, "Unsupported report");
   assert.equal(get("configuration-message").dataset.error, "true");
+});
+
+test("board reboot uses the shared confirmation modal and requires explicit confirmation", () => {
+  const { client, get } = fixture();
+  client.state.phase = "connected";
+  client.state.dashboard.identity = { capabilities: 2 };
+  client.render(client.state);
+  const rebootButton = get("reboot-board");
+  assert.equal(rebootButton.hidden, false);
+  assert.equal(rebootButton.disabled, false);
+  rebootButton.click();
+  assert.equal(get("reboot-dialog").open, true);
+  assert.deepEqual(client.calls, []);
+  get("cancel-reboot").click();
+  assert.equal(get("reboot-dialog").open, false);
+  assert.deepEqual(client.calls, []);
+  rebootButton.click();
+  get("confirm-reboot").click();
+  assert.equal(get("reboot-dialog").open, false);
+  assert.deepEqual(client.calls, [["reboot", true]]);
 });
 
 test("metadata continues refreshing automatically every second", () => {

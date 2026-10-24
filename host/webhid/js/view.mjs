@@ -79,8 +79,38 @@ function showChannelDiagnostics(id, channel, diagnostic, capacities, data) {
   dialog.showModal();
 }
 
+let channelPointerInside = false;
+let pendingChannelData = null;
+let trackedChannelBody = null;
+
+function channelInteractionActive(body) {
+  if (trackedChannelBody !== body) {
+    trackedChannelBody = body;
+    body.addEventListener("pointerenter", () => { channelPointerInside = true; });
+    body.addEventListener("pointerleave", () => {
+      channelPointerInside = false;
+      flushPendingChannelData();
+    });
+    body.addEventListener("focusout", () => globalThis.setTimeout(flushPendingChannelData, 0));
+  }
+  return channelPointerInside || Boolean(document.activeElement && body.contains(document.activeElement));
+}
+
+function flushPendingChannelData() {
+  if (!pendingChannelData || channelPointerInside
+    || document.activeElement && trackedChannelBody?.contains(document.activeElement)) return;
+  const data = pendingChannelData;
+  pendingChannelData = null;
+  renderChannels(data);
+}
+
 function renderChannels(data) {
   const body = document.querySelector("#channel-rows");
+  if (channelInteractionActive(body)) {
+    pendingChannelData = data;
+    return;
+  }
+  pendingChannelData = null;
   body.replaceChildren();
   const now = Date.now();
   const capacities = data.configuration?.capacities;
@@ -155,8 +185,12 @@ function renderChannels(data) {
     diagnosticsButton.className = "button button-small diagnostics-action";
     diagnosticsButton.type = "button";
     diagnosticsButton.textContent = "Diagnostics";
-    diagnosticsButton.addEventListener("click", () =>
-      showChannelDiagnostics(index, channel, diagnostic, capacities, data));
+    diagnosticsButton.addEventListener("click", () => {
+      const current = pendingChannelData ?? data;
+      showChannelDiagnostics(index, current.channels[index] ?? channel,
+        current.channel_diagnostics?.[index] ?? diagnostic,
+        current.configuration?.capacities ?? capacities, current);
+    });
     diagnostics.append(diagnosticsButton);
     row.append(diagnostics);
     body.append(row);

@@ -23,6 +23,7 @@ class Element {
   get textContent() { return this.text + this.children.map(child => child.textContent).join(""); }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
+  contains(target) { return this.children.some(child => child === target || child.contains?.(target)); }
   addEventListener(event, callback) { this.events[event] = callback; }
   click() { this.events.click?.(); }
   showModal() { this.open = true; }
@@ -67,12 +68,12 @@ test("webhid report age text tracks freshness", () => {
   }
 });
 
-test("webhid render shows identity and runtime summaries", () => {
+test("webhid render shows identity and runtime summaries", async () => {
   const html = readFileSync(new URL("../../webhid/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   globalThis.document = document;
   try {
-    renderDashboard({
+    const dashboard = {
       connected: true,
       updated_at: new Date().toISOString(),
       identity: {
@@ -119,13 +120,18 @@ test("webhid render shows identity and runtime summaries", () => {
         last_configuration_error: "None recorded",
         peaks: { tx_ring: 0, rx_ring: 0, cdc_tx: 0, cdc_rx: 0 },
       })),
-    });
+    };
+    renderDashboard(dashboard);
     assert.equal(document.querySelector("#product-name").textContent, "PicoUart");
     assert.equal(document.querySelector("#board-model").textContent, "Pico 2 (RP2350)");
     assert.equal(document.querySelector("#serial").textContent, "ABC123");
     assert.equal(document.querySelector("#firmware").textContent, "1.2.3");
     assert.equal(document.querySelector("#service-load").textContent, "12.5% / 5.0%");
     assert.equal(document.querySelector("#toggle-led").textContent, "Board LED: On");
+    assert.equal(document.querySelector("#toggle-led").dataset.state, "on");
+    renderDashboard({ ...dashboard, telemetry: { ...dashboard.telemetry, led: { output_on: false } } });
+    assert.equal(document.querySelector("#toggle-led").textContent, "Board LED: Off");
+    assert.equal(document.querySelector("#toggle-led").dataset.state, "off");
     assert.doesNotMatch(html, /<span>Microcontroller<\/span>/);
     assert.equal(document.querySelector("#channel-rows").children[0].children[2].children.length, 1);
     const lifecycle = document.querySelector("#channel-rows").children[0].children[1];
@@ -136,7 +142,32 @@ test("webhid render shows identity and runtime summaries", () => {
       "UART TX", "UART RX", "USB RX", "USB TX",
     ]);
     assert.equal(traffic.children[0].children[1].textContent, "0.0 KB/s");
-    const diagnosticsButton = document.querySelector("#channel-rows").children[0].children[4].children[0];
+    const rows = document.querySelector("#channel-rows");
+    const initialRow = rows.children[0];
+    rows.events.pointerenter();
+    const pointerUpdate = { ...dashboard, channels: dashboard.channels.map((channel, index) =>
+      index === 0 ? { ...channel, baud_rate: 57600 } : channel) };
+    renderDashboard(pointerUpdate);
+    assert.equal(rows.children[0], initialRow);
+    rows.events.pointerleave();
+    assert.notEqual(rows.children[0], initialRow);
+    assert.equal(rows.children[0].children[2].children[0].textContent,
+      `${(57600).toLocaleString()} 8N1`);
+
+    const focusedRow = rows.children[0];
+    document.activeElement = focusedRow.children[4].children[0];
+    const focusUpdate = { ...pointerUpdate, channels: pointerUpdate.channels.map((channel, index) =>
+      index === 0 ? { ...channel, baud_rate: 38400 } : channel) };
+    renderDashboard(focusUpdate);
+    assert.equal(rows.children[0], focusedRow);
+    document.activeElement = null;
+    rows.events.focusout();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.notEqual(rows.children[0], focusedRow);
+    assert.equal(rows.children[0].children[2].children[0].textContent,
+      `${(38400).toLocaleString()} 8N1`);
+
+    const diagnosticsButton = rows.children[0].children[4].children[0];
     assert.equal(diagnosticsButton.textContent, "Diagnostics");
     diagnosticsButton.click();
     assert.equal(document.querySelector("#channel-diagnostics-dialog").open, true);

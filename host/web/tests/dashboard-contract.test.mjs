@@ -53,7 +53,8 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   const identitySection = markup.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)?.[1] ?? "";
   const configuration = markup.match(/<div class="summary configuration-summary">([\s\S]*?)<\/div>\s*<details class="pin-map-disclosure">/)?.[1] ?? "";
   const configurationSection = markup.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)?.[1] ?? "";
-  const configurationDialog = markup.match(/<dialog class="configuration-dialog" id="configuration-dialog"[^>]*>([\s\S]*?)<\/dialog>/)?.[1] ?? "";
+  const configurationDialog = markup.match(/<dialog class="confirmation-dialog" id="configuration-dialog"[^>]*>([\s\S]*?)<\/dialog>/)?.[1] ?? "";
+  const rebootDialog = markup.match(/<dialog class="confirmation-dialog" id="reboot-dialog"[^>]*>([\s\S]*?)<\/dialog>/)?.[1] ?? "";
   assert.equal((identity.match(/class="summary-item"/g) ?? []).length, 6);
   assert.doesNotMatch(identity, /Microcontroller/);
   assert.match(identity, /Product[\s\S]*?Board model[\s\S]*?Serial \/ UID[\s\S]*?System clock[\s\S]*?Firmware RAM reserved \/ total[\s\S]*?Firmware version/);
@@ -73,6 +74,11 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(configurationDialog, /id="overclock-ack" type="checkbox" disabled/);
   assert.match(configurationDialog, /id="cancel-configuration"/);
   assert.match(configurationDialog, /id="confirm-configuration"/);
+  assert.match(rebootDialog, /id="cancel-reboot"/);
+  assert.match(rebootDialog, /id="confirm-reboot"/);
+  assert.match(dashboard, /rebootDialog\.showModal\(\)/);
+  assert.match(dashboard, /rebootDialog\.close\(\)[\s\S]*?runAction\("reset"\)/);
+  assert.doesNotMatch(dashboard, /window\.confirm\(/);
   assert.match(dashboard, /fetch\(`\/api\/configuration\?board=/);
   assert.match(dashboard, /JSON\.stringify\(\{ profile, unsafe_overclock: unsafeOverclock \}\)/);
   assert.match(dashboard, /configurationDialog\.showModal\(\)/);
@@ -92,6 +98,10 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(dashboard, /total\.textContent = formatBytes\(channel\.totals\?\.\[key\]\)/);
   assert.match(dashboard, /latest\.totals\[key\] - baseline\.totals\[key\]/);
   assert.match(dashboard, /elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS/);
+  assert.match(dashboard, /channelRows\.addEventListener\("pointerenter"/);
+  assert.match(dashboard, /channelRows\.addEventListener\("pointerleave"/);
+  assert.match(dashboard, /channelRows\.addEventListener\("focusout"/);
+  assert.match(dashboard, /data\.channels\.forEach\(channel => currentRates\(channel, now, data\)\)/);
   assert.match(dashboard, /boardIdentityName\([\s\S]*?data\.identity\?\.mcu_id \?\? data\.identity\?\.mcu/);
   assert.match(dashboard, /measurement\.textContent = stale \? "Waiting for sample"/);
   assert.match(dashboard, /configuration\.append\(settings\)/);
@@ -104,7 +114,10 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(stylesheet, /\.traffic b \{[^}]*text-align: right;/);
   assert.match(stylesheet, /\.traffic-total \{[^}]*text-align: right;/);
   assert.match(stylesheet, /\.traffic b \{[^}]*font-size: 10px;/);
-  assert.match(stylesheet, /#toggle-led \{[^}]*background: var\(--teal\);[^}]*color: #fff;/);
+  assert.match(stylesheet, /#toggle-led\[data-state="off"\] \{[^}]*background: var\(--paper\);/);
+  assert.match(stylesheet, /#toggle-led\[data-state="on"\] \{[^}]*background: var\(--teal\);[^}]*color: #fff;/);
+  assert.match(stylesheet, /#save-configuration, #reset-board \{ min-width: 136px; \}/);
+  assert.match(stylesheet, /\.confirmation-dialog \{[^}]*border-top: 3px solid var\(--teal\);/);
   assert.match(stylesheet, /\.summary\.identity-summary \{ grid-template-columns: repeat\(6, minmax\(0, 1fr\)\); \}/);
   assert.match(stylesheet, /\.summary\.identity-summary \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
   assert.match(stylesheet, /\.summary\.identity-summary \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);

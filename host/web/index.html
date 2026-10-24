@@ -6,8 +6,8 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css?v=27">
-  <script src="/js/dashboard.js?v=27" defer></script>
+  <link rel="stylesheet" href="/css/dashboard.css?v=28">
+  <script src="/js/dashboard.js?v=29" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -89,7 +89,7 @@
       </details>
     </section>
 
-    <dialog class="configuration-dialog" id="configuration-dialog" aria-labelledby="configuration-dialog-title">
+    <dialog class="confirmation-dialog" id="configuration-dialog" aria-labelledby="configuration-dialog-title">
       <h2 id="configuration-dialog-title">Save clock profile?</h2>
       <p id="configuration-dialog-profile"></p>
       <p class="configuration-warning">
@@ -101,10 +101,22 @@
         <span>I acknowledge the non-default overclock request.</span>
       </label>
       <div class="dialog-actions">
-        <button class="button button-led" id="cancel-configuration" type="button">Cancel</button>
+        <button class="button button-cancel" id="cancel-configuration" type="button">Cancel</button>
         <button class="button button-danger" id="confirm-configuration" type="button" disabled>
           Save &amp; Reboot
         </button>
+      </div>
+    </dialog>
+
+    <dialog class="confirmation-dialog" id="reboot-dialog" aria-labelledby="reboot-dialog-title">
+      <h2 id="reboot-dialog-title">Reboot board?</h2>
+      <p class="configuration-warning">
+        This immediately reboots the board and briefly disconnects USB. Close all CDC ports and stop external UART
+        traffic first.
+      </p>
+      <div class="dialog-actions">
+        <button class="button button-cancel" id="cancel-reboot" type="button">Cancel</button>
+        <button class="button button-danger" id="confirm-reboot" type="button">Reboot</button>
       </div>
     </dialog>
 

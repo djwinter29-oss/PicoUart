@@ -24,6 +24,49 @@ test("WebHID accepts valid distinct UART and CDC buffer capacities", () => {
     /Invalid board-configuration fields/);
 });
 
+test("background refresh preserves connected controls and serializes user operations", async () => {
+  for (const operation of ["performAction", "refreshDiagnostics"]) {
+    const phases = [];
+    const client = new PicoUartWebHid(null, state => phases.push(state.phase));
+    client.device = {};
+    client.state.phase = "connected";
+    client.information = { capabilities: 0 };
+    client.state.dashboard.configuration = {};
+    client.state.dashboard.action_result = {};
+    let finishTelemetry;
+    let telemetryReads = 0;
+    client.readTelemetry = () => {
+      telemetryReads++;
+      return new Promise(resolve => { finishTelemetry = resolve; });
+    };
+    let diagnosticsRead = false;
+    client.readChannelDetails = async () => {
+      diagnosticsRead = true;
+      await client.refresh();
+    };
+    const refresh = client.refresh();
+    assert.equal(client.refreshInFlight, true);
+    assert.equal(client.state.phase, "connected");
+    assert.ok(phases.every(phase => phase === "connected"));
+    let settled = false;
+    const pending = (operation === "performAction" ? client.performAction(2) : client.refreshDiagnostics())
+      .then(() => { settled = true; }, error => {
+        assert.match(error.message, /Board-action capability unavailable/);
+        settled = true;
+      });
+    await Promise.resolve();
+    assert.equal(settled, false);
+    assert.equal(diagnosticsRead, false);
+    finishTelemetry();
+    await refresh;
+    await pending;
+    assert.equal(settled, true);
+    assert.equal(diagnosticsRead, operation === "refreshDiagnostics");
+    assert.equal(telemetryReads, 1);
+    assert.equal(client.state.phase, "connected");
+  }
+});
+
 test("identity report length comes from the protocol rather than OS collection metadata", () => {
   assert.equal(identityDiscoveryLength(), 27);
 });

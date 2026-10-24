@@ -1,4 +1,3 @@
-.actions #connect { min-width: 110px; }
 .status-line { align-items: baseline; }
 .status-line .status-mark { flex-shrink: 0; }
 #status-message { overflow-wrap: anywhere; }
@@ -35,6 +34,3 @@
 .static-map table { min-width: 540px; table-layout: auto; }
 .static-map caption { padding: 10px 14px; color: var(--muted); text-align: left; font-size: 12px; }
 .static-map td { height: 40px; }
-@media (max-width: 720px) {
-  .actions #connect { min-width: 0; }
-}

@@ -7,6 +7,7 @@ const statusMessage = document.querySelector("#status-message");
 const clockProfile = document.querySelector("#clock-profile");
 const saveConfigurationButton = document.querySelector("#save-configuration");
 const configurationDialog = document.querySelector("#configuration-dialog");
+const rebootDialog = document.querySelector("#reboot-dialog");
 const configurationDialogProfile = document.querySelector("#configuration-dialog-profile");
 const confirmConfigurationButton = document.querySelector("#confirm-configuration");
 const overclockAcknowledgement = document.querySelector("#overclock-ack");
@@ -50,6 +51,9 @@ const directions = [
   ["USB RX", "usb_rx", false],
   ["USB TX", "usb_tx", false],
 ];
+let channelPointerInside = false;
+let pendingChannelData = null;
+let channelRowsTracked = false;
 const channelStates = ["closed", "starting", "ready", "configuring", "error"];
 const measurementStates = ["Unavailable", "Current", "Cached"];
 const resetCauses = ["Unknown", "Power-on", "Watchdog", "Software-requested"];
@@ -259,6 +263,27 @@ function currentRates(channel, now, data) {
   return { rates, fresh };
 }
 
+function channelInteractionActive() {
+  if (!channelRowsTracked) {
+    channelRowsTracked = true;
+    channelRows.addEventListener("pointerenter", () => { channelPointerInside = true; });
+    channelRows.addEventListener("pointerleave", () => {
+      channelPointerInside = false;
+      flushPendingChannelData();
+    });
+    channelRows.addEventListener("focusout", () => globalThis.setTimeout(flushPendingChannelData, 0));
+  }
+  return channelPointerInside || Boolean(document.activeElement && channelRows.contains(document.activeElement));
+}
+
+function flushPendingChannelData() {
+  if (!pendingChannelData || channelPointerInside
+    || document.activeElement && channelRows.contains(document.activeElement)) return;
+  const data = pendingChannelData;
+  pendingChannelData = null;
+  renderChannels(data);
+}
+
 function measurementLabel(value) {
   return measurementStates[value] ?? "Unknown";
 }
@@ -369,6 +394,15 @@ function buildDiagnosticsCell(channel) {
 }
 
 function renderChannels(data) {
+  if (channelInteractionActive()) {
+    if (Array.isArray(data.channels)) {
+      const now = Date.now();
+      data.channels.forEach(channel => currentRates(channel, now, data));
+    }
+    pendingChannelData = data;
+    return;
+  }
+  pendingChannelData = null;
   channelRows.replaceChildren();
   if (!Array.isArray(data.channels)) return;
   const now = Date.now();
@@ -594,9 +628,6 @@ async function rescanBoards() {
 
 async function runAction(action) {
   if (!selectedBoard || actionBusy) return;
-  if (action === "reset" && !window.confirm(
-    "Reboot PicoUart? USB serial ports will disconnect briefly.",
-  )) return;
   const board = selectedBoard;
   actionBusy = true;
   boardSelect.disabled = true;
@@ -682,7 +713,15 @@ async function saveConfiguration() {
 }
 
 document.querySelector("#toggle-led").addEventListener("click", () => runAction("toggle-led"));
-document.querySelector("#reset-board").addEventListener("click", () => runAction("reset"));
+document.querySelector("#reset-board").addEventListener("click", () => {
+  if (!actionBusy && selectedBoard) rebootDialog.showModal();
+});
+document.querySelector("#cancel-reboot").addEventListener("click", () => rebootDialog.close());
+document.querySelector("#confirm-reboot").addEventListener("click", () => {
+  if (!rebootDialog.open || actionBusy || !selectedBoard) return;
+  rebootDialog.close();
+  runAction("reset");
+});
 clockProfile.addEventListener("change", () => {
   configurationProfileDirty = true;
   overclockAcknowledgement.checked = false;

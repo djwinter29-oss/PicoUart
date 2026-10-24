@@ -597,10 +597,12 @@ export class PicoUartWebHid {
   async refresh(initial = false) {
     const device = this.device;
     const generation = this.generation;
-    if (!device || this.actionInFlight || !["connected", "reading"].includes(this.state.phase)
+    if (!device || this.actionInFlight || this.state.phase !== "connected"
       || this.ioBlocked || this.refreshInFlight) return;
     this.refreshInFlight = true;
-    this.update({ phase: "reading", message: "Reading HID status", error: null });
+    let finishRefresh;
+    this.refreshComplete = new Promise(resolve => { finishRefresh = resolve; });
+    this.update({ message: "Reading HID status", error: null });
     try {
       if (!this.information) {
         try {
@@ -637,20 +639,20 @@ export class PicoUartWebHid {
       }
       if (initial) await this.readChannelDetails();
       if (!this.isCurrent(generation, device)) return;
-      this.update({ phase: "connected", message: "HID status received",
+      this.update({ message: "HID status received",
         error: this.state.dashboard.identity_error ?? this.state.dashboard.configuration_error
           ?? this.state.dashboard.telemetry_error ?? this.state.dashboard.action_error });
     } finally {
       this.refreshInFlight = false;
-      if (this.isCurrent(generation, device) && this.state.phase === "reading") {
-        this.update({ phase: "connected" });
-      }
+      finishRefresh();
     }
   }
 
   async refreshDiagnostics() {
-    if (!this.device || this.actionInFlight || this.state.phase !== "connected") return;
     const generation = this.generation, device = this.device;
+    await this.refreshComplete;
+    if (!device || !this.isCurrent(generation, device)
+      || this.actionInFlight || this.state.phase !== "connected") return;
     this.update({ phase: "reading", message: "Refreshing channel diagnostics", error: null });
     try {
       if (!this.state.dashboard.configuration && this.information) await this.readConfiguration();
@@ -662,7 +664,9 @@ export class PicoUartWebHid {
 
   async performAction(action, { profile = 0, acknowledgeOverclock = false, confirmed = false } = {}) {
     const device = this.device, generation = this.generation;
-    if (!device || this.state.phase !== "connected" || this.actionInFlight) return;
+    await this.refreshComplete;
+    if (!device || !this.isCurrent(generation, device)
+      || this.state.phase !== "connected" || this.actionInFlight) return;
     const identity = this.information;
     if (!identity) throw new Error("Read a supported device identity before sending commands.");
     const capability = action <= 2 ? 1 : action === 3 ? 2 : 4;
