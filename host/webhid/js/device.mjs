@@ -1,8 +1,6 @@
 export const DEVICE_FILTER = Object.freeze({
   vendorId: 0xcafe,
   productId: 0x4010,
-  usagePage: 0xff00,
-  usage: 0x01,
 });
 
 const PRODUCT_ID_PICOUART = 1;
@@ -47,7 +45,7 @@ function reportInfo(device, type, reportId) {
     for (const child of collection.children ?? []) visit(child);
   };
   for (const collection of device.collections ?? []) visit(collection);
-  if (!entries.length) throw new Error(`HID descriptor is missing ${type} report ${reportId}`);
+  if (!entries.length) return null;
   const lengths = entries.map(info => {
     const bits = (info.items ?? []).reduce((total, item) => total + item.reportSize * item.reportCount, 0);
     if (!Number.isSafeInteger(bits) || bits % 8) throw new Error(`Invalid HID descriptor length for report ${reportId}`);
@@ -61,12 +59,14 @@ function reportInfo(device, type, reportId) {
 
 export function validatePicoUartDescriptor(device) {
   for (const [reportId, length] of FEATURE_LENGTHS) {
-    if (reportInfo(device, "feature", reportId) !== length) {
+    const reportedLength = reportInfo(device, "feature", reportId);
+    if (reportedLength !== null && reportedLength !== length) {
       throw new Error(`HID descriptor has an invalid Feature report ${reportId} length`);
     }
   }
   for (const [reportId, length] of INPUT_LENGTHS) {
-    if (reportInfo(device, "input", reportId) !== length) {
+    const reportedLength = reportInfo(device, "input", reportId);
+    if (reportedLength !== null && reportedLength !== length) {
       throw new Error(`HID descriptor has an invalid Input report ${reportId} length`);
     }
   }
@@ -74,8 +74,9 @@ export function validatePicoUartDescriptor(device) {
 
 export function identityDiscoveryLength(device) {
   const length = reportInfo(device, "feature", 1);
-  if (length < 3) throw new Error("Identity Feature report is too short for product discovery");
-  return length;
+  const identityLength = length ?? FEATURE_LENGTHS.get(1);
+  if (identityLength < 3) throw new Error("Identity Feature report is too short for product discovery");
+  return identityLength;
 }
 
 export function decodeIdentityPrefix(report, declaredLength) {
@@ -354,9 +355,7 @@ function emptyDashboard() {
 }
 
 export function matchesPicoUart(device) {
-  return device?.vendorId === DEVICE_FILTER.vendorId && device?.productId === DEVICE_FILTER.productId
-    && (device.collections ?? []).some(collection => collection.usagePage === DEVICE_FILTER.usagePage
-      && collection.usage === DEVICE_FILTER.usage);
+  return device?.vendorId === DEVICE_FILTER.vendorId && device?.productId === DEVICE_FILTER.productId;
 }
 
 export class PicoUartWebHid {
@@ -782,7 +781,7 @@ export class PicoUartWebHid {
       dashboard: emptyDashboard() });
     let selected;
     try {
-      const devices = await this.hid.requestDevice({ filters: [{ ...DEVICE_FILTER }] });
+      const devices = await this.hid.requestDevice({ filters: [{ vendorId: DEVICE_FILTER.vendorId }] });
       if (generation !== this.generation) return;
       if (!devices.length) {
         this.update({ phase: "disconnected", message: "No device selected" });

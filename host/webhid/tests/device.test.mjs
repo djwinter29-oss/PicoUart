@@ -1,6 +1,38 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PicoUartWebHid } from "../js/device.mjs";
+import { DEVICE_FILTER, identityDiscoveryLength, matchesPicoUart, PicoUartWebHid,
+  validatePicoUartDescriptor } from "../js/device.mjs";
+
+test("WebHID uses protocol report lengths when collection metadata is omitted", () => {
+  const device = { collections: [] };
+  assert.equal(identityDiscoveryLength(device), 27);
+  assert.doesNotThrow(() => validatePicoUartDescriptor(device));
+});
+
+test("WebHID rejects reported descriptor lengths that conflict with the protocol", () => {
+  const device = { collections: [{
+    featureReports: [{ reportId: 1, items: [{ reportSize: 8, reportCount: 28 }] }],
+    inputReports: [],
+    children: [],
+  }] };
+  assert.throws(() => validatePicoUartDescriptor(device), /invalid Feature report 1 length/);
+});
+
+test("WebHID discovery filters by PicoUart VID/PID and leaves descriptor validation to connection", () => {
+  assert.deepEqual(DEVICE_FILTER, { vendorId: 0xcafe, productId: 0x4010 });
+  assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4010, collections: [] }), true);
+  assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4011 }), false);
+  assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4010 }), true);
+});
+
+test("WebHID chooser requests PicoUart vendor devices before exact product validation", async () => {
+  const requests = [];
+  const hid = { addEventListener() {}, requestDevice: async options => { requests.push(options); return []; } };
+  const client = new PicoUartWebHid(hid);
+  await client.connect();
+  assert.deepEqual(requests, [{ filters: [{ vendorId: 0xcafe }] }]);
+  assert.equal(client.state.phase, "disconnected");
+});
 
 test("input rates smooth cumulative counters over five seconds across sequence gaps", () => {
   const client = new PicoUartWebHid(null);

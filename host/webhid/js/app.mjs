@@ -1,4 +1,4 @@
-import { PicoUartWebHid } from "./device.mjs?v=10";
+import { PicoUartWebHid } from "./device.mjs?v=13";
 import { renderDashboard, updateReportAge } from "./view.mjs?v=13";
 
 const connectButton = document.querySelector("#connect");

@@ -54,7 +54,9 @@ def check_build(build_dir: Path, board: str, size_tool: str) -> tuple[int, int, 
         if not artifact.is_file():
             raise ValueError(f"missing build artifact: {artifact}")
 
-    command = [size_tool, "-A", "-x", str(elf)]
+    size_path = Path(size_tool)
+    command = [sys.executable, str(size_path)] if size_path.suffix.lower() == ".py" else [size_tool]
+    command.extend(("-A", "-x", str(elf)))
     try:
         output = subprocess.run(command, check=True, capture_output=True, text=True).stdout
     except FileNotFoundError as error:

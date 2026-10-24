@@ -20,13 +20,12 @@ def make_build(tmp_path, ram_size=1024, image_size=1024, flash_size=8192):
         json.dumps({"flash_size": flash_size, "sector_size": 4096}),
         encoding="utf-8",
     )
-    size_tool = tmp_path / "size-tool"
+    size_tool = tmp_path / "size-tool.py"
     size_tool.write_text(
-        "#!/bin/sh\n"
-        f"printf 'section size addr\\n.bss 0x{ram_size:x} 0x20000000\\n'\n",
+        "print('section size addr')\n"
+        f"print('.bss 0x{ram_size:x} 0x20000000')\n",
         encoding="utf-8",
     )
-    size_tool.chmod(0o755)
     return size_tool
 
 
