@@ -12,14 +12,7 @@ const MAX_REPORT_AGE_MS = 3000;
 const ACTION_DEADLINE_MS = 3000;
 const ACTION_POLL_MS = 50;
 const UINT32_MAX = 0xffffffff;
-const FEATURE_LENGTHS = new Map([
-  [1, 27], [2, 36], [3, 20], [20, 4],
-  ...Array.from({ length: CHANNEL_COUNT }, (_, channel) => [10 + channel, 30]),
-  ...Array.from({ length: CHANNEL_COUNT }, (_, channel) => [30 + channel, 24]),
-]);
-const INPUT_LENGTHS = new Map(
-  Array.from({ length: CHANNEL_COUNT }, (_, channel) => [10 + channel, 30]),
-);
+const IDENTITY_REPORT_LENGTH = 27;
 const CLOCK_PROFILES = new Map([
   [0, "SDK default"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"], [4, "280 MHz"],
 ]);
@@ -29,54 +22,20 @@ const CONFIGURATION_ERRORS = [
 ];
 const ACTION_STATUS = ["Idle", "Pending", "Completed", "Invalid", "Unsupported", "Busy", "Failed"];
 
-function payload(report, expectedLength, reportName) {
+function payload(report, expectedLength, reportName, reportId = null) {
+  if (report instanceof DataView && reportId !== null && report.byteLength === expectedLength + 1
+    && report.getUint8(0) === reportId) {
+    return new DataView(report.buffer, report.byteOffset + 1, expectedLength);
+  }
   if (!(report instanceof DataView) || report.byteLength !== expectedLength) {
-    throw new Error(`${reportName} must contain exactly ${expectedLength} payload bytes`);
+    const received = report instanceof DataView ? report.byteLength : "non-DataView";
+    throw new Error(`${reportName} must contain exactly ${expectedLength} payload bytes (received ${received})`);
   }
   return new DataView(report.buffer, report.byteOffset, report.byteLength);
 }
 
-function reportInfo(device, type, reportId) {
-  const entries = [];
-  const visit = collection => {
-    for (const info of collection[`${type}Reports`] ?? []) {
-      if (info.reportId === reportId) entries.push(info);
-    }
-    for (const child of collection.children ?? []) visit(child);
-  };
-  for (const collection of device.collections ?? []) visit(collection);
-  if (!entries.length) return null;
-  const lengths = entries.map(info => {
-    const bits = (info.items ?? []).reduce((total, item) => total + item.reportSize * item.reportCount, 0);
-    if (!Number.isSafeInteger(bits) || bits % 8) throw new Error(`Invalid HID descriptor length for report ${reportId}`);
-    return bits / 8;
-  });
-  if (lengths.some(length => length !== lengths[0])) {
-    throw new Error(`Conflicting HID descriptor lengths for report ${reportId}`);
-  }
-  return lengths[0];
-}
-
-export function validatePicoUartDescriptor(device, verifiedFeatureReports = new Set()) {
-  for (const [reportId, length] of FEATURE_LENGTHS) {
-    const reportedLength = reportInfo(device, "feature", reportId);
-    if (reportedLength !== null && reportedLength !== length && !verifiedFeatureReports.has(reportId)) {
-      throw new Error(`HID descriptor has an invalid Feature report ${reportId} length`);
-    }
-  }
-  for (const [reportId, length] of INPUT_LENGTHS) {
-    const reportedLength = reportInfo(device, "input", reportId);
-    if (reportedLength !== null && reportedLength !== length) {
-      throw new Error(`HID descriptor has an invalid Input report ${reportId} length`);
-    }
-  }
-}
-
-export function identityDiscoveryLength(device) {
-  const length = reportInfo(device, "feature", 1);
-  const protocolLength = FEATURE_LENGTHS.get(1);
-  if (length !== null && length < 3) throw new Error("Identity Feature report is too short for product discovery");
-  return protocolLength;
+export function identityDiscoveryLength() {
+  return IDENTITY_REPORT_LENGTH;
 }
 
 export function decodeIdentityPrefix(report, declaredLength) {
@@ -142,7 +101,6 @@ export function decodeBoardConfiguration(report, identity) {
   if (!validateProfile(storedProfile) || channelCount !== CHANNEL_COUNT || resetCause > 4
     || pins.some(channel => channel.some(pin => pin > 47 && pin !== 255))
     || Object.values(capacities).some(capacity => capacity === 0)
-    || new Set(Object.values(capacities)).size !== 1
     || identity && identity.hardware_channel_mask >>> channelCount) {
     throw new Error("Invalid board-configuration fields");
   }
@@ -409,7 +367,8 @@ export class PicoUartWebHid {
       if (event.device !== device || !this.isCurrent(generation, device)
         || event.reportId < 10 || event.reportId > 15) return;
       try {
-        const snapshot = decodeChannelSnapshot(event.data, event.reportId, this.information,
+        const report = payload(event.data, 30, `Channel ${event.reportId - 10} snapshot`, event.reportId);
+        const snapshot = decodeChannelSnapshot(report, event.reportId, this.information,
           this.state.dashboard.configuration);
         this.applyInputSnapshot(snapshot);
       } catch (error) {
@@ -460,7 +419,7 @@ export class PicoUartWebHid {
   async readFeature(reportId, length, timeout = 3000) {
     const device = this.device;
     const data = await this.transfer(() => device.receiveFeatureReport(reportId), timeout);
-    return payload(data, length, `Feature report ${reportId}`);
+    return payload(data, length, `Feature report ${reportId}`, reportId);
   }
 
   async discoverIdentity() {
@@ -479,7 +438,6 @@ export class PicoUartWebHid {
     if (prefix.layout_version !== 1) {
       throw new Error(`Unsupported PicoUart identity layout version ${prefix.layout_version}`);
     }
-    validatePicoUartDescriptor(this.device, new Set([1]));
     const identity = decodeDeviceInformation(identityReport);
     this.information = identity;
     this.update({ dashboard: { ...this.state.dashboard, identity, identity_error: null } });

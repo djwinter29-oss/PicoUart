@@ -195,10 +195,6 @@ export function renderDashboard(data) {
     : `Set board identification LED ${led ? "Off" : "On"}`;
   updateReportAge(data);
   const action = data.action_result;
-  document.querySelector("#traffic-note").hidden = !data.traffic_incomplete;
-  document.querySelector("#traffic-note").textContent = data.traffic_incomplete
-    ? "Some traffic rates are unavailable after a sequence gap, stale stream, saturated interval, or cached UART sample. Totals remain modulo 2^32."
-    : "";
   renderChannels(data);
   const actionMessage = action && action.status_name !== "Idle"
     ? `Latest board action: ${action.status_name}${action.action ? `, action ${action.action}` : ""}`

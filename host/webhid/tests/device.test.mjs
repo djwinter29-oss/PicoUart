@@ -1,31 +1,72 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEVICE_FILTER, identityDiscoveryLength, matchesPicoUart, PicoUartWebHid,
-  validatePicoUartDescriptor } from "../js/device.mjs";
+import { decodeBoardConfiguration, DEVICE_FILTER, identityDiscoveryLength, matchesPicoUart,
+  PicoUartWebHid } from "../js/device.mjs";
 
-test("WebHID uses protocol report lengths when collection metadata is omitted", () => {
-  const device = { collections: [] };
-  assert.equal(identityDiscoveryLength(device), 27);
-  assert.doesNotThrow(() => validatePicoUartDescriptor(device));
+test("WebHID accepts valid distinct UART and CDC buffer capacities", () => {
+  const bytes = new Uint8Array(36);
+  bytes[0] = 1;
+  bytes[1] = 0;
+  bytes[2] = 6;
+  bytes.fill(255, 3, 27);
+  bytes[27] = 2;
+  const report = new DataView(bytes.buffer);
+  report.setUint16(28, 4096, true);
+  report.setUint16(30, 4096, true);
+  report.setUint16(32, 2048, true);
+  report.setUint16(34, 2048, true);
+
+  assert.deepEqual(decodeBoardConfiguration(report, { hardware_channel_mask: 0x3f }).capacities,
+    { uart_tx: 4096, uart_rx: 4096, cdc_tx: 2048, cdc_rx: 2048 });
+
+  report.setUint16(32, 0, true);
+  assert.throws(() => decodeBoardConfiguration(report, { hardware_channel_mask: 0x3f }),
+    /Invalid board-configuration fields/);
 });
 
-test("WebHID rejects reported descriptor lengths that conflict with the protocol", () => {
-  const device = { collections: [{
-    featureReports: [{ reportId: 1, items: [{ reportSize: 8, reportCount: 28 }] }],
-    inputReports: [],
-    children: [],
-  }] };
-  assert.throws(() => validatePicoUartDescriptor(device), /invalid Feature report 1 length/);
+test("identity report length comes from the protocol rather than OS collection metadata", () => {
+  assert.equal(identityDiscoveryLength(), 27);
 });
 
-test("identity report uses its 27-byte protocol length when Windows reports 26 bytes", () => {
-  const device = { collections: [{
-    featureReports: [{ reportId: 1, items: [{ reportSize: 8, reportCount: 26 }] }],
-    inputReports: [],
-    children: [],
-  }] };
-  assert.equal(identityDiscoveryLength(device), 27);
-  assert.doesNotThrow(() => validatePicoUartDescriptor(device, new Set([1])));
+test("WebHID strips the leading Report ID from Windows Feature responses", async () => {
+  const client = new PicoUartWebHid(null);
+  const report = Uint8Array.from([1, 1, 1, 0, ...Array(24).fill(0)]);
+  client.device = { receiveFeatureReport: async () => new DataView(report.buffer) };
+  const payload = await client.readFeature(1, 27);
+  assert.equal(payload.byteLength, 27);
+  assert.deepEqual(Array.from(new Uint8Array(payload.buffer, payload.byteOffset, 3)), [1, 1, 0]);
+
+  const payloadOnly = Uint8Array.from([1, 1, 0, ...Array(24).fill(0)]);
+  client.device.receiveFeatureReport = async () => new DataView(payloadOnly.buffer);
+  const unchanged = await client.readFeature(1, 27);
+  assert.equal(unchanged.byteLength, 27);
+  assert.deepEqual(Array.from(new Uint8Array(unchanged.buffer, unchanged.byteOffset, 3)), [1, 1, 0]);
+});
+
+test("WebHID normalizes Report ID prefixes on Input snapshots", () => {
+  const client = new PicoUartWebHid(null);
+  const device = { addEventListener(_name, callback) { this.inputListener = callback; }, removeEventListener() {} };
+  client.device = device;
+  client.generation = 1;
+  client.addInputListener(device, 1);
+
+  const report = new Uint8Array(31);
+  report[0] = 10;
+  const data = new DataView(report.buffer, 1);
+  data.setUint8(0, 1);
+  data.setUint8(1, 2);
+  data.setUint8(2, 1);
+  data.setUint32(3, 115200, true);
+  data.setUint8(7, 8);
+  data.setUint8(8, 1);
+  data.setUint8(9, 0);
+  data.setUint16(10, 1, true);
+  data.setUint16(12, 500, true);
+  for (let index = 0; index < 4; index++) data.setUint32(14 + index * 4, index + 1, true);
+  device.inputListener({ device, reportId: 10, data: new DataView(report.buffer) });
+
+  assert.equal(client.state.dashboard.channels[0].baud_rate, 115200);
+  assert.equal(client.state.dashboard.channels[0].sequence, 1);
 });
 
 test("WebHID discovery filters by PicoUart VID/PID and leaves descriptor validation to connection", () => {

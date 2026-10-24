@@ -6,8 +6,8 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css?v=26">
-  <script src="/js/dashboard.js?v=26" defer></script>
+  <link rel="stylesheet" href="/css/dashboard.css?v=27">
+  <script src="/js/dashboard.js?v=27" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -60,7 +60,7 @@
           <button class="button button-secondary" id="save-configuration" type="button" hidden disabled>
             Save &amp; Reboot
           </button>
-          <button class="button button-danger" id="reset-board" type="button"
+          <button class="button button-secondary" id="reset-board" type="button"
             title="Reboot the board; USB serial ports will disconnect briefly" hidden>
             Reboot
           </button>
@@ -151,7 +151,6 @@
           <tbody id="channel-rows"></tbody>
         </table>
       </div>
-      <p class="traffic-note" id="traffic-note" hidden></p>
     </section>
 
     <dialog class="diagnostics-dialog" id="diagnostics-dialog" aria-labelledby="diagnostics-dialog-title">

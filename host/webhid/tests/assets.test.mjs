@@ -22,18 +22,24 @@ for (const frontend of ["web", "webhid"]) {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     const section = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
     if (frontend === "webhid") {
+      const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
       assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
+      assert.match(section, /id="reboot-board"/);
+      assert.match(section, /class="button button-secondary" id="reboot-board"/);
+      assert.doesNotMatch(identity, /id="reboot-board"/);
       assert.match(section, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[^>]*>Save &amp; Reboot<\/button>[\s\S]*?<\/div>\s*<\/div>/);
       assert.match(section, /class="summary configuration-summary">[\s\S]*?<label for="configuration-profile">Stored boot profile<\/label>\s*<select/);
       assert.match(html, /<dialog class="configuration-dialog"[^>]*>[\s\S]*?id="configuration-acknowledgement" hidden/);
       assert.match(html, /<th scope="col"(?: title="[^"]+")?>Traffic<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
       assert.match(html, /<dialog class="diagnostics-dialog"[^>]*id="channel-diagnostics-dialog"/);
       assert.match(html, /<details class="pin-map-disclosure">[\s\S]*?id="board-pins"/);
+      assert.doesNotMatch(html, /id="traffic-note"/);
       assert.match(section, /id="configuration-message" role="status" aria-live="polite"/);
       assert.match(html, /title="Rates ramp from a one-second to a five-second average as samples arrive\./);
     } else {
       assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
       assert.match(section, /id="save-configuration"/);
+      assert.match(section, /class="button button-secondary" id="reset-board"/);
       assert.match(section, /<label for="clock-profile">Stored boot profile<\/label>/);
     }
     assert.doesNotMatch(section, /configuration-panel|configuration-note|configuration-status|configuration-detail/);
@@ -42,6 +48,7 @@ for (const frontend of ["web", "webhid"]) {
     if (frontend === "webhid") {
       const sharedStyles = readFileSync(new URL("../css/dashboard.css", import.meta.url), "utf8");
       assert.match(styles, /#configuration-profile\s*\{[^}]*width:\s*100%;/);
+      assert.match(sharedStyles, /#toggle-led\s*\{[^}]*background:\s*var\(--teal\);[^}]*color:\s*#fff;/);
       assert.match(sharedStyles, /\.summary\.configuration-summary\s*\{\s*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\);\s*\}/);
       assert.match(sharedStyles, /\.traffic-metrics\s*\{[^}]*grid-auto-flow:\s*column;/);
     }

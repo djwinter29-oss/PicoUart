@@ -490,12 +490,6 @@ function render(data) {
   resetButton.hidden = !(capabilities & 2);
   resetButton.disabled = actionBusy || !data.connected;
   updateReportAge(data);
-  const trafficNote = document.querySelector("#traffic-note");
-  trafficNote.hidden = !data.traffic_incomplete;
-  trafficNote.dataset.incomplete = String(data.traffic_incomplete);
-  trafficNote.textContent = data.traffic_incomplete
-    ? "Input report gaps detected; affected rate windows restart after a contiguous sample. Byte counters are modulo 2^32 since boot."
-    : "";
   renderChannels(data);
 
   const message = scanError || data.error

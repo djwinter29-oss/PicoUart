@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PicoUart Diagnostics | WebHID</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/dashboard.css?v=14">
+  <link rel="stylesheet" href="css/dashboard.css?v=15">
   <link rel="stylesheet" href="css/webhid.css?v=7">
   <script type="module" src="js/app.mjs?v=13"></script>
 </head>
@@ -38,7 +38,6 @@
         <div class="actions" aria-label="Connection and board controls">
           <button class="button button-led" id="toggle-led" type="button" data-state="unknown"
             title="Board identification LED state unavailable" disabled>Board LED: --</button>
-          <button class="button button-danger" id="reboot-board" type="button" hidden disabled>Reboot board</button>
           <button class="button button-secondary" id="connect" type="button" disabled>Connect</button>
         </div>
       </div>
@@ -57,6 +56,7 @@
         <h2 id="configuration-title">Board configuration</h2>
         <div class="actions" aria-label="Boot configuration controls">
           <button class="button button-secondary" id="save-configuration" type="button" disabled>Save &amp; Reboot</button>
+          <button class="button button-secondary" id="reboot-board" type="button" hidden disabled>Reboot board</button>
         </div>
       </div>
       <div class="summary configuration-summary">
@@ -135,7 +135,6 @@
           <tbody id="channel-rows"></tbody>
         </table>
       </div>
-      <p class="traffic-note" id="traffic-note" hidden></p>
     </section>
 
     <dialog class="diagnostics-dialog" id="channel-diagnostics-dialog" aria-labelledby="channel-diagnostics-title">

@@ -511,6 +511,12 @@ static void test_control_adapter_pre_ack_results_protected_writes_and_failed_get
     TEST_ASSERT_EQUAL_UINT8(1u, ((uint8_t *)transfer_buffer)[1]);
     TEST_ASSERT_EQUAL_UINT8(1u, ((uint8_t *)transfer_buffer)[2]);
     TEST_ASSERT_EQUAL_UINT8(0u, ((uint8_t *)transfer_buffer)[3]);
+    TEST_ASSERT_EQUAL_UINT8(1u, ((uint8_t *)transfer_buffer)[4]);
+    request.wLength = 27u;
+    TEST_ASSERT_TRUE(__wrap_hidd_control_xfer_cb(0u, CONTROL_STAGE_SETUP, &request));
+    TEST_ASSERT_EQUAL_UINT16(27u, transfer_length);
+    TEST_ASSERT_EQUAL_UINT8(1u, ((uint8_t *)transfer_buffer)[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x23u, ((uint8_t *)transfer_buffer)[4]);
     request.wLength = 10u;
     TEST_ASSERT_TRUE(__wrap_hidd_control_xfer_cb(0u, CONTROL_STAGE_SETUP, &request));
     TEST_ASSERT_EQUAL_UINT16(10u, transfer_length);

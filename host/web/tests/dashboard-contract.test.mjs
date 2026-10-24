@@ -58,6 +58,8 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.doesNotMatch(identity, /Microcontroller/);
   assert.match(identity, /Product[\s\S]*?Board model[\s\S]*?Serial \/ UID[\s\S]*?System clock[\s\S]*?Firmware RAM reserved \/ total[\s\S]*?Firmware version/);
   assert.equal((configuration.match(/class="summary-item"/g) ?? []).length, 6);
+  assert.doesNotMatch(markup, /id="traffic-note"/);
+  assert.doesNotMatch(dashboard, /querySelector\("#traffic-note"\)/);
   assert.match(identitySection, /id="rescan-boards"/);
   assert.doesNotMatch(identitySection, /clock-profile|save-configuration/);
   for (const id of ["clock-profile", "save-configuration", "overclock-ack"]) {
@@ -102,6 +104,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(stylesheet, /\.traffic b \{[^}]*text-align: right;/);
   assert.match(stylesheet, /\.traffic-total \{[^}]*text-align: right;/);
   assert.match(stylesheet, /\.traffic b \{[^}]*font-size: 10px;/);
+  assert.match(stylesheet, /#toggle-led \{[^}]*background: var\(--teal\);[^}]*color: #fff;/);
   assert.match(stylesheet, /\.summary\.identity-summary \{ grid-template-columns: repeat\(6, minmax\(0, 1fr\)\); \}/);
   assert.match(stylesheet, /\.summary\.identity-summary \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
   assert.match(stylesheet, /\.summary\.identity-summary \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
