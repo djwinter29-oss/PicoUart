@@ -62,15 +62,20 @@ def test_invalid_or_open_board_is_not_accepted(arguments, monkeypatch, response)
 
 def test_blocked_hid_worker_is_bounded_and_recorded(arguments, monkeypatch):
     arguments.timeout = 0.01
+    now = [0.0]
+    monkeypatch.setattr(startup.time, "monotonic", lambda: now[0])
 
     def blocked(command, **kwargs):
         assert 0 < kwargs["timeout"] <= arguments.timeout
+        now[0] += kwargs["timeout"]
         raise subprocess.TimeoutExpired(command, kwargs["timeout"], stderr=b"blocked")
 
     monkeypatch.setattr(startup.subprocess, "run", blocked)
     evidence = startup.observe(arguments)
     assert evidence["result"] == "FAIL"
+    assert len(evidence["attempts"]) == 1
     assert evidence["attempts"][0]["stderr"] == "blocked"
+    assert evidence["attempts"][0]["end_s"] == arguments.timeout
 
 
 def test_late_success_cannot_pass_deadline(arguments, monkeypatch):
