@@ -421,6 +421,7 @@ def test_six_cdc_arguments_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [getattr(arguments, f"cdc{channel}") for channel in range(6)] == [
         f"/dev/ttyACM{channel}" for channel in range(6)
     ]
+    assert arguments.incremental_start_rate == 115200
 
 
 def test_incremental_rates_are_generated_inclusive_of_maximum() -> None:

@@ -85,6 +85,7 @@ def test_parse_defaults_to_concurrent_rate_sweep() -> None:
 
     expected_rates = "115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000"
     assert arguments.rates == expected_rates
+    assert arguments.incremental_start_rate == 115200
     command = full.build_performance_command(arguments)
     assert command[command.index("--rates") + 1] == expected_rates
     assert arguments.record_dir == full.DEFAULT_RECORDS_DIR
@@ -218,7 +219,7 @@ def test_incremental_record_shows_ceiling_and_only_attempted_rates() -> None:
     )
     stream_labels = full.PERFORMANCE_LINKS
     performance_lines = []
-    for rate, outcome in ((460800, "PASS"), (560800, "PASS"), (660800, "FAIL")):
+    for rate, outcome in ((115200, "PASS"), (460800, "PASS"), (560800, "PASS"), (660800, "FAIL")):
         performance_lines.append(f"Incremental rate: {rate} baud")
         performance_lines.append(f"Benchmarking all six HIL fixture streams at {rate} baud")
         performance_lines.extend(
@@ -236,10 +237,46 @@ def test_incremental_record_shows_ceiling_and_only_attempted_rates() -> None:
 
     assert "**Overall result:** `PASS`" in report
     assert "Ceiling search:** `PASS (boundary failure expected)`" in report
-    assert "Highest passing tested concurrent rate:** `560800 baud`" in report
+    assert "115200-baud six-stream baseline:** `PASS`" in report
+    assert "Highest all-six-stream passing tested concurrent rate:** `560800 baud`" in report
     assert "First failed tested rate:** `660800 baud`" in report
     assert "760800" not in report
     assert "child command hidden" not in report
+
+
+def test_fixed_rate_record_passes_baseline_and_reports_boundary() -> None:
+    full = _load_full()
+    arguments = _arguments()
+    arguments.full_fixture = True
+    arguments.rates = "115200,128000"
+    functional_output = "\n".join(
+        [
+            "RUN HW UART0 to PIO UART2\nPASS pico-to-peer: 117 bytes\nPASS peer-to-pico: 117 bytes",
+            "RUN PIO UART3 to PIO UART4\nPASS pico-to-peer: 117 bytes\nPASS peer-to-pico: 117 bytes",
+            "RUN HW UART1 loopback\nPASS pico-loopback: 118 bytes",
+            "RUN PIO UART5 loopback\nPASS pico-loopback: 118 bytes",
+        ]
+    )
+    performance_lines = []
+    for rate, outcome in ((115200, "PASS"), (128000, "FAIL")):
+        performance_lines.append(f"Benchmarking all six HIL fixture streams at {rate} baud")
+        performance_lines.extend(
+            f"PASS {label}: 100 bytes, 20.0 B/s" if outcome == "PASS" else f"FAIL {label}: timeout"
+            for label in full.PERFORMANCE_LINKS
+        )
+
+    report = full.format_result_entry(
+        arguments,
+        "2026-10-28T00:00:00+00:00",
+        (0, functional_output),
+        (0, "\n".join(performance_lines)),
+    )
+
+    assert "**Overall result:** `PASS`" in report
+    assert "**Phase result:** `PASS`" in report
+    assert "**115200-baud six-stream baseline:** `PASS`" in report
+    assert "**Highest all-six-stream passing tested concurrent rate:** `115200 baud`" in report
+    assert "**First failed tested rate:** `128000 baud`" in report
 
 
 def test_record_writer_never_overwrites_same_run_name(tmp_path: Path) -> None:

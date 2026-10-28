@@ -3,6 +3,7 @@
 [![PR Check](https://github.com/djwinter29-oss/PicoUart/actions/workflows/pr-check.yml/badge.svg)](https://github.com/djwinter29-oss/PicoUart/actions/workflows/pr-check.yml)
 [![Release](https://github.com/djwinter29-oss/PicoUart/actions/workflows/release.yml/badge.svg)](https://github.com/djwinter29-oss/PicoUart/actions/workflows/release.yml)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
+![Targets: RP2040 and RP2350](https://img.shields.io/badge/Targets-RP2040%20%7C%20RP2350-2674b8)
 
 **Six UARTs. One Pico. One USB cable.** PicoUart turns a Raspberry Pi Pico or Pico 2 into six independent USB serial
 ports, with host applications that monitor UART status and bridge health alongside your serial traffic. Built for
@@ -187,4 +188,3 @@ qualification; results apply only to the exact artifacts and conditions recorded
 ## License
 
 [BSD 3-Clause](LICENSE).
-

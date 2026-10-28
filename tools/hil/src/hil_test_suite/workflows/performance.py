@@ -19,6 +19,7 @@ from ..support.repository import git_metadata
 
 DEFAULT_RESULTS_FILE = REPO_ROOT / "build/hil-results.md"
 DEFAULT_RATES = "115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000"
+BASELINE_RATE = 115200
 PASS_PATTERN = re.compile(
     r"^PASS (?P<label>[^:]+): (?P<bytes>[0-9]+) bytes, (?P<throughput>[0-9.]+) B/s$",
     re.MULTILINE,
@@ -107,6 +108,38 @@ def parse_benchmark_output_by_rate(output: str) -> dict[tuple[int, str], tuple[s
     return results
 
 
+def rate_sweep_summary(output: str) -> tuple[bool, str, str]:
+    """Return baseline status and the first contiguous all-stream ceiling bracket."""
+    attempted_rates = list(dict.fromkeys(int(rate) for rate in RATE_PATTERN.findall(output)))
+    parsed = parse_benchmark_output_by_rate(output)
+    labels = expected_link_labels()
+
+    def rate_passed(rate: int) -> bool:
+        return all(parsed.get((rate, label), ("NOT REPORTED",))[0] == "PASS" for label in labels)
+
+    baseline_passed = BASELINE_RATE in attempted_rates and rate_passed(BASELINE_RATE)
+    highest_passing_rate: int | None = None
+    for rate in attempted_rates:
+        if rate_passed(rate):
+            highest_passing_rate = rate
+        else:
+            break
+    first_failing_rate = None
+    for rate in attempted_rates:
+        outcomes = [parsed.get((rate, label)) for label in labels]
+        failures = [item for item in outcomes if item is not None and item[0] == "FAIL"]
+        if (
+            all(item is not None for item in outcomes)
+            and failures
+            and not any("no traffic sent" in item[2].lower() or "hid health" in item[2].lower() for item in failures)
+        ):
+            first_failing_rate = rate
+            break
+    highest = f"{highest_passing_rate} baud" if highest_passing_rate is not None else "none"
+    first_failed = f"{first_failing_rate} baud" if first_failing_rate is not None else "not reached"
+    return baseline_passed, highest, first_failed
+
+
 def incremental_ceiling_found(
     arguments: SimpleNamespace,
     result: int,
@@ -119,17 +152,13 @@ def incremental_ceiling_found(
         return False
     if "no traffic sent" in output.lower():
         return False
-    if (
-        health_after is None
-        or health_after.get("error")
-        or len(health_after.get("channels", {})) != 6
-        or len(health_after.get("overruns", {})) != 6
-    ):
+    if not health_is_clean(health_after, health_before):
         return False
 
     attempted_rates = list(dict.fromkeys(int(rate) for rate in RATE_PATTERN.findall(output)))
     parsed = parse_benchmark_output_by_rate(output)
-    if not attempted_rates:
+    baseline_passed, _, _ = rate_sweep_summary(output)
+    if not attempted_rates or not baseline_passed:
         return False
     if any(
         not all(parsed.get((rate, label), ("NOT REPORTED",))[0] == "PASS" for label in expected_link_labels())
@@ -169,7 +198,10 @@ def format_result_entry(
     parsed = parse_benchmark_output_by_rate(output)
     attempted_rates = {int(rate) for rate in RATE_PATTERN.findall(output)}
     ceiling_found = incremental_ceiling_found(arguments, result, output, health_before, health_after)
-    clean = (result == 0 and health_is_clean(health_after, health_before)) or ceiling_found
+    baseline_passed, highest, first_failed = rate_sweep_summary(output)
+    clean_health = health_is_clean(health_before) and health_is_clean(health_after, health_before)
+    speed_sweep = getattr(arguments, "incremental", False) or len(attempted_rates) > 1
+    clean = (clean_health and (baseline_passed or (result == 0 and not speed_sweep))) or ceiling_found
     overall = "PASS" if clean else "FAIL"
     expected_labels = [
         "cdc0-to-cdc2",
@@ -203,6 +235,9 @@ def format_result_entry(
         "",
         "### Results",
         "",
+        f"- 115200-baud six-stream baseline: `{'PASS' if baseline_passed else 'NOT PASSED'}`",
+        f"- Highest all-six-stream passing tested rate: `{highest}`",
+        f"- First failed tested rate: `{first_failed}`",
         "| Rate | Link | Result | Verified bytes | Throughput / error |",
         "| ---: | --- | --- | ---: | --- |",
     ]
@@ -216,23 +251,6 @@ def format_result_entry(
             status, verified, throughput = parsed.get((rate, label), (missing_status, "-", "-"))
             lines.append(f"| {rate} | {label} | {status} | {verified} | {throughput} |")
     if getattr(arguments, "incremental", False):
-        passing_rates = [
-            rate
-            for rate in rates
-            if all(parsed.get((rate, label), ("NOT REPORTED",))[0] == "PASS" for label in expected_labels)
-        ]
-        failing_rates = [
-            rate
-            for rate in rates
-            if any(parsed.get((rate, label), ("NOT REPORTED",))[0] != "PASS" for label in expected_labels)
-        ]
-        lines.extend(
-            [
-                "",
-                f"**Highest passing tested concurrent rate:** `{max(passing_rates) if passing_rates else 'none'}`",
-                f"**First failed tested rate:** `{failing_rates[0] if failing_rates else 'not reached'}`",
-            ]
-        )
         if ceiling_found:
             lines.extend(["", "**Ceiling search:** `PASS (boundary failure expected)`"])
     lines.extend(
@@ -263,7 +281,7 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     parser.add_argument(
         "--incremental", action="store_true", help="Search for the six-port rate ceiling after a passing rate"
     )
-    parser.add_argument("--incremental-start-rate", type=int, default=460800)
+    parser.add_argument("--incremental-start-rate", type=int, default=BASELINE_RATE)
     parser.add_argument("--incremental-rate-step", type=int, default=100000)
     parser.add_argument("--incremental-max-rate", type=int, default=3000000)
     parser.add_argument("--duration", type=float, default=10.0)
@@ -312,7 +330,14 @@ def main(arguments: argparse.Namespace | None = None) -> int:
     if incremental_ceiling_found(arguments, completed.returncode, output, health_before, health_after):
         print("CEILING SEARCH PASS: expected traffic failure at the measured boundary")
         return 0
-    return completed.returncode if health_is_clean(health_after, health_before) else 1
+    clean_health = health_is_clean(health_before) and health_is_clean(health_after, health_before)
+    baseline_passed = rate_sweep_summary(output)[0]
+    if not clean_health:
+        return 1
+    if arguments.incremental:
+        return 0 if baseline_passed else 1
+    speed_sweep = len(dict.fromkeys(RATE_PATTERN.findall(output))) > 1
+    return 0 if baseline_passed or (completed.returncode == 0 and not speed_sweep) else 1
 
 
 if __name__ == "__main__":

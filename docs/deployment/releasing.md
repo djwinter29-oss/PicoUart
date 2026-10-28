@@ -200,9 +200,11 @@ traffic commands and evidence interpretation; it is not, by itself, the whole re
 | Control and recovery | Rapid line-coding changes, disconnect/remount, watchdog recovery, and DMA wrap/re-arm checks |
 | Artifact identity | Board target, firmware/runner revisions, exact artifact SHA-256, flashing evidence, and complete results |
 
-Do not infer unrecorded cases from an aggregate `PASS`. Missing cases are `PARTIAL`; unexplained loss, timeout,
-disconnect, or relevant HID error blocks qualification. In particular, an incremental ceiling search can report a
-successful aggregate result despite failed boundary rows; it does not qualify those rates. The
+Do not infer unrecorded cases from an aggregate `PASS`. For an ascending speed sweep, `PASS` means the six-stream
+115200-baud baseline passed with clean HID health; it does not qualify higher rates with failed or unrun rows. Missing
+required cases are `PARTIAL`; unexplained loss, timeout, disconnect, or relevant HID error blocks qualification.
+An incremental ceiling search reports the highest observed passing rate and its first failed boundary, but does not
+qualify that failed rate or replace the required release matrix. The
 [record index](../tests/records/README.md#evidence-index) describes historical coverage limits, not substitutes for a
 current exact-artifact run.
 

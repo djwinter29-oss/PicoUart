@@ -10,6 +10,9 @@
   [docs/deployment/releasing.md](../docs/deployment/releasing.md) for physical flashing, OpenOCD recovery, and release HIL gates.
 - For an unknown QSPI ID, use the documented `FLASHSIZE` auto-detection override only after confirming flash
   capacity from the chip marking/datasheet; never guess capacity or use the override to hide failed SWD access.
+- For HIL speed sweeps, follow the [test plan](../docs/tests/hil-fixture-test-plan.md): require a passing six-stream
+  115200-baud baseline, then record the highest all-stream passing tested rate and first higher failed rate.
+  A higher-rate boundary is not itself a failed baseline test; retain clean HID-health and setup requirements.
 
 ## Documentation
 

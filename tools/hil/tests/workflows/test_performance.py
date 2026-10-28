@@ -81,6 +81,7 @@ def test_builds_incremental_stress_command() -> None:
     assert "--incremental" in command
     assert "--rates" not in command
     assert command[command.index("--incremental-max-rate") + 1] == "900000"
+    assert arguments.incremental_start_rate == 115200
 
 
 def test_preserves_results_for_repeated_rates() -> None:
@@ -139,7 +140,7 @@ def test_incremental_report_shows_only_attempted_rates_and_highest_supported() -
     )
     streams = ["cdc0-to-cdc2", "cdc2-to-cdc0", "cdc3-to-cdc4", "cdc4-to-cdc3", "cdc1-loopback", "cdc5-loopback"]
     output_lines = []
-    for rate, status in ((460800, "PASS"), (560800, "PASS"), (660800, "FAIL")):
+    for rate, status in ((115200, "PASS"), (460800, "PASS"), (560800, "PASS"), (660800, "FAIL")):
         output_lines.append(f"Incremental rate: {rate} baud")
         output_lines.append(f"Benchmarking all six HIL fixture streams at {rate} baud")
         output_lines.extend(
@@ -154,7 +155,7 @@ def test_incremental_report_shows_only_attempted_rates_and_highest_supported() -
                                "rx_error_count": 0, "last_control_error_reason": 0} for index in range(6)},
         "error": None,
     }
-    health_after = {**health_before, "channels": {**health_before["channels"], 0: "error"}}
+    health_after = health_before
 
     report = performance.format_result_entry(
         arguments, "2026-10-08T00:00:00+00:00", 0, output, health_before, health_after
@@ -162,12 +163,92 @@ def test_incremental_report_shows_only_attempted_rates_and_highest_supported() -
 
     assert "**Result:** `PASS`" in report
     assert "Ceiling search:** `PASS (boundary failure expected)`" in report
+    assert "115200-baud six-stream baseline: `PASS`" in report
     assert "460800 | cdc0-to-cdc2 | PASS" in report
     assert "560800 | cdc0-to-cdc2 | PASS" in report
     assert "660800 | cdc0-to-cdc2 | FAIL" in report
-    assert "Highest passing tested concurrent rate:** `560800`" in report
-    assert "First failed tested rate:** `660800`" in report
+    assert "Highest all-six-stream passing tested rate: `560800 baud`" in report
+    assert "First failed tested rate: `660800 baud`" in report
     assert "760800" not in report
+    dirty_health = {**health_before, "channels": {**health_before["channels"], 0: "error"}}
+    assert not performance.incremental_ceiling_found(
+        arguments, 0, output, health_before, dirty_health
+    )
+
+
+def test_higher_rate_boundary_does_not_fail_a_clean_115200_baseline() -> None:
+    performance = _load_performance()
+    endpoints = [item for channel in range(6) for item in (f"--cdc{channel}", f"cdc{channel}")]
+    arguments = performance.parse_arguments(endpoints)
+    labels = performance.expected_link_labels()
+    output_lines = []
+    for rate, status in ((115200, "PASS"), (215200, "FAIL")):
+        output_lines.append(f"Benchmarking all six HIL fixture streams at {rate} baud")
+        output_lines.extend(
+            f"PASS {label}: 100 bytes, 20.0 B/s" if status == "PASS" else f"FAIL {label}: timeout"
+            for label in labels
+        )
+    health = {
+        "channels": {index: "ready" for index in range(6)},
+        "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {
+            index: {
+                "uart_measurement_state": 1,
+                "rx_overrun_count": 0,
+                "rx_error_count": 0,
+                "last_control_error_reason": 0,
+            }
+            for index in range(6)
+        },
+        "error": None,
+    }
+
+    report = performance.format_result_entry(
+        arguments, "2026-10-28T00:00:00+00:00", 1, "\n".join(output_lines), health, health
+    )
+
+    assert "**Result:** `PASS`" in report
+    assert "115200-baud six-stream baseline: `PASS`" in report
+    assert "Highest all-six-stream passing tested rate: `115200 baud`" in report
+    assert "First failed tested rate: `215200 baud`" in report
+    dirty_initial_health = {**health, "channels": {**health["channels"], 0: "error"}}
+    unhealthy_report = performance.format_result_entry(
+        arguments, "2026-10-28T00:00:00+00:00", 1, "\n".join(output_lines), dirty_initial_health, health
+    )
+    assert "**Result:** `FAIL`" in unhealthy_report
+
+
+def test_speed_sweep_without_115200_baseline_is_not_a_pass() -> None:
+    performance = _load_performance()
+    endpoints = [item for channel in range(6) for item in (f"--cdc{channel}", f"cdc{channel}")]
+    arguments = performance.parse_arguments(endpoints + ["--rates", "128000,256000"])
+    labels = performance.expected_link_labels()
+    output_lines = []
+    for rate in (128000, 256000):
+        output_lines.append(f"Benchmarking all six HIL fixture streams at {rate} baud")
+        output_lines.extend(f"PASS {label}: 100 bytes, 20.0 B/s" for label in labels)
+    health = {
+        "channels": {index: "ready" for index in range(6)},
+        "overruns": {index: 0 for index in range(6)},
+        "diagnostics": {
+            index: {
+                "uart_measurement_state": 1,
+                "rx_overrun_count": 0,
+                "rx_error_count": 0,
+                "last_control_error_reason": 0,
+            }
+            for index in range(6)
+        },
+        "error": None,
+    }
+
+    report = performance.format_result_entry(
+        arguments, "2026-10-28T00:00:00+00:00", 0, "\n".join(output_lines), health, health
+    )
+
+    assert "**Result:** `FAIL`" in report
+    assert "115200-baud six-stream baseline: `NOT PASSED`" in report
+    assert "Highest all-six-stream passing tested rate: `256000 baud`" in report
 
 
 def test_incremental_pre_rate_health_abort_is_not_a_ceiling() -> None:
@@ -258,7 +339,7 @@ def test_main_accepts_expected_incremental_boundary_failure(monkeypatch, capsys)
         "firmware_version": "1.2.3",
         "error": None,
     }
-    boundary_health = {**clean, "channels": {**clean["channels"], 0: "error"}}
+    boundary_health = clean
     labels = [
         "cdc0-to-cdc2", "cdc2-to-cdc0", "cdc3-to-cdc4", "cdc4-to-cdc3", "cdc1-loopback", "cdc5-loopback",
     ]
