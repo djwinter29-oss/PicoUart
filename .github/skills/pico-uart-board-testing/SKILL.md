@@ -41,14 +41,14 @@ wiring during the run. Use `tools/hil/runner/functional.sh --stage 1|2|3|4` only
 fixture.
 
 When asked to find the highest rate that all six ports can run together, use the combined runner with
-`--incremental-performance`, starting from a recently verified passing rate and choosing a step and maximum appropriate
-for the board and measured clock. The runner stops at the first rate where traffic fails. A ceiling-search record is an
-overall `PASS` only when initial HID health is clean, every lower attempted rate passed on all six streams, and all six
-streams were attempted at the boundary with final HID sampling successful. The boundary row remains `FAIL` and the
-record labels it as an expected boundary failure; do not describe the overall test as failed.
-A dirty health check before transmitting (reported as “no traffic sent”), a setup error, missing stream results, or no
-lower passing rate means the ceiling was not measured and remains `FAIL`. Report the highest passing tested rate and
-first failed tested rate; do not claim an unmeasured exact hardware limit.
+`--incremental-performance`. Start at the default 115200-baud baseline, choose a step and maximum appropriate for the
+board and measured clock, and stop at the first rate where traffic fails. A clean six-stream baseline pass means the
+speed sweep is `PASS`; a higher-rate failure is the expected boundary, not a failed baseline test. Record the highest
+all-stream passing tested rate and first higher failed rate. If the boundary is not reached, say so and report only
+the highest passing tested rate. Clean HID health is still required. A dirty baseline health check (reported as “no
+traffic sent”), a setup error that prevents a complete baseline result, or a failed/missing baseline means the
+baseline did not pass. A higher-rate setup issue leaves the ceiling undetermined but does not erase a verified
+baseline pass; a health error remains a failure. Do not claim an unmeasured exact hardware limit.
 
 Before every physical HIL test, flash the selected board with the firmware being tested; never assume the board is
 already running the intended image. For development tests, use `tools/firmware/load.sh --board <pico|pico2>` to build

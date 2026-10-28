@@ -158,7 +158,11 @@ record["phase"] = phase
 with open(os.environ["CALL_LOG"], "a") as stream:
     stream.write(json.dumps(record) + "\\n")
 if phase == os.environ["SIGNAL_PHASE"]:
-    Path(os.environ["CHILD_PID_FILE"]).write_text(str(os.getpid()))
+    # Publish readiness only after the PID has been written and the file closed.
+    pid_file = Path(os.environ["CHILD_PID_FILE"])
+    pending_pid_file = pid_file.with_suffix(".tmp")
+    pending_pid_file.write_text(str(os.getpid()))
+    pending_pid_file.replace(pid_file)
     while True:
         time.sleep(1)
 sys.exit(1 if phase == "full" else 0)

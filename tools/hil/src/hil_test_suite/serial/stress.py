@@ -159,7 +159,7 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
         help="increase the rate until the first failed six-stream run",
     )
     parser.set_defaults(rates=DEFAULT_RATES)
-    parser.add_argument("--incremental-start-rate", type=int, default=460800)
+    parser.add_argument("--incremental-start-rate", type=int, default=115200)
     parser.add_argument("--incremental-rate-step", type=int, default=100000)
     parser.add_argument("--incremental-max-rate", type=int, default=3000000)
     parser.add_argument("--duration", type=float, default=10.0, help="Transmit duration per rate in seconds")

@@ -22,6 +22,36 @@ The host sees six USB CDC ACM ports. Each CDC port maps to one target-side UART:
 Normal UART wiring needs TX, RX, and a shared ground. RTS/CTS pins are reserved assignments, but they are not active in
 the default firmware configuration.
 
+## Find The Serial Ports
+
+Host port numbers such as `/dev/ttyACM*` or `COMx` depend on enumeration order, so identify each CDC port by its USB
+interface instead. CDCn uses USB interface number 2×n and the interface name below, from the
+[USB descriptors](../firmware/src/usb/usb_descriptors.c):
+
+| USB CDC | Interface number | Linux `by-id` suffix | Interface name |
+| ------- | ---------------- | -------------------- | -------------- |
+| CDC0    | 0                | `-if00`              | `CDC0 HW`      |
+| CDC1    | 2                | `-if02`              | `CDC1 HW`      |
+| CDC2    | 4                | `-if04`              | `CDC2 PIO 8N1` |
+| CDC3    | 6                | `-if06`              | `CDC3 PIO 8N1` |
+| CDC4    | 8                | `-if08`              | `CDC4 PIO 8N1` |
+| CDC5    | 10               | `-if0a`              | `CDC5 PIO 8N1` |
+
+On Linux, use the stable paths from `ls -l /dev/serial/by-id/`; the suffix is the hexadecimal interface number. On
+other systems, match the interface number or name shown by the OS device tools. With several boards attached, the
+board's unique USB serial number in the device name distinguishes them.
+
+Example observed Linux entries (board serial redacted; `/dev/ttyACM*` assignments vary):
+
+```text
+usb-PicoUart_PicoUart_<board-serial>-if00 -> ../../ttyACM2
+usb-PicoUart_PicoUart_<board-serial>-if02 -> ../../ttyACM3
+usb-PicoUart_PicoUart_<board-serial>-if04 -> ../../ttyACM4
+usb-PicoUart_PicoUart_<board-serial>-if06 -> ../../ttyACM5
+usb-PicoUart_PicoUart_<board-serial>-if08 -> ../../ttyACM6
+usb-PicoUart_PicoUart_<board-serial>-if0a -> ../../ttyACM7
+```
+
 ## PicoUART6 Carrier Compatibility
 
 With flow control disabled, PicoUart's six UART TX/RX pairs match the published pinout of

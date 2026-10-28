@@ -96,6 +96,13 @@ The standalone performance runner and combined runner default to this concurrent
 does not test above 3 Mbaud. Use `--rates` to select a different list. Concurrent sweeps stop at the first failed
 rate; later configured rates are reported as `NOT RUN`, not as failures or missing measurements.
 
+Treat an ascending concurrent speed sweep as a ceiling search, not a pass/fail test at every requested rate. The
+required baseline is 115200 baud: an overall `PASS` requires all six streams to pass at that rate and clean HID
+health. A failure at a higher tested rate is the observed speed boundary, not a failed baseline test. Record the
+highest rate where all six streams passed and the first higher rate with a failed stream; do not claim an exact
+hardware limit. If 115200 fails or is not included, the baseline did not pass and the speed sweep is `FAIL` or
+inconclusive. HID health failures remain failures regardless of baud.
+
 The standalone performance workflow and combined runner require clean HID health before and after each rate,
 including unchanged overrun counts. A health failure blocks traffic or fails the completed rate even if payload
 verification passed. Raw `stress` invocations opt into these same checks with `--check-hid-health`.
@@ -118,16 +125,16 @@ clean-start results. The runners never reset, reflash, or change regulator volta
 Benchmark children run with unbuffered Python output, so stdout rate headings and stderr failures retain their
 emission order without requiring an external `PYTHONUNBUFFERED` setting. Reports retain per-rate HID summaries.
 
-For an optional concurrent six-port ceiling search, use `--incremental-performance` with the combined runner. It
-starts at 460800 baud, increases by 100000 baud, and stops at the first failed rate (capped at 3000000 baud by default).
-The summary reports the highest rate where all six streams passed and the first failed rate; that boundary failure is
-expected for a ceiling search. Incremental mode can exit successfully after at least one rate passes, and a wrapper can
-record `PASS` if its final health check is clean even though boundary rows failed. Inspect every rate and retained HID
-summary; neither that exit code nor the aggregate verdict qualifies the failed rate or the required release matrix.
-The last passing rate describes only that run's achieved load and conditions. Override the start, step, or cap with
-`--incremental-start-rate`,
-`--incremental-rate-step`, or `--incremental-max-rate`. The standalone `pico-uart-hil performance --incremental` mode
-uses the same options.
+For a concurrent six-port ceiling search, use `--incremental-performance` with the combined runner. It starts at the
+115200-baud baseline by default, increases by 100000 baud, and stops at the first failed rate (capped at 3000000 baud
+by default). The recorded summary shows whether the six-stream baseline passed, the highest tested rate where every
+stream passed, and the first failed tested rate. The first higher failed rate is an expected boundary; it does not
+make the overall sweep `FAIL` when the baseline and HID health passed. If all attempted rates pass up to the cap,
+record that highest tested rate and say the boundary was not reached. A missing baseline, setup/health failure, or
+missing baseline stream result is not a passing sweep. Override the start, step, or cap with
+`--incremental-start-rate`, `--incremental-rate-step`, or `--incremental-max-rate`; an overridden start above
+115200 does not establish a baseline in that run. The standalone `pico-uart-hil performance --incremental` mode uses
+the same options.
 
 The serial setup also checks the host TTY's reported line speed and fails when either direction differs from the
 requested rate by 50% or more. This checks driver readback, not an independent measurement of the physical waveform;
@@ -209,17 +216,15 @@ the process exit code. Continue-after-failure options are diagnostic, not a way 
 ### Six-Port Ceiling Search
 
 When the goal is to find the highest tested rate that passes on all six ports, use the same combined command with
-`--incremental-performance` instead of `--rates`. Start at a recently verified all-stream passing rate, choose a
-practical step and maximum for the board/clock, and refine the passing/failing bracket with a smaller step if needed.
-Each rate includes the configured settling period, so keep the duration and sweep size practical.
+`--incremental-performance` instead of `--rates`. Keep the 115200-baud baseline in the same run, choose a practical
+step and maximum for the board/clock, and refine the passing/failing bracket with a smaller step if needed. Each rate
+includes the configured settling period, so keep the duration and sweep size practical.
 
-The runner stops at the first boundary rate where actual traffic fails. The run is an overall `PASS` for ceiling
-measurement only if initial HID health is clean, every lower attempted rate passed on every stream, all six streams
-were attempted at the boundary, and final HID sampling succeeded. The boundary row remains `FAIL` and the record says the failure was
-expected for the search; report the highest passing tested rate and first failed tested rate. Do not claim an exact
-hardware limit or label the overall record `FAIL` for that expected boundary. A dirty HID check before traffic,
-serial-setup failure, missing stream outcome, or failure at the first tested rate means no ceiling was measured and
-must remain an overall `FAIL`.
+The runner stops at the first boundary rate where actual traffic fails. A clean all-stream 115200 baseline makes the
+speed sweep an overall `PASS`; a higher-rate traffic failure is recorded as the expected boundary, with the highest
+all-stream passing tested rate and first failed tested rate shown separately. Clean HID health is still required
+before and after the run. Do not claim an exact hardware limit. A dirty HID check, setup/health failure, missing
+baseline stream outcome, or failed 115200 baseline means the baseline did not pass and the run remains `FAIL`.
 
 The benchmark prints one `TIME <label>: {...}` line per stream with host thread-start, first-send-attempt, and
 first-nonempty-read UTC and monotonic timestamps. These are not wire-level first-byte times and are not parsed by
@@ -244,10 +249,9 @@ runs.
 
 Record every tested rate, including failures. A rate is stable only if every direction and stream passes repeatedly.
 Full-speed USB bandwidth limits aggregate throughput; a concurrent failure does not by itself establish a single-UART
-baud limit. A data mismatch, unexplained loss, unexpected reset, persistent disconnect, or new RX error is a failure in
-a normal fixed-rate qualification run. During a ceiling search, such a failure at the first boundary rate is the expected
-stopping observation only when every lower rate passed and boundary traffic was actually attempted; retain and report
-the failed row and health evidence.
+baud limit. For a single-rate qualification, a data mismatch, unexplained loss, unexpected reset, persistent
+disconnect, or new RX error is a failure. In an ascending ceiling sweep, a traffic failure above a passing 115200-baud
+baseline is the expected boundary observation; retain and report the failed row and health evidence.
 
 ## Concurrent Recovery And Profiling Coverage
 

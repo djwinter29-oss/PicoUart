@@ -17,7 +17,7 @@ from ..support.health import read_system_clock_hz
 from ..support.paths import REPO_ROOT
 from ..support.results import artifact_metadata
 from ..support.repository import git_metadata
-from .performance import DEFAULT_RATES, RATE_PATTERN, parse_benchmark_output_by_rate
+from .performance import DEFAULT_RATES, RATE_PATTERN, parse_benchmark_output_by_rate, rate_sweep_summary
 
 DEFAULT_RECORDS_DIR = REPO_ROOT / "docs/tests/records"
 FUNCTIONAL_CASES = (
@@ -231,17 +231,29 @@ def format_result_entry(
 ) -> str:
     functional_code = functional[0] if functional else None
     performance_code = performance[0] if performance else None
+    performance_rates = getattr(arguments, "rates", "")
+    if getattr(arguments, "incremental_performance", False):
+        attempted_rates = RATE_PATTERN.findall(performance[1]) if performance is not None else []
+        performance_rates = ",".join(dict.fromkeys(attempted_rates))
+    performance_rows = performance_summary_rows(performance_rates, performance)
+    baseline_passed, highest_passing_rate, first_failed_rate = rate_sweep_summary(
+        performance[1] if performance is not None else ""
+    )
+    configured_rates = [rate for rate in performance_rates.split(",") if rate.strip()]
+    speed_sweep = getattr(arguments, "incremental_performance", False) or len(configured_rates) > 1
+    speed_sweep_baseline_missing = speed_sweep and not baseline_passed
+    performance_passed = performance_code == 0 and not speed_sweep_baseline_missing
     if any(code not in (None, 0) for code in (functional_code, performance_code)):
         overall = "FAIL"
     elif functional_code is None or performance_code is None or not getattr(arguments, "full_fixture", False):
         overall = "PARTIAL"
-    elif functional_code == 0 and performance_code == 0:
+    elif functional_code == 0 and performance_passed:
         overall = "PASS"
     else:
         overall = "FAIL"
 
     functional_status = "PASS" if functional_code == 0 else "FAIL" if functional_code is not None else "NOT RUN"
-    performance_status = "PASS" if performance_code == 0 else "FAIL" if performance_code is not None else "NOT RUN"
+    performance_status = "PASS" if performance_passed else "FAIL" if performance_code is not None else "NOT RUN"
     lines = [
         "# PicoUart HIL Record",
         "",
@@ -283,33 +295,20 @@ def format_result_entry(
     )
     if performance is not None and "CEILING SEARCH PASS:" in performance[1]:
         lines.extend(["**Ceiling search:** `PASS (boundary failure expected)`", ""])
-    performance_rates = getattr(arguments, "rates", "")
-    if getattr(arguments, "incremental_performance", False):
-        attempted_rates = RATE_PATTERN.findall(performance[1]) if performance is not None else []
-        performance_rates = ",".join(dict.fromkeys(attempted_rates))
-    performance_rows = performance_summary_rows(performance_rates, performance)
     lines.extend(
         f"| {rate} | {label} | {status} | {verified} | {metric} |"
         for rate, label, status, verified, metric in performance_rows
     )
-    if getattr(arguments, "incremental_performance", False):
-        passing_rates = [
-            int(rate)
-            for rate in dict.fromkeys(row[0] for row in performance_rows)
-            if all(row[2] == "PASS" for row in performance_rows if row[0] == rate)
-        ]
-        failing_rates = [
-            int(rate)
-            for rate in dict.fromkeys(row[0] for row in performance_rows)
-            if any(row[2] == "FAIL" for row in performance_rows if row[0] == rate)
-        ]
-        highest = f"{max(passing_rates)} baud" if passing_rates else "none"
-        first_failed = f"{failing_rates[0]} baud" if failing_rates else "not reached"
+    attempted_rates = list(
+        dict.fromkeys(RATE_PATTERN.findall(performance[1]) if performance is not None else [])
+    )
+    if attempted_rates:
         lines.extend(
             [
                 "",
-                f"**Highest passing tested concurrent rate:** `{highest}`",
-                f"**First failed tested rate:** `{first_failed}`",
+                f"**115200-baud six-stream baseline:** `{'PASS' if baseline_passed else 'NOT PASSED'}`",
+                f"**Highest all-six-stream passing tested concurrent rate:** `{highest_passing_rate}`",
+                f"**First failed tested rate:** `{first_failed_rate}`",
             ]
         )
     lines.extend(
@@ -370,7 +369,7 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
         action="store_true",
         help="Search for the six-port rate ceiling; a traffic failure after passing rates marks the boundary",
     )
-    parser.add_argument("--incremental-start-rate", type=int, default=460800)
+    parser.add_argument("--incremental-start-rate", type=int, default=115200)
     parser.add_argument("--incremental-rate-step", type=int, default=100000)
     parser.add_argument("--incremental-max-rate", type=int, default=3000000)
     parser.add_argument("--duration", type=float, default=10.0)

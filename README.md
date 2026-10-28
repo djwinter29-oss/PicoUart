@@ -1,50 +1,18 @@
 # PicoUart
 
-[![PR Check](https://github.com/djwinter29-oss/PicoUart/actions/workflows/pr-check.yml/badge.svg)](https://github.com/djwinter29-oss/PicoUart/actions/workflows/pr-check.yml)
+[![PR Check](https://github.com/djwinter29-oss/PicoUart/actions/workflows/pr-check.yml/badge.svg?branch=main)](https://github.com/djwinter29-oss/PicoUart/actions/workflows/pr-check.yml)
 [![Release](https://github.com/djwinter29-oss/PicoUart/actions/workflows/release.yml/badge.svg)](https://github.com/djwinter29-oss/PicoUart/actions/workflows/release.yml)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
+![Targets: RP2040 and RP2350](https://img.shields.io/badge/Targets-RP2040%20%7C%20RP2350-2674b8)
 
 **Six UARTs. One Pico. One USB cable.** PicoUart turns a Raspberry Pi Pico or Pico 2 into six independent USB serial
 ports, with host applications that monitor UART status and bridge health alongside your serial traffic. Built for
 multi-device bring-up, test automation, and diagnosing failed test runs.
 
-[Download firmware](https://github.com/djwinter29-oss/PicoUart/releases) ·
+**Quick links:** [Download firmware](https://github.com/djwinter29-oss/PicoUart/releases) ·
 [Hardware setup](docs/hardware-setup.md) ·
-[Test automation](#test-automation)
-
-<table align="center">
-    <thead>
-        <tr>
-            <th scope="col" align="center">Raspberry Pi Pico</th>
-            <th scope="col" align="center">Raspberry Pi Pico 2</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td align="center">
-                <img src="docs/assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico reference board" width="240" />
-            </td>
-            <td align="center">
-                <img src="docs/assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2 reference board" width="240" />
-            </td>
-        </tr>
-        <tr>
-            <td align="center">RP2040 · firmware: <strong><code>pico</code></strong></td>
-            <td align="center">RP2350 · firmware: <strong><code>pico2</code></strong></td>
-        </tr>
-    </tbody>
-</table>
-
-<details>
-<summary>Board photo credits</summary>
-
-Reference boards, not PicoUart-specific assemblies. Pico photo by Misael Reséndiz
-([source](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_Pico.jpg),
-[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)); Pico 2 photo by SparkFun Electronics
-([source](https://commons.wikimedia.org/wiki/File:DEV-26124-PICO-2-angle.jpg),
-[CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)).
-
-</details>
+[Open browser dashboard](https://djwinter29-oss.github.io/PicoUart/) ·
+[Python package](https://pypi.org/project/pico-uart/)
 
 ## Why PicoUart?
 
@@ -66,22 +34,43 @@ _Current WebHID layout with simulated telemetry; illustrative, not a live hardwa
 Compare UART/USB traffic and RX dropped-byte counts before and after the run to help locate where traffic stopped.
 PicoUart adds evidence, not automatic root-cause detection. Your runner still owns test sequencing and pass/fail.
 
+## Before You Connect
+
+- UART signals are **3.3 V logic**; do not connect 5 V or RS-232 signals directly.
+- UART0-1 use hardware UARTs; UART2-5 use PIO and support **8N1 only**.
+- RTS/CTS flow control is disabled by default.
+- **Operating rates:** 460,800 baud per channel is a conservative six-port operating point supported by fixture testing.
+  Six concurrent streams passed payload checks at configured rates up to 2 Mbaud on tested Pico artifacts; this does not
+  establish sustained wire-rate throughput. See the [dated HIL results](docs/tests/records/README.md).
+- **Shared bandwidth:** USB 2.0 full-speed's 12 Mbit/s is a signaling rate, not usable payload throughput. Higher-rate
+  limits depend on combined traffic and firmware.
+- **Overclocking:** A 200 MHz Pico profile has passed HIL testing, but stability is board-specific.
+- Dashboards use HID for diagnostics and limited controls; serial applications use CDC for UART data and line settings.
+
 ## Get Started
 
-1. **Get the firmware.** Download the rated **`pico`** or **`pico2`** `.uf2` file for your board from
-   [Releases](https://github.com/djwinter29-oss/PicoUart/releases).
+1. **Get the firmware.** Download the **`pico`** `.uf2` for Raspberry Pi Pico (RP2040) or **`pico2`** `.uf2` for
+   Raspberry Pi Pico 2 (RP2350) from [Releases](https://github.com/djwinter29-oss/PicoUart/releases).
+   These images target non-wireless boards; see [Hardware Compatibility](#hardware-compatibility) for W variants.
 2. **Flash over USB.** Hold **BOOTSEL** while plugging the board into USB, release it when the USB drive appears, then
-    copy the `.uf2` file onto that drive. The board automatically reboots into PicoUart; no debug probe is needed.
-    See [USB-drive flashing](docs/deployment/releasing.md#usb-drive-uf2) for upgrade and reset-button instructions.
-3. **Connect the hardware.** Check the [hardware setup](docs/hardware-setup.md) before connecting UART devices.
-4. **Use the serial ports.** Open the port for the wired UART in your terminal or test script and set the baud rate and
-   framing for the connected device.
+   copy the `.uf2` file onto that drive. The board automatically reboots into PicoUart; no debug probe is needed.
+   See [USB-drive flashing](docs/deployment/releasing.md#usb-drive-uf2) for upgrade and reset-button instructions.
+3. **Connect the hardware.** Wire TX, RX, and ground using the [hardware setup](docs/hardware-setup.md), observing the
+   3.3 V limit above.
+4. **Open the serial ports.** Find the CDC port for each wired UART in the
+   [port map](docs/hardware-setup.md#port-map), then [identify it on your host](docs/hardware-setup.md#find-the-serial-ports).
+   Open it in your terminal or test script and set the baud rate and framing for the connected device.
+5. **Inspect bridge health (optional).** Open the [browser dashboard](https://djwinter29-oss.github.io/PicoUart/) in
+   desktop Chrome or Edge, click **Connect**, and select your board. No host app is needed for ordinary serial traffic.
+
+If device access is denied, check OS permissions. Linux HID access uses the
+[permissions setup](tools/README.md#linux-hid-permissions); CDC serial-port permissions are separate.
 
 ## Test Automation
 
 The Python CLI reads HID status while your serial tools keep using the UARTs. Install it with Python 3.10 or newer in a
-virtual environment. Have your runner record dropped-byte counts before and after the test and run the monitor
-alongside it:
+virtual environment. The monitoring-only example below records dropped-byte counts around a 60-second capture.
+Run your existing serial test in a separate terminal during that capture; these commands do not start a test:
 
 ```sh
 python -m pip install --pre pico-uart
@@ -128,7 +117,7 @@ See the [Python guide](host/python/README.md) for the full API.
 
 ## Dashboards
 
-Use a dashboard for interactive bring-up and diagnosis. Neither is needed for serial traffic.
+Use a dashboard for interactive bring-up and diagnosis. None is needed for serial traffic.
 
 ### Browser Dashboard
 
@@ -146,28 +135,62 @@ See the [WebHID guide](host/webhid/README.md) for controls and connection troubl
 
 With the [pico-uart](https://pypi.org/project/pico-uart/) package installed as above, run `pico-uart web` and open
 `http://127.0.0.1:5000/`. It does not require browser WebHID support. See the [Python guide](host/python/README.md) for
-`pipx` and device permissions. Prefer .NET? See the [.NET host guide](host/dotnet/README.md).
+`pipx` and device permissions.
+
+### Local .NET Dashboard
+
+Download a self-contained host from [Releases](https://github.com/djwinter29-oss/PicoUart/releases), extract the whole
+archive, and run `./PicoUart web` on Linux/macOS or `.\PicoUart.exe web` in Windows PowerShell. Open
+`http://127.0.0.1:5000/`; no Python or .NET installation is needed, and browser WebHID support is not required.
+See the [.NET host guide](host/dotnet/README.md) for supported downloads and device permissions.
 
 ## Hardware Compatibility
 
+The prebuilt **`pico`** and **`pico2`** firmware images target the standard non-wireless boards:
+
+<table align="center">
+    <thead>
+        <tr>
+            <th scope="col" align="center">Raspberry Pi Pico</th>
+            <th scope="col" align="center">Raspberry Pi Pico 2</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td align="center">
+                <img src="docs/assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico reference board" width="240" />
+            </td>
+            <td align="center">
+                <img src="docs/assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2 reference board" width="240" />
+            </td>
+        </tr>
+        <tr>
+            <td align="center">RP2040 · firmware: <strong><code>pico</code></strong></td>
+            <td align="center">RP2350 · firmware: <strong><code>pico2</code></strong></td>
+        </tr>
+    </tbody>
+</table>
+
+<details>
+<summary>Board photo credits</summary>
+
+Reference boards, not PicoUart-specific assemblies. Pico photo by Misael Reséndiz
+([source](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_Pico.jpg),
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)); Pico 2 photo by SparkFun Electronics
+([source](https://commons.wikimedia.org/wiki/File:DEV-26124-PICO-2-angle.jpg),
+[CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)).
+
+</details>
+
 **Pico W and Pico 2 W:** use the matching `pico_w` or `pico2_w`
 [board-specific build](firmware/build-and-config.md#build) for USB/UART operation. Wi-Fi and Bluetooth are not enabled.
-See the [wireless-board notes](docs/hardware-setup.md#wireless-boards) for the LED limitation and qualification scope;
-the prebuilt `pico` and `pico2` images shown near the top target the non-wireless boards.
+See the [wireless-board notes](docs/hardware-setup.md#wireless-boards) for the LED limitation and qualification scope.
 
 **PicoUART6 carrier:** the default UART TX/RX pinout matches
 [8086net/pico-sexa-uart-bridge](https://github.com/8086net/pico-sexa-uart-bridge) and the PicoUART6 hardware sold on
 [Lectronz](https://lectronz.com/products/picouart6) and [The Pi Hut](https://thepihut.com/products/picouart6).
 Carrier-board LEDs and USB-to-I2C are not supported; see the
 [compatibility notes](docs/hardware-setup.md#picouart6-carrier-compatibility) before using it.
-
-## Before You Connect
-
-- UART0-1 use hardware UARTs; UART2-5 use PIO and support **8N1 only**.
-- RTS/CTS flow control is disabled by default. Throughput is shared across USB full-speed bandwidth; configured baud
-  is not a guarantee of sustained six-port throughput.
-- Dashboards use HID for diagnostics and limited controls; serial applications use CDC for UART data and line settings.
-- The USB identity `cafe:4010` is for development/lab use, not commercial derivatives. See [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
@@ -188,3 +211,4 @@ qualification; results apply only to the exact artifacts and conditions recorded
 
 [BSD 3-Clause](LICENSE).
 
+The USB identity `cafe:4010` is for development/lab use, not commercial derivatives. See [SECURITY.md](SECURITY.md).
