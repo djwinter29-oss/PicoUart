@@ -338,6 +338,8 @@ void test_write_returns_short_count_when_full(void)
     memset(payload, 0xA5, sizeof(payload));
     TEST_ASSERT_EQUAL_UINT(8u, ring_buffer_write(&ring, payload, sizeof(payload)));
     TEST_ASSERT_EQUAL_UINT(0u, ring_buffer_write(&ring, payload, 1u));
+    TEST_ASSERT_EQUAL_UINT(0u, ring_buffer_overflow_count(&ring));
+    TEST_ASSERT_EQUAL_UINT(sizeof(storage), ring_buffer_high_watermark(&ring));
 }
 
 void test_producer_index_tracks_writes(void)

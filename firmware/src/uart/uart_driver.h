@@ -70,7 +70,7 @@ typedef struct {
     uint32_t uart_rx_bytes;                   /**< DMA-received bytes published into the RX ring. */
     uint16_t tx_ring_high_watermark;         /**< Largest observed USB-to-UART ring occupancy. */
     uint16_t rx_ring_high_watermark;         /**< Largest observed UART-to-USB ring occupancy. */
-    uint32_t tx_ring_overflow_count;         /**< Bytes rejected by the USB-to-UART ring. */
+    uint32_t tx_ring_overflow_count;         /**< Consumer-recovery discards. Backpressure does not increment this. */
     uint32_t rx_ring_overflow_count;         /**< Bytes dropped by the UART-to-USB ring. */
     uint32_t rx_ring_pending_overflow_count; /**< Unread UART-to-USB bytes already overwritten. */
     uint32_t rx_error_count; /**< Controller receive-status events observed since the post-boot baseline. */
