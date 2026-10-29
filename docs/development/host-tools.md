@@ -114,6 +114,80 @@ subset.
 hidapi `0.14.0.post4` supplies a Python 3.13 Linux ARM64 wheel,
 avoiding the original `0.14.0` source-build failure on that platform.
 
+## Python Client API
+
+The [package quick start](../../host/python/README.md) covers installation and a first status read.
+`PicoUartHid` owns its HID connection; use it as a context manager to close the connection on exit.
+Select a board with `PicoUartHid(serial_number="ABC123")`. Device access failures may raise `OSError` or `RuntimeError`.
+Run one HID monitor/server per board; see [shared monitoring](#board-selection-and-shared-monitoring).
+
+### Board and channel reads
+
+| Method | Returns |
+| --- | --- |
+| `read_status(timeout_ms=1000)` | Latest six-channel Input snapshot, or `None` on timeout |
+| `read_identity()` / `read_board_status()` | Static identity and capabilities; board status also includes temperature |
+| `read_telemetry()` | Live board telemetry |
+| `read_configuration()` | Cached boot-time pins, capacities, stored profile, and reset cause |
+| `read_channel(index)` | An on-demand channel Feature snapshot, separate from Input traffic totals |
+| `read_channel_diagnostic(index)` | RX fault history, last configuration-error reason, measurement age, and buffer peaks |
+| `read_channel_diagnostics()` | Diagnostics for all six channels |
+
+`read_status()` updates the channel whose Input report arrived; it does not wait for fresh data from all six channels.
+Feature and diagnostic reads do not advance Input traffic baselines. Cached or unavailable UART measurements cannot
+establish a clean current UART rate. Convenience methods include `read_runtime()`, `read_led()`,
+`read_overflow_counts()`, and `read_hardware_info()`.
+
+The supported high-level API is `PicoUartHid` and the methods described here, plus the module-level functions
+`read_board_status`, `read_board_temperature`, `read_firmware_version`, `read_configuration`, `read_hardware_info`,
+`read_overflow_counts`, `read_telemetry`, and `reset_board`.
+Report parsers, IDs and sizes, USB identifiers, raw HID access, and generic feature-report helpers are low-level
+exports tied to the firmware report contract. Prefer their owning `pico_uart.protocol`, `pico_uart.transport`,
+and `pico_uart.client` modules when using them directly.
+
+### UART readiness
+
+After opening and configuring all selected CDC TTYs and asserting DTR, use
+`board.wait_channels_ready({0: 115200, 2: 115200}, timeout_s=3.0)` before transmitting. This waits for open, ready
+channels with applied 8N1 settings within 3% of the requested baud and no pending control. It raises `OSError` for
+current initialization/configuration failures, `TimeoutError` on expiry, and propagates HID access errors. Historical
+fault counters do not fail readiness. Select the HID board by the same USB serial number as the TTY endpoints;
+this helper does not open or configure TTYs and does not change generic POSIX `open()` behavior.
+
+### Board controls
+
+The CLI's `toggle-led` and `reset` commands correspond to `toggle_led()` and `reset_board()`.
+Reset requires firmware-advertised support, enabled by default.
+`save_configuration(profile, unsafe_overclock=False)` writes a supported boot-time clock profile;
+`read_configuration_save()` reads the save result. A verified save automatically reboots the board, independently of
+the optional reset command. Follow the [save safety contract](../design/usb/hid-report-reference.md#save-and-reboot-safety)
+and [persistent configuration workflow](#persistent-configuration) before changing settings.
+Actions use one serialized controlling host. Timeout or disconnect means the outcome is unconfirmed; never
+automatically retry reboot or save. There is no request ID or multi-client ownership guarantee.
+
+## Python Test Automation
+
+Run diagnostics alongside the serial test; these commands do not start a test or capture UART payloads.
+Record dropped-byte counts around a timed capture, running the serial test in another terminal during monitoring:
+
+```sh
+pico-uart overruns > overruns-before.txt
+pico-uart monitor --duration 60 > uart-traffic.log
+pico-uart overruns > overruns-after.txt
+```
+
+`pico-uart status --json > uart-status.json` saves a status snapshot. Only `status` supports `--json`;
+`monitor` produces text with channel lifecycle, measurement validity, and UART/CDC byte deltas.
+Each channel has independently sequenced 500 ms measurement intervals. Status JSON tracks observed totals,
+valid observed intervals, sequence gaps, and sticky incompleteness indicators. Missing reports or saturated values
+prevent exact traffic accounting. Dropped-byte counts and buffer peaks are cumulative since boot, not per-test totals;
+compare before and after a run, accounting for resets and saturation.
+
+`status` fails if its timeout expires without a valid report. `monitor` fails if it receives no valid reports,
+but can succeed after one report even if later reads time out. Both fail on device errors.
+A successful command does not establish continuous reporting or healthy channels; the runner must evaluate reported
+states and counters rather than treating the exit code as the test result.
+
 ## Python Distribution
 
 The publication channels and artifact qualification gates are in the
