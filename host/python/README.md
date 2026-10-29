@@ -1,83 +1,89 @@
 # PicoUart
 
-**Monitor six UARTs from your terminal, test runner, or browser.** The `pico-uart` package provides a Python API, CLI,
-and local diagnostics dashboard for the PicoUart USB-to-UART bridge on Raspberry Pi Pico and Pico 2.
+**See what your UART bridge is doing, without taking over your serial ports.**
 
-Inspect per-channel health, traffic statistics, and RX dropped-byte counts alongside your test results. Diagnostics use
-a separate USB HID interface, so your existing serial tools can keep using the six USB CDC ports. This package does
-not capture UART payloads or set serial baud rates and framing; use your serial tools for those tasks.
+The `pico-uart` package adds a Python API, command-line tools, and a local web dashboard to the
+[PicoUart](https://github.com/djwinter29-oss/PicoUart) six-channel USB-to-UART bridge.
+For **Windows, Linux, and macOS** with **Python 3.10+**.
 
-## Requirements
+[PyPI](https://pypi.org/project/pico-uart/) ·
+[Source](https://github.com/djwinter29-oss/PicoUart) ·
+[Firmware releases](https://github.com/djwinter29-oss/PicoUart/releases) ·
+[Report an issue](https://github.com/djwinter29-oss/PicoUart/issues)
 
-- Python 3.10 or newer
-- A Raspberry Pi Pico or Pico 2 running compatible
-	[PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to this computer over USB
-- Access to the board's HID interface; Linux may need
-	[device permissions](https://github.com/djwinter29-oss/PicoUart/blob/main/tools/README.md#linux-hid-permissions)
+Inspect channel health, traffic, and dropped-byte counts, or save diagnostics alongside your test results.
 
-## Install
+Diagnostics use **USB HID**, separate from the six USB CDC serial ports. Keep using your terminal or serial library
+for UART payloads, baud rates, and framing. The browser talks to Python, so it does not need WebHID support.
 
-Create a virtual environment with `python -m venv .venv`. Activate it with `. .venv/bin/activate` on Linux/macOS, or
-`.venv\Scripts\Activate.ps1` in Windows PowerShell, then install:
+![PicoUart dashboard showing board information, configuration, runtime status, and six UART channels](https://raw.githubusercontent.com/djwinter29-oss/PicoUart/main/docs/assets/pico-uart-dashboard.png)
+
+*Illustrative WebHID dashboard with simulated telemetry, not a live hardware result. The Python dashboard uses
+the shared frontend; its layout and controls may differ.*
+
+## Quick Start
+
+Create and activate a virtual environment on Linux or macOS:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+```
+
+On Windows PowerShell:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Then install the package:
 
 ```sh
 python -m pip install --pre pico-uart
 ```
 
-`--pre` allows development releases; omit it to select stable releases when available. For an isolated CLI/dashboard
-installation instead, use `pipx install --pip-args="--pre" pico-uart` (requires pipx).
+`--pre` allows development releases; omit it to select stable releases when available.
+For an isolated CLI installation, use `pipx install --pip-args="--pre" pico-uart` instead.
 
-## Quick Start
-
-Connect the flashed board, then read a status sample or start the dashboard:
+Connect a Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), then run:
 
 ```sh
-pico-uart status
 pico-uart web
 ```
 
-Open <http://127.0.0.1:5000/>. The server binds to loopback and works with a normal browser; WebHID support and .NET
-are not required. The dashboard shows channel health and traffic, RX dropped-byte counts, firmware and hardware
-identity, clock, and temperature. Use `pico-uart web --port 5001` if the default port is occupied.
+Open **<http://127.0.0.1:5000/>** on the computer running Python. Use **Board** to select a device and **Rescan** to refresh.
+Stop the server with `Ctrl+C`. If the port is occupied, run `pico-uart web --port 5001`.
 
-For browser-only diagnostics without installing Python, use the separate
-[WebHID dashboard on GitHub Pages](https://djwinter29-oss.github.io/PicoUart/) in desktop Chrome or Edge, with the board
-connected to the computer running that browser.
+**Before wiring UART devices:** signals are 3.3 V only; never connect 5 V or RS-232 signals directly. Follow the
+[hardware setup guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/hardware-setup.md).
 
-For multiple boards, put `--serial SERIAL` or `--device-path PATH` before the command:
+## Command-Line Tools
+
+| Task | Command |
+| --- | --- |
+| Read a channel status update | `pico-uart status` |
+| Save status as JSON | `pico-uart status --json` |
+| Watch traffic for 60 seconds | `pico-uart monitor --duration 60` |
+| Read cumulative RX dropped-byte counts | `pico-uart overruns` |
+| Inspect hardware or boot configuration | `pico-uart hardware` / `pico-uart config` |
+
+Run `pico-uart --help` for all commands. To select a board, put `--serial SERIAL` or `--device-path PATH`
+**before** the command:
 
 ```sh
 pico-uart --serial ABC123 status
 ```
 
-Use **Board** and **Rescan** in the dashboard to choose an attached board. See
-[board selection and monitoring](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#board-selection-and-shared-monitoring)
-for selection and multi-user behavior.
-Use one HID monitor/server per physical board; separate processes do not share its input reports or traffic totals.
+Use one HID monitor/server per physical board; separate processes do not share input reports or traffic totals.
 
-## Test Automation
-
-Have your test runner save a JSON status sample, run a timed monitor alongside the serial test, or record cumulative
-RX dropped-byte counts before and after it. These commands can be used independently:
-
-```sh
-pico-uart status --json > uart-status.json
-pico-uart monitor --duration 60 > uart-traffic.log
-pico-uart overruns > uart-dropped-bytes.txt
-```
-
-Monitor output includes per-channel lifecycle, UART measurement validity, and UART/CDC byte deltas. The Input stream carries
-each channel's independently sequenced 500 ms measurement interval. Status JSON includes cumulative observed totals,
-the sum of valid observed intervals, sequence-gap counts, and sticky incompleteness indicators. Dropped-byte counts
-from `overruns` and buffer peaks are cumulative since boot, not per-test totals; account for resets and saturation.
-
-`status` exits non-zero if its timeout expires without a valid report. `monitor` exits non-zero if it receives no valid
-reports during its duration; it can succeed after one report even if later reads time out. Both exit non-zero on device
-errors. Success does not prove continuous reporting or healthy channels: your runner must evaluate report availability,
-states, and values. Only `status` supports `--json`; `monitor` produces text. Missing reports or saturated values prevent
-exact traffic accounting.
+For automated tests, redirect `status --json` or `monitor` output to a file alongside your serial test results.
+A successful command does **not** prove continuous reporting or healthy channels; see
+[result interpretation](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-test-automation).
 
 ## Python API
+
+Read a status snapshot without changing board settings:
 
 ```python
 from pico_uart import PicoUartHid
@@ -89,59 +95,36 @@ if status is None:
 print(status["channels"])
 ```
 
-`read_status()` returns `None` on timeout; otherwise it returns the latest six-channel snapshot, updating the channel
-whose Input report arrived. Device access failures may raise `OSError` or `RuntimeError`. Use
-`PicoUartHid(serial_number="ABC123")` to select a board. Static identity and capability data come from
-`read_identity()` / `read_board_status()`. Live board values come from `read_telemetry()`; channel Feature snapshots
-are available through `read_channel(index)` and do not contribute to Input traffic totals.
-`read_configuration()` caches boot-time pins, capacities, stored profile, and reset cause.
-`read_channel_diagnostic(index)` reads independent on-demand RX fault history, last configuration-error reason,
-measurement age, and observed buffer peaks; `read_channel_diagnostics()` reads all six. These reads never advance
-Input rate baselines. Unavailable or cached UART measurements cannot establish a clean current UART rate.
-After opening and configuring all selected CDC TTYs and asserting DTR, use
-`board.wait_channels_ready({0: 115200, 2: 115200}, timeout_s=3.0)` before transmitting. This waits for open, ready
-channels with applied 8N1 settings within 3% of the requested baud and no pending control. It raises `OSError` for
-current initialization/configuration failures, `TimeoutError` on expiry, and propagates HID access errors. Historical
-fault counters do not fail readiness. Select the HID board by the same USB serial number as the TTY endpoints;
-this helper does not open or configure TTYs and does not change generic POSIX `open()` behavior.
-`read_runtime()`, `read_led()`, `read_overflow_counts()`, `read_hardware_info()`, and `read_configuration()` remain
-convenience methods.
-
-The supported high-level API is `PicoUartHid` and its methods described here, plus the module-level convenience
-functions `read_board_status`, `read_board_temperature`, `read_firmware_version`, `read_configuration`,
-`read_hardware_info`, `read_overflow_counts`, `read_telemetry`, and `reset_board`. Report parsers, report IDs and sizes, USB identifiers,
-raw HID access, and generic feature-report helpers are low-level exports tied to the firmware report contract; prefer
-their owning `pico_uart.protocol`, `pico_uart.transport`, and `pico_uart.client` modules when using them directly.
-
-## Other Commands And Controls
-
-Read-only commands include `hardware`, `config`, `temperature`, and `version`. Run `pico-uart --help` or
-`pico-uart COMMAND --help` for options.
-
-`toggle-led` changes the board LED. `reset` reboots the board and is refused unless firmware advertises reset support,
-which is enabled by default. The API exposes equivalent `toggle_led()` and `reset_board()` methods.
-
-The API's `save_configuration(profile, unsafe_overclock=False)` writes a supported boot-time clock profile;
-`read_configuration_save()` reads the save result. A verified save automatically reboots the board, independently of
-the optional reset command. Close all CDC ports and stop external UART traffic first; non-default profiles require
-explicit unsafe-overclock acknowledgement. After reconnecting, inspect the stored request and live system clock rather
-than assuming the requested clock became active. A verified save does not establish overclock stability. See the
-[HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
-for compatibility, save semantics, and overclock precautions before changing configuration.
-Actions use one serialized controlling host. Timeout or disconnect means the outcome is unconfirmed; never
-automatically retry reboot or save. There is no request ID or multi-client ownership guarantee.
+The context manager closes the connection. A snapshot may contain channels still waiting for data; it does not wait
+for fresh reports from all six. Use `PicoUartHid(serial_number="ABC123")` to select a board.
+See the [Python client guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-client-api)
+for methods, UART readiness checks, errors, and board controls.
 
 ## Troubleshooting
 
-- **Board not found:** confirm compatible PicoUart firmware is flashed, USB is connected to the machine running Python,
-	and the selected serial number or device path is correct. With no board attached, a HID command failing is expected.
-- **Access denied:** check OS device permissions; see the Linux permission guide linked above. Do not run the dashboard
-	as root to bypass permissions.
-- **No valid reports:** check firmware compatibility and the USB connection. Do not interpret a timeout as zero traffic.
+- **Board not found:** check firmware, the USB data cable, and the selected serial number or device path. The board
+  must be connected to the computer running Python. With no board attached, a HID command failing is expected.
+- **Access denied:** follow the
+  [Linux HID permissions guide](https://github.com/djwinter29-oss/PicoUart/blob/main/tools/README.md#linux-hid-permissions).
+  Do not run the dashboard as root to bypass permissions.
+- **Port already in use:** start the dashboard with `pico-uart web --port 5001`.
+- **PowerShell activation blocked:** install with `.\.venv\Scripts\python.exe -m pip install --pre pico-uart`,
+  then run `.\.venv\Scripts\pico-uart.exe web`.
+- **No valid reports:** check firmware compatibility and the USB connection. A timeout does not mean zero traffic.
+- **Unconfirmed board action:** reconnect and inspect state. Never automatically retry a save or reboot.
+
+Saving configuration reboots the board. Close all CDC ports and stop UART traffic first; review the
+[save safety contract](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md#save-and-reboot-safety)
+before changing settings.
 
 ## Documentation
 
+- [Installation from a checkout, tests, and host development](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md)
 - [Project, firmware, and wiring](https://github.com/djwinter29-oss/PicoUart)
-- [Host development and source-checkout setup](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md)
 - [HID report reference and compatibility](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
 - [Security and lab-only USB identity](https://github.com/djwinter29-oss/PicoUart/blob/main/SECURITY.md)
+
+## License
+
+Released under the [BSD 3-Clause License](https://github.com/djwinter29-oss/PicoUart/blob/main/LICENSE).
+For bug reports, include the package and firmware versions, operating system, and exact error message.

@@ -5,9 +5,11 @@
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
 ![Targets: RP2040 and RP2350](https://img.shields.io/badge/Targets-RP2040%20%7C%20RP2350-2674b8)
 
-**Six UARTs. One Pico. One USB cable.** PicoUart turns a Raspberry Pi Pico or Pico 2 into six independent USB serial
-ports, with host applications that monitor UART status and bridge health alongside your serial traffic. Built for
-multi-device bring-up, test automation, and diagnosing failed test runs.
+**Six UARTs. One Pico. One USB cable.**
+
+Turn a Raspberry Pi Pico or Pico 2 into six independent USB serial ports for multi-device bring-up and test automation.
+Use your existing terminals and scripts for serial traffic, and inspect bridge health through a separate diagnostics
+interface. No host application is required to send or receive UART data.
 
 **Quick links:** [Download firmware](https://github.com/djwinter29-oss/PicoUart/releases) ·
 [Hardware setup](docs/hardware-setup.md) ·
@@ -16,14 +18,15 @@ multi-device bring-up, test automation, and diagnosing failed test runs.
 
 ## Why PicoUart?
 
-**A USB-serial adapter moves bytes. PicoUart also shows what the bridge saw.**
+When a device stops responding, serial data alone may not tell you where traffic stopped. PicoUart gives you
+per-channel status and traffic measurements alongside the data, without taking over your serial ports.
 
 | | What you get |
 | --- | --- |
-| **Six serial ports, one cable** | Standard USB serial ports for your terminals, scripts, and test runners. No host app is needed for UART data. |
-| **Visibility beside the data** | Per-UART health, traffic counters, RX overrun flags, and buffer peaks on a separate HID interface, apart from your serial ports. |
-| **Test-automation friendly** | Save `pico-uart status --json` snapshots and `pico-uart monitor` logs next to each test run's results. |
-| **Dashboards when you need them** | Watch all six UARTs live in the browser, local Python, or .NET app during bring-up and debugging. |
+| **Six independent channels** | Standard USB serial ports for terminals, scripts, and test runners. |
+| **Diagnostics beside the data** | Channel health, UART/USB traffic counters, RX dropped-byte counts, and buffer peaks over USB HID. |
+| **Evidence for automated tests** | Save JSON status snapshots and timed traffic logs alongside test results. |
+| **A choice of dashboards** | Inspect all six channels in a browser-only, Python, or .NET dashboard. |
 
 ![WebHID dashboard with simulated device identity, board configuration, runtime status, and six-channel UART/USB traffic.](docs/assets/pico-uart-dashboard.png)
 
@@ -31,98 +34,69 @@ _Current WebHID layout with simulated telemetry; illustrative, not a live hardwa
 
 ### When a test times out
 
-Compare UART/USB traffic and RX dropped-byte counts before and after the run to help locate where traffic stopped.
-PicoUart adds evidence, not automatic root-cause detection. Your runner still owns test sequencing and pass/fail.
+Compare UART/USB traffic and RX dropped-byte counts around the run to narrow down where traffic stopped. PicoUart
+provides evidence, not automatic root-cause detection; your test runner still decides pass or fail.
 
 ## Before You Connect
 
-- UART signals are **3.3 V logic**; do not connect 5 V or RS-232 signals directly.
-- UART0-1 use hardware UARTs; UART2-5 use PIO and support **8N1 only**.
-- RTS/CTS flow control is disabled by default.
-- **Operating rates:** 460,800 baud per channel is a conservative six-port operating point supported by fixture testing.
-  Six concurrent streams passed payload checks at configured rates up to 2 Mbaud on tested Pico artifacts; this does not
-  establish sustained wire-rate throughput. See the [dated HIL results](docs/tests/records/README.md).
-- **Shared bandwidth:** USB 2.0 full-speed's 12 Mbit/s is a signaling rate, not usable payload throughput. Higher-rate
-  limits depend on combined traffic and firmware.
-- **Overclocking:** A 200 MHz Pico profile has passed HIL testing, but stability is board-specific.
-- Dashboards use HID for diagnostics and limited controls; serial applications use CDC for UART data and line settings.
+- **Electrical limits:** use 3.3 V UART logic and a shared ground. Never connect 5 V or RS-232 signals directly.
+- **Framing:** UART0-1 use hardware UARTs; UART2-5 use PIO and support **8N1 only**.
+- **Flow control:** RTS/CTS is disabled by default.
+- **Throughput:** all six channels share USB full-speed bandwidth. A configured baud rate is not a guarantee of
+  sustained throughput; use the [dated hardware test results](docs/tests/records/README.md) to choose tested conditions.
+- **Clock settings:** non-default profiles require explicit overclock acknowledgement. Stability is board-specific;
+  passing tests on one board does not qualify another.
+
+Serial applications use USB CDC for UART data, baud rate, and framing. Dashboards use the separate HID interface for
+diagnostics and limited board controls.
 
 ## Get Started
 
-1. **Get the firmware.** Download the **`pico`** `.uf2` for Raspberry Pi Pico (RP2040) or **`pico2`** `.uf2` for
-   Raspberry Pi Pico 2 (RP2350) from [Releases](https://github.com/djwinter29-oss/PicoUart/releases).
-   These images target non-wireless boards; see [Hardware Compatibility](#hardware-compatibility) for W variants.
-2. **Flash over USB.** Hold **BOOTSEL** while plugging the board into USB, release it when the USB drive appears, then
-   copy the `.uf2` file onto that drive. The board automatically reboots into PicoUart; no debug probe is needed.
-   See [USB-drive flashing](docs/deployment/releasing.md#usb-drive-uf2) for upgrade and reset-button instructions.
-3. **Connect the hardware.** Wire TX, RX, and ground using the [hardware setup](docs/hardware-setup.md), observing the
-   3.3 V limit above.
-4. **Open the serial ports.** Find the CDC port for each wired UART in the
-   [port map](docs/hardware-setup.md#port-map), then [identify it on your host](docs/hardware-setup.md#find-the-serial-ports).
-   Open it in your terminal or test script and set the baud rate and framing for the connected device.
-5. **Inspect bridge health (optional).** Open the [browser dashboard](https://djwinter29-oss.github.io/PicoUart/) in
-   desktop Chrome or Edge, click **Connect**, and select your board. No host app is needed for ordinary serial traffic.
+1. **Download firmware** from [Releases](https://github.com/djwinter29-oss/PicoUart/releases): choose the **`pico`**
+   `.uf2` for Pico (RP2040) or **`pico2`** `.uf2` for Pico 2 (RP2350). These images target non-wireless boards; see
+   [Hardware Compatibility](#hardware-compatibility) for W variants.
+2. **Flash the board** using the [USB-drive flashing guide](docs/deployment/releasing.md#usb-drive-uf2).
+   You need a USB cable, not a debug probe.
+3. **Wire a UART device:** connect TX to the device's RX, RX to its TX, and ground to ground. Follow the
+   [pin map and wiring rules](docs/hardware-setup.md) and observe the 3.3 V limit.
+4. **Open the matching serial port** in your terminal or test script. Use the
+   [port identification guide](docs/hardware-setup.md#find-the-serial-ports), then set baud rate and framing for your
+   device.
+5. **Check diagnostics (optional):** open the [browser dashboard](https://djwinter29-oss.github.io/PicoUart/) in desktop
+   Chrome or Edge, click **Connect**, and select your board.
 
 If device access is denied, check OS permissions. Linux HID access uses the
 [permissions setup](tools/README.md#linux-hid-permissions); CDC serial-port permissions are separate.
 
 ## Test Automation
 
-The Python CLI reads HID status while your serial tools keep using the UARTs. Install it with Python 3.10 or newer in a
-virtual environment. The monitoring-only example below records dropped-byte counts around a 60-second capture.
-Run your existing serial test in a separate terminal during that capture; these commands do not start a test:
+The optional Python CLI reads diagnostics while your serial tools use the UARTs. With Python 3.10 or newer, follow the
+[installation guide](host/python/README.md#install), then record a status snapshot or a timed traffic log:
 
 ```sh
-python -m pip install --pre pico-uart
-pico-uart overruns > overruns-before.txt
+pico-uart status --json > uart-status.json
 pico-uart monitor --duration 60 > uart-traffic.log
-pico-uart overruns > overruns-after.txt
+pico-uart overruns > uart-dropped-bytes.txt
 ```
 
-`--pre` selects development builds; omit it for stable releases. Each monitor line includes all six channels.
-Illustrative excerpt showing one channel:
+These commands collect diagnostics; they do not start a serial test or capture UART payloads. Run your serial test
+separately during monitoring. To measure dropped bytes for a run, record `overruns` before and after it and account for
+any board reset.
 
-```text
-seq=412 cdc0 health=0x11[ready,cdc_open] uart_tx/rx=96/1520 cdc_tx/rx=1520/96 ring_peak=64
-```
+A successful command does **not** prove that every channel is healthy or that reporting was continuous. Your runner
+must evaluate the returned states and counters. Use one HID monitor per physical board; separate processes do not
+share input reports.
 
-These are traffic statistics, not UART payloads; capture device messages with your serial tools. Each monitor line's
-byte counts are deltas since the previous report, saturating at 65535. The `overruns` counts are cumulative since boot,
-so compare before and after.
-
-`monitor` exits non-zero if it receives no valid reports. A successful exit does **not** mean every UART is healthy:
-your runner must evaluate health flags and counts. Only `status` supports `--json`.
-
-<details>
-<summary>Python API: save a status snapshot</summary>
-
-Call this helper from your test setup or teardown:
-
-```python
-import json
-from pathlib import Path
-from pico_uart import PicoUartHid
-
-def save_uart_status(path: Path) -> None:
-    with PicoUartHid() as board:
-        status = board.read_status(timeout_ms=1000)
-    if status is None:
-        raise RuntimeError("no PicoUart status report received")
-    path.write_text(json.dumps(status, sort_keys=True))
-```
-
-See the [Python guide](host/python/README.md) for the full API.
-
-</details>
+See the [Python guide](host/python/README.md) for the API, output semantics, and multi-board selection.
 
 ## Dashboards
 
-Use a dashboard for interactive bring-up and diagnosis. None is needed for serial traffic.
+Choose the interface that fits your workflow. All three show bridge diagnostics; none is required for serial traffic.
 
 ### Browser Dashboard
 
-Launch [WebHID](https://djwinter29-oss.github.io/PicoUart/), click **Connect**, and select your board.
-No Python or .NET installation is needed.
+Open [WebHID](https://djwinter29-oss.github.io/PicoUart/), click **Connect**, and select your board.
+No application installation is needed.
 
 > [!IMPORTANT]
 > **WebHID requires desktop Google Chrome or Microsoft Edge.** Safari and Firefox are not supported.
@@ -133,15 +107,15 @@ See the [WebHID guide](host/webhid/README.md) for controls and connection troubl
 
 ### Local Python Dashboard
 
-With the [pico-uart](https://pypi.org/project/pico-uart/) package installed as above, run `pico-uart web` and open
-`http://127.0.0.1:5000/`. It does not require browser WebHID support. See the [Python guide](host/python/README.md) for
-`pipx` and device permissions.
+Install [pico-uart](https://pypi.org/project/pico-uart/), run `pico-uart web`, and open <http://127.0.0.1:5000/>.
+It works without browser WebHID support. See the [Python guide](host/python/README.md) for installation and device
+permissions.
 
 ### Local .NET Dashboard
 
 Download a self-contained host from [Releases](https://github.com/djwinter29-oss/PicoUart/releases), extract the whole
 archive, and run `./PicoUart web` on Linux/macOS or `.\PicoUart.exe web` in Windows PowerShell. Open
-`http://127.0.0.1:5000/`; no Python or .NET installation is needed, and browser WebHID support is not required.
+<http://127.0.0.1:5000/>; no Python or .NET installation or browser WebHID support is required.
 See the [.NET host guide](host/dotnet/README.md) for supported downloads and device permissions.
 
 ## Hardware Compatibility
@@ -197,11 +171,13 @@ Carrier-board LEDs and USB-to-I2C are not supported; see the
 | Need | Guide |
 | --- | --- |
 | Connect UART devices | [Hardware setup](docs/hardware-setup.md) |
+| Use the CLI, API, or dashboards | [Python](host/python/README.md), [.NET](host/dotnet/README.md), [WebHID](host/webhid/README.md) |
 | Understand USB and UART behavior | [CDC/HID overview](docs/design/usb/cdc-hid-overview.md), [architecture](docs/design/architecture.md) |
 | Build or modify firmware | [Firmware build guide](firmware/build-and-config.md), [development and testing](docs/development/firmware-testing.md) |
 | Develop host applications | [Host development](docs/development/host-tools.md), [host app distribution](docs/deployment/host-app-distribution.md) |
 | Understand PR and release checks | [GitHub Actions: validation and releases](docs/development/github-actions.md) |
 | Publish or test a release | [Release qualification](docs/deployment/releasing.md), [host publishing](docs/deployment/host-app-publishing.md) |
+| Review validation and hardware evidence | [Test guide](docs/tests/README.md), [dated HIL records](docs/tests/records/README.md) |
 | Contribute | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md) |
 
 Firmware is checked on a physical fixture ([test records](docs/tests/README.md)). Host tests do not replace hardware
