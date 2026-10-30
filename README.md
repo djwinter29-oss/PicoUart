@@ -5,11 +5,11 @@
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
 ![Targets: RP2040 and RP2350](https://img.shields.io/badge/Targets-RP2040%20%7C%20RP2350-2674b8)
 
-**Six UARTs. One Pico. One USB cable.**
+**Six serial ports. One Pico. Diagnostics built in.**
 
-Turn a Raspberry Pi Pico or Pico 2 into six independent USB serial ports for multi-device bring-up and test automation.
-Use your existing terminals and scripts for serial traffic, and inspect bridge health through a separate diagnostics
-interface. No host application is required to send or receive UART data.
+PicoUart turns a stock Raspberry Pi Pico or Pico 2 into a six-port USB-to-UART bridge for bring-up benches and test
+racks. Replace a tangle of single-port adapters with one board and one USB cable, keep your existing terminals and
+scripts, and inspect bridge health without closing your serial connections.
 
 **Quick links:** [Download firmware](https://github.com/djwinter29-oss/PicoUart/releases) ·
 [Hardware setup](docs/hardware-setup.md) ·
@@ -18,24 +18,32 @@ interface. No host application is required to send or receive UART data.
 
 ## Why PicoUart?
 
-When a device stops responding, serial data alone may not tell you where traffic stopped. PicoUart gives you
-per-channel status and traffic measurements alongside the data, without taking over your serial ports.
+A silent serial log is ambiguous: did the device stop talking, did the bridge drop bytes, or did the host stop
+reading? A typical USB-serial adapter can't tell you which. PicoUart counts traffic on both sides of the bridge, per
+channel, to help narrow down where traffic stopped. These counters provide evidence, not automatic root-cause
+detection; your test runner still decides pass or fail.
 
 | | What you get |
 | --- | --- |
-| **Six independent channels** | Standard USB serial ports for terminals, scripts, and test runners. |
-| **Diagnostics beside the data** | Channel health, UART/USB traffic counters, RX dropped-byte counts, and buffer peaks over USB HID. |
-| **Evidence for automated tests** | Save JSON status snapshots and timed traffic logs alongside test results. |
-| **A choice of dashboards** | Inspect all six channels in a browser-only, Python, or .NET dashboard. |
+| **Six ports, one cable** | Six independent standard USB serial ports from a single Pico. No host app needed for data. |
+| **Independent diagnostics** | UART/USB traffic counters, RX dropped-byte counts, and buffer peaks over separate USB HID. |
+| **Evidence for CI** | Save JSON status snapshots and timed traffic logs next to your test results. |
+| **Browser dashboard** | Desktop Chrome/Edge; Linux may need [HID permissions](tools/README.md#linux-hid-permissions). |
+
+One host, six UART devices (logical connections, not a wiring diagram):
+
+```text
+Computer -- USB -- Pico / Pico 2 -- UART0 -- Device A
+                               |- UART1 -- Device B
+                               |- UART2 -- Device C
+                               |- UART3 -- Device D
+                               |- UART4 -- Device E
+                               `- UART5 -- Device F
+```
 
 ![WebHID dashboard with simulated device identity, board configuration, runtime status, and six-channel UART/USB traffic.](docs/assets/pico-uart-dashboard.png)
 
 _Current WebHID layout with simulated telemetry; illustrative, not a live hardware result._
-
-### When a test times out
-
-Compare UART/USB traffic and RX dropped-byte counts around the run to narrow down where traffic stopped. PicoUart
-provides evidence, not automatic root-cause detection; your test runner still decides pass or fail.
 
 ## Before You Connect
 
@@ -65,13 +73,16 @@ diagnostics and limited board controls.
 5. **Check diagnostics (optional):** open the [browser dashboard](https://djwinter29-oss.github.io/PicoUart/) in desktop
    Chrome or Edge, click **Connect**, and select your board.
 
+**Setup checkpoint:** the host should list six PicoUart serial ports. That confirms USB enumeration, not UART wiring.
+Confirm communication by exchanging expected data with your connected device at its required baud rate and framing.
+
 If device access is denied, check OS permissions. Linux HID access uses the
 [permissions setup](tools/README.md#linux-hid-permissions); CDC serial-port permissions are separate.
 
 ## Test Automation
 
 The optional Python CLI reads diagnostics while your serial tools use the UARTs. With Python 3.10 or newer, follow the
-[installation guide](host/python/README.md#install), then record a status snapshot or a timed traffic log:
+[installation guide](host/python/README.md#quick-start), then record a status snapshot or a timed traffic log:
 
 ```sh
 pico-uart status --json > uart-status.json
@@ -93,6 +104,15 @@ See the [Python guide](host/python/README.md) for the API, output semantics, and
 
 Choose the interface that fits your workflow. All three show bridge diagnostics; none is required for serial traffic.
 
+| Dashboard | Choose it when |
+| --- | --- |
+| [Browser](#browser-dashboard) | You want browser-only access. |
+| [Python](#local-python-dashboard) | You also want the Python API or CLI. |
+| [.NET](#local-net-dashboard) | You prefer a self-contained executable. |
+
+All three need local USB access to the board; Linux may require
+[HID permissions setup](tools/README.md#linux-hid-permissions).
+
 ### Browser Dashboard
 
 Open [WebHID](https://djwinter29-oss.github.io/PicoUart/), click **Connect**, and select your board.
@@ -100,8 +120,6 @@ No application installation is needed.
 
 > [!IMPORTANT]
 > **WebHID requires desktop Google Chrome or Microsoft Edge.** Safari and Firefox are not supported.
-> Connect the board to the computer running the browser. Linux may need
-> [HID permissions setup](tools/README.md#linux-hid-permissions).
 
 See the [WebHID guide](host/webhid/README.md) for controls and connection troubleshooting.
 
@@ -145,16 +163,7 @@ The prebuilt **`pico`** and **`pico2`** firmware images target the standard non-
     </tbody>
 </table>
 
-<details>
-<summary>Board photo credits</summary>
-
-Reference boards, not PicoUart-specific assemblies. Pico photo by Misael Reséndiz
-([source](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_Pico.jpg),
-[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)); Pico 2 photo by SparkFun Electronics
-([source](https://commons.wikimedia.org/wiki/File:DEV-26124-PICO-2-angle.jpg),
-[CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)).
-
-</details>
+Reference boards, not PicoUart-specific assemblies. See [photo credits](#photo-credits).
 
 **Pico W and Pico 2 W:** use the matching `pico_w` or `pico2_w`
 [board-specific build](firmware/build-and-config.md#build) for USB/UART operation. Wi-Fi and Bluetooth are not enabled.
@@ -188,3 +197,11 @@ qualification; results apply only to the exact artifacts and conditions recorded
 [BSD 3-Clause](LICENSE).
 
 The USB identity `cafe:4010` is for development/lab use, not commercial derivatives. See [SECURITY.md](SECURITY.md).
+
+## Photo Credits
+
+Pico photo by Misael Reséndiz
+([source](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_Pico.jpg),
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)); Pico 2 photo by SparkFun Electronics
+([source](https://commons.wikimedia.org/wiki/File:DEV-26124-PICO-2-angle.jpg),
+[CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)).
