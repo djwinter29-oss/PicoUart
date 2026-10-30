@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Fail publication unless the selected commit's latest required workflow runs passed."""
 
 from __future__ import annotations

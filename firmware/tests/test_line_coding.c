@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_line_coding.c
  * @brief Unity tests for shared UART line-coding parse and validation helpers.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Pair diagnostics must never report an empty or failed run as CLI success."""
 
 import importlib

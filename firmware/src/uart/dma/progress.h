@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file dma_progress.h
  * @brief Shared RX DMA transfer-count helpers for hardware and PIO UART backends.

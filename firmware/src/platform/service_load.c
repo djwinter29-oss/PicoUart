@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file service_load.c
  * @brief Single-writer per-core service windows with atomic result publication.

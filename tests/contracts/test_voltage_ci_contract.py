@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Contracts for opt-in SDK voltage checks and their minimal CI dependency lock."""
 
 import importlib.util

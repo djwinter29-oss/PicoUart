@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file dma_claim.c
  * @brief HW UART DMA channel claim/rollback logic (see @ref dma_claim.h).

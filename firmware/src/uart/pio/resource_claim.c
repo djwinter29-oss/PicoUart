@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file resource_claim.c
  * @brief PIO UART SM/DMA claim/rollback logic (see @ref resource_claim.h).

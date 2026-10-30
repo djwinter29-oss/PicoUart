@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 set -eu
 
 if ! command -v cppcheck >/dev/null 2>&1; then

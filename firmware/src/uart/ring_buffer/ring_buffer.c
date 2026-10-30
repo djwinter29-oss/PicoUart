@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file ring_buffer.c
  * @brief Fixed-size ring-buffer helpers for PicoUart DMA and USB bridging.

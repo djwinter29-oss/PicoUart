@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_dma_claim.c
  * @brief Fault-injection tests for HW UART DMA claim/rollback (see dma_claim.h).

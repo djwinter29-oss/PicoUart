@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Run the complete PicoUart functional and performance hardware test."""
 
 from __future__ import annotations

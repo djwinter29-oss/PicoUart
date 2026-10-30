@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Filter excluded packages and exclusive dependencies from a uv lock file."""
 
 from __future__ import annotations

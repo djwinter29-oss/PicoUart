@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_usb_hid.c
  * @brief Exercise production HID payloads, acquisition/accounting, and pre-ACK transfer handling.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_uart_driver_facade.c
  * @brief Host contract tests for the public UART driver facade.

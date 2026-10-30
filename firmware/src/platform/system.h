@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file system.h
  * @brief System clock, watchdog, and reset services for PicoUart firmware.

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Verify bidirectional traffic through one PicoUart CDC-to-UART bridge."""
 
 import argparse

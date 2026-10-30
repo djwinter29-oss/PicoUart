@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_service_load.c
  * @brief Deterministic checks for measured service-pass wall-time ratios.

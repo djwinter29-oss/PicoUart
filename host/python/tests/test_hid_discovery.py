@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Mocked hidapi discovery tests for fail-closed collection selection."""
 
 from __future__ import annotations

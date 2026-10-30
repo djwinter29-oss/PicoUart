@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file usb_cdc.h
  * @brief TinyUSB CDC helpers for the PicoUart USB-to-UART bridge firmware.

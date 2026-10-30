@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Hardware-free tests for the public PicoUart command-line interface."""
 
 from __future__ import annotations

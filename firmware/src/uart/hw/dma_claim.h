@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file dma_claim.h
  * @brief Injectable seam for HW UART RX/TX DMA channel acquisition.

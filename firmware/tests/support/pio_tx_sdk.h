@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file pio_tx_sdk.h
  * @brief Isolated SDK declarations for host tests including the real PIO driver.

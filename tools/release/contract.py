@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Parse firmware headers for host/firmware contract checks."""
 
 from __future__ import annotations

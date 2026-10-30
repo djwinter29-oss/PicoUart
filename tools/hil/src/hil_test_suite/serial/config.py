@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Shared raw serial-port setup for Linux hardware tests."""
 
 from __future__ import annotations

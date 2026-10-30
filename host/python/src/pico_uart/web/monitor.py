@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Own one board's HID connection and publish a thread-safe telemetry snapshot."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_backend_policy.c
  * @brief Unity tests for UART backend idle, DMA IRQ, PIO TX, and worker heartbeat policy.

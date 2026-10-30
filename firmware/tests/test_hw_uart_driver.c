@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_hw_uart_driver.c
  * @brief Execute real HW UART DMA and reconfiguration paths with SDK register-call mocks.

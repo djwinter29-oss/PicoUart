@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file hw_uart_sdk.h
  * @brief Isolated UART declarations extending the shared driver-test SDK surface.

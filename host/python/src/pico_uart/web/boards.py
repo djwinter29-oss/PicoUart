@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Discover boards and share one monitor per board across dashboard requests."""
 
 import hashlib

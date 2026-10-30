@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Execute the PIO RX majority-vote tree checked into uart.pio."""
 
 from __future__ import annotations

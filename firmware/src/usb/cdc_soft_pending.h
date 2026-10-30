@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file cdc_soft_pending.h
  * @brief Pure host-testable CDC line-state and soft-pending helpers.

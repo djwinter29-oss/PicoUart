@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file usb_hid.c
  * @brief HID identity, configuration, telemetry, board actions, and channel monitoring.

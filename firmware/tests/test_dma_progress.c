@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_dma_progress.c
  * @brief Unity tests for RX DMA progress wrap, COUNT masking, and pause-settle policy.

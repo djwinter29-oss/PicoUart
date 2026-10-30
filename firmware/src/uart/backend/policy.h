@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file backend_policy.h
  * @brief Host-testable idle, DMA re-arm, and PIO TX policy for UART backends.

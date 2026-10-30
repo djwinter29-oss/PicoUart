@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Observe selected-board startup with retained failures and an optional identified CDC1 loopback probe."""
 
 from __future__ import annotations

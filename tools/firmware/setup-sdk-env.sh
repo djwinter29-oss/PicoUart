@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 
 SCRIPT_PATH="${BASH_SOURCE:-$0}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$SCRIPT_PATH")" && pwd)

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Build-time clock overrides are rejected; family detection remains SDK-driven."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Python dashboard adapter exposes the shared per-channel version-1 schema."""
 
 import threading

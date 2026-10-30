@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Linux permission helpers exercised with fake devices, sysfs and udev, never /etc."""
 
 import json

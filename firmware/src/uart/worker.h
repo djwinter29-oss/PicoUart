@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file worker.h
  * @brief Core-1 UART worker scheduling and heartbeat health.

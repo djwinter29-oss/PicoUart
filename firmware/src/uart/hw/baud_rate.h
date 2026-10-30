@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file baud_rate.h
  * @brief PL011 baud-divisor validation shared by hardware UART control paths.

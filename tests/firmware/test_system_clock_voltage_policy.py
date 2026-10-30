@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Compile and run the real firmware `system_init_clock` against mock SDK
 headers to pin the no-voltage-write policy: defaults never override SDK
 startup and valid profiles request an exact clock, with no `hardware/vreg.h` include

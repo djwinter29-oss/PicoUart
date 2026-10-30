@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_usb_cdc.c
  * @brief Exercise production CDC and ring bridging with simulated USB FIFOs, ownership, and time.

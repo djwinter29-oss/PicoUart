@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_temperature.c
  * @brief Unity tests for SDK-free temperature report conversion.

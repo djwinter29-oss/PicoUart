@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_cdc_soft_pending.c
  * @brief Unity tests for CDC soft-pending deadline and CONTROL_PENDING ownership helpers.

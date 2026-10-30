@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 # Resolve and validate the release version string used by
 # .github/workflows/release.yml. Extracted to a standalone script so the
 # release-tag policy (plain MAJOR.MINOR.PATCH, major/minor 0-99, patch 0-255)

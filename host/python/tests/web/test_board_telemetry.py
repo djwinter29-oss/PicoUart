@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Static identity and dynamic board telemetry report-1/report-3 checks."""
 
 import pytest

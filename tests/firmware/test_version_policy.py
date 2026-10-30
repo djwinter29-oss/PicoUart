@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Automated coverage for the PICO_UART_VERSION acceptance/rejection policy
 in firmware/version.cmake (extracted from firmware/CMakeLists.txt).
 

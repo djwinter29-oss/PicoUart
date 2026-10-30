@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_hw_baud_rate.c
  * @brief Unity tests for PL011 baud-rate representability policy.

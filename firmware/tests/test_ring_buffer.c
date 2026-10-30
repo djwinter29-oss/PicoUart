@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_ring_buffer.c
  * @brief Host-native Unity tests for the PicoUart ring buffer.

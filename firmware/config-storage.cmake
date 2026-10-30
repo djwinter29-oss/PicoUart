@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 # Use the SDK-resolved region, including board-header/default overrides, without changing physical capacity.
 set(_sdk_flash_region "${CMAKE_BINARY_DIR}/pico-sdk/src/rp2_common/pico_standard_link/pico_flash_region.ld")
 file(READ "${_sdk_flash_region}" _flash_region)
