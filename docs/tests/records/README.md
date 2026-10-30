@@ -53,8 +53,15 @@ tables preserve the original stream outcomes. Missing measurements must not be i
 Performance-only runs do not establish functional or recovery coverage, and requested baud is not independently
 measured wire speed.
 
+Pico 2 rows below stop on 2026-10-10 and predate the v0.8.6 Pico release line. No file in this directory is an
+exact-artifact Pico 2 run of that line. A Pico `PASS` does not qualify `pico2`.
+
 | Record | Recorded Result | Scope And Limitations |
 | --- | --- | --- |
+| [2026-10-24 Pico 200 MHz eight-hour 1 Mbaud soak](20261024T223400Z-pico-200mhz-1000000-6port-8h.md) | `PASS` | v0.8.6 Pico ELF at the board-local 200 MHz profile. Six streams at 1,000,000 baud for 8 hours verified 12,606,540,800 host CDC payload bytes, with clean before/after HID and zero overruns. Performance only: no functional table, recovery, or RTS/CTS. The worktree was dirty. Counts are host-verified CDC bytes, and the run ended 2026-10-25 06:34 UTC. |
+| [2026-10-24 Pico 200 MHz four-hour 1 Mbaud soak](20261024T183331Z-pico-200mhz-1000000-6port-4h.md) | `PASS` | Same v0.8.6 Pico ELF and six-stream 1,000,000 baud workload for 4 hours (6,324,596,736 verified bytes) with clean HID. Performance only. The system clock was not independently captured, and the worktree was dirty. |
+| [2026-10-24 Pico eight-hour 460800 soak](20261024-071715Z-pico-125mhz-460800-8h-soak.md) | `PASS` | Six streams at 460800 baud for 8 hours with clean before/after HID. Firmware was reported as 0.0.0 and the artifact hash was not supplied, so this is not release-artifact qualification. |
+| [2026-10-24 Pico four-hour 460800 soak](20261024-031611Z-pico-125mhz-460800-4h-soak.md) | `PASS` | Six streams at 460800 baud for 4 hours with clean before/after HID. Firmware was reported as 0.0.0 and the artifact hash was not supplied, so this is not release-artifact qualification. |
 | [2026-10-24 v0.8.6 Pico 200 MHz HIL](2026-10-24-181517Z-pico-200mhz-hil.md) | `PASS` | Exact packaged Pico ELF with the board-local 200 MHz profile; functional fixture and all six streams passed through 2 Mbaud. At 3 Mbaud, CDC5 loopback failed a short read (33 of 1024 bytes), establishing the first observed boundary; HID health remained clean with zero overruns/errors. |
 | [2026-10-24 v0.8.6 Pico release HIL](2026-10-24-180437Z-pico-125mhz-hil.md) | `PASS` | Exact packaged Pico ELF; all functional links and all six streams passed through 2 Mbaud with clean HID health. At 3 Mbaud, CDC3→CDC4 failed a short read, establishing the first observed boundary; zero overruns or HID errors were recorded. |
 | [2026-10-23 Pico 3 Mbaud sweep](2026-10-23-220124Z-pico-125mhz-hil.md) | `PASS` | All six streams passed through 2 Mbaud; two streams failed at 3 Mbaud with final zero overruns. The installed firmware commit and artifact hash were unavailable, so this is not release-artifact qualification. |
