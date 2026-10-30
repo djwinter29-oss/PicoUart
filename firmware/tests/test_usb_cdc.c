@@ -665,6 +665,8 @@ void test_full_uart_tx_preserves_usb_out_until_space_returns(void)
     TEST_ASSERT_EQUAL_UINT(137u, ring_buffer_write(&usb_out[0], payload, 137u));
     usb_cdc_poll();
     TEST_ASSERT_EQUAL_UINT(137u, tud_cdc_n_available(0u));
+    TEST_ASSERT_EQUAL_UINT(0u, ring_buffer_overflow_count(&uart_tx[0]));
+    TEST_ASSERT_EQUAL_UINT(sizeof(payload), ring_buffer_high_watermark(&uart_tx[0]));
     TEST_ASSERT_EQUAL_UINT(sizeof(payload), ring_buffer_read(&uart_tx[0], actual, sizeof(actual)));
     TEST_ASSERT_EQUAL_MEMORY(payload, actual, sizeof(payload));
     TEST_ASSERT_TRUE(usb_cdc_port_stats(0u, &after));
