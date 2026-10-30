@@ -316,6 +316,7 @@ void test_control_plane_invalid_line_coding_releases_provisional_ownership(void)
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
     TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_0));
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_BAUD, test_ports[UART_PORT_0].control_history.reason);
 }
 
 void test_control_plane_unacceptable_line_coding_releases_provisional_ownership(void)
@@ -326,6 +327,7 @@ void test_control_plane_unacceptable_line_coding_releases_provisional_ownership(
     uart_driver_line_coding_t unacceptable = test_line_coding();
     uart_control_mailbox_request_t request;
 
+    test_ports[UART_PORT_0].info.backend = UART_DRIVER_BACKEND_PIO;
     test_ports[UART_PORT_0].info.baud_rate = 115200u;
     test_ports[UART_PORT_0].info.data_bits = 8u;
     test_ports[UART_PORT_0].info.stop_bits = 1u;
@@ -352,6 +354,15 @@ void test_control_plane_unacceptable_line_coding_releases_provisional_ownership(
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
     TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_0));
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_FRAMING, test_ports[UART_PORT_0].control_history.reason);
+
+    test_ports[UART_PORT_0].info.backend = UART_DRIVER_BACKEND_HW;
+    unacceptable.data_bits = 7u;
+    request.control_generation = 2u;
+    test_control_generations[UART_PORT_0] = 2u;
+    TEST_ASSERT_TRUE(uart_control_mailbox_publish(&test_mailboxes[UART_PORT_0], &request));
+    uart_control_plane_service(&test_control_plane);
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_BAUD, test_ports[UART_PORT_0].control_history.reason);
 }
 
 void test_control_plane_unavailable_backend_releases_provisional_ownership(void)
@@ -379,6 +390,7 @@ void test_control_plane_unavailable_backend_releases_provisional_ownership(void)
                      test_status_flags[UART_PORT_1]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_1]);
     TEST_ASSERT_TRUE(uart_control_plane_tx_launch_allowed(&test_control_plane, UART_PORT_1));
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_BACKEND, test_ports[UART_PORT_1].control_history.reason);
 }
 
 void test_control_plane_rejects_payload_aimed_at_another_port(void)
@@ -401,6 +413,7 @@ void test_control_plane_rejects_payload_aimed_at_another_port(void)
                      test_status_flags[UART_PORT_0]);
     TEST_ASSERT_BITS(UART_DRIVER_PORT_STATUS_CONTROL_PENDING, 0u, test_status_flags[UART_PORT_0]);
     TEST_ASSERT_EQUAL_UINT8(0u, test_status_flags[UART_PORT_1]);
+    TEST_ASSERT_EQUAL_UINT8(UART_CONTROL_ERROR_OTHER, test_ports[UART_PORT_0].control_history.reason);
 }
 
 void test_control_plane_stops_immediately_when_backend_is_retired(void)
