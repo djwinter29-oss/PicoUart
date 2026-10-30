@@ -43,17 +43,18 @@ flowchart TD
   Browser --> Done
 ```
 
-The application-matrix job runs .NET unit tests before repository pytest; Windows runs native C tests afterward.
+The application-matrix job runs .NET unit tests before repository pytest; Windows and macOS run native C tests
+afterward. Linux runs that suite with ASan/UBSan in the host-tools job.
 The Pico-only stamped-version check is a conditional step inside the PR firmware matrix, not another job.
 
 | Check | Environment And Dependencies | What It Establishes |
 | --- | --- | --- |
 | Firmware matrix | Linux; Arm toolchain, pinned Pico SDK, CMake/Ninja, host C++ compiler, Python | Pico and Pico 2 compile/link and satisfy binary contracts plus target-specific static SRAM/flash budgets; real-build regulator policy is inspected, not physically measured |
 | Firmware policy check | Python and `requirements-voltage-lock.txt` | Minimal pytest environment for inspection of the actual SDK build artifacts |
-| Host application matrix | Linux, macOS, Windows; Python 3.12, .NET 10 SDK, `requirements-lock.txt` | .NET unit tests, repository Python tests, and installed/published host contracts; Windows also runs native C tests |
+| Host application matrix | Linux, macOS, Windows; Python 3.12, .NET 10 SDK, `requirements-lock.txt` | .NET unit tests, repository Python tests, and installed/published host contracts; Windows and macOS also run native C tests |
 | Linux host tools | Python 3.12, development lock, native C toolchain, CMake/Ninja, cppcheck | Syntax, ASan/UBSan native tests, static analysis, and CLI smoke checks |
 | Python minimum | Linux; Python 3.10 and development lock | Repository Python checks on the minimum supported interpreter |
-| Browser host | Linux; Node 22 | JavaScript syntax and hardware-free WebHID/shared-renderer contracts |
+| Browser host | Linux; Node 22 | JavaScript syntax, WebHID tests, and the shared dashboard contract test under `host/web/tests` |
 | Release Python wheel | Python build backend/plugin and `requirements-runtime-lock.txt` | Wheel version, clean installation outside the checkout, and bundled dashboard startup response |
 | Release .NET archives | Native Linux/Windows/macOS runners and .NET SDK | Self-contained publishing for the configured runtime matrix, archive extraction, CLI startup, and embedded version |
 | Physical HIL | Identified board, intended flashed artifact, and required fixture | UART payload integrity, health, timing/recovery behavior, and conditions absent from CI |
