@@ -123,6 +123,8 @@ def parse_control(payload: bytes) -> dict[str, object]:
     if status == STATUS_IDLE:
         if action != 0:
             raise RuntimeError("idle result must have action zero")
+    elif status == STATUS_FAILED and action != COMMAND_SAVE_CONFIGURATION:
+        raise RuntimeError("invalid control action")
     elif action not in (1, 2, 3, 4):
         if action != 0 or (status, error) not in ((STATUS_INVALID, 1), (STATUS_UNSUPPORTED, 5)):
             raise RuntimeError("invalid control action")

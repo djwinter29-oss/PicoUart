@@ -96,7 +96,10 @@ print(status["channels"])
 ```
 
 The context manager closes the connection. A snapshot may contain channels still waiting for data; it does not wait
-for fresh reports from all six. Use `PicoUartHid(serial_number="ABC123")` to select a board.
+for fresh reports from all six. `status --json` is that six-entry `channels` object. The .NET CLI prints one
+channel object instead; both shapes are defined in the
+[host tools guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-test-automation).
+Use `PicoUartHid(serial_number="ABC123")` to select a board.
 See the [Python client guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-client-api)
 for methods, UART readiness checks, errors, and board controls.
 

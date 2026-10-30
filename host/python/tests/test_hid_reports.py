@@ -212,6 +212,24 @@ def test_channel_rejects_out_of_range_applied_baud(baud):
         parse_channel(channel_bytes(baud=baud))
 
 
+def test_failed_control_result_requires_the_save_action():
+    assert parse_control(control_bytes(action=4, status=6, error_reason=7))["error"] == "flash_operation_failed"
+    with pytest.raises(RuntimeError, match="action"):
+        parse_control(control_bytes(action=1, status=6, error_reason=7))
+
+
+def test_identity_read_rejects_a_padded_feature_buffer():
+    class PaddedIdentity(FakeHidDevice):
+        def get_feature_report(self, report_id, size):
+            if report_id == REPORT_ID_DEVICE_INFO:
+                return [report_id, *device_info_bytes(), 0]
+            return super().get_feature_report(report_id, size)
+
+    client = PicoUartHid(device=PaddedIdentity({}))
+    with pytest.raises(RuntimeError, match="unexpected report 1"):
+        client.read_identity()
+
+
 def test_control_report_validates_status_pairing():
     result = parse_control(control_bytes(
         action=4, status=3, error_reason=3,

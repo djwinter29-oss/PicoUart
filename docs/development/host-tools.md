@@ -178,6 +178,15 @@ pico-uart overruns > overruns-after.txt
 
 `pico-uart status --json > uart-status.json` saves a status snapshot. Only `status` supports `--json`;
 `monitor` produces text with channel lifecycle, measurement validity, and UART/CDC byte deltas.
+The JSON object is `{"channels": [ ... ]}` with six entries. A channel that has not delivered an Input in
+this process keeps the waiting placeholder (`sequence` null, `state` `"unknown"`) plus traffic-accounting
+fields (`traffic`, `totals`, `traffic_gaps`, `traffic_incomplete`, `observed_interval_ms`, `updated_at`).
+
+.NET `PicoUart status` prints one channel object for the single Input report that arrived. Its snake_case
+fields are `id`, `state`, `uart_measurement_state`, `baud_rate`, `data_bits`, `stop_bits`, `parity`,
+`sequence`, `interval_ms`, and the four boot byte totals. It does not wrap that object in `channels` and
+does not include the Python delta fields. `monitor` prints one such object per line. Parse each host with
+its own schema.
 Each channel has independently sequenced 500 ms measurement intervals. Status JSON tracks observed totals,
 valid observed intervals, sequence gaps, and sticky incompleteness indicators. Missing reports or saturated values
 prevent exact traffic accounting. Dropped-byte counts and buffer peaks are cumulative since boot, not per-test totals;
@@ -229,6 +238,8 @@ dotnet run --project host/dotnet/PicoUart -- web --port 5001
 ```
 
 `status` is a read-only device check and can fail normally with no compatible board attached; it is not a setup test.
+Its JSON is one channel object, not the Python `channels` array; the field lists are in
+[Python test automation](#python-test-automation).
 On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
 The C# `PicoUartHid` class owns a connection and implements `IDisposable`; `Protocol` provides typed report decoders.
 Python and .NET share `host/web`; keep frontend changes backend-neutral rather than adding a separate C# frontend.
