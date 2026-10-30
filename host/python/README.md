@@ -96,8 +96,8 @@ print(status["channels"])
 ```
 
 The context manager closes the connection. A snapshot may contain channels still waiting for data; it does not wait
-for fresh reports from all six. `status --json` is that six-entry `channels` object. The .NET CLI prints one
-channel object instead; both shapes are defined in the
+for fresh reports from all six. Python `status --json` and .NET `status` both print that six-entry `channels`
+object. The field rules are in the
 [host tools guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-test-automation).
 Use `PicoUartHid(serial_number="ABC123")` to select a board.
 See the [Python client guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-client-api)

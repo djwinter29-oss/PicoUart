@@ -76,8 +76,8 @@ The [consolidated HID v1 contract](../../docs/design/usb/hid-report-reference.md
 validation, traffic accounting, fault-history interpretation, and command timing; legacy layouts are not supported.
 
 `status` exits non-zero when no report arrives before its timeout. **Unlike the Python CLI, .NET `monitor` can finish
-successfully with no reports.** `status` also differs: it prints one channel object, while Python `status --json`
-prints six `channels` entries with traffic deltas. Field lists are in the
+successfully with no reports.** `status` prints the same six-entry `channels` snapshot as Python `status --json`.
+`monitor` still prints one channel object per line. Field rules are in the
 [host tools guide](../../docs/development/host-tools.md#python-test-automation).
 Your runner must check sample availability and channel health, not just the exit code.
 Without `--duration`, monitoring continues until interrupted. Device errors are printed to stderr and return non-zero.

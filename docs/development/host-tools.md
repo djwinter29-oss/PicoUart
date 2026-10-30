@@ -176,24 +176,25 @@ pico-uart monitor --duration 60 > uart-traffic.log
 pico-uart overruns > overruns-after.txt
 ```
 
-`pico-uart status --json > uart-status.json` saves a status snapshot. Only `status` supports `--json`;
-`monitor` produces text with channel lifecycle, measurement validity, and UART/CDC byte deltas.
-The JSON object is `{"channels": [ ... ]}` with six entries. A channel that has not delivered an Input in
+`pico-uart status --json > uart-status.json` saves a status snapshot. Python `status` is the only Python command
+with `--json`. .NET `status` always prints the same JSON object; its `--json` flag is accepted and does not
+change the output. Python `monitor` prints text. .NET `monitor` prints one channel object per line and can
+finish with no reports.
+
+The status object is `{"channels": [ ... ]}` with six entries. A channel that has not delivered an Input in
 this process keeps the waiting placeholder (`sequence` null, `state` `"unknown"`) plus traffic-accounting
 fields (`traffic`, `totals`, `traffic_gaps`, `traffic_incomplete`, `observed_interval_ms`, `updated_at`).
+The Input that arrived is that channel's first sample: `traffic` values stay null, `totals` are the boot
+counters, `observed_interval_ms` stays 0, and `traffic_incomplete` is true when `interval_ms` is 0 or 65535.
+`updated_at` is UTC with millisecond precision and a `+00:00` offset.
 
-.NET `PicoUart status` prints one channel object for the single Input report that arrived. Its snake_case
-fields are `id`, `state`, `uart_measurement_state`, `baud_rate`, `data_bits`, `stop_bits`, `parity`,
-`sequence`, `interval_ms`, and the four boot byte totals. It does not wrap that object in `channels` and
-does not include the Python delta fields. `monitor` prints one such object per line. Parse each host with
-its own schema.
 Each channel has independently sequenced 500 ms measurement intervals. Status JSON tracks observed totals,
 valid observed intervals, sequence gaps, and sticky incompleteness indicators. Missing reports or saturated values
 prevent exact traffic accounting. Dropped-byte counts and buffer peaks are cumulative since boot, not per-test totals;
 compare before and after a run, accounting for resets and saturation.
 
-`status` fails if its timeout expires without a valid report. `monitor` fails if it receives no valid reports,
-but can succeed after one report even if later reads time out. Both fail on device errors.
+`status` fails on either host if its timeout expires without a valid report. Python `monitor` fails if it receives
+no valid reports, but can succeed after one report even if later reads time out. Both fail on device errors.
 A successful command does not establish continuous reporting or healthy channels; the runner must evaluate reported
 states and counters rather than treating the exit code as the test result.
 
@@ -238,8 +239,8 @@ dotnet run --project host/dotnet/PicoUart -- web --port 5001
 ```
 
 `status` is a read-only device check and can fail normally with no compatible board attached; it is not a setup test.
-Its JSON is one channel object, not the Python `channels` array; the field lists are in
-[Python test automation](#python-test-automation).
+Its JSON matches the Python `channels` snapshot in [Python test automation](#python-test-automation). .NET
+`monitor` still prints one channel object per line.
 On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
 The C# `PicoUartHid` class owns a connection and implements `IDisposable`; `Protocol` provides typed report decoders.
 Python and .NET share `host/web`; keep frontend changes backend-neutral rather than adding a separate C# frontend.

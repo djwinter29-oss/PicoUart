@@ -25,8 +25,9 @@ try
     switch (options.Command)
     {
         case "status":
-            WriteJson(client.ReadStatus(1000)
-                ?? throw new InvalidOperationException("no status report arrived before timeout"));
+            var sample = client.ReadStatus(1000)
+                ?? throw new InvalidOperationException("no status report arrived before timeout");
+            WriteJson(StatusSnapshot.FromFirstSample(sample, DateTimeOffset.UtcNow));
             break;
         case "monitor":
             using (var stop = new CancellationTokenSource())
