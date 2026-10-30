@@ -78,6 +78,9 @@ and receive-status errors then remain visible through backend statistics and HID
 
 - Hardware UART line coding depends on PL011 divisor precision and the configured baud error tolerance.
 - RX overflow remains possible when the peer ignores RTS or the host does not drain CDC IN quickly enough.
+  Reloading the single RX DMA countdown leaves a short PL011 FIFO window. Bytes lost there latch a sticky
+  receive-status flag and publish as one saturating `rx_error_count` observation, not a known `rx_overrun_count`.
+  Closing that window needs double-buffered RX DMA and a physical HIL run. A zero transfer count does not self-chain.
 - DMA, IRQ timing, UART idle behavior, and RTS/CTS behavior require
     [hardware-in-the-loop testing](../../tests/hil-fixture-test-plan.md).
 - Host tests cover baud/policy, resource claims, and rejection of repeated initialization. A real-driver harness with SDK
