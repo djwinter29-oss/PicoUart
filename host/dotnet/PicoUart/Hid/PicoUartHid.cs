@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using HidSharp;
+using HidSharp.Reports;
 using System.Diagnostics;
 using PicoUart.Wire;
 
@@ -94,7 +95,7 @@ public sealed class PicoUartHid : IDisposable
         var descriptor = device.GetReportDescriptor();
         var identityReports = descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
             .Where(report => report.ReportID == Protocol.IdentityReportId).ToArray();
-        if (identityReports.Length != 1 || identityReports[0].Length < 4)
+        if (identityReports.Length != 1 || ReportDataLength(identityReports[0]) < 4)
             throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
         stream = device.Open();
         streamLifetime = new(stream.Dispose);
@@ -103,16 +104,16 @@ public sealed class PicoUartHid : IDisposable
             stream.ReadTimeout = 250;
             stream.WriteTimeout = 3000;
             var payload = ReadFeaturePayload(stream, streamLifetime,
-                Protocol.IdentityReportId, identityReports[0].Length - 1);
+                Protocol.IdentityReportId, ReportDataLength(identityReports[0]) - 1);
             var prefix = Protocol.ParseIdentityPrefix(payload);
             if (prefix.ProductId != Protocol.ProductId)
                 throw new InvalidOperationException($"unsupported HID product (0x{prefix.ProductId:X4})");
             identity = Protocol.ParseIdentity(payload);
             ValidateUsbSerial(device.GetSerialNumber(), identity.DeviceUid);
             ValidateReports(descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
-                    .Select(report => ((byte)report.ReportID, report.Length)),
+                    .Select(report => (report.ReportID, ReportDataLength(report))),
                 descriptor.DeviceItems.SelectMany(item => item.InputReports)
-                    .Select(report => ((byte)report.ReportID, report.Length)));
+                    .Select(report => (report.ReportID, ReportDataLength(report))));
         }
         catch
         {
@@ -131,7 +132,7 @@ public sealed class PicoUartHid : IDisposable
     {
         var features = device.GetReportDescriptor().DeviceItems.SelectMany(item => item.FeatureReports)
             .Where(report => report.ReportID == Protocol.IdentityReportId).ToArray();
-        if (features.Length != 1 || features[0].Length < 4)
+        if (features.Length != 1 || ReportDataLength(features[0]) < 4)
             throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
         var candidate = device.Open();
         var lifetime = new HidStreamLifetime(candidate.Dispose);
@@ -140,7 +141,7 @@ public sealed class PicoUartHid : IDisposable
             candidate.ReadTimeout = 3000;
             candidate.WriteTimeout = 3000;
             var payload = ReadFeaturePayload(candidate, lifetime,
-                Protocol.IdentityReportId, features[0].Length - 1);
+                Protocol.IdentityReportId, ReportDataLength(features[0]) - 1);
             var prefix = Protocol.ParseIdentityPrefix(payload);
             var usbSerial = device.GetSerialNumber();
             if (prefix.ProductId != Protocol.ProductId)
@@ -159,6 +160,25 @@ public sealed class PicoUartHid : IDisposable
     {
         if (usbSerial is not null && !string.Equals(usbSerial, deviceUid, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("HID identity UID does not match the USB serial number");
+    }
+
+    /// <summary>Report size including ID, excluding trailing constant padding reconstructed by Windows.</summary>
+    internal static int ReportDataLength(Report report)
+    {
+        var bits = 0;
+        var padding = false;
+        foreach (var item in report.DataItems)
+        {
+            if (item.IsConstant)
+            {
+                padding = true;
+                continue;
+            }
+            if (padding || item.TotalBits % 8 != 0)
+                throw new InvalidOperationException("unsupported HID report data alignment or internal padding");
+            bits = checked(bits + item.TotalBits);
+        }
+        return bits / 8 + 1;
     }
 
     internal static void ValidateReports(IEnumerable<(byte Id, int Length)> features,

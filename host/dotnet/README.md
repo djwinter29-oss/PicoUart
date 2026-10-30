@@ -124,6 +124,10 @@ An unavailable save capability sets `configuration_save_error`; an unread/failed
 	HID driver may need the other client closed and the board's USB cable reconnected.
 - **No valid reports:** check firmware compatibility and the USB connection. Missing reports are not zero traffic;
   verify that monitor output contains samples even when the command exits successfully.
+- **Windows `unsupported report size or layout version` with matching v0.10.0 host and firmware:** that host counts
+  Windows-reconstructed descriptor padding as payload. Use a host build containing the descriptor-padding fix;
+  it excludes trailing constant padding while still validating report IDs, payload sizes, and layout versions.
+  This host-only fix does not require reflashing the board.
 - **Missing web files:** re-extract the complete archive; do not move only the executable.
 - **Need framework logs:** set `Logging__LogLevel__Microsoft=Information` before launching. Startup normally prints one
 	dashboard URL while retaining warnings and errors.
