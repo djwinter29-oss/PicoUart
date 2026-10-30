@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file tusb_config.h
  * @brief TinyUSB device-stack configuration for PicoUart.

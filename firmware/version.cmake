@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 # Parse and validate PICO_UART_VERSION into PICO_UART_VERSION_{MAJOR,MINOR,PATCH}
 # and compute PICO_UART_BCD_DEVICE. Extracted from CMakeLists.txt so the
 # version policy can be exercised standalone with `cmake -P` (no Pico SDK or

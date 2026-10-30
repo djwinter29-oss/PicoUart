@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Check stall, overflow, configuration and reopen isolation on the fixed fixture's CDC1/CDC5 loopbacks."""
 
 from __future__ import annotations

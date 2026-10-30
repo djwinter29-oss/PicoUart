@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Offline configuration provisioner checks: no OpenOCD or physical target is contacted."""
 
 from __future__ import annotations

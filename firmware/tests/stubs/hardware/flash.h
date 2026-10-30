@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /** @file flash.h
  * @brief Host declarations for Pico SDK flash programming APIs.
  */

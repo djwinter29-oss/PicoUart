@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Shared readers and page-local board selection without physical USB devices."""
 
 from concurrent.futures import ThreadPoolExecutor

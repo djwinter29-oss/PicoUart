@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file pio_uart_driver_internal.h
  * @brief Internal runtime state for the PicoUart PIO UART backend.

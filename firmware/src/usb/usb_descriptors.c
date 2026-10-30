@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file usb_descriptors.c
  * @brief TinyUSB descriptor tables and callbacks for the PicoUart USB CDC device.

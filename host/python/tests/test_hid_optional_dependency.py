@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Regression test: pico_uart must import without the hidapi runtime.
 
 Without this, a missing/unbuildable hidapi wheel (no prebuilt wheel for the

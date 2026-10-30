@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Report whether firmware uses the project's unallocated lab USB identity."""
 
 from __future__ import annotations

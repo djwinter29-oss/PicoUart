@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_uart_board_config.c
  * @brief Host tests for compile-time board references and backend-owned resources.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Report-20 configuration actions validate capabilities and observe results."""
 
 from unittest.mock import patch

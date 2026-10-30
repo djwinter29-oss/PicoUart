@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file uart_driver.c
  * @brief Logical UART port table for the PicoUart firmware.

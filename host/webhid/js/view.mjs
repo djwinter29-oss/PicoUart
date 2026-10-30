@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 function makeCell(className, text) {
   const cell = document.createElement("td");
   if (className) cell.className = className;

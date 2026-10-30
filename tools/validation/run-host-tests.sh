@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 # Run host-side automated tests (native C Unity + Python pytest). No Pico board required.
 set -eu
 

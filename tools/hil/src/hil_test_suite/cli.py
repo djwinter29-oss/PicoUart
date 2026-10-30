@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Single command-line entry point for PicoUart HIL tools."""
 
 from __future__ import annotations

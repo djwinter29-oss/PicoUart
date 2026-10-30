@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Resource-owning Python API for PicoUart's version-1 HID reports."""
 
 from copy import deepcopy

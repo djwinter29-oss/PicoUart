@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /** @file unique_id.h
  * @brief Host-test declarations for the SDK board serial API.
  */

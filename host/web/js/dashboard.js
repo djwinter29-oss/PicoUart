@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 const token = document.querySelector('meta[name="csrf-token"]').content;
 const connection = document.querySelector("#connection");
 const channelRows = document.querySelector("#channel-rows");

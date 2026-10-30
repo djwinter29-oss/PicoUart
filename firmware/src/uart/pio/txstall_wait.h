@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file txstall_wait.h
  * @brief Nonblocking TXSTALL re-assertion policy shared by the driver and host tests.

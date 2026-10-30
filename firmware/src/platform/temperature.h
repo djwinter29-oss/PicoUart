@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file temperature.h
  * @brief Internal ADC temperature-sensor helpers for PicoUart firmware.

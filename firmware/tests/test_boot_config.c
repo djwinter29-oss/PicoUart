@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_boot_config.c
  * @brief Corruption, profile compatibility, and default/recovery boot decisions.

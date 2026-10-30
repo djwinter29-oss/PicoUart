@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file hw_uart_board_config.c
  * @brief Compile-time hardware-UART assignments referencing the common board table.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /** @file addressmap.h
  * @brief Host-test SRAM bounds matching the RP2 SDK address maps.
  */

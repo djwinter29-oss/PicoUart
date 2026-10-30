@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";

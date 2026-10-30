@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
 """Build/load board defaults must resolve the same ELF, without contacting hardware."""
 
 import json

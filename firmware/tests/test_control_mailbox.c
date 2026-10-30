@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
 /**
  * @file test_control_mailbox.c
  * @brief Host-native Unity tests for UART control mailbox handoff.
