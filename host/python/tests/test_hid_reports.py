@@ -218,6 +218,30 @@ def test_failed_control_result_requires_the_save_action():
         parse_control(control_bytes(action=1, status=6, error_reason=7))
 
 
+def test_identity_read_rejects_a_missing_feature_report():
+    class MissingIdentity(FakeHidDevice):
+        def get_feature_report(self, report_id, size):
+            if report_id == REPORT_ID_DEVICE_INFO:
+                return None
+            return super().get_feature_report(report_id, size)
+
+    client = PicoUartHid(device=MissingIdentity({}))
+    with pytest.raises(RuntimeError, match="invalid identity report ID"):
+        client.read_identity()
+
+
+def test_identity_read_rejects_an_empty_feature_report():
+    class EmptyIdentity(FakeHidDevice):
+        def get_feature_report(self, report_id, size):
+            if report_id == REPORT_ID_DEVICE_INFO:
+                return []
+            return super().get_feature_report(report_id, size)
+
+    client = PicoUartHid(device=EmptyIdentity({}))
+    with pytest.raises(RuntimeError, match="unexpected report 1"):
+        client.read_identity()
+
+
 def test_identity_read_rejects_a_padded_feature_buffer():
     class PaddedIdentity(FakeHidDevice):
         def get_feature_report(self, report_id, size):

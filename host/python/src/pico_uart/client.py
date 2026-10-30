@@ -123,6 +123,8 @@ class PicoUartHid:
                 lambda: self._require_open().get_feature_report(REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE + 1),
                 COMMAND_TIMEOUT_S,
             )
+            if report is None:
+                raise RuntimeError("invalid identity report ID")
             self._device_info = parse_device_info(
                 require_payload(report, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE)
             )
