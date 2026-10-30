@@ -56,6 +56,9 @@ measured wire speed.
 Pico 2 rows below stop on 2026-10-10 and predate the v0.8.6 Pico release line. No file in this directory is an
 exact-artifact Pico 2 run of that line. A Pico `PASS` does not qualify `pico2`.
 
+This table is the curated evidence index. Other Markdown files here are development notes, not extra qualification.
+Every Pico 2 record in this directory is listed below.
+
 | Record | Recorded Result | Scope And Limitations |
 | --- | --- | --- |
 | [2026-10-24 Pico 200 MHz eight-hour 1 Mbaud soak](20261024T223400Z-pico-200mhz-1000000-6port-8h.md) | `PASS` | v0.8.6 Pico ELF at the board-local 200 MHz profile. Six streams at 1,000,000 baud for 8 hours verified 12,606,540,800 host CDC payload bytes, with clean before/after HID and zero overruns. Performance only: no functional table, recovery, or RTS/CTS. The worktree was dirty. Counts are host-verified CDC bytes, and the run ended 2026-10-25 06:34 UTC. |
