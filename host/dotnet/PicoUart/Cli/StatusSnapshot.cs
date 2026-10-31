@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
+using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using PicoUart.Wire;
 
 namespace PicoUart.Cli;
@@ -17,6 +20,52 @@ internal sealed record StatusSnapshot(StatusChannel[] Channels)
             channels[index] = StatusChannel.Waiting(index);
         channels[sample.Id] = StatusChannel.FirstSample(sample, observedAt);
         return new(channels);
+    }
+
+    /// <summary>Retry until one Input arrives. Each read waits at most 250 ms, matching Python status.</summary>
+    internal static ChannelStatus? Poll(Func<int, ChannelStatus?> read, TimeSpan timeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        var clock = Stopwatch.StartNew();
+        while (clock.Elapsed < timeout)
+        {
+            var remainingMs = (timeout - clock.Elapsed).TotalMilliseconds;
+            if (remainingMs <= 0) break;
+            var slice = (int)Math.Min(250, Math.Max(1, remainingMs));
+            var sample = read(slice);
+            if (sample is not null) return sample;
+        }
+        return null;
+    }
+
+    /// <summary>Serialize with recursively sorted object keys, matching Python <c>sort_keys=True</c>.</summary>
+    internal static string ToSortedJson(StatusSnapshot snapshot)
+    {
+        var node = JsonSerializer.SerializeToNode(snapshot, Protocol.JsonOptions)
+            ?? throw new InvalidOperationException("status snapshot did not serialize");
+        SortKeys(node);
+        return node.ToJsonString(Protocol.JsonOptions);
+    }
+
+    private static void SortKeys(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                var entries = obj.ToArray();
+                foreach (var entry in entries)
+                    obj.Remove(entry.Key);
+                foreach (var entry in entries.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+                {
+                    SortKeys(entry.Value);
+                    obj.Add(entry.Key, entry.Value);
+                }
+                break;
+            case JsonArray array:
+                foreach (var item in array)
+                    SortKeys(item);
+                break;
+        }
     }
 }
 

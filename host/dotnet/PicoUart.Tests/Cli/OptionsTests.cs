@@ -109,11 +109,31 @@ public sealed class OptionsTests
     [InlineData("--device-path")]
     [InlineData("--port")]
     [InlineData("--duration")]
+    [InlineData("--timeout")]
     public void OptionsRequireTheirValue(string option)
     {
         var error = Assert.Throws<ArgumentException>(() => Options.Parse(["status", option]));
 
         Assert.Equal($"missing value for {option}", error.Message);
+    }
+
+    [Fact]
+    public void StatusTimeoutDefaultsToTwoSeconds()
+    {
+        Assert.Equal(2, Options.Parse(["status"]).StatusTimeout);
+        Assert.Equal(0.5, Options.Parse(["--timeout", "0.5", "status"]).StatusTimeout);
+        var error = Assert.Throws<ArgumentException>(() => Options.Parse(["monitor", "--timeout", "1"]));
+        Assert.Equal("--timeout is only valid for status", error.Message);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("NaN")]
+    [InlineData("abc")]
+    public void StatusTimeoutRejectsInvalidValues(string input)
+    {
+        Assert.Throws<ArgumentException>(() => Options.Parse(["status", "--timeout", input]));
     }
 
     [Fact]

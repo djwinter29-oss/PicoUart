@@ -186,15 +186,17 @@ this process keeps the waiting placeholder (`sequence` null, `state` `"unknown"`
 fields (`traffic`, `totals`, `traffic_gaps`, `traffic_incomplete`, `observed_interval_ms`, `updated_at`).
 The Input that arrived is that channel's first sample: `traffic` values stay null, `totals` are the boot
 counters, `observed_interval_ms` stays 0, and `traffic_incomplete` is true when `interval_ms` is 0 or 65535.
-`updated_at` is UTC with millisecond precision and a `+00:00` offset.
+`updated_at` is UTC with millisecond precision and a `+00:00` offset. Status object keys are sorted on both hosts.
 
 Each channel has independently sequenced 500 ms measurement intervals. Status JSON tracks observed totals,
 valid observed intervals, sequence gaps, and sticky incompleteness indicators. Missing reports or saturated values
 prevent exact traffic accounting. Dropped-byte counts and buffer peaks are cumulative since boot, not per-test totals;
 compare before and after a run, accounting for resets and saturation.
 
-`status` fails on either host if its timeout expires without a valid report. Python `monitor` fails if it receives
-no valid reports, but can succeed after one report even if later reads time out. Both fail on device errors.
+`status` on either host retries until its timeout. The default is 2 seconds, and each read waits at most 250 ms.
+Python and .NET select that limit with `--timeout`. `status` fails when the timeout expires with no valid report.
+Python `monitor` fails if it receives no valid reports, but can succeed after one report even if later reads time out.
+Both hosts fail on device errors.
 A successful command does not establish continuous reporting or healthy channels; the runner must evaluate reported
 states and counters rather than treating the exit code as the test result.
 

@@ -77,4 +77,64 @@ public sealed class StatusSnapshotTests
         Assert.False(channel.CdcOpen);
         Assert.Equal("unknown", StatusSnapshot.FromFirstSample(sample, Observed).Channels[0].State);
     }
+
+    [Fact]
+    public void StatusJsonSortsObjectKeys()
+    {
+        var sample = new ChannelStatus(2, "ready", 1, 115200, 8, 1, "none", 9, 500, 100, 200, 300, 400);
+        var json = StatusSnapshot.ToSortedJson(StatusSnapshot.FromFirstSample(sample, Observed));
+        using var document = JsonDocument.Parse(json);
+        AssertSorted(document.RootElement);
+        var live = document.RootElement.GetProperty("channels")[2];
+        Assert.Equal("baud_rate", live.EnumerateObject().First().Name);
+        Assert.Equal("uart_rx", live.GetProperty("traffic").EnumerateObject().First().Name);
+        Assert.Equal("uart_rx", live.GetProperty("totals").EnumerateObject().First().Name);
+    }
+
+    [Fact]
+    public void PollReturnsTheFirstSampleAndCapsEachReadAt250Ms()
+    {
+        var calls = new List<int>();
+        var sample = new ChannelStatus(0, "ready", 1, 115200, 8, 1, "none", 1, 500, 1, 2, 3, 4);
+        ChannelStatus? found = null;
+        var reads = 0;
+        found = StatusSnapshot.Poll(timeoutMs =>
+        {
+            calls.Add(timeoutMs);
+            return ++reads == 3 ? sample : null;
+        }, TimeSpan.FromMilliseconds(800));
+        Assert.Same(sample, found);
+        Assert.Equal(3, calls.Count);
+        Assert.All(calls, timeoutMs => Assert.InRange(timeoutMs, 1, 250));
+    }
+
+    [Fact]
+    public void PollReturnsNullWhenEveryReadIsEmpty()
+    {
+        var calls = 0;
+        var found = StatusSnapshot.Poll(_ =>
+        {
+            calls++;
+            return null;
+        }, TimeSpan.FromMilliseconds(30));
+        Assert.Null(found);
+        Assert.True(calls >= 1);
+    }
+
+    private static void AssertSorted(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                var names = element.EnumerateObject().Select(property => property.Name).ToArray();
+                Assert.Equal(names.OrderBy(name => name, StringComparer.Ordinal), names);
+                foreach (var property in element.EnumerateObject())
+                    AssertSorted(property.Value);
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                    AssertSorted(item);
+                break;
+        }
+    }
 }
