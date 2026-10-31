@@ -230,6 +230,18 @@ def test_identity_read_rejects_a_missing_feature_report():
         client.read_identity()
 
 
+def test_feature_read_rejects_a_missing_report():
+    class MissingTelemetry(FakeHidDevice):
+        def get_feature_report(self, report_id, size):
+            if report_id == REPORT_ID_TELEMETRY:
+                return None
+            return super().get_feature_report(report_id, size)
+
+    client = PicoUartHid(device=MissingTelemetry({}))
+    with pytest.raises(RuntimeError, match="received no report"):
+        client.read_telemetry()
+
+
 def test_identity_read_rejects_an_empty_feature_report():
     class EmptyIdentity(FakeHidDevice):
         def get_feature_report(self, report_id, size):
