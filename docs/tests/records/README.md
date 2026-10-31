@@ -56,8 +56,8 @@ measured wire speed.
 Pico 2 rows below stop on 2026-10-10 and predate the v0.8.6 Pico release line. No file in this directory is an
 exact-artifact Pico 2 run of that line. A Pico `PASS` does not qualify `pico2`.
 
-This table is the curated evidence index. Other Markdown files here are development notes, not extra qualification.
-Every Pico 2 record in this directory is listed below.
+This table is the curated evidence index. Development notes are linked at the end of this page and are not extra
+qualification. Every Markdown file in this directory is linked from this page.
 
 | Record | Recorded Result | Scope And Limitations |
 | --- | --- | --- |
@@ -87,3 +87,31 @@ the referenced files with their hashes in an accessible evidence archive when sh
 Do not backfill unknown provenance or overwrite historical stream results with later runs. A higher-rate boundary
 failure does not change a clean 115200-baseline speed sweep to `FAIL`; independent health, setup, or functional failures
 remain failures.
+
+## Development Notes
+
+Every Markdown file in this directory is linked from this page. The notes below are not extra qualification.
+A Pico result here does not qualify `pico2`.
+
+- [2026-10-22 07:49 Pico](2026-10-22-074923Z-pico-hil.md): `PASS`, firmware 0.8.1. Historical Pico run, not v0.8.6.
+- [2026-10-22 08:02 Pico](2026-10-22-080227Z-pico-hil.md): `PARTIAL`, firmware 0.8.1. Historical Pico run, not v0.8.6.
+- [2026-10-22 14:06 Pico](2026-10-22-140603Z-pico-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 18:43 Pico 125 MHz](2026-10-22-184304Z-pico-125mhz-hil.md): `PARTIAL`, firmware 0.0.0. Not qualification.
+- [2026-10-22 19:29 Pico 125 MHz](2026-10-22-192938Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 19:39 Pico 125 MHz](2026-10-22-193909Z-pico-125mhz-hil.md): `PARTIAL`, firmware 0.0.0. Not qualification.
+- [2026-10-22 20:03 Pico 125 MHz](2026-10-22-200343Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 20:29 Pico 125 MHz](2026-10-22-202929Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 20:37 Pico 125 MHz](2026-10-22-203712Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 20:46 Pico 125 MHz](2026-10-22-204609Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 21:31 Pico 125 MHz](2026-10-22-213102Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [CDC/UART session and tuning check](2026-10-22-cdc-uart-session-validation.md): development check, not qualification.
+- [UART lifecycle optimization check](2026-10-22-uart-lifecycle-optimization.md): development check, not qualification.
+- [2026-10-23 17:00 Pico 125 MHz](2026-10-23-170002Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:12 Pico 125 MHz](2026-10-23-171221Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:14 Pico 125 MHz](2026-10-23-171456Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:16 Pico 125 MHz](2026-10-23-171632Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:20 Pico 125 MHz](2026-10-23-172029Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:21 Pico 125 MHz](2026-10-23-172156Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:24 Pico 125 MHz](2026-10-23-172425Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:26 Pico 125 MHz](2026-10-23-172600Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:27 Pico 125 MHz](2026-10-23-172735Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
