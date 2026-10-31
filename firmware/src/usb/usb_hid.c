@@ -225,16 +225,24 @@ static bool usb_hid_cdc_sessions_closed(void)
     return true;
 }
 
+/* Host tests may override this. Mach-O arm64 cannot relocate absolute linker symbols. */
+#ifndef PICO_UART_LINK_ADDR
+#define PICO_UART_LINK_ADDR(symbol) ((uintptr_t)&(symbol))
+#define PICO_UART_LINK_ADDR_EXTERN 1
+#endif
+
 /** @brief Calculate linked SRAM plus reserved SDK stacks, not runtime memory usage. */
 static uint32_t usb_hid_ram_reserved_bytes(void)
 {
+#ifdef PICO_UART_LINK_ADDR_EXTERN
     extern char __end__, __scratch_x_start__, __scratch_x_end__, __scratch_y_start__, __scratch_y_end__;
     extern char __StackBottom, __StackTop, __StackOneBottom, __StackOneTop;
-    return (uint32_t)(((uintptr_t)&__end__ - SRAM_BASE) +
-                     ((uintptr_t)&__scratch_x_end__ - (uintptr_t)&__scratch_x_start__) +
-                     ((uintptr_t)&__scratch_y_end__ - (uintptr_t)&__scratch_y_start__) +
-                     ((uintptr_t)&__StackTop - (uintptr_t)&__StackBottom) +
-                     ((uintptr_t)&__StackOneTop - (uintptr_t)&__StackOneBottom));
+#endif
+    return (uint32_t)((PICO_UART_LINK_ADDR(__end__) - SRAM_BASE) +
+                     (PICO_UART_LINK_ADDR(__scratch_x_end__) - PICO_UART_LINK_ADDR(__scratch_x_start__)) +
+                     (PICO_UART_LINK_ADDR(__scratch_y_end__) - PICO_UART_LINK_ADDR(__scratch_y_start__)) +
+                     (PICO_UART_LINK_ADDR(__StackTop) - PICO_UART_LINK_ADDR(__StackBottom)) +
+                     (PICO_UART_LINK_ADDR(__StackOneTop) - PICO_UART_LINK_ADDR(__StackOneBottom)));
 }
 
 /** @brief Capture immutable identity and boot configuration once, before enumeration. */

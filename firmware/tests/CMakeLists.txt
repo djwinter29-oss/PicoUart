@@ -237,8 +237,13 @@ foreach(_family IN ITEMS rp2040 rp2350 rp2040_no_reset)
         PICO_UART_BOARD_MODEL=$<IF:$<STREQUAL:${_family},rp2350>,3,1>
         PICO_UART_ALLOW_HID_RESET=$<NOT:$<STREQUAL:${_family},rp2040_no_reset>>
     )
-    target_compile_options(test_usb_hid_${_family} PRIVATE -ffunction-sections -fdata-sections -fno-pie)
-    target_link_options(test_usb_hid_${_family} PRIVATE ${_pico_uart_gc_sections} -no-pie)
+    target_compile_options(test_usb_hid_${_family} PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(test_usb_hid_${_family} PRIVATE ${_pico_uart_gc_sections})
+    if(NOT APPLE)
+        # Non-PIE lets the ELF harness take addresses of the absolute .set symbols.
+        target_compile_options(test_usb_hid_${_family} PRIVATE -fno-pie)
+        target_link_options(test_usb_hid_${_family} PRIVATE -no-pie)
+    endif()
 endforeach()
 
 # Fault-injection test: HW UART DMA claim/rollback via injectable ops seam.
