@@ -14,6 +14,7 @@
 #include "uart/line_coding.h"
 #include "uart/pio/resource_claim.h"
 #include "uart/pio/txstall_wait.h"
+#include "uart/saturating.h"
 
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
@@ -651,7 +652,7 @@ static void pio_uart_driver_harvest_framing_errors(pio_uart_driver_t *driver)
     /* irq set 0 rel raises the flag whose index matches the RX state machine. */
     if (pio_interrupt_get(driver->config->pio, driver->config->rx_state_machine)) {
         pio_interrupt_clear(driver->config->pio, driver->config->rx_state_machine);
-        driver->rx_error_count += 1u;
+        driver->rx_error_count = uart_saturating_add_u32(driver->rx_error_count, 1u);
         service_load_note(1u);
     }
 }

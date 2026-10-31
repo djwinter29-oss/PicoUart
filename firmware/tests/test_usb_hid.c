@@ -5,8 +5,23 @@
  * @brief Exercise production HID payloads, acquisition/accounting, and pre-ACK transfer handling.
  */
 #include "unity.h"
+#if defined(__APPLE__)
+/* Same map as the ELF .set symbols below. arm64 Mach-O rejects absolute-symbol relocations. */
+#define PICO_UART_LINK_ADDR(symbol) (pico_uart_host_link_##symbol)
+#define pico_uart_host_link___end__ (0x20001234u)
+#define pico_uart_host_link___scratch_x_start__ (0x20040000u)
+#define pico_uart_host_link___scratch_x_end__ (0x20040020u)
+#define pico_uart_host_link___scratch_y_start__ (0x20041000u)
+#define pico_uart_host_link___scratch_y_end__ (0x20041040u)
+#define pico_uart_host_link___StackBottom (0x20041800u)
+#define pico_uart_host_link___StackTop (0x20042000u)
+#define pico_uart_host_link___StackOneBottom (0x20040800u)
+#define pico_uart_host_link___StackOneTop (0x20041000u)
+#else
 #define __end__ pico_uart_test_static_end
+#endif
 #include "../src/usb/usb_hid.c"
+#if !defined(__APPLE__)
 #undef __end__
 
 __asm__(
@@ -23,6 +38,14 @@ __asm__(
     ".set __StackOneBottom, 0x20040800\n"
     ".set __StackOneTop, 0x20041000\n"
 );
+#else
+_Static_assert((uint32_t)((pico_uart_host_link___end__ - SRAM_BASE) +
+                          (pico_uart_host_link___scratch_x_end__ - pico_uart_host_link___scratch_x_start__) +
+                          (pico_uart_host_link___scratch_y_end__ - pico_uart_host_link___scratch_y_start__) +
+                          (pico_uart_host_link___StackTop - pico_uart_host_link___StackBottom) +
+                          (pico_uart_host_link___StackOneTop - pico_uart_host_link___StackOneBottom)) == 0x2294u,
+               "Mach-O link map must match the identity reserved-RAM fixture");
+#endif
 
 absolute_time_t pico_test_time_us;
 static bool led_available, led_on, cdc_open, endpoint_ready, endpoint_accepts;

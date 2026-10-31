@@ -53,8 +53,18 @@ tables preserve the original stream outcomes. Missing measurements must not be i
 Performance-only runs do not establish functional or recovery coverage, and requested baud is not independently
 measured wire speed.
 
+Pico 2 rows below stop on 2026-10-10 and predate the v0.8.6 Pico release line. No file in this directory is an
+exact-artifact Pico 2 run of that line. A Pico `PASS` does not qualify `pico2`.
+
+This table is the curated evidence index. Development notes are linked at the end of this page and are not extra
+qualification. Every Markdown file in this directory is linked from this page.
+
 | Record | Recorded Result | Scope And Limitations |
 | --- | --- | --- |
+| [2026-10-24 Pico 200 MHz eight-hour 1 Mbaud soak](20261024T223400Z-pico-200mhz-1000000-6port-8h.md) | `PASS` | v0.8.6 Pico ELF at the board-local 200 MHz profile. Six streams at 1,000,000 baud for 8 hours verified 12,606,540,800 host CDC payload bytes, with clean before/after HID and zero overruns. Performance only: no functional table, recovery, or RTS/CTS. The worktree was dirty. Counts are host-verified CDC bytes, and the run ended 2026-10-25 06:34 UTC. |
+| [2026-10-24 Pico 200 MHz four-hour 1 Mbaud soak](20261024T183331Z-pico-200mhz-1000000-6port-4h.md) | `PASS` | Same v0.8.6 Pico ELF and six-stream 1,000,000 baud workload for 4 hours (6,324,596,736 verified bytes) with clean HID. Performance only. The system clock was not independently captured, and the worktree was dirty. |
+| [2026-10-24 Pico eight-hour 460800 soak](20261024-071715Z-pico-125mhz-460800-8h-soak.md) | `PASS` | Six streams at 460800 baud for 8 hours with clean before/after HID. Firmware was reported as 0.0.0 and the artifact hash was not supplied, so this is not release-artifact qualification. |
+| [2026-10-24 Pico four-hour 460800 soak](20261024-031611Z-pico-125mhz-460800-4h-soak.md) | `PASS` | Six streams at 460800 baud for 4 hours with clean before/after HID. Firmware was reported as 0.0.0 and the artifact hash was not supplied, so this is not release-artifact qualification. |
 | [2026-10-24 v0.8.6 Pico 200 MHz HIL](2026-10-24-181517Z-pico-200mhz-hil.md) | `PASS` | Exact packaged Pico ELF with the board-local 200 MHz profile; functional fixture and all six streams passed through 2 Mbaud. At 3 Mbaud, CDC5 loopback failed a short read (33 of 1024 bytes), establishing the first observed boundary; HID health remained clean with zero overruns/errors. |
 | [2026-10-24 v0.8.6 Pico release HIL](2026-10-24-180437Z-pico-125mhz-hil.md) | `PASS` | Exact packaged Pico ELF; all functional links and all six streams passed through 2 Mbaud with clean HID health. At 3 Mbaud, CDC3→CDC4 failed a short read, establishing the first observed boundary; zero overruns or HID errors were recorded. |
 | [2026-10-23 Pico 3 Mbaud sweep](2026-10-23-220124Z-pico-125mhz-hil.md) | `PASS` | All six streams passed through 2 Mbaud; two streams failed at 3 Mbaud with final zero overruns. The installed firmware commit and artifact hash were unavailable, so this is not release-artifact qualification. |
@@ -77,3 +87,31 @@ the referenced files with their hashes in an accessible evidence archive when sh
 Do not backfill unknown provenance or overwrite historical stream results with later runs. A higher-rate boundary
 failure does not change a clean 115200-baseline speed sweep to `FAIL`; independent health, setup, or functional failures
 remain failures.
+
+## Development Notes
+
+Every Markdown file in this directory is linked from this page. The notes below are not extra qualification.
+A Pico result here does not qualify `pico2`.
+
+- [2026-10-22 07:49 Pico](2026-10-22-074923Z-pico-hil.md): `PASS`, firmware 0.8.1. Historical Pico run, not v0.8.6.
+- [2026-10-22 08:02 Pico](2026-10-22-080227Z-pico-hil.md): `PARTIAL`, firmware 0.8.1. Historical Pico run, not v0.8.6.
+- [2026-10-22 14:06 Pico](2026-10-22-140603Z-pico-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 18:43 Pico 125 MHz](2026-10-22-184304Z-pico-125mhz-hil.md): `PARTIAL`, firmware 0.0.0. Not qualification.
+- [2026-10-22 19:29 Pico 125 MHz](2026-10-22-192938Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 19:39 Pico 125 MHz](2026-10-22-193909Z-pico-125mhz-hil.md): `PARTIAL`, firmware 0.0.0. Not qualification.
+- [2026-10-22 20:03 Pico 125 MHz](2026-10-22-200343Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 20:29 Pico 125 MHz](2026-10-22-202929Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 20:37 Pico 125 MHz](2026-10-22-203712Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 20:46 Pico 125 MHz](2026-10-22-204609Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-22 21:31 Pico 125 MHz](2026-10-22-213102Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [CDC/UART session and tuning check](2026-10-22-cdc-uart-session-validation.md): development check, not qualification.
+- [UART lifecycle optimization check](2026-10-22-uart-lifecycle-optimization.md): development check, not qualification.
+- [2026-10-23 17:00 Pico 125 MHz](2026-10-23-170002Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:12 Pico 125 MHz](2026-10-23-171221Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:14 Pico 125 MHz](2026-10-23-171456Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:16 Pico 125 MHz](2026-10-23-171632Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:20 Pico 125 MHz](2026-10-23-172029Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:21 Pico 125 MHz](2026-10-23-172156Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:24 Pico 125 MHz](2026-10-23-172425Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:26 Pico 125 MHz](2026-10-23-172600Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+- [2026-10-23 17:27 Pico 125 MHz](2026-10-23-172735Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.

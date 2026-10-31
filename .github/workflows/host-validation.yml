@@ -23,7 +23,7 @@ jobs:
         run: |
           node --check host/webhid/js/view.mjs
           node --check host/webhid/js/app.mjs
-          node --test host/webhid/tests/*.test.mjs
+          node --test host/webhid/tests/*.test.mjs host/web/tests/*.test.mjs
 
   host-apps:
     name: Host Python + .NET (${{ matrix.os }})
@@ -60,6 +60,12 @@ jobs:
         shell: bash
         run: |
           choco install ninja --no-progress -y
+          tools/validation/run-host-tests.sh --skip-python
+
+      - name: Run macOS native C tests
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v cmake >/dev/null 2>&1; then brew install cmake; fi
           tools/validation/run-host-tests.sh --skip-python
 
   host-tools:

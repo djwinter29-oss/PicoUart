@@ -47,6 +47,10 @@ RX is a live stream, not an archival logger. On overrun, the consumer advances p
 data, and records the loss. The producer never changes the consumer cursor. HID exposes overrun health and cumulative
 dropped-byte counts; see the [HID Report Reference](../usb/hid-report-reference.md).
 
+A hardware UART FIFO overrun that never reaches this ring is not one of those byte counts. The controller only latches
+a sticky receive-status flag, so firmware publishes it as an `rx_error_count` observation. That counter saturates and
+can coalesce several frames into one observation.
+
 When the TX ring is full, the bridge leaves unread CDC OUT data queued and stops reading that port until space is
 available. This preserves host-byte ordering and lets USB apply backpressure instead of silently dropping queued data.
 

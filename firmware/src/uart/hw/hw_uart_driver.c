@@ -12,6 +12,7 @@
 #include "uart/dma/progress.h"
 #include "uart/hw/baud_rate.h"
 #include "uart/hw/dma_claim.h"
+#include "uart/saturating.h"
 
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
@@ -93,11 +94,15 @@ static void hw_uart_driver_update_rts(hw_uart_driver_t *driver)
 static void hw_uart_driver_rearm_rx_dma(hw_uart_driver_t *driver)
 {
     /*
-     * Keep WRITE_ADDR / ring state and only reload TRANS_COUNT. This is the
-     * tight path that closes the software re-arm gap after the countdown
-     * exhausts. Peers that ignore RTS can still overrun the UART FIFO if
-     * re-arm is delayed into the poll loop; the DMA IRQ below restarts before
-     * the next worker sweep.
+     * Keep WRITE_ADDR / ring state and only reload TRANS_COUNT. The DMA IRQ
+     * restarts before the next worker sweep; poll remains the fallback.
+     *
+     * ponytail: one RX channel cannot cover IRQ latency before this reload.
+     * A peer that ignores RTS can drop PL011 FIFO bytes in that window. The
+     * sticky receive-status bit is one saturating `rx_error_count` observation,
+     * not a known byte count, so it stays out of `rx_overrun_count`. Double-
+     * buffered RX DMA would close the window and needs a physical HIL run
+     * first; a zero TRANS_COUNT does not self-chain.
      *
      * Use @ref uart_dma_rx_transfer_count_encoded — raw 0xffffffff is ENDLESS
      * mode on RP2350 and breaks progress publishing.
@@ -392,7 +397,7 @@ static void hw_uart_driver_record_rx_errors(hw_uart_driver_t *driver)
     errors = uart_get_hw(driver->config->instance)->rsr;
     if ((errors & UART_UARTRSR_BITS) != 0u) {
         service_load_note(1u);
-        driver->rx_error_count += 1u;
+        driver->rx_error_count = uart_saturating_add_u32(driver->rx_error_count, 1u);
         uart_get_hw(driver->config->instance)->rsr = 0u;
     }
 }

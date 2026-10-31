@@ -120,11 +120,14 @@ class PicoUartHid:
     def _read_device_info(self) -> dict[str, object]:
         if self._device_info is None:
             report = self._bounded_transfer(
-                lambda: self._require_open().get_feature_report(REPORT_ID_DEVICE_INFO, 65), COMMAND_TIMEOUT_S
+                lambda: self._require_open().get_feature_report(REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE + 1),
+                COMMAND_TIMEOUT_S,
             )
-            if not report or report[0] != REPORT_ID_DEVICE_INFO:
+            if report is None:
                 raise RuntimeError("invalid identity report ID")
-            self._device_info = parse_device_info(bytes(report[1:]))
+            self._device_info = parse_device_info(
+                require_payload(report, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE)
+            )
         return self._device_info
 
     def _bounded_transfer(self, operation: Callable[[], Any], timeout_s: float = COMMAND_TIMEOUT_S) -> Any:

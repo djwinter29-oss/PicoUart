@@ -12,7 +12,8 @@ try
     var options = Options.Parse(args);
     if (options.Command is "help" or "--help" or "-h")
     {
-        Console.WriteLine("PicoUart [--serial SERIAL | --device-path PATH] COMMAND [--port N] [--duration SECONDS] [--json]");
+        Console.WriteLine("PicoUart [--serial SERIAL | --device-path PATH] COMMAND");
+        Console.WriteLine("         [--port N] [--duration SECONDS] [--timeout SECONDS] [--json]");
         Console.WriteLine("Commands: status, monitor, overruns, hardware, config, telemetry, temperature, version, toggle-led, reset, web");
         return 0;
     }
@@ -25,8 +26,11 @@ try
     switch (options.Command)
     {
         case "status":
-            WriteJson(client.ReadStatus(1000)
-                ?? throw new InvalidOperationException("no status report arrived before timeout"));
+            var sample = StatusSnapshot.Poll(
+                client.ReadStatus, TimeSpan.FromSeconds(options.StatusTimeout))
+                ?? throw new InvalidOperationException("no status report arrived before timeout");
+            Console.WriteLine(StatusSnapshot.ToSortedJson(
+                StatusSnapshot.FromFirstSample(sample, DateTimeOffset.UtcNow)));
             break;
         case "monitor":
             using (var stop = new CancellationTokenSource())

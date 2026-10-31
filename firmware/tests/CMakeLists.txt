@@ -90,6 +90,13 @@ pico_uart_add_unity_test(test_txstall_wait txstall_wait
     test_txstall_wait.c
 )
 
+# GNU ld drops unreferenced sections. Apple ld rejects --gc-sections; -dead_strip is its equivalent.
+if(APPLE)
+    set(_pico_uart_gc_sections -Wl,-dead_strip)
+else()
+    set(_pico_uart_gc_sections -Wl,--gc-sections)
+endif()
+
 set(_pio_tx_stubs "${CMAKE_CURRENT_BINARY_DIR}/pio_tx_stubs")
 foreach(_header IN ITEMS
     hardware/pio.h hardware/clocks.h hardware/dma.h hardware/gpio.h hardware/irq.h
@@ -105,7 +112,7 @@ pico_uart_add_unity_test(test_pio_tx_driver pio_tx_driver
 )
 target_include_directories(test_pio_tx_driver BEFORE PRIVATE "${_pio_tx_stubs}")
 target_compile_options(test_pio_tx_driver PRIVATE -ffunction-sections -fdata-sections)
-target_link_options(test_pio_tx_driver PRIVATE -Wl,--gc-sections)
+target_link_options(test_pio_tx_driver PRIVATE ${_pico_uart_gc_sections})
 
 set(_hw_uart_stubs "${CMAKE_CURRENT_BINARY_DIR}/hw_uart_stubs")
 foreach(_header IN ITEMS
@@ -123,7 +130,7 @@ target_include_directories(test_hw_uart_driver BEFORE PRIVATE
     "${_hw_uart_stubs}" "${CMAKE_CURRENT_SOURCE_DIR}/support"
 )
 target_compile_options(test_hw_uart_driver PRIVATE -ffunction-sections -fdata-sections)
-target_link_options(test_hw_uart_driver PRIVATE -Wl,--gc-sections)
+target_link_options(test_hw_uart_driver PRIVATE ${_pico_uart_gc_sections})
 
 if(MINGW)
     # COFF unwind tables retain untested SDK paths despite --gc-sections.
@@ -230,8 +237,13 @@ foreach(_family IN ITEMS rp2040 rp2350 rp2040_no_reset)
         PICO_UART_BOARD_MODEL=$<IF:$<STREQUAL:${_family},rp2350>,3,1>
         PICO_UART_ALLOW_HID_RESET=$<NOT:$<STREQUAL:${_family},rp2040_no_reset>>
     )
-    target_compile_options(test_usb_hid_${_family} PRIVATE -ffunction-sections -fdata-sections -fno-pie)
-    target_link_options(test_usb_hid_${_family} PRIVATE -Wl,--gc-sections -no-pie)
+    target_compile_options(test_usb_hid_${_family} PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(test_usb_hid_${_family} PRIVATE ${_pico_uart_gc_sections})
+    if(NOT APPLE)
+        # Non-PIE lets the ELF harness take addresses of the absolute .set symbols.
+        target_compile_options(test_usb_hid_${_family} PRIVATE -fno-pie)
+        target_link_options(test_usb_hid_${_family} PRIVATE -no-pie)
+    endif()
 endforeach()
 
 # Fault-injection test: HW UART DMA claim/rollback via injectable ops seam.
@@ -264,7 +276,7 @@ target_include_directories(test_uart_driver_facade PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
 )
 target_compile_options(test_uart_driver_facade PRIVATE -ffunction-sections -fdata-sections)
-target_link_options(test_uart_driver_facade PRIVATE -Wl,--gc-sections)
+target_link_options(test_uart_driver_facade PRIVATE ${_pico_uart_gc_sections})
 
 pico_uart_add_unity_test(test_cdc_uart_integration cdc_uart_integration
     test_uart_driver_facade.c

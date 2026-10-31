@@ -17,6 +17,35 @@
 /** @brief Maximum time the worker may defer applying a line-coding change. */
 #define UART_CONTROL_PLANE_APPLY_TIMEOUT_MS 1000u
 
+/**
+ * @brief Choose the diagnostic reason for a line-coding request the worker will not apply.
+ * @param port Port that owns the request. A missing backend is a backend failure.
+ * @param line_coding Request payload. Out-of-range baud is distinct from framing.
+ * @return Baud, framing, backend, or other. Never @ref UART_CONTROL_ERROR_NONE.
+ */
+static uart_driver_control_error_t uart_control_plane_line_coding_error(const uart_runtime_port_t *port,
+                                                                        const uart_driver_line_coding_t *line_coding)
+{
+    if (line_coding == NULL) {
+        return UART_CONTROL_ERROR_OTHER;
+    }
+    if ((line_coding->baud_rate < UART_LINE_CODING_BAUD_MIN) || (line_coding->baud_rate > UART_LINE_CODING_BAUD_MAX)) {
+        return UART_CONTROL_ERROR_BAUD;
+    }
+    if (!uart_line_coding_is_valid(line_coding)) {
+        return UART_CONTROL_ERROR_FRAMING;
+    }
+    if ((port == NULL) || (port->ops == NULL)) {
+        return UART_CONTROL_ERROR_BACKEND;
+    }
+    if ((port->info.backend == UART_DRIVER_BACKEND_PIO) &&
+        ((line_coding->data_bits != 8u) || (line_coding->stop_bits != 1u) ||
+         (line_coding->parity != UART_DRIVER_PARITY_NONE))) {
+        return UART_CONTROL_ERROR_FRAMING;
+    }
+    return UART_CONTROL_ERROR_BAUD;
+}
+
 static bool uart_control_plane_mailbox_has_pending_port(const uart_control_plane_t *control_plane,
                                                         uart_port_id_t port_id)
 {
@@ -72,12 +101,12 @@ static void uart_control_plane_finish_worker_control(uart_control_plane_t *contr
 static void uart_control_plane_finish_mailbox_control(uart_control_plane_t *control_plane, uart_port_id_t port_id,
                                                       uint32_t control_generation, bool success,
                                                       bool drop_provisional_pending, uint32_t worker_generation,
-                                                      bool complete_worker)
+                                                      bool complete_worker, uart_driver_control_error_t error)
 {
     uint32_t save = spin_lock_blocking(control_plane->status_lock);
 
     if (!success) {
-        uart_control_record_error(&control_plane->ports[port_id], UART_CONTROL_ERROR_OTHER);
+        uart_control_record_error(&control_plane->ports[port_id], error);
     }
     if (drop_provisional_pending || complete_worker) {
         control_plane->pending_controls[port_id].pending = false;
@@ -202,7 +231,8 @@ static void uart_control_plane_set_line_coding(uart_control_plane_t *control_pla
     pending_control = &control_plane->pending_controls[port_id];
     if (!uart_line_coding_is_valid(&request->line_coding)) {
         uart_control_plane_finish_mailbox_control(control_plane, port_id, request->control_generation, false,
-                                                  !prior_pending, 0u, false);
+                                                  !prior_pending, 0u, false,
+                                                  uart_control_plane_line_coding_error(port, &request->line_coding));
         return;
     }
 
@@ -219,13 +249,15 @@ static void uart_control_plane_set_line_coding(uart_control_plane_t *control_pla
         port->info.parity = request->line_coding.parity;
         spin_unlock(control_plane->status_lock, save);
         uart_control_plane_finish_mailbox_control(control_plane, port_id, request->control_generation, true,
-                                                  !was_pending, pending_control->control_generation, was_pending);
+                                                  !was_pending, pending_control->control_generation, was_pending,
+                                                  UART_CONTROL_ERROR_NONE);
         return;
     }
 
     if ((port->ops == NULL) || !port->ops->line_coding_acceptable(&request->line_coding)) {
         uart_control_plane_finish_mailbox_control(control_plane, port_id, request->control_generation, false,
-                                                  !prior_pending, 0u, false);
+                                                  !prior_pending, 0u, false,
+                                                  uart_control_plane_line_coding_error(port, &request->line_coding));
         return;
     }
 
@@ -278,7 +310,7 @@ void uart_control_plane_service(uart_control_plane_t *control_plane)
 
         if (request.port_id != (uint32_t)index) {
             uart_control_plane_finish_mailbox_control(control_plane, (uart_port_id_t)index, request.control_generation,
-                                                      false, !prior_pending, 0u, false);
+                                                      false, !prior_pending, 0u, false, UART_CONTROL_ERROR_OTHER);
             continue;
         }
 

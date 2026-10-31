@@ -123,6 +123,8 @@ def parse_control(payload: bytes) -> dict[str, object]:
     if status == STATUS_IDLE:
         if action != 0:
             raise RuntimeError("idle result must have action zero")
+    elif status == STATUS_FAILED and action != COMMAND_SAVE_CONFIGURATION:
+        raise RuntimeError("invalid control action")
     elif action not in (1, 2, 3, 4):
         if action != 0 or (status, error) not in ((STATUS_INVALID, 1), (STATUS_UNSUPPORTED, 5)):
             raise RuntimeError("invalid control action")
@@ -208,8 +210,13 @@ def parse_diagnostic(payload: bytes, configuration: dict[str, object] | None = N
     return result
 
 
-def require_payload(report: list[int], report_id: int, payload_size: int) -> bytes:
+def require_payload(report: list[int] | None, report_id: int, payload_size: int) -> bytes:
     """Validate a report-ID-prefixed HID report and return its payload."""
+    if report is None:
+        raise RuntimeError(
+            f"unexpected report {report_id}: expected {payload_size + 1} bytes with report ID prefix, "
+            "received no report"
+        )
     if len(report) != payload_size + 1 or report[0] != report_id:
         raise RuntimeError(
             f"unexpected report {report_id}: expected {payload_size + 1} bytes with report ID prefix, "
