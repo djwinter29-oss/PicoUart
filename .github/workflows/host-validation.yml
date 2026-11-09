@@ -21,8 +21,8 @@ jobs:
 
       - name: Check Direct Dashboard page and client
         run: |
-          node --check host/direct/js/view.mjs
-          node --check host/direct/js/app.mjs
+          node --check host/direct/src/js/view.mjs
+          node --check host/direct/src/js/app.mjs
           node --test host/direct/tests/*.test.mjs host/web/tests/*.test.mjs
 
   host-apps:

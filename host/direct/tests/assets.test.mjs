@@ -6,7 +6,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const root = fileURLToPath(new URL("../", import.meta.url));
+const root = fileURLToPath(new URL("../src/", import.meta.url));
 
 test("Direct Dashboard branding appears in browser and accessible headings", () => {
   const html = readFileSync(join(root, "index.html"), "utf8");
@@ -29,7 +29,8 @@ test("HTML references only WebHID-owned assets", () => {
 
 for (const frontend of ["web", "direct"]) {
   test(`${frontend} keeps board configuration in a compact summary with a heading action`, () => {
-    const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
+    const sourceRoot = new URL(frontend === "web" ? "../../web/src/" : "../src/", import.meta.url);
+    const html = readFileSync(new URL("index.html", sourceRoot), "utf8");
     const section = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
     if (frontend === "direct") {
       const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
@@ -60,10 +61,10 @@ for (const frontend of ["web", "direct"]) {
       assert.match(section, /<label for="clock-profile">Stored boot profile<\/label>/);
     }
     assert.doesNotMatch(section, /configuration-panel|configuration-note|configuration-status|configuration-detail/);
-    const styles = readFileSync(new URL(`../../${frontend}/css/${frontend === "web" ? "dashboard" : "direct"}.css`,
-      import.meta.url), "utf8");
+    const styles = readFileSync(new URL(`css/${frontend === "web" ? "dashboard" : "direct"}.css`,
+      sourceRoot), "utf8");
     if (frontend === "direct") {
-      const sharedStyles = readFileSync(new URL("../css/dashboard.css", import.meta.url), "utf8");
+      const sharedStyles = readFileSync(new URL("../src/css/dashboard.css", import.meta.url), "utf8");
       const channels = html.match(/<section class="channels-section"[\s\S]*?<\/section>/)[0];
       assert.match(channels, /<th scope="col">Channel status<\/th>\s*<th scope="col">UART configuration<\/th>/);
       assert.match(styles, /#configuration-profile\s*\{[^}]*width:\s*100%;/);

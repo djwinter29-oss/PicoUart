@@ -12,8 +12,10 @@ for publisher setup, manual tests, retries, and rollback. Published host artifac
 | .NET | Self-contained archives on GitHub Releases, with no installed .NET runtime required | Linux `.deb`, signed Windows `.msi`, signed and notarized macOS `.app` |
 | Direct Dashboard | Static HTTPS site on GitHub Pages | Downloadable static archive; no application installer or backend planned |
 
-Keep Python/.NET assets in their existing shared frontend. The Direct Dashboard remains independent, with all deployable
-files in `host/direct`; do not introduce a shared asset-generation or preparation step.
+Python/.NET package only the shared frontend assets in `host/web/src`; shared tests remain in `host/web/tests`.
+The Direct Dashboard remains independent, with all deployable
+files in `host/direct/src`; tests remain in `host/direct/tests`. Do not introduce a shared asset-generation or
+preparation step.
 
 ## Python Publication
 
@@ -60,7 +62,7 @@ for the later phase, not part of the initial archive rollout.
 
 ## Direct Dashboard Hosting
 
-The [hosted dashboard](https://djwinter29-oss.github.io/PicoUart/) uses the standalone `host/direct` assets over HTTPS.
+The [hosted dashboard](https://djwinter29-oss.github.io/PicoUart/) uses the standalone `host/direct/src` assets over HTTPS.
 Packaging stamps its visible version without introducing shared frontend generation. Normal release deployment and
 explicit live-site test deployment are separate modes; see the [Pages runbook](host-app-publishing.md#direct-dashboard-pages).
 

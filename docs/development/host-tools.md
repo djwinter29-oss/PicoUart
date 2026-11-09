@@ -50,7 +50,7 @@ libusb. Boards left detached by an older client need a USB reconnect after that 
 ## Python Layout
 
 The installable package lives in `host/python/src/pico_uart`; use its public API rather than adding another top-level
-compatibility module. Python and .NET share the frontend in `host/web`. Keep framework-specific behavior in each backend
+compatibility module. Python and .NET share the frontend in `host/web/src`. Keep framework-specific behavior in each backend
 and the shared assets backend-neutral.
 
 ## Python Tests
@@ -217,7 +217,7 @@ The nested package searches parent directories for the repository; fetch full hi
 Source distributions preserve the resolved version without Git. With neither Git metadata nor a source-distribution
 version, the fallback is `0.0.0.dev0`. Use `SETUPTOOLS_SCM_PRETEND_VERSION` for an explicit test-build version.
 
-`hatch_build.py` bundles the canonical `host/web` assets so source distributions build without the rest of the
+`hatch_build.py` bundles the canonical `host/web/src` assets so source distributions build without the rest of the
 repository.
 Package tests require the repository checkout and are not included in source distributions or wheels.
 Hatchling, its VCS plugin, and the editable-install helper are included in the locked development environment.
@@ -245,7 +245,8 @@ Its JSON matches the Python `channels` snapshot in [Python test automation](#pyt
 `monitor` still prints one channel object per line.
 On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
 The C# `PicoUartHid` class owns a connection and implements `IDisposable`; `Protocol` provides typed report decoders.
-Python and .NET share `host/web`; keep frontend changes backend-neutral rather than adding a separate C# frontend.
+Python and .NET share `host/web/src`; tests live in `host/web/tests`. Keep frontend changes backend-neutral rather than
+adding a separate C# frontend.
 
 Build and run the hardware-free unit suite:
 
@@ -285,10 +286,10 @@ in the [.NET host guide](../../host/dotnet/README.md#install).
 
 ## Direct Dashboard Development
 
-The Direct Dashboard uses WebHID and is a standalone browser app in `host/direct`, independent of the Python/.NET server
-and shared
-`host/web` frontend. Its HTML, CSS, favicon, and renderer are owned by that directory; no shared asset-generation step
-or files from `host/web` are required. Browser connection and troubleshooting belong in the
+The Direct Dashboard uses WebHID and is a standalone browser app in `host/direct/src`, independent of the Python/.NET
+server and shared `host/web/src` frontend. Tests live in `host/direct/tests`. Its HTML, CSS, favicon, and renderer are owned
+by the source directory; no shared asset-generation step
+or files from `host/web/src` are required. Browser connection and troubleshooting belong in the
 [Direct Dashboard user guide](../../host/direct/README.md).
 
 <a id="run-webhid-from-a-checkout"></a>
@@ -305,7 +306,7 @@ Open <http://127.0.0.1:8000/>. Use `--port N` to choose another port. Without a 
 with Python 3:
 
 ```sh
-python -m http.server 8000 --bind 127.0.0.1 --directory host/direct
+python -m http.server 8000 --bind 127.0.0.1 --directory host/direct/src
 ```
 
 The server only delivers files; native HID access is still to the browser computer's USB devices. Do not open the HTML
@@ -318,8 +319,8 @@ Pages workflow stamps it during packaging. Release gates and deployment/rollback
 Run the hardware-free browser checks used by CI:
 
 ```sh
-node --check host/direct/js/view.mjs
-node --check host/direct/js/app.mjs
+node --check host/direct/src/js/view.mjs
+node --check host/direct/src/js/app.mjs
 node --test host/direct/tests/*.test.mjs
 ```
 
@@ -338,7 +339,7 @@ native browser/OS USB compatibility; see the [hardware test index](../tests/READ
 
 The backend label and **App v** version share a secondary line beneath **PicoUart** in the top bar. This identifies the
 host application, not the board's firmware. Python obtains its installed version through `importlib.metadata`; .NET
-uses its assembly informational version. The backends pass these values into the shared HTML template; `host/web`
+uses its assembly informational version. The backends pass these values into the shared HTML template; `host/web/src`
 contains no application version metadata. Tagged Python builds derive their package version from Git through
 `hatch-vcs`; .NET builds use `dotnet publish -p:Version=...`.
 `PICO_UART_HOST_VERSION` is only an optional runtime display override; an unset or empty value uses native build
@@ -347,7 +348,7 @@ Python Git checkouts produce VCS-derived versions; the no-Git fallback `0.0.0.de
 .NET uses `0.0.0-debug` for development. Reinstall an editable Python package after commits or tags change its version.
 None of these settings changes the board's firmware version.
 
-Python and .NET serve the same frontend from `host/web`. Keep templates backend-neutral and preserve the shared JSON
+Python and .NET serve the same frontend from `host/web/src`. Keep templates backend-neutral and preserve the shared JSON
 contract; do not add a second frontend. The [.NET integration tests](../../tests/tooling/test_dotnet_host.py) guard
 shared assets and API behavior. Distribution details belong in the [Python](../../host/python/README.md) and
 [.NET](../../host/dotnet/README.md) guides.

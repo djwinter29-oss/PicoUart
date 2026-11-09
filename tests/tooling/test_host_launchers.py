@@ -104,7 +104,7 @@ def test_legacy_launcher_forwards_arguments_and_exit_status(launchers):
     result = invoke(launchers, "run-webhid.sh", "--port", "8123", APP_STATUS="7")
     assert result.returncode == 7
     assert calls(launchers)[0]["args"] == [
-        "-m", "http.server", "8123", "--bind", "127.0.0.1", "--directory", str(launchers[0] / "host/direct"),
+        "-m", "http.server", "8123", "--bind", "127.0.0.1", "--directory", str(launchers[0] / "host/direct/src"),
     ]
 
 
@@ -188,7 +188,7 @@ def test_webhid_uses_loopback_and_its_own_assets(launchers, args, port):
     result = invoke(launchers, "run-direct.sh", *args)
     assert result.returncode == 0, result.stderr
     assert calls(launchers)[0]["args"] == [
-        "-m", "http.server", port, "--bind", "127.0.0.1", "--directory", str(launchers[0] / "host/direct"),
+        "-m", "http.server", port, "--bind", "127.0.0.1", "--directory", str(launchers[0] / "host/direct/src"),
     ]
     assert not Path(launchers[3]["VENV_DIR"]).exists()
 

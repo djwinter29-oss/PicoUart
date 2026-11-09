@@ -9,7 +9,7 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 class CustomBuildHook(BuildHookInterface):
     def initialize(self, version, build_data):
-        shared_web = Path(self.root).parent / "web"
+        shared_web = Path(self.root).parent / "web" / "src"
         assets = shared_web if shared_web.is_dir() else Path(self.root) / "src/pico_uart/web/assets"
         for name in ("index.html", "css/dashboard.css", "js/dashboard.js", "favicon.svg"):
             if not (assets / name).is_file():

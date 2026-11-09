@@ -19,7 +19,7 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
     """Create the web app; an injected service keeps route tests hardware-free."""
     web_root = Path(__file__).parent / "assets"
     if not web_root.is_dir():
-        web_root = Path(__file__).resolve().parents[4] / "web"
+        web_root = Path(__file__).resolve().parents[4] / "web" / "src"
     try:
         packaged_version = distribution_version("pico-uart")
     except PackageNotFoundError:

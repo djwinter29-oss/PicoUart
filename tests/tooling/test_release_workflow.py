@@ -389,9 +389,9 @@ def test_webhid_pages_stamps_only_valid_host_versions(tmp_path, version, success
     text = (REPO_ROOT / ".github/workflows/publish-direct.yml").read_text(encoding="utf-8")
     step = text.split("- name: Stamp Direct Dashboard version\n", 1)[1].split("\n      - name:", 1)[0]
     script = textwrap.dedent(step.split("<<'JS'\n", 1)[1].rsplit("\n          JS", 1)[0])
-    target = tmp_path / "host/direct/index.html"
+    target = tmp_path / "host/direct/src/index.html"
     target.parent.mkdir(parents=True)
-    original = (REPO_ROOT / "host/direct/index.html").read_text(encoding="utf-8")
+    original = (REPO_ROOT / "host/direct/src/index.html").read_text(encoding="utf-8")
     target.write_text(original, encoding="utf-8")
     result = subprocess.run([node, "--input-type=module", "-"], input=script, text=True,
                             capture_output=True, cwd=tmp_path, env={**os.environ, "HOST_VERSION": version})
@@ -405,7 +405,9 @@ def test_webhid_pages_deploys_only_the_independent_site_with_scoped_permissions(
     text = (REPO_ROOT / ".github/workflows/publish-direct.yml").read_text(encoding="utf-8")
     build, deploy = text.split("\n  deploy:\n", 1)
 
-    assert "path: host/direct" in build
+    assert "path: host/direct/src\n" in build
+    assert "path: host/direct\n" not in build
+    assert "path: host/direct/tests" not in build
     assert "path: host/web\n" not in text
     assert "needs: build" in deploy
     assert "pages: write" not in build

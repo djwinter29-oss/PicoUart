@@ -6,7 +6,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 function fixture(secure = true, hid = {}) {
-  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [
     `#${id}`, { textContent: "", dataset: {}, parentElement: { dataset: {} },
       children: [], value: "", checked: false, disabled: false, open: false,
@@ -45,7 +45,7 @@ function fixture(secure = true, hid = {}) {
       this.render(this.state);
     }
   }
-  const source = readFileSync(new URL("../js/app.mjs", import.meta.url), "utf8")
+  const source = readFileSync(new URL("../src/js/app.mjs", import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "");
   let polling;
   let agePolling;

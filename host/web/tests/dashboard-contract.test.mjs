@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const dashboard = await readFile(new URL("../js/dashboard.js", import.meta.url), "utf8");
-const stylesheet = await readFile(new URL("../css/dashboard.css", import.meta.url), "utf8");
-const markup = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const dashboard = await readFile(new URL("../src/js/dashboard.js", import.meta.url), "utf8");
+const stylesheet = await readFile(new URL("../src/css/dashboard.css", import.meta.url), "utf8");
+const markup = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
 
 test("Python and .NET share the Dashboard page heading", () => {
   assert.match(markup, /<h1>Dashboard<\/h1>/);

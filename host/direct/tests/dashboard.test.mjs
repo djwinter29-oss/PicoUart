@@ -5,10 +5,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
-const script = readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8");
+const html = readFileSync(new URL("../../web/src/index.html", import.meta.url), "utf8");
+const script = readFileSync(new URL("../../web/src/js/dashboard.js", import.meta.url), "utf8");
 test("host versions belong to the wordmark rather than the page heading", () => {
-  for (const path of ["../../web/index.html", "../index.html"]) {
+  for (const path of ["../../web/src/index.html", "../src/index.html"]) {
     const page = readFileSync(new URL(path, import.meta.url), "utf8");
     assert.match(page, /class="wordmark"[\s\S]*?id="host-version"[\s\S]*?<\/a>/);
     assert.match(page, /<strong>PicoUart<\/strong>\s*<span class="brand-meta"><small>[^<]+<\/small>\s*<span class="host-version"/);

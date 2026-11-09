@@ -79,7 +79,7 @@ def test_python_version_comes_from_parent_git_repository(python_project, tmp_pat
 @pytest.mark.parametrize("location", ["shared", "bundled"])
 @pytest.mark.parametrize("missing", [None, "index.html", "css/dashboard.css", "js/dashboard.js", "favicon.svg"])
 def test_python_build_rejects_missing_dashboard_assets(python_project, tmp_path, location, missing):
-    assets = python_project.parent / "web"
+    assets = python_project.parent / "web" / "src"
     if location == "bundled":
         bundled = python_project / "src/pico_uart/web/assets"
         shutil.move(str(assets), str(bundled))
@@ -141,8 +141,8 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
     )
     assert result.returncode == 0, result.stdout + result.stderr
     expected_assets = {
-        f"pico_uart/web/assets/{asset.relative_to(repo_root / 'host/web').as_posix()}": asset.read_bytes()
-        for asset in (repo_root / "host/web").rglob("*")
+        f"pico_uart/web/assets/{asset.relative_to(repo_root / 'host/web/src').as_posix()}": asset.read_bytes()
+        for asset in (repo_root / "host/web/src").rglob("*")
         if asset.is_file() and "__pycache__" not in asset.parts and asset.suffix != ".pyc"
     }
     license_text = (project / "LICENSE").read_bytes()
@@ -157,5 +157,6 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
             assert wheel.read(f"pico_uart-{expected_version}.dist-info/licenses/LICENSE") == license_text
             for name, content in expected_assets.items():
                 assert wheel.read(name) == content
+            assert {name for name in wheel.namelist() if name.startswith("pico_uart/web/assets/")} == set(expected_assets)
             assert not any(name.startswith(("tests/", "pico_uart/tests/")) for name in wheel.namelist())
             assert not any("__pycache__" in name or name.endswith(".pyc") for name in wheel.namelist())

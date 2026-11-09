@@ -103,7 +103,7 @@ def packaged_version(request):
 
 def test_published_dotnet_serves_the_canonical_frontend(server, host_version, packaged_version):
     token, _, headers, page = session(server)
-    template = (ROOT / "host/web/index.html").read_bytes()
+    template = (ROOT / "host/web/src/index.html").read_bytes()
     expected_version = html.escape(host_version or packaged_version).encode()
     assert page == template.replace(b"{{ csrf_token }}", token.encode()).replace(
         b"{{ dashboard_type }}", b".NET").replace(b"{{ host_version }}", expected_version)
@@ -121,11 +121,19 @@ def test_published_dotnet_serves_the_canonical_frontend(server, host_version, pa
     for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
         status, asset_headers, payload = request(server, f"/{path}")
         assert status == 200
-        assert payload == (ROOT / "host/web" / path).read_bytes()
+        assert payload == (ROOT / "host/web/src" / path).read_bytes()
         if path == "favicon.svg":
             assert asset_headers["Content-Type"].split(";", 1)[0] == "image/svg+xml"
     for path in ("index.html", "css/index.html", "js/index.html", "css/../index.html", "js/../index.html"):
         assert request(server, f"/{path}")[0] == 404
+
+
+def test_dotnet_packages_only_shared_source_assets(published_host):
+    assets = published_host / "web"
+    assert {path.relative_to(assets) for path in assets.rglob("*") if path.is_file()} == {
+        path.relative_to(ROOT / "host/web/src")
+        for path in (ROOT / "host/web/src").rglob("*") if path.is_file()
+    }
 
 
 def test_dotnet_refresh_interval_matches_python_default(server):

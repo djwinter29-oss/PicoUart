@@ -49,4 +49,4 @@ if ! command -v "$PYTHON_EXE" >/dev/null 2>&1; then
     echo "Python interpreter not found: $PYTHON_EXE" >&2
     exit 1
 fi
-exec "$PYTHON_EXE" -m http.server "$PORT" --bind 127.0.0.1 --directory "$REPO_ROOT/host/direct"
+exec "$PYTHON_EXE" -m http.server "$PORT" --bind 127.0.0.1 --directory "$REPO_ROOT/host/direct/src"

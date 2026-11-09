@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { decodeBoardConfiguration, DEVICE_FILTER, identityDiscoveryLength, matchesPicoUart,
-  PicoUartWebHid } from "../js/device.mjs";
+  PicoUartWebHid } from "../src/js/device.mjs";
 
 test("WebHID accepts valid distinct UART and CDC buffer capacities", () => {
   const bytes = new Uint8Array(36);

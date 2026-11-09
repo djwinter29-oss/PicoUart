@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
-import { renderDashboard, updateReportAge } from "../js/view.mjs";
+import { renderDashboard, updateReportAge } from "../src/js/view.mjs";
 
 class Element {
   constructor(tag = "") {
@@ -51,7 +51,7 @@ function fixture(html) {
 }
 
 test("webhid report age text tracks freshness", () => {
-  const html = readFileSync(new URL("../../direct/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   globalThis.document = document;
   try {
@@ -71,7 +71,7 @@ test("webhid report age text tracks freshness", () => {
 });
 
 test("webhid render updates live cells without replacing diagnostics buttons", () => {
-  const html = readFileSync(new URL("../../direct/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   globalThis.document = document;
   try {
@@ -208,7 +208,7 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
 });
 
 test("host web runtime section reflects service-load terminology", () => {
-  const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../../web/src/index.html", import.meta.url), "utf8");
   const runtime = html.match(/<section aria-labelledby="runtime-title">([\s\S]*?)<\/section>/)[1];
   assert.ok(runtime.includes("Service load (Core 0 / Core 1)"));
   assert.ok(runtime.includes("Board temperature"));
@@ -216,14 +216,14 @@ test("host web runtime section reflects service-load terminology", () => {
 });
 
 test("host web updateReportAge keeps telemetry wording", () => {
-  const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../../web/src/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   const context = vm.createContext({
     document,
     fetch: () => new Promise(() => {}),
     window: { setInterval() {}, clearInterval() {} },
   });
-  vm.runInContext(readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8"), context);
+  vm.runInContext(readFileSync(new URL("../../web/src/js/dashboard.js", import.meta.url), "utf8"), context);
   context.data = { connected: true, updated_at: "2026-01-01T00:00:00.000Z" };
   context.now = Date.parse("2026-01-01T00:00:00.000Z");
   vm.runInContext("updateReportAge(data, now)", context);

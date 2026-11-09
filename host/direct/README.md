@@ -87,6 +87,7 @@ Installing an OS access rule may require administrator approval in the OS; do no
 
 ## Documentation
 
+- Source assets live in `src/`; automated checks live in `tests/`. Serve or publish only `src/`, with no build step.
 - [Project, firmware, and wiring](../../README.md)
 - [Host development and source-checkout setup](../../docs/development/host-tools.md#direct-dashboard-development)
 - [HID report reference and compatibility](../../docs/design/usb/hid-report-reference.md)

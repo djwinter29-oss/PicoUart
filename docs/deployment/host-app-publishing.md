@@ -102,7 +102,7 @@ run gets a new version; rerunning the same run retains its version and fails if 
 
 ## Direct Dashboard Pages
 
-The [Pages workflow](../../.github/workflows/publish-direct.yml) publishes the independent app from `host/direct`.
+The [Pages workflow](../../.github/workflows/publish-direct.yml) publishes the independent app from `host/direct/src`.
 It neither deploys nor modifies the shared Python/.NET frontend. Normal deployment follows successful completion of a
 tag-push Release run and verifies its published, non-prerelease release. Failed builds and manual preflights do not
 change the live site.
@@ -122,7 +122,7 @@ authoritative if Pages settings or the repository name changes.
 
 After the tag-push Release run succeeds, the Pages workflow validates the published release and shared gates, rejects a
 moved tag, checks out the gate-validated commit, and runs WebHID checks. It stamps the
-visible app version from the tag without its leading `v`, then uploads only `host/direct`. Deployments are serialized.
+visible app version from the tag without its leading `v`, then uploads only `host/direct/src`. Deployments are serialized.
 
 For redeployment or rollback, use **Actions > Publish Direct Dashboard Pages > Run workflow** with the already-published **tag**
 and **test_publish** unchecked. Drafts, prereleases, and tags outside the release policy are rejected. The selected
