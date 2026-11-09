@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 export const DEVICE_FILTER = Object.freeze({
-  vendorId: 0xcafe,
-  productId: 0x4010,
+  vendorId: 0x2e8a,
+  productId: 0x116b,
 });
 
 const PRODUCT_ID_PICOUART = 1;

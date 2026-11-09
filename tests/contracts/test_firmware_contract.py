@@ -51,6 +51,7 @@ def test_runtime_lock_matches_runtime_pins_without_test_dependencies(repo_root):
 
 def test_usb_ids_parse_from_firmware_defines(repo_root):
     vid, pid = firmware_usb_ids(repo_root)
+    assert (vid, pid) == (0x2E8A, 0x116B)
     assert vid == hid.VENDOR_ID
     assert pid == hid.PRODUCT_ID
 

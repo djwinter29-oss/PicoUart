@@ -115,10 +115,10 @@ test("WebHID normalizes Report ID prefixes on Input snapshots", () => {
 });
 
 test("WebHID discovery filters by PicoUart VID/PID and leaves descriptor validation to connection", () => {
-  assert.deepEqual(DEVICE_FILTER, { vendorId: 0xcafe, productId: 0x4010 });
-  assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4010, collections: [] }), true);
-  assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4011 }), false);
-  assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4010 }), true);
+  assert.deepEqual(DEVICE_FILTER, { vendorId: 0x2e8a, productId: 0x116b });
+  assert.equal(matchesPicoUart({ vendorId: 0x2e8a, productId: 0x116b, collections: [] }), true);
+  assert.equal(matchesPicoUart({ vendorId: 0x2e8a, productId: 0x116c }), false);
+  assert.equal(matchesPicoUart({ vendorId: 0x2e8a, productId: 0x116b }), true);
 });
 
 test("WebHID chooser requests PicoUart vendor devices before exact product validation", async () => {
@@ -126,7 +126,7 @@ test("WebHID chooser requests PicoUart vendor devices before exact product valid
   const hid = { addEventListener() {}, requestDevice: async options => { requests.push(options); return []; } };
   const client = new PicoUartWebHid(hid);
   await client.connect();
-  assert.deepEqual(requests, [{ filters: [{ vendorId: 0xcafe }] }]);
+  assert.deepEqual(requests, [{ filters: [{ vendorId: 0x2e8a }] }]);
   assert.equal(client.state.phase, "disconnected");
 });
 

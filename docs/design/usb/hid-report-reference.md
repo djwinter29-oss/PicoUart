@@ -31,7 +31,8 @@ DTR closes stop bridging and request worker-owned backend shutdown. Closed chann
 initializing. DTR state is also checked for configuration-save safety.
 
 The interface uses vendor usage page `0xFF00`, vendor usage `0x01`, and no boot protocol. The device is identified
-as USB `cafe:4010` (the project's unallocated lab identity, permitted for published project artifacts).
+as USB `2e8a:116b`, allocated to PicoUart by the Raspberry Pi Foundation
+([official allocation list](https://github.com/raspberrypi/usb-pid)).
 One HID interface follows the twelve CDC control/data interfaces. The USB product name is `PicoUart`.
 CDC interface strings advertise backend limits: `CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
 

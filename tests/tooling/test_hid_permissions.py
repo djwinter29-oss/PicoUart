@@ -69,7 +69,7 @@ def invoke(permissions, name, *args, **overrides):
     )
 
 
-def add_device(permissions, product="4010", vendor="cafe"):
+def add_device(permissions, product="116b", vendor="2e8a"):
     _, dev, sysfs, _, env = permissions
     parent = sysfs / "devices/usb/target"
     child = parent / "interface/hidraw/hidraw0"
@@ -115,7 +115,7 @@ def test_denied_matching_nodes_are_reported_including_hidraw_ancestor(permission
     assert "hid-permissions-setup.sh" in result.stderr
 
 
-@pytest.mark.parametrize("vendor,product", [("cafe", "4011"), ("2e8a", "000c"), ("1234", "4010")])
+@pytest.mark.parametrize("vendor,product", [("2e8a", "116c"), ("2e8a", "000c"), ("1234", "116b")])
 def test_unrelated_devices_are_ignored(permissions, vendor, product):
     for node in add_device(permissions, product, vendor):
         node.chmod(0o000)
@@ -137,7 +137,7 @@ def test_setup_installs_scoped_rules_idempotently_and_reloads(permissions):
     assert len(content.splitlines()) == 2
     assert 'ENV{DEVTYPE}=="usb_device"' in content
     assert 'SUBSYSTEM=="hidraw"' in content
-    assert content.count('"cafe"') == content.count('"4010"') == 2
+    assert content.count('"2e8a"') == content.count('"116b"') == 2
     assert content.count('GROUP="4321"') == content.count('MODE="0660"') == 2
     assert content.count('TAG+="uaccess"') == 2
     assert rule.stat().st_mode & 0o777 == 0o644
@@ -147,7 +147,7 @@ def test_setup_installs_scoped_rules_idempotently_and_reloads(permissions):
     commands = [json.loads(line) for line in Path(permissions[4]["UDEV_LOG"]).read_text().splitlines()]
     assert commands[:4] == [
         ["control", "--reload-rules"],
-        ["trigger", "--subsystem-match=usb", "--attr-match=idVendor=cafe", "--attr-match=idProduct=4010"],
+        ["trigger", "--subsystem-match=usb", "--attr-match=idVendor=2e8a", "--attr-match=idProduct=116b"],
         ["trigger", "--subsystem-match=hidraw"], ["settle"],
     ]
 
@@ -164,6 +164,21 @@ def test_setup_preserves_custom_rules_and_symlinks(permissions):
     assert rule.is_symlink()
     assert not destination.exists()
     assert not Path(permissions[4]["UDEV_LOG"]).exists()
+
+
+def test_setup_migrates_generated_legacy_rules(permissions):
+    rule = permissions[3]
+    rule.write_text(
+        'SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="cafe", '
+        'ATTR{idProduct}=="4010", GROUP="4321", MODE="0660", TAG+="uaccess"\n'
+        'SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ATTRS{idVendor}=="cafe", '
+        'ATTRS{idProduct}=="4010", GROUP="4321", MODE="0660", TAG+="uaccess"'
+    )
+    result = invoke(permissions, "setup")
+    assert result.returncode == 0, result.stderr
+    content = rule.read_text()
+    assert content.count('"2e8a"') == content.count('"116b"') == 2
+    assert "cafe" not in content
 
 
 def test_setup_escalates_only_when_needed_and_requires_an_invoking_account(permissions):

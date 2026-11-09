@@ -77,14 +77,15 @@ Test versions are not HIL qualification or proof that the full test suite passed
 
 ## Security Reporting Setup
 
-Before publishing, enable private vulnerability reporting in repository settings and handle reports privately. User
-instructions and device-security notes are in [`SECURITY.md`](../../SECURITY.md).
+Before publishing, enable private vulnerability reporting in repository settings and handle reports privately.
+Reporting instructions are in [`SECURITY.md`](../../SECURITY.md).
 
 ## USB identity
 
-PicoUart artifacts use `cafe:4010`, an unallocated lab identity. Do not reuse it commercially; derivatives need an
-allocated VID/PID and must treat the identity change as a breaking USB change. See [`SECURITY.md`](../../SECURITY.md)
-and the USB identity contract tests before publishing.
+PicoUart artifacts use the Raspberry Pi Foundation-allocated identity `2e8a:116b`, listed in the
+[official USB PID allocations](https://github.com/raspberrypi/usb-pid). Do not reuse it for other products; derivatives
+need their own allocated VID/PID. Any identity change is a breaking USB change. See
+the USB identity contract tests before publishing.
 
 ## Release HIL Gates
 

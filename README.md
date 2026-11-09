@@ -196,8 +196,6 @@ qualification; results apply only to the exact artifacts and conditions recorded
 
 [BSD 3-Clause](LICENSE).
 
-The USB identity `cafe:4010` is for development/lab use, not commercial derivatives. See [SECURITY.md](SECURITY.md).
-
 ## Photo Credits
 
 Pico photo by Misael Reséndiz

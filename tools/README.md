@@ -79,10 +79,18 @@ tools/host/hid-permissions-check.sh
 ```
 
 Setup requests sudo, installs `/etc/udev/rules.d/70-picouart-hid.rules`, reloads udev, and reapplies rules to attached
-devices. The rules grant read/write access only to PicoUart `cafe:4010` USB and hidraw nodes through the invoking user's
-primary group, plus desktop-session `uaccess`. Group membership is not changed; SSH users need no fresh login.
-The USB rule supports libusb-backed hidapi; the hidraw rule supports HID clients and WebHID. CDC serial permissions and
-Debug Probe access are unchanged. Customized existing rules are never overwritten.
+devices. The rules grant read/write access only to PicoUart USB and hidraw nodes with VID `0x2E8A` and PID `0x116B`
+([official allocation list](https://github.com/raspberrypi/usb-pid)) through the invoking user's primary group,
+plus desktop-session `uaccess`. Existing unmodified rules generated for the retired `cafe:4010` identity
+are migrated automatically; customized rules are never overwritten. Group membership is not changed; SSH users need no
+fresh login. The USB rule supports libusb-backed hidapi; the hidraw rule supports HID clients and WebHID. CDC serial
+permissions and Debug Probe access are unchanged.
+
+HID access permits board-control commands as well as diagnostics, including reboot when firmware advertises that
+capability. This is local USB access on the connected computer; a process or SSH session with the same device
+permissions can use it. Serial-port group membership (such as `dialout`) does not itself grant HID access.
+See the [HID control contract](../docs/design/usb/hid-report-reference.md#action-validation-and-execution) and
+[firmware build options](../firmware/build-and-config.md) for reboot behavior and how to disable standalone HID reboot.
 
 If access is still denied, reconnect the board and rerun the check. With no connected board the check succeeds; this is
 not a connectivity test. On systems without udev it warns and skips checking. Both helpers are no-ops on non-Linux hosts.

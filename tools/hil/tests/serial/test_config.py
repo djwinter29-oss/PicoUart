@@ -239,7 +239,7 @@ def test_fixture_readiness_rejects_unidentified_swapped_or_mixed_board_endpoints
                                     expected_channels={"cdc0": 0, "cdc1": 1})
 
 
-@pytest.mark.parametrize("vendor, interface_number, expected", [("cafe", "04", ("BOARD-SERIAL", 2)),
+@pytest.mark.parametrize("vendor, interface_number, expected", [("2e8a", "04", ("BOARD-SERIAL", 2)),
                                                                ("1234", "04", None)])
 def test_pico_endpoint_uses_usb_interface_not_tty_ordinal(monkeypatch, tmp_path, vendor, interface_number, expected):
     serial_port = _load_serial_config()
@@ -247,7 +247,7 @@ def test_pico_endpoint_uses_usb_interface_not_tty_ordinal(monkeypatch, tmp_path,
     interface = usb / "interface"
     interface.mkdir(parents=True)
     (usb / "idVendor").write_text(vendor)
-    (usb / "idProduct").write_text("4010")
+    (usb / "idProduct").write_text("116b")
     (usb / "serial").write_text("BOARD-SERIAL\n")
     (interface / "bInterfaceNumber").write_text(interface_number)
     tty = tmp_path / "tty" / "ttyACM7"
