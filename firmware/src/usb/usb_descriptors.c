@@ -29,7 +29,7 @@
 _Static_assert(USB_CDC_COUNT == UART_PORT_COUNT, "USB CDC count must match the logical UART port table");
 
 /** @brief Manufacturer string exposed in the USB string table. */
-#define USB_STR_MANUFACTURER "PicoUart"
+#define USB_STR_MANUFACTURER "djwinter"
 /** @brief Product string exposed in the USB string table (UTF-16, max 32 chars). */
 #define USB_STR_PRODUCT PICO_UART_USB_PRODUCT
 _Static_assert((sizeof(USB_STR_PRODUCT) - 1u) <= 32u, "USB product string must fit one TinyUSB string descriptor");
