@@ -476,7 +476,8 @@ void usb_hid_poll(void)
         usb_hid_execute_pending_save();
     }
     if (usb_hid_reboot_pending && time_reached(usb_hid_reboot_deadline)) {
-        system_reset();
+        system_reset(usb_hid_command == USB_HID_COMMAND_SAVE_CONFIGURATION ?
+                     SYSTEM_RESET_CAUSE_CONFIG_SAVE : SYSTEM_RESET_CAUSE_USER_REBOOT);
         return;
     }
     uint64_t now_ms = time_us_64() / 1000u;

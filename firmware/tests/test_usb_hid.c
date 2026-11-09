@@ -54,6 +54,7 @@ static float temperature;
 static uint32_t clock_hz;
 static uint8_t accepted_report_id, accepted_payload[USB_HID_CHANNEL_SIZE];
 static unsigned accepted_reports, reset_calls, save_calls, delegated_transfers;
+static system_reset_cause_t requested_reset_cause;
 static boot_config_save_result_t config_save_result;
 static boot_config_t staged_config;
 static boot_config_status_t boot_status;
@@ -82,7 +83,7 @@ bool boot_config_set(const boot_config_t *config)
 }
 boot_config_save_result_t boot_config_save_with_result(void) { ++save_calls; return config_save_result; }
 const boot_config_status_t *boot_config_get_status(void) { return &boot_status; }
-void system_reset(void) { ++reset_calls; }
+void system_reset(system_reset_cause_t cause) { ++reset_calls; requested_reset_cause = cause; }
 uint8_t system_reset_cause(void) { return 2u; }
 bool tud_hid_ready(void) { return endpoint_ready; }
 bool tud_hid_report(uint8_t id, void const *report, uint16_t length)
@@ -469,17 +470,21 @@ static void test_save_pending_execution_rechecks_and_errors(void)
     cdc_open = true;
     usb_hid_poll(); result(4u, 5u, 6u);
     TEST_ASSERT_EQUAL_UINT(0u, save_calls);
+    TEST_ASSERT_FALSE(usb_hid_reboot_pending);
     cdc_open = false;
     config_set_succeeds = false;
     command(4u, 1u, 0u);
     usb_hid_poll(); result(4u, 6u, 9u);
+    TEST_ASSERT_FALSE(usb_hid_reboot_pending);
     config_set_succeeds = true;
     config_save_result = BOOT_CONFIG_SAVE_FLASH_FAILED;
     command(4u, 1u, 0u);
     usb_hid_poll(); result(4u, 6u, 7u);
+    TEST_ASSERT_FALSE(usb_hid_reboot_pending);
     config_save_result = BOOT_CONFIG_SAVE_VERIFY_FAILED;
     command(4u, 1u, 0u);
     usb_hid_poll(); result(4u, 6u, 8u);
+    TEST_ASSERT_FALSE(usb_hid_reboot_pending);
     config_save_result = BOOT_CONFIG_SAVE_OK;
     command(4u, 3u, 4u);
     usb_hid_poll(); result(4u, 2u, 0u);
@@ -498,6 +503,7 @@ static void test_save_pending_execution_rechecks_and_errors(void)
     pico_test_time_us = 1000000u;
     usb_hid_poll();
     TEST_ASSERT_EQUAL_UINT(1u, reset_calls);
+    TEST_ASSERT_EQUAL(SYSTEM_RESET_CAUSE_CONFIG_SAVE, requested_reset_cause);
 }
 
 static void test_reboot_confirmation_and_no_arm_transaction(void)
@@ -509,6 +515,7 @@ static void test_reboot_confirmation_and_no_arm_transaction(void)
     pico_test_time_us = 1000000u;
     usb_hid_poll();
     TEST_ASSERT_EQUAL_UINT(1u, reset_calls);
+    TEST_ASSERT_EQUAL(SYSTEM_RESET_CAUSE_USER_REBOOT, requested_reset_cause);
 #else
     result(3u, 4u, 5u);
     TEST_ASSERT_FALSE(usb_hid_reboot_pending);

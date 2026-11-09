@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
-import { PicoUartWebHid } from "./device.mjs?v=21";
+import { PicoUartWebHid } from "./device.mjs?v=22";
 import { renderDashboard, updateReportAge } from "./view.mjs?v=22";
 
 const connectButton = document.querySelector("#connect");
@@ -64,9 +64,11 @@ function renderConfiguration(state) {
   unsafeAcknowledgement.disabled = !enabled || selectedProfile === 0;
   saveButton.hidden = !Boolean(identity?.capabilities & 4);
   saveButton.disabled = !enabled || !profileChanged;
-  document.querySelector("#reset-cause").textContent = dashboard.configuration
-    ? ["Unknown", "Power-on", "Watchdog reset", "Software-requested reset", "Unassigned"][dashboard.configuration.reset_cause]
-    : "--";
+  const resetCause = dashboard.configuration?.reset_cause;
+  document.querySelector("#reset-cause").textContent = resetCause == null ? "--"
+    : ["Unknown (not distinguished)", "Power-on", "Watchdog reset", "Software-requested reset", "HardFault recovery",
+      "Power-on or brownout", "Brownout", "RUN-pin reset", "Debugger reset", "User-requested reboot",
+      "Configuration-save reboot"][resetCause] ?? `Unknown (${resetCause})`;
   document.querySelector("#board-pins").replaceChildren();
   const pinRows = dashboard.configuration?.pins ?? dashboard.configuration?.channel_pins ?? [];
   pinRows.forEach((pins, index) => {

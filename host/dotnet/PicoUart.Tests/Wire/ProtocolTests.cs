@@ -83,6 +83,17 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public void ConfigurationPreservesKnownAndUnassignedResetCauses()
+    {
+        foreach (var cause in Enumerable.Range(0, 11).Append(255))
+        {
+            var data = ConfigurationPayload();
+            data[27] = (byte)cause;
+            Assert.Equal((byte)cause, Protocol.ParseConfiguration(data, Identity()).ResetCause);
+        }
+    }
+
+    [Fact]
     public void ConfigurationAcceptsRetained280MhzRequestOnRp2040()
     {
         var identity = Identity() with { McuId = 1, ClockProfileMask = 0x0f };

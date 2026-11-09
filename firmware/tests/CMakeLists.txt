@@ -220,6 +220,21 @@ foreach(_family IN ITEMS rp2040 rp2350)
     )
 endforeach()
 
+foreach(_family IN ITEMS rp2040 rp2350)
+    pico_uart_add_unity_test(test_system_${_family} system_${_family} test_system.c)
+    set(_system_stubs "${CMAKE_CURRENT_BINARY_DIR}/system_${_family}_stubs")
+    foreach(_header IN ITEMS
+        hardware/clocks.h hardware/watchdog.h hardware/structs/powman.h
+        hardware/structs/vreg_and_chip_reset.h pico/stdlib.h
+    )
+        configure_file(support/system_sdk.h "${_system_stubs}/${_header}" COPYONLY)
+    endforeach()
+    target_include_directories(test_system_${_family} BEFORE PRIVATE "${_system_stubs}")
+    target_compile_definitions(test_system_${_family} PRIVATE
+        PICO_RP2350=$<STREQUAL:${_family},rp2350>
+    )
+endforeach()
+
 pico_uart_add_unity_test(test_service_load service_load
     test_service_load.c
     ${FIRMWARE_ROOT}/src/platform/service_load.c

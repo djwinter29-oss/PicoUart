@@ -56,7 +56,11 @@ const directions = [
 ];
 const channelStates = ["closed", "starting", "ready", "configuring", "error"];
 const measurementStates = ["Unavailable", "Current", "Cached"];
-const resetCauses = ["Unknown", "Power-on", "Watchdog", "Software-requested"];
+const resetCauses = [
+  "Unknown (not distinguished)", "Power-on", "Watchdog reset", "Software-requested reset", "HardFault recovery",
+  "Power-on or brownout", "Brownout", "RUN-pin reset", "Debugger reset", "User-requested reboot",
+  "Configuration-save reboot",
+];
 const errorReasons = [
   "None recorded",
   "Unsupported baud setting",

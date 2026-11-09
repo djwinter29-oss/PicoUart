@@ -100,7 +100,7 @@ export function decodeBoardConfiguration(report, identity) {
     cdc_tx: data.getUint16(32, true),
     cdc_rx: data.getUint16(34, true),
   };
-  if (!validateProfile(storedProfile) || channelCount !== CHANNEL_COUNT || resetCause > 4
+  if (!validateProfile(storedProfile) || channelCount !== CHANNEL_COUNT
     || pins.some(channel => channel.some(pin => pin > 47 && pin !== 255))
     || Object.values(capacities).some(capacity => capacity === 0)
     || identity && identity.hardware_channel_mask >>> channelCount) {

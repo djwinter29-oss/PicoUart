@@ -16,6 +16,16 @@ test("Direct Dashboard branding appears in browser and accessible headings", () 
   assert.match(html, /<h1>Dashboard<\/h1>/);
 });
 
+test("both dashboards explain platform reset evidence and unknown causes", () => {
+  for (const sourceRoot of [new URL("../src/", import.meta.url), new URL("../../web/src/", import.meta.url)]) {
+    const html = readFileSync(new URL("index.html", sourceRoot), "utf8");
+    assert.match(html, /title="[^"]*Pico combines power-on and brownout; Pico 2 distinguishes them\.[^"]*">Reset cause/);
+    const script = readFileSync(new URL(sourceRoot.pathname.endsWith("/web/src/") ? "js/dashboard.js" : "js/app.mjs",
+      sourceRoot), "utf8");
+    assert.ok(script.includes('"Unknown (not distinguished)"'));
+  }
+});
+
 test("HTML references only WebHID-owned assets", () => {
   const html = readFileSync(join(root, "index.html"), "utf8");
   for (const match of html.matchAll(/(?:href|src)="([^"]+)"/g)) {

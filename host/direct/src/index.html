@@ -12,7 +12,7 @@ Copyright (c) 2026 Ji Dong
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/dashboard.css?v=26">
   <link rel="stylesheet" href="css/direct.css?v=8">
-  <script type="module" src="js/app.mjs?v=17"></script>
+  <script type="module" src="js/app.mjs?v=19"></script>
 </head>
 <body>
   <header class="topbar">
@@ -68,7 +68,7 @@ Copyright (c) 2026 Ji Dong
           <label for="configuration-profile">Stored boot profile</label>
           <select id="configuration-profile" disabled></select>
         </div>
-        <div class="summary-item"><span>Reset cause</span><strong id="reset-cause">--</strong></div>
+        <div class="summary-item"><span title="Reported from reset evidence captured at boot. Pico combines power-on and brownout; Pico 2 distinguishes them. Unknown means the available evidence cannot identify the cause, not necessarily a fault.">Reset cause</span><strong id="reset-cause">--</strong></div>
         <div class="summary-item"><span>UART TX ring capacity</span><strong id="uart-tx-capacity">--</strong></div>
         <div class="summary-item"><span>UART RX ring capacity</span><strong id="uart-rx-capacity">--</strong></div>
         <div class="summary-item"><span>CDC TX FIFO capacity</span><strong id="cdc-tx-capacity">--</strong></div>

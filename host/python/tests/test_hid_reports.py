@@ -197,6 +197,11 @@ def test_feature_and_input_reports_require_validated_product_identity():
         read_telemetry_from_device(device)
 
 
+@pytest.mark.parametrize("cause", [*range(11), 255])
+def test_configuration_preserves_known_and_unassigned_reset_causes(cause):
+    assert parse_configuration(configuration_bytes(reset_cause=cause))["reset_cause"] == cause
+
+
 @pytest.mark.parametrize("channel_id", [2, 5])
 def test_pio_channel_rejects_non_8n1_but_hardware_uart_accepts_it(channel_id):
     identity = parse_device_info(device_info_bytes(hardware_mask=0x03))

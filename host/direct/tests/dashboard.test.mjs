@@ -117,6 +117,21 @@ async function connect(view) {
   await view.respond(snapshot("first"));
 }
 
+test("Python and .NET display all assigned reset causes and preserve unknown codes", async () => {
+  const view = page();
+  await connect(view);
+  const labels = ["Unknown (not distinguished)", "Power-on", "Watchdog reset", "Software-requested reset",
+    "HardFault recovery", "Power-on or brownout", "Brownout", "RUN-pin reset", "Debugger reset",
+    "User-requested reboot", "Configuration-save reboot"];
+  for (const [cause, label] of [...labels.entries(), [255, "Unknown (255)"]]) {
+    view.tick();
+    const data = snapshot("first");
+    data.configuration.reset_cause = cause;
+    await view.respond(data);
+    assert.equal(view.element("reset-cause").textContent, label);
+  }
+});
+
 test("hosted pages select independently and render board labels as text", async () => {
   const alice = page(), bob = page();
   assert.equal(alice.intervalMs, 500);

@@ -11,7 +11,7 @@ Copyright (c) 2026 Ji Dong
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/dashboard.css?v=35">
-  <script src="/js/dashboard.js?v=35" defer></script>
+  <script src="/js/dashboard.js?v=37" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -81,7 +81,7 @@ Copyright (c) 2026 Ji Dong
             <option value="4">280 MHz</option>
           </select>
         </div>
-        <div class="summary-item"><span>Reset cause</span><strong id="reset-cause">--</strong></div>
+        <div class="summary-item"><span title="Reported from reset evidence captured at boot. Pico combines power-on and brownout; Pico 2 distinguishes them. Unknown means the available evidence cannot identify the cause, not necessarily a fault.">Reset cause</span><strong id="reset-cause">--</strong></div>
         <div class="summary-item"><span>UART TX ring capacity</span><strong id="uart-tx-capacity">--</strong></div>
         <div class="summary-item"><span>UART RX ring capacity</span><strong id="uart-rx-capacity">--</strong></div>
         <div class="summary-item"><span>CDC TX FIFO capacity</span><strong id="cdc-tx-capacity">--</strong></div>

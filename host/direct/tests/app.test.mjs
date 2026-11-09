@@ -59,6 +59,21 @@ function fixture(secure = true, hid = {}) {
   return { html, client, polling, agePolling, get: id => document.querySelector(`#${id}`) };
 }
 
+test("Direct Dashboard distinguishes all assigned reset causes and preserves unknown codes", () => {
+  const view = fixture();
+  const labels = ["Unknown (not distinguished)", "Power-on", "Watchdog reset", "Software-requested reset",
+    "HardFault recovery", "Power-on or brownout", "Brownout", "RUN-pin reset", "Debugger reset",
+    "User-requested reboot", "Configuration-save reboot"];
+  for (const [reset_cause, label] of [...labels.entries(), [255, "Unknown (255)"]]) {
+    view.client.state.dashboard.configuration = { stored_profile: 0, reset_cause };
+    view.client.phase("connected");
+    assert.equal(view.get("reset-cause").textContent, label);
+  }
+  view.client.state.dashboard.configuration = null;
+  view.client.phase("disconnected");
+  assert.equal(view.get("reset-cause").textContent, "--");
+});
+
 test("one connection button belongs to Device identity, with no separate refresh or disconnect", () => {
   const { html } = fixture();
   const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];

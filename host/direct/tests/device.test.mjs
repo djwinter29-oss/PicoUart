@@ -20,6 +20,10 @@ test("WebHID accepts valid distinct UART and CDC buffer capacities", () => {
 
   assert.deepEqual(decodeBoardConfiguration(report, { hardware_channel_mask: 0x3f }).capacities,
     { uart_tx: 4096, uart_rx: 4096, cdc_tx: 2048, cdc_rx: 2048 });
+  for (const cause of [...Array(11).keys(), 255]) {
+    report.setUint8(27, cause);
+    assert.equal(decodeBoardConfiguration(report).reset_cause, cause);
+  }
 
   report.setUint16(32, 0, true);
   assert.throws(() => decodeBoardConfiguration(report, { hardware_channel_mask: 0x3f }),
