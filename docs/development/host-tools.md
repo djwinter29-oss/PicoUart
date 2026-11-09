@@ -353,6 +353,10 @@ contract; do not add a second frontend. The [.NET integration tests](../../tests
 shared assets and API behavior. Distribution details belong in the [Python](../../host/python/README.md) and
 [.NET](../../host/dotnet/README.md) guides.
 
+All dashboards hide the header's sample age while reports are fresh. When updates exceed the existing freshness
+threshold, they show `Telemetry stale` with the sample age; a connected board without a sample shows
+`Waiting for telemetry`. Disconnected boards hide the sample-age indicator.
+
 ### Board selection and shared monitoring
 
 The **Board** dropdown lists boards attached to the dashboard server, not the browser's computer. The page scans this

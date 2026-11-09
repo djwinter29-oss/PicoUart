@@ -84,7 +84,6 @@ function makeCell(className, text) {
 function updateReportAge(data, now = Date.now()) {
   const sample = Date.parse(data.updated_at);
   const age = document.querySelector("#sample-time");
-  age.hidden = !data.connected;
   if (!data.connected) reportSample = null;
   if (data.connected && Number.isFinite(sample) && sample !== reportSample) {
     reportSample = sample;
@@ -92,8 +91,9 @@ function updateReportAge(data, now = Date.now()) {
   }
   const seconds = Math.max(0, Math.floor((now - reportReceivedAt) / 1000));
   const stale = Number.isFinite(sample) && now - reportReceivedAt > 3000;
+  age.hidden = !data.connected || (Number.isFinite(sample) && !stale);
   age.textContent = Number.isFinite(sample)
-    ? `Report ${seconds} s ago${stale ? " (stale)" : ""}` : "Waiting for report";
+    ? `Telemetry stale · ${seconds} s ago` : "Waiting for telemetry";
   age.dataset.stale = String(stale);
 }
 

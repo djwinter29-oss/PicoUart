@@ -59,12 +59,19 @@ test("webhid report age text tracks freshness", () => {
     updateReportAge({ connected: false }, 10000);
     assert.equal(age.hidden, true);
     updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:00.000Z"));
-    assert.equal(age.textContent, "Telemetry 0 s ago");
+    assert.equal(age.hidden, true);
+    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:03.000Z"));
+    assert.equal(age.hidden, true);
     updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:05.000Z"));
-    assert.equal(age.textContent, "Telemetry 5 s ago (stale)");
+    assert.equal(age.hidden, false);
+    assert.equal(age.textContent, "Telemetry stale · 5 s ago");
     assert.equal(age.dataset.stale, "true");
     updateReportAge({ connected: true, updated_at: null }, Date.parse("2026-01-01T00:00:05.000Z"));
     assert.equal(age.textContent, "Waiting for telemetry");
+    assert.equal(age.hidden, false);
+    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:05.000Z" }, Date.parse("2026-01-01T00:00:05.000Z"));
+    assert.equal(age.hidden, true);
+    assert.equal(age.dataset.stale, "false");
   } finally {
     delete globalThis.document;
   }
@@ -227,7 +234,25 @@ test("host web updateReportAge keeps telemetry wording", () => {
   context.data = { connected: true, updated_at: "2026-01-01T00:00:00.000Z" };
   context.now = Date.parse("2026-01-01T00:00:00.000Z");
   vm.runInContext("updateReportAge(data, now)", context);
+  const age = document.querySelector("#sample-time");
+  assert.equal(age.hidden, true);
+  context.now = Date.parse("2026-01-01T00:00:03.000Z");
+  vm.runInContext("updateReportAge(data, now)", context);
+  assert.equal(age.hidden, true);
   context.now = Date.parse("2026-01-01T00:00:04.000Z");
   vm.runInContext("updateReportAge(data, now)", context);
-  assert.equal(document.querySelector("#sample-time").textContent, "Report 4 s ago (stale)");
+  assert.equal(age.hidden, false);
+  assert.equal(age.textContent, "Telemetry stale · 4 s ago");
+  assert.equal(age.dataset.stale, "true");
+  context.data.updated_at = "2026-01-01T00:00:04.000Z";
+  vm.runInContext("updateReportAge(data, now)", context);
+  assert.equal(age.hidden, true);
+  assert.equal(age.dataset.stale, "false");
+  context.data.updated_at = null;
+  vm.runInContext("updateReportAge(data, now)", context);
+  assert.equal(age.hidden, false);
+  assert.equal(age.textContent, "Waiting for telemetry");
+  context.data.connected = false;
+  vm.runInContext("updateReportAge(data, now)", context);
+  assert.equal(age.hidden, true);
 });
