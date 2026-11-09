@@ -76,7 +76,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   }
   assert.match(markup, /<th scope="col">Channel status<\/th>/);
   assert.match(markup, /<th scope="col">Diagnostics<\/th>/);
-  assert.match(configuration, /<select id="clock-profile" disabled>/);
+  assert.match(configuration, /<select id="clock-profile" title="System clock profile applied after saving and rebooting\." disabled>/);
   assert.doesNotMatch(configuration, /overclock-ack/);
   assert.match(configurationSection, /<button class="button button-secondary" id="save-configuration" type="button" hidden disabled>/);
   assert.match(configurationDialog, /id="overclock-ack" type="checkbox" disabled/);
@@ -97,7 +97,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(markup, /<th class="traffic-heading" scope="col" title="[^"]+">\s*<span class="traffic-heading-title">Traffic<\/span>\s*<span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB<\/span>\s*<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
   assert.match(markup, /title="Rates ramp from a one-second to a five-second average as samples arrive\./);
   assert.match(markup, /<dialog class="diagnostics-dialog" id="diagnostics-dialog"/);
-  assert.match(markup, /Stored boot profile/);
+  assert.match(markup, /Board clock profile/);
   assert.match(markup, /Reset cause/);
   assert.match(markup, /Service load \(Core 0 \/ Core 1\)/);
   assert.doesNotMatch(markup, /CPU load|unsafe overclock/);

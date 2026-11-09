@@ -93,7 +93,7 @@ test("one connection button belongs to Device overview, with no separate refresh
   assert.match(html, /<dialog class="confirmation-dialog"[^>]*>[\s\S]*?id="configuration-unsafe-ack"/);
   assert.match(configuration, /role="status" aria-live="polite"/);
   assert.match(configuration, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[\s\S]*?<\/div>\s*<\/div>/);
-  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">Stored boot profile<\/label>\s*<select/);
+  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">Board clock profile<\/label>\s*<select/);
   assert.match(configuration, /id="uart-tx-capacity"[\s\S]*?id="uart-rx-capacity"[\s\S]*?id="cdc-tx-capacity"[\s\S]*?id="cdc-rx-capacity"/);
   assert.match(html, /<details class="pin-map-disclosure">[\s\S]*?id="board-pins"/);
   assert.doesNotMatch(configuration, /configuration-note|configuration-detail|configuration-status/);

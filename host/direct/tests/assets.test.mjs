@@ -59,7 +59,7 @@ for (const frontend of ["web", "direct"]) {
       assert.match(section, /class="button button-secondary" id="reboot-board"/);
       assert.doesNotMatch(identity, /id="reboot-board"/);
       assert.match(section, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[^>]*>Save &amp; Reboot<\/button>[\s\S]*?<\/div>\s*<\/div>/);
-      assert.match(section, /class="summary configuration-summary">[\s\S]*?<label for="configuration-profile">Stored boot profile<\/label>\s*<select/);
+      assert.match(section, /class="summary configuration-summary">[\s\S]*?<label for="configuration-profile">Board clock profile<\/label>\s*<select/);
       assert.match(html, /<dialog class="confirmation-dialog"[^>]*>[\s\S]*?id="configuration-acknowledgement" hidden/);
       assert.match(html, /<dialog class="confirmation-dialog"[^>]*id="reboot-dialog"[\s\S]*?id="confirm-reboot"/);
       assert.match(html, /<th class="traffic-heading" scope="col" title="[^"]+">\s*<span class="traffic-heading-title">Traffic<\/span>\s*<span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB<\/span>\s*<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
@@ -78,7 +78,7 @@ for (const frontend of ["web", "direct"]) {
       assert.match(section, /<h2 id="configuration-title">Hardware &amp; boot<\/h2>/);
       assert.match(section, /id="save-configuration"/);
       assert.match(section, /class="button button-secondary" id="reset-board"/);
-      assert.match(section, /<label for="clock-profile">Stored boot profile<\/label>/);
+      assert.match(section, /<label for="clock-profile">Board clock profile<\/label>/);
     }
     assert.doesNotMatch(section, /configuration-panel|configuration-note|configuration-status|configuration-detail/);
     const styles = readFileSync(new URL(`css/${frontend === "web" ? "dashboard" : "direct"}.css`,
