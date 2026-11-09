@@ -393,7 +393,9 @@ cookies are ignored; reload the dashboard after upgrading to obtain a new sessio
 
 ### Status presentation
 
-Both dashboards separate device identity from live runtime status, retaining the six UART channel table.
+All dashboards use Device overview, Hardware & boot, Live status, and UART channels sections. The boot profile is
+editable when available; buffer capacities and pin mapping are read-only. Section naming does not change control
+availability or protocol fields.
 `/api/status` carries `identity` (product, serial, firmware, MCU/build target, capability/profile masks, reserved/total RAM)
 and `runtime` (uptime, `service_load_basis_points`, and current clock),
 with independent `identity_error` and `runtime_error` fields. Unsupported or failed reads clear
@@ -429,8 +431,11 @@ changed status sample. Age measures browser receipt time so remote host clock of
 
 ### Persistent configuration
 
-All three dashboards expose **Persistent configuration** separately from live telemetry. The system-clock selector
-offers the connected MCU's supported profiles and identifies its SDK default. Editing the selection never writes the
+All three dashboards expose the stored boot profile under **Hardware & boot**. The system-clock selector
+offers the connected MCU's supported profiles and identifies its SDK default. A connected board advertising save support
+allows profile selection even without ready UART channels or a stored profile; an unset stored profile means SDK default.
+Controls may be temporarily locked during an in-flight action or save/reboot. Save retains its safety checks and requires
+valid configuration data. Editing the selection never writes the
 device, and telemetry refreshes do not overwrite unsaved edits. A non-default profile requires explicit unsafe-overclock
 acknowledgement before **Save & Reboot**.
 

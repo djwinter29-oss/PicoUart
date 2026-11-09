@@ -60,7 +60,7 @@ function renderConfiguration(state) {
   const saveAvailable = Boolean(identity?.capabilities & 4) && dashboard.configuration !== null;
   const enabled = state.phase === "connected" && saveAvailable && channelsReady;
   const profileChanged = saveAvailable && selectedProfile !== baselineProfile;
-  profileSelect.disabled = !enabled;
+  profileSelect.disabled = state.phase !== "connected" || !Boolean(identity?.capabilities & 4) || !options.length;
   unsafeAcknowledgement.disabled = !enabled || selectedProfile === 0;
   saveButton.hidden = !Boolean(identity?.capabilities & 4);
   saveButton.disabled = !enabled || !profileChanged;

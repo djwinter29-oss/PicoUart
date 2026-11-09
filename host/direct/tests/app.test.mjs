@@ -74,7 +74,7 @@ test("Direct Dashboard distinguishes all assigned reset causes and preserves unk
   assert.equal(view.get("reset-cause").textContent, "--");
 });
 
-test("one connection button belongs to Device identity, with no separate refresh or disconnect", () => {
+test("one connection button belongs to Device overview, with no separate refresh or disconnect", () => {
   const { html } = fixture();
   const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
   const channels = html.match(/<section class="channels-section"[\s\S]*?<\/section>/)[0];
@@ -87,7 +87,7 @@ test("one connection button belongs to Device identity, with no separate refresh
   assert.ok(!html.includes("USB identity"));
   const configuration = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
   assert.match(html, /id="identity-title"[\s\S]*?<section aria-labelledby="configuration-title">[\s\S]*?<section aria-labelledby="runtime-title">/);
-  assert.match(configuration, /<h2 id="configuration-title">Board configuration<\/h2>/);
+  assert.match(configuration, /<h2 id="configuration-title">Hardware &amp; boot<\/h2>/);
   assert.match(configuration, /id="configuration-profile"/);
   assert.doesNotMatch(configuration, /configuration-unsafe-ack/);
   assert.match(html, /<dialog class="confirmation-dialog"[^>]*>[\s\S]*?id="configuration-unsafe-ack"/);
@@ -135,9 +135,14 @@ test("persistent configuration uses target profiles and gates unsafe saves", () 
   get("cancel-configuration").click();
   client.state.dashboard.channels[3].channel_state = 2;
   client.render(client.state);
-  assert.equal(profile.disabled, true);
+  assert.equal(profile.disabled, false);
   assert.equal(get("configuration-unsafe-ack").disabled, true);
   assert.equal(get("save-configuration").disabled, true);
+  client.state.dashboard.channels = [];
+  client.render(client.state);
+  assert.equal(profile.disabled, false);
+  client.phase("disconnected");
+  assert.equal(profile.disabled, true);
 });
 
 test("Save & Reboot stays disabled until the selected profile differs from its baseline", () => {

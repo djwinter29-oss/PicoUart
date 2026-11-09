@@ -11,7 +11,7 @@ Copyright (c) 2026 Ji Dong
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/dashboard.css?v=35">
-  <script src="/js/dashboard.js?v=37" defer></script>
+  <script src="/js/dashboard.js?v=38" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -37,7 +37,7 @@ Copyright (c) 2026 Ji Dong
 
     <section aria-labelledby="identity-title">
       <div class="section-heading">
-        <h2 id="identity-title">Device identity</h2>
+        <h2 id="identity-title">Device overview</h2>
         <div class="actions" aria-label="Board identification">
           <button class="button button-led" id="rescan-boards" type="button">Rescan</button>
           <select id="board-select" aria-label="Board attached to this server" disabled>
@@ -59,7 +59,7 @@ Copyright (c) 2026 Ji Dong
 
     <section aria-labelledby="configuration-title">
       <div class="section-heading">
-        <h2 id="configuration-title">Board configuration</h2>
+        <h2 id="configuration-title">Hardware &amp; boot</h2>
         <div class="actions" aria-label="Board controls">
           <button class="button button-secondary" id="save-configuration" type="button" hidden disabled>
             Save &amp; Reboot
@@ -88,7 +88,7 @@ Copyright (c) 2026 Ji Dong
         <div class="summary-item"><span>CDC RX FIFO capacity</span><strong id="cdc-rx-capacity">--</strong></div>
       </div>
       <details class="pin-map-disclosure">
-        <summary>Channel pin mapping</summary>
+        <summary>Pin mapping</summary>
         <div class="pin-map" id="pin-map" aria-label="Static UART GPIO assignments"></div>
       </details>
     </section>
@@ -126,7 +126,7 @@ Copyright (c) 2026 Ji Dong
 
     <section aria-labelledby="runtime-title">
       <div class="section-heading">
-        <h2 id="runtime-title">Runtime status</h2>
+        <h2 id="runtime-title">Live status</h2>
       </div>
       <div class="summary runtime-summary">
         <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>

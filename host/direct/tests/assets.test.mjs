@@ -16,6 +16,16 @@ test("Direct Dashboard branding appears in browser and accessible headings", () 
   assert.match(html, /<h1>Dashboard<\/h1>/);
 });
 
+test("all dashboards use matching descriptive section headings", () => {
+  for (const sourceRoot of [new URL("../src/", import.meta.url), new URL("../../web/src/", import.meta.url)]) {
+    const html = readFileSync(new URL("index.html", sourceRoot), "utf8");
+    assert.match(html, /<h2 id="identity-title">Device overview<\/h2>/);
+    assert.match(html, /<h2 id="configuration-title">Hardware &amp; boot<\/h2>/);
+    assert.match(html, /<h2 id="runtime-title">Live status<\/h2>/);
+    assert.match(html, /<h2 id="channels-title">UART channels /);
+  }
+});
+
 test("both dashboards explain platform reset evidence and unknown causes", () => {
   for (const sourceRoot of [new URL("../src/", import.meta.url), new URL("../../web/src/", import.meta.url)]) {
     const html = readFileSync(new URL("index.html", sourceRoot), "utf8");
@@ -44,7 +54,7 @@ for (const frontend of ["web", "direct"]) {
     const section = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
     if (frontend === "direct") {
       const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
-      assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
+      assert.match(section, /<h2 id="configuration-title">Hardware &amp; boot<\/h2>/);
       assert.match(section, /id="reboot-board"/);
       assert.match(section, /class="button button-secondary" id="reboot-board"/);
       assert.doesNotMatch(identity, /id="reboot-board"/);
@@ -65,7 +75,7 @@ for (const frontend of ["web", "direct"]) {
       assert.match(section, /id="configuration-message" role="status" aria-live="polite"/);
       assert.match(html, /title="Rates ramp from a one-second to a five-second average as samples arrive\./);
     } else {
-      assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
+      assert.match(section, /<h2 id="configuration-title">Hardware &amp; boot<\/h2>/);
       assert.match(section, /id="save-configuration"/);
       assert.match(section, /class="button button-secondary" id="reset-board"/);
       assert.match(section, /<label for="clock-profile">Stored boot profile<\/label>/);

@@ -101,7 +101,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(markup, /Reset cause/);
   assert.match(markup, /Service load \(Core 0 \/ Core 1\)/);
   assert.doesNotMatch(markup, /CPU load|unsafe overclock/);
-  assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Channel pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
+  assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
   assert.match(markup, /Uptime[\s\S]*?Board temperature[\s\S]*?Service load \(Core 0 \/ Core 1\)/);
   assert.match(dashboard, /total\.textContent = formatBytes\(channel\.totals\?\.\[key\]\)/);
   assert.match(dashboard, /latest\.totals\[key\] - baseline\.totals\[key\]/);

@@ -156,8 +156,9 @@ function renderStaticConfiguration(data) {
     configurationSavePending = false;
     overclockAcknowledgement.checked = false;
   }
-  if (!configurationProfileDirty && Number.isInteger(configuration?.stored_profile)) {
-    clockProfile.value = String(configuration.stored_profile);
+  if (!configurationProfileDirty && configuration
+    && (configuration.stored_profile === null || Number.isInteger(configuration.stored_profile))) {
+    clockProfile.value = String(configuration.stored_profile ?? 0);
   }
   document.querySelector("#reset-cause").textContent = resetCauseName(configuration?.reset_cause);
   document.querySelector("#uart-tx-capacity").textContent = formatBytes(configuration?.uart_tx_ring_capacity_bytes);
@@ -217,9 +218,11 @@ function updateConfigurationControls(data) {
   const profile = Number(clockProfile.value);
   const profileSupported = Number.isInteger(profile) && Boolean((identity?.clock_profile_mask ?? 0) & (1 << profile));
   const storedProfile = data?.configuration?.stored_profile;
-  const available = Boolean(data?.connected && (capabilities & 4) && Number.isInteger(storedProfile));
-  const profileChanged = available && profile !== storedProfile;
-  clockProfile.disabled = actionBusy || configurationSavePending || !available;
+  const available = Boolean(data?.connected && (capabilities & 4) && data?.configuration
+    && (storedProfile === null || Number.isInteger(storedProfile)));
+  const profileChanged = available && profile !== (storedProfile ?? 0);
+  clockProfile.disabled = actionBusy || configurationSavePending || !data?.connected
+    || !(capabilities & 4) || !identity?.clock_profile_mask;
   saveConfigurationButton.hidden = !(capabilities & 4);
   saveConfigurationButton.disabled = actionBusy || configurationSavePending || !available
     || !profileChanged || !profileSupported;

@@ -132,6 +132,32 @@ test("Python and .NET display all assigned reset causes and preserve unknown cod
   }
 });
 
+test("hosted profile selection supports unset defaults and preserves unsaved edits", async () => {
+  const view = page();
+  await connect(view);
+  view.tick();
+  await view.respond(snapshot("first", 2, null));
+  const profile = view.element("clock-profile");
+  assert.equal(profile.disabled, false);
+  assert.equal(profile.value, "0");
+  assert.equal(view.element("save-configuration").disabled, true);
+  profile.value = "1";
+  profile.events.change();
+  assert.equal(view.element("save-configuration").disabled, false);
+  view.tick();
+  await view.respond(snapshot("first", 2, null));
+  assert.equal(profile.value, "1");
+  const data = snapshot("first", 2, null);
+  data.configuration = null;
+  view.tick();
+  await view.respond(data);
+  assert.equal(profile.disabled, false);
+  assert.equal(view.element("save-configuration").disabled, true);
+  view.tick();
+  await view.respond({ ...snapshot("first"), connected: false });
+  assert.equal(profile.disabled, true);
+});
+
 test("hosted pages select independently and render board labels as text", async () => {
   const alice = page(), bob = page();
   assert.equal(alice.intervalMs, 500);
