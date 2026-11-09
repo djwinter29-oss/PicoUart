@@ -8,6 +8,10 @@ const dashboard = await readFile(new URL("../js/dashboard.js", import.meta.url),
 const stylesheet = await readFile(new URL("../css/dashboard.css", import.meta.url), "utf8");
 const markup = await readFile(new URL("../index.html", import.meta.url), "utf8");
 
+test("Python and .NET share the Dashboard page heading", () => {
+  assert.match(markup, /<h1>Dashboard<\/h1>/);
+});
+
 test("dashboard uses the HID snapshot and diagnostic contract fields", () => {
   for (const field of [
     "service_load_basis_points",

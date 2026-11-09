@@ -12,8 +12,8 @@ test("Direct Dashboard branding appears in browser and accessible headings", () 
   const html = readFileSync(join(root, "index.html"), "utf8");
   assert.match(html, /<title>PicoUart \| Direct Dashboard<\/title>/);
   assert.match(html, /aria-label="PicoUart Direct Dashboard home"/);
-  assert.match(html, /<small>Direct Dashboard<\/small>/);
-  assert.match(html, /<h1>Direct Dashboard<\/h1>/);
+  assert.match(html, /<small>Direct<\/small>/);
+  assert.match(html, /<h1>Dashboard<\/h1>/);
 });
 
 test("HTML references only WebHID-owned assets", () => {
