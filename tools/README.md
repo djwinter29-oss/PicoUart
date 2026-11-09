@@ -57,7 +57,6 @@ tools/host/run-dotnet.sh --serial <serial-2> web --port 5002
 
 The same pattern works for multiple instances of either backend.
 The Direct Dashboard launcher serves only static assets on loopback port 8000; use `--port` to change it.
-The former `tools/host/run-webhid.sh` command remains a compatibility wrapper for `tools/host/run-direct.sh`.
 Run each launcher with `--help` for prerequisites and environment overrides.
 The Python/.NET launchers check local USB/HID permissions before starting; they do not install rules automatically.
 The Direct Dashboard does not check the server's USB permissions because the browser may run on another computer.
