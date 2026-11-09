@@ -387,6 +387,10 @@ without a board returns an empty six-channel snapshot; actions require a known b
 token. Unknown IDs and duplicate board identities fail explicitly. Servers remain loopback-only; this is not a change
 to network exposure or access control. WebHID retains its native browser chooser and is unchanged.
 
+Session cookies are backend- and port-specific: `PicoUart.Python.Session.<port>` and `PicoUart.DotNet.Session.<port>`.
+This prevents incompatible cookies from colliding when switching hosts on the same address and port. Older shared-name
+cookies are ignored; reload the dashboard after upgrading to obtain a new session and CSRF token.
+
 ### Status presentation
 
 Both dashboards separate device identity from live runtime status, retaining the six UART channel table.

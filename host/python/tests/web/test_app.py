@@ -23,12 +23,16 @@ class FakeDashboard:
         self.actions.append("reset")
 
 
-def test_dashboard_session_cookie_names_are_port_specific():
+def test_dashboard_session_cookie_names_are_backend_and_port_specific():
     first = create_app(FakeDashboard(), port=5101)
     second = create_app(FakeDashboard(), port=5102)
 
-    assert first.config["SESSION_COOKIE_NAME"] == "PicoUart.Session.5101"
-    assert second.config["SESSION_COOKIE_NAME"] == "PicoUart.Session.5102"
+    assert first.config["SESSION_COOKIE_NAME"] == "PicoUart.Python.Session.5101"
+    assert second.config["SESSION_COOKIE_NAME"] == "PicoUart.Python.Session.5102"
+    client = first.test_client()
+    client.set_cookie("PicoUart.Session.5101", "legacy-cookie")
+    client.set_cookie("PicoUart.DotNet.Session.5101", "dotnet-cookie")
+    assert client.get("/").headers["Set-Cookie"].startswith("PicoUart.Python.Session.5101=")
 
 
 def _csrf_token(client):

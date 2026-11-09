@@ -30,7 +30,7 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
     app.config.update(
         SECRET_KEY=secrets.token_bytes(32),
         TRUSTED_HOSTS=["localhost", "127.0.0.1"],
-        SESSION_COOKIE_NAME=f"PicoUart.Session.{port}",
+        SESSION_COOKIE_NAME=f"PicoUart.Python.Session.{port}",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
     )

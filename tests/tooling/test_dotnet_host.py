@@ -113,6 +113,7 @@ def test_published_dotnet_serves_the_canonical_frontend(server, host_version, pa
     assert b"Board model" in page
     assert b'id="mcu"' not in page
     assert b'id="system-clock"' in page
+    assert headers["Set-Cookie"].startswith(f"PicoUart.DotNet.Session.{server}=")
     assert "httponly" in headers["Set-Cookie"].lower()
     assert "samesite=strict" in headers["Set-Cookie"].lower()
     assert headers["X-Content-Type-Options"] == "nosniff"
