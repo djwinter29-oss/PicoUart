@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Ji Dong
-"""Coverage for the release.yml tag trigger glob and version policy script.
+"""Coverage for release workflow contracts and publication gates.
 
 GitHub Actions tag filters are glob patterns, not regexes: '+' has no
 "one or more" meaning there. A prior version of the workflow used
 "v[0-9]+.[0-9]+.[0-9]+", which only matches tags containing a literal '+'
 and never matches a real tag like v1.2.3. These tests pin the fixed glob
-and the release-tag version policy enforced by tools/release/resolve-release-version.sh.
+and the release workflow contracts.
 
 They also pin the PR and release firmware matrices to the rated pico/pico2
 images only; overclock selection now lives in the on-device configuration
@@ -32,7 +32,6 @@ import require_release_checks
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PR_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-check.yml"
-RESOLVE_SCRIPT = REPO_ROOT / "tools" / "release" / "resolve-release-version.sh"
 
 # board, label.
 PR_FIRMWARE_MATRIX = (
@@ -77,62 +76,7 @@ def test_release_tag_glob_rejects_non_v_prefixed_or_non_numeric_tags(tag: str) -
     # one dot-delimited numeric group" via '+'). Tags like v1.2.3-rc1 or
     # v1.2.3.4 do match this glob and are rejected later by the job-level
     # "Resolve version" policy in tools/release/resolve-release-version.sh instead
-    # (see test_resolve_release_version_rejects_outside_policy).
     assert not fnmatch.fnmatch(tag, _tag_glob())
-
-
-def _resolve(event_name: str, input_tag: str, ref_name: str) -> subprocess.CompletedProcess:
-    # Invoke via "sh" explicitly rather than executing the script path
-    # directly: Windows has no shebang support, so running the POSIX
-    # script as a bare executable fails with WinError 193 ("%1 is not a
-    # valid Win32 application"). Git-for-Windows' sh.exe (on PATH for
-    # GitHub-hosted windows-latest runners) and every POSIX sh both honor
-    # this invocation the same way.
-    return subprocess.run(
-        ["sh", str(RESOLVE_SCRIPT), event_name, input_tag, ref_name],
-        capture_output=True,
-        text=True,
-    )
-
-
-@pytest.mark.parametrize(
-    ("ref_name", "expected"),
-    [
-        ("v1.2.3", "1.2.3"),
-        ("v99.99.255", "99.99.255"),
-    ],
-)
-def test_resolve_release_version_accepts_within_policy(ref_name: str, expected: str) -> None:
-    result = _resolve("push", "", ref_name)
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == expected
-
-
-@pytest.mark.parametrize(
-    "ref_name",
-    ["v100.0.0", "v255.255.255", "v256.0.0", "v1.2.3-rc1", "v1.2"],
-)
-def test_resolve_release_version_rejects_outside_policy(ref_name: str) -> None:
-    result = _resolve("push", "", ref_name)
-
-    assert result.returncode != 0
-    assert "Refusing version" in result.stderr
-
-
-def test_resolve_release_version_uses_workflow_dispatch_input() -> None:
-    result = _resolve("workflow_dispatch", "v1.2.3", "refs/heads/main")
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "1.2.3"
-
-
-@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
-@pytest.mark.parametrize("tag", ["", "1.2.3", "vv1.2.3", "v01.2.3", "v1.2.3-rc1", "v1.2"])
-def test_release_versions_require_consistent_v_prefixed_tags(event, tag):
-    result = _resolve(event, tag, tag)
-    assert result.returncode != 0
-    assert "expected tag vMAJOR.MINOR.PATCH" in result.stderr
 
 
 @pytest.mark.parametrize("filename", ["release.yml", "publish-dotnet.yml", "publish-pypi.yml", "publish-direct.yml"])

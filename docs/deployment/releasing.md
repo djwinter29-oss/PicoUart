@@ -142,6 +142,12 @@ For Pico 2, use `--board pico2` with its matching packaged ELF, not a Pico image
 Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached or when USB enumeration tools are
 unavailable.
 
+The loader defaults to 1000 kHz SWD and retains flash verification. Override the speed with
+`--adapter-speed-khz <kHz>` or `PICO_DEBUG_PROBE_SPEED_KHZ`; the command-line option takes precedence. For unstable SWD
+connections, try `--adapter-speed-khz 100` and check probe wiring. The speed setting does not change the firmware clock.
+For development, omitting `--skip-build` performs an incremental build before flashing; use `--skip-build` only when
+the selected ELF is already the intended artifact.
+
 <details>
 <summary>Probe permissions and unknown flash-device troubleshooting</summary>
 
