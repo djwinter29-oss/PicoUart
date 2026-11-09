@@ -6,7 +6,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 function fixture(secure = true, hid = {}) {
-  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [
     `#${id}`, { textContent: "", dataset: {}, parentElement: { dataset: {} },
       children: [], value: "", checked: false, disabled: false, open: false,
@@ -45,7 +45,7 @@ function fixture(secure = true, hid = {}) {
       this.render(this.state);
     }
   }
-  const source = readFileSync(new URL("../js/app.mjs", import.meta.url), "utf8")
+  const source = readFileSync(new URL("../src/js/app.mjs", import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "");
   let polling;
   let agePolling;
@@ -59,7 +59,22 @@ function fixture(secure = true, hid = {}) {
   return { html, client, polling, agePolling, get: id => document.querySelector(`#${id}`) };
 }
 
-test("one connection button belongs to Device identity, with no separate refresh or disconnect", () => {
+test("Direct Dashboard distinguishes all assigned reset causes and preserves unknown codes", () => {
+  const view = fixture();
+  const labels = ["Unknown (not distinguished)", "Power-on", "Watchdog reset", "Software-requested reset",
+    "HardFault recovery", "Power-on or brownout", "Brownout", "RUN-pin reset", "Debugger reset",
+    "User-requested reboot", "Configuration-save reboot"];
+  for (const [reset_cause, label] of [...labels.entries(), [255, "Unknown (255)"]]) {
+    view.client.state.dashboard.configuration = { stored_profile: 0, reset_cause };
+    view.client.phase("connected");
+    assert.equal(view.get("reset-cause").textContent, label);
+  }
+  view.client.state.dashboard.configuration = null;
+  view.client.phase("disconnected");
+  assert.equal(view.get("reset-cause").textContent, "--");
+});
+
+test("one connection button belongs to Device overview, with no separate refresh or disconnect", () => {
   const { html } = fixture();
   const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
   const channels = html.match(/<section class="channels-section"[\s\S]*?<\/section>/)[0];
@@ -72,13 +87,13 @@ test("one connection button belongs to Device identity, with no separate refresh
   assert.ok(!html.includes("USB identity"));
   const configuration = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
   assert.match(html, /id="identity-title"[\s\S]*?<section aria-labelledby="configuration-title">[\s\S]*?<section aria-labelledby="runtime-title">/);
-  assert.match(configuration, /<h2 id="configuration-title">Board configuration<\/h2>/);
+  assert.match(configuration, /<h2 id="configuration-title">Hardware &amp; boot<\/h2>/);
   assert.match(configuration, /id="configuration-profile"/);
   assert.doesNotMatch(configuration, /configuration-unsafe-ack/);
   assert.match(html, /<dialog class="confirmation-dialog"[^>]*>[\s\S]*?id="configuration-unsafe-ack"/);
   assert.match(configuration, /role="status" aria-live="polite"/);
   assert.match(configuration, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[\s\S]*?<\/div>\s*<\/div>/);
-  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">Stored boot profile<\/label>\s*<select/);
+  assert.match(configuration, /class="summary configuration-summary">[\s\S]*?class="summary-item">[\s\S]*?<label for="configuration-profile">Board clock profile<\/label>\s*<select/);
   assert.match(configuration, /id="uart-tx-capacity"[\s\S]*?id="uart-rx-capacity"[\s\S]*?id="cdc-tx-capacity"[\s\S]*?id="cdc-rx-capacity"/);
   assert.match(html, /<details class="pin-map-disclosure">[\s\S]*?id="board-pins"/);
   assert.doesNotMatch(configuration, /configuration-note|configuration-detail|configuration-status/);
@@ -120,9 +135,14 @@ test("persistent configuration uses target profiles and gates unsafe saves", () 
   get("cancel-configuration").click();
   client.state.dashboard.channels[3].channel_state = 2;
   client.render(client.state);
-  assert.equal(profile.disabled, true);
+  assert.equal(profile.disabled, false);
   assert.equal(get("configuration-unsafe-ack").disabled, true);
   assert.equal(get("save-configuration").disabled, true);
+  client.state.dashboard.channels = [];
+  client.render(client.state);
+  assert.equal(profile.disabled, false);
+  client.phase("disconnected");
+  assert.equal(profile.disabled, true);
 });
 
 test("Save & Reboot stays disabled until the selected profile differs from its baseline", () => {

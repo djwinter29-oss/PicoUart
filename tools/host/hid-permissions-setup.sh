@@ -50,20 +50,32 @@ if [ -z "${SUDO_USER:-}" ] || [ "$SUDO_USER" = root ]; then
 fi
 
 ACCESS_GROUP=$(id -g "$SUDO_USER")
-USB_RULE="SUBSYSTEM==\"usb\", ENV{DEVTYPE}==\"usb_device\", ATTR{idVendor}==\"cafe\", ATTR{idProduct}==\"4010\", GROUP=\"$ACCESS_GROUP\", MODE=\"0660\", TAG+=\"uaccess\""
-HIDRAW_RULE="SUBSYSTEM==\"hidraw\", KERNEL==\"hidraw*\", ATTRS{idVendor}==\"cafe\", ATTRS{idProduct}==\"4010\", GROUP=\"$ACCESS_GROUP\", MODE=\"0660\", TAG+=\"uaccess\""
+USB_RULE="SUBSYSTEM==\"usb\", ENV{DEVTYPE}==\"usb_device\", "\
+"ATTR{idVendor}==\"2e8a\", ATTR{idProduct}==\"116b\", GROUP=\"$ACCESS_GROUP\", "\
+"MODE=\"0660\", TAG+=\"uaccess\""
+HIDRAW_RULE="SUBSYSTEM==\"hidraw\", KERNEL==\"hidraw*\", "\
+"ATTRS{idVendor}==\"2e8a\", ATTRS{idProduct}==\"116b\", GROUP=\"$ACCESS_GROUP\", "\
+"MODE=\"0660\", TAG+=\"uaccess\""
 RULE_CONTENT=$(printf '%s\n%s' "$USB_RULE" "$HIDRAW_RULE")
+LEGACY_USB_RULE="SUBSYSTEM==\"usb\", ENV{DEVTYPE}==\"usb_device\", "\
+"ATTR{idVendor}==\"cafe\", ATTR{idProduct}==\"4010\", GROUP=\"$ACCESS_GROUP\", "\
+"MODE=\"0660\", TAG+=\"uaccess\""
+LEGACY_HIDRAW_RULE="SUBSYSTEM==\"hidraw\", KERNEL==\"hidraw*\", "\
+"ATTRS{idVendor}==\"cafe\", ATTRS{idProduct}==\"4010\", GROUP=\"$ACCESS_GROUP\", "\
+"MODE=\"0660\", TAG+=\"uaccess\""
+LEGACY_RULE_CONTENT=$(printf '%s\n%s' "$LEGACY_USB_RULE" "$LEGACY_HIDRAW_RULE")
 
 if [ -L "$RULE_TARGET" ]; then
     echo "Refusing to replace symlink $RULE_TARGET; review the rule manually." >&2
     exit 1
 fi
-if [ -e "$RULE_TARGET" ] && [ "$(cat "$RULE_TARGET")" != "$RULE_CONTENT" ]; then
+if [ -e "$RULE_TARGET" ] && [ "$(cat "$RULE_TARGET")" != "$RULE_CONTENT" ] \
+    && [ "$(cat "$RULE_TARGET")" != "$LEGACY_RULE_CONTENT" ]; then
     echo "Existing udev rule differs; refusing to overwrite $RULE_TARGET." >&2
     echo "Review and merge the rule manually." >&2
     exit 1
 fi
-if [ ! -e "$RULE_TARGET" ]; then
+if [ ! -e "$RULE_TARGET" ] || [ "$(cat "$RULE_TARGET")" = "$LEGACY_RULE_CONTENT" ]; then
     TEMP_RULE=$(mktemp)
     trap 'rm -f "$TEMP_RULE"' 0 HUP INT TERM
     printf '%s\n' "$RULE_CONTENT" > "$TEMP_RULE"
@@ -71,7 +83,7 @@ if [ ! -e "$RULE_TARGET" ]; then
 fi
 
 udevadm control --reload-rules
-udevadm trigger --subsystem-match=usb --attr-match=idVendor=cafe --attr-match=idProduct=4010
+udevadm trigger --subsystem-match=usb --attr-match=idVendor=2e8a --attr-match=idProduct=116b
 udevadm trigger --subsystem-match=hidraw
 udevadm settle
 echo "PicoUart HID permissions applied for $SUDO_USER (primary group $ACCESS_GROUP)."

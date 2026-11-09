@@ -10,10 +10,12 @@ for publisher setup, manual tests, retries, and rollback. Published host artifac
 | --- | --- | --- |
 | Python | Release wheel on GitHub and PyPI; recommend `pipx` for application installation | Source distribution after rebuild qualification; no native installer planned |
 | .NET | Self-contained archives on GitHub Releases, with no installed .NET runtime required | Linux `.deb`, signed Windows `.msi`, signed and notarized macOS `.app` |
-| WebHID | Static HTTPS site on GitHub Pages | Downloadable static archive; no application installer or backend planned |
+| Direct Dashboard | Static HTTPS site on GitHub Pages | Downloadable static archive; no application installer or backend planned |
 
-Keep Python/.NET assets in their existing shared frontend. WebHID remains independent, with all deployable files in
-`host/webhid`; do not introduce a shared asset-generation or preparation step.
+Python/.NET package only the shared frontend assets in `host/web/src`; shared tests remain in `host/web/tests`.
+The Direct Dashboard remains independent, with all deployable
+files in `host/direct/src`; tests remain in `host/direct/tests`. Do not introduce a shared asset-generation or
+preparation step.
 
 ## Python Publication
 
@@ -56,11 +58,13 @@ Archives must retain the current loopback-only server behavior. Neither archives
 always-running service by default. Signing identities, notarization access, and installer tooling are prerequisites
 for the later phase, not part of the initial archive rollout.
 
-## WebHID Hosting
+<a id="webhid-hosting"></a>
 
-The [hosted dashboard](https://djwinter29-oss.github.io/PicoUart/) uses the standalone `host/webhid` assets over HTTPS.
+## Direct Dashboard Hosting
+
+The [hosted dashboard](https://djwinter29-oss.github.io/PicoUart/) uses the standalone `host/direct/src` assets over HTTPS.
 Packaging stamps its visible version without introducing shared frontend generation. Normal release deployment and
-explicit live-site test deployment are separate modes; see the [Pages runbook](host-app-publishing.md#webhid-pages).
+explicit live-site test deployment are separate modes; see the [Pages runbook](host-app-publishing.md#direct-dashboard-pages).
 
 A versioned static release archive for self-hosting remains planned. It will require HTTPS or localhost when served;
 opening HTML directly from disk is not a supported deployment.
@@ -68,7 +72,7 @@ opening HTML directly from disk is not a supported deployment.
 Use supported desktop Chromium browsers, such as Chrome and Edge; do not promise Safari, Firefox, or mobile support.
 USB access stays local to the browser's computer and requires user-granted browser permission plus OS device access.
 Hosting the page does not proxy remote USB devices or require a Python/.NET server. See the
-[WebHID guide](../../host/webhid/README.md) for setup, permissions, and browser behavior.
+[Direct Dashboard guide](../../host/direct/README.md) for setup, permissions, and browser behavior.
 
 Qualification includes the deployed project-site path, asset loading, secure-context behavior, and supported
 browser/device access. Mocked checks do not prove native WebHID compatibility.

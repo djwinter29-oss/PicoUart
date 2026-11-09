@@ -75,6 +75,8 @@ public sealed class ConfigurationEndpointTests
         using var handler = new HttpClientHandler { CookieContainer = new CookieContainer() };
         using var http = new HttpClient(handler) { BaseAddress = new($"http://127.0.0.1:{port}"),
             Timeout = TimeSpan.FromSeconds(5) };
+        handler.CookieContainer.Add(http.BaseAddress!, new Cookie($"PicoUart.Session.{port}", "legacy-cookie"));
+        handler.CookieContainer.Add(http.BaseAddress!, new Cookie($"PicoUart.Python.Session.{port}", "python-cookie"));
         try
         {
             string? page = null;
@@ -89,7 +91,7 @@ public sealed class ConfigurationEndpointTests
             Assert.Contains("#toggle-led[data-state=\"off\"]", stylesheet);
             var script = await http.GetStringAsync("/js/dashboard.js");
             Assert.Contains("const channelRowViews = new Map()", script);
-            Assert.NotNull(handler.CookieContainer.GetCookies(http.BaseAddress!)[$"PicoUart.Session.{port}"]);
+            Assert.NotNull(handler.CookieContainer.GetCookies(http.BaseAddress!)[$"PicoUart.DotNet.Session.{port}"]);
             var token = Regex.Match(page, "[A-F0-9]{64}").Value;
             Assert.Equal(64, token.Length);
             const string valid = "{\"profile\":0,\"unsafe_overclock\":false}";

@@ -257,7 +257,7 @@ jobs:
             - For rated **pico** (125 MHz) and **pico2** (150 MHz), match packaged SHAs to recorded HIL images
             - Optional overclock profiles are selected on-device through the persistent configuration sector and require exact-board HIL qualification
             - Some Pico 2 boards may not support 300 MHz reliably; the reduced 280 MHz target still requires exact-board HIL before any stability claim
-            - This project publishes lab/test artifacts using the unallocated `cafe:4010` USB identity
+            - PicoUart uses Raspberry Pi Foundation-allocated USB identity `2e8a:116b`
             - Attach or link recorded HIL evidence for every claimed board, rate, and workload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

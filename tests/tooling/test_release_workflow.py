@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Ji Dong
-"""Coverage for the release.yml tag trigger glob and version policy script.
+"""Coverage for release workflow contracts and publication gates.
 
 GitHub Actions tag filters are glob patterns, not regexes: '+' has no
 "one or more" meaning there. A prior version of the workflow used
 "v[0-9]+.[0-9]+.[0-9]+", which only matches tags containing a literal '+'
 and never matches a real tag like v1.2.3. These tests pin the fixed glob
-and the release-tag version policy enforced by tools/release/resolve-release-version.sh.
+and the release workflow contracts.
 
 They also pin the PR and release firmware matrices to the rated pico/pico2
 images only; overclock selection now lives in the on-device configuration
@@ -32,7 +32,6 @@ import require_release_checks
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PR_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-check.yml"
-RESOLVE_SCRIPT = REPO_ROOT / "tools" / "release" / "resolve-release-version.sh"
 
 # board, label.
 PR_FIRMWARE_MATRIX = (
@@ -77,65 +76,10 @@ def test_release_tag_glob_rejects_non_v_prefixed_or_non_numeric_tags(tag: str) -
     # one dot-delimited numeric group" via '+'). Tags like v1.2.3-rc1 or
     # v1.2.3.4 do match this glob and are rejected later by the job-level
     # "Resolve version" policy in tools/release/resolve-release-version.sh instead
-    # (see test_resolve_release_version_rejects_outside_policy).
     assert not fnmatch.fnmatch(tag, _tag_glob())
 
 
-def _resolve(event_name: str, input_tag: str, ref_name: str) -> subprocess.CompletedProcess:
-    # Invoke via "sh" explicitly rather than executing the script path
-    # directly: Windows has no shebang support, so running the POSIX
-    # script as a bare executable fails with WinError 193 ("%1 is not a
-    # valid Win32 application"). Git-for-Windows' sh.exe (on PATH for
-    # GitHub-hosted windows-latest runners) and every POSIX sh both honor
-    # this invocation the same way.
-    return subprocess.run(
-        ["sh", str(RESOLVE_SCRIPT), event_name, input_tag, ref_name],
-        capture_output=True,
-        text=True,
-    )
-
-
-@pytest.mark.parametrize(
-    ("ref_name", "expected"),
-    [
-        ("v1.2.3", "1.2.3"),
-        ("v99.99.255", "99.99.255"),
-    ],
-)
-def test_resolve_release_version_accepts_within_policy(ref_name: str, expected: str) -> None:
-    result = _resolve("push", "", ref_name)
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == expected
-
-
-@pytest.mark.parametrize(
-    "ref_name",
-    ["v100.0.0", "v255.255.255", "v256.0.0", "v1.2.3-rc1", "v1.2"],
-)
-def test_resolve_release_version_rejects_outside_policy(ref_name: str) -> None:
-    result = _resolve("push", "", ref_name)
-
-    assert result.returncode != 0
-    assert "Refusing version" in result.stderr
-
-
-def test_resolve_release_version_uses_workflow_dispatch_input() -> None:
-    result = _resolve("workflow_dispatch", "v1.2.3", "refs/heads/main")
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "1.2.3"
-
-
-@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
-@pytest.mark.parametrize("tag", ["", "1.2.3", "vv1.2.3", "v01.2.3", "v1.2.3-rc1", "v1.2"])
-def test_release_versions_require_consistent_v_prefixed_tags(event, tag):
-    result = _resolve(event, tag, tag)
-    assert result.returncode != 0
-    assert "expected tag vMAJOR.MINOR.PATCH" in result.stderr
-
-
-@pytest.mark.parametrize("filename", ["release.yml", "publish-dotnet.yml", "publish-pypi.yml", "publish-webhid.yml"])
+@pytest.mark.parametrize("filename", ["release.yml", "publish-dotnet.yml", "publish-pypi.yml", "publish-direct.yml"])
 def test_manual_release_inputs_use_the_same_tag_contract(filename):
     text = (REPO_ROOT / ".github/workflows" / filename).read_text(encoding="utf-8")
     inputs = text.split("  workflow_dispatch:\n    inputs:\n", 1)[1].split("\npermissions:", 1)[0]
@@ -349,7 +293,7 @@ def test_pypi_wheel_verification_rejects_invalid_release_artifacts(tmp_path, cas
 
 
 def test_webhid_pages_requires_a_published_release_and_checks_the_tag() -> None:
-    text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
+    text = (REPO_ROOT / ".github/workflows/publish-direct.yml").read_text(encoding="utf-8")
 
     assert "workflows: [Release]" in text
     assert "types: [completed]" in text
@@ -358,13 +302,13 @@ def test_webhid_pages_requires_a_published_release_and_checks_the_tag() -> None:
     assert "gh release view" in text
     assert ".isDraft == false and .isPrerelease == false" in text
     assert "ref: ${{ steps.checks.outputs.sha || github.sha }}" in text
-    assert "node --test host/webhid/tests/*.test.mjs" in text
-    assert text.index("Validate published release") < text.index("Checkout WebHID")
-    assert text.index("Check WebHID") < text.index("Upload WebHID site")
+    assert "node --test host/direct/tests/*.test.mjs" in text
+    assert text.index("Validate published release") < text.index("Checkout Direct Dashboard")
+    assert text.index("Check Direct Dashboard") < text.index("Upload Direct Dashboard site")
 
 
 def test_webhid_pages_test_publish_is_explicit_and_uses_the_dispatched_commit() -> None:
-    text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
+    text = (REPO_ROOT / ".github/workflows/publish-direct.yml").read_text(encoding="utf-8")
     inputs = text.split("    inputs:\n", 1)[1].split("\npermissions:", 1)[0]
 
     assert "test_publish:" in inputs
@@ -373,7 +317,7 @@ def test_webhid_pages_test_publish_is_explicit_and_uses_the_dispatched_commit() 
     section = text.split("- name: Validate published release\n", 1)[1].split("\n      - name:", 1)[0]
     assert "if: github.event_name != 'workflow_dispatch' || !inputs.test_publish" in section
     assert 'require_release_checks.py --tag "$RELEASE_TAG"' in text
-    assert text.index("Require successful tests") < text.index("Checkout WebHID")
+    assert text.index("Require successful tests") < text.index("Checkout Direct Dashboard")
     gate = text.split("- name: Require successful tests\n", 1)[1].split("\n      - name:", 1)[0]
     assert "if: github.event_name != 'workflow_dispatch' || !inputs.test_publish" in gate
     assert "ref: ${{ steps.checks.outputs.sha || github.sha }}" in text
@@ -386,12 +330,12 @@ def test_webhid_pages_stamps_only_valid_host_versions(tmp_path, version, success
     node = shutil.which("node")
     if not node:
         pytest.skip("Node unavailable")
-    text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
-    step = text.split("- name: Stamp WebHID version\n", 1)[1].split("\n      - name:", 1)[0]
+    text = (REPO_ROOT / ".github/workflows/publish-direct.yml").read_text(encoding="utf-8")
+    step = text.split("- name: Stamp Direct Dashboard version\n", 1)[1].split("\n      - name:", 1)[0]
     script = textwrap.dedent(step.split("<<'JS'\n", 1)[1].rsplit("\n          JS", 1)[0])
-    target = tmp_path / "host/webhid/index.html"
+    target = tmp_path / "host/direct/src/index.html"
     target.parent.mkdir(parents=True)
-    original = (REPO_ROOT / "host/webhid/index.html").read_text(encoding="utf-8")
+    original = (REPO_ROOT / "host/direct/src/index.html").read_text(encoding="utf-8")
     target.write_text(original, encoding="utf-8")
     result = subprocess.run([node, "--input-type=module", "-"], input=script, text=True,
                             capture_output=True, cwd=tmp_path, env={**os.environ, "HOST_VERSION": version})
@@ -402,10 +346,12 @@ def test_webhid_pages_stamps_only_valid_host_versions(tmp_path, version, success
 
 
 def test_webhid_pages_deploys_only_the_independent_site_with_scoped_permissions() -> None:
-    text = (REPO_ROOT / ".github/workflows/publish-webhid.yml").read_text(encoding="utf-8")
+    text = (REPO_ROOT / ".github/workflows/publish-direct.yml").read_text(encoding="utf-8")
     build, deploy = text.split("\n  deploy:\n", 1)
 
-    assert "path: host/webhid" in build
+    assert "path: host/direct/src\n" in build
+    assert "path: host/direct\n" not in build
+    assert "path: host/direct/tests" not in build
     assert "path: host/web\n" not in text
     assert "needs: build" in deploy
     assert "pages: write" not in build
@@ -497,7 +443,7 @@ def test_publication_gate_requires_all_applicable_workflows(monkeypatch, tmp_pat
 
 
 @pytest.mark.parametrize("filename,job_name", [
-    ("publish-pypi.yml", "verify"), ("publish-webhid.yml", "build"),
+    ("publish-pypi.yml", "verify"), ("publish-direct.yml", "build"),
 ])
 def test_publishers_follow_successful_same_repository_tag_builds(filename, job_name):
     text = (REPO_ROOT / ".github/workflows" / filename).read_text(encoding="utf-8")

@@ -21,8 +21,8 @@ else:
     _HID_IMPORT_ERROR = None
 
 
-VENDOR_ID = 0xCAFE  # Keep in sync with firmware/src/config/usb_identity.h
-PRODUCT_ID = 0x4010  # Development placeholder; see SECURITY.md
+VENDOR_ID = 0x2E8A  # Keep in sync with firmware/src/config/usb_identity.h
+PRODUCT_ID = 0x116B
 USAGE_PAGE = 0xFF00
 USAGE = 0x0001
 PRODUCT_STRING = "PicoUart"

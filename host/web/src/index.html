@@ -11,7 +11,7 @@ Copyright (c) 2026 Ji Dong
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/dashboard.css?v=35">
-  <script src="/js/dashboard.js?v=34" defer></script>
+  <script src="/js/dashboard.js?v=38" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -32,12 +32,12 @@ Copyright (c) 2026 Ji Dong
 
   <main>
     <section class="page-heading">
-      <div><h1>Diagnostics</h1></div>
+      <div><h1>Dashboard</h1></div>
     </section>
 
     <section aria-labelledby="identity-title">
       <div class="section-heading">
-        <h2 id="identity-title">Device identity</h2>
+        <h2 id="identity-title">Device overview</h2>
         <div class="actions" aria-label="Board identification">
           <button class="button button-led" id="rescan-boards" type="button">Rescan</button>
           <select id="board-select" aria-label="Board attached to this server" disabled>
@@ -59,7 +59,7 @@ Copyright (c) 2026 Ji Dong
 
     <section aria-labelledby="configuration-title">
       <div class="section-heading">
-        <h2 id="configuration-title">Board configuration</h2>
+        <h2 id="configuration-title">Hardware &amp; boot</h2>
         <div class="actions" aria-label="Board controls">
           <button class="button button-secondary" id="save-configuration" type="button" hidden disabled>
             Save &amp; Reboot
@@ -72,8 +72,8 @@ Copyright (c) 2026 Ji Dong
       </div>
       <div class="summary configuration-summary">
         <div class="summary-item">
-          <label for="clock-profile">Stored boot profile</label>
-          <select id="clock-profile" disabled>
+          <label for="clock-profile">Board clock profile</label>
+          <select id="clock-profile" title="System clock profile applied after saving and rebooting." disabled>
             <option value="0">SDK default</option>
             <option value="1">150 MHz</option>
             <option value="2">200 MHz</option>
@@ -81,14 +81,14 @@ Copyright (c) 2026 Ji Dong
             <option value="4">280 MHz</option>
           </select>
         </div>
-        <div class="summary-item"><span>Reset cause</span><strong id="reset-cause">--</strong></div>
+        <div class="summary-item"><span title="Reported from reset evidence captured at boot. Pico combines power-on and brownout; Pico 2 distinguishes them. Unknown means the available evidence cannot identify the cause, not necessarily a fault.">Reset cause</span><strong id="reset-cause">--</strong></div>
         <div class="summary-item"><span>UART TX ring capacity</span><strong id="uart-tx-capacity">--</strong></div>
         <div class="summary-item"><span>UART RX ring capacity</span><strong id="uart-rx-capacity">--</strong></div>
         <div class="summary-item"><span>CDC TX FIFO capacity</span><strong id="cdc-tx-capacity">--</strong></div>
         <div class="summary-item"><span>CDC RX FIFO capacity</span><strong id="cdc-rx-capacity">--</strong></div>
       </div>
       <details class="pin-map-disclosure">
-        <summary>Channel pin mapping</summary>
+        <summary>Pin mapping</summary>
         <div class="pin-map" id="pin-map" aria-label="Static UART GPIO assignments"></div>
       </details>
     </section>
@@ -126,7 +126,7 @@ Copyright (c) 2026 Ji Dong
 
     <section aria-labelledby="runtime-title">
       <div class="section-heading">
-        <h2 id="runtime-title">Runtime status</h2>
+        <h2 id="runtime-title">Live status</h2>
       </div>
       <div class="summary runtime-summary">
         <div class="summary-item"><span>Uptime</span><strong id="uptime">--</strong></div>

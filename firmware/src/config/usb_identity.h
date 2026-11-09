@@ -6,27 +6,20 @@
  *
  * ## Policy
  *
- * `0xCAFE:0x4010` is a **development / lab placeholder**. It is not an
- * allocated USB-IF or pid.codes identity. PicoUart publishes lab/project
- * artifacts under these IDs; they are not suitable for commercial devices
- * because collisions with other projects are likely.
- *
- * Before shipping a commercial derivative:
- * 1. Obtain an allocated VID/PID (for example via https://pid.codes or a
- *    commercial USB-IF vendor ID).
- * 2. Update @ref PICO_UART_USB_VID and @ref PICO_UART_USB_PID here.
- * 3. Keep @ref host/python/src/pico_uart/transport.py in sync (same numeric values).
- * 4. Call out the identity change in release notes as a breaking USB change.
- * 5. See docs/deployment/releasing.md for the release and HIL checklist.
+ * The Raspberry Pi Foundation has allocated VID/PID `0x2E8A:0x116B` to
+ * PicoUart; see https://github.com/raspberrypi/usb-pid. Keep host-side
+ * discovery filters synchronized with these values.
+ * Changing this identity is a breaking USB change; see docs/deployment/releasing.md
+ * for the release and HIL checklist.
  */
 
 #ifndef PICO_UART_USB_IDENTITY_H
 #define PICO_UART_USB_IDENTITY_H
 
-/** @brief USB vendor ID used by PicoUart (development placeholder). */
-#define PICO_UART_USB_VID 0xCafeu
-/** @brief USB product ID used by PicoUart (development placeholder). */
-#define PICO_UART_USB_PID 0x4010u
+/** @brief Raspberry Pi Foundation USB vendor ID allocated for PicoUart. */
+#define PICO_UART_USB_VID 0x2E8Au
+/** @brief USB product ID allocated for PicoUart. */
+#define PICO_UART_USB_PID 0x116Bu
 /** @brief ASCII product name shared by USB enumeration and HID board identity. */
 #define PICO_UART_USB_PRODUCT "PicoUart"
 

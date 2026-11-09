@@ -6,7 +6,35 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const root = fileURLToPath(new URL("../", import.meta.url));
+const root = fileURLToPath(new URL("../src/", import.meta.url));
+
+test("Direct Dashboard branding appears in browser and accessible headings", () => {
+  const html = readFileSync(join(root, "index.html"), "utf8");
+  assert.match(html, /<title>PicoUart \| Direct Dashboard<\/title>/);
+  assert.match(html, /aria-label="PicoUart Direct Dashboard home"/);
+  assert.match(html, /<small>Direct<\/small>/);
+  assert.match(html, /<h1>Dashboard<\/h1>/);
+});
+
+test("all dashboards use matching descriptive section headings", () => {
+  for (const sourceRoot of [new URL("../src/", import.meta.url), new URL("../../web/src/", import.meta.url)]) {
+    const html = readFileSync(new URL("index.html", sourceRoot), "utf8");
+    assert.match(html, /<h2 id="identity-title">Device overview<\/h2>/);
+    assert.match(html, /<h2 id="configuration-title">Hardware &amp; boot<\/h2>/);
+    assert.match(html, /<h2 id="runtime-title">Live status<\/h2>/);
+    assert.match(html, /<h2 id="channels-title">UART channels /);
+  }
+});
+
+test("both dashboards explain platform reset evidence and unknown causes", () => {
+  for (const sourceRoot of [new URL("../src/", import.meta.url), new URL("../../web/src/", import.meta.url)]) {
+    const html = readFileSync(new URL("index.html", sourceRoot), "utf8");
+    assert.match(html, /title="[^"]*Pico combines power-on and brownout; Pico 2 distinguishes them\.[^"]*">Reset cause/);
+    const script = readFileSync(new URL(sourceRoot.pathname.endsWith("/web/src/") ? "js/dashboard.js" : "js/app.mjs",
+      sourceRoot), "utf8");
+    assert.ok(script.includes('"Unknown (not distinguished)"'));
+  }
+});
 
 test("HTML references only WebHID-owned assets", () => {
   const html = readFileSync(join(root, "index.html"), "utf8");
@@ -19,18 +47,19 @@ test("HTML references only WebHID-owned assets", () => {
   assert.ok(!html.includes("shared/"));
 });
 
-for (const frontend of ["web", "webhid"]) {
+for (const frontend of ["web", "direct"]) {
   test(`${frontend} keeps board configuration in a compact summary with a heading action`, () => {
-    const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
+    const sourceRoot = new URL(frontend === "web" ? "../../web/src/" : "../src/", import.meta.url);
+    const html = readFileSync(new URL("index.html", sourceRoot), "utf8");
     const section = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
-    if (frontend === "webhid") {
+    if (frontend === "direct") {
       const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
-      assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
+      assert.match(section, /<h2 id="configuration-title">Hardware &amp; boot<\/h2>/);
       assert.match(section, /id="reboot-board"/);
       assert.match(section, /class="button button-secondary" id="reboot-board"/);
       assert.doesNotMatch(identity, /id="reboot-board"/);
       assert.match(section, /class="section-heading">[\s\S]*?class="actions"[\s\S]*?id="save-configuration"[^>]*>Save &amp; Reboot<\/button>[\s\S]*?<\/div>\s*<\/div>/);
-      assert.match(section, /class="summary configuration-summary">[\s\S]*?<label for="configuration-profile">Stored boot profile<\/label>\s*<select/);
+      assert.match(section, /class="summary configuration-summary">[\s\S]*?<label for="configuration-profile">Board clock profile<\/label>\s*<select/);
       assert.match(html, /<dialog class="confirmation-dialog"[^>]*>[\s\S]*?id="configuration-acknowledgement" hidden/);
       assert.match(html, /<dialog class="confirmation-dialog"[^>]*id="reboot-dialog"[\s\S]*?id="confirm-reboot"/);
       assert.match(html, /<th class="traffic-heading" scope="col" title="[^"]+">\s*<span class="traffic-heading-title">Traffic<\/span>\s*<span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB<\/span>\s*<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
@@ -46,16 +75,16 @@ for (const frontend of ["web", "webhid"]) {
       assert.match(section, /id="configuration-message" role="status" aria-live="polite"/);
       assert.match(html, /title="Rates ramp from a one-second to a five-second average as samples arrive\./);
     } else {
-      assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
+      assert.match(section, /<h2 id="configuration-title">Hardware &amp; boot<\/h2>/);
       assert.match(section, /id="save-configuration"/);
       assert.match(section, /class="button button-secondary" id="reset-board"/);
-      assert.match(section, /<label for="clock-profile">Stored boot profile<\/label>/);
+      assert.match(section, /<label for="clock-profile">Board clock profile<\/label>/);
     }
     assert.doesNotMatch(section, /configuration-panel|configuration-note|configuration-status|configuration-detail/);
-    const styles = readFileSync(new URL(`../../${frontend}/css/${frontend === "web" ? "dashboard" : "webhid"}.css`,
-      import.meta.url), "utf8");
-    if (frontend === "webhid") {
-      const sharedStyles = readFileSync(new URL("../css/dashboard.css", import.meta.url), "utf8");
+    const styles = readFileSync(new URL(`css/${frontend === "web" ? "dashboard" : "direct"}.css`,
+      sourceRoot), "utf8");
+    if (frontend === "direct") {
+      const sharedStyles = readFileSync(new URL("../src/css/dashboard.css", import.meta.url), "utf8");
       const channels = html.match(/<section class="channels-section"[\s\S]*?<\/section>/)[0];
       assert.match(channels, /<th scope="col">Channel status<\/th>\s*<th scope="col">UART configuration<\/th>/);
       assert.match(styles, /#configuration-profile\s*\{[^}]*width:\s*100%;/);

@@ -28,7 +28,7 @@ python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial 
 # Host dashboards (Linux/macOS/WSL; use separate ports for concurrent instances)
 tools/host/run-python.sh
 tools/host/run-dotnet.sh
-tools/host/run-webhid.sh
+tools/host/run-direct.sh
 
 # Host tests (after the developer environment setup linked below)
 PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
@@ -56,10 +56,10 @@ tools/host/run-dotnet.sh --serial <serial-2> web --port 5002
 ```
 
 The same pattern works for multiple instances of either backend.
-The WebHID launcher serves only static assets on loopback port 8000; use `--port` to change it.
+The Direct Dashboard launcher serves only static assets on loopback port 8000; use `--port` to change it.
 Run each launcher with `--help` for prerequisites and environment overrides.
 The Python/.NET launchers check local USB/HID permissions before starting; they do not install rules automatically.
-WebHID does not check the server's USB permissions because the browser may run on another computer.
+The Direct Dashboard does not check the server's USB permissions because the browser may run on another computer.
 
 The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it), installing the hash-locked
 runtime dependencies only if Flask or hidapi cannot import. Bootstrap uses public PyPI only and ignores machine/user
@@ -67,7 +67,7 @@ pip index configuration, avoiding unrelated private feeds. It runs source direct
 installing the package editable. Refresh dependencies explicitly after dependency changes using the
 [developer setup](../docs/development/host-tools.md#python-environment-setup).
 Native Windows users can use the direct commands in the [Python](../host/python/README.md),
-[.NET](../host/dotnet/README.md), and [WebHID](../host/webhid/README.md) guides.
+[.NET](../host/dotnet/README.md), and [Direct Dashboard](../host/direct/README.md) guides.
 
 ## Linux HID Permissions
 
@@ -79,14 +79,22 @@ tools/host/hid-permissions-check.sh
 ```
 
 Setup requests sudo, installs `/etc/udev/rules.d/70-picouart-hid.rules`, reloads udev, and reapplies rules to attached
-devices. The rules grant read/write access only to PicoUart `cafe:4010` USB and hidraw nodes through the invoking user's
-primary group, plus desktop-session `uaccess`. Group membership is not changed; SSH users need no fresh login.
-The USB rule supports libusb-backed hidapi; the hidraw rule supports HID clients and WebHID. CDC serial permissions and
-Debug Probe access are unchanged. Customized existing rules are never overwritten.
+devices. The rules grant read/write access only to PicoUart USB and hidraw nodes with VID `0x2E8A` and PID `0x116B`
+([official allocation list](https://github.com/raspberrypi/usb-pid)) through the invoking user's primary group,
+plus desktop-session `uaccess`. Existing unmodified rules generated for the retired `cafe:4010` identity
+are migrated automatically; customized rules are never overwritten. Group membership is not changed; SSH users need no
+fresh login. The USB rule supports libusb-backed hidapi; the hidraw rule supports HID clients and WebHID. CDC serial
+permissions and Debug Probe access are unchanged.
+
+HID access permits board-control commands as well as diagnostics, including reboot when firmware advertises that
+capability. This is local USB access on the connected computer; a process or SSH session with the same device
+permissions can use it. Serial-port group membership (such as `dialout`) does not itself grant HID access.
+See the [HID control contract](../docs/design/usb/hid-report-reference.md#action-validation-and-execution) and
+[firmware build options](../firmware/build-and-config.md) for reboot behavior and how to disable standalone HID reboot.
 
 If access is still denied, reconnect the board and rerun the check. With no connected board the check succeeds; this is
 not a connectivity test. On systems without udev it warns and skips checking. Both helpers are no-ops on non-Linux hosts.
-For WebHID, run setup on the Linux computer running the browser, not just on a remote dashboard server.
+For the Direct Dashboard, run setup on the Linux computer running the browser, not just on a remote dashboard server.
 
 ## Canonical Documentation
 

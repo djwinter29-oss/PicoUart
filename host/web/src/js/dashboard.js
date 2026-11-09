@@ -56,7 +56,11 @@ const directions = [
 ];
 const channelStates = ["closed", "starting", "ready", "configuring", "error"];
 const measurementStates = ["Unavailable", "Current", "Cached"];
-const resetCauses = ["Unknown", "Power-on", "Watchdog", "Software-requested"];
+const resetCauses = [
+  "Unknown (not distinguished)", "Power-on", "Watchdog reset", "Software-requested reset", "HardFault recovery",
+  "Power-on or brownout", "Brownout", "RUN-pin reset", "Debugger reset", "User-requested reboot",
+  "Configuration-save reboot",
+];
 const errorReasons = [
   "None recorded",
   "Unsupported baud setting",
@@ -84,7 +88,6 @@ function makeCell(className, text) {
 function updateReportAge(data, now = Date.now()) {
   const sample = Date.parse(data.updated_at);
   const age = document.querySelector("#sample-time");
-  age.hidden = !data.connected;
   if (!data.connected) reportSample = null;
   if (data.connected && Number.isFinite(sample) && sample !== reportSample) {
     reportSample = sample;
@@ -92,8 +95,9 @@ function updateReportAge(data, now = Date.now()) {
   }
   const seconds = Math.max(0, Math.floor((now - reportReceivedAt) / 1000));
   const stale = Number.isFinite(sample) && now - reportReceivedAt > 3000;
+  age.hidden = !data.connected || (Number.isFinite(sample) && !stale);
   age.textContent = Number.isFinite(sample)
-    ? `Report ${seconds} s ago${stale ? " (stale)" : ""}` : "Waiting for report";
+    ? `Telemetry stale · ${seconds} s ago` : "Waiting for telemetry";
   age.dataset.stale = String(stale);
 }
 
@@ -152,8 +156,9 @@ function renderStaticConfiguration(data) {
     configurationSavePending = false;
     overclockAcknowledgement.checked = false;
   }
-  if (!configurationProfileDirty && Number.isInteger(configuration?.stored_profile)) {
-    clockProfile.value = String(configuration.stored_profile);
+  if (!configurationProfileDirty && configuration
+    && (configuration.stored_profile === null || Number.isInteger(configuration.stored_profile))) {
+    clockProfile.value = String(configuration.stored_profile ?? 0);
   }
   document.querySelector("#reset-cause").textContent = resetCauseName(configuration?.reset_cause);
   document.querySelector("#uart-tx-capacity").textContent = formatBytes(configuration?.uart_tx_ring_capacity_bytes);
@@ -213,9 +218,11 @@ function updateConfigurationControls(data) {
   const profile = Number(clockProfile.value);
   const profileSupported = Number.isInteger(profile) && Boolean((identity?.clock_profile_mask ?? 0) & (1 << profile));
   const storedProfile = data?.configuration?.stored_profile;
-  const available = Boolean(data?.connected && (capabilities & 4) && Number.isInteger(storedProfile));
-  const profileChanged = available && profile !== storedProfile;
-  clockProfile.disabled = actionBusy || configurationSavePending || !available;
+  const available = Boolean(data?.connected && (capabilities & 4) && data?.configuration
+    && (storedProfile === null || Number.isInteger(storedProfile)));
+  const profileChanged = available && profile !== (storedProfile ?? 0);
+  clockProfile.disabled = actionBusy || configurationSavePending || !data?.connected
+    || !(capabilities & 4) || !identity?.clock_profile_mask;
   saveConfigurationButton.hidden = !(capabilities & 4);
   saveConfigurationButton.disabled = actionBusy || configurationSavePending || !available
     || !profileChanged || !profileSupported;

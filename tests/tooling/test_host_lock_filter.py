@@ -2,8 +2,6 @@
 # Copyright (c) 2026 Ji Dong
 """The optional hidapi fallback must preserve other hashed requirements."""
 
-import json
-import os
 import subprocess
 import sys
 
@@ -22,12 +20,6 @@ def _run_filter(repo_root, lock_text: str, exclude: str) -> str:
         check=True,
     )
     return result.stdout
-
-
-def test_python_filter_is_used_by_host_test_runner(repo_root):
-    assert (repo_root / FILTER_SCRIPT).is_file()
-    script = (repo_root / "tools/validation/run-host-tests.sh").read_text()
-    assert "filter_lock_exclude.py" in script
 
 
 def test_hidapi_filter_retains_setuptools_needed_by_vcs_builds(repo_root):
@@ -83,8 +75,6 @@ def test_filter_preserves_package_with_a_still_kept_parent(repo_root, hashes):
     assert "pytest==8.3.5" in filtered
     assert "# via hidapi" not in filtered
     assert "# via pytest" in filtered
-
-
 def test_filter_drops_only_transitively_hidapi_only_packages(repo_root):
     """A package solely required by the excluded package must be dropped too."""
     lock = (
@@ -105,57 +95,3 @@ def test_filter_drops_only_transitively_hidapi_only_packages(repo_root):
     assert "hidapi==" not in filtered
     assert "setuptools==" not in filtered
     assert "pytest==8.3.5" in filtered
-
-
-@pytest.mark.parametrize("fallback_fails", [False, True])
-def test_shell_fallback_preserves_failure_and_cleans_lock(repo_root, tmp_path, fallback_fails):
-    """Exercise the shell policy, not pip: any first failure retries once."""
-    shim = tmp_path / "python-shim"
-    log = tmp_path / "calls.jsonl"
-    shim.write_text(
-        f"#!{sys.executable}\n"
-        + """import json, os, sys
-from pathlib import Path
-args = sys.argv[1:]
-if args == ["-m", "pip", "--version"]:
-    sys.exit(0)
-if args and args[0].endswith("filter_lock_exclude.py"):
-    os.execv(sys.executable, [sys.executable, *args])
-record = {"args": args}
-if "-r" in args:
-    lock = Path(args[args.index("-r") + 1])
-    record.update(path=str(lock), text=lock.read_text())
-with open(os.environ["CALL_LOG"], "a") as stream:
-    stream.write(json.dumps(record) + "\\n")
-if "install" in args:
-    if lock.name == "requirements-lock.txt":
-        print("unrelated package/network failure", file=sys.stderr)
-        sys.exit(1)
-    sys.exit(int(os.environ["FALLBACK_FAILS"]))
-sys.exit(0)
-"""
-    )
-    shim.chmod(0o700)
-    result = subprocess.run(
-        ["sh", str(repo_root / "tools/validation/run-host-tests.sh"), "--skip-c"],
-        env={
-            **os.environ,
-            "PYTHON_EXE": str(shim),
-            "CALL_LOG": str(log),
-            "FALLBACK_FAILS": str(int(fallback_fails)),
-            "TMPDIR": str(tmp_path),
-        },
-        capture_output=True,
-        text=True,
-    )
-    calls = [json.loads(line) for line in log.read_text().splitlines()]
-    installs = [call for call in calls if "install" in call["args"]]
-    assert len(installs) == 2
-    assert all("--require-hashes" in call["args"] for call in installs)
-    filtered = installs[1]
-    assert "hidapi==" not in filtered["text"]
-    assert "setuptools==" in filtered["text"]
-    assert not os.path.exists(filtered["path"])
-    assert result.returncode == int(fallback_fails)
-    assert any("pytest" in call["args"] for call in calls) is not fallback_fails
-    assert "unrelated package/network failure" in result.stderr

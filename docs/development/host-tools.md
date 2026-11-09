@@ -4,7 +4,7 @@ This guide covers the Python and .NET host tools and their shared dashboard fron
 the [Python package guide](../../host/python/README.md) and [.NET host guide](../../host/dotnet/README.md). The Python
 package guide is also included as the PyPI project description.
 
-The independent [WebHID dashboard](../../host/webhid/README.md) runs directly in a supported desktop browser with its
+The independent [Direct Dashboard](../../host/direct/README.md) runs directly in a supported desktop browser with its
 own assets and renderer. Its hardware-free checks use Node rather than the Python/.NET test runners.
 
 Run commands from the repository root unless a linked guide explicitly says otherwise. These setup, build, and test
@@ -50,7 +50,7 @@ libusb. Boards left detached by an older client need a USB reconnect after that 
 ## Python Layout
 
 The installable package lives in `host/python/src/pico_uart`; use its public API rather than adding another top-level
-compatibility module. Python and .NET share the frontend in `host/web`. Keep framework-specific behavior in each backend
+compatibility module. Python and .NET share the frontend in `host/web/src`. Keep framework-specific behavior in each backend
 and the shared assets backend-neutral.
 
 ## Python Tests
@@ -217,7 +217,7 @@ The nested package searches parent directories for the repository; fetch full hi
 Source distributions preserve the resolved version without Git. With neither Git metadata nor a source-distribution
 version, the fallback is `0.0.0.dev0`. Use `SETUPTOOLS_SCM_PRETEND_VERSION` for an explicit test-build version.
 
-`hatch_build.py` bundles the canonical `host/web` assets so source distributions build without the rest of the
+`hatch_build.py` bundles the canonical `host/web/src` assets so source distributions build without the rest of the
 repository.
 Package tests require the repository checkout and are not included in source distributions or wheels.
 Hatchling, its VCS plugin, and the editable-install helper are included in the locked development environment.
@@ -245,7 +245,8 @@ Its JSON matches the Python `channels` snapshot in [Python test automation](#pyt
 `monitor` still prints one channel object per line.
 On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
 The C# `PicoUartHid` class owns a connection and implements `IDisposable`; `Protocol` provides typed report decoders.
-Python and .NET share `host/web`; keep frontend changes backend-neutral rather than adding a separate C# frontend.
+Python and .NET share `host/web/src`; tests live in `host/web/tests`. Keep frontend changes backend-neutral rather than
+adding a separate C# frontend.
 
 Build and run the hardware-free unit suite:
 
@@ -281,41 +282,46 @@ Use `-p:Version=1.2.3` to embed an explicit application version. Release archive
 tests belong in the [publishing runbook](../deployment/host-app-publishing.md#net-packaging); user installation belongs
 in the [.NET host guide](../../host/dotnet/README.md#install).
 
-## WebHID Development
+<a id="webhid-development"></a>
 
-WebHID is a standalone browser app in `host/webhid`, independent of the Python/.NET server and shared
-`host/web` frontend. Its HTML, CSS, favicon, and renderer are owned by that directory; no shared asset-generation step
-or files from `host/web` are required. Browser connection and troubleshooting belong in the
-[WebHID user guide](../../host/webhid/README.md).
+## Direct Dashboard Development
 
-### Run WebHID From A Checkout
+The Direct Dashboard uses WebHID and is a standalone browser app in `host/direct/src`, independent of the Python/.NET
+server and shared `host/web/src` frontend. Tests live in `host/direct/tests`. Its HTML, CSS, favicon, and renderer are owned
+by the source directory; no shared asset-generation step
+or files from `host/web/src` are required. Browser connection and troubleshooting belong in the
+[Direct Dashboard user guide](../../host/direct/README.md).
+
+<a id="run-webhid-from-a-checkout"></a>
+
+### Run Direct Dashboard From A Checkout
 
 Serve the static app from the repository root:
 
 ```sh
-tools/host/run-webhid.sh
+tools/host/run-direct.sh
 ```
 
 Open <http://127.0.0.1:8000/>. Use `--port N` to choose another port. Without a POSIX shell, serve the same directory
 with Python 3:
 
 ```sh
-python -m http.server 8000 --bind 127.0.0.1 --directory host/webhid
+python -m http.server 8000 --bind 127.0.0.1 --directory host/direct/src
 ```
 
 The server only delivers files; native HID access is still to the browser computer's USB devices. Do not open the HTML
 directly from disk. Self-hosted deployments need HTTPS or localhost. Local files display the debug app version; the
 Pages workflow stamps it during packaging. Release gates and deployment/rollback steps belong in the
-[Pages publishing runbook](../deployment/host-app-publishing.md#webhid-pages).
+[Pages publishing runbook](../deployment/host-app-publishing.md#direct-dashboard-pages).
 
 ### WebHID Checks
 
 Run the hardware-free browser checks used by CI:
 
 ```sh
-node --check host/webhid/js/view.mjs
-node --check host/webhid/js/app.mjs
-node --test host/webhid/tests/*.test.mjs
+node --check host/direct/src/js/view.mjs
+node --check host/direct/src/js/app.mjs
+node --test host/direct/tests/*.test.mjs
 ```
 
 The test suite also checks the independent and shared renderers' presentation contracts; it does not open native USB
@@ -333,7 +339,7 @@ native browser/OS USB compatibility; see the [hardware test index](../tests/READ
 
 The backend label and **App v** version share a secondary line beneath **PicoUart** in the top bar. This identifies the
 host application, not the board's firmware. Python obtains its installed version through `importlib.metadata`; .NET
-uses its assembly informational version. The backends pass these values into the shared HTML template; `host/web`
+uses its assembly informational version. The backends pass these values into the shared HTML template; `host/web/src`
 contains no application version metadata. Tagged Python builds derive their package version from Git through
 `hatch-vcs`; .NET builds use `dotnet publish -p:Version=...`.
 `PICO_UART_HOST_VERSION` is only an optional runtime display override; an unset or empty value uses native build
@@ -342,10 +348,14 @@ Python Git checkouts produce VCS-derived versions; the no-Git fallback `0.0.0.de
 .NET uses `0.0.0-debug` for development. Reinstall an editable Python package after commits or tags change its version.
 None of these settings changes the board's firmware version.
 
-Python and .NET serve the same frontend from `host/web`. Keep templates backend-neutral and preserve the shared JSON
+Python and .NET serve the same frontend from `host/web/src`. Keep templates backend-neutral and preserve the shared JSON
 contract; do not add a second frontend. The [.NET integration tests](../../tests/tooling/test_dotnet_host.py) guard
 shared assets and API behavior. Distribution details belong in the [Python](../../host/python/README.md) and
 [.NET](../../host/dotnet/README.md) guides.
+
+All dashboards hide the header's sample age while reports are fresh. When updates exceed the existing freshness
+threshold, they show `Telemetry stale` with the sample age; a connected board without a sample shows
+`Waiting for telemetry`. Disconnected boards hide the sample-age indicator.
 
 ### Board selection and shared monitoring
 
@@ -377,9 +387,15 @@ without a board returns an empty six-channel snapshot; actions require a known b
 token. Unknown IDs and duplicate board identities fail explicitly. Servers remain loopback-only; this is not a change
 to network exposure or access control. WebHID retains its native browser chooser and is unchanged.
 
+Session cookies are backend- and port-specific: `PicoUart.Python.Session.<port>` and `PicoUart.DotNet.Session.<port>`.
+This prevents incompatible cookies from colliding when switching hosts on the same address and port. Older shared-name
+cookies are ignored; reload the dashboard after upgrading to obtain a new session and CSRF token.
+
 ### Status presentation
 
-Both dashboards separate device identity from live runtime status, retaining the six UART channel table.
+All dashboards use Device overview, Hardware & boot, Live status, and UART channels sections. The boot profile is
+editable when available; buffer capacities and pin mapping are read-only. Section naming does not change control
+availability or protocol fields.
 `/api/status` carries `identity` (product, serial, firmware, MCU/build target, capability/profile masks, reserved/total RAM)
 and `runtime` (uptime, `service_load_basis_points`, and current clock),
 with independent `identity_error` and `runtime_error` fields. Unsupported or failed reads clear
@@ -415,8 +431,11 @@ changed status sample. Age measures browser receipt time so remote host clock of
 
 ### Persistent configuration
 
-All three dashboards expose **Persistent configuration** separately from live telemetry. The system-clock selector
-offers the connected MCU's supported profiles and identifies its SDK default. Editing the selection never writes the
+All three dashboards expose the stored boot profile under **Hardware & boot**. The system-clock selector
+offers the connected MCU's supported profiles and identifies its SDK default. A connected board advertising save support
+allows profile selection even without ready UART channels or a stored profile; an unset stored profile means SDK default.
+Controls may be temporarily locked during an in-flight action or save/reboot. Save retains its safety checks and requires
+valid configuration data. Editing the selection never writes the
 device, and telemetry refreshes do not overwrite unsaved edits. A non-default profile requires explicit unsafe-overclock
 acknowledgement before **Save & Reboot**.
 

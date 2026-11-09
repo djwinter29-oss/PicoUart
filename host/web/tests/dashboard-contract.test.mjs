@@ -4,9 +4,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const dashboard = await readFile(new URL("../js/dashboard.js", import.meta.url), "utf8");
-const stylesheet = await readFile(new URL("../css/dashboard.css", import.meta.url), "utf8");
-const markup = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const dashboard = await readFile(new URL("../src/js/dashboard.js", import.meta.url), "utf8");
+const stylesheet = await readFile(new URL("../src/css/dashboard.css", import.meta.url), "utf8");
+const markup = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
+
+test("Python and .NET share the Dashboard page heading", () => {
+  assert.match(markup, /<h1>Dashboard<\/h1>/);
+});
 
 test("dashboard uses the HID snapshot and diagnostic contract fields", () => {
   for (const field of [
@@ -72,7 +76,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   }
   assert.match(markup, /<th scope="col">Channel status<\/th>/);
   assert.match(markup, /<th scope="col">Diagnostics<\/th>/);
-  assert.match(configuration, /<select id="clock-profile" disabled>/);
+  assert.match(configuration, /<select id="clock-profile" title="System clock profile applied after saving and rebooting\." disabled>/);
   assert.doesNotMatch(configuration, /overclock-ack/);
   assert.match(configurationSection, /<button class="button button-secondary" id="save-configuration" type="button" hidden disabled>/);
   assert.match(configurationDialog, /id="overclock-ack" type="checkbox" disabled/);
@@ -93,11 +97,11 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(markup, /<th class="traffic-heading" scope="col" title="[^"]+">\s*<span class="traffic-heading-title">Traffic<\/span>\s*<span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB<\/span>\s*<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
   assert.match(markup, /title="Rates ramp from a one-second to a five-second average as samples arrive\./);
   assert.match(markup, /<dialog class="diagnostics-dialog" id="diagnostics-dialog"/);
-  assert.match(markup, /Stored boot profile/);
+  assert.match(markup, /Board clock profile/);
   assert.match(markup, /Reset cause/);
   assert.match(markup, /Service load \(Core 0 \/ Core 1\)/);
   assert.doesNotMatch(markup, /CPU load|unsafe overclock/);
-  assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Channel pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
+  assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
   assert.match(markup, /Uptime[\s\S]*?Board temperature[\s\S]*?Service load \(Core 0 \/ Core 1\)/);
   assert.match(dashboard, /total\.textContent = formatBytes\(channel\.totals\?\.\[key\]\)/);
   assert.match(dashboard, /latest\.totals\[key\] - baseline\.totals\[key\]/);

@@ -31,8 +31,10 @@ DTR closes stop bridging and request worker-owned backend shutdown. Closed chann
 initializing. DTR state is also checked for configuration-save safety.
 
 The interface uses vendor usage page `0xFF00`, vendor usage `0x01`, and no boot protocol. The device is identified
-as USB `cafe:4010` (the project's unallocated lab identity, permitted for published project artifacts).
-One HID interface follows the twelve CDC control/data interfaces. The USB product name is `PicoUart`.
+as USB `2e8a:116b`, allocated to PicoUart by the Raspberry Pi Foundation
+([official allocation list](https://github.com/raspberrypi/usb-pid)).
+One HID interface follows the twelve CDC control/data interfaces. The USB manufacturer string is `djwinter`;
+the product name is `PicoUart`.
 CDC interface strings advertise backend limits: `CDC0 HW` / `CDC1 HW` and `CDC2`-`CDC5 PIO 8N1`.
 
 ## Ownership
@@ -191,7 +193,7 @@ show percentages only with valid report-2 metadata, otherwise bytes without gues
 ### Reset Cause
 
 Capture at startup: reset cause is not clock-selection reason. These protocol values do not imply that every MCU
-can distinguish all causes; verify mappings separately before implementation.
+can distinguish all causes.
 
 | Value | Meaning |
 | ----: | ------- |
@@ -200,14 +202,29 @@ can distinguish all causes; verify mappings separately before implementation.
 | `2` | Watchdog reset, without a reliably established software-requested cause. |
 | `3` | Software-requested reset, when reliably established by firmware/platform evidence. |
 | `4` | Watchdog recovery after firmware recorded a HardFault in watchdog scratch storage. |
-| `5`-`255` | Unassigned. |
+| `5` | Power-on or brownout; RP2040 provides a combined hardware indication. |
+| `6` | Brownout, independently identified by the platform. |
+| `7` | External RUN-pin reset. |
+| `8` | Debugger reset, identified by platform reset evidence. |
+| `9` | User-requested standalone board reboot, identified by a firmware marker. |
+| `10` | Configuration-save reboot after successful flash verification, identified by a firmware marker. |
+| `11`-`255` | Unassigned; hosts preserve the numeric value and display it as unknown. |
 
 Do not infer power-on from absence of a watchdog indication. Intentional reboot may use the watchdog: prefer an
 evidenced software-requested cause, otherwise known watchdog or Unknown. Software-requested does not prove which
 host action caused reset.
-Current firmware reports evidenced Watchdog, a recorded HardFault followed by watchdog reset, or Unknown; it does not
-infer power-on or software-requested reset from missing SDK watchdog markers. The HardFault marker is volatile
-watchdog-scratch metadata, not a persisted fault address or a record of the crashing instruction.
+RP2040 combines power-on and brownout evidence and reports value 5 rather than claiming power-on specifically.
+RP2350 distinguishes power-on and brownout. RUN-pin and debugger resets are reported only when supported by captured
+hardware evidence. A watchdog-scratch startup sentinel prevents retained chip-reset flags from misidentifying a later
+subsystem restart as an earlier power-on, RUN-pin, or debugger reset. Arbitrary debugger/core manipulation is not
+universally identifiable.
+User-requested and configuration-save reboot markers identify the firmware path, not the user or host process.
+They require SDK-qualified, force-only watchdog reboot evidence; a recorded HardFault takes priority.
+These markers and the HardFault marker are volatile watchdog-scratch metadata, consumed at boot; they are not persisted
+configuration or a record of a faulting instruction. Watchdog recovery for clock-profile safety remains separate from
+the displayed reset cause.
+Unknown remains valid when evidence is missing, conflicting, or insufficient; it does not necessarily indicate a fault.
+Older firmware may also report Unknown after a power cycle. The report layout remains version 1.
 
 ### Channel Hardware Map
 

@@ -68,7 +68,7 @@ checks, use visibly non-release versions, and do not create or promote a qualifi
 | --- | --- | --- |
 | Publish .NET Packages | Downloadable run artifacts, not GitHub Release attachments | `VERSION-test.RUN_ID.RUN_ATTEMPT` |
 | Publish Python to PyPI with `test_publish` checked | Public, immutable development release on production PyPI | `0.0.0.devRUN_ID` |
-| Publish WebHID Pages with `test_publish` checked | The normal Pages site, replacing its current deployment | `0.0.0-test.RUN_ID.RUN_ATTEMPT` |
+| Publish Direct Dashboard Pages with `test_publish` checked | The normal Pages site, replacing its current deployment | `0.0.0-test.RUN_ID.RUN_ATTEMPT` |
 
 The run identifiers are supplied by GitHub. No Git tag needs to exist for these test modes, but independent .NET
 packaging still requires its base **tag** version label. Environment approval and branch restrictions still apply.
@@ -77,14 +77,15 @@ Test versions are not HIL qualification or proof that the full test suite passed
 
 ## Security Reporting Setup
 
-Before publishing, enable private vulnerability reporting in repository settings and handle reports privately. User
-instructions and device-security notes are in [`SECURITY.md`](../../SECURITY.md).
+Before publishing, enable private vulnerability reporting in repository settings and handle reports privately.
+Reporting instructions are in [`SECURITY.md`](../../SECURITY.md).
 
 ## USB identity
 
-PicoUart artifacts use `cafe:4010`, an unallocated lab identity. Do not reuse it commercially; derivatives need an
-allocated VID/PID and must treat the identity change as a breaking USB change. See [`SECURITY.md`](../../SECURITY.md)
-and the USB identity contract tests before publishing.
+PicoUart artifacts use the Raspberry Pi Foundation-allocated identity `2e8a:116b`, listed in the
+[official USB PID allocations](https://github.com/raspberrypi/usb-pid). Do not reuse it for other products; derivatives
+need their own allocated VID/PID. Any identity change is a breaking USB change. See
+the USB identity contract tests before publishing.
 
 ## Release HIL Gates
 
@@ -140,6 +141,12 @@ For Pico 2, use `--board pico2` with its matching packaged ELF, not a Pico image
 
 Use `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached or when USB enumeration tools are
 unavailable.
+
+The loader defaults to 1000 kHz SWD and retains flash verification. Override the speed with
+`--adapter-speed-khz <kHz>` or `PICO_DEBUG_PROBE_SPEED_KHZ`; the command-line option takes precedence. For unstable SWD
+connections, try `--adapter-speed-khz 100` and check probe wiring. The speed setting does not change the firmware clock.
+For development, omitting `--skip-build` performs an incremental build before flashing; use `--skip-build` only when
+the selected ELF is already the intended artifact.
 
 <details>
 <summary>Probe permissions and unknown flash-device troubleshooting</summary>
@@ -235,8 +242,8 @@ match.
 
 For **Release** preflight and independent **Publish .NET Packages** runs, this input is a base version label; it need
 not already exist as a Git tag, does not create a tag, and does not change which branch/commit is checked out.
-Stable PyPI releases and release-mode WebHID publication require an existing, published, software-validated release tag.
-WebHID and Python development-publish modes leave **tag** empty and generate their marked test versions automatically.
+Stable PyPI releases and release-mode Direct Dashboard publication require an existing, published, software-validated release tag.
+Direct Dashboard and Python development-publish modes leave **tag** empty and generate their marked test versions automatically.
 
 Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release version resolver owns tag bounds; firmware
 build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the

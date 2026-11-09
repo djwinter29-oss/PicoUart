@@ -18,7 +18,7 @@ for UART payloads, baud rates, and framing. The browser talks to Python, so it d
 
 ![PicoUart dashboard showing board information, configuration, runtime status, and six UART channels](https://raw.githubusercontent.com/djwinter29-oss/PicoUart/main/docs/assets/pico-uart-dashboard.png)
 
-*Illustrative WebHID dashboard with simulated telemetry, not a live hardware result. The Python dashboard uses
+*Illustrative Direct Dashboard with simulated telemetry, not a live hardware result. The Python dashboard uses
 the shared frontend; its layout and controls may differ.*
 
 ## Quick Start

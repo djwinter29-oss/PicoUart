@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { decodeBoardConfiguration, DEVICE_FILTER, identityDiscoveryLength, matchesPicoUart,
-  PicoUartWebHid } from "../js/device.mjs";
+  PicoUartWebHid } from "../src/js/device.mjs";
 
 test("WebHID accepts valid distinct UART and CDC buffer capacities", () => {
   const bytes = new Uint8Array(36);
@@ -20,6 +20,10 @@ test("WebHID accepts valid distinct UART and CDC buffer capacities", () => {
 
   assert.deepEqual(decodeBoardConfiguration(report, { hardware_channel_mask: 0x3f }).capacities,
     { uart_tx: 4096, uart_rx: 4096, cdc_tx: 2048, cdc_rx: 2048 });
+  for (const cause of [...Array(11).keys(), 255]) {
+    report.setUint8(27, cause);
+    assert.equal(decodeBoardConfiguration(report).reset_cause, cause);
+  }
 
   report.setUint16(32, 0, true);
   assert.throws(() => decodeBoardConfiguration(report, { hardware_channel_mask: 0x3f }),
@@ -115,10 +119,10 @@ test("WebHID normalizes Report ID prefixes on Input snapshots", () => {
 });
 
 test("WebHID discovery filters by PicoUart VID/PID and leaves descriptor validation to connection", () => {
-  assert.deepEqual(DEVICE_FILTER, { vendorId: 0xcafe, productId: 0x4010 });
-  assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4010, collections: [] }), true);
-  assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4011 }), false);
-  assert.equal(matchesPicoUart({ vendorId: 0xcafe, productId: 0x4010 }), true);
+  assert.deepEqual(DEVICE_FILTER, { vendorId: 0x2e8a, productId: 0x116b });
+  assert.equal(matchesPicoUart({ vendorId: 0x2e8a, productId: 0x116b, collections: [] }), true);
+  assert.equal(matchesPicoUart({ vendorId: 0x2e8a, productId: 0x116c }), false);
+  assert.equal(matchesPicoUart({ vendorId: 0x2e8a, productId: 0x116b }), true);
 });
 
 test("WebHID chooser requests PicoUart vendor devices before exact product validation", async () => {
@@ -126,7 +130,7 @@ test("WebHID chooser requests PicoUart vendor devices before exact product valid
   const hid = { addEventListener() {}, requestDevice: async options => { requests.push(options); return []; } };
   const client = new PicoUartWebHid(hid);
   await client.connect();
-  assert.deepEqual(requests, [{ filters: [{ vendorId: 0xcafe }] }]);
+  assert.deepEqual(requests, [{ filters: [{ vendorId: 0x2e8a }] }]);
   assert.equal(client.state.phase, "disconnected");
 });
 

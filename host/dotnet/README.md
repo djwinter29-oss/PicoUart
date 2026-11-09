@@ -47,7 +47,7 @@ health and traffic, dropped-byte counts, firmware and hardware identity, clock, 
 `./PicoUart web --port 5001` if the default port is occupied. This starts a local server, not a system service.
 
 For browser-only diagnostics without installing a host application, use the separate
-[WebHID dashboard on GitHub Pages](https://djwinter29-oss.github.io/PicoUart/) in desktop Chrome or Edge, with the board
+[Direct Dashboard on GitHub Pages](https://djwinter29-oss.github.io/PicoUart/) in desktop Chrome or Edge, with the board
 connected to the computer running that browser.
 
 For multiple boards, use `./PicoUart --serial ABC123 status` or `--device-path PATH`, but not both. Ambiguous matches

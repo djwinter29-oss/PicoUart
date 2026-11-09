@@ -1,6 +1,6 @@
 # Host App Publishing
 
-This runbook covers .NET archive test runs, Python publication to PyPI, and WebHID deployment to GitHub Pages.
+This runbook covers .NET archive test runs, Python publication to PyPI, and Direct Dashboard deployment to GitHub Pages.
 For channels and supported downloads, see [Host App Distribution](host-app-distribution.md). For the release sequence,
 tag policy, and exact-artifact qualification, start with [Releasing PicoUart](releasing.md).
 
@@ -98,9 +98,11 @@ These are real public uploads using the [development-version scheme](releasing.m
 previews or HIL qualification. The first upload can create the project and activate a pending publisher. A new workflow
 run gets a new version; rerunning the same run retains its version and fails if that filename was already uploaded.
 
-## WebHID Pages
+<a id="webhid-pages"></a>
 
-The [Pages workflow](../../.github/workflows/publish-webhid.yml) publishes the independent app from `host/webhid`.
+## Direct Dashboard Pages
+
+The [Pages workflow](../../.github/workflows/publish-direct.yml) publishes the independent app from `host/direct/src`.
 It neither deploys nor modifies the shared Python/.NET frontend. Normal deployment follows successful completion of a
 tag-push Release run and verifies its published, non-prerelease release. Failed builds and manual preflights do not
 change the live site.
@@ -120,9 +122,9 @@ authoritative if Pages settings or the repository name changes.
 
 After the tag-push Release run succeeds, the Pages workflow validates the published release and shared gates, rejects a
 moved tag, checks out the gate-validated commit, and runs WebHID checks. It stamps the
-visible app version from the tag without its leading `v`, then uploads only `host/webhid`. Deployments are serialized.
+visible app version from the tag without its leading `v`, then uploads only `host/direct/src`. Deployments are serialized.
 
-For redeployment or rollback, use **Actions > Publish WebHID Pages > Run workflow** with the already-published **tag**
+For redeployment or rollback, use **Actions > Publish Direct Dashboard Pages > Run workflow** with the already-published **tag**
 and **test_publish** unchecked. Drafts, prereleases, and tags outside the release policy are rejected. The selected
 commit must contain the standalone app and tests. A deployment changes the hosted app, not firmware or connected boards.
 Existing releases and manual release edits do not generate a new Release-completion event; use this manual route to
@@ -132,15 +134,15 @@ redeploy them. Hardware qualification remains separate from publication.
 
 1. Commit and push the desired app and workflow changes. Manual dispatch requires the workflow on the default branch;
    the selected branch must contain the test-publish option.
-2. Open **Actions > Publish WebHID Pages > Run workflow** and select that branch.
+2. Open **Actions > Publish Direct Dashboard Pages > Run workflow** and select that branch.
 3. Check **test_publish**, leave **tag** empty, and start the run. Ensure **github-pages** permits the branch and
    approve deployment if required.
 4. Inspect the deployment environment URL. To restore a release, rerun with **test_publish** unchecked and its tag.
 
 Test mode deploys the selected commit after scoped WebHID checks, without published-release lookup or the full gate.
 It replaces the normal Pages site and shows the [test-version marker](releasing.md#publication-gates); uncommitted
-changes are not included. Local WebHID uses `0.0.0-debug`, independent of the connected board's firmware version.
+changes are not included. The local Direct Dashboard uses `0.0.0-debug`, independent of the connected board's firmware version.
 
 A Pages failure does not unpublish a GitHub Release. Inspect the environment's latest successful deployment, fix or
 rerun separately, and check asset loading and browser/device access after deployment. Mocked checks do not prove native
-USB compatibility; browser requirements and permissions remain in the [WebHID guide](../../host/webhid/README.md).
+USB compatibility; browser requirements and permissions remain in the [Direct Dashboard guide](../../host/direct/README.md).

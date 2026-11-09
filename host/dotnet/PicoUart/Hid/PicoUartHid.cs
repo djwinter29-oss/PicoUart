@@ -122,7 +122,7 @@ public sealed class PicoUartHid : IDisposable
         }
     }
 
-    private static IEnumerable<HidDevice> MatchingDevices() => DeviceList.Local.GetHidDevices(0xCAFE, 0x4010)
+    private static IEnumerable<HidDevice> MatchingDevices() => DeviceList.Local.GetHidDevices(0x2E8A, 0x116B)
         .Where(device => device.GetReportDescriptor().DeviceItems
             .Any(item => item.Usages.GetAllValues().Contains(0xFF000001u)));
 

@@ -5,10 +5,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
-const script = readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8");
+const html = readFileSync(new URL("../../web/src/index.html", import.meta.url), "utf8");
+const script = readFileSync(new URL("../../web/src/js/dashboard.js", import.meta.url), "utf8");
 test("host versions belong to the wordmark rather than the page heading", () => {
-  for (const path of ["../../web/index.html", "../index.html"]) {
+  for (const path of ["../../web/src/index.html", "../src/index.html"]) {
     const page = readFileSync(new URL(path, import.meta.url), "utf8");
     assert.match(page, /class="wordmark"[\s\S]*?id="host-version"[\s\S]*?<\/a>/);
     assert.match(page, /<strong>PicoUart<\/strong>\s*<span class="brand-meta"><small>[^<]+<\/small>\s*<span class="host-version"/);
@@ -116,6 +116,47 @@ async function connect(view) {
   assert.equal(view.requests[0].url, "/api/status?board=A");
   await view.respond(snapshot("first"));
 }
+
+test("Python and .NET display all assigned reset causes and preserve unknown codes", async () => {
+  const view = page();
+  await connect(view);
+  const labels = ["Unknown (not distinguished)", "Power-on", "Watchdog reset", "Software-requested reset",
+    "HardFault recovery", "Power-on or brownout", "Brownout", "RUN-pin reset", "Debugger reset",
+    "User-requested reboot", "Configuration-save reboot"];
+  for (const [cause, label] of [...labels.entries(), [255, "Unknown (255)"]]) {
+    view.tick();
+    const data = snapshot("first");
+    data.configuration.reset_cause = cause;
+    await view.respond(data);
+    assert.equal(view.element("reset-cause").textContent, label);
+  }
+});
+
+test("hosted profile selection supports unset defaults and preserves unsaved edits", async () => {
+  const view = page();
+  await connect(view);
+  view.tick();
+  await view.respond(snapshot("first", 2, null));
+  const profile = view.element("clock-profile");
+  assert.equal(profile.disabled, false);
+  assert.equal(profile.value, "0");
+  assert.equal(view.element("save-configuration").disabled, true);
+  profile.value = "1";
+  profile.events.change();
+  assert.equal(view.element("save-configuration").disabled, false);
+  view.tick();
+  await view.respond(snapshot("first", 2, null));
+  assert.equal(profile.value, "1");
+  const data = snapshot("first", 2, null);
+  data.configuration = null;
+  view.tick();
+  await view.respond(data);
+  assert.equal(profile.disabled, false);
+  assert.equal(view.element("save-configuration").disabled, true);
+  view.tick();
+  await view.respond({ ...snapshot("first"), connected: false });
+  assert.equal(profile.disabled, true);
+});
 
 test("hosted pages select independently and render board labels as text", async () => {
   const alice = page(), bob = page();

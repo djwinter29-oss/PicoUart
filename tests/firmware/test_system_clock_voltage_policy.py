@@ -3,7 +3,7 @@
 """Compile and run the real firmware `system_init_clock` against mock SDK
 headers to pin the no-voltage-write policy: defaults never override SDK
 startup and valid profiles request an exact clock, with no `hardware/vreg.h` include
-and no vreg symbol anywhere in the link (any voltage write or bypass fails
+and no voltage-setter symbol in the link (any voltage write or bypass fails
 the build or the recorded-clock check below).
 """
 
@@ -55,7 +55,9 @@ _MOCK_WATCHDOG_H = """
 #define MOCK_HARDWARE_WATCHDOG_H
 #include <stdbool.h>
 #include <stdint.h>
-typedef struct { volatile uint32_t scratch[8]; } watchdog_hw_t;
+typedef struct { volatile uint32_t reason; volatile uint32_t scratch[8]; } watchdog_hw_t;
+#define WATCHDOG_REASON_TIMER_BITS 0x00000001u
+#define WATCHDOG_REASON_FORCE_BITS 0x00000002u
 extern watchdog_hw_t g_watchdog_hw;
 #define watchdog_hw (&g_watchdog_hw)
 extern bool g_watchdog_recovery;
@@ -98,6 +100,8 @@ _MOCK_RUNTIME_C = """
 uint8_t g_sector[4096];
 bool g_watchdog_recovery = WATCHDOG_RECOVERY;
 watchdog_hw_t g_watchdog_hw;
+typedef struct { volatile uint32_t chip_reset; } chip_reset_hw_t;
+chip_reset_hw_t g_chip_reset_hw;
 uint32_t g_requested_clock_khz;
 int g_set_sys_clock_khz_calls;
 int g_flash_calls;
@@ -155,6 +159,7 @@ static uint32_t fixture_crc32(const uint8_t *data, size_t size) {
     return crc ^ UINT32_MAX;
 }
 int main(void) {
+    g_watchdog_hw.reason = WATCHDOG_RECOVERY ? WATCHDOG_REASON_TIMER_BITS : 0u;
     memset(g_sector, 255, sizeof(g_sector));
     if (PROFILE >= 0) {
         memset(g_sector, 0, 36);
@@ -286,6 +291,18 @@ def test_system_init_clock_never_writes_voltage(
     _write(mock_sdk / "hardware" / "regs" / "addressmap.h", _MOCK_ADDRESSMAP_H)
     _write(mock_sdk / "hardware" / "flash.h", _MOCK_FLASH_H)
     _write(mock_sdk / "pico" / "flash.h", _MOCK_SAFE_FLASH_H)
+    reset_masks = "\n".join(
+        line for line in (repo_root / "firmware/tests/support/system_sdk.h").read_text().splitlines()
+        if line.startswith(("#define POWMAN_", "#define VREG_AND_CHIP_RESET_"))
+    )
+    chip_reset_header = reset_masks + """
+typedef struct { volatile uint32_t chip_reset; } chip_reset_hw_t;
+extern chip_reset_hw_t g_chip_reset_hw;
+#define powman_hw (&g_chip_reset_hw)
+#define vreg_and_chip_reset_hw (&g_chip_reset_hw)
+"""
+    for name in ("powman", "vreg_and_chip_reset"):
+        _write(mock_sdk / "hardware" / "structs" / f"{name}.h", chip_reset_header)
 
     (tmp_path / "mock_runtime.c").write_text(_MOCK_RUNTIME_C)
     (tmp_path / "main.c").write_text(_MAIN_C)
@@ -293,8 +310,9 @@ def test_system_init_clock_never_writes_voltage(
     system_c = repo_root / "firmware" / "src" / "platform" / "system.c"
     source_text = system_c.read_text(encoding="utf-8")
     # Defense in depth alongside the missing-header compile failure: the real
-    # source must not reference vreg at all.
-    assert "vreg" not in source_text.lower()
+    # Reset-status reads are allowed; the voltage-control API is not.
+    assert 'hardware/vreg.h' not in source_text
+    assert "vreg_set_voltage" not in source_text
 
     # Windows linkers emit `<name>.exe` even when `-o` omits the suffix; nm
     # and CreateProcess need the real on-disk path.
@@ -327,11 +345,11 @@ def test_system_init_clock_never_writes_voltage(
     assert compiled.returncode == 0, compiled.stderr
     assert exe.is_file(), f"compiler did not produce {exe}"
 
-    # The link must not pull in any symbol with "vreg" in its name. nm itself
+    # The link must not pull in the voltage setter. nm itself
     # is optional here (mock native test); if present it must succeed.
     nm = shutil.which("nm")
     if nm:
-        assert "vreg" not in _read_nm_symbols(nm, exe).lower()
+        assert "vreg_set_voltage" not in _read_nm_symbols(nm, exe).lower()
 
     run = subprocess.run([str(exe)], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
-import { renderDashboard, updateReportAge } from "../js/view.mjs";
+import { renderDashboard, updateReportAge } from "../src/js/view.mjs";
 
 class Element {
   constructor(tag = "") {
@@ -51,7 +51,7 @@ function fixture(html) {
 }
 
 test("webhid report age text tracks freshness", () => {
-  const html = readFileSync(new URL("../../webhid/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   globalThis.document = document;
   try {
@@ -59,19 +59,26 @@ test("webhid report age text tracks freshness", () => {
     updateReportAge({ connected: false }, 10000);
     assert.equal(age.hidden, true);
     updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:00.000Z"));
-    assert.equal(age.textContent, "Telemetry 0 s ago");
+    assert.equal(age.hidden, true);
+    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:03.000Z"));
+    assert.equal(age.hidden, true);
     updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:05.000Z"));
-    assert.equal(age.textContent, "Telemetry 5 s ago (stale)");
+    assert.equal(age.hidden, false);
+    assert.equal(age.textContent, "Telemetry stale · 5 s ago");
     assert.equal(age.dataset.stale, "true");
     updateReportAge({ connected: true, updated_at: null }, Date.parse("2026-01-01T00:00:05.000Z"));
     assert.equal(age.textContent, "Waiting for telemetry");
+    assert.equal(age.hidden, false);
+    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:05.000Z" }, Date.parse("2026-01-01T00:00:05.000Z"));
+    assert.equal(age.hidden, true);
+    assert.equal(age.dataset.stale, "false");
   } finally {
     delete globalThis.document;
   }
 });
 
 test("webhid render updates live cells without replacing diagnostics buttons", () => {
-  const html = readFileSync(new URL("../../webhid/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   globalThis.document = document;
   try {
@@ -208,7 +215,7 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
 });
 
 test("host web runtime section reflects service-load terminology", () => {
-  const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../../web/src/index.html", import.meta.url), "utf8");
   const runtime = html.match(/<section aria-labelledby="runtime-title">([\s\S]*?)<\/section>/)[1];
   assert.ok(runtime.includes("Service load (Core 0 / Core 1)"));
   assert.ok(runtime.includes("Board temperature"));
@@ -216,18 +223,36 @@ test("host web runtime section reflects service-load terminology", () => {
 });
 
 test("host web updateReportAge keeps telemetry wording", () => {
-  const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../../web/src/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   const context = vm.createContext({
     document,
     fetch: () => new Promise(() => {}),
     window: { setInterval() {}, clearInterval() {} },
   });
-  vm.runInContext(readFileSync(new URL("../../web/js/dashboard.js", import.meta.url), "utf8"), context);
+  vm.runInContext(readFileSync(new URL("../../web/src/js/dashboard.js", import.meta.url), "utf8"), context);
   context.data = { connected: true, updated_at: "2026-01-01T00:00:00.000Z" };
   context.now = Date.parse("2026-01-01T00:00:00.000Z");
   vm.runInContext("updateReportAge(data, now)", context);
+  const age = document.querySelector("#sample-time");
+  assert.equal(age.hidden, true);
+  context.now = Date.parse("2026-01-01T00:00:03.000Z");
+  vm.runInContext("updateReportAge(data, now)", context);
+  assert.equal(age.hidden, true);
   context.now = Date.parse("2026-01-01T00:00:04.000Z");
   vm.runInContext("updateReportAge(data, now)", context);
-  assert.equal(document.querySelector("#sample-time").textContent, "Report 4 s ago (stale)");
+  assert.equal(age.hidden, false);
+  assert.equal(age.textContent, "Telemetry stale · 4 s ago");
+  assert.equal(age.dataset.stale, "true");
+  context.data.updated_at = "2026-01-01T00:00:04.000Z";
+  vm.runInContext("updateReportAge(data, now)", context);
+  assert.equal(age.hidden, true);
+  assert.equal(age.dataset.stale, "false");
+  context.data.updated_at = null;
+  vm.runInContext("updateReportAge(data, now)", context);
+  assert.equal(age.hidden, false);
+  assert.equal(age.textContent, "Waiting for telemetry");
+  context.data.connected = false;
+  vm.runInContext("updateReportAge(data, now)", context);
+  assert.equal(age.hidden, true);
 });

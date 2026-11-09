@@ -10,7 +10,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="PicoUart.Tests" />
     <PackageReference Include="HidSharp" Version="2.6.4" />
-    <Content Include="../../web/**/*" Exclude="../../web/**/__pycache__/**">
+    <Content Include="../../web/src/**/*" Exclude="../../web/src/**/__pycache__/**">
       <Link>web/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

@@ -1,9 +1,10 @@
-# PicoUart WebHID Dashboard
+# PicoUart Direct Dashboard
 
-**Monitor six UARTs directly from your browser.** The WebHID dashboard shows PicoUart identity, runtime health,
+**Monitor six UARTs directly from your browser over USB.** The Direct Dashboard shows PicoUart identity, runtime health,
 per-channel traffic statistics, and RX dropped-byte counts on Raspberry Pi Pico and Pico 2.
 
-Diagnostics use a separate USB HID interface, without a Python/.NET application backend. UART payloads and baud/framing
+Diagnostics use the browser's WebHID API and a separate USB HID interface, without a Python/.NET application backend.
+UART payloads and baud/framing
 settings still use the six USB CDC serial ports, not this page.
 
 ## Requirements
@@ -17,7 +18,7 @@ settings still use the six USB CDC serial ports, not this page.
 
 ## Install
 
-Open the [hosted WebHID dashboard](https://djwinter29-oss.github.io/PicoUart/). No local installation, Python, .NET,
+Open the [hosted Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/). No local installation, Python, .NET,
 or server is required. The GitHub Pages site uses HTTPS; self-hosted pages also require HTTPS or localhost.
 If your browser does not support WebHID, use the local [Python](../python/README.md) or [.NET](../dotnet/README.md)
 dashboard instead.
@@ -86,7 +87,8 @@ Installing an OS access rule may require administrator approval in the OS; do no
 
 ## Documentation
 
+- Source assets live in `src/`; automated checks live in `tests/`. Serve or publish only `src/`, with no build step.
 - [Project, firmware, and wiring](../../README.md)
-- [Host development and source-checkout setup](../../docs/development/host-tools.md#webhid-development)
+- [Host development and source-checkout setup](../../docs/development/host-tools.md#direct-dashboard-development)
 - [HID report reference and compatibility](../../docs/design/usb/hid-report-reference.md)
-- [Security and lab-only USB identity](../../SECURITY.md)
+- [Vulnerability reporting](../../SECURITY.md)

@@ -44,7 +44,8 @@ def test_module_imports_without_hidapi_installed():
     with _hid_unavailable() as module:
         assert module.hid is None
         # Constants (used by contract tests) must remain usable without hidapi.
-        assert module.VENDOR_ID == 0xCAFE
+        assert module.VENDOR_ID == 0x2E8A
+        assert module.PRODUCT_ID == 0x116B
 
 
 def test_open_device_raises_clear_runtime_error_without_hidapi():

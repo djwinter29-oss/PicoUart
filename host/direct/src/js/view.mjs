@@ -27,11 +27,11 @@ function serviceLoad(value) {
 export function updateReportAge(data, now = Date.now()) {
   const sample = Date.parse(data.updated_at);
   const age = document.querySelector("#sample-time");
-  age.hidden = !data.connected;
   const seconds = Number.isFinite(sample) ? Math.max(0, Math.floor((now - sample) / 1000)) : null;
   const stale = seconds !== null && seconds > 3;
+  age.hidden = !data.connected || (seconds !== null && !stale);
   age.textContent = seconds === null ? "Waiting for telemetry"
-    : `Telemetry ${seconds} s ago${stale ? " (stale)" : ""}`;
+    : `Telemetry stale · ${seconds} s ago`;
   age.dataset.stale = String(stale);
 }
 

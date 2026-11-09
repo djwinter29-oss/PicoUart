@@ -20,9 +20,9 @@ while [ "$#" -gt 0 ]; do
             ;;
         -h|--help)
             cat <<'EOF'
-Usage: tools/host/run-webhid.sh [--port PORT]
+Usage: tools/host/run-direct.sh [--port PORT]
 
-Serve the browser-only WebHID dashboard at http://127.0.0.1:8000/.
+Serve the browser-only Direct Dashboard at http://127.0.0.1:8000/.
 Set PYTHON to select the Python interpreter; no packages or virtualenv required.
 USB access is local to the browser's computer.
 EOF
@@ -49,4 +49,4 @@ if ! command -v "$PYTHON_EXE" >/dev/null 2>&1; then
     echo "Python interpreter not found: $PYTHON_EXE" >&2
     exit 1
 fi
-exec "$PYTHON_EXE" -m http.server "$PORT" --bind 127.0.0.1 --directory "$REPO_ROOT/host/webhid"
+exec "$PYTHON_EXE" -m http.server "$PORT" --bind 127.0.0.1 --directory "$REPO_ROOT/host/direct/src"

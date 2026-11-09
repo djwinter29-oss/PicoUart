@@ -14,6 +14,7 @@ and CTest; they do not exercise the TinyUSB device stack, live DMA IRQs, or phys
 - Logical-port RX alignment, independent storage, and compact metadata layout
 - Hardware/PIO resource claim rollback
 - LED policy behavior
+- Both platforms' reset evidence, stale chip-level flags, consumed markers, and HID user/config-save reboot paths
 
 The test source files are the detailed inventory. The production design notes are linked from the root
 [README](../../README.md).

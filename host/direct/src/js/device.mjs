@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 export const DEVICE_FILTER = Object.freeze({
-  vendorId: 0xcafe,
-  productId: 0x4010,
+  vendorId: 0x2e8a,
+  productId: 0x116b,
 });
 
 const PRODUCT_ID_PICOUART = 1;
@@ -100,7 +100,7 @@ export function decodeBoardConfiguration(report, identity) {
     cdc_tx: data.getUint16(32, true),
     cdc_rx: data.getUint16(34, true),
   };
-  if (!validateProfile(storedProfile) || channelCount !== CHANNEL_COUNT || resetCause > 4
+  if (!validateProfile(storedProfile) || channelCount !== CHANNEL_COUNT
     || pins.some(channel => channel.some(pin => pin > 47 && pin !== 255))
     || Object.values(capacities).some(capacity => capacity === 0)
     || identity && identity.hardware_channel_mask >>> channelCount) {

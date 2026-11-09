@@ -41,7 +41,7 @@ for device_node in /dev/hidraw* /dev/bus/usb/*/*; do
         if [ -f "$sys_path/idVendor" ] && [ -f "$sys_path/idProduct" ]; then
             read -r vendor < "$sys_path/idVendor"
             read -r product < "$sys_path/idProduct"
-            if [ "$vendor" = cafe ] && [ "$product" = 4010 ]; then
+            if [ "$vendor" = 2e8a ] && [ "$product" = 116b ]; then
                 if [ ! -r "$device_node" ] || [ ! -w "$device_node" ]; then
                     echo "No read/write permission for PicoUart device node: $device_node" >&2
                     echo "Run tools/host/hid-permissions-setup.sh, then retry or reconnect the board." >&2

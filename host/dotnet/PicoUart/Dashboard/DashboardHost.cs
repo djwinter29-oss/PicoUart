@@ -21,7 +21,7 @@ internal static class DashboardHost
         builder.Services.AddDistributedMemoryCache();
         builder.Services.AddSession(configuration =>
         {
-            configuration.Cookie.Name = $"PicoUart.Session.{port}";
+            configuration.Cookie.Name = $"PicoUart.DotNet.Session.{port}";
             configuration.Cookie.HttpOnly = true;
             configuration.Cookie.SameSite = SameSiteMode.Strict;
             configuration.Cookie.IsEssential = true;
