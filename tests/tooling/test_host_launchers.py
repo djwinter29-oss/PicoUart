@@ -20,7 +20,7 @@ def launchers(repo_root, tmp_path):
     root = tmp_path / "checkout with spaces"
     scripts = root / "tools/host"
     scripts.mkdir(parents=True)
-    for name in ("run-python.sh", "run-dotnet.sh", "run-webhid.sh"):
+    for name in ("run-python.sh", "run-dotnet.sh", "run-direct.sh", "run-webhid.sh"):
         shutil.copy2(repo_root / "tools/host" / name, scripts / name)
     permission_check = scripts / "hid-permissions-check.sh"
     permission_check.write_text('#!/bin/sh\nexit "${PERMISSION_STATUS:-0}"\n')
@@ -78,7 +78,7 @@ def calls(launchers):
     return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
 
-@pytest.mark.parametrize("name", ["run-python.sh", "run-dotnet.sh", "run-webhid.sh"])
+@pytest.mark.parametrize("name", ["run-python.sh", "run-dotnet.sh", "run-direct.sh", "run-webhid.sh"])
 def test_help_needs_no_runtime_or_environment(launchers, name):
     result = invoke(launchers, name, "--help", PYTHON="/missing/python", DOTNET="/missing/dotnet")
     assert result.returncode == 0
@@ -96,8 +96,16 @@ def test_permission_failure_stops_before_bootstrap_or_application(launchers, nam
 
 
 def test_webhid_server_does_not_check_remote_server_usb_permissions(launchers):
-    result = invoke(launchers, "run-webhid.sh", PERMISSION_STATUS="1")
+    result = invoke(launchers, "run-direct.sh", PERMISSION_STATUS="1")
     assert result.returncode == 0
+
+
+def test_legacy_launcher_forwards_arguments_and_exit_status(launchers):
+    result = invoke(launchers, "run-webhid.sh", "--port", "8123", APP_STATUS="7")
+    assert result.returncode == 7
+    assert calls(launchers)[0]["args"] == [
+        "-m", "http.server", "8123", "--bind", "127.0.0.1", "--directory", str(launchers[0] / "host/direct"),
+    ]
 
 
 def test_python_bootstraps_once_and_defaults_to_dashboard(launchers):
@@ -177,10 +185,10 @@ def test_dotnet_reports_missing_sdk(launchers):
 
 @pytest.mark.parametrize("args,port", [([], "8000"), (["--port", "8765"], "8765")])
 def test_webhid_uses_loopback_and_its_own_assets(launchers, args, port):
-    result = invoke(launchers, "run-webhid.sh", *args)
+    result = invoke(launchers, "run-direct.sh", *args)
     assert result.returncode == 0, result.stderr
     assert calls(launchers)[0]["args"] == [
-        "-m", "http.server", port, "--bind", "127.0.0.1", "--directory", str(launchers[0] / "host/webhid"),
+        "-m", "http.server", port, "--bind", "127.0.0.1", "--directory", str(launchers[0] / "host/direct"),
     ]
     assert not Path(launchers[3]["VENV_DIR"]).exists()
 
@@ -190,7 +198,7 @@ def test_webhid_uses_loopback_and_its_own_assets(launchers, args, port):
     ["--port", "9999999999999999999999999"], ["--port", "abc"], ["--unknown"],
 ])
 def test_webhid_rejects_invalid_arguments_before_starting_server(launchers, args):
-    result = invoke(launchers, "run-webhid.sh", *args)
+    result = invoke(launchers, "run-direct.sh", *args)
     assert result.returncode == 2
     assert result.stderr
     assert not calls(launchers)

@@ -68,7 +68,7 @@ checks, use visibly non-release versions, and do not create or promote a qualifi
 | --- | --- | --- |
 | Publish .NET Packages | Downloadable run artifacts, not GitHub Release attachments | `VERSION-test.RUN_ID.RUN_ATTEMPT` |
 | Publish Python to PyPI with `test_publish` checked | Public, immutable development release on production PyPI | `0.0.0.devRUN_ID` |
-| Publish WebHID Pages with `test_publish` checked | The normal Pages site, replacing its current deployment | `0.0.0-test.RUN_ID.RUN_ATTEMPT` |
+| Publish Direct Dashboard Pages with `test_publish` checked | The normal Pages site, replacing its current deployment | `0.0.0-test.RUN_ID.RUN_ATTEMPT` |
 
 The run identifiers are supplied by GitHub. No Git tag needs to exist for these test modes, but independent .NET
 packaging still requires its base **tag** version label. Environment approval and branch restrictions still apply.
@@ -236,8 +236,8 @@ match.
 
 For **Release** preflight and independent **Publish .NET Packages** runs, this input is a base version label; it need
 not already exist as a Git tag, does not create a tag, and does not change which branch/commit is checked out.
-Stable PyPI releases and release-mode WebHID publication require an existing, published, software-validated release tag.
-WebHID and Python development-publish modes leave **tag** empty and generate their marked test versions automatically.
+Stable PyPI releases and release-mode Direct Dashboard publication require an existing, published, software-validated release tag.
+Direct Dashboard and Python development-publish modes leave **tag** empty and generate their marked test versions automatically.
 
 Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release version resolver owns tag bounds; firmware
 build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the

@@ -13,7 +13,7 @@ scripts, and inspect bridge health without closing your serial connections.
 
 **Quick links:** [Download firmware](https://github.com/djwinter29-oss/PicoUart/releases) ·
 [Hardware setup](docs/hardware-setup.md) ·
-[Open browser dashboard](https://djwinter29-oss.github.io/PicoUart/) ·
+[Open Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/) ·
 [Python package](https://pypi.org/project/pico-uart/) ·
 [Measured performance](docs/tests/records/README.md#evidence-index)
 
@@ -29,7 +29,7 @@ detection; your test runner still decides pass or fail.
 | **Six ports, one cable** | Six independent standard USB serial ports from a single Pico. No host app needed for data. |
 | **Independent diagnostics** | UART/USB traffic counters, RX dropped-byte counts, and buffer peaks over separate USB HID. |
 | **Evidence for CI** | Save JSON status snapshots and timed traffic logs next to your test results. |
-| **Browser dashboard** | Inspect bridge health without installing a host application. |
+| **Direct Dashboard** | Inspect bridge health without installing a host application. |
 
 One host, six UART devices (logical connections, not a wiring diagram):
 
@@ -42,9 +42,9 @@ Computer -- USB -- Pico / Pico 2 +- UART0 -- Device A
                                  `- UART5 -- Device F
 ```
 
-![WebHID dashboard with simulated device identity, board configuration, runtime status, and six-channel UART/USB traffic.](docs/assets/pico-uart-dashboard.png)
+![Direct Dashboard with simulated device identity, board configuration, runtime status, and six-channel UART/USB traffic.](docs/assets/pico-uart-dashboard.png)
 
-_Current WebHID layout with simulated telemetry; illustrative, not a live hardware result._
+_Direct Dashboard layout with simulated telemetry; illustrative, not a live hardware result._
 
 ## Before You Connect
 
@@ -117,7 +117,7 @@ Choose the interface that fits your workflow. All three show bridge diagnostics;
 
 | Dashboard | Choose it when | Connect the board to |
 | --- | --- | --- |
-| [Browser](#browser-dashboard) | You want browser-only access. | The computer running Chrome/Edge. |
+| [Direct](#direct-dashboard) | You want browser-only access. | The computer running Chrome/Edge. |
 | [Python](#local-python-dashboard) | You also want the Python API or CLI. | The computer running `pico-uart web`. |
 | [.NET](#local-net-dashboard) | You prefer a self-contained executable. | The computer running `PicoUart web`. |
 
@@ -125,15 +125,17 @@ For Python and .NET, the host application accesses USB; the browser displays its
 On Linux, run [HID permissions setup](tools/README.md#linux-hid-permissions) on the computer accessing USB, not
 necessarily the computer displaying the dashboard. CDC serial-port permissions are separate.
 
-### Browser Dashboard
+<a id="browser-dashboard"></a>
 
-Open [WebHID](https://djwinter29-oss.github.io/PicoUart/), click **Connect**, and select your board.
-No application installation is needed.
+### Direct Dashboard
+
+Open the [Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/), click **Connect**, and select your board.
+Connect your browser directly to PicoUart over USB; no host application installation is needed.
 
 > [!IMPORTANT]
 > **WebHID requires desktop Google Chrome or Microsoft Edge.** Safari and Firefox are not supported.
 
-See the [WebHID guide](host/webhid/README.md) for controls and connection troubleshooting.
+See the [Direct Dashboard guide](host/direct/README.md) for controls and connection troubleshooting.
 
 ### Local Python Dashboard
 
@@ -191,7 +193,7 @@ Carrier-board LEDs and USB-to-I2C are not supported; see the
 | Need | Guide |
 | --- | --- |
 | Connect UART devices | [Hardware setup](docs/hardware-setup.md) |
-| Use the CLI, API, or dashboards | [Python](host/python/README.md), [.NET](host/dotnet/README.md), [WebHID](host/webhid/README.md) |
+| Use the CLI, API, or dashboards | [Python](host/python/README.md), [.NET](host/dotnet/README.md), [Direct](host/direct/README.md) |
 | Understand USB and UART behavior | [CDC/HID overview](docs/design/usb/cdc-hid-overview.md), [architecture](docs/design/architecture.md) |
 | Build or modify firmware | [Firmware build guide](firmware/build-and-config.md), [development and testing](docs/development/firmware-testing.md) |
 | Develop host applications | [Host development](docs/development/host-tools.md), [host app distribution](docs/deployment/host-app-distribution.md) |

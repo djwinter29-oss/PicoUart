@@ -8,6 +8,14 @@ import test from "node:test";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
+test("Direct Dashboard branding appears in browser and accessible headings", () => {
+  const html = readFileSync(join(root, "index.html"), "utf8");
+  assert.match(html, /<title>PicoUart \| Direct Dashboard<\/title>/);
+  assert.match(html, /aria-label="PicoUart Direct Dashboard home"/);
+  assert.match(html, /<small>Direct Dashboard<\/small>/);
+  assert.match(html, /<h1>Direct Dashboard<\/h1>/);
+});
+
 test("HTML references only WebHID-owned assets", () => {
   const html = readFileSync(join(root, "index.html"), "utf8");
   for (const match of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
@@ -19,11 +27,11 @@ test("HTML references only WebHID-owned assets", () => {
   assert.ok(!html.includes("shared/"));
 });
 
-for (const frontend of ["web", "webhid"]) {
+for (const frontend of ["web", "direct"]) {
   test(`${frontend} keeps board configuration in a compact summary with a heading action`, () => {
     const html = readFileSync(new URL(`../../${frontend}/index.html`, import.meta.url), "utf8");
     const section = html.match(/<section aria-labelledby="configuration-title">([\s\S]*?)<\/section>/)[1];
-    if (frontend === "webhid") {
+    if (frontend === "direct") {
       const identity = html.match(/<section aria-labelledby="identity-title">([\s\S]*?)<\/section>/)[1];
       assert.match(section, /<h2 id="configuration-title">Board configuration<\/h2>/);
       assert.match(section, /id="reboot-board"/);
@@ -52,9 +60,9 @@ for (const frontend of ["web", "webhid"]) {
       assert.match(section, /<label for="clock-profile">Stored boot profile<\/label>/);
     }
     assert.doesNotMatch(section, /configuration-panel|configuration-note|configuration-status|configuration-detail/);
-    const styles = readFileSync(new URL(`../../${frontend}/css/${frontend === "web" ? "dashboard" : "webhid"}.css`,
+    const styles = readFileSync(new URL(`../../${frontend}/css/${frontend === "web" ? "dashboard" : "direct"}.css`,
       import.meta.url), "utf8");
-    if (frontend === "webhid") {
+    if (frontend === "direct") {
       const sharedStyles = readFileSync(new URL("../css/dashboard.css", import.meta.url), "utf8");
       const channels = html.match(/<section class="channels-section"[\s\S]*?<\/section>/)[0];
       assert.match(channels, /<th scope="col">Channel status<\/th>\s*<th scope="col">UART configuration<\/th>/);

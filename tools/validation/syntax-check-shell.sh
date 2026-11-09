@@ -9,6 +9,7 @@ for script in \
     tools/firmware/setup-sdk-env.sh \
     tools/host/run-python.sh \
     tools/host/run-dotnet.sh \
+    tools/host/run-direct.sh \
     tools/host/run-webhid.sh \
     tools/host/hid-permissions-check.sh \
     tools/host/hid-permissions-setup.sh \

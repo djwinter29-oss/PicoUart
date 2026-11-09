@@ -51,7 +51,7 @@ function fixture(html) {
 }
 
 test("webhid report age text tracks freshness", () => {
-  const html = readFileSync(new URL("../../webhid/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../../direct/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   globalThis.document = document;
   try {
@@ -71,7 +71,7 @@ test("webhid report age text tracks freshness", () => {
 });
 
 test("webhid render updates live cells without replacing diagnostics buttons", () => {
-  const html = readFileSync(new URL("../../webhid/index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../../direct/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   globalThis.document = document;
   try {

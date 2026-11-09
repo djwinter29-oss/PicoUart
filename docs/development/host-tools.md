@@ -4,7 +4,7 @@ This guide covers the Python and .NET host tools and their shared dashboard fron
 the [Python package guide](../../host/python/README.md) and [.NET host guide](../../host/dotnet/README.md). The Python
 package guide is also included as the PyPI project description.
 
-The independent [WebHID dashboard](../../host/webhid/README.md) runs directly in a supported desktop browser with its
+The independent [Direct Dashboard](../../host/direct/README.md) runs directly in a supported desktop browser with its
 own assets and renderer. Its hardware-free checks use Node rather than the Python/.NET test runners.
 
 Run commands from the repository root unless a linked guide explicitly says otherwise. These setup, build, and test
@@ -281,41 +281,46 @@ Use `-p:Version=1.2.3` to embed an explicit application version. Release archive
 tests belong in the [publishing runbook](../deployment/host-app-publishing.md#net-packaging); user installation belongs
 in the [.NET host guide](../../host/dotnet/README.md#install).
 
-## WebHID Development
+<a id="webhid-development"></a>
 
-WebHID is a standalone browser app in `host/webhid`, independent of the Python/.NET server and shared
+## Direct Dashboard Development
+
+The Direct Dashboard uses WebHID and is a standalone browser app in `host/direct`, independent of the Python/.NET server
+and shared
 `host/web` frontend. Its HTML, CSS, favicon, and renderer are owned by that directory; no shared asset-generation step
 or files from `host/web` are required. Browser connection and troubleshooting belong in the
-[WebHID user guide](../../host/webhid/README.md).
+[Direct Dashboard user guide](../../host/direct/README.md).
 
-### Run WebHID From A Checkout
+<a id="run-webhid-from-a-checkout"></a>
+
+### Run Direct Dashboard From A Checkout
 
 Serve the static app from the repository root:
 
 ```sh
-tools/host/run-webhid.sh
+tools/host/run-direct.sh
 ```
 
 Open <http://127.0.0.1:8000/>. Use `--port N` to choose another port. Without a POSIX shell, serve the same directory
 with Python 3:
 
 ```sh
-python -m http.server 8000 --bind 127.0.0.1 --directory host/webhid
+python -m http.server 8000 --bind 127.0.0.1 --directory host/direct
 ```
 
 The server only delivers files; native HID access is still to the browser computer's USB devices. Do not open the HTML
 directly from disk. Self-hosted deployments need HTTPS or localhost. Local files display the debug app version; the
 Pages workflow stamps it during packaging. Release gates and deployment/rollback steps belong in the
-[Pages publishing runbook](../deployment/host-app-publishing.md#webhid-pages).
+[Pages publishing runbook](../deployment/host-app-publishing.md#direct-dashboard-pages).
 
 ### WebHID Checks
 
 Run the hardware-free browser checks used by CI:
 
 ```sh
-node --check host/webhid/js/view.mjs
-node --check host/webhid/js/app.mjs
-node --test host/webhid/tests/*.test.mjs
+node --check host/direct/js/view.mjs
+node --check host/direct/js/app.mjs
+node --test host/direct/tests/*.test.mjs
 ```
 
 The test suite also checks the independent and shared renderers' presentation contracts; it does not open native USB

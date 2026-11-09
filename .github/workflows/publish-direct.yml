@@ -1,4 +1,4 @@
-name: Publish WebHID Pages
+name: Publish Direct Dashboard Pages
 
 on:
   workflow_run:
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   build:
-    name: Validate and package WebHID
+    name: Validate and package Direct Dashboard
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
@@ -64,7 +64,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 tools/release/require_release_checks.py --tag "$RELEASE_TAG" --expected-sha "$SOURCE_SHA"
 
-      - name: Checkout WebHID
+      - name: Checkout Direct Dashboard
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.checks.outputs.sha || github.sha }}
@@ -75,13 +75,13 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check WebHID
+      - name: Check Direct Dashboard
         run: |
-          node --check host/webhid/js/view.mjs
-          node --check host/webhid/js/app.mjs
-          node --test host/webhid/tests/*.test.mjs
+          node --check host/direct/js/view.mjs
+          node --check host/direct/js/app.mjs
+          node --test host/direct/tests/*.test.mjs
 
-      - name: Stamp WebHID version
+      - name: Stamp Direct Dashboard version
         env:
           HOST_VERSION: ${{ inputs.test_publish && format('0.0.0-test.{0}.{1}', github.run_id, github.run_attempt) || steps.release.outputs.version }}
         run: |
@@ -89,7 +89,7 @@ jobs:
           import { readFileSync, writeFileSync } from 'node:fs';
           const version = process.env.HOST_VERSION;
           if (!/^\d+\.\d+\.\d+(?:-debug|-test\.\d+\.\d+)?$/.test(version ?? '')) throw new Error('Invalid host version');
-          const path = 'host/webhid/index.html';
+          const path = 'host/direct/index.html';
           const html = readFileSync(path, 'utf8');
           const marker = 'aria-label="Host application version">0.0.0-debug</span>';
           if (!html.includes(marker)) throw new Error('Host version marker missing');
@@ -99,13 +99,13 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
-      - name: Upload WebHID site
+      - name: Upload Direct Dashboard site
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: host/webhid
+          path: host/direct
 
   deploy:
-    name: Deploy WebHID
+    name: Deploy Direct Dashboard
     needs: build
     runs-on: ubuntu-latest
     permissions:
