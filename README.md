@@ -14,7 +14,8 @@ scripts, and inspect bridge health without closing your serial connections.
 **Quick links:** [Download firmware](https://github.com/djwinter29-oss/PicoUart/releases) ·
 [Hardware setup](docs/hardware-setup.md) ·
 [Open browser dashboard](https://djwinter29-oss.github.io/PicoUart/) ·
-[Python package](https://pypi.org/project/pico-uart/)
+[Python package](https://pypi.org/project/pico-uart/) ·
+[Measured performance](docs/tests/records/README.md#evidence-index)
 
 ## Why PicoUart?
 
@@ -28,17 +29,17 @@ detection; your test runner still decides pass or fail.
 | **Six ports, one cable** | Six independent standard USB serial ports from a single Pico. No host app needed for data. |
 | **Independent diagnostics** | UART/USB traffic counters, RX dropped-byte counts, and buffer peaks over separate USB HID. |
 | **Evidence for CI** | Save JSON status snapshots and timed traffic logs next to your test results. |
-| **Browser dashboard** | Desktop Chrome/Edge; Linux may need [HID permissions](tools/README.md#linux-hid-permissions). |
+| **Browser dashboard** | Inspect bridge health without installing a host application. |
 
 One host, six UART devices (logical connections, not a wiring diagram):
 
 ```text
-Computer -- USB -- Pico / Pico 2 -- UART0 -- Device A
-                               |- UART1 -- Device B
-                               |- UART2 -- Device C
-                               |- UART3 -- Device D
-                               |- UART4 -- Device E
-                               `- UART5 -- Device F
+Computer -- USB -- Pico / Pico 2 +- UART0 -- Device A
+                                 |- UART1 -- Device B
+                                 |- UART2 -- Device C
+                                 |- UART3 -- Device D
+                                 |- UART4 -- Device E
+                                 `- UART5 -- Device F
 ```
 
 ![WebHID dashboard with simulated device identity, board configuration, runtime status, and six-channel UART/USB traffic.](docs/assets/pico-uart-dashboard.png)
@@ -51,9 +52,10 @@ _Current WebHID layout with simulated telemetry; illustrative, not a live hardwa
 - **Framing:** UART0-1 use hardware UARTs; UART2-5 use PIO and support **8N1 only**.
 - **Flow control:** RTS/CTS is disabled by default.
 - **Throughput:** all six channels share USB full-speed bandwidth. A configured baud rate is not a guarantee of
-  sustained throughput; use the [dated hardware test results](docs/tests/records/README.md) to choose tested conditions.
+  sustained throughput; compare board, clock, workload, and duration in the
+  [measured-performance evidence index](docs/tests/records/README.md#evidence-index).
 - **Clock settings:** non-default profiles require explicit overclock acknowledgement. Stability is board-specific;
-  passing tests on one board does not qualify another.
+  results apply only to the tested artifacts and conditions.
 
 Serial applications use USB CDC for UART data, baud rate, and framing. Dashboards use the separate HID interface for
 diagnostics and limited board controls.
@@ -70,14 +72,23 @@ diagnostics and limited board controls.
 4. **Open the matching serial port** in your terminal or test script. Use the
    [port identification guide](docs/hardware-setup.md#find-the-serial-ports), then set baud rate and framing for your
    device.
-5. **Check diagnostics (optional):** open the [browser dashboard](https://djwinter29-oss.github.io/PicoUart/) in desktop
-   Chrome or Edge, click **Connect**, and select your board.
+5. **Check diagnostics (optional):** choose a [dashboard](#dashboards), connect, and select your board.
+
+For each UART device, the signal connections are:
+
+```text
+PicoUart TX  -->  Device RX
+PicoUart RX  <--  Device TX
+PicoUart GND ---  Device GND
+```
+
+Use the [port map](docs/hardware-setup.md#port-map) to find the pins for your chosen UART.
 
 **Setup checkpoint:** the host should list six PicoUart serial ports. That confirms USB enumeration, not UART wiring.
 Confirm communication by exchanging expected data with your connected device at its required baud rate and framing.
 
-If device access is denied, check OS permissions. Linux HID access uses the
-[permissions setup](tools/README.md#linux-hid-permissions); CDC serial-port permissions are separate.
+If the serial port cannot be opened, check its OS permissions. Dashboard/HID access is separate; see
+[dashboard permissions](#dashboards).
 
 ## Test Automation
 
@@ -104,14 +115,15 @@ See the [Python guide](host/python/README.md) for the API, output semantics, and
 
 Choose the interface that fits your workflow. All three show bridge diagnostics; none is required for serial traffic.
 
-| Dashboard | Choose it when |
-| --- | --- |
-| [Browser](#browser-dashboard) | You want browser-only access. |
-| [Python](#local-python-dashboard) | You also want the Python API or CLI. |
-| [.NET](#local-net-dashboard) | You prefer a self-contained executable. |
+| Dashboard | Choose it when | Connect the board to |
+| --- | --- | --- |
+| [Browser](#browser-dashboard) | You want browser-only access. | The computer running Chrome/Edge. |
+| [Python](#local-python-dashboard) | You also want the Python API or CLI. | The computer running `pico-uart web`. |
+| [.NET](#local-net-dashboard) | You prefer a self-contained executable. | The computer running `PicoUart web`. |
 
-All three need local USB access to the board; Linux may require
-[HID permissions setup](tools/README.md#linux-hid-permissions).
+For Python and .NET, the host application accesses USB; the browser displays its web interface without WebHID.
+On Linux, run [HID permissions setup](tools/README.md#linux-hid-permissions) on the computer accessing USB, not
+necessarily the computer displaying the dashboard. CDC serial-port permissions are separate.
 
 ### Browser Dashboard
 
@@ -126,15 +138,14 @@ See the [WebHID guide](host/webhid/README.md) for controls and connection troubl
 ### Local Python Dashboard
 
 Install [pico-uart](https://pypi.org/project/pico-uart/), run `pico-uart web`, and open <http://127.0.0.1:5000/>.
-It works without browser WebHID support. See the [Python guide](host/python/README.md) for installation and device
-permissions.
+See the [Python guide](host/python/README.md) for installation and connection troubleshooting.
 
 ### Local .NET Dashboard
 
 Download a self-contained host from [Releases](https://github.com/djwinter29-oss/PicoUart/releases), extract the whole
 archive, and run `./PicoUart web` on Linux/macOS or `.\PicoUart.exe web` in Windows PowerShell. Open
-<http://127.0.0.1:5000/>; no Python or .NET installation or browser WebHID support is required.
-See the [.NET host guide](host/dotnet/README.md) for supported downloads and device permissions.
+<http://127.0.0.1:5000/>; no Python or .NET installation is required.
+See the [.NET host guide](host/dotnet/README.md) for supported downloads and connection troubleshooting.
 
 ## Hardware Compatibility
 
@@ -189,8 +200,8 @@ Carrier-board LEDs and USB-to-I2C are not supported; see the
 | Review validation and hardware evidence | [Test guide](docs/tests/README.md), [dated HIL records](docs/tests/records/README.md) |
 | Contribute | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md) |
 
-Firmware is checked on a physical fixture ([test records](docs/tests/README.md)). Host tests do not replace hardware
-qualification; results apply only to the exact artifacts and conditions recorded.
+Host tests do not replace physical hardware qualification; see the [test guide](docs/tests/README.md) for validation
+scope and release gates.
 
 ## License
 

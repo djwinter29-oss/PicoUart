@@ -9,7 +9,8 @@ details here. Follow the shared coding and documentation conventions in
 
 ## Environment And Validation
 
-Check the current environment before assuming tools or hardware are available. Choose validation scope accordingly:
+Check the current environment before assuming tools or hardware are available. Choose checks relevant to the change;
+these tiers describe available validation, not a mandatory checklist for every task:
 
 - No board: verify firmware builds, host tooling, host tests, and binary USB contracts.
 - Board only: also check USB enumeration and read-only HID status on the identified PicoUart board. These checks do not

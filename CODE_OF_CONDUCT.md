@@ -27,24 +27,31 @@ officially representing the project in public spaces.
 
 ## Reporting
 
-Use GitHub's reporting tools rather than opening a public issue or a security vulnerability report:
+Choose the route that applies:
 
-- For project moderation, use **Report content**, then **Report to repository admins**, if available.
-- For suspected GitHub policy violations, including those involving maintainers, use
-  [GitHub's abuse reporting form](https://support.github.com/contact/report-abuse).
+- **Project conduct concerns:** use **Report content**, then **Report to repository admins**, if available.
+- **Suspected GitHub policy violations:** use
+  [GitHub's abuse reporting form](https://support.github.com/contact/report-abuse), including when a maintainer is involved.
 
-Include relevant links and context; do not post sensitive details publicly. See
+Include relevant links, what happened, and any concerns about a reviewer's involvement. Do not post sensitive details
+in a public issue or use security vulnerability reporting for conduct concerns. See
 [GitHub's reporting instructions](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam).
 
-GitHub Support enforces GitHub's policies, not this code, and does not automatically forward reports to maintainers.
-There is no separate private project inbox or guaranteed independent reviewer. If admin reporting is unavailable or
-conflicted, project-only concerns have no dedicated private escalation route.
+**Available channels:** the project currently uses GitHub's reporting tools and has no separate private reporting inbox.
+An additional private project channel will be listed here only when someone can reliably monitor it.
+If repository-admin reporting is unavailable, there is no private project reporting fallback.
+GitHub Support handles GitHub policy violations, not enforcement of this code, and does not automatically forward
+reports to maintainers.
 
 ## Enforcement And Privacy
 
-Maintainers review concerns fairly and must not handle complaints about their own conduct. An uninvolved maintainer
-should handle those where available. Sensitive information is shared only as needed for review and enforcement;
-absolute confidentiality cannot be guaranteed. GitHub handles reports sent to its Support team under its own policies.
+Maintainers review concerns fairly and must not handle complaints about their own conduct. Such complaints must be
+referred to an uninvolved maintainer where available. If none is available, the project cannot provide an independent
+review; the involved maintainer must not decide the complaint. There is currently no independent project escalation
+route for these cases.
+
+Sensitive information is shared only as needed for review and enforcement; absolute confidentiality cannot be
+guaranteed. GitHub handles reports sent to its Support team under its own policies.
 
 Depending on severity and repetition, maintainers may request a correction, issue a warning, remove content, temporarily
 restrict participation, or permanently exclude a participant. Serious incidents may warrant immediate exclusion.
