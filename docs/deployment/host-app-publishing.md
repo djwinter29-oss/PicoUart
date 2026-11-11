@@ -122,7 +122,8 @@ authoritative if Pages settings or the repository name changes.
 
 After the tag-push Release run succeeds, the Pages workflow validates the published release and shared gates, rejects a
 moved tag, checks out the gate-validated commit, and runs WebHID checks. It stamps the
-visible app version from the tag without its leading `v`, then uploads only `host/direct/src`. Deployments are serialized.
+visible app version from the tag without its leading `v`, then uploads only the verified staged Direct Dashboard.
+Deployments are serialized.
 
 For redeployment or rollback, use **Actions > Publish Direct Dashboard Pages > Run workflow** with the already-published **tag**
 and **test_publish** unchecked. Drafts, prereleases, and tags outside the release policy are rejected. The selected
@@ -141,7 +142,8 @@ redeploy them. Hardware qualification remains separate from publication.
 
 Test mode deploys the selected commit after scoped WebHID checks, without published-release lookup or the full gate.
 It replaces the normal Pages site and shows the [test-version marker](releasing.md#publication-gates); uncommitted
-changes are not included. The local Direct Dashboard uses `0.0.0-debug`, independent of the connected board's firmware version.
+changes are not included. The local Direct Dashboard derives its version from Git tags, independent of the connected
+board's firmware version.
 
 A Pages failure does not unpublish a GitHub Release. Inspect the environment's latest successful deployment, fix or
 rerun separately, and check asset loading and browser/device access after deployment. Mocked checks do not prove native

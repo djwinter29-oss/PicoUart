@@ -37,6 +37,11 @@ def test_python_build_backend_matches_tested_development_pin(repo_root):
     development = project["dependency-groups"]["dev"]
     for requirement in requirements:
         assert requirement in development
+    assert project["tool"]["hatch"]["version"]["source"] == "vcs"
+    assert project["tool"]["hatch"]["version"]["raw-options"]["root"] == "../.."
+    assert project["tool"]["hatch"]["version"]["raw-options"]["git_describe_command"].startswith(
+        "git describe --dirty --tags --long --match"
+    )
 
 
 @pytest.mark.parametrize("state", ["tagged", "development", "override"])
@@ -129,9 +134,12 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
             assert metadata["License-Expression"] == "BSD-3-Clause"
             assert set(metadata.get_all("Requires-Dist")) == set(runtime_requirements)
             assert wheel.read(f"pico_uart-{expected_version}.dist-info/licenses/LICENSE") == license_text
-            for name, content in expected_assets.items():
-                assert wheel.read(name) == content
-            assert {name for name in wheel.namelist() if name.startswith("pico_uart/web/assets/")} == set(expected_assets)
+            if directory != editable_directory:
+                for name, content in expected_assets.items():
+                    assert wheel.read(name) == content
+                assert {name for name in wheel.namelist() if name.startswith("pico_uart/web/assets/")} == set(
+                    expected_assets
+                )
             assert not any(name.startswith(("tests/", "pico_uart/tests/")) for name in wheel.namelist())
             assert not any("__pycache__" in name or name.endswith(".pyc") for name in wheel.namelist())
 

@@ -29,7 +29,7 @@ def published_host(tmp_path_factory, packaged_version):
     output = tmp_path_factory.mktemp("dotnet-host")
     result = subprocess.run(
         [DOTNET, "publish", str(ROOT / "host/dotnet/PicoUart"), "-o", str(output)]
-        + (["-p:Version=" + packaged_version] if packaged_version != "0.0.0-debug" else []),
+        + ["-p:MinVerVersionOverride=" + packaged_version],
         capture_output=True,
         text=True,
         timeout=120,

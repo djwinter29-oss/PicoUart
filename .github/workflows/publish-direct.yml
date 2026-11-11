@@ -81,20 +81,12 @@ jobs:
           node --check host/direct/src/js/app.mjs
           node --test host/direct/tests/*.test.mjs
 
-      - name: Stamp Direct Dashboard version
+      - name: Stage and verify Direct Dashboard
         env:
           HOST_VERSION: ${{ inputs.test_publish && format('0.0.0-test.{0}.{1}', github.run_id, github.run_attempt) || steps.release.outputs.version }}
         run: |
-          node --input-type=module - <<'JS'
-          import { readFileSync, writeFileSync } from 'node:fs';
-          const version = process.env.HOST_VERSION;
-          if (!/^\d+\.\d+\.\d+(?:-debug|-test\.\d+\.\d+)?$/.test(version ?? '')) throw new Error('Invalid host version');
-          const path = 'host/direct/src/index.html';
-          const html = readFileSync(path, 'utf8');
-          const marker = 'aria-label="Host application version">0.0.0-debug</span>';
-          if (!html.includes(marker)) throw new Error('Host version marker missing');
-          writeFileSync(path, html.replace(marker, marker.replace('0.0.0-debug', version)));
-          JS
+          python3 tools/host/direct_site.py build --output build/direct-site --version "$HOST_VERSION"
+          python3 tools/host/direct_site.py verify --output build/direct-site --version "$HOST_VERSION"
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
@@ -102,7 +94,7 @@ jobs:
       - name: Upload Direct Dashboard site
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: host/direct/src
+          path: build/direct-site
 
   deploy:
     name: Deploy Direct Dashboard

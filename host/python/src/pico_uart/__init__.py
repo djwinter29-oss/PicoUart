@@ -2,6 +2,8 @@
 # Copyright (c) 2026 Ji Dong
 """Python client tools for PicoUart hardware."""
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .client import (
     PicoUartHid,
     read_board_status,
@@ -54,7 +56,16 @@ from .transport import (
     open_enumerated_device,
 )
 
+try:
+    __version__ = version("pico-uart")
+except PackageNotFoundError:
+    __version__ = "0.0.0-debug"
+else:
+    if __version__ == "0.0.0.dev0":
+        __version__ = "0.0.0-debug"
+
 __all__ = [
+    "__version__",
     "PicoUartHid",
     "read_board_status",
     "read_board_temperature",

@@ -43,6 +43,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Resolve host version
         id: version
@@ -53,7 +55,9 @@ jobs:
           TEST_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && !inputs.release_build }}
         run: |
           set -eu
-          VERSION=$(tools/release/resolve-release-version.sh "$EVENT_NAME" "$INPUT_TAG" "$REF_NAME")
+          VERSION_EVENT="$EVENT_NAME"
+          if [ -n "$INPUT_TAG" ]; then VERSION_EVENT=workflow_dispatch; fi
+          VERSION=$(tools/release/resolve-release-version.sh "$VERSION_EVENT" "$INPUT_TAG" "$REF_NAME")
           if [ "$TEST_PUBLISH" = true ]; then
             VERSION="${VERSION}-test.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           fi
@@ -71,11 +75,10 @@ jobs:
 
       - name: Publish standalone host
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          MinVerVersionOverride: ${{ inputs.tag && steps.version.outputs.version || '' }}
           RID: ${{ matrix.rid }}
         run: |
-          dotnet publish host/dotnet/PicoUart -c Release -r "$RID" --self-contained true \
-            -p:Version="$VERSION" -o build/host-release
+          dotnet publish host/dotnet/PicoUart -c Release -r "$RID" --self-contained true -o build/host-release
 
       - name: Check and archive standalone host
         env:

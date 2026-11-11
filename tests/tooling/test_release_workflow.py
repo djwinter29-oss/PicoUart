@@ -152,13 +152,20 @@ def test_tagged_host_packages_embed_the_release_version_and_gate_publication() -
     assert "workflow_dispatch:" in job
     assert "contents: write" not in job
     assert "pip wheel" not in job
+    assert "<MinVerTagPrefix>v</MinVerTagPrefix>" in (
+        REPO_ROOT / "host/dotnet/PicoUart/PicoUart.csproj"
+    ).read_text(encoding="utf-8")
+    assert "MinVerAutoIncrement>patch</MinVerAutoIncrement>" in (
+        REPO_ROOT / "host/dotnet/PicoUart/PicoUart.csproj"
+    ).read_text(encoding="utf-8")
     python_job = text.split("\n  python-package:\n", 1)[1].split("\n  publish:\n", 1)[0]
     assert "fetch-depth: 0" in python_job
     assert "SETUPTOOLS_SCM_PRETEND_VERSION:" in python_job
     assert "SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}" in python_job
     assert "PICO_UART_HOST_VERSION:" not in python_job
     assert "--self-contained true" in job
-    assert '-p:Version="$VERSION"' in job
+    assert "MinVerVersionOverride: ${{ inputs.tag && steps.version.outputs.version || '' }}" in job
+    assert "fetch-depth: 0" in job
     assert "Verify installed Python release" in text
     assert "SHA256SUMS-python.txt" in text
     assert "name: release-python" in text
@@ -323,33 +330,21 @@ def test_webhid_pages_test_publish_is_explicit_and_uses_the_dispatched_commit() 
     assert "ref: ${{ steps.checks.outputs.sha || github.sha }}" in text
 
 
-@pytest.mark.parametrize("version,success", [
-    ("0.0.0-debug", True), ("1.2.3", True), ("0.0.0-test.123.1", True), ("<script>", False),
-])
-def test_webhid_pages_stamps_only_valid_host_versions(tmp_path, version, success):
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("Node unavailable")
+def test_webhid_pages_builds_and_uploads_a_verified_versioned_site():
     text = (REPO_ROOT / ".github/workflows/publish-direct.yml").read_text(encoding="utf-8")
-    step = text.split("- name: Stamp Direct Dashboard version\n", 1)[1].split("\n      - name:", 1)[0]
-    script = textwrap.dedent(step.split("<<'JS'\n", 1)[1].rsplit("\n          JS", 1)[0])
-    target = tmp_path / "host/direct/src/index.html"
-    target.parent.mkdir(parents=True)
-    original = (REPO_ROOT / "host/direct/src/index.html").read_text(encoding="utf-8")
-    target.write_text(original, encoding="utf-8")
-    result = subprocess.run([node, "--input-type=module", "-"], input=script, text=True,
-                            capture_output=True, cwd=tmp_path, env={**os.environ, "HOST_VERSION": version})
-    assert (result.returncode == 0) == success, result.stderr
-    expected = original.replace(">0.0.0-debug</span>", f">{version}</span>") if success else original
-    assert target.read_text(encoding="utf-8") == expected
-    assert "format('0.0.0-test.{0}.{1}', github.run_id, github.run_attempt)" in step
+    step = text.split("- name: Stage and verify Direct Dashboard\n", 1)[1].split("\n      - name:", 1)[0]
+    assert 'format(\'0.0.0-test.{0}.{1}\', github.run_id, github.run_attempt)' in step
+    assert "direct_site.py build --output build/direct-site --version" in step
+    assert "direct_site.py verify --output build/direct-site --version" in step
+    assert "path: build/direct-site\n" in text
+    assert "path: host/direct/src\n" not in text
 
 
 def test_webhid_pages_deploys_only_the_independent_site_with_scoped_permissions() -> None:
     text = (REPO_ROOT / ".github/workflows/publish-direct.yml").read_text(encoding="utf-8")
     build, deploy = text.split("\n  deploy:\n", 1)
 
-    assert "path: host/direct/src\n" in build
+    assert "path: build/direct-site\n" in build
     assert "path: host/direct\n" not in build
     assert "path: host/direct/tests" not in build
     assert "path: host/web\n" not in text
@@ -361,6 +356,8 @@ def test_webhid_pages_deploys_only_the_independent_site_with_scoped_permissions(
     assert "name: github-pages" in deploy
     assert "group: webhid-pages" in text
     assert "cancel-in-progress: false" in text
+    assert "tools/host/direct_site.py build" in build
+    assert "tools/host/direct_site.py verify" in build
 
 
 @pytest.mark.parametrize("status,conclusion", [

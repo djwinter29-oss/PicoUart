@@ -188,7 +188,7 @@ uv build --wheel --directory host/python
 ```
 
 Hatchling uses `hatch-vcs` to derive version `1.2.3` from Git tag `v1.2.3` and development versions from later commits.
-The nested package searches parent directories for the repository; fetch full history and tags for release builds.
+The nested package uses the repository root and full Git tag history to derive development and release versions.
 Source distributions preserve the resolved version without Git. With neither Git metadata nor a source-distribution
 version, the fallback is `0.0.0.dev0`. Use `SETUPTOOLS_SCM_PRETEND_VERSION` for an explicit test-build version.
 
@@ -249,9 +249,9 @@ dotnet build/host-dotnet/PicoUart.dll web --port 5001
 
 For a self-contained build, replace `--self-contained false` with `--self-contained true -r linux-x64`, or the matching
 target identifier. Distribute the whole output directory, including `web`; the executable alone is insufficient.
-Use `-p:Version=1.2.3` to embed an explicit application version. Release archive qualification and marked packaging
-tests belong in the [publishing runbook](../deployment/host-app-publishing.md#net-packaging); user installation belongs
-in the [.NET host guide](../../host/dotnet/README.md#install).
+Use `-p:MinVerVersionOverride=1.2.3` to embed an explicit application version. Release archive qualification and
+marked packaging tests belong in the [publishing runbook](../deployment/host-app-publishing.md#net-packaging); user
+installation belongs in the [.NET host guide](../../host/dotnet/README.md#install).
 
 <a id="webhid-development"></a>
 
@@ -267,22 +267,23 @@ or files from `host/web/src` are required. Browser connection and troubleshootin
 
 ### Run Direct Dashboard From A Checkout
 
-Serve the static app from the repository root:
+Serve the static app from the repository root with its version derived from Git tags:
 
 ```sh
 tools/host/run-direct.sh
 ```
 
-Open <http://127.0.0.1:8000/>. Use `--port N` to choose another port. Without a POSIX shell, serve the same directory
-with Python 3:
+Open <http://127.0.0.1:8000/>. Use `--port N` to choose another port. The launcher stages a temporary copy and leaves
+the canonical source tree unchanged. Without a POSIX shell, run the staging helper directly:
 
 ```sh
-python -m http.server 8000 --bind 127.0.0.1 --directory host/direct/src
+python tools/host/direct_site.py serve --port 8000
 ```
 
 The server only delivers files; native HID access is still to the browser computer's USB devices. Do not open the HTML
-directly from disk. Self-hosted deployments need HTTPS or localhost. Local files display the debug app version; the
-Pages workflow stamps it during packaging. Release gates and deployment/rollback steps belong in the
+directly from disk. Self-hosted deployments need HTTPS or localhost. Direct versions use the nearest reachable `vMAJOR.MINOR.PATCH` tag, with development versions incrementing the patch
+and including the commit distance and hash. The Pages workflow stamps the validated release tag into a staged copy.
+Release gates and deployment/rollback steps belong in the
 [Pages publishing runbook](../deployment/host-app-publishing.md#direct-dashboard-pages).
 
 ### WebHID Checks
@@ -309,15 +310,13 @@ native browser/OS USB compatibility; see the [hardware test index](../tests/READ
 ## Python/.NET Web UI
 
 The backend label and **App v** version share a secondary line beneath **PicoUart** in the top bar. This identifies the
-host application, not the board's firmware. Python obtains its installed version through `importlib.metadata`; .NET
-uses its assembly informational version. The backends pass these values into the shared HTML template; `host/web/src`
-contains no application version metadata. Tagged Python builds derive their package version from Git through
-`hatch-vcs`; .NET builds use `dotnet publish -p:Version=...`.
+host application, not the board's firmware. Python exposes its installed version through `pico_uart.__version__`;
+.NET uses its assembly informational version. The backends pass these values into the shared HTML template;
+`host/web/src` contains no application version metadata. Both derive versions from `vMAJOR.MINOR.PATCH` Git tags:
+Python uses `hatch-vcs`, while .NET uses MinVer with patch auto-increment and the `dev` prerelease label.
 `PICO_UART_HOST_VERSION` is only an optional runtime display override; an unset or empty value uses native build
-metadata.
-Python Git checkouts produce VCS-derived versions; the no-Git fallback `0.0.0.dev0` displays as `0.0.0-debug`.
-.NET uses `0.0.0-debug` for development. Reinstall an editable Python package after commits or tags change its version.
-None of these settings changes the board's firmware version.
+metadata. Python's no-Git fallback is `0.0.0-debug`. Reinstall an editable Python package after commits or tags change
+its version. None of these settings changes the board's firmware version.
 
 Python and .NET serve the same frontend from `host/web/src`. Keep templates backend-neutral and preserve the shared JSON
 contract; do not add a second frontend. The [.NET integration tests](../../tests/tooling/test_dotnet_host.py) guard

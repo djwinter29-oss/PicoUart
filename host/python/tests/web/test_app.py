@@ -99,7 +99,7 @@ def test_dashboard_serves_static_assets_safely():
     ("", "0.0.0-debug"), ("1.2.3", "1.2.3"), ("<script>", "&lt;script&gt;"),
 ])
 def test_dashboard_shows_host_version_safely(monkeypatch, version, expected):
-    monkeypatch.setattr("pico_uart.web.app.distribution_version", lambda _name: "0.0.0.dev0")
+    monkeypatch.setattr("pico_uart.web.app.__version__", "0.0.0-debug")
     monkeypatch.setenv("PICO_UART_HOST_VERSION", version)
     page = create_app(FakeDashboard()).test_client().get("/").data.decode()
     assert f'aria-label="Host application version">{expected}</span>' in page
