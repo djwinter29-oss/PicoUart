@@ -50,18 +50,17 @@ The Pico-only stamped-version check is a conditional step inside the PR firmware
 | Check | Environment And Dependencies | What It Establishes |
 | --- | --- | --- |
 | Firmware matrix | Linux; Arm toolchain, pinned Pico SDK, CMake/Ninja, host C++ compiler, Python | Pico and Pico 2 compile/link and satisfy binary contracts plus target-specific static SRAM/flash budgets; real-build regulator policy is inspected, not physically measured |
-| Firmware policy check | Python and `requirements-voltage-lock.txt` | Minimal pytest environment for inspection of the actual SDK build artifacts |
-| Host application matrix | Linux, macOS, Windows; Python 3.12, .NET 10 SDK, `requirements-lock.txt` | .NET unit tests, repository Python tests, and installed/published host contracts; Windows and macOS also run native C tests |
-| Linux host tools | Python 3.12, development lock, native C toolchain, CMake/Ninja, cppcheck | Syntax, ASan/UBSan native tests, static analysis, and CLI smoke checks |
-| Python minimum | Linux; Python 3.10 and development lock | Repository Python checks on the minimum supported interpreter |
+| Firmware policy check | Python and the `test` dependency group | Minimal pytest environment for inspection of the actual SDK build artifacts |
+| Host application matrix | Linux, macOS, Windows; Python 3.12, .NET 10 SDK, Python `dev` dependency group | .NET unit tests, repository Python tests, and installed/published host contracts; Windows and macOS also run native C tests |
+| Linux host tools | Python 3.12, Python `dev` dependency group, native C toolchain, CMake/Ninja, cppcheck | Syntax, ASan/UBSan native tests, static analysis, and CLI smoke checks |
+| Python minimum | Linux; Python 3.10 and Python `dev` dependency group | Repository Python checks on the minimum supported interpreter |
 | Browser host | Linux; Node 22 | JavaScript syntax, WebHID tests, and the shared dashboard contract test under `host/web/tests` |
-| Release Python wheel | Python build backend/plugin and `requirements-runtime-lock.txt` | Wheel version, clean installation outside the checkout, and bundled dashboard startup response |
+| Release Python wheel | Python build backend/plugin and wheel-declared runtime dependencies | Wheel version, clean installation outside the checkout, and bundled dashboard startup response |
 | Release .NET archives | Native Linux/Windows/macOS runners and .NET SDK | Self-contained publishing for the configured runtime matrix, archive extraction, CLI startup, and embedded version |
 | Physical HIL | Identified board, intended flashed artifact, and required fixture | UART payload integrity, health, timing/recovery behavior, and conditions absent from CI |
 
-Locks contain reviewed versions and hashes; the
-[host development guide](host-tools.md#python-dependencies-and-locking)
-owns their declarations and generation. Version stamping and host transport checks do not establish board compatibility
+Python dependencies are declared in the host project's
+[pyproject.toml](../../host/python/pyproject.toml). Version stamping and host transport checks do not establish board compatibility
 or physical overclock/voltage margins. See [HIL scope](../tests/hil-fixture-test-plan.md) for the evidence limits.
 
 ## Release And Publication

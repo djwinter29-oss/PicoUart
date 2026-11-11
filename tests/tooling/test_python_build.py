@@ -35,10 +35,8 @@ def test_python_build_backend_matches_tested_development_pin(repo_root):
     project = parse((repo_root / "host/python/pyproject.toml").read_text())
     assert project["build-system"]["requires"] == requirements
     development = project["dependency-groups"]["dev"]
-    lines = (repo_root / "host/python/requirements-lock.txt").read_text().splitlines()
     for requirement in requirements:
         assert requirement in development
-        assert any(line.removesuffix(" \\") == requirement for line in lines)
 
 
 @pytest.mark.parametrize("state", ["tagged", "development", "override"])

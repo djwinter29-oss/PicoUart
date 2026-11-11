@@ -16,9 +16,9 @@ steps do not require a board; physical device checks require an identified board
 - .NET 10 SDK for the C# host
 - Desktop Chrome or Edge with WebHID support for the browser-only host
 - Node 22 or newer for WebHID unit tests; no Node runtime is required to use a hosted page
-- uv for the Python build and lock-generation commands below; ordinary package installation uses pip or pipx
+- pip 25.1 or newer for installing Python dependency groups
 - Bash on Linux/macOS, or PowerShell on Windows
-- Network access to install hash-locked Python dependencies and restore .NET packages
+- Network access to install Python dependencies and restore .NET packages
 
 Install only the tools needed for the application or checks you are changing. Source checkouts need Git and full tag
 history for Git-derived Python versions; standalone source archives preserve their resolved version without Git.
@@ -26,18 +26,18 @@ history for Git-derived Python versions; standalone source archives preserve the
 ## Python Environment Setup
 
 To run an application from a checkout, use the [host launchers](../../tools/README.md); no separate setup command is
-needed. For development and tests, explicitly create an environment and install the hash-locked development packages
-from the repository root:
+needed. For development and tests, explicitly create an environment and install the development dependency group and
+editable package from the repository root:
 
 ```sh
 python3 -m venv host/python/.venv
-host/python/.venv/bin/python -m pip install --require-hashes -r host/python/requirements-lock.txt
-host/python/.venv/bin/python -m pip install --no-deps --no-build-isolation -e host/python
+host/python/.venv/bin/python -m pip install --group host/python/pyproject.toml:dev
+host/python/.venv/bin/python -m pip install --no-build-isolation -e host/python
 ```
 
 On native Windows, use `python` to create the environment and replace `host/python/.venv/bin/python` with
 `host/python/.venv/Scripts/python.exe` throughout this guide.
-Repeat both install commands when dependency manifests or locks change. The launchers are POSIX shell scripts for
+Repeat both install commands when dependency declarations change. The launchers are POSIX shell scripts for
 Linux/macOS/WSL; native Windows application commands remain in the package guides.
 If hidapi has no wheel for your Python/platform, installation needs its native build prerequisites. Installation errors
 stop the Python launcher; it does not silently run without HID access. A supported Python version with an available
@@ -77,42 +77,15 @@ host/python/.venv/bin/python -m pytest -c host/python/pyproject.toml host/python
 These Python checks do not replace the separate .NET and Node suites or physical UART validation. See the
 [test index](../tests/README.md) for validation levels and hardware boundaries.
 
-## Python Dependencies and Locking
+## Python Dependencies
 
 Edit dependency declarations only in [pyproject.toml](../../host/python/pyproject.toml): `project.dependencies` contains
-runtime packages, the `test` dependency group contains pytest, and `dev` adds coverage and build tools.
-`build-system.requires` declares the isolated build backend and plugin. TOML contains version requirements, not hashes.
-
-The lock files are generated installation inputs; do not edit their versions or hashes by hand:
-
-| Generated File | Used For |
-| --- | --- |
-| [requirements-runtime-lock.txt](../../host/python/requirements-runtime-lock.txt) | Runtime-only launcher and installed-release checks |
-| [requirements-lock.txt](../../host/python/requirements-lock.txt) | Development and host CI, including test and build tools |
-| [requirements-voltage-lock.txt](../../host/python/requirements-voltage-lock.txt) | Minimal Linux/Python 3.12 pytest environment for firmware-artifact checks |
-
-These describe dependency environments, not PicoUart release versions. Installers retain `--require-hashes`; the Python
-launcher uses public PyPI without inheriting private index configuration. Regenerate all three locks from the repository
-root in this order, constraining the smaller environments to the development lock's versions:
-
-```bash
-uv pip compile host/python/pyproject.toml --group host/python/pyproject.toml:dev \
-  --universal --python-version 3.10 \
-  --generate-hashes --no-emit-index-url --output-file host/python/requirements-lock.txt
-uv pip compile host/python/pyproject.toml --constraint host/python/requirements-lock.txt \
-  --universal --python-version 3.10 \
-  --generate-hashes --no-emit-index-url --output-file host/python/requirements-runtime-lock.txt
-uv pip compile --group host/python/pyproject.toml:test --constraint host/python/requirements-lock.txt \
-  --python-version 3.12 --python-platform x86_64-unknown-linux-gnu \
-  --generate-hashes --no-emit-index-url --output-file host/python/requirements-voltage-lock.txt
-```
-
-The [dependency contract tests](../../tests/contracts/test_firmware_contract.py) check direct pins, runtime/development
-alignment, and that the runtime lock contains no test packages. The
-[firmware CI contracts](../../tests/contracts/test_voltage_ci_contract.py) verify the minimal lock's exact pytest
-subset.
-hidapi `0.14.0.post4` supplies a Python 3.13 Linux ARM64 wheel,
-avoiding the original `0.14.0` source-build failure on that platform.
+runtime packages, the `test` dependency group contains pytest, and `dev` adds the packages used by the full host test
+suite and build checks. `build-system.requires` declares the isolated build backend and plugin. Runtime and direct
+development requirements are version-pinned there; pip resolves transitive dependencies during installation, so
+environments are not hash-locked. The runtime launcher uses public PyPI without inheriting private index configuration.
+The [dependency contract tests](../../tests/contracts/test_firmware_contract.py) check the declared packages and that no
+generated lock files remain. Firmware artifact checks install only the `test` group.
 
 ## Python Client API
 

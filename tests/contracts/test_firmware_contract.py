@@ -23,30 +23,19 @@ from contract import (
 import pico_uart as hid
 
 
-def test_release_lock_matches_direct_requirement_pins(repo_root):
+def test_python_project_declares_dependencies_without_lock_files(repo_root):
     requirement_dir = repo_root / "host" / "python"
     pin_pattern = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;\\]+)", re.MULTILINE)
     project = parse((requirement_dir / "pyproject.toml").read_text())
-    requirements = project["project"]["dependencies"] + project["dependency-groups"]["test"]
-    requirements += [requirement for requirement in project["dependency-groups"]["dev"] if isinstance(requirement, str)]
-    requirements += project["build-system"]["requires"]
-    direct_pins = dict(pin_pattern.findall("\n".join(requirements)))
-    locked_pins = dict(pin_pattern.findall((requirement_dir / "requirements-lock.txt").read_text()))
-    assert direct_pins.items() <= locked_pins.items()
+    runtime_pins = dict(pin_pattern.findall("\n".join(project["project"]["dependencies"])))
+    assert runtime_pins == {"flask": "3.1.3", "hidapi": "0.14.0.post4"}
+    assert "pytest==9.1.1" in project["dependency-groups"]["test"]
+    assert "flask==3.1.3" in project["dependency-groups"]["dev"]
+    assert all(requirement in project["dependency-groups"]["dev"]
+               for requirement in project["build-system"]["requires"])
+    assert not list(requirement_dir.glob("*-lock.txt"))
     assert not (requirement_dir / "requirements.txt").exists()
     assert not (requirement_dir / "requirements-dev.txt").exists()
-
-
-def test_runtime_lock_matches_runtime_pins_without_test_dependencies(repo_root):
-    requirement_dir = repo_root / "host/python"
-    pin_pattern = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;\\]+)", re.MULTILINE)
-    project = parse((requirement_dir / "pyproject.toml").read_text())
-    runtime_pins = dict(pin_pattern.findall("\n".join(project["project"]["dependencies"])))
-    locked_pins = dict(pin_pattern.findall((requirement_dir / "requirements-runtime-lock.txt").read_text()))
-    development_pins = dict(pin_pattern.findall((requirement_dir / "requirements-lock.txt").read_text()))
-    assert runtime_pins.items() <= locked_pins.items()
-    assert locked_pins.items() <= development_pins.items()
-    assert not {"pytest", "pytest-cov", "coverage", "pluggy", "iniconfig"}.intersection(locked_pins)
 
 
 def test_usb_ids_parse_from_firmware_defines(repo_root):

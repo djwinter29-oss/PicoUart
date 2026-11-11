@@ -136,7 +136,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install test dependencies
-        run: python -m pip install --require-hashes -r host/python/requirements-lock.txt
+        run: python -m pip install --group host/python/pyproject.toml:dev host/python
 
       - name: Run Python package tests
         run: python -m pytest host/python/tests
@@ -152,8 +152,7 @@ jobs:
         run: |
           set -eu
           python -m venv build/development-check
-          build/development-check/bin/python -m pip install --require-hashes -r host/python/requirements-runtime-lock.txt
-          build/development-check/bin/python -m pip install --no-deps dist/*.whl
+          build/development-check/bin/python -m pip install dist/*.whl
           cd build
           development-check/bin/python - <<'PY'
           from importlib.metadata import version

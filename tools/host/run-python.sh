@@ -14,7 +14,7 @@ case "${1:-}" in
 Usage: tools/host/run-python.sh [application arguments...]
 
 Run the Python host; defaults to web at http://127.0.0.1:5000/.
-Creates a virtualenv and installs locked runtime dependencies when needed.
+Creates a virtualenv and installs runtime dependencies when needed.
 Set PYTHON to select Python 3.10+, or VENV_DIR to select the environment.
 Use status --help, web --help, etc. for application options.
 EOF
@@ -39,7 +39,7 @@ fi
 PYTHON_EXE="$VENV_DIR/bin/python"
 if ! "$PYTHON_EXE" -c 'import flask, hid' >/dev/null 2>&1; then
     PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_EXTRA_INDEX_URL= \
-        "$PYTHON_EXE" -m pip install --require-hashes -r "$REPO_ROOT/host/python/requirements-runtime-lock.txt"
+        "$PYTHON_EXE" -m pip install "$REPO_ROOT/host/python"
 fi
 
 if [ "$#" -eq 0 ]; then

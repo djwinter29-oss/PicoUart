@@ -103,12 +103,12 @@ Run this update script in Bash; it refreshes the checkout environment and does n
 ```bash
 set -euo pipefail
 python3 -m venv host/python/.venv
-host/python/.venv/bin/python -m pip install --require-hashes -r host/python/requirements-lock.txt
-host/python/.venv/bin/python -m pip install --no-deps --no-build-isolation -e host/python
+host/python/.venv/bin/python -m pip install --group host/python/pyproject.toml:dev
+host/python/.venv/bin/python -m pip install --no-build-isolation -e host/python
 . tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0 --sdk-revision 98a542c1a62fb549ffb5d66a3e5892b06276b670
 ```
 
-The Python commands install locked development dependencies and `pico-uart` editable; see the
+The Python commands install the `dev` dependency group and `pico-uart` editable; see the
 [host developer setup](host-tools.md#python-environment-setup).
 `setup-sdk-env.sh` clones the pinned SDK into gitignored `.pico-sdk/` if missing, and otherwise confirms the pin.
 Keep the SDK line: a fresh checkout does not carry `.pico-sdk/`.

@@ -61,8 +61,8 @@ Run each launcher with `--help` for prerequisites and environment overrides.
 The Python/.NET launchers check local USB/HID permissions before starting; they do not install rules automatically.
 The Direct Dashboard does not check the server's USB permissions because the browser may run on another computer.
 
-The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it), installing the hash-locked
-runtime dependencies only if Flask or hidapi cannot import. Bootstrap uses public PyPI only and ignores machine/user
+The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it), installing the package's
+declared runtime dependencies only if Flask or hidapi cannot import. Bootstrap uses public PyPI only and ignores machine/user
 pip index configuration, avoiding unrelated private feeds. It runs source directly, without activating the environment or
 installing the package editable. Refresh dependencies explicitly after dependency changes using the
 [developer setup](../docs/development/host-tools.md#python-environment-setup).
