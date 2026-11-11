@@ -85,9 +85,12 @@ def test_partial_write_mismatch_and_timeout_are_not_success():
         PicoUartHid(device=ConfigDevice(written=8)).save_configuration(0)
     with pytest.raises(RuntimeError, match="does not match"):
         PicoUartHid(device=ConfigDevice(result_profile=1)).save_configuration(0)
-    with patch("pico_uart.hid.client.time.monotonic", side_effect=[0, 1, 4]), patch("pico_uart.hid.client.time.sleep"):
-        with pytest.raises(RuntimeError, match="timed out"):
-            PicoUartHid(device=ConfigDevice(status=1)).save_configuration(0)
+    with (
+        patch("pico_uart.hid.client.time.monotonic", side_effect=[0, 1, 4]),
+        patch("pico_uart.hid.client.time.sleep"),
+        pytest.raises(RuntimeError, match="timed out"),
+    ):
+        PicoUartHid(device=ConfigDevice(status=1)).save_configuration(0)
 
 
 def test_pending_save_is_not_replaced():

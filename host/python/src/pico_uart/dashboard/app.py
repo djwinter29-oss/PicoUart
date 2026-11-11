@@ -64,6 +64,17 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
         )
         return response
 
+    @app.before_request
+    def require_csrf_token() -> ResponseReturnValue | None:
+        if request.method != "POST":
+            return None
+        request.host  # noqa: B018 - reject untrusted hosts (400) before reporting a token failure
+        token = session.get("csrf_token", "")
+        supplied_token = request.headers.get("X-CSRF-Token", "")
+        if not token or not secrets.compare_digest(token, supplied_token):
+            return jsonify(error="request token missing or invalid"), 403
+        return None
+
     @app.get("/")
     def index() -> str:
         token = session.setdefault("csrf_token", secrets.token_urlsafe(32))
@@ -108,10 +119,6 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
 
     @app.post("/api/configuration")
     def save_configuration() -> ResponseReturnValue:
-        token = session.get("csrf_token", "")
-        supplied_token = request.headers.get("X-CSRF-Token", "")
-        if not token or not secrets.compare_digest(token, supplied_token):
-            return jsonify(error="request token missing or invalid"), 403
         if not request.is_json:
             return jsonify(error="configuration request must be JSON"), 415
         try:
@@ -134,10 +141,6 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
 
     @app.post("/api/actions/<action>")
     def action(action: str) -> ResponseReturnValue:
-        token = session.get("csrf_token", "")
-        supplied_token = request.headers.get("X-CSRF-Token", "")
-        if not token or not secrets.compare_digest(token, supplied_token):
-            return jsonify(error="request token missing or invalid"), 403
         try:
             if action == "toggle-led":
                 dashboard.toggle_led(request.args.get("board"))

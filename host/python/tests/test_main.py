@@ -247,3 +247,4 @@ def test_main_module_entrypoint_runs_cli(monkeypatch, capsys):
 
     assert error.value.code == 0
     assert "usage: pico-uart" in capsys.readouterr().out
+

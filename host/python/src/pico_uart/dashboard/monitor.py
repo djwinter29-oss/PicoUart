@@ -7,10 +7,11 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from copy import deepcopy
-from typing import Callable
 
-from ..hid.client import PicoUartHid, _empty_channel
+from ..hid.client import PicoUartHid
+from ..hid.inputs import empty_channel
 from ..hid.protocol import UART_CHANNEL_COUNT
 from ..hid.types import ControlResult, StatusSnapshot
 from .types import BoardIdentity, BoardSnapshot, HardwareSnapshot, LedSnapshot
@@ -44,7 +45,7 @@ def empty_snapshot() -> BoardSnapshot:
         "diagnostics_error": None,
         "board": None,
         "overflow_counts": [None] * UART_CHANNEL_COUNT,
-        "channels": [_empty_channel(index) for index in range(UART_CHANNEL_COUNT)],
+        "channels": [empty_channel(index) for index in range(UART_CHANNEL_COUNT)],
     }
 
 
@@ -69,31 +70,31 @@ class BoardMonitor:
         with self._lock:
             return deepcopy(self._snapshot)
 
+    # HID transfers can take seconds; the client serializes device access, so they run outside the snapshot lock.
     def toggle_led(self) -> None:
-        with self._lock:
-            client = self._require_client()
-            client.toggle_led()
-            self._read_telemetry(client)
+        client = self._require_client()
+        client.toggle_led()
+        self._read_telemetry(client)
 
     def reset_board(self) -> None:
-        with self._lock:
-            self._require_client().reset_board()
+        self._require_client().reset_board()
 
     def save_configuration(self, profile: int, unsafe_overclock: bool) -> None:
+        result = self._require_client().save_configuration(profile, unsafe_overclock)
         with self._lock:
-            result = self._require_client().save_configuration(profile, unsafe_overclock)
             self._snapshot["configuration_save"] = result
             self._snapshot["configuration_save_error"] = None
 
     def read_diagnostics(self) -> BoardSnapshot:
         """Refresh details only on explicit request, independently of Input cadence."""
-        with self._lock:
-            client = self._require_client()
-            try:
-                diagnostics = client.read_channel_diagnostics()
-            except (OSError, RuntimeError) as error:
+        client = self._require_client()
+        try:
+            diagnostics = client.read_channel_diagnostics()
+        except (OSError, RuntimeError) as error:
+            with self._lock:
                 self._snapshot["diagnostics_error"] = str(error)
-                raise
+            raise
+        with self._lock:
             self._snapshot["channel_diagnostics"] = diagnostics
             self._snapshot["diagnostics_error"] = None
             self._snapshot["overflow_counts"] = [item["rx_overrun_count"] for item in diagnostics]
@@ -136,19 +137,7 @@ class BoardMonitor:
                             interval = self._snapshot["refresh_interval_ms"]
                         next_metadata_read = time.monotonic() + interval / 1000
             except (OSError, RuntimeError) as error:
-                with self._lock:
-                    self._snapshot["connected"] = False
-                    self._snapshot["error"] = str(error)
-                    self._snapshot["identity"] = None
-                    self._snapshot["runtime"] = None
-                    self._snapshot["led"] = None
-                    self._snapshot["board"] = None
-                    self._snapshot["hardware"] = None
-                    self._snapshot["configuration"] = None
-                    self._snapshot["configuration_error"] = None
-                    self._snapshot["configuration_save"] = None
-                    self._snapshot["configuration_save_error"] = None
-                    self._snapshot["channel_diagnostics"] = None
+                self._mark_disconnected(str(error))
             finally:
                 with self._lock:
                     if self._client is client:
@@ -162,6 +151,23 @@ class BoardMonitor:
                         with self._lock:
                             self._snapshot["error"] = f"failed to close PicoUart HID client: {error}"
             self._stop.wait(1.0)
+
+    def _mark_disconnected(self, error: str) -> None:
+        """Keep live traffic but drop every value that came from the lost device session."""
+        with self._lock:
+            snapshot = self._snapshot
+            snapshot["connected"] = False
+            snapshot["error"] = error
+            snapshot["identity"] = None
+            snapshot["runtime"] = None
+            snapshot["led"] = None
+            snapshot["board"] = None
+            snapshot["hardware"] = None
+            snapshot["configuration"] = None
+            snapshot["configuration_error"] = None
+            snapshot["configuration_save"] = None
+            snapshot["configuration_save_error"] = None
+            snapshot["channel_diagnostics"] = None
 
     def _apply_status(self, status: StatusSnapshot) -> None:
         with self._lock:

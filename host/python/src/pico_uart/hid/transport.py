@@ -115,10 +115,6 @@ def _hidraw_feature_ioctl(command: int, size: int) -> int:
     ioc_size_shift = ioc_type_shift + ioc_type_bits
     ioc_dir_shift = ioc_size_shift + ioc_size_bits
     direction = ioc_read | ioc_write
-    if command == 0x07:
-        direction = ioc_read | ioc_write
-    elif command == 0x06:
-        direction = ioc_read | ioc_write
     return (
         (direction << ioc_dir_shift)
         | (ord("H") << ioc_type_shift)

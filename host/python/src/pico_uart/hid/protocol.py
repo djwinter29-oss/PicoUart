@@ -136,11 +136,10 @@ def parse_control(payload: bytes) -> ControlResult:
     if status == STATUS_IDLE:
         if action != 0:
             raise RuntimeError("idle result must have action zero")
-    elif status == STATUS_FAILED and action != COMMAND_SAVE_CONFIGURATION:
+    elif status == STATUS_FAILED and action != COMMAND_SAVE_CONFIGURATION or action not in (1, 2, 3, 4) and (
+        action != 0 or (status, error) not in ((STATUS_INVALID, 1), (STATUS_UNSUPPORTED, 5))
+    ):
         raise RuntimeError("invalid control action")
-    elif action not in (1, 2, 3, 4):
-        if action != 0 or (status, error) not in ((STATUS_INVALID, 1), (STATUS_UNSUPPORTED, 5)):
-            raise RuntimeError("invalid control action")
     return {"action": action, "status": status, "error_reason": error, "error": ERROR_REASONS[error]}
 
 
@@ -182,9 +181,8 @@ def parse_channel(
         raise RuntimeError("unavailable UART framing must be zero")
     if channel_id is not None and (type(channel_id) is not int or not 0 <= channel_id < UART_CHANNEL_COUNT):
         raise ValueError("channel index must be 0 through 5")
-    if channel_id is not None and configuration is not None:
-        if channel_id >= configuration["channel_count"]:
-            raise RuntimeError("channel index exceeds advertised channel count")
+    if channel_id is not None and configuration is not None and channel_id >= configuration["channel_count"]:
+        raise RuntimeError("channel index exceeds advertised channel count")
     if baud and channel_id is not None and identity is not None and configuration is not None:
         hardware_mask = identity["hardware_channel_mask"]
         if not hardware_mask & (1 << channel_id) and (data_bits, stop_bits, parity) != (8, 1, 0):

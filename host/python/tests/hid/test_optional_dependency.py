@@ -49,9 +49,11 @@ def test_module_imports_without_hidapi_installed():
 
 
 def test_open_device_raises_clear_runtime_error_without_hidapi():
-    with _hid_unavailable() as module:
-        with pytest.raises(RuntimeError, match="install pico-uart with its runtime dependencies"):
-            module.open_device()
+    with (
+        _hid_unavailable() as module,
+        pytest.raises(RuntimeError, match="install pico-uart with its runtime dependencies"),
+    ):
+        module.open_device()
 
 
 @pytest.mark.parametrize("body_fails", [False, True])
@@ -69,11 +71,10 @@ def test_hid_unavailable_helper_restores_real_hid_afterward(monkeypatch, body_fa
     baseline = importlib.import_module("pico_uart")
 
     expected = pytest.raises(ValueError) if body_fails else contextlib.nullcontext()
-    with expected:
-        with _hid_unavailable() as module:
-            assert module.hid.transport.hid is None
-            if body_fails:
-                raise ValueError("test body failed")
+    with expected, _hid_unavailable() as module:
+        assert module.hid.transport.hid is None
+        if body_fails:
+            raise ValueError("test body failed")
 
     assert sys.modules["hid"] is fake_hid
     assert sys.modules["pico_uart"] is baseline

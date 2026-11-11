@@ -402,8 +402,8 @@ def test_stale_stream_rebaselines_any_sequence_then_resumes_accounting(resumed_s
     from pico_uart.hid.protocol import parse_channel
 
     client = PicoUartHid(device=FakeHidDevice({}))
-    client._apply_input(0, parse_channel(channel_bytes(sequence=100)), 0.0)
-    client._apply_input(0, parse_channel(channel_bytes(
+    client._inputs.apply(0, parse_channel(channel_bytes(sequence=100)), 0.0)
+    client._inputs.apply(0, parse_channel(channel_bytes(
         sequence=resumed_sequence, traffic=(1000, 0, 0, 0),
     )), 3.1)
     channel = client._channels[0]
@@ -412,7 +412,7 @@ def test_stale_stream_rebaselines_any_sequence_then_resumes_accounting(resumed_s
     assert channel["traffic_incomplete"] is True
     assert channel["totals"]["uart_tx"] == 1000
     assert channel["observed_interval_ms"] == 0
-    client._apply_input(0, parse_channel(channel_bytes(
+    client._inputs.apply(0, parse_channel(channel_bytes(
         sequence=(resumed_sequence + 1) % 65536, traffic=(1007, 0, 0, 0),
     )), 3.6)
     assert channel["totals"]["uart_tx"] == 1007

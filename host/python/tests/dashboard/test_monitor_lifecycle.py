@@ -23,7 +23,7 @@ def test_close_reports_pending_slow_read_and_succeeds_after_deferred_cleanup(mon
             assert timeout_ms == 250
             entered_read.set()
             release_read.wait(timeout=2)
-            return None
+            return
 
         def read_identity(self):
             metadata_read.set()

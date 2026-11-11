@@ -192,4 +192,4 @@ def test_python_launcher_dispatches_to_application_module(repo_root, tmp_path):
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "usage: main.py dashboard" in result.stdout
+    assert "usage: pico-uart dashboard" in result.stdout

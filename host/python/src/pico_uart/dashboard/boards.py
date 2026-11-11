@@ -5,11 +5,14 @@
 import hashlib
 import os
 import threading
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 from ..hid.transport import enumerate_devices
 from .monitor import BoardMonitor, empty_snapshot
 from .types import BoardList, BoardSnapshot, BoardSummary
+
+MISSED_SCANS_BEFORE_REAP = 3
 
 
 class MonitorFactory(Protocol):
@@ -35,13 +38,18 @@ class BoardRegistry:
         self._lock = threading.RLock()
         self._known: dict[str, BoardSummary] = {}
         self._monitors: dict[str, BoardMonitor] = {}
+        self._missed_scans: dict[str, int] = {}
         self._closed = False
 
     def boards(self) -> BoardList:
         with self._lock:
             if self._closed:
                 raise RuntimeError("dashboard is shutting down")
-            devices = self._discover()
+        devices = self._discover()  # blocking hidapi enumeration stays outside the registry lock
+        reaped: list[BoardMonitor] = []
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("dashboard is shutting down")
             boards: list[BoardSummary] = []
             seen: set[str] = set()
             for device in devices:
@@ -67,11 +75,40 @@ class BoardRegistry:
                 }
                 boards.append(board)
             self._known.update((board["id"], board) for board in boards)
-            preferred = next((board["id"] for board in boards
-                              if (self._serial and board["serial_number"] == self._serial)
-                              or (self._path and board["device_path"] == self._path)), None)
-            return {"boards": boards, "default_board_id": preferred or (
-                None if self._serial or self._path else boards[0]["id"] if boards else None)}
+            reaped = self._reap_missing(seen)
+            result: BoardList = {"boards": boards, "default_board_id": self._default_board_id(boards)}
+        for monitor in reaped:
+            monitor.close()
+        return result
+
+    def _reap_missing(self, present: set[str]) -> list[BoardMonitor]:
+        """Forget boards absent for several scans so unplugged boards stop retrying; caller holds the lock."""
+        reaped: list[BoardMonitor] = []
+        for board_id in list(self._known):
+            if board_id in present:
+                self._missed_scans.pop(board_id, None)
+                continue
+            missed = self._missed_scans.get(board_id, 0) + 1
+            if missed < MISSED_SCANS_BEFORE_REAP:
+                self._missed_scans[board_id] = missed
+                continue
+            self._missed_scans.pop(board_id, None)
+            del self._known[board_id]
+            monitor = self._monitors.pop(board_id, None)
+            if monitor is not None:
+                reaped.append(monitor)
+        return reaped
+
+    def _default_board_id(self, boards: list[BoardSummary]) -> str | None:
+        """Prefer the board named on the command line; with a selector but no match, choose none."""
+        for board in boards:
+            if (self._serial and board["serial_number"] == self._serial) or (
+                self._path and board["device_path"] == self._path
+            ):
+                return board["id"]
+        if self._serial or self._path:
+            return None
+        return boards[0]["id"] if boards else None
 
     def _monitor(self, board_id: str | None) -> BoardMonitor:
         with self._lock:

@@ -92,6 +92,7 @@ jobs:
         run: |
           python -m ruff check src tests
           python -m mypy
+          python -m pytest --cov=pico_uart --cov-fail-under=85
 
       - name: Syntax-check shell tools
         run: tools/validation/syntax-check-shell.sh

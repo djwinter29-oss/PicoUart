@@ -7,6 +7,7 @@ import json
 import math
 import sys
 import time
+from collections.abc import Callable
 
 from .hid.client import PicoUartHid
 from .hid.types import StatusSnapshot
@@ -42,9 +43,38 @@ def monitor(client: PicoUartHid, duration: float) -> None:
         raise RuntimeError("monitor timed out without receiving a valid status report")
 
 
+def _status(client: PicoUartHid, arguments: argparse.Namespace) -> None:
+    deadline = time.monotonic() + arguments.timeout
+    status = None
+    while status is None and time.monotonic() < deadline:
+        remaining_ms = max(1, min(250, int((deadline - time.monotonic()) * 1000)))
+        status = client.read_status(remaining_ms, deadline=deadline)
+    if status is None:
+        raise RuntimeError("timed out without receiving a valid status report")
+    if arguments.json:
+        print(json.dumps(status, sort_keys=True))
+    else:
+        print_status(status)
+
+
+COMMANDS: dict[str, Callable[[PicoUartHid, argparse.Namespace], None]] = {
+    "monitor": lambda client, arguments: monitor(client, arguments.duration),
+    "status": _status,
+    "temperature": lambda client, _: print(f"temperature={client.read_board_temperature():.2f} C"),
+    "version": lambda client, _: print(client.read_firmware_version()),
+    "overruns": lambda client, _: print(
+        " ".join(f"cdc{index}={count}" for index, count in enumerate(client.read_overflow_counts()))
+    ),
+    "hardware": lambda client, _: print(json.dumps(client.read_hardware_info(), sort_keys=True)),
+    "config": lambda client, _: print(json.dumps(client.read_configuration(), sort_keys=True)),
+    "toggle-led": lambda client, _: client.toggle_led(),
+    "reset": lambda client, _: client.reset_board(),
+}
+
+
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the HID command-line interface."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog="pico-uart", description=__doc__)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--serial", help="select a PicoUart HID interface by USB serial number")
     selection.add_argument("--device-path", help="select a PicoUart HID interface by hidapi path")
@@ -100,34 +130,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         with PicoUartHid(arguments.serial, arguments.device_path) as client:
-            if arguments.command == "monitor":
-                monitor(client, arguments.duration)
-            elif arguments.command == "status":
-                deadline = time.monotonic() + arguments.timeout
-                status = None
-                while status is None and time.monotonic() < deadline:
-                    remaining_ms = max(1, min(250, int((deadline - time.monotonic()) * 1000)))
-                    status = client.read_status(remaining_ms, deadline=deadline)
-                if status is None:
-                    raise RuntimeError("timed out without receiving a valid status report")
-                if arguments.json:
-                    print(json.dumps(status, sort_keys=True))
-                else:
-                    print_status(status)
-            elif arguments.command == "temperature":
-                print(f"temperature={client.read_board_temperature():.2f} C")
-            elif arguments.command == "version":
-                print(client.read_firmware_version())
-            elif arguments.command == "overruns":
-                print(" ".join(f"cdc{index}={count}" for index, count in enumerate(client.read_overflow_counts())))
-            elif arguments.command == "hardware":
-                print(json.dumps(client.read_hardware_info(), sort_keys=True))
-            elif arguments.command == "config":
-                print(json.dumps(client.read_configuration(), sort_keys=True))
-            elif arguments.command == "toggle-led":
-                client.toggle_led()
-            elif arguments.command == "reset":
-                client.reset_board()
+            COMMANDS[arguments.command](client, arguments)
     except (OSError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

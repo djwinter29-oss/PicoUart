@@ -4,6 +4,13 @@ User-facing changes to the `pico-uart` Python package.
 
 ## Unreleased
 
+### Changes
+
+- The package now ships a `py.typed` marker, so type checkers use its inline annotations.
+- The module-level `read_*(device)` helpers now delegate to `PicoUartHid(device=device)`, so they share its bounded
+  transfers and validation.
+- The dashboard releases monitors for boards that stay unplugged for several scans.
+
 ### Breaking changes
 
 - Python implementation modules moved under `pico_uart.hid` and `pico_uart.dashboard`; the CLI module is now
