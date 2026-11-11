@@ -45,14 +45,22 @@ from .protocol import (
     require_payload,
 )
 from .transport import open_device
+from .types import (
+    ChannelDiagnostic,
+    ChannelFeatureSample,
+    ChannelSample,
+    ChannelSnapshot,
+    ChannelTraffic,
+    ChannelTotals,
+    Configuration,
+    ControlResult,
+    DeviceIdentity,
+    Telemetry,
+    RuntimeTelemetry,
+    StatusSnapshot,
+)
 
 
-TRAFFIC_FIELDS = {
-    "uart_tx": "uart_tx_bytes",
-    "uart_rx": "uart_rx_bytes",
-    "usb_tx": "cdc_tx_bytes",
-    "usb_rx": "cdc_rx_bytes",
-}
 COMMAND_TIMEOUT_S = 3.0
 COMMAND_POLL_INTERVAL_S = 0.05
 
@@ -62,7 +70,7 @@ def read_feature(device: Any, report_id: int, payload_size: int) -> bytes:
     return require_payload(device.get_feature_report(report_id, payload_size + 1), report_id, payload_size)
 
 
-def _empty_channel(channel_id: int) -> dict[str, Any]:
+def _empty_channel(channel_id: int) -> ChannelSnapshot:
     return {
         "id": channel_id,
         "updated_at": None,
@@ -74,8 +82,8 @@ def _empty_channel(channel_id: int) -> dict[str, Any]:
         "channel_state": None,
         "uart_measurement_state": None,
         "cdc_open": False,
-        "traffic": {field: None for field in TRAFFIC_FIELDS},
-        "totals": {field: 0 for field in TRAFFIC_FIELDS},
+        "traffic": {"uart_tx": None, "uart_rx": None, "usb_tx": None, "usb_rx": None},
+        "totals": {"uart_tx": 0, "uart_rx": 0, "usb_tx": 0, "usb_rx": 0},
         "interval_ms": None,
         "baud_rate": None,
         "data_bits": None,
@@ -100,12 +108,11 @@ class PicoUartHid:
         self._transfer_state_lock = threading.Lock()
         self._closed = False
         self._device_closed = False
+        self._device_close_complete = threading.Event()
         self._deferred_close_error: OSError | None = None
-        self._device_info: dict[str, object] | None = None
-        self._configuration: dict[str, object] | None = None
+        self._device_info: DeviceIdentity | None = None
+        self._configuration: Configuration | None = None
         self._transfer_in_flight = False
-        self._transfer_idle = threading.Event()
-        self._transfer_idle.set()
         self._channels = [_empty_channel(index) for index in range(UART_CHANNEL_COUNT)]
         self._last_counters: list[dict[str, int] | None] = [None] * UART_CHANNEL_COUNT
         self._input_seen = [False] * UART_CHANNEL_COUNT
@@ -117,7 +124,7 @@ class PicoUartHid:
             raise RuntimeError("PicoUart HID connection is closed")
         return self._device
 
-    def _read_device_info(self) -> dict[str, object]:
+    def _read_device_info(self) -> DeviceIdentity:
         if self._device_info is None:
             report = self._bounded_transfer(
                 lambda: self._require_open().get_feature_report(REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE + 1),
@@ -136,7 +143,6 @@ class PicoUartHid:
             if self._transfer_in_flight:
                 raise RuntimeError("a previous HID feature transfer is still in flight")
             self._transfer_in_flight = True
-            self._transfer_idle.clear()
         completed = threading.Event()
         result: list[Any] = []
         failure: list[Exception] = []
@@ -151,7 +157,6 @@ class PicoUartHid:
                     self._transfer_in_flight = False
                     if self._closed and not self._device_closed:
                         self._close_device_after_transfer()
-                    self._transfer_idle.set()
                     completed.set()
 
         worker = threading.Thread(target=run, name="pico-uart-hid-transfer", daemon=True)
@@ -160,7 +165,6 @@ class PicoUartHid:
         except RuntimeError:
             with self._transfer_state_lock:
                 self._transfer_in_flight = False
-                self._transfer_idle.set()
             raise
         if not completed.wait(max(0.0, timeout_s)):
             raise RuntimeError("HID feature transfer timed out; outcome is unconfirmed")
@@ -182,10 +186,10 @@ class PicoUartHid:
     def _send_feature(self, report: list[int]) -> int:
         return self._bounded_transfer(lambda: self._require_open().send_feature_report(report))
 
-    def read_identity(self) -> dict[str, object]:
+    def read_identity(self) -> DeviceIdentity:
         """Read static device identity, firmware, capabilities, and memory information."""
         with self._lock:
-            return dict(self._read_device_info())
+            return DeviceIdentity(**self._read_device_info())
 
     def read_board_status(self) -> dict[str, object]:
         """Return static board identity/capabilities together with the current temperature."""
@@ -207,7 +211,7 @@ class PicoUartHid:
         telemetry = self.read_telemetry()
         return {"mcu": info["mcu"], "mcu_id": info["mcu_id"], "system_clock_hz": telemetry["system_clock_hz"]}
 
-    def read_configuration(self) -> dict[str, object]:
+    def read_configuration(self) -> Configuration:
         """Read immutable boot metadata independently of the action result."""
         with self._lock:
             if self._configuration is None:
@@ -215,30 +219,30 @@ class PicoUartHid:
                     self._read_feature(REPORT_ID_CONFIGURATION, CONFIGURATION_SIZE), self._read_device_info())
             return deepcopy(self._configuration)
 
-    def read_configuration_save(self) -> dict[str, object]:
+    def read_configuration_save(self) -> ControlResult:
         """Read the latest device-global action result."""
         return self.read_control()
 
-    def read_control(self) -> dict[str, object]:
+    def read_control(self) -> ControlResult:
         with self._lock:
             return parse_control(self._read_feature(REPORT_ID_CONTROL, CONTROL_SIZE))
 
-    def read_telemetry(self) -> dict[str, object]:
+    def read_telemetry(self) -> Telemetry:
         """Read live LED, temperature, uptime, service-load, and clock values."""
         with self._lock:
             telemetry = parse_telemetry(self._read_feature(REPORT_ID_TELEMETRY, TELEMETRY_SIZE))
             return telemetry
 
-    def read_runtime(self) -> dict[str, object]:
+    def read_runtime(self) -> RuntimeTelemetry:
         return self.read_telemetry()["runtime"]
 
     def read_overflow_counts(self) -> list[int]:
         return [int(item["rx_overrun_count"]) for item in self.read_channel_diagnostics()]
 
-    def read_channel_diagnostics(self) -> list[dict[str, object]]:
+    def read_channel_diagnostics(self) -> list[ChannelDiagnostic]:
         return [self.read_channel_diagnostic(index) for index in range(UART_CHANNEL_COUNT)]
 
-    def read_channel_diagnostic(self, index: int) -> dict[str, object]:
+    def read_channel_diagnostic(self, index: int) -> ChannelDiagnostic:
         """Read one channel's non-consuming combined Feature snapshot."""
         if type(index) is not int or not 0 <= index < UART_CHANNEL_COUNT:
             raise ValueError("channel index must be 0 through 5")
@@ -247,7 +251,7 @@ class PicoUartHid:
             configuration = self.read_configuration()
             return {"id": index, **parse_diagnostic(payload, configuration)}
 
-    def read_channel(self, index: int) -> dict[str, object]:
+    def read_channel(self, index: int) -> ChannelFeatureSample:
         """Read a non-consuming snapshot; never merge it into Input traffic accounting."""
         if type(index) is not int or not 0 <= index < UART_CHANNEL_COUNT:
             raise ValueError("channel index must be 0 through 5")
@@ -263,7 +267,7 @@ class PicoUartHid:
                 ),
             }
 
-    def read_status(self, timeout_ms: int = 250) -> dict[str, object] | None:
+    def read_status(self, timeout_ms: int = 250) -> StatusSnapshot | None:
         """Read one Input report, derive its counter increments, and return the latest channel snapshot."""
         if timeout_ms < 0:
             raise ValueError("timeout_ms must not be negative")
@@ -285,7 +289,9 @@ class PicoUartHid:
             )
             return {"channels": deepcopy(self._channels)}
 
-    def wait_channels_ready(self, channels: dict[int, int], timeout_s: float = 3.0) -> dict[int, dict[str, object]]:
+    def wait_channels_ready(
+        self, channels: dict[int, int], timeout_s: float = 3.0
+    ) -> dict[int, ChannelFeatureSample]:
         """Wait for selected open channels to apply raw 8N1 at the requested baud (within 3%).
 
         Call after opening/configuring every endpoint in a group. Historical faults do not fail this wait;
@@ -298,7 +304,7 @@ class PicoUartHid:
             raise ValueError("timeout_s must be finite and positive")
         deadline = time.monotonic() + timeout_s
         while True:
-            samples = {}
+            samples: dict[int, ChannelFeatureSample] = {}
             for index, baud in channels.items():
                 if time.monotonic() >= deadline:
                     raise TimeoutError(f"CDC readiness timed out for channels {list(channels)}")
@@ -333,12 +339,15 @@ class PicoUartHid:
                 return samples
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
-    def _apply_input(self, channel_id: int, sample: dict[str, object], now: float) -> None:
+    def _apply_input(self, channel_id: int, sample: ChannelSample, now: float) -> None:
         channel = self._channels[channel_id]
         previous_at = self._last_input_at[channel_id]
         previous_sequence = channel["sequence"]
         first = not self._input_seen[channel_id]
-        sequence_delta = None if first else (int(sample["sequence"]) - int(previous_sequence)) & 0xFFFF
+        sequence_delta = (
+            (sample["sequence"] - previous_sequence) & 0xFFFF
+            if not first and previous_sequence is not None else None
+        )
         stale = not first and (previous_at is None or now - previous_at > 3.0)
         if stale:
             channel["traffic_incomplete"] = True
@@ -354,9 +363,14 @@ class PicoUartHid:
                 self._ignored_gap[channel_id] = True
             return
         gap = not first and sequence_delta != 1
-        interval = int(sample["interval_ms"])
+        interval = sample["interval_ms"]
         invalid_interval = interval in (0, 65535)
-        counters = {field: int(sample[source]) for field, source in TRAFFIC_FIELDS.items()}
+        counters = {
+            "uart_tx_bytes": sample["uart_tx_bytes"],
+            "uart_rx_bytes": sample["uart_rx_bytes"],
+            "cdc_tx_bytes": sample["cdc_tx_bytes"],
+            "cdc_rx_bytes": sample["cdc_rx_bytes"],
+        }
         previous_counters = self._last_counters[channel_id]
         if gap or invalid_interval:
             channel["traffic_incomplete"] = True
@@ -364,14 +378,29 @@ class PicoUartHid:
             channel["traffic_gaps"] += 1
         previous_measurement = channel["uart_measurement_state"]
         clean = not first and not gap and not invalid_interval
-        traffic = {
-            field: ((value - previous_counters[field]) & MAX_U32)
-            if clean and (field.startswith("usb") or
-                          (sample["uart_measurement_state"] == 1 and previous_measurement == 1)) else None
-            for field, value in counters.items()
+        def traffic_delta(field: str, value: int) -> int | None:
+            if previous_counters is None or not clean:
+                return None
+            if not field.startswith("cdc_") and not (
+                sample["uart_measurement_state"] == 1 and previous_measurement == 1
+            ):
+                return None
+            return (value - previous_counters[field]) & MAX_U32
+
+        traffic: ChannelTraffic = {
+            "uart_tx": traffic_delta("uart_tx_bytes", counters["uart_tx_bytes"]),
+            "uart_rx": traffic_delta("uart_rx_bytes", counters["uart_rx_bytes"]),
+            "usb_tx": traffic_delta("cdc_tx_bytes", counters["cdc_tx_bytes"]),
+            "usb_rx": traffic_delta("cdc_rx_bytes", counters["cdc_rx_bytes"]),
+        }
+        totals: ChannelTotals = {
+            "uart_tx": counters["uart_tx_bytes"],
+            "uart_rx": counters["uart_rx_bytes"],
+            "usb_tx": counters["cdc_tx_bytes"],
+            "usb_rx": counters["cdc_rx_bytes"],
         }
         channel["traffic"] = traffic
-        channel["totals"] = counters
+        channel["totals"] = totals
         if not first and not gap and not invalid_interval:
             channel["observed_interval_ms"] += interval
         channel.update({
@@ -418,7 +447,7 @@ class PicoUartHid:
                 raise RuntimeError("firmware HID reset is disabled")
             self._execute_command(COMMAND_REBOOT, flags=1)
 
-    def save_configuration(self, profile: int, unsafe_overclock: bool = False) -> dict[str, object]:
+    def save_configuration(self, profile: int, unsafe_overclock: bool = False) -> ControlResult:
         """Save an advertised clock profile and return the verified command result."""
         if type(profile) is not int or not 0 <= profile <= 4 or type(unsafe_overclock) is not bool:
             raise ValueError("invalid clock profile or overclock acknowledgement")
@@ -436,7 +465,7 @@ class PicoUartHid:
 
     def _execute_command(
         self, command: int, *, flags: int = 0, profile: int = 0
-    ) -> dict[str, object]:
+    ) -> ControlResult:
         self._require_open()
         self._read_device_info()
         latest = parse_control(self._read_feature(REPORT_ID_CONTROL, CONTROL_SIZE))
@@ -477,16 +506,36 @@ class PicoUartHid:
                 raise RuntimeError("board-control operation timed out; outcome is unconfirmed")
             time.sleep(min(COMMAND_POLL_INTERVAL_S, remaining))
 
-    def close(self) -> None:
+    def close(self) -> bool:
+        """Close the device or report that an active feature transfer is delaying closure."""
         with self._lock:
             if not self._closed:
                 self._closed = True
                 with self._transfer_state_lock:
                     if not self._transfer_in_flight:
                         self._device_closed = True
-                        self._device.close()
+                        try:
+                            self._device.close()
+                        except OSError as error:
+                            self._deferred_close_error = error
+                            raise
+                        finally:
+                            self._device_close_complete.set()
+            with self._transfer_state_lock:
+                if self._deferred_close_error is not None:
+                    raise self._deferred_close_error
+            return self._device_close_complete.is_set()
+
+    def wait_closed(self, timeout_s: float | None = None) -> bool:
+        """Wait for a deferred device close; return false when the timeout expires."""
+        if timeout_s is not None and (not math.isfinite(timeout_s) or timeout_s < 0):
+            raise ValueError("timeout_s must be finite and non-negative")
+        if not self._device_close_complete.wait(timeout_s):
+            return False
+        with self._transfer_state_lock:
             if self._deferred_close_error is not None:
                 raise self._deferred_close_error
+        return True
 
     def _close_device_after_transfer(self) -> None:
         if self._device_closed:
@@ -496,6 +545,8 @@ class PicoUartHid:
             self._device.close()
         except OSError as error:
             self._deferred_close_error = error
+        finally:
+            self._device_close_complete.set()
 
     def __enter__(self) -> "PicoUartHid":
         self._require_open()
@@ -524,7 +575,7 @@ def read_firmware_version(device: Any) -> str:
     return str(info["firmware_version"])
 
 
-def read_configuration(device: Any) -> dict[str, object]:
+def read_configuration(device: Any) -> Configuration:
     return PicoUartHid(device=device).read_configuration()
 
 
@@ -534,7 +585,7 @@ def read_hardware_info(device: Any) -> dict[str, object]:
     return {"mcu": info["mcu"], "mcu_id": info["mcu_id"], "system_clock_hz": telemetry["system_clock_hz"]}
 
 
-def read_telemetry(device: Any) -> dict[str, object]:
+def read_telemetry(device: Any) -> Telemetry:
     parse_device_info(read_feature(device, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE))
     return parse_telemetry(read_feature(device, REPORT_ID_TELEMETRY, TELEMETRY_SIZE))
 

@@ -101,7 +101,8 @@ object. The field rules are in the
 [host tools guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-test-automation).
 Use `PicoUartHid(serial_number="ABC123")` to select a board.
 See the [Python client guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-client-api)
-for methods, UART readiness checks, errors, and board controls.
+for methods, UART readiness checks, errors, board controls, and waiting for deferred HID cleanup after a timed-out
+transfer.
 
 ## Troubleshooting
 
@@ -122,6 +123,7 @@ before changing settings.
 
 ## Documentation
 
+- [Python package release notes](https://github.com/djwinter29-oss/PicoUart/blob/main/host/python/CHANGELOG.md)
 - [Installation from a checkout, tests, and host development](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md)
 - [Project, firmware, and wiring](https://github.com/djwinter29-oss/PicoUart)
 - [HID report reference and compatibility](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)

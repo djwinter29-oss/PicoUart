@@ -4,6 +4,17 @@
 
 import struct
 
+from .types import (
+    ChannelSample,
+    Configuration,
+    ControlResult,
+    DeviceIdentity,
+    DiagnosticSample,
+    RuntimeTelemetry,
+    Telemetry,
+    UartPins,
+)
+
 
 REPORT_ID_DEVICE_INFO = 1
 REPORT_ID_CONFIGURATION = 2
@@ -39,12 +50,6 @@ ERROR_REASONS = (
     "missing_reboot_authorization", "unsupported", "cdc_session_open", "flash_operation_failed",
     "flash_verification_failed", "execution_failed",
 )
-PEAK_CAPACITIES = {
-    "uart_tx_ring_peak_bytes": "uart_tx_ring_capacity_bytes",
-    "uart_rx_ring_peak_bytes": "uart_rx_ring_capacity_bytes",
-    "cdc_tx_fifo_peak_bytes": "cdc_tx_fifo_capacity_bytes",
-    "cdc_rx_fifo_peak_bytes": "cdc_rx_fifo_capacity_bytes",
-}
 
 
 def _layout(payload: bytes, size: int, name: str) -> None:
@@ -52,7 +57,7 @@ def _layout(payload: bytes, size: int, name: str) -> None:
         raise RuntimeError(f"unsupported {name} report size or version")
 
 
-def parse_device_info(payload: bytes) -> dict[str, object]:
+def parse_device_info(payload: bytes) -> DeviceIdentity:
     """Select a product/layout from the discovery prefix before interpreting its fields."""
     if len(payload) < 3:
         raise RuntimeError("identity discovery prefix is truncated")
@@ -86,22 +91,28 @@ def parse_device_info(payload: bytes) -> dict[str, object]:
     }
 
 
-def parse_configuration(payload: bytes, identity: dict[str, object] | None = None) -> dict[str, object]:
+def parse_configuration(payload: bytes, identity: DeviceIdentity | None = None) -> Configuration:
     """Decode immutable boot metadata and validate topology only with a valid channel count."""
     _layout(payload, CONFIGURATION_SIZE, "configuration")
     stored, count = payload[1:3]
     if stored not in (0, 1, 2, 3, 4, 255) or count != UART_CHANNEL_COUNT:
         raise RuntimeError("invalid stored profile or channel count")
-    if identity is not None and int(identity["hardware_channel_mask"]) >> count:
+    if identity is not None and identity["hardware_channel_mask"] >> count:
         raise RuntimeError("hardware channel mask exceeds channel count")
-    pins = []
+    pins: list[UartPins] = []
     for offset in range(3, 27, 4):
-        values = payload[offset:offset + 4]
+        tx_pin, rx_pin, rts_pin, cts_pin = payload[offset:offset + 4]
+        values = (tx_pin, rx_pin, rts_pin, cts_pin)
         if any(value > 47 and value != 255 for value in values):
             raise RuntimeError("invalid UART GPIO")
-        pins.append(dict(zip(("tx_pin", "rx_pin", "rts_pin", "cts_pin"),
-                             (None if value == 255 else value for value in values), strict=True)))
-    capacities = struct.unpack_from("<4H", payload, 28)
+        pins.append({
+            "tx_pin": None if tx_pin == 255 else tx_pin,
+            "rx_pin": None if rx_pin == 255 else rx_pin,
+            "rts_pin": None if rts_pin == 255 else rts_pin,
+            "cts_pin": None if cts_pin == 255 else cts_pin,
+        })
+    tx_capacity, rx_capacity, cdc_tx_capacity, cdc_rx_capacity = struct.unpack_from("<4H", payload, 28)
+    capacities = (tx_capacity, rx_capacity, cdc_tx_capacity, cdc_rx_capacity)
     if not all(capacities):
         raise RuntimeError("buffer capacities must be nonzero")
     return {
@@ -109,11 +120,14 @@ def parse_configuration(payload: bytes, identity: dict[str, object] | None = Non
         "channel_count": count,
         "channel_pins": pins,
         "reset_cause": payload[27],
-        **dict(zip(PEAK_CAPACITIES.values(), capacities, strict=True)),
+        "uart_tx_ring_capacity_bytes": tx_capacity,
+        "uart_rx_ring_capacity_bytes": rx_capacity,
+        "cdc_tx_fifo_capacity_bytes": cdc_tx_capacity,
+        "cdc_rx_fifo_capacity_bytes": cdc_rx_capacity,
     }
 
 
-def parse_control(payload: bytes) -> dict[str, object]:
+def parse_control(payload: bytes) -> ControlResult:
     """Validate a device-global action result, without claiming request correlation."""
     _layout(payload, CONTROL_SIZE, "control")
     _, action, status, error = payload
@@ -131,20 +145,21 @@ def parse_control(payload: bytes) -> dict[str, object]:
     return {"action": action, "status": status, "error_reason": error, "error": ERROR_REASONS[error]}
 
 
-def parse_telemetry(payload: bytes) -> dict[str, object]:
+def parse_telemetry(payload: bytes) -> Telemetry:
     """Decode live board telemetry; unknown service load remains unavailable."""
     _layout(payload, TELEMETRY_SIZE, "telemetry")
     _, led, temperature, uptime, core0, core1, clock = struct.unpack("<BBhQHHI", payload)
     if led & ~1 or any(value > 10000 and value != 65535 for value in (core0, core1)) or not clock:
         raise RuntimeError("invalid telemetry values")
+    runtime: RuntimeTelemetry = {
+        "uptime_ms": uptime,
+        "service_load_basis_points": [None if value == 65535 else value for value in (core0, core1)],
+        "system_clock_hz": clock,
+    }
     return {
         "led": bool(led),
         "temperature_celsius": temperature / 100.0,
-        "runtime": {
-            "uptime_ms": uptime,
-            "service_load_basis_points": [None if value == 65535 else value for value in (core0, core1)],
-            "system_clock_hz": clock,
-        },
+        "runtime": runtime,
         "system_clock_hz": clock,
     }
 
@@ -152,9 +167,9 @@ def parse_telemetry(payload: bytes) -> dict[str, object]:
 def parse_channel(
     payload: bytes,
     channel_id: int | None = None,
-    identity: dict[str, object] | None = None,
-    configuration: dict[str, object] | None = None,
-) -> dict[str, object]:
+    identity: DeviceIdentity | None = None,
+    configuration: Configuration | None = None,
+) -> ChannelSample:
     """Decode independent lifecycle, measurement validity, applied settings, and traffic totals."""
     _layout(payload, CHANNEL_SIZE, "channel")
     _, state, measurement, baud, data_bits, stop_bits, parity, sequence, interval, *counters = struct.unpack(
@@ -169,10 +184,10 @@ def parse_channel(
     if channel_id is not None and (type(channel_id) is not int or not 0 <= channel_id < UART_CHANNEL_COUNT):
         raise ValueError("channel index must be 0 through 5")
     if channel_id is not None and configuration is not None:
-        if channel_id >= int(configuration["channel_count"]):
+        if channel_id >= configuration["channel_count"]:
             raise RuntimeError("channel index exceeds advertised channel count")
     if baud and channel_id is not None and identity is not None and configuration is not None:
-        hardware_mask = int(identity["hardware_channel_mask"])
+        hardware_mask = identity["hardware_channel_mask"]
         if not hardware_mask & (1 << channel_id) and (data_bits, stop_bits, parity) != (8, 1, 0):
             raise RuntimeError("PIO UART channels only support 8N1 framing")
     if measurement == 0 and any(counters[:2]):
@@ -184,11 +199,14 @@ def parse_channel(
         "stop_bits": stop_bits if baud else None,
         "parity": ("none", "odd", "even")[parity] if baud else None,
         "sequence": sequence, "interval_ms": interval,
-        **dict(zip(("uart_tx_bytes", "uart_rx_bytes", "cdc_tx_bytes", "cdc_rx_bytes"), counters, strict=True)),
+        "uart_tx_bytes": counters[0],
+        "uart_rx_bytes": counters[1],
+        "cdc_tx_bytes": counters[2],
+        "cdc_rx_bytes": counters[3],
     }
 
 
-def parse_diagnostic(payload: bytes, configuration: dict[str, object] | None = None) -> dict[str, object]:
+def parse_diagnostic(payload: bytes, configuration: Configuration | None = None) -> DiagnosticSample:
     """Decode one independent diagnostic capture and optionally check peaks against capacities."""
     _layout(payload, DIAGNOSTIC_SIZE, "diagnostic")
     _, measurement, age, reason, dropped, errors, timestamp, *peaks = struct.unpack("<4B3I4H", payload)
@@ -198,14 +216,28 @@ def parse_diagnostic(payload: bytes, configuration: dict[str, object] | None = N
         raise RuntimeError("unavailable UART diagnostics must have zero placeholders and unknown age")
     if not (dropped or errors or reason) and timestamp:
         raise RuntimeError("fault timestamp requires recorded history")
-    result = {
+    result: DiagnosticSample = {
         "uart_measurement_state": measurement, "uart_sample_age_100ms": age,
         "last_control_error_reason": reason, "rx_overrun_count": dropped, "rx_error_count": errors,
-        "last_fault_uptime_s": timestamp, **dict(zip(PEAK_CAPACITIES, peaks, strict=True)),
+        "last_fault_uptime_s": timestamp,
+        "uart_tx_ring_peak_bytes": peaks[0],
+        "uart_rx_ring_peak_bytes": peaks[1],
+        "cdc_tx_fifo_peak_bytes": peaks[2],
+        "cdc_rx_fifo_peak_bytes": peaks[3],
     }
     if configuration is not None:
-        for peak, capacity in PEAK_CAPACITIES.items():
-            if result[peak] > configuration[capacity]:
+        capacity_checks = (
+            ("uart_tx_ring_peak_bytes", result["uart_tx_ring_peak_bytes"],
+             configuration["uart_tx_ring_capacity_bytes"]),
+            ("uart_rx_ring_peak_bytes", result["uart_rx_ring_peak_bytes"],
+             configuration["uart_rx_ring_capacity_bytes"]),
+            ("cdc_tx_fifo_peak_bytes", result["cdc_tx_fifo_peak_bytes"],
+             configuration["cdc_tx_fifo_capacity_bytes"]),
+            ("cdc_rx_fifo_peak_bytes", result["cdc_rx_fifo_peak_bytes"],
+             configuration["cdc_rx_fifo_capacity_bytes"]),
+        )
+        for peak, value, capacity in capacity_checks:
+            if value > capacity:
                 raise RuntimeError(f"{peak} exceeds advertised capacity")
     return result
 

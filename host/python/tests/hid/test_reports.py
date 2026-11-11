@@ -529,8 +529,8 @@ def test_close_waits_for_timed_out_feature_transfer_before_closing_device(monkey
     with pytest.raises(RuntimeError, match="transfer timed out"):
         client.read_identity()
     assert started.is_set()
-    client.close()
+    assert client.close() is False
     assert not device.closed
     release.set()
-    assert client._transfer_idle.wait(timeout=1)
+    assert client.wait_closed(timeout_s=1)
     assert device.closed

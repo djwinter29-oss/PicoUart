@@ -32,7 +32,9 @@ class Monitor:
         self.actions.append("reset")
 
     def close(self):
-        self.closed += 1
+        if not self.closed:
+            self.closed = 1
+        return True
 
 
 def test_multiple_viewers_share_one_reader_per_board_and_actions_target_only_that_board():
@@ -72,8 +74,8 @@ def test_multiple_viewers_share_one_reader_per_board_and_actions_target_only_tha
     assert alice.post(f"/api/actions/reset?board={second}").status_code == 403
     assert alice.post(f"/api/actions/reset?board={second}", headers=headers).status_code == 200
     assert by_serial["B"].actions == ["toggle-led", "reset"]
-    registry.close()
-    registry.close()
+    assert registry.close() is True
+    assert registry.close() is True
     assert all(monitor.closed == 1 for monitor in created)
     with pytest.raises(RuntimeError, match="shutting down"):
         registry.snapshot(first)
@@ -125,3 +127,23 @@ def test_discovery_failure_is_explicit_without_opening_a_reader():
     assert response.status_code == 503
     assert response.json == {"error": "service temporarily unavailable"}
     assert not registry._monitors
+
+
+def test_close_reports_if_any_board_monitor_is_still_stopping():
+    class PendingMonitor(Monitor):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.pending = True
+
+        def close(self):
+            was_pending = self.pending
+            self.pending = False
+            super().close()
+            return not was_pending
+
+    registry = BoardRegistry(discover=lambda: [device("A", "/a")], monitor_factory=PendingMonitor)
+    board_id = registry.boards()["boards"][0]["id"]
+    registry.snapshot(board_id)
+
+    assert registry.close() is False
+    assert registry.close() is True

@@ -124,7 +124,7 @@ def test_run_server_suppresses_routine_access_logs(monkeypatch, caplog):
             pass
 
         def close(self):
-            pass
+            return True
 
     monkeypatch.setattr(web_app, "BoardRegistry", FakeRegistry)
     monkeypatch.setattr(web_app, "create_app", lambda *_args, **_kwargs: FakeApp())
@@ -135,6 +135,27 @@ def test_run_server_suppresses_routine_access_logs(monkeypatch, caplog):
         assert logger.level == logging.INFO
     assert logger.level == previous_level
     assert [record.getMessage() for record in caplog.records] == ["request warning", "request error"]
+
+
+def test_run_server_warns_when_monitor_cleanup_is_pending(monkeypatch, caplog):
+    class FakeApp:
+        def run(self, **kwargs):
+            pass
+
+    class PendingRegistry:
+        def __init__(self, *_args):
+            pass
+
+        def close(self):
+            return False
+
+    monkeypatch.setattr(web_app, "BoardRegistry", PendingRegistry)
+    monkeypatch.setattr(web_app, "create_app", lambda *_args, **_kwargs: FakeApp())
+
+    with caplog.at_level(logging.WARNING, logger="pico_uart.dashboard.app"):
+        web_app.run_server()
+
+    assert "dashboard monitor shutdown is still pending" in caplog.text
 
 
 def test_dashboard_sanitizes_reset_capability_errors():

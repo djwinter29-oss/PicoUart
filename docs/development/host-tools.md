@@ -70,6 +70,14 @@ For repository Python checks, including tooling and cross-project contracts:
 host/python/.venv/bin/python -m pytest -c pyproject.toml
 ```
 
+Run the Python host lint and type checks from the package directory:
+
+```bash
+cd host/python
+.venv/bin/python -m ruff check src tests
+.venv/bin/python -m mypy
+```
+
 Measure package coverage with:
 
 ```bash
@@ -84,9 +92,10 @@ These Python checks do not replace the separate .NET and Node suites or physical
 
 Edit dependency declarations only in [pyproject.toml](../../host/python/pyproject.toml): `project.dependencies` contains
 runtime packages, the `test` dependency group contains pytest, and `dev` adds the packages used by the full host test
-suite and build checks. `build-system.requires` declares the isolated build backend and plugin. Runtime and direct
-development requirements are version-pinned there; pip resolves transitive dependencies during installation, so
-environments are not hash-locked. The runtime launcher uses public PyPI without inheriting private index configuration.
+suite, build checks, linting, and type checking. `build-system.requires` declares the isolated build backend and plugin.
+Runtime and direct development requirements are version-pinned there; pip resolves transitive dependencies during
+installation, so environments are not hash-locked. The runtime launcher uses public PyPI without inheriting private
+index configuration.
 The [dependency contract tests](../../tests/contracts/test_firmware_contract.py) check the declared packages and that no
 generated lock files remain. Firmware artifact checks install only the `test` group.
 
@@ -95,6 +104,8 @@ generated lock files remain. Firmware artifact checks install only the `test` gr
 The [package quick start](../../host/python/README.md) covers installation and a first status read.
 `PicoUartHid` owns its HID connection; use it as a context manager to close the connection on exit.
 Select a board with `PicoUartHid(serial_number="ABC123")`. Device access failures may raise `OSError` or `RuntimeError`.
+`close()` returns false if an in-flight feature transfer defers native-handle closure; call
+`wait_closed(timeout_s=...)` to wait for that closure.
 Run one HID monitor/server per board; see [shared monitoring](#board-selection-and-shared-monitoring).
 
 ### Board and channel reads
@@ -121,6 +132,22 @@ Report parsers, IDs and sizes, USB identifiers, raw HID access, and generic feat
 exports tied to the firmware report contract. Prefer their owning `pico_uart.hid.protocol`,
 `pico_uart.hid.transport`, and `pico_uart.hid.client` modules when using them directly.
 The optional third-party hidapi module is available as `pico_uart.hid.transport.hid`.
+
+### Python module-path migration
+
+The top-level `PicoUartHid` API remains unchanged, but implementation-module imports moved:
+
+| Previous path | Current path |
+| --- | --- |
+| `pico_uart.cli` | `pico_uart.main` |
+| `pico_uart.client` | `pico_uart.hid.client` |
+| `pico_uart.protocol` | `pico_uart.hid.protocol` |
+| `pico_uart.transport` | `pico_uart.hid.transport` |
+| `pico_uart.web` | `pico_uart.dashboard` |
+
+Use `pico-uart` or `python -m pico_uart.main`; `python -m pico_uart` is no longer supported. This is an intentional
+breaking change for callers that import these implementation modules directly. The old raw hidapi root export is
+also replaced by `pico_uart.hid.transport.hid`.
 
 ### UART readiness
 
@@ -354,6 +381,10 @@ Additional viewers do not read the HID stream or consume its deltas again. Reade
 including when no page is viewing them, and retry disconnected boards. Observed traffic totals belong to the shared
 reader's current connection, not to a browser session. Run only one host monitor/server per physical board; separate
 server processes and standalone HID clients do not share these readers.
+
+Closing a registry requests monitor shutdown and returns whether all polling threads stopped within one second. A false
+result means cleanup is still pending; the server logs a warning and lets the monitor finish in the background. The HID
+client defers closing its native handle until any in-flight feature transfer returns.
 
 `GET /api/boards` returns `boards` (`id`, `product_name`, `serial_number`, `device_path`) and `default_board_id`.
 Pass the opaque `id` as `?board=ID` to `GET /api/status` and `POST /api/actions/{toggle-led,reset}`. A status request

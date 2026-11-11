@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -14,6 +15,9 @@ from werkzeug.serving import WSGIRequestHandler
 
 from .. import __version__
 from .boards import BoardRegistry
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class _QuietRequestHandler(WSGIRequestHandler):
@@ -151,4 +155,5 @@ def run_server(
             request_handler=_QuietRequestHandler,
         )
     finally:
-        dashboard.close()
+        if not dashboard.close():
+            _LOGGER.warning("dashboard monitor shutdown is still pending; cleanup will continue in the background")

@@ -3,17 +3,21 @@
 """HID device discovery and platform-specific opening helpers."""
 
 import os
+from importlib import import_module
 from pathlib import Path
 import select
 from typing import Any
 
+fcntl: Any
+hid: Any
+_HID_IMPORT_ERROR: ImportError | None
 try:
-    import fcntl
+    fcntl = import_module("fcntl")
 except ImportError:  # pragma: no cover - only used by the Linux hidraw fallback
     fcntl = None
 
 try:
-    import hid
+    hid = import_module("hid")
 except ImportError as error:
     hid = None
     _HID_IMPORT_ERROR = error

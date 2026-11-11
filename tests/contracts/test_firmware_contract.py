@@ -31,6 +31,8 @@ def test_python_project_declares_dependencies_without_lock_files(repo_root):
     assert runtime_pins == {"flask": "3.1.3", "hidapi": "0.14.0.post4"}
     assert "pytest==9.1.1" in project["dependency-groups"]["test"]
     assert "flask==3.1.3" in project["dependency-groups"]["dev"]
+    assert "mypy==2.4.1" in project["dependency-groups"]["dev"]
+    assert "ruff==0.17.3" in project["dependency-groups"]["dev"]
     assert all(requirement in project["dependency-groups"]["dev"]
                for requirement in project["build-system"]["requires"])
     assert not list(requirement_dir.glob("*-lock.txt"))

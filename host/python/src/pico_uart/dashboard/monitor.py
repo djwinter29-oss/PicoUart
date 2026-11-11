@@ -5,20 +5,18 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import logging
 import threading
 import time
 from typing import Any, Callable
 
 from ..hid.client import PicoUartHid, _empty_channel
 from ..hid.protocol import UART_CHANNEL_COUNT
+from ..hid.types import ControlResult, StatusSnapshot
 
 
-TRAFFIC_FIELDS = {
-    "uart_tx": "uart_tx_bytes",
-    "uart_rx": "uart_rx_bytes",
-    "usb_tx": "cdc_tx_bytes",
-    "usb_rx": "cdc_rx_bytes",
-}
+_LOGGER = logging.getLogger(__name__)
+MONITOR_CLOSE_TIMEOUT_S = 1.0
 
 
 def empty_snapshot() -> dict[str, Any]:
@@ -101,9 +99,11 @@ class BoardMonitor:
             self._snapshot["overflow_counts"] = [item["rx_overrun_count"] for item in diagnostics]
             return deepcopy(self._snapshot)
 
-    def close(self) -> None:
+    def close(self) -> bool:
+        """Stop polling and report whether the polling thread finished cleanup."""
         self._stop.set()
-        self._thread.join(timeout=1.0)
+        self._thread.join(timeout=MONITOR_CLOSE_TIMEOUT_S)
+        return not self._thread.is_alive()
 
     def _require_client(self) -> PicoUartHid:
         with self._lock:
@@ -127,6 +127,8 @@ class BoardMonitor:
                     status = client.read_status(timeout_ms=250)
                     if status is not None:
                         self._apply_status(status)
+                    if self._stop.is_set():
+                        break
                     now = time.monotonic()
                     if now >= next_metadata_read:
                         self._read_metadata(client)
@@ -153,12 +155,15 @@ class BoardMonitor:
                         self._client = None
                 if client is not None:
                     try:
-                        client.close()
-                    except OSError:
-                        pass
+                        if client.close() is False:
+                            client.wait_closed()
+                    except OSError as error:
+                        _LOGGER.error("failed to close PicoUart HID client: %s", error)
+                        with self._lock:
+                            self._snapshot["error"] = f"failed to close PicoUart HID client: {error}"
             self._stop.wait(1.0)
 
-    def _apply_status(self, status: dict[str, Any]) -> None:
+    def _apply_status(self, status: StatusSnapshot) -> None:
         with self._lock:
             self._snapshot["connected"] = True
             self._snapshot["error"] = None
@@ -254,7 +259,7 @@ class BoardMonitor:
             with self._lock:
                 self._snapshot["configuration_save_error"] = str(error)
             return
-        save = result
+        save: ControlResult | None = result
         with self._lock:
             identity = self._snapshot["identity"]
             save_error = None

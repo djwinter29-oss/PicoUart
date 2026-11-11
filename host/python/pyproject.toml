@@ -35,6 +35,8 @@ dev = [
 	{include-group = "test"},
 	"flask==3.1.3",
 	"pytest-cov==6.2.1",
+	"mypy==2.4.1",
+	"ruff==0.17.3",
 	"hatchling==1.32.4",
 	"hatch-vcs==0.5.0",
 	"editables==0.5",
@@ -63,3 +65,23 @@ testpaths = ["tests"]
 pythonpath = ["src", "tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.10"
+files = [
+	"src/pico_uart/hid/types.py",
+	"src/pico_uart/hid/protocol.py",
+	"src/pico_uart/hid/client.py",
+	"src/pico_uart/dashboard/monitor.py",
+	"src/pico_uart/main.py",
+]
+check_untyped_defs = true
+ignore_missing_imports = true
+warn_unused_ignores = true

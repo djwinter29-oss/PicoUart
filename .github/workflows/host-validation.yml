@@ -87,6 +87,12 @@ jobs:
       - name: Syntax-check Python tools
         run: tools/validation/syntax-check-python.sh
 
+      - name: Lint and type-check Python host
+        working-directory: host/python
+        run: |
+          python -m ruff check src tests
+          python -m mypy
+
       - name: Syntax-check shell tools
         run: tools/validation/syntax-check-shell.sh
 

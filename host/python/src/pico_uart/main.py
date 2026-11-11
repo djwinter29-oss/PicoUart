@@ -9,9 +9,10 @@ import sys
 import time
 
 from .hid.client import PicoUartHid
+from .hid.types import StatusSnapshot
 
 
-def print_status(status: dict[str, object]) -> None:
+def print_status(status: StatusSnapshot) -> None:
     """Print one concise per-channel update for monitor and status commands."""
     channels = " ".join(
         f"cdc{channel['id']} "

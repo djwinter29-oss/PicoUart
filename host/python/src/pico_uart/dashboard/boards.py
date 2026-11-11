@@ -35,8 +35,8 @@ class BoardRegistry:
             if self._closed:
                 raise RuntimeError("dashboard is shutting down")
             devices = self._discover()
-            boards = []
-            seen = set()
+            boards: list[dict[str, Any]] = []
+            seen: set[str] = set()
             for device in devices:
                 serial = device.get("serial_number") or None
                 path = os.fsdecode(device["path"])
@@ -44,8 +44,12 @@ class BoardRegistry:
                 if identifier in seen:
                     raise RuntimeError("duplicate PicoUart board identity; board serials must be unique")
                 seen.add(identifier)
-                board = {"id": identifier, "product_name": device.get("product_string") or "PicoUart",
-                         "serial_number": serial, "device_path": path}
+                board: dict[str, Any] = {
+                    "id": identifier,
+                    "product_name": device.get("product_string") or "PicoUart",
+                    "serial_number": serial,
+                    "device_path": path,
+                }
                 boards.append(board)
             self._known.update((board["id"], board) for board in boards)
             preferred = next((board["id"] for board in boards
@@ -84,11 +88,13 @@ class BoardRegistry:
     def read_diagnostics(self, board_id: str | None) -> dict[str, Any]:
         return self._monitor(board_id).read_diagnostics()
 
-    def close(self) -> None:
+    def close(self) -> bool:
+        """Stop all board readers and report whether every monitor finished cleanup."""
         with self._lock:
-            if self._closed:
-                return
             self._closed = True
             monitors = list(self._monitors.values())
+        complete = True
         for monitor in monitors:
-            monitor.close()
+            if not monitor.close():
+                complete = False
+        return complete
