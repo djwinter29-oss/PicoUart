@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Ji Dong
+using PicoUart.Wire;
+
+namespace PicoUart.Dashboard;
+
+public interface IDashboardBoards
+{
+    DashboardBoardList Boards();
+    string SnapshotJson(string? boardId);
+    BoardControlStatus Action(string? boardId, string action);
+    BoardControlStatus SaveConfiguration(string? boardId, uint profile, bool unsafeOverclock);
+    string DiagnosticsJson(string? boardId);
+}

@@ -4,7 +4,6 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using PicoUart.Hid;
 using PicoUart.Wire;
@@ -13,9 +12,16 @@ namespace PicoUart.Dashboard;
 
 internal static class DashboardHost
 {
-    private const long MaxConfigurationRequestBytes = 1024;
+    private const int MaxConfigurationRequestBytes = 1024;
 
     public static async Task RunAsync(int port, string? serialNumber, string? devicePath)
+    {
+        await using var app = await CreateApplicationAsync(
+            port, new DashboardBoards(serialNumber, devicePath));
+        await app.RunAsync();
+    }
+
+    internal static async Task<WebApplication> CreateApplicationAsync(int port, IDashboardBoards dashboard)
     {
         var builder = WebApplication.CreateBuilder(Array.Empty<string>());
         builder.Logging.AddFilter("Microsoft",
@@ -29,8 +35,9 @@ internal static class DashboardHost
             configuration.Cookie.SameSite = SameSiteMode.Strict;
             configuration.Cookie.IsEssential = true;
         });
-        builder.Services.AddSingleton(new DashboardBoards(serialNumber, devicePath));
-        builder.Services.AddHostedService(provider => provider.GetRequiredService<DashboardBoards>());
+        builder.Services.AddSingleton(dashboard);
+        if (dashboard is IHostedService hostedService)
+            builder.Services.AddSingleton<IHostedService>(hostedService);
         var app = builder.Build();
         app.Use(async (context, next) =>
         {
@@ -74,24 +81,24 @@ internal static class DashboardHost
                 .Replace("{{ host_version }}", System.Net.WebUtility.HtmlEncode(hostVersion)),
                 "text/html");
         });
-        app.MapGet("/api/boards", (DashboardBoards dashboard) =>
+        app.MapGet("/api/boards", (IDashboardBoards dashboard) =>
         {
             try { return Results.Json(dashboard.Boards(), Protocol.JsonOptions); }
             catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
-                return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);
+                return DeviceErrorResponse(error);
             }
         });
-        app.MapGet("/api/status", async (HttpContext context, DashboardBoards dashboard) =>
+        app.MapGet("/api/status", async (HttpContext context, IDashboardBoards dashboard) =>
         {
             await context.Session.LoadAsync();
             try { return Results.Content(dashboard.SnapshotJson(context.Request.Query["board"]), "application/json"); }
             catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
-                return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);
+                return DeviceErrorResponse(error);
             }
         });
-        app.MapGet("/api/diagnostics", async (HttpContext context, DashboardBoards dashboard) =>
+        app.MapGet("/api/diagnostics", async (HttpContext context, IDashboardBoards dashboard) =>
         {
             await context.Session.LoadAsync();
             try
@@ -101,10 +108,10 @@ internal static class DashboardHost
             }
             catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
-                return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);
+                return DeviceErrorResponse(error);
             }
         });
-        app.MapPost("/api/actions/{action}", (string action, HttpContext context, DashboardBoards dashboard) =>
+        app.MapPost("/api/actions/{action}", (string action, HttpContext context, IDashboardBoards dashboard) =>
         {
             var token = context.Session.GetString("csrf_token");
             var supplied = context.Request.Headers["X-CSRF-Token"].ToString();
@@ -119,20 +126,15 @@ internal static class DashboardHost
             }
             catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
-                return Results.Json(new { error = error.Message }, statusCode: error is IOException ? 503 : 409);
+                return DeviceErrorResponse(error);
             }
         });
-        app.MapPost("/api/configuration", async (HttpContext context, DashboardBoards dashboard) =>
+        app.MapPost("/api/configuration", async (HttpContext context, IDashboardBoards dashboard) =>
         {
-            var bodyLimit = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
-            if (bodyLimit is null || bodyLimit.IsReadOnly)
-                throw new InvalidOperationException("configuration request size limit is unavailable");
-            bodyLimit.MaxRequestBodySize = MaxConfigurationRequestBytes;
             if (context.Request.ContentLength > MaxConfigurationRequestBytes)
-                return Results.Json(new
-                {
-                    error = $"configuration request exceeds {MaxConfigurationRequestBytes} bytes"
-                }, statusCode: 413);
+                return ConfigurationRequestTooLarge();
+            var requestBody = await ReadConfigurationBodyAsync(context.Request.Body, context.RequestAborted);
+            if (requestBody is null) return ConfigurationRequestTooLarge();
             var token = context.Session.GetString("csrf_token");
             var supplied = context.Request.Headers["X-CSRF-Token"].ToString();
             if (token is null || !CryptographicOperations.FixedTimeEquals(
@@ -142,19 +144,11 @@ internal static class DashboardHost
                 return Results.Json(new { error = "configuration request must be JSON" }, statusCode: 415);
             try
             {
-                using var body = await JsonDocument.ParseAsync(context.Request.Body,
-                    cancellationToken: context.RequestAborted);
+                using var body = JsonDocument.Parse(requestBody);
                 var request = ConfigurationSaveRequest.Parse(body.RootElement);
                 var result = dashboard.SaveConfiguration(
                     context.Request.Query["board"], request.Profile, request.UnsafeOverclock);
                 return Results.Json(result, Protocol.JsonOptions);
-            }
-            catch (BadHttpRequestException error) when (error.StatusCode == StatusCodes.Status413PayloadTooLarge)
-            {
-                return Results.Json(new
-                {
-                    error = $"configuration request exceeds {MaxConfigurationRequestBytes} bytes"
-                }, statusCode: 413);
             }
             catch (Exception error) when (error is JsonException or ArgumentException
                 || HidErrors.IsDeviceError(error))
@@ -166,11 +160,37 @@ internal static class DashboardHost
                     IOException or UnauthorizedAccessException => 503,
                     _ => 409
                 };
-                return Results.Json(new { error = error.Message }, statusCode: status);
+                return ErrorResponse(error, status);
             }
         });
         app.Lifetime.ApplicationStarted.Register(() =>
             Console.WriteLine($"PicoUart dashboard: http://127.0.0.1:{port}/ (Ctrl+C to stop)"));
-        await app.RunAsync();
+        return app;
+    }
+
+    private static IResult DeviceErrorResponse(Exception error) =>
+        ErrorResponse(error, error is IOException ? 503 : 409);
+
+    private static IResult ErrorResponse(Exception error, int statusCode) =>
+        Results.Json(new { error = error.Message }, statusCode: statusCode);
+
+    private static IResult ConfigurationRequestTooLarge() =>
+        Results.Json(new
+        {
+            error = $"configuration request exceeds {MaxConfigurationRequestBytes} bytes"
+        }, statusCode: 413);
+
+    private static async Task<byte[]?> ReadConfigurationBodyAsync(
+        Stream requestBody, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[MaxConfigurationRequestBytes + 1];
+        var length = 0;
+        while (length < buffer.Length)
+        {
+            var read = await requestBody.ReadAsync(buffer.AsMemory(length), cancellationToken);
+            if (read == 0) return buffer.AsSpan(0, length).ToArray();
+            length += read;
+        }
+        return null;
     }
 }

@@ -106,12 +106,21 @@ public sealed class ConfigurationEndpointTests
             await AssertResponse("{\"profile\":1,\"unsafe_overclock\":false}", 400);
             await AssertResponse("{\"profile\":0,\"unsafe_overclock\":false,\"extra\":0}", 400);
             await AssertResponse(valid, 409);
+            await AssertResponse(valid.PadRight(1024), 409);
             using (var oversizedContent = new StringContent(new string('x', 2048), Encoding.UTF8, "application/json"))
             using (var oversizedResponse = await http.PostAsync("/api/configuration?board=unknown", oversizedContent))
             {
                 Assert.Equal(413, (int)oversizedResponse.StatusCode);
                 using var body = JsonDocument.Parse(await oversizedResponse.Content.ReadAsStringAsync());
                 Assert.Contains("1024 bytes", body.RootElement.GetProperty("error").GetString());
+            }
+            using (var chunkedContent = new ChunkedContent(Encoding.UTF8.GetBytes(new string('x', 2048))))
+            {
+                chunkedContent.Headers.ContentType = new("application/json");
+                Assert.Null(chunkedContent.Headers.ContentLength);
+                using var chunkedResponse =
+                    await http.PostAsync("/api/configuration?board=unknown", chunkedContent);
+                Assert.Equal(413, (int)chunkedResponse.StatusCode);
             }
 
             await AssertGetError("/api/status?board=unknown", 409);
@@ -155,5 +164,106 @@ public sealed class ConfigurationEndpointTests
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             Assert.False(string.IsNullOrEmpty(body.RootElement.GetProperty("error").GetString()));
         }
+    }
+
+    [Fact]
+    public async Task DashboardRoutesReturnSuccessfulActionAndSaveResults()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        var dashboard = new FakeDashboardBoards();
+        await using var app = await DashboardHost.CreateApplicationAsync(port, dashboard);
+        await app.StartAsync();
+        using var handler = new HttpClientHandler { CookieContainer = new CookieContainer() };
+        using var http = new HttpClient(handler)
+        {
+            BaseAddress = new($"http://127.0.0.1:{port}"),
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+        try
+        {
+            var page = await http.GetStringAsync("/");
+            var token = Regex.Match(page, "[A-F0-9]{64}").Value;
+            Assert.Equal(64, token.Length);
+            http.DefaultRequestHeaders.Add("X-CSRF-Token", token);
+            const string boardId = "test-board";
+
+            using var actionContent = new StringContent("{}", Encoding.UTF8, "application/json");
+            using var actionResponse = await http.PostAsync($"/api/actions/toggle-led?board={boardId}", actionContent);
+            Assert.Equal(HttpStatusCode.OK, actionResponse.StatusCode);
+            using var action = JsonDocument.Parse(await actionResponse.Content.ReadAsStringAsync());
+            Assert.Equal((byte)1, action.RootElement.GetProperty("action").GetByte());
+            Assert.Equal((byte)2, action.RootElement.GetProperty("status").GetByte());
+            Assert.Equal(boardId, dashboard.LastBoardId);
+
+            using var saveContent = new StringContent(
+                "{\"profile\":0,\"unsafe_overclock\":false}", Encoding.UTF8, "application/json");
+            using var saveResponse = await http.PostAsync($"/api/configuration?board={boardId}", saveContent);
+            Assert.Equal(HttpStatusCode.OK, saveResponse.StatusCode);
+            using var save = JsonDocument.Parse(await saveResponse.Content.ReadAsStringAsync());
+            Assert.Equal((byte)4, save.RootElement.GetProperty("action").GetByte());
+            Assert.Equal((byte)2, save.RootElement.GetProperty("status").GetByte());
+            Assert.Equal(boardId, dashboard.LastBoardId);
+            Assert.Equal((uint)0, dashboard.SavedProfile);
+
+            using var status = JsonDocument.Parse(await http.GetStringAsync($"/api/status?board={boardId}"));
+            Assert.Equal((byte)2, status.RootElement.GetProperty("configuration_save")
+                .GetProperty("status").GetByte());
+            Assert.Equal((uint)0, status.RootElement.GetProperty("configuration_save")
+                .GetProperty("profile").GetUInt32());
+        }
+        finally
+        {
+            await app.StopAsync();
+        }
+    }
+
+    private sealed class FakeDashboardBoards : IDashboardBoards
+    {
+        private readonly DashboardSnapshot snapshot = new();
+
+        public string? LastBoardId { get; private set; }
+        public uint? SavedProfile { get; private set; }
+
+        public DashboardBoardList Boards() => new([], null);
+
+        public string SnapshotJson(string? boardId)
+        {
+            LastBoardId = boardId;
+            return JsonSerializer.Serialize(snapshot, Protocol.JsonOptions);
+        }
+
+        public BoardControlStatus Action(string? boardId, string action)
+        {
+            LastBoardId = boardId;
+            snapshot.ApplyAction(new(action == "toggle-led" ? (byte)1 : (byte)3, 2, 0));
+            return snapshot.Control!;
+        }
+
+        public BoardControlStatus SaveConfiguration(string? boardId, uint profile, bool unsafeOverclock)
+        {
+            LastBoardId = boardId;
+            SavedProfile = profile;
+            snapshot.ApplyAction(new(4, 2, 0));
+            snapshot.ConfigurationSave = new(2, 0, profile);
+            snapshot.ConfigurationSaveError = null;
+            return snapshot.Control!;
+        }
+
+        public string DiagnosticsJson(string? boardId) => "[]";
+    }
+
+    private sealed class ChunkedContent(byte[] payload) : HttpContent
+    {
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            stream.WriteAsync(payload).AsTask();
     }
 }

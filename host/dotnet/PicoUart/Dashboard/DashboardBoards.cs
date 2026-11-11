@@ -11,7 +11,7 @@ namespace PicoUart.Dashboard;
 public sealed record DashboardBoard(string Id, string ProductName, string? SerialNumber, string DevicePath);
 public sealed record DashboardBoardList(DashboardBoard[] Boards, string? DefaultBoardId);
 
-public sealed class DashboardBoards : IHostedService, IDisposable
+public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoards
 {
     private readonly object gate = new();
     private readonly string? serialNumber;
