@@ -78,6 +78,9 @@ cd host/python
 .venv/bin/python -m mypy
 ```
 
+Mypy enforces `disallow_untyped_defs` per dashboard module; extend the module overrides as additional files become
+fully annotated.
+
 Measure package coverage with:
 
 ```bash

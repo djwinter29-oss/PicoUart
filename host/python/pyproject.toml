@@ -94,10 +94,17 @@ ignore_missing_imports = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = [
-	"pico_uart.dashboard.app",
-	"pico_uart.dashboard.boards",
-	"pico_uart.dashboard.monitor",
-	"pico_uart.dashboard.types",
-]
+module = "pico_uart.dashboard.app"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "pico_uart.dashboard.boards"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "pico_uart.dashboard.monitor"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "pico_uart.dashboard.types"
 disallow_untyped_defs = true
