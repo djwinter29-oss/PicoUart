@@ -115,7 +115,7 @@ Run one HID monitor/server per board; see [shared monitoring](#board-selection-a
 
 | Method | Returns |
 | --- | --- |
-| `read_status(timeout_ms=1000)` | Latest six-channel Input snapshot, or `None` on timeout |
+| `read_status(timeout_ms=250)` | Latest six-channel Input snapshot, or `None` on timeout |
 | `read_identity()` / `read_board_status()` | Static identity and capabilities; board status also includes temperature |
 | `read_telemetry()` | Live board telemetry |
 | `read_configuration()` | Cached boot-time pins, capacities, stored profile, and reset cause |
@@ -127,13 +127,16 @@ Run one HID monitor/server per board; see [shared monitoring](#board-selection-a
 Feature and diagnostic reads do not advance Input traffic baselines. Cached or unavailable UART measurements cannot
 establish a clean current UART rate. Convenience methods include `read_runtime()`, `read_led()`,
 `read_overflow_counts()`, and `read_hardware_info()`.
+`timeout_ms=0` is implemented as a bounded 1 ms poll because hidapi interprets zero as an unbounded wait. When provided,
+the absolute `deadline` also bounds client-lock acquisition and metadata reads.
 
 The supported high-level API is `PicoUartHid` and the methods described here, plus the module-level functions
 `read_board_status`, `read_board_temperature`, `read_firmware_version`, `read_configuration`, `read_hardware_info`,
 `read_overflow_counts`, `read_telemetry`, and `reset_board`.
-Report parsers, IDs and sizes, USB identifiers, raw HID access, and generic feature-report helpers are low-level
-exports tied to the firmware report contract. Prefer their owning `pico_uart.hid.protocol`,
-`pico_uart.hid.transport`, and `pico_uart.hid.client` modules when using them directly.
+The names in `pico_uart.__all__` are the supported package-root exports. Report parsers, IDs and sizes, USB
+identifiers, raw HID access, and generic feature-report helpers are low-level exports tied to the firmware report
+contract. Prefer their owning `pico_uart.hid.protocol`, `pico_uart.hid.transport`, and `pico_uart.hid.client` modules
+when using them directly.
 The optional third-party hidapi module is available as `pico_uart.hid.transport.hid`.
 
 ### Python module-path migration
@@ -385,10 +388,10 @@ Boards with serial numbers reconnect by serial even if the OS path changes. Devi
 their OS path, which cannot distinguish a replacement device reusing that path.
 
 Each server starts one HID reader lazily per selected board and shares its cached snapshot among all viewers.
-Additional viewers do not read the HID stream or consume its deltas again. Readers remain active until server shutdown,
-including when no page is viewing them, and retry disconnected boards. Observed traffic totals belong to the shared
-reader's current connection, not to a browser session. Run only one host monitor/server per physical board; separate
-server processes and standalone HID clients do not share these readers.
+Additional viewers do not read the HID stream or consume its deltas again. Readers remain active when no page is viewing
+them, retry disconnected boards, and are reaped after repeated scans no longer find their board. Observed traffic totals
+belong to the shared reader's current connection, not to a browser session. Run only one host monitor/server per
+physical board; separate server processes and standalone HID clients do not share these readers.
 
 Closing a registry requests monitor shutdown and returns whether all polling threads stopped within one second. A false
 result means cleanup is still pending; the server logs a warning and lets the monitor finish in the background. The HID

@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from pico_uart.dashboard.app import create_app
-from pico_uart.dashboard.boards import BoardRegistry
+from pico_uart.dashboard.boards import MISSED_SCANS_BEFORE_REAP, BoardRegistry
 
 
 def device(serial, path):
@@ -163,4 +163,75 @@ def test_close_reports_if_any_board_monitor_is_still_stopping():
     registry.snapshot(board_id)
 
     assert registry.close() is False
+    assert registry.close() is True
+
+
+def test_reaped_monitor_remains_owned_until_cleanup_finishes():
+    class PendingMonitor(Monitor):
+        def __init__(self, serial_number, device_path):
+            super().__init__(serial_number, device_path)
+            self.finished = False
+            self.close_calls = 0
+
+        @property
+        def is_stopped(self):
+            return self.finished
+
+        def close(self):
+            self.close_calls += 1
+            return self.finished
+
+    attached = [device("A", "/a")]
+    created = []
+
+    def factory(**kwargs):
+        monitor = PendingMonitor(**kwargs)
+        created.append(monitor)
+        return monitor
+
+    registry = BoardRegistry(discover=lambda: attached, monitor_factory=factory)
+    board_id = registry.boards()["boards"][0]["id"]
+    first = registry._monitor(board_id)
+    attached.clear()
+    for _ in range(MISSED_SCANS_BEFORE_REAP):
+        registry.boards()
+
+    assert first.close_calls == 1
+    attached.append(device("A", "/a"))
+    registry.boards()
+    with pytest.raises(RuntimeError, match="cleanup is still pending"):
+        registry._monitor(board_id)
+    assert created == [first]
+
+    first.finished = True
+    registry.boards()
+    replacement = registry._monitor(board_id)
+    assert replacement is not first
+    assert len(created) == 2
+    assert registry.close() is False
+
+
+def test_registry_shutdown_reports_pending_reaped_monitor():
+    class PendingMonitor(Monitor):
+        def __init__(self, serial_number, device_path):
+            super().__init__(serial_number, device_path)
+            self.finished = False
+
+        @property
+        def is_stopped(self):
+            return self.finished
+
+        def close(self):
+            return self.finished
+
+    attached = [device("A", "/a")]
+    registry = BoardRegistry(discover=lambda: attached, monitor_factory=PendingMonitor)
+    board_id = registry.boards()["boards"][0]["id"]
+    monitor = registry._monitor(board_id)
+    attached.clear()
+    for _ in range(MISSED_SCANS_BEFORE_REAP):
+        registry.boards()
+
+    assert registry.close() is False
+    monitor.finished = True
     assert registry.close() is True

@@ -31,13 +31,13 @@ class BoardList(TypedDict):
 
 
 class BoardIdentity(DeviceIdentity):
-    """Static board identity with the latest measured temperature."""
+    """Static board identity; the temperature is None while telemetry is unavailable (cf. `hid.types.BoardStatus`)."""
 
     temperature_celsius: float | None
 
 
 class HardwareSnapshot(TypedDict):
-    """Hardware identity and current system-clock reading."""
+    """Hardware identity; the clock is None while telemetry is unavailable (cf. `hid.types.HardwareInfo`)."""
 
     mcu: str
     mcu_id: int

@@ -12,12 +12,30 @@ from copy import deepcopy
 
 from ..hid.client import PicoUartHid
 from ..hid.inputs import empty_channel
-from ..hid.protocol import UART_CHANNEL_COUNT
+from ..hid.protocol import (
+    CAPABILITY_CONFIGURATION_SAVE,
+    COMMAND_SAVE_CONFIGURATION,
+    UART_CHANNEL_COUNT,
+    UNAVAILABLE_U16,
+)
 from ..hid.types import ControlResult, StatusSnapshot
 from .types import BoardIdentity, BoardSnapshot, HardwareSnapshot, LedSnapshot
 
 _LOGGER = logging.getLogger(__name__)
 MONITOR_CLOSE_TIMEOUT_S = 1.0
+REFRESH_INTERVAL_MIN_MS = 500
+REFRESH_INTERVAL_MAX_MS = 1000
+RECONNECT_DELAY_S = 1.0
+RECONNECT_DELAY_MAX_S = 8.0
+
+
+def public_error(error: Exception) -> str:
+    """Return dashboard-safe error text; raw OS details (device paths, errno text) go to the log only."""
+    message = str(error)
+    if isinstance(error, OSError) or message.startswith("failed to open PicoUart HID interface at "):
+        _LOGGER.error("PicoUart HID I/O error: %s", error)
+        return "PicoUart HID I/O error"
+    return message
 
 
 def empty_snapshot() -> BoardSnapshot:
@@ -66,9 +84,20 @@ class BoardMonitor:
         self._thread = threading.Thread(target=self._poll, name="pico-uart-monitor", daemon=True)
         self._thread.start()
 
+    def __enter__(self) -> BoardMonitor:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
     def snapshot(self) -> BoardSnapshot:
         with self._lock:
             return deepcopy(self._snapshot)
+
+    @property
+    def is_stopped(self) -> bool:
+        """Whether the polling thread has finished cleanup."""
+        return not self._thread.is_alive()
 
     # HID transfers can take seconds; the client serializes device access, so they run outside the snapshot lock.
     def toggle_led(self) -> None:
@@ -92,7 +121,7 @@ class BoardMonitor:
             diagnostics = client.read_channel_diagnostics()
         except (OSError, RuntimeError) as error:
             with self._lock:
-                self._snapshot["diagnostics_error"] = str(error)
+                self._snapshot["diagnostics_error"] = public_error(error)
             raise
         with self._lock:
             self._snapshot["channel_diagnostics"] = diagnostics
@@ -115,6 +144,7 @@ class BoardMonitor:
         return client
 
     def _poll(self) -> None:
+        delay = RECONNECT_DELAY_S
         while not self._stop.is_set():
             client = None
             try:
@@ -126,6 +156,7 @@ class BoardMonitor:
                 next_metadata_read = 0.0
                 while not self._stop.is_set():
                     status = client.read_status(timeout_ms=250)
+                    delay = RECONNECT_DELAY_S
                     if status is not None:
                         self._apply_status(status)
                     if self._stop.is_set():
@@ -137,7 +168,7 @@ class BoardMonitor:
                             interval = self._snapshot["refresh_interval_ms"]
                         next_metadata_read = time.monotonic() + interval / 1000
             except (OSError, RuntimeError) as error:
-                self._mark_disconnected(str(error))
+                self._mark_disconnected(error)
             finally:
                 with self._lock:
                     if self._client is client:
@@ -149,15 +180,17 @@ class BoardMonitor:
                     except OSError as error:
                         _LOGGER.error("failed to close PicoUart HID client: %s", error)
                         with self._lock:
-                            self._snapshot["error"] = f"failed to close PicoUart HID client: {error}"
-            self._stop.wait(1.0)
+                            self._snapshot["error"] = "failed to close PicoUart HID client"
+            self._stop.wait(delay)
+            delay = min(delay * 2, RECONNECT_DELAY_MAX_S)
 
-    def _mark_disconnected(self, error: str) -> None:
+    def _mark_disconnected(self, error: Exception) -> None:
         """Keep live traffic but drop every value that came from the lost device session."""
+        message = public_error(error)
         with self._lock:
             snapshot = self._snapshot
             snapshot["connected"] = False
-            snapshot["error"] = error
+            snapshot["error"] = message
             snapshot["identity"] = None
             snapshot["runtime"] = None
             snapshot["led"] = None
@@ -178,7 +211,10 @@ class BoardMonitor:
                     continue
                 channel_id = source["id"]
                 current = self._snapshot["channels"][channel_id]
-                sample_updated = source["updated_at"] != current["updated_at"]
+                sample_updated = source["updated_at"] != current["updated_at"] or any(
+                    source[field] != current[field]
+                    for field in ("sequence", "totals")
+                )
                 accounting_changed = (
                     source["traffic_gaps"] != current["traffic_gaps"]
                     or source["traffic_incomplete"] != current["traffic_incomplete"]
@@ -186,8 +222,11 @@ class BoardMonitor:
                 if not sample_updated and not accounting_changed:
                     continue
                 interval = source.get("interval_ms")
-                if sample_updated and interval is not None and 0 < interval < 65535:
-                    self._snapshot["refresh_interval_ms"] = max(500, min(1000, interval))
+                if sample_updated and interval is not None and 0 < interval < UNAVAILABLE_U16:
+                    self._snapshot["refresh_interval_ms"] = max(
+                        REFRESH_INTERVAL_MIN_MS,
+                        min(REFRESH_INTERVAL_MAX_MS, interval),
+                    )
                 self._snapshot["channels"][channel_id] = deepcopy(source)
             channels = self._snapshot["channels"]
             self._snapshot["updated_at"] = max(
@@ -208,7 +247,7 @@ class BoardMonitor:
         try:
             telemetry = client.read_telemetry()
         except (OSError, RuntimeError) as error:
-            message = str(error)
+            message = public_error(error)
             with self._lock:
                 self._snapshot["led"] = None
                 self._snapshot["led_error"] = message
@@ -253,7 +292,7 @@ class BoardMonitor:
         except (OSError, RuntimeError) as error:
             with self._lock:
                 self._snapshot["configuration"] = None
-                self._snapshot["configuration_error"] = str(error)
+                self._snapshot["configuration_error"] = public_error(error)
         else:
             with self._lock:
                 self._snapshot["configuration"] = configuration
@@ -262,16 +301,16 @@ class BoardMonitor:
             result = client.read_control()
         except (OSError, RuntimeError) as error:
             with self._lock:
-                self._snapshot["configuration_save_error"] = str(error)
+                self._snapshot["configuration_save_error"] = public_error(error)
             return
         save: ControlResult | None = result
         with self._lock:
             identity = self._snapshot["identity"]
             save_error = None
-            if identity is None or not identity["capabilities"] & 4:
+            if identity is None or not identity["capabilities"] & CAPABILITY_CONFIGURATION_SAVE:
                 save = None
                 save_error = self._snapshot["identity_error"] or "configuration save capability is unavailable"
-            elif result["action"] != 4:
+            elif result["action"] != COMMAND_SAVE_CONFIGURATION:
                 save = {"status": 0, "action": 0, "error_reason": 0, "error": "none"}
             self._snapshot["configuration_save"] = save
             self._snapshot["configuration_save_error"] = save_error
@@ -280,13 +319,14 @@ class BoardMonitor:
         try:
             identity = client.read_identity()
         except (OSError, RuntimeError) as error:
+            message = public_error(error)
             with self._lock:
                 self._snapshot["identity"] = None
-                self._snapshot["identity_error"] = str(error)
+                self._snapshot["identity_error"] = message
                 self._snapshot["hardware"] = None
-                self._snapshot["hardware_error"] = str(error)
+                self._snapshot["hardware_error"] = message
                 self._snapshot["board"] = None
-                self._snapshot["metadata_error"] = str(error)
+                self._snapshot["metadata_error"] = message
             return
         with self._lock:
             self._snapshot["identity"] = identity

@@ -46,11 +46,14 @@ from .protocol import (
 )
 from .transport import HidDevice, open_device
 from .types import (
+    BoardStatus,
     ChannelDiagnostic,
     ChannelFeatureSample,
+    ChannelSample,
     Configuration,
     ControlResult,
     DeviceIdentity,
+    HardwareInfo,
     RuntimeTelemetry,
     StatusSnapshot,
     Telemetry,
@@ -58,6 +61,7 @@ from .types import (
 
 COMMAND_TIMEOUT_S = 3.0
 COMMAND_POLL_INTERVAL_S = 0.05
+BAUD_READY_TOLERANCE = 0.03
 _TransferResult = TypeVar("_TransferResult")
 
 
@@ -71,7 +75,7 @@ class PicoUartHid:
 
     Methods are thread-safe: one reentrant lock serializes device access. Feature transfers are bounded by
     ``COMMAND_TIMEOUT_S``; a timed-out transfer leaves its outcome unconfirmed and is never retried, and
-    further transfers fail until it returns. ``close()`` defers closing the handle until such a transfer ends.
+    further device I/O fails until it returns. ``close()`` defers closing the handle until it returns.
     """
 
     def __init__(
@@ -126,7 +130,7 @@ class PicoUartHid:
         def run() -> None:
             try:
                 result.append(operation())
-            except Exception as error:
+            except Exception as error:  # The worker must relay any operation failure to its caller.
                 failure.append(error)
             finally:
                 self._gate.end_transfer(completed)
@@ -162,7 +166,7 @@ class PicoUartHid:
         with self._lock:
             return DeviceIdentity(**self._read_device_info())
 
-    def read_board_status(self) -> dict[str, object]:
+    def read_board_status(self) -> BoardStatus:
         """Return static board identity/capabilities together with the current temperature."""
         info = self.read_identity()
         return {
@@ -179,7 +183,7 @@ class PicoUartHid:
         """Read the firmware semantic version string."""
         return str(self.read_identity()["firmware_version"])
 
-    def read_hardware_info(self) -> dict[str, object]:
+    def read_hardware_info(self) -> HardwareInfo:
         """Read MCU identity and the current system clock."""
         info = self.read_identity()
         telemetry = self.read_telemetry()
@@ -252,13 +256,34 @@ class PicoUartHid:
             raise ValueError("timeout_ms must not be negative")
         if deadline is not None and not math.isfinite(deadline):
             raise ValueError("deadline must be finite")
-        with self._lock:
+        if deadline is None:
+            self._lock.acquire()
+        else:
+            remaining_s = deadline - time.monotonic()
+            if remaining_s <= 0 or not self._lock.acquire(
+                timeout=min(remaining_s, threading.TIMEOUT_MAX)
+            ):
+                return None
+        try:
             self._read_device_info(deadline)
             configuration = self.read_configuration(deadline=deadline)
-            input_timeout_ms = timeout_ms
+            # ponytail: hidapi treats zero as an infinite wait; one millisecond is the smallest portable poll.
+            input_timeout_ms = max(1, timeout_ms)
             if deadline is not None:
-                input_timeout_ms = min(timeout_ms, max(0, int((deadline - time.monotonic()) * 1000)))
-            report = self._require_open().read(CHANNEL_SIZE + 1, input_timeout_ms)
+                remaining_ms = int((deadline - time.monotonic()) * 1000)
+                if remaining_ms <= 0:
+                    return None
+                input_timeout_ms = min(max(1, timeout_ms), remaining_ms)
+            if input_timeout_ms <= 0:
+                return None
+            device = self._require_open()
+            self._gate.begin_transfer()
+            try:
+                report = device.read(CHANNEL_SIZE + 1, input_timeout_ms)
+            finally:
+                self._gate.end_transfer()
+            if deadline is not None and time.monotonic() >= deadline:
+                return None
             if not report:
                 return None
             if len(report) != CHANNEL_SIZE + 1 or not REPORT_ID_CHANNEL_BASE <= report[0] < (
@@ -272,11 +297,13 @@ class PicoUartHid:
                 time.monotonic(),
             )
             return self._inputs.snapshot()
+        finally:
+            self._lock.release()
 
     def wait_channels_ready(
         self, channels: dict[int, int], timeout_s: float = 3.0
     ) -> dict[int, ChannelFeatureSample]:
-        """Wait for selected open channels to apply raw 8N1 at the requested baud (within 3%).
+        """Wait for selected open channels to apply raw 8N1 at the requested baud (within `BAUD_READY_TOLERANCE`).
 
         Call after opening/configuring every endpoint in a group. Historical faults do not fail this wait;
         current initialization/configuration errors do. HID transport errors propagate to the caller.
@@ -315,9 +342,7 @@ class PicoUartHid:
                     raise TimeoutError("CDC readiness HID read timed out")
                 if sample["state"] == "error":
                     raise OSError(f"CDC{index} configuration failed")
-                if (sample["state"] == "ready" and sample["baud_rate"]
-                        and abs(sample["baud_rate"] - baud) <= baud * 0.03
-                        and (sample["data_bits"], sample["parity"], sample["stop_bits"]) == (8, "none", 1)):
+                if channel_ready(sample, baud):
                     samples[index] = {"id": index, **sample}
             if len(samples) == len(channels):
                 return samples
@@ -427,7 +452,16 @@ class PicoUartHid:
         self.close()
 
 
-def read_board_status(device: HidDevice) -> dict[str, object]:
+def channel_ready(sample: ChannelSample, baud: int) -> bool:
+    """Return whether a channel is ready, raw 8N1, and within tolerance of the requested baud rate."""
+    return bool(
+        sample["state"] == "ready" and sample["baud_rate"]
+        and abs(sample["baud_rate"] - baud) <= baud * BAUD_READY_TOLERANCE
+        and (sample["data_bits"], sample["parity"], sample["stop_bits"]) == (8, "none", 1)
+    )
+
+
+def read_board_status(device: HidDevice) -> BoardStatus:
     """Read static identity/capabilities and current temperature from an already opened device."""
     return PicoUartHid(device=device).read_board_status()
 
@@ -447,7 +481,7 @@ def read_configuration(device: HidDevice) -> Configuration:
     return PicoUartHid(device=device).read_configuration()
 
 
-def read_hardware_info(device: HidDevice) -> dict[str, object]:
+def read_hardware_info(device: HidDevice) -> HardwareInfo:
     """Read MCU identity and the current system clock."""
     return PicoUartHid(device=device).read_hardware_info()
 

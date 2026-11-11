@@ -25,10 +25,10 @@ class DeviceGate:
         return self._closing
 
     def begin_transfer(self) -> None:
-        """Claim the transfer slot; a quarantined earlier transfer keeps it until it returns."""
+        """Claim the device-I/O slot; a quarantined operation keeps it until it returns."""
         with self._state_lock:
             if self._in_flight:
-                raise RuntimeError("a previous HID feature transfer is still in flight")
+                raise RuntimeError("a previous HID operation is still in flight")
             self._in_flight = True
 
     def abort_transfer(self) -> None:
@@ -36,8 +36,8 @@ class DeviceGate:
         with self._state_lock:
             self._in_flight = False
 
-    def end_transfer(self, completed: threading.Event) -> None:
-        """Release the slot, finish a deferred close, then signal the waiting caller."""
+    def end_transfer(self, completed: threading.Event | None = None) -> None:
+        """Release the slot, finish a deferred close, then signal a waiting feature caller."""
         with self._state_lock:
             self._in_flight = False
             if self._closing and not self._device_closed:
@@ -48,7 +48,8 @@ class DeviceGate:
                     self._close_error = error
                 finally:
                     self._close_complete.set()
-            completed.set()
+            if completed is not None:
+                completed.set()
 
     def close(self) -> bool:
         """Close now, or defer while a transfer is in flight; return whether the handle is closed."""

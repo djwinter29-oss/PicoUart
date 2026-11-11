@@ -68,6 +68,39 @@ jobs:
           if ! command -v cmake >/dev/null 2>&1; then brew install cmake; fi
           tools/validation/run-host-tests.sh --skip-python
 
+  host-wheel-smoke:
+    name: Host wheel smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel, install it in a clean venv, and run it
+        run: |
+          python -m pip install build
+          mkdir -p host/python/src/pico_uart/dashboard/assets
+          cp -R host/web/src/. host/python/src/pico_uart/dashboard/assets/
+          python -m build --wheel --outdir "$RUNNER_TEMP/dist" host/python
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install "$(ls "$RUNNER_TEMP"/dist/*.whl)[dashboard]"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/venv/bin/pico-uart" --help
+          "$RUNNER_TEMP/venv/bin/python" - <<'PY'
+          from pico_uart.dashboard.app import create_app
+
+          client = create_app().test_client()
+          assert client.get("/").status_code == 200
+          assert client.get("/favicon.svg").status_code == 200
+          assert client.get("/css/dashboard.css").status_code == 200
+          assert client.get("/js/dashboard.js").status_code == 200
+          PY
+
   host-tools:
     name: Host tools
     runs-on: ubuntu-latest
@@ -92,7 +125,7 @@ jobs:
         run: |
           python -m ruff check src tests
           python -m mypy
-          python -m pytest --cov=pico_uart --cov-fail-under=85
+          python -m pytest --cov=pico_uart --cov-fail-under=92
 
       - name: Syntax-check shell tools
         run: tools/validation/syntax-check-shell.sh

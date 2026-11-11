@@ -36,8 +36,10 @@ class BoardRegistry:
         self._discover = discover
         self._monitor_factory = monitor_factory
         self._lock = threading.RLock()
+        self._retired_cleanup_lock = threading.Lock()
         self._known: dict[str, BoardSummary] = {}
         self._monitors: dict[str, BoardMonitor] = {}
+        self._retired_monitors: dict[str, BoardMonitor] = {}
         self._missed_scans: dict[str, int] = {}
         self._closed = False
 
@@ -46,7 +48,7 @@ class BoardRegistry:
             if self._closed:
                 raise RuntimeError("dashboard is shutting down")
         devices = self._discover()  # blocking hidapi enumeration stays outside the registry lock
-        reaped: list[BoardMonitor] = []
+        reaped: list[tuple[str, BoardMonitor]] = []
         with self._lock:
             if self._closed:
                 raise RuntimeError("dashboard is shutting down")
@@ -77,13 +79,15 @@ class BoardRegistry:
             self._known.update((board["id"], board) for board in boards)
             reaped = self._reap_missing(seen)
             result: BoardList = {"boards": boards, "default_board_id": self._default_board_id(boards)}
-        for monitor in reaped:
-            monitor.close()
+        for board_id, monitor in reaped:
+            if monitor.close():
+                self._forget_retired(board_id, monitor)
+        self._cleanup_retired()
         return result
 
-    def _reap_missing(self, present: set[str]) -> list[BoardMonitor]:
+    def _reap_missing(self, present: set[str]) -> list[tuple[str, BoardMonitor]]:
         """Forget boards absent for several scans so unplugged boards stop retrying; caller holds the lock."""
-        reaped: list[BoardMonitor] = []
+        reaped: list[tuple[str, BoardMonitor]] = []
         for board_id in list(self._known):
             if board_id in present:
                 self._missed_scans.pop(board_id, None)
@@ -96,8 +100,23 @@ class BoardRegistry:
             del self._known[board_id]
             monitor = self._monitors.pop(board_id, None)
             if monitor is not None:
-                reaped.append(monitor)
+                self._retired_monitors[board_id] = monitor
+                reaped.append((board_id, monitor))
         return reaped
+
+    def _forget_retired(self, board_id: str, monitor: BoardMonitor) -> None:
+        with self._lock:
+            if self._retired_monitors.get(board_id) is monitor:
+                del self._retired_monitors[board_id]
+
+    def _cleanup_retired(self) -> None:
+        """Release ownership of retired monitors only after their polling threads finish."""
+        with self._retired_cleanup_lock:
+            with self._lock:
+                pending = list(self._retired_monitors.items())
+            for board_id, monitor in pending:
+                if monitor.is_stopped:
+                    self._forget_retired(board_id, monitor)
 
     def _default_board_id(self, boards: list[BoardSummary]) -> str | None:
         """Prefer the board named on the command line; with a selector but no match, choose none."""
@@ -116,6 +135,8 @@ class BoardRegistry:
                 raise RuntimeError("dashboard is shutting down")
             if not board_id or board_id not in self._known:
                 raise RuntimeError("unknown board; rescan and select a listed board")
+            if board_id in self._retired_monitors:
+                raise RuntimeError("previous board monitor cleanup is still pending")
             if board_id not in self._monitors:
                 board = self._known[board_id]
                 self._monitors[board_id] = self._monitor_factory(
@@ -140,11 +161,17 @@ class BoardRegistry:
     def read_diagnostics(self, board_id: str | None) -> BoardSnapshot:
         return self._monitor(board_id).read_diagnostics()
 
+    def __enter__(self) -> "BoardRegistry":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
     def close(self) -> bool:
         """Stop all board readers and report whether every monitor finished cleanup."""
         with self._lock:
             self._closed = True
-            monitors = list(self._monitors.values())
+            monitors = list(self._monitors.values()) + list(self._retired_monitors.values())
         complete = True
         for monitor in monitors:
             if not monitor.close():

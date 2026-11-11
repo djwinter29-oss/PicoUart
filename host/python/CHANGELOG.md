@@ -6,6 +6,13 @@ User-facing changes to the `pico-uart` Python package.
 
 ### Changes
 
+- Dashboard snapshots no longer include raw HID OS errors or device paths; details go to the log. The monitor
+  reconnects with a capped exponential backoff (1 s to 8 s), and `BoardMonitor` and `BoardRegistry` are context
+  managers.
+- Input reads honor the absolute deadline and share transfer quarantine with Feature reports. Reaped dashboard readers
+  remain owned until cleanup completes, and channel snapshots detect newer samples even when timestamps collide.
+- `channel_ready` and the `BAUD_READY_TOLERANCE` constant are now public in `pico_uart.hid.client`.
+- `read_board_status` and `read_hardware_info` now return the typed `BoardStatus` and `HardwareInfo` dictionaries.
 - The package now ships a `py.typed` marker, so type checkers use its inline annotations.
 - The module-level `read_*(device)` helpers now delegate to `PicoUartHid(device=device)`, so they share its bounded
   transfers and validation.

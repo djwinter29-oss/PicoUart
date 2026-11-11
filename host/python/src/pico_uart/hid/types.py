@@ -29,6 +29,21 @@ class DeviceIdentity(TypedDict):
     configuration_save_available: bool
 
 
+class BoardStatus(DeviceIdentity):
+    """Static identity plus the current board temperature."""
+
+    temperature_celsius: float
+    hid_led_enabled: bool
+
+
+class HardwareInfo(TypedDict):
+    """MCU identity and the current system clock."""
+
+    mcu: str
+    mcu_id: int
+    system_clock_hz: int
+
+
 class UartPins(TypedDict):
     """GPIO assignment for one UART channel."""
 

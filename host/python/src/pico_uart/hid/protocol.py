@@ -43,6 +43,19 @@ STATUS_UNSUPPORTED = 4
 STATUS_BUSY = 5
 STATUS_FAILED = 6
 MAX_U32 = 0xFFFFFFFF
+PRODUCT_ID_PICOUART = 1
+CAPABILITY_LED = 1
+CAPABILITY_RESET = 2
+CAPABILITY_CONFIGURATION_SAVE = 4
+CAPABILITY_RESERVED_MASK = 0xF8
+CLOCK_PROFILE_RESERVED_MASK = 0xE0
+CLOCK_PROFILE_DEFAULT_BIT = 1
+STORED_PROFILE_NONE = 255
+GPIO_UNUSED = 255
+GPIO_MAX = 47
+UNAVAILABLE_U16 = 0xFFFF
+MIN_BAUD_RATE = 50
+MAX_BAUD_RATE = 3_000_000
 CHANNEL_STATES = ("closed", "starting", "ready", "configuring", "error")
 ERROR_REASONS = (
     "none", "malformed_payload", "invalid_profile", "missing_overclock_acknowledgement",
@@ -61,12 +74,15 @@ def parse_device_info(payload: bytes) -> DeviceIdentity:
     if len(payload) < 3:
         raise RuntimeError("identity discovery prefix is truncated")
     product = int.from_bytes(payload[1:3], "little")
-    if product != 1:
+    if product != PRODUCT_ID_PICOUART:
         raise RuntimeError(f"Unknown product (0x{product:04X}); product-specific operations are unavailable")
     _layout(payload, DEVICE_INFO_SIZE, "device-information")
     major, minor, patch, mcu, board, hardware_mask, capabilities, profiles = payload[11:19]
     total, reserved = struct.unpack_from("<II", payload, 19)
-    if capabilities & 0xF8 or profiles & 0xE0 or not profiles & 1 or not total or reserved > total:
+    if (
+        capabilities & CAPABILITY_RESERVED_MASK or profiles & CLOCK_PROFILE_RESERVED_MASK
+        or not profiles & CLOCK_PROFILE_DEFAULT_BIT or not total or reserved > total
+    ):
         raise RuntimeError("invalid static device information")
     return {
         "product_id": product,
@@ -84,9 +100,9 @@ def parse_device_info(payload: bytes) -> DeviceIdentity:
         "clock_profile_mask": profiles,
         "ram_total_bytes": total,
         "ram_reserved_bytes": reserved,
-        "hid_led_available": bool(capabilities & 1),
-        "hid_reset_enabled": bool(capabilities & 2),
-        "configuration_save_available": bool(capabilities & 4),
+        "hid_led_available": bool(capabilities & CAPABILITY_LED),
+        "hid_reset_enabled": bool(capabilities & CAPABILITY_RESET),
+        "configuration_save_available": bool(capabilities & CAPABILITY_CONFIGURATION_SAVE),
     }
 
 
@@ -94,7 +110,7 @@ def parse_configuration(payload: bytes, identity: DeviceIdentity | None = None) 
     """Decode immutable boot metadata and validate topology only with a valid channel count."""
     _layout(payload, CONFIGURATION_SIZE, "configuration")
     stored, count = payload[1:3]
-    if stored not in (0, 1, 2, 3, 4, 255) or count != UART_CHANNEL_COUNT:
+    if stored not in (0, 1, 2, 3, 4, STORED_PROFILE_NONE) or count != UART_CHANNEL_COUNT:
         raise RuntimeError("invalid stored profile or channel count")
     if identity is not None and identity["hardware_channel_mask"] >> count:
         raise RuntimeError("hardware channel mask exceeds channel count")
@@ -102,20 +118,20 @@ def parse_configuration(payload: bytes, identity: DeviceIdentity | None = None) 
     for offset in range(3, 27, 4):
         tx_pin, rx_pin, rts_pin, cts_pin = payload[offset:offset + 4]
         values = (tx_pin, rx_pin, rts_pin, cts_pin)
-        if any(value > 47 and value != 255 for value in values):
+        if any(value > GPIO_MAX and value != GPIO_UNUSED for value in values):
             raise RuntimeError("invalid UART GPIO")
         pins.append({
-            "tx_pin": None if tx_pin == 255 else tx_pin,
-            "rx_pin": None if rx_pin == 255 else rx_pin,
-            "rts_pin": None if rts_pin == 255 else rts_pin,
-            "cts_pin": None if cts_pin == 255 else cts_pin,
+            "tx_pin": None if tx_pin == GPIO_UNUSED else tx_pin,
+            "rx_pin": None if rx_pin == GPIO_UNUSED else rx_pin,
+            "rts_pin": None if rts_pin == GPIO_UNUSED else rts_pin,
+            "cts_pin": None if cts_pin == GPIO_UNUSED else cts_pin,
         })
     tx_capacity, rx_capacity, cdc_tx_capacity, cdc_rx_capacity = struct.unpack_from("<4H", payload, 28)
     capacities = (tx_capacity, rx_capacity, cdc_tx_capacity, cdc_rx_capacity)
     if not all(capacities):
         raise RuntimeError("buffer capacities must be nonzero")
     return {
-        "stored_profile": None if stored == 255 else stored,
+        "stored_profile": None if stored == STORED_PROFILE_NONE else stored,
         "channel_count": count,
         "channel_pins": pins,
         "reset_cause": payload[27],
@@ -147,11 +163,11 @@ def parse_telemetry(payload: bytes) -> Telemetry:
     """Decode live board telemetry; unknown service load remains unavailable."""
     _layout(payload, TELEMETRY_SIZE, "telemetry")
     _, led, temperature, uptime, core0, core1, clock = struct.unpack("<BBhQHHI", payload)
-    if led & ~1 or any(value > 10000 and value != 65535 for value in (core0, core1)) or not clock:
+    if led & ~1 or any(value > 10000 and value != UNAVAILABLE_U16 for value in (core0, core1)) or not clock:
         raise RuntimeError("invalid telemetry values")
     runtime: RuntimeTelemetry = {
         "uptime_ms": uptime,
-        "service_load_basis_points": [None if value == 65535 else value for value in (core0, core1)],
+        "service_load_basis_points": [None if value == UNAVAILABLE_U16 else value for value in (core0, core1)],
         "system_clock_hz": clock,
     }
     return {
@@ -174,7 +190,7 @@ def parse_channel(
         "<BBBIBBBHH4I", payload)
     if state >= len(CHANNEL_STATES) or measurement > 2:
         raise RuntimeError("invalid channel state or UART measurement state")
-    if baud and (not 50 <= baud <= 3_000_000
+    if baud and (not MIN_BAUD_RATE <= baud <= MAX_BAUD_RATE
                  or not 5 <= data_bits <= 8 or stop_bits not in (1, 2) or parity > 2):
         raise RuntimeError("invalid applied UART framing")
     if not baud and any((data_bits, stop_bits, parity)):

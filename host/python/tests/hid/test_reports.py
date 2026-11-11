@@ -535,6 +535,96 @@ def test_status_deadline_bounds_metadata_feature_transfers():
     assert all(0 < timeout <= 1.0 for timeout in transfer_timeouts)
 
 
+def test_status_does_not_issue_zero_timeout_native_reads_or_read_after_deadline(monkeypatch):
+    import pico_uart.hid.client as client_module
+
+    class CountingDevice(FakeHidDevice):
+        def __init__(self):
+            super().__init__({})
+            self.input_reads = []
+
+        def read(self, size, timeout_ms):
+            self.input_reads.append(timeout_ms)
+            return []
+
+    device = CountingDevice()
+    client = PicoUartHid(device=device)
+    seed_client_metadata(client)
+
+    assert client.read_status(timeout_ms=0) is None
+    assert device.input_reads == [1]
+    device.input_reads.clear()
+    with monkeypatch.context() as patch:
+        patch.setattr(client_module.time, "monotonic", lambda: 100.0)
+        assert client.read_status(timeout_ms=0, deadline=101.0) is None
+        assert device.input_reads == [1]
+        device.input_reads.clear()
+        assert client.read_status(deadline=99.0) is None
+        assert client.read_status(deadline=100.0005) is None
+
+    assert device.input_reads == []
+
+
+def test_status_deadline_bounds_lock_contention():
+    client = PicoUartHid(device=FakeHidDevice({}))
+    held = threading.Event()
+    release = threading.Event()
+
+    def hold_lock():
+        with client._lock:
+            held.set()
+            release.wait(timeout=1)
+
+    worker = threading.Thread(target=hold_lock)
+    worker.start()
+    try:
+        assert held.wait(timeout=1)
+        started = time.monotonic()
+        assert client.read_status(deadline=started + 0.02) is None
+        assert time.monotonic() - started < 0.5
+    finally:
+        release.set()
+        worker.join(timeout=1)
+
+
+def test_input_read_is_refused_while_a_timed_out_feature_transfer_is_running(monkeypatch):
+    import pico_uart.hid.client as client_module
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    class SlowDevice(FakeHidDevice):
+        def __init__(self):
+            super().__init__({})
+            self.input_reads = 0
+
+        def get_feature_report(self, report_id, size):
+            if report_id == REPORT_ID_TELEMETRY:
+                entered.set()
+                release.wait(timeout=1)
+            return super().get_feature_report(report_id, size)
+
+        def read(self, size, timeout_ms):
+            self.input_reads += 1
+            return []
+
+    device = SlowDevice()
+    client = PicoUartHid(device=device)
+    seed_client_metadata(client)
+    monkeypatch.setattr(client_module, "COMMAND_TIMEOUT_S", 0.01)
+    try:
+        with pytest.raises(RuntimeError, match="transfer timed out"):
+            client.read_telemetry()
+        assert entered.is_set()
+        with pytest.raises(RuntimeError, match="still in flight"):
+            client.read_status()
+        assert device.input_reads == 0
+    finally:
+        assert client.close() is False
+        release.set()
+        assert client.wait_closed(timeout_s=1)
+
+
 def test_close_waits_for_timed_out_feature_transfer_before_closing_device(monkeypatch):
     import pico_uart.hid.client as client_module
 

@@ -5,8 +5,10 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 
-from .protocol import MAX_U32, UART_CHANNEL_COUNT
+from .protocol import MAX_U32, UART_CHANNEL_COUNT, UNAVAILABLE_U16
 from .types import ChannelSample, ChannelSnapshot, ChannelTotals, ChannelTraffic, StatusSnapshot
+
+STALE_INPUT_S = 3.0  # Input reports arrive about every 0.5-1 s; a longer silence restarts accounting
 
 
 def empty_channel(channel_id: int) -> ChannelSnapshot:
@@ -73,7 +75,7 @@ class InputTracker:
             (sample["sequence"] - previous_sequence) & 0xFFFF
             if not first and previous_sequence is not None else None
         )
-        if not first and (previous_at is None or now - previous_at > 3.0):
+        if not first and (previous_at is None or now - previous_at > STALE_INPUT_S):
             channel["traffic_incomplete"] = True
             if not self._ignored_gap[channel_id]:
                 channel["traffic_gaps"] += 1
@@ -97,7 +99,7 @@ class InputTracker:
         channel = self.channels[channel_id]
         gap = not first and sequence_delta != 1
         interval = sample["interval_ms"]
-        invalid_interval = interval in (0, 65535)
+        invalid_interval = interval in (0, UNAVAILABLE_U16)
         counters = {
             "uart_tx_bytes": sample["uart_tx_bytes"],
             "uart_rx_bytes": sample["uart_rx_bytes"],
