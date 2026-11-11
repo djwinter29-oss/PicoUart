@@ -179,9 +179,11 @@ The publication channels and artifact qualification gates are in the
 [host app distribution guide](../deployment/host-app-distribution.md).
 The commands below build locally; they do not publish to PyPI.
 
-Build the wheel from the repository root:
+Stage the shared dashboard into the Python package, then build the wheel from the repository root:
 
 ```bash
+mkdir -p host/python/src/pico_uart/web/assets
+cp -R host/web/src/. host/python/src/pico_uart/web/assets/
 uv build --wheel --directory host/python
 ```
 
@@ -190,15 +192,11 @@ The nested package searches parent directories for the repository; fetch full hi
 Source distributions preserve the resolved version without Git. With neither Git metadata nor a source-distribution
 version, the fallback is `0.0.0.dev0`. Use `SETUPTOOLS_SCM_PRETEND_VERSION` for an explicit test-build version.
 
-`hatch_build.py` bundles the canonical `host/web/src` assets so source distributions build without the rest of the
-repository.
-Package tests require the repository checkout and are not included in source distributions or wheels.
-Hatchling, its VCS plugin, and the editable-install helper are included in the locked development environment.
-Builds validate the selected dashboard asset tree and fail on missing required files instead of emitting an incomplete
-host package.
-Keep `build-system.requires` pins aligned with the TOML `dev` group and regenerate the development lock when
-updating them. Tag-push releases use Git versions; manual release preflights override the version with their input tag,
-and manual PyPI test publications override it with a marked development version.
+The release workflows stage the canonical `host/web/src` dashboard into the Python package before building wheels.
+Hatchling's artifact rule includes those staged files in wheels and source distributions, including files that are
+untracked in a checkout. Package tests require the repository checkout and are not included in distributions.
+Tag-push releases use Git versions; manual release preflights override the version with their input tag, and manual
+PyPI test publications override it with a marked development version.
 
 The project metadata points PyPI at `host/python/README.md` for its long description. Keep that file focused on package
 users; contributor setup and maintenance instructions belong in this guide.

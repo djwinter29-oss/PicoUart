@@ -48,6 +48,9 @@ fallback-version = "0.0.0.dev0"
 [tool.hatch.version.raw-options]
 search_parent_directories = true
 
+[tool.hatch.build]
+artifacts = ["src/pico_uart/web/assets/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pico_uart"]
 
