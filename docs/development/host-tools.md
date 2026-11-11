@@ -10,6 +10,9 @@ own assets and renderer. Its hardware-free checks use Node rather than the Pytho
 Run commands from the repository root unless a linked guide explicitly says otherwise. These setup, build, and test
 steps do not require a board; physical device checks require an identified board and separate hardware validation.
 
+Python and .NET dashboards suppress routine HTTP request logs by default, including page visits and polling.
+Warnings and errors remain visible.
+
 ## Prerequisites
 
 - Python 3.10 or newer for the Python host and cross-backend integration checks

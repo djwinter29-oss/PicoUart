@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import secrets
 import os
@@ -134,6 +135,7 @@ def run_server(
     device_path: str | None = None,
 ) -> None:
     """Run the dashboard on loopback only; never expose board controls to a LAN."""
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
     dashboard = BoardRegistry(serial_number, device_path)
     try:
         create_app(dashboard, port=port).run(host="127.0.0.1", port=port, debug=False, use_reloader=False)

@@ -2,10 +2,12 @@
 # Copyright (c) 2026 Ji Dong
 """Hardware-free tests for the Flask dashboard's control endpoints."""
 
+import logging
 import re
 
 import pytest
 
+from pico_uart.web import app as web_app
 from pico_uart.web.app import create_app
 
 
@@ -103,6 +105,31 @@ def test_dashboard_shows_host_version_safely(monkeypatch, version, expected):
     monkeypatch.setenv("PICO_UART_HOST_VERSION", version)
     page = create_app(FakeDashboard()).test_client().get("/").data.decode()
     assert f'aria-label="Host application version">{expected}</span>' in page
+
+
+def test_run_server_suppresses_routine_access_logs(monkeypatch, caplog):
+    class FakeApp:
+        def run(self, **_kwargs):
+            logger = logging.getLogger("werkzeug")
+            logger.info("GET /")
+            logger.info("GET /api/status")
+            logger.warning("request warning")
+            logger.error("request error")
+
+    class FakeRegistry:
+        def __init__(self, *_args):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(web_app, "BoardRegistry", FakeRegistry)
+    monkeypatch.setattr(web_app, "create_app", lambda *_args, **_kwargs: FakeApp())
+    with caplog.at_level(logging.INFO, logger="werkzeug"):
+        web_app.run_server()
+    assert "GET /" not in caplog.text
+    assert "request warning" in caplog.text
+    assert "request error" in caplog.text
 
 
 def test_dashboard_sanitizes_reset_capability_errors():
