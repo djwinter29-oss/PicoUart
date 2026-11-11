@@ -2,12 +2,12 @@
 # Copyright (c) 2026 Ji Dong
 """Resource-owning Python API for PicoUart's version-1 HID reports."""
 
-from copy import deepcopy
-from datetime import datetime, timezone
+import math
 import threading
 import time
-import math
 from collections.abc import Callable
+from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
 
 from .protocol import (
@@ -16,16 +16,16 @@ from .protocol import (
     COMMAND_LED_ON,
     COMMAND_REBOOT,
     COMMAND_SAVE_CONFIGURATION,
-    CONTROL_SIZE,
     CONFIGURATION_SIZE,
-    DIAGNOSTIC_SIZE,
+    CONTROL_SIZE,
     DEVICE_INFO_SIZE,
+    DIAGNOSTIC_SIZE,
     MAX_U32,
     REPORT_ID_CHANNEL_BASE,
-    REPORT_ID_CONTROL,
     REPORT_ID_CONFIGURATION,
-    REPORT_ID_DIAGNOSTIC_BASE,
+    REPORT_ID_CONTROL,
     REPORT_ID_DEVICE_INFO,
+    REPORT_ID_DIAGNOSTIC_BASE,
     REPORT_ID_TELEMETRY,
     STATUS_BUSY,
     STATUS_COMPLETED,
@@ -38,9 +38,9 @@ from .protocol import (
     UART_CHANNEL_COUNT,
     parse_channel,
     parse_configuration,
-    parse_diagnostic,
     parse_control,
     parse_device_info,
+    parse_diagnostic,
     parse_telemetry,
     require_payload,
 )
@@ -50,16 +50,15 @@ from .types import (
     ChannelFeatureSample,
     ChannelSample,
     ChannelSnapshot,
-    ChannelTraffic,
     ChannelTotals,
+    ChannelTraffic,
     Configuration,
     ControlResult,
     DeviceIdentity,
-    Telemetry,
     RuntimeTelemetry,
     StatusSnapshot,
+    Telemetry,
 )
-
 
 COMMAND_TIMEOUT_S = 3.0
 COMMAND_POLL_INTERVAL_S = 0.05

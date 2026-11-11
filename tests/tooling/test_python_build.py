@@ -84,7 +84,12 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
     repo_root, tmp_path, python_project, version,
 ):
     project = python_project
-    runtime_requirements = parse((project / "pyproject.toml").read_text())["project"]["dependencies"]
+    metadata_project = parse((project / "pyproject.toml").read_text())["project"]
+    runtime_requirements = set(metadata_project["dependencies"])
+    dashboard_requirements = set(metadata_project["optional-dependencies"]["dashboard"])
+    expected_requirements = runtime_requirements | {
+        f"{requirement}; extra == 'dashboard'" for requirement in dashboard_requirements
+    }
     environment = {key: value for key, value in os.environ.items()
                    if key not in ("PICO_UART_HOST_VERSION", "SETUPTOOLS_SCM_PRETEND_VERSION")}
     if version:
@@ -132,7 +137,7 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
             metadata = BytesParser().parsebytes(wheel.read(metadata_path))
             assert metadata["Version"] == expected_version
             assert metadata["License-Expression"] == "BSD-3-Clause"
-            assert set(metadata.get_all("Requires-Dist")) == set(runtime_requirements)
+            assert set(metadata.get_all("Requires-Dist")) == expected_requirements
             entry_points = wheel.read(f"pico_uart-{expected_version}.dist-info/entry_points.txt").decode()
             assert "pico-uart = pico_uart.main:main" in entry_points
             assert wheel.read(f"pico_uart-{expected_version}.dist-info/licenses/LICENSE") == license_text

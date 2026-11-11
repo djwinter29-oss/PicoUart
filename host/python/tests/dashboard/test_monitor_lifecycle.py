@@ -4,10 +4,11 @@
 
 import threading
 
+from helpers import FakeHidDevice
+
 import pico_uart.dashboard.monitor as monitor_module
 import pico_uart.hid.client as client_module
 from pico_uart.dashboard.monitor import BoardMonitor
-from helpers import FakeHidDevice
 
 
 def test_close_reports_pending_slow_read_and_succeeds_after_deferred_cleanup(monkeypatch):

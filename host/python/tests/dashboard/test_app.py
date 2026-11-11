@@ -101,7 +101,8 @@ def test_dashboard_serves_static_assets_safely():
 
 
 @pytest.mark.parametrize("version,expected", [
-    ("", "0.0.0-debug"), ("1.2.3", "1.2.3"), ("<script>", "&lt;script&gt;"),
+    ("", "0.0.0-debug"), ("0.0.0.dev0", "0.0.0-debug"), ("1.2.3", "1.2.3"),
+    ("<script>", "&lt;script&gt;"),
 ])
 def test_dashboard_shows_host_version_safely(monkeypatch, version, expected):
     monkeypatch.setattr("pico_uart.dashboard.app.__version__", "0.0.0-debug")

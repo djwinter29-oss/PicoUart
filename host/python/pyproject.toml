@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pico-uart"
 dynamic = ["version"]
-description = "Host HID API, CLI, and Flask diagnostics dashboard for PicoUart"
+description = "Host HID API, CLI, and optional Flask diagnostics dashboard for PicoUart"
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
@@ -17,7 +17,10 @@ classifiers = [
 	"Topic :: Software Development :: Testing",
 ]
 requires-python = ">=3.10"
-dependencies = ["flask==3.1.3", "hidapi==0.14.0.post4"]
+dependencies = ["hidapi==0.14.0.post4"]
+
+[project.optional-dependencies]
+dashboard = ["flask==3.1.3"]
 
 [project.urls]
 Homepage = "https://github.com/djwinter29-oss/PicoUart"
@@ -71,7 +74,7 @@ line-length = 120
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+select = ["B", "E4", "E7", "E9", "F", "I"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -79,9 +82,22 @@ files = [
 	"src/pico_uart/hid/types.py",
 	"src/pico_uart/hid/protocol.py",
 	"src/pico_uart/hid/client.py",
+	"src/pico_uart/hid/transport.py",
+	"src/pico_uart/dashboard/app.py",
+	"src/pico_uart/dashboard/boards.py",
 	"src/pico_uart/dashboard/monitor.py",
+	"src/pico_uart/dashboard/types.py",
 	"src/pico_uart/main.py",
 ]
 check_untyped_defs = true
 ignore_missing_imports = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+	"pico_uart.dashboard.app",
+	"pico_uart.dashboard.boards",
+	"pico_uart.dashboard.monitor",
+	"pico_uart.dashboard.types",
+]
+disallow_untyped_defs = true

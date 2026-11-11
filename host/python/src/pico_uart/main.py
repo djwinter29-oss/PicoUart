@@ -65,8 +65,10 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         "reset",
         help="request a confirmed board reboot (requires firmware HID reset support)",
     )
-    web_parser = commands.add_parser("web", help="start the local Flask diagnostics dashboard")
-    web_parser.add_argument("--port", type=int, default=5000, help="local web server port")
+    dashboard_parser = commands.add_parser(
+        "dashboard", aliases=["web"], help="start the local diagnostics dashboard"
+    )
+    dashboard_parser.add_argument("--port", type=int, default=5000, help="local dashboard port")
     return parser.parse_args(argv)
 
 
@@ -77,13 +79,17 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--duration must be a finite value greater than zero")
     if arguments.command == "status" and (not math.isfinite(arguments.timeout) or arguments.timeout <= 0):
         raise SystemExit("--timeout must be a finite value greater than zero")
-    if arguments.command == "web":
+    if arguments.command in ("dashboard", "web"):
         if not 1 <= arguments.port <= 65535:
             raise SystemExit("--port must be between 1 and 65535")
         try:
             from .dashboard.app import run_server
-
             run_server(arguments.port, arguments.serial, arguments.device_path)
+        except ModuleNotFoundError as error:
+            if error.name != "flask":
+                raise
+            print("error: install pico-uart[dashboard] to use the dashboard command", file=sys.stderr)
+            return 1
         except (OSError, RuntimeError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 1

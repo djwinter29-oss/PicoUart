@@ -15,7 +15,6 @@ from .types import (
     UartPins,
 )
 
-
 REPORT_ID_DEVICE_INFO = 1
 REPORT_ID_CONFIGURATION = 2
 REPORT_ID_TELEMETRY = 3

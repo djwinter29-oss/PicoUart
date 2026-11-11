@@ -181,7 +181,8 @@ jobs:
         run: |
           set -eu
           python -m venv build/host-wheel-check
-          build/host-wheel-check/bin/python -m pip install dist/*.whl
+          wheel_url="$(python -c "from pathlib import Path; print(next(Path('dist').glob('*.whl')).resolve().as_uri())")"
+          build/host-wheel-check/bin/python -m pip install "pico-uart[dashboard] @ ${wheel_url}"
           cd build
           host-wheel-check/bin/python - <<'PY'
           from importlib.metadata import version
@@ -192,6 +193,11 @@ jobs:
           page = create_app(object()).test_client().get('/')
           assert page.status_code == 200
           assert f'aria-label="Host application version">{expected}</span>'.encode() in page.data
+          client = create_app(object()).test_client()
+          for path in ('/css/dashboard.css', '/js/dashboard.js', '/favicon.svg'):
+              response = client.get(path)
+              assert response.status_code == 200, path
+              assert response.data, path
           PY
 
       - name: Checksum Python wheel

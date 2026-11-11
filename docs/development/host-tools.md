@@ -90,12 +90,13 @@ These Python checks do not replace the separate .NET and Node suites or physical
 
 ## Python Dependencies
 
-Edit dependency declarations only in [pyproject.toml](../../host/python/pyproject.toml): `project.dependencies` contains
-runtime packages, the `test` dependency group contains pytest, and `dev` adds the packages used by the full host test
-suite, build checks, linting, and type checking. `build-system.requires` declares the isolated build backend and plugin.
-Runtime and direct development requirements are version-pinned there; pip resolves transitive dependencies during
-installation, so environments are not hash-locked. The runtime launcher uses public PyPI without inheriting private
-index configuration.
+Edit dependency declarations only in [pyproject.toml](../../host/python/pyproject.toml):
+`project.dependencies` contains the HID runtime package, `project.optional-dependencies.dashboard` contains Flask,
+the `test` dependency group contains pytest, and `dev` adds the packages used by the full host test suite, build
+checks, linting, and type checking. `build-system.requires` declares the isolated build backend and plugin.
+Runtime, optional, and direct development requirements are version-pinned there; pip resolves transitive dependencies
+during installation, so environments are not hash-locked. The runtime launcher uses public PyPI without inheriting
+private index configuration.
 The [dependency contract tests](../../tests/contracts/test_firmware_contract.py) check the declared packages and that no
 generated lock files remain. Firmware artifact checks install only the `test` group.
 
@@ -221,7 +222,8 @@ uv build --wheel --directory host/python
 Hatchling uses `hatch-vcs` to derive version `1.2.3` from Git tag `v1.2.3` and development versions from later commits.
 The nested package uses the repository root and full Git tag history to derive development and release versions.
 Source distributions preserve the resolved version without Git. With neither Git metadata nor a source-distribution
-version, the fallback is `0.0.0.dev0`. Use `SETUPTOOLS_SCM_PRETEND_VERSION` for an explicit test-build version.
+version, package metadata falls back to `0.0.0.dev0`, which the dashboard displays as `0.0.0-debug`. Use
+`SETUPTOOLS_SCM_PRETEND_VERSION` for an explicit test-build version.
 
 The release workflows stage the canonical `host/web/src` dashboard into the Python package before building wheels.
 Hatchling's artifact rule includes those staged files in wheels and source distributions, including files that are

@@ -3,9 +3,9 @@
 """HID device discovery and platform-specific opening helpers."""
 
 import os
+import select
 from importlib import import_module
 from pathlib import Path
-import select
 from typing import Any
 
 fcntl: Any
@@ -153,7 +153,7 @@ def _device_path_matches(device_info: dict[str, Any], requested_path: str) -> bo
     return path == requested_path
 
 
-def enumerate_devices() -> list[dict[str, Any]]:
+def enumerate_devices() -> list[dict[str, object]]:
     """List PicoUart HID interfaces without opening them."""
     require_hid()
     # Some hidapi backends omit usage metadata. Constrain these fallbacks to

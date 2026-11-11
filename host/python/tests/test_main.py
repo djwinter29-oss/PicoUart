@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-import runpy
 import re
+import runpy
 import sys
 
 import pytest
@@ -114,6 +114,7 @@ def test_main_status_text_retries_empty_reads_and_selects_device_path(monkeypatc
 
 def test_monitor_preserves_all_six_hil_health_tokens_in_one_publication_round(monkeypatch, capsys):
     from helpers import FakeHidDevice, channel_bytes
+
     from pico_uart.hid.client import PicoUartHid
 
     device = FakeHidDevice({}, inputs=[
@@ -160,7 +161,7 @@ def test_main_monitor_dispatches_configured_duration(monkeypatch):
         (["monitor", "--duration", "nan"], "--duration must be a finite"),
         (["monitor", "--duration", "0"], "--duration must be a finite"),
         (["status", "--timeout", "inf"], "--timeout must be a finite"),
-        (["web", "--port", "65536"], "--port must be between"),
+        (["dashboard", "--port", "65536"], "--port must be between"),
     ],
 )
 def test_main_rejects_invalid_command_arguments(arguments, message):
@@ -168,7 +169,8 @@ def test_main_rejects_invalid_command_arguments(arguments, message):
         cli.main(arguments)
 
 
-def test_main_web_starts_server_with_port_and_selector(monkeypatch):
+@pytest.mark.parametrize("command", ["dashboard", "web"])
+def test_main_dashboard_starts_server_with_port_and_selector(monkeypatch, command):
     from pico_uart.dashboard import app as web_app
 
     calls = []
@@ -178,12 +180,12 @@ def test_main_web_starts_server_with_port_and_selector(monkeypatch):
         lambda *arguments: calls.append(arguments),
     )
 
-    assert cli.main(["--device-path", "/dev/hidraw7", "web", "--port", "5500"]) == 0
+    assert cli.main(["--device-path", "/dev/hidraw7", command, "--port", "5500"]) == 0
     assert calls == [(5500, None, "/dev/hidraw7")]
 
 
 @pytest.mark.parametrize("error", [OSError("bind failed"), RuntimeError("server failed")])
-def test_main_web_reports_server_errors(monkeypatch, capsys, error):
+def test_main_dashboard_reports_server_errors(monkeypatch, capsys, error):
     from pico_uart.dashboard import app as web_app
 
     def fail(*_arguments):
@@ -191,8 +193,16 @@ def test_main_web_reports_server_errors(monkeypatch, capsys, error):
 
     monkeypatch.setattr(web_app, "run_server", fail)
 
-    assert cli.main(["web"]) == 1
+    assert cli.main(["dashboard"]) == 1
     assert str(error) in capsys.readouterr().err
+
+
+def test_main_dashboard_explains_optional_dependency(monkeypatch, capsys):
+    monkeypatch.setitem(sys.modules, "flask", None)
+    monkeypatch.delitem(sys.modules, "pico_uart.dashboard.app", raising=False)
+
+    assert cli.main(["dashboard"]) == 1
+    assert "install pico-uart[dashboard]" in capsys.readouterr().err
 
 
 def test_main_reports_hid_errors_and_status_timeouts(monkeypatch, capsys):

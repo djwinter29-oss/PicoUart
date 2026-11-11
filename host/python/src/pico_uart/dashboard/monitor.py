@@ -4,22 +4,22 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import logging
 import threading
 import time
-from typing import Any, Callable
+from copy import deepcopy
+from typing import Callable
 
 from ..hid.client import PicoUartHid, _empty_channel
 from ..hid.protocol import UART_CHANNEL_COUNT
 from ..hid.types import ControlResult, StatusSnapshot
-
+from .types import BoardIdentity, BoardSnapshot, HardwareSnapshot, LedSnapshot
 
 _LOGGER = logging.getLogger(__name__)
 MONITOR_CLOSE_TIMEOUT_S = 1.0
 
 
-def empty_snapshot() -> dict[str, Any]:
+def empty_snapshot() -> BoardSnapshot:
     return {
         "connected": False,
         "refresh_interval_ms": 500,
@@ -61,11 +61,11 @@ class BoardMonitor:
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._client: PicoUartHid | None = None
-        self._snapshot = empty_snapshot()
+        self._snapshot: BoardSnapshot = empty_snapshot()
         self._thread = threading.Thread(target=self._poll, name="pico-uart-monitor", daemon=True)
         self._thread.start()
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self) -> BoardSnapshot:
         with self._lock:
             return deepcopy(self._snapshot)
 
@@ -85,7 +85,7 @@ class BoardMonitor:
             self._snapshot["configuration_save"] = result
             self._snapshot["configuration_save_error"] = None
 
-    def read_diagnostics(self) -> dict[str, Any]:
+    def read_diagnostics(self) -> BoardSnapshot:
         """Refresh details only on explicit request, independently of Input cadence."""
         with self._lock:
             client = self._require_client()
@@ -204,43 +204,42 @@ class BoardMonitor:
         except (OSError, RuntimeError) as error:
             message = str(error)
             with self._lock:
-                self._snapshot.update(
-                    led=None, led_error=message, runtime=None, runtime_error=message,
-                )
+                self._snapshot["led"] = None
+                self._snapshot["led_error"] = message
+                self._snapshot["runtime"] = None
+                self._snapshot["runtime_error"] = message
                 if self._snapshot["identity"] is not None:
-                    self._snapshot["hardware"] = {
-                        "mcu": self._snapshot["identity"]["mcu"],
-                        "mcu_id": self._snapshot["identity"]["mcu_id"],
-                        "system_clock_hz": None,
-                    }
-                    self._snapshot["board"] = {
+                    self._snapshot["hardware"] = HardwareSnapshot(
+                        mcu=self._snapshot["identity"]["mcu"],
+                        mcu_id=self._snapshot["identity"]["mcu_id"],
+                        system_clock_hz=None,
+                    )
+                    self._snapshot["board"] = BoardIdentity(
                         **self._snapshot["identity"],
-                        "temperature_celsius": None,
-                    }
+                        temperature_celsius=None,
+                    )
                 self._snapshot["metadata_error"] = message
             return
         with self._lock:
-            self._snapshot.update(
-                led=(
-                    {"manual_on": telemetry["led"], "output_on": telemetry["led"]}
-                    if self._snapshot["identity"] and self._snapshot["identity"]["hid_led_available"]
-                    else None
-                ),
-                led_error=self._snapshot["identity_error"],
-                runtime=telemetry["runtime"],
-                runtime_error=None,
-                metadata_error=self._snapshot["identity_error"],
+            self._snapshot["led"] = (
+                LedSnapshot(manual_on=telemetry["led"], output_on=telemetry["led"])
+                if self._snapshot["identity"] and self._snapshot["identity"]["hid_led_available"]
+                else None
             )
+            self._snapshot["led_error"] = self._snapshot["identity_error"]
+            self._snapshot["runtime"] = telemetry["runtime"]
+            self._snapshot["runtime_error"] = None
+            self._snapshot["metadata_error"] = self._snapshot["identity_error"]
             if self._snapshot["identity"] is not None:
-                self._snapshot["board"] = {
+                self._snapshot["board"] = BoardIdentity(
                     **self._snapshot["identity"],
-                    "temperature_celsius": telemetry["temperature_celsius"],
-                }
-                self._snapshot["hardware"] = {
-                    "mcu": self._snapshot["identity"]["mcu"],
-                    "mcu_id": self._snapshot["identity"]["mcu_id"],
-                    "system_clock_hz": telemetry["system_clock_hz"],
-                }
+                    temperature_celsius=telemetry["temperature_celsius"],
+                )
+                self._snapshot["hardware"] = HardwareSnapshot(
+                    mcu=self._snapshot["identity"]["mcu"],
+                    mcu_id=self._snapshot["identity"]["mcu_id"],
+                    system_clock_hz=telemetry["system_clock_hz"],
+                )
 
     def _read_control(self, client: PicoUartHid) -> None:
         try:
@@ -268,10 +267,8 @@ class BoardMonitor:
                 save_error = self._snapshot["identity_error"] or "configuration save capability is unavailable"
             elif result["action"] != 4:
                 save = {"status": 0, "action": 0, "error_reason": 0, "error": "none"}
-            self._snapshot.update(
-                configuration_save=save,
-                configuration_save_error=save_error,
-            )
+            self._snapshot["configuration_save"] = save
+            self._snapshot["configuration_save_error"] = save_error
 
     def _read_static(self, client: PicoUartHid) -> None:
         try:
@@ -286,24 +283,22 @@ class BoardMonitor:
                 self._snapshot["metadata_error"] = str(error)
             return
         with self._lock:
-            self._snapshot.update(
-                identity=identity,
-                identity_error=None,
-                hardware={
-                    "mcu": identity["mcu"],
-                    "mcu_id": identity["mcu_id"],
-                    "system_clock_hz": (
-                        self._snapshot["runtime"]["system_clock_hz"]
-                        if self._snapshot["runtime"] is not None else None
-                    ),
-                },
-                hardware_error=None,
+            self._snapshot["identity"] = identity
+            self._snapshot["identity_error"] = None
+            self._snapshot["hardware"] = HardwareSnapshot(
+                mcu=identity["mcu"],
+                mcu_id=identity["mcu_id"],
+                system_clock_hz=(
+                    self._snapshot["runtime"]["system_clock_hz"]
+                    if self._snapshot["runtime"] is not None else None
+                ),
             )
+            self._snapshot["hardware_error"] = None
             if self._snapshot["runtime_error"] is None:
                 self._snapshot["metadata_error"] = None
             if self._snapshot["runtime"] is not None:
-                self._snapshot["board"] = {
+                self._snapshot["board"] = BoardIdentity(
                     **identity,
-                    "temperature_celsius": self._snapshot["board"]["temperature_celsius"]
+                    temperature_celsius=self._snapshot["board"]["temperature_celsius"]
                     if self._snapshot["board"] else None,
-                }
+                )

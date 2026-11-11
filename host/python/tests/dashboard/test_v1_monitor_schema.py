@@ -159,6 +159,7 @@ def test_static_identity_masks_and_dynamic_clock_keep_their_own_report_sources()
 
 def test_non_save_control_result_is_idle_for_save_ui_and_capability_failure_is_explicit():
     from helpers import control_bytes
+
     from pico_uart.hid.protocol import parse_control
 
     service = object.__new__(BoardMonitor)

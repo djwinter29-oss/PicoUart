@@ -5,10 +5,10 @@
 from unittest.mock import patch
 
 import pytest
-
-from pico_uart.hid.client import PicoUartHid
 from helpers import control_bytes, device_info_bytes
+
 from pico_uart.dashboard.app import create_app
+from pico_uart.hid.client import PicoUartHid
 from pico_uart.hid.protocol import REPORT_ID_CONTROL, REPORT_ID_DEVICE_INFO
 
 

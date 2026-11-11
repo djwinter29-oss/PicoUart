@@ -6,12 +6,18 @@ import threading
 import time
 
 import pytest
-
 from helpers import (
-    FakeHidDevice, channel_bytes, control_bytes, device_info_bytes, telemetry_bytes,
-    configuration_bytes, diagnostic_bytes,
+    FakeHidDevice,
+    channel_bytes,
+    configuration_bytes,
+    control_bytes,
+    device_info_bytes,
+    diagnostic_bytes,
+    telemetry_bytes,
 )
-from pico_uart.hid.client import PicoUartHid, read_telemetry as read_telemetry_from_device
+
+from pico_uart.hid.client import PicoUartHid
+from pico_uart.hid.client import read_telemetry as read_telemetry_from_device
 from pico_uart.hid.protocol import (
     CHANNEL_SIZE,
     CONTROL_SIZE,
@@ -21,11 +27,11 @@ from pico_uart.hid.protocol import (
     REPORT_ID_DEVICE_INFO,
     REPORT_ID_TELEMETRY,
     parse_channel,
+    parse_configuration,
     parse_control,
     parse_device_info,
-    parse_telemetry,
-    parse_configuration,
     parse_diagnostic,
+    parse_telemetry,
 )
 
 
@@ -118,6 +124,7 @@ def test_ready_wait_accepts_pending_then_applied_for_all_channels(monkeypatch):
 
 def test_ready_wait_rejects_ready_sample_returned_after_deadline(monkeypatch):
     from types import SimpleNamespace
+
     import pico_uart.hid.client as client_module
     now = [0.0]
     monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now[0]))

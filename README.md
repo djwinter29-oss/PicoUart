@@ -118,7 +118,7 @@ Choose the interface that fits your workflow. All three show bridge diagnostics;
 | Dashboard | Choose it when | Connect the board to |
 | --- | --- | --- |
 | [Direct](#direct-dashboard) | You want browser-only access. | The computer running Chrome/Edge. |
-| [Python](#local-python-dashboard) | You also want the Python API or CLI. | The computer running `pico-uart web`. |
+| [Python](#local-python-dashboard) | You also want the Python API or CLI. | The computer running `pico-uart dashboard`. |
 | [.NET](#local-net-dashboard) | You prefer a self-contained executable. | The computer running `PicoUart web`. |
 
 For Python and .NET, the host application accesses USB; the browser displays its web interface without WebHID.
@@ -139,7 +139,8 @@ See the [Direct Dashboard guide](host/direct/README.md) for controls and connect
 
 ### Local Python Dashboard
 
-Install [pico-uart](https://pypi.org/project/pico-uart/), run `pico-uart web`, and open <http://127.0.0.1:5000/>.
+Install [pico-uart](https://pypi.org/project/pico-uart/) with its dashboard extra, run `pico-uart dashboard`, and
+open <http://127.0.0.1:5000/>.
 See the [Python guide](host/python/README.md) for installation and connection troubleshooting.
 
 ### Local .NET Dashboard

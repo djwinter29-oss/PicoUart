@@ -2,8 +2,8 @@
 # Copyright (c) 2026 Ji Dong
 """Lock the Pico 2 evidence gap and require every record file to be linked."""
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 
 def test_evidence_index_links_every_record_and_keeps_the_pico2_gap(repo_root: Path):

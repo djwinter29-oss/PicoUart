@@ -2,8 +2,8 @@
 # Copyright (c) 2026 Ji Dong
 """Shared readers and page-local board selection without physical USB devices."""
 
-from concurrent.futures import ThreadPoolExecutor
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -126,6 +126,23 @@ def test_discovery_failure_is_explicit_without_opening_a_reader():
     response = create_app(registry).test_client().get("/api/boards")
     assert response.status_code == 503
     assert response.json == {"error": "service temporarily unavailable"}
+    assert not registry._monitors
+
+
+@pytest.mark.parametrize(
+    ("invalid_device", "message"),
+    [
+        ({"path": None}, "invalid board identity"),
+        ({"path": b"/a", "serial_number": 1}, "invalid board identity"),
+        ({"path": b"/a", "product_string": 1}, "invalid product name"),
+    ],
+)
+def test_discovery_rejects_malformed_device_metadata(invalid_device, message):
+    registry = BoardRegistry(discover=lambda: [invalid_device], monitor_factory=Monitor)
+
+    with pytest.raises(RuntimeError, match=message):
+        registry.boards()
+
     assert not registry._monitors
 
 

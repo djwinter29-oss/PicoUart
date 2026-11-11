@@ -40,20 +40,21 @@ py -m venv .venv
 Then install the package:
 
 ```sh
-python -m pip install --pre pico-uart
+python -m pip install --pre "pico-uart[dashboard]"
 ```
 
 `--pre` allows development releases; omit it to select stable releases when available.
-For an isolated CLI installation, use `pipx install --pip-args="--pre" pico-uart` instead.
+The dashboard extra installs Flask; the HID API and CLI work without it.
+For an isolated dashboard installation, use `pipx install --pip-args="--pre" "pico-uart[dashboard]"` instead.
 
 Connect a Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), then run:
 
 ```sh
-pico-uart web
+pico-uart dashboard
 ```
 
 Open **<http://127.0.0.1:5000/>** on the computer running Python. Use **Board** to select a device and **Rescan** to refresh.
-Stop the server with `Ctrl+C`. If the port is occupied, run `pico-uart web --port 5001`.
+Stop the server with `Ctrl+C`. If the port is occupied, run `pico-uart dashboard --port 5001`.
 
 **Before wiring UART devices:** signals are 3.3 V only; never connect 5 V or RS-232 signals directly. Follow the
 [hardware setup guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/hardware-setup.md).
@@ -111,9 +112,13 @@ transfer.
 - **Access denied:** follow the
   [Linux HID permissions guide](https://github.com/djwinter29-oss/PicoUart/blob/main/tools/README.md#linux-hid-permissions).
   Do not run the dashboard as root to bypass permissions.
-- **Port already in use:** start the dashboard with `pico-uart web --port 5001`.
-- **PowerShell activation blocked:** install with `.\.venv\Scripts\python.exe -m pip install --pre pico-uart`,
-  then run `.\.venv\Scripts\pico-uart.exe web`.
+- **Port already in use:** start the dashboard with `pico-uart dashboard --port 5001`.
+- **PowerShell activation blocked:** run these commands directly:
+
+  ```powershell
+  .\.venv\Scripts\python.exe -m pip install --pre "pico-uart[dashboard]"
+  .\.venv\Scripts\pico-uart.exe dashboard
+  ```
 - **No valid reports:** check firmware compatibility and the USB connection. A timeout does not mean zero traffic.
 - **Unconfirmed board action:** reconnect and inspect state. Never automatically retry a save or reboot.
 

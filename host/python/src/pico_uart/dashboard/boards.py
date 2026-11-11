@@ -5,10 +5,17 @@
 import hashlib
 import os
 import threading
-from typing import Any, Callable
+from typing import Callable, Protocol
 
 from ..hid.transport import enumerate_devices
 from .monitor import BoardMonitor, empty_snapshot
+from .types import BoardList, BoardSnapshot, BoardSummary
+
+
+class MonitorFactory(Protocol):
+    """Construct a monitor for one selected HID interface."""
+
+    def __call__(self, *, serial_number: str | None, device_path: str | None) -> BoardMonitor: ...
 
 
 class BoardRegistry:
@@ -18,35 +25,43 @@ class BoardRegistry:
         self,
         serial_number: str | None = None,
         device_path: str | None = None,
-        discover: Callable[[], list[dict[str, Any]]] = enumerate_devices,
-        monitor_factory: Callable[..., BoardMonitor] = BoardMonitor,
+        discover: Callable[[], list[dict[str, object]]] = enumerate_devices,
+        monitor_factory: MonitorFactory = BoardMonitor,
     ) -> None:
         self._serial = serial_number
         self._path = device_path
         self._discover = discover
         self._monitor_factory = monitor_factory
         self._lock = threading.RLock()
-        self._known: dict[str, dict[str, Any]] = {}
+        self._known: dict[str, BoardSummary] = {}
         self._monitors: dict[str, BoardMonitor] = {}
         self._closed = False
 
-    def boards(self) -> dict[str, Any]:
+    def boards(self) -> BoardList:
         with self._lock:
             if self._closed:
                 raise RuntimeError("dashboard is shutting down")
             devices = self._discover()
-            boards: list[dict[str, Any]] = []
+            boards: list[BoardSummary] = []
             seen: set[str] = set()
             for device in devices:
-                serial = device.get("serial_number") or None
-                path = os.fsdecode(device["path"])
+                serial_value = device.get("serial_number")
+                path_value = device.get("path")
+                if (serial_value is not None and not isinstance(serial_value, str)
+                        or not isinstance(path_value, (str, bytes))):
+                    raise RuntimeError("HID enumeration returned invalid board identity")
+                serial = serial_value or None
+                path = os.fsdecode(path_value)
                 identifier = hashlib.sha256((f"serial:{serial}" if serial else f"path:{path}").encode()).hexdigest()
                 if identifier in seen:
                     raise RuntimeError("duplicate PicoUart board identity; board serials must be unique")
                 seen.add(identifier)
-                board: dict[str, Any] = {
+                product_name = device.get("product_string")
+                if product_name is not None and not isinstance(product_name, str):
+                    raise RuntimeError("HID enumeration returned an invalid product name")
+                board: BoardSummary = {
                     "id": identifier,
-                    "product_name": device.get("product_string") or "PicoUart",
+                    "product_name": product_name or "PicoUart",
                     "serial_number": serial,
                     "device_path": path,
                 }
@@ -71,7 +86,7 @@ class BoardRegistry:
                     device_path=None if board["serial_number"] else board["device_path"])
             return self._monitors[board_id]
 
-    def snapshot(self, board_id: str | None = None) -> dict[str, Any]:
+    def snapshot(self, board_id: str | None = None) -> BoardSnapshot:
         if board_id is None:
             return empty_snapshot()
         return self._monitor(board_id).snapshot()
@@ -85,7 +100,7 @@ class BoardRegistry:
     def save_configuration(self, board_id: str | None, profile: int, unsafe_overclock: bool) -> None:
         self._monitor(board_id).save_configuration(profile, unsafe_overclock)
 
-    def read_diagnostics(self, board_id: str | None) -> dict[str, Any]:
+    def read_diagnostics(self, board_id: str | None) -> BoardSnapshot:
         return self._monitor(board_id).read_diagnostics()
 
     def close(self) -> bool:

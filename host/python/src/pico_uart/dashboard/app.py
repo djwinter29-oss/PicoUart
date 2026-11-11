@@ -6,16 +6,17 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 import secrets
+from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, send_from_directory, session
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory, session
+from flask.typing import ResponseReturnValue
 from werkzeug.exceptions import BadRequest
 from werkzeug.serving import WSGIRequestHandler
 
 from .. import __version__
 from .boards import BoardRegistry
-
+from .types import DashboardService
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +26,18 @@ class _QuietRequestHandler(WSGIRequestHandler):
         pass
 
 
-def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
+def _parse_configuration_body(body: object) -> tuple[int, bool] | None:
+    if not isinstance(body, dict) or set(body) != {"profile", "unsafe_overclock"}:
+        return None
+    profile = body.get("profile")
+    unsafe_overclock = body.get("unsafe_overclock")
+    if (type(profile) is not int or profile not in (0, 1, 2, 3, 4)
+            or type(unsafe_overclock) is not bool):
+        return None
+    return profile, unsafe_overclock
+
+
+def create_app(service: DashboardService | None = None, port: int = 5000) -> Flask:
     """Create the web app; an injected service keeps route tests hardware-free."""
     web_root = Path(__file__).parent / "assets"
     if not web_root.is_dir():
@@ -41,7 +53,7 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
     dashboard = service if service is not None else BoardRegistry()
 
     @app.after_request
-    def set_security_headers(response):
+    def set_security_headers(response: Response) -> Response:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -53,28 +65,31 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
         return response
 
     @app.get("/")
-    def index():
+    def index() -> str:
         token = session.setdefault("csrf_token", secrets.token_urlsafe(32))
+        host_version = os.environ.get("PICO_UART_HOST_VERSION") or __version__
+        if host_version == "0.0.0.dev0":
+            host_version = "0.0.0-debug"
         return render_template("index.html", csrf_token=token, dashboard_type="Python",
-                       host_version=os.environ.get("PICO_UART_HOST_VERSION") or __version__)
+                               host_version=host_version)
 
     @app.get("/favicon.svg")
-    def favicon():
+    def favicon() -> Response:
         return send_from_directory(web_root, "favicon.svg", mimetype="image/svg+xml")
 
     @app.get("/<any(css,js):asset_type>/<path:filename>")
-    def asset(asset_type: str, filename: str):
+    def asset(asset_type: str, filename: str) -> Response:
         return send_from_directory(web_root / asset_type, filename)
 
     @app.get("/api/status")
-    def status():
+    def status() -> ResponseReturnValue:
         try:
             return jsonify(dashboard.snapshot(request.args.get("board")))
         except RuntimeError:
             return jsonify(error="request could not be completed"), 409
 
     @app.get("/api/boards")
-    def boards():
+    def boards() -> ResponseReturnValue:
         try:
             return jsonify(dashboard.boards())
         except RuntimeError:
@@ -83,7 +98,7 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
             return jsonify(error="service temporarily unavailable"), 503
 
     @app.get("/api/diagnostics")
-    def diagnostics():
+    def diagnostics() -> ResponseReturnValue:
         try:
             return jsonify(dashboard.read_diagnostics(request.args.get("board")))
         except RuntimeError:
@@ -92,7 +107,7 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
             return jsonify(error="service temporarily unavailable"), 503
 
     @app.post("/api/configuration")
-    def save_configuration():
+    def save_configuration() -> ResponseReturnValue:
         token = session.get("csrf_token", "")
         supplied_token = request.headers.get("X-CSRF-Token", "")
         if not token or not secrets.compare_digest(token, supplied_token):
@@ -100,15 +115,15 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
         if not request.is_json:
             return jsonify(error="configuration request must be JSON"), 415
         try:
-            body = request.get_json()
+            body: object = request.get_json()
         except BadRequest:
             return jsonify(error="malformed JSON body"), 400
-        if (not isinstance(body, dict) or set(body) != {"profile", "unsafe_overclock"}
-                or type(body["profile"]) is not int or body["profile"] not in (0, 1, 2, 3, 4)
-                or type(body["unsafe_overclock"]) is not bool):
+        parsed_body = _parse_configuration_body(body)
+        if parsed_body is None:
             return jsonify(error="expected a clock profile and boolean unsafe_overclock acknowledgement"), 400
+        profile, unsafe_overclock = parsed_body
         try:
-            dashboard.save_configuration(request.args.get("board"), body["profile"], body["unsafe_overclock"])
+            dashboard.save_configuration(request.args.get("board"), profile, unsafe_overclock)
         except ValueError:
             return jsonify(error="invalid request"), 400
         except RuntimeError:
@@ -118,7 +133,7 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
         return jsonify(ok=True)
 
     @app.post("/api/actions/<action>")
-    def action(action: str):
+    def action(action: str) -> ResponseReturnValue:
         token = session.get("csrf_token", "")
         supplied_token = request.headers.get("X-CSRF-Token", "")
         if not token or not secrets.compare_digest(token, supplied_token):

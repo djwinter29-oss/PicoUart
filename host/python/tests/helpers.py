@@ -6,8 +6,10 @@ import struct
 
 from pico_uart.hid import protocol as hid
 
+_DEFAULT_SERIAL = bytes.fromhex("0123456789ABCDEF")
 
-def device_info_bytes(*, product_id=1, serial=bytes.fromhex("0123456789ABCDEF"),
+
+def device_info_bytes(*, product_id=1, serial=_DEFAULT_SERIAL,
                       firmware=(1, 2, 3), mcu=hid.MCU_RP2040, board=1, hardware_mask=3,
                       capabilities=7, profile_mask=0x1F, ram_total=270336, ram_reserved=65536):
     return struct.pack("<BH8s8BII", 1, product_id, serial, *firmware, mcu, board, hardware_mask,
