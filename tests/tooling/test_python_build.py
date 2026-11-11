@@ -160,6 +160,7 @@ def test_python_wheel_workflows_stage_shared_dashboard_assets(repo_root, workflo
             assert content.index(staging) < content.index(build)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="run-python.sh is a POSIX shell launcher")
 def test_python_launcher_dispatches_to_application_module(repo_root, tmp_path):
     checkout = tmp_path / "checkout"
     host_python = checkout / "host/python"
