@@ -20,13 +20,13 @@ from tomlkit import parse
 def python_project(repo_root, tmp_path):
     project = tmp_path / "checkout" / "host" / "python"
     project.mkdir(parents=True)
-    for name in ("pyproject.toml", "hatch_build.py", "README.md", "LICENSE"):
+    for name in ("pyproject.toml", "README.md", "LICENSE"):
         shutil.copy2(repo_root / "host/python" / name, project / name)
     shutil.copytree(repo_root / "host/python/src", project / "src",
                     ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"))
     shutil.copytree(repo_root / "host/python/tests", project / "tests",
                     ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(repo_root / "host/web", project.parent / "web")
+    shutil.copytree(repo_root / "host/web/src", project / "src/pico_uart/web/assets")
     return project
 
 
@@ -72,30 +72,6 @@ def test_python_version_comes_from_parent_git_repository(python_project, tmp_pat
         assert version.dev == 1
     else:
         assert str(version) == ("0.0.0.dev42" if state == "override" else "1.2.3")
-
-
-@pytest.mark.parametrize("location", ["shared", "bundled"])
-@pytest.mark.parametrize("missing", [None, "index.html", "css/dashboard.css", "js/dashboard.js", "favicon.svg"])
-def test_python_build_rejects_missing_dashboard_assets(python_project, tmp_path, location, missing):
-    assets = python_project.parent / "web" / "src"
-    if location == "bundled":
-        bundled = python_project / "src/pico_uart/web/assets"
-        shutil.move(str(assets), str(bundled))
-        assets = bundled
-    if missing is None:
-        shutil.rmtree(assets)
-    else:
-        (assets / missing).unlink()
-    destination = tmp_path / "wheel"
-    destination.mkdir()
-    result = subprocess.run(
-        [sys.executable, "-c", "from hatchling.build import build_wheel; import sys; build_wheel(sys.argv[1])",
-         str(destination)],
-        cwd=python_project, capture_output=True, text=True, timeout=30,
-    )
-    assert result.returncode != 0
-    assert "Missing dashboard asset:" in result.stderr
-    assert not list(destination.glob("*.whl"))
 
 
 @pytest.mark.parametrize("version", [None, "1.2.3"])
@@ -158,3 +134,11 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
             assert {name for name in wheel.namelist() if name.startswith("pico_uart/web/assets/")} == set(expected_assets)
             assert not any(name.startswith(("tests/", "pico_uart/tests/")) for name in wheel.namelist())
             assert not any("__pycache__" in name or name.endswith(".pyc") for name in wheel.namelist())
+
+
+@pytest.mark.parametrize("workflow", ["release.yml", "publish-pypi.yml"])
+def test_python_wheel_workflows_stage_shared_dashboard_assets(repo_root, workflow):
+            content = (repo_root / ".github/workflows" / workflow).read_text()
+            staging = "cp -R host/web/src/. host/python/src/pico_uart/web/assets/"
+            build = "python -m pip wheel --no-deps host/python --wheel-dir dist"
+            assert content.index(staging) < content.index(build)

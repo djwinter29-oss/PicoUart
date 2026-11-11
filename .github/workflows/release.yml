@@ -170,7 +170,10 @@ jobs:
       - name: Build Python wheel
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}
-        run: python -m pip wheel --no-deps host/python --wheel-dir dist
+        run: |
+          mkdir -p host/python/src/pico_uart/web/assets
+          cp -R host/web/src/. host/python/src/pico_uart/web/assets/
+          python -m pip wheel --no-deps host/python --wheel-dir dist
 
       - name: Verify installed Python release
         env:
