@@ -160,3 +160,25 @@ def test_configuration_endpoint_sanitizes_errors(error, status, message):
                            headers={"X-CSRF-Token": token})
     assert response.status_code == status
     assert response.json == {"error": message}
+
+
+def test_configuration_endpoint_preserves_unconfirmed_outcome_warning(caplog):
+    class UnconfirmedDashboard:
+        def save_configuration(self, *_args):
+            raise RuntimeError("board-control operation timed out; outcome is unconfirmed")
+
+    client = create_app(UnconfirmedDashboard()).test_client()
+    client.get("/")
+    with client.session_transaction() as session:
+        token = session["csrf_token"]
+    response = client.post(
+        "/api/configuration",
+        json={"profile": 0, "unsafe_overclock": False},
+        headers={"X-CSRF-Token": token},
+    )
+
+    assert response.status_code == 409
+    assert response.json == {
+        "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+    }
+    assert "outcome is unconfirmed" in caplog.text

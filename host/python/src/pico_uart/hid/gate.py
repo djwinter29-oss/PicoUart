@@ -3,79 +3,118 @@
 """Close/transfer coordination for one HID handle shared with abandoned (timed-out) transfers."""
 
 import threading
+import weakref
 
 from .transport import HidDevice
 
 
+class _DeviceState:
+    """I/O and close state shared by wrappers around the same HID object."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.references = 0
+        self.in_flight = False
+        self.closing = False
+        self.device_closed = False
+        self.close_complete = threading.Event()
+        self.close_error: OSError | None = None
+
+
+_DEVICE_STATES: dict[int, _DeviceState] = {}
+_DEVICE_STATES_LOCK = threading.Lock()
+
+
+def _acquire_device_state(device: HidDevice) -> tuple[int, _DeviceState]:
+    key = id(device)
+    with _DEVICE_STATES_LOCK:
+        state = _DEVICE_STATES.setdefault(key, _DeviceState())
+        state.references += 1
+    return key, state
+
+
+def _release_device_state(key: int, state: _DeviceState) -> None:
+    with _DEVICE_STATES_LOCK, state.lock:
+        state.references -= 1
+        if state.references == 0 and _DEVICE_STATES.get(key) is state:
+            del _DEVICE_STATES[key]
+
+
 class DeviceGate:
-    """Track the single in-flight transfer and defer closing the handle until that transfer returns."""
+    """Serialize wrappers around one HID handle and defer close until its transfer returns."""
 
     def __init__(self, device: HidDevice) -> None:
         self.device = device
-        self._state_lock = threading.Lock()
-        self._closing = False
-        self._device_closed = False
-        self._close_complete = threading.Event()
-        self._close_error: OSError | None = None
-        self._in_flight = False
+        self._state_key, self._state = _acquire_device_state(device)
+        weakref.finalize(self, _release_device_state, self._state_key, self._state)
 
     @property
     def closing(self) -> bool:
         """Whether close was requested; new device operations must be refused."""
-        return self._closing
+        with self._state.lock:
+            return self._state.closing
 
     def begin_transfer(self) -> None:
         """Claim the device-I/O slot; a quarantined operation keeps it until it returns."""
-        with self._state_lock:
-            if self._in_flight:
+        with self._state.lock:
+            if self._state.closing:
+                raise RuntimeError("PicoUart HID connection is closed")
+            if self._state.in_flight:
                 raise RuntimeError("a previous HID operation is still in flight")
-            self._in_flight = True
+            self._state.in_flight = True
 
     def abort_transfer(self) -> None:
         """Release the slot when the transfer worker could not be started."""
-        with self._state_lock:
-            self._in_flight = False
+        with self._state.lock:
+            self._state.in_flight = False
 
     def end_transfer(self, completed: threading.Event | None = None) -> None:
         """Release the slot, finish a deferred close, then signal a waiting feature caller."""
-        with self._state_lock:
-            self._in_flight = False
-            if self._closing and not self._device_closed:
-                self._device_closed = True
+        with self._state.lock:
+            self._state.in_flight = False
+            if self._state.closing and not self._state.device_closed:
+                self._state.device_closed = True
                 try:
                     self.device.close()
                 except OSError as error:
-                    self._close_error = error
+                    self._state.close_error = error
                 finally:
-                    self._close_complete.set()
+                    self._state.close_complete.set()
             if completed is not None:
                 completed.set()
+        _release_idle_device_state(self._state_key, self._state)
 
     def close(self) -> bool:
         """Close now, or defer while a transfer is in flight; return whether the handle is closed."""
-        if not self._closing:
-            self._closing = True
-            with self._state_lock:
-                if not self._in_flight:
-                    self._device_closed = True
-                    try:
-                        self.device.close()
-                    except OSError as error:
-                        self._close_error = error
-                        raise
-                    finally:
-                        self._close_complete.set()
+        with self._state.lock:
+            self._state.closing = True
+            if not self._state.in_flight and not self._state.device_closed:
+                self._state.device_closed = True
+                try:
+                    self.device.close()
+                except OSError as error:
+                    self._state.close_error = error
+                    raise
+                finally:
+                    self._state.close_complete.set()
         self._raise_close_error()
-        return self._close_complete.is_set()
+        return self._state.close_complete.is_set()
 
     def wait_closed(self, timeout_s: float | None) -> bool:
         """Wait for the handle to close; return false on timeout."""
-        if not self._close_complete.wait(timeout_s):
+        if not self._state.close_complete.wait(timeout_s):
             return False
         self._raise_close_error()
         return True
 
     def _raise_close_error(self) -> None:
-        with self._state_lock:
-            if self._close_error is not None:
-                raise self._close_error
+        with self._state.lock:
+            if self._state.close_error is not None:
+                raise self._state.close_error
+
+
+def _release_idle_device_state(key: int, state: _DeviceState) -> None:
+    """Discard a shared state after its wrappers and any in-flight call are gone."""
+    with _DEVICE_STATES_LOCK, state.lock:
+        if state.references == 0 and not state.in_flight and _DEVICE_STATES.get(key) is state:
+            del _DEVICE_STATES[key]

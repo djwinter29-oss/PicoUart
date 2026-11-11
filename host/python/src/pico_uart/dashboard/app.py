@@ -37,6 +37,15 @@ def _parse_configuration_body(body: object) -> tuple[int, bool] | None:
     return profile, unsafe_overclock
 
 
+def _control_failure(error: RuntimeError) -> tuple[dict[str, str], int]:
+    if "outcome is unconfirmed" in str(error):
+        _LOGGER.warning("PicoUart board-control outcome is unconfirmed: %s", error)
+        return {
+            "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+        }, 409
+    return {"error": "request could not be completed"}, 409
+
+
 def create_app(service: DashboardService | None = None, port: int = 5000) -> Flask:
     """Create the web app; an injected service keeps route tests hardware-free."""
     web_root = Path(__file__).parent / "assets"
@@ -71,7 +80,7 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
         request.host  # noqa: B018 - reject untrusted hosts (400) before reporting a token failure
         token = session.get("csrf_token", "")
         supplied_token = request.headers.get("X-CSRF-Token", "")
-        if not token or not secrets.compare_digest(token, supplied_token):
+        if not token or not supplied_token.isascii() or not secrets.compare_digest(token, supplied_token):
             return jsonify(error="request token missing or invalid"), 403
         return None
 
@@ -133,8 +142,9 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
             dashboard.save_configuration(request.args.get("board"), profile, unsafe_overclock)
         except ValueError:
             return jsonify(error="invalid request"), 400
-        except RuntimeError:
-            return jsonify(error="request could not be completed"), 409
+        except RuntimeError as error:
+            response, status_code = _control_failure(error)
+            return jsonify(response), status_code
         except OSError:
             return jsonify(error="service temporarily unavailable"), 503
         return jsonify(ok=True)
@@ -148,8 +158,9 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
                 dashboard.reset_board(request.args.get("board"))
             else:
                 return jsonify(error="unknown action"), 404
-        except RuntimeError:
-            return jsonify(error="request could not be completed"), 409
+        except RuntimeError as error:
+            response, status_code = _control_failure(error)
+            return jsonify(response), status_code
         except OSError:
             return jsonify(error="service temporarily unavailable"), 503
         return jsonify(ok=True)

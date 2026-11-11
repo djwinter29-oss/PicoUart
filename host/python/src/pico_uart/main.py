@@ -33,9 +33,13 @@ def monitor(client: PicoUartHid, duration: float) -> None:
     """Print valid status reports until the requested duration expires."""
     deadline = time.monotonic() + duration
     valid_reports = 0
-    while time.monotonic() < deadline:
-        status = client.read_status(timeout_ms=250)
-        if status is None:
+    while True:
+        remaining_s = deadline - time.monotonic()
+        if remaining_s <= 0:
+            break
+        timeout_ms = max(1, min(250, math.ceil(remaining_s * 1000)))
+        status = client.read_status(timeout_ms=timeout_ms, deadline=deadline)
+        if status is None or time.monotonic() >= deadline:
             continue
         print_status(status)
         valid_reports += 1

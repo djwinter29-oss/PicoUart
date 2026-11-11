@@ -16,8 +16,15 @@ from helpers import (
     telemetry_bytes,
 )
 
-from pico_uart.hid.client import PicoUartHid
-from pico_uart.hid.client import read_telemetry as read_telemetry_from_device
+from pico_uart.hid.client import (
+    PicoUartHid,
+)
+from pico_uart.hid.client import (
+    read_firmware_version as read_firmware_version_from_device,
+)
+from pico_uart.hid.client import (
+    read_telemetry as read_telemetry_from_device,
+)
 from pico_uart.hid.protocol import (
     CHANNEL_SIZE,
     CONTROL_SIZE,
@@ -516,6 +523,46 @@ def test_late_feature_transfer_is_bounded_and_quarantines_the_connection(monkeyp
     assert started.is_set()
     with pytest.raises(RuntimeError, match="still in flight"):
         client.read_control()
+
+
+def test_module_helper_calls_share_quarantine_for_a_raw_device(monkeypatch):
+    import pico_uart.hid.client as client_module
+
+    entered = threading.Event()
+    release = threading.Event()
+    first_read = True
+
+    class SlowDevice(FakeHidDevice):
+        def get_feature_report(self, report_id, size):
+            nonlocal first_read
+            if first_read:
+                first_read = False
+                entered.set()
+                release.wait(timeout=1)
+            return super().get_feature_report(report_id, size)
+
+    device = SlowDevice({})
+    monkeypatch.setattr(client_module, "COMMAND_TIMEOUT_S", 0.01)
+    try:
+        with pytest.raises(RuntimeError, match="transfer timed out"):
+            read_firmware_version_from_device(device)
+        assert entered.is_set()
+        with pytest.raises(RuntimeError, match="still in flight"):
+            read_firmware_version_from_device(device)
+
+        release.set()
+        deadline = time.monotonic() + 1
+        while True:
+            try:
+                assert read_firmware_version_from_device(device) == "1.2.3"
+                break
+            except RuntimeError as error:
+                if "still in flight" not in str(error) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.001)
+    finally:
+        release.set()
+        device.close()
 
 
 def test_status_deadline_bounds_metadata_feature_transfers():

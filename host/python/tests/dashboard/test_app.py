@@ -71,6 +71,24 @@ def test_dashboard_maps_action_errors_and_unknown_actions():
     assert client.post("/api/actions/unknown", headers=headers).status_code == 404
 
 
+def test_dashboard_preserves_unconfirmed_action_outcome(caplog):
+    class UnconfirmedDashboard(FakeDashboard):
+        def toggle_led(self, board_id=None):
+            raise RuntimeError("HID feature transfer timed out; outcome is unconfirmed")
+
+    client = create_app(UnconfirmedDashboard()).test_client()
+    response = client.post(
+        "/api/actions/toggle-led",
+        headers={"X-CSRF-Token": _csrf_token(client)},
+    )
+
+    assert response.status_code == 409
+    assert response.json == {
+        "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+    }
+    assert "outcome is unconfirmed" in caplog.text
+
+
 def test_dashboard_rejects_untrusted_host_before_serving_controls():
     service = FakeDashboard()
     client = create_app(service).test_client()
@@ -82,6 +100,21 @@ def test_dashboard_rejects_untrusted_host_before_serving_controls():
         headers={"X-CSRF-Token": token},
     )
     assert response.status_code == 400
+    assert service.actions == []
+
+
+def test_dashboard_rejects_non_ascii_csrf_token_without_server_error():
+    service = FakeDashboard()
+    client = create_app(service).test_client()
+    token = _csrf_token(client)
+
+    response = client.post(
+        "/api/actions/toggle-led",
+        headers={"X-CSRF-Token": token + "é"},
+    )
+
+    assert response.status_code == 403
+    assert response.json == {"error": "request token missing or invalid"}
     assert service.actions == []
 
 

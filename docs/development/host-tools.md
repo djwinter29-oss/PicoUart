@@ -133,6 +133,10 @@ the absolute `deadline` also bounds client-lock acquisition and metadata reads.
 The supported high-level API is `PicoUartHid` and the methods described here, plus the module-level functions
 `read_board_status`, `read_board_temperature`, `read_firmware_version`, `read_configuration`, `read_hardware_info`,
 `read_overflow_counts`, `read_telemetry`, and `reset_board`.
+Module-level helpers accept an already-open HID device and share in-flight transfer and deferred-close state with
+other wrappers around that same object. After a timed-out helper call, later helpers fail until its native transfer
+returns; calling `close()` on any wrapper closes the shared handle. Use `PicoUartHid` as a context manager for
+multi-operation sessions.
 The names in `pico_uart.__all__` are the supported package-root exports. Report parsers, IDs and sizes, USB
 identifiers, raw HID access, and generic feature-report helpers are low-level exports tied to the firmware report
 contract. Prefer their owning `pico_uart.hid.protocol`, `pico_uart.hid.transport`, and `pico_uart.hid.client` modules
@@ -206,9 +210,13 @@ compare before and after a run, accounting for resets and saturation.
 `status` on either host retries until its timeout. The default is 2 seconds, and each read waits at most 250 ms.
 Python and .NET select that limit with `--timeout`. `status` fails when the timeout expires with no valid report.
 Python `monitor` fails if it receives no valid reports, but can succeed after one report even if later reads time out.
-Both hosts fail on device errors.
+Python `monitor` passes its capture deadline through identity, configuration, and Input reads and excludes reports
+that complete after the deadline. Both hosts fail on device errors.
 A successful command does not establish continuous reporting or healthy channels; the runner must evaluate reported
 states and counters rather than treating the exit code as the test result.
+
+Dashboard save and board-action errors may report that the outcome is unconfirmed. Reconnect and inspect board state
+before deciding what to do; never automatically retry a save or reboot.
 
 ## Python Distribution
 

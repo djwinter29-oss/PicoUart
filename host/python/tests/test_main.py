@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 import runpy
 import sys
+import time
 
 import pytest
 
@@ -127,15 +128,37 @@ def test_monitor_preserves_all_six_hil_health_tokens_in_one_publication_round(mo
     samples = [client.read_status(0) for _ in range(6)]
 
     class Reader:
-        def read_status(self, timeout_ms):
-            return samples.pop(0)
+        def read_status(self, timeout_ms, *, deadline):
+            assert 0 < timeout_ms <= 250
+            assert deadline == 1.0
+            result = samples.pop(0) if samples else None
+            now[0] = min(deadline, now[0] + 0.1)
+            return result
 
-    now = iter((0.0, 0.5, 0.51, 0.52, 0.53, 0.54, 0.55, 1.0))
-    monkeypatch.setattr(cli.time, "monotonic", lambda: next(now))
+    now = [0.0]
+    monkeypatch.setattr(cli.time, "monotonic", lambda: now[0])
     cli.monitor(Reader(), 1.0)
     assert set(re.findall(r"cdc([0-5]) state=(\w+)", capsys.readouterr().out)) == {
         (str(index), "ready") for index in range(6)
     }
+
+
+def test_monitor_passes_deadline_and_discards_late_report(capsys):
+    class LateReader:
+        def __init__(self):
+            self.deadline = None
+
+        def read_status(self, timeout_ms, *, deadline):
+            assert 0 < timeout_ms <= 250
+            self.deadline = deadline
+            time.sleep(0.02)
+            return {"channels": []}
+
+    reader = LateReader()
+    with pytest.raises(RuntimeError, match="without receiving"):
+        cli.monitor(reader, 0.01)
+    assert reader.deadline is not None
+    assert capsys.readouterr().out == ""
 
 
 def test_main_monitor_dispatches_configured_duration(monkeypatch):

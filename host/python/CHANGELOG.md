@@ -11,6 +11,9 @@ User-facing changes to the `pico-uart` Python package.
   managers.
 - Input reads honor the absolute deadline and share transfer quarantine with Feature reports. Reaped dashboard readers
   remain owned until cleanup completes, and channel snapshots detect newer samples even when timestamps collide.
+- Wrappers around one injected HID handle now share transfer quarantine and deferred close. CLI monitor reads honor
+  their capture deadline, and dashboard action timeouts preserve an explicit unconfirmed-outcome warning.
+- Dashboard POST requests with non-ASCII CSRF tokens now fail with 403 instead of an internal server error.
 - `channel_ready` and the `BAUD_READY_TOLERANCE` constant are now public in `pico_uart.hid.client`.
 - `read_board_status` and `read_hardware_info` now return the typed `BoardStatus` and `HardwareInfo` dictionaries.
 - The package now ships a `py.typed` marker, so type checkers use its inline annotations.

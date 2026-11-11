@@ -27,6 +27,7 @@ def test_second_transfer_is_refused_until_first_ends_and_abort_releases_slot():
         gate.begin_transfer()
     gate.abort_transfer()
     gate.begin_transfer()
+    gate.end_transfer()
 
 
 def test_close_during_transfer_is_deferred_until_transfer_ends():
@@ -39,6 +40,22 @@ def test_close_during_transfer_is_deferred_until_transfer_ends():
     gate.end_transfer(completed)
     assert completed.is_set() and device.closes == 1
     assert gate.wait_closed(0) is True and gate.close() is True and device.closes == 1
+
+
+def test_wrappers_share_quarantine_and_defer_close_for_the_same_device():
+    device = Device()
+    reader = DeviceGate(device)
+    owner = DeviceGate(device)
+    reader.begin_transfer()
+
+    with pytest.raises(RuntimeError, match="still in flight"):
+        owner.begin_transfer()
+    assert owner.close() is False
+    assert device.closes == 0
+
+    reader.end_transfer()
+    assert owner.wait_closed(0) is True
+    assert device.closes == 1
 
 
 def test_close_error_is_reported_on_every_later_call():

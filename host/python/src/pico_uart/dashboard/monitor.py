@@ -156,14 +156,15 @@ class BoardMonitor:
                 next_metadata_read = 0.0
                 while not self._stop.is_set():
                     status = client.read_status(timeout_ms=250)
-                    delay = RECONNECT_DELAY_S
                     if status is not None:
+                        delay = RECONNECT_DELAY_S
                         self._apply_status(status)
                     if self._stop.is_set():
                         break
                     now = time.monotonic()
                     if now >= next_metadata_read:
-                        self._read_metadata(client)
+                        if self._read_metadata(client):
+                            delay = RECONNECT_DELAY_S
                         with self._lock:
                             interval = self._snapshot["refresh_interval_ms"]
                         next_metadata_read = time.monotonic() + interval / 1000
@@ -238,10 +239,11 @@ class BoardMonitor:
             )
             self._snapshot["traffic_gaps"] = sum(channel["traffic_gaps"] for channel in channels)
 
-    def _read_metadata(self, client: PicoUartHid) -> None:
-        self._read_static(client)
+    def _read_metadata(self, client: PicoUartHid) -> bool:
+        identity_read = self._read_static(client)
         self._read_telemetry(client)
         self._read_control(client)
+        return identity_read
 
     def _read_telemetry(self, client: PicoUartHid) -> None:
         try:
@@ -315,7 +317,7 @@ class BoardMonitor:
             self._snapshot["configuration_save"] = save
             self._snapshot["configuration_save_error"] = save_error
 
-    def _read_static(self, client: PicoUartHid) -> None:
+    def _read_static(self, client: PicoUartHid) -> bool:
         try:
             identity = client.read_identity()
         except (OSError, RuntimeError) as error:
@@ -327,7 +329,7 @@ class BoardMonitor:
                 self._snapshot["hardware_error"] = message
                 self._snapshot["board"] = None
                 self._snapshot["metadata_error"] = message
-            return
+            return False
         with self._lock:
             self._snapshot["identity"] = identity
             self._snapshot["identity_error"] = None
@@ -348,3 +350,4 @@ class BoardMonitor:
                     temperature_celsius=self._snapshot["board"]["temperature_celsius"]
                     if self._snapshot["board"] else None,
                 )
+        return True
