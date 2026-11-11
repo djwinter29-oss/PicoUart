@@ -6,10 +6,11 @@ import os
 import select
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Protocol, cast
 
-fcntl: Any
-hid: Any
+fcntl: ModuleType | None
+hid: ModuleType | None
 _HID_IMPORT_ERROR: ImportError | None
 try:
     fcntl = import_module("fcntl")
@@ -33,10 +34,33 @@ PRODUCT_STRING = "PicoUart"
 HID_INTERFACE_NUMBER = 12
 
 
-def require_hid() -> None:
-    """Raise a clear error if hidapi is unavailable, only when opening a device."""
+class HidDevice(Protocol):
+    """Operations required from an opened HID interface."""
+
+    def read(self, size: int, timeout_ms: int) -> list[int]: ...
+
+    def get_feature_report(self, report_id: int, size: int) -> list[int]: ...
+
+    def send_feature_report(self, report: list[int]) -> int: ...
+
+    def close(self) -> None: ...
+
+
+class _OpenableHidDevice(HidDevice, Protocol):
+    """HID interface methods used before returning an opened device."""
+
+    def open_path(self, path: str | bytes) -> None: ...
+
+
+def _hid_module() -> ModuleType:
     if hid is None:
         raise RuntimeError("Missing dependency: install pico-uart with its runtime dependencies") from _HID_IMPORT_ERROR
+    return hid
+
+
+def require_hid() -> None:
+    """Raise a clear error if hidapi is unavailable, only when opening a device."""
+    _hid_module()
 
 
 class _LinuxHidrawDevice:
@@ -118,24 +142,24 @@ def _resolve_hidraw_path(enumerated_path: str) -> str | None:
     return None
 
 
-def _open_hidraw_device(path: str) -> Any:
+def _open_hidraw_device(path: str) -> HidDevice:
     """Open a Linux hidraw node with the standard file-descriptor API."""
-    if os.name != "posix":
-        return None
     return _LinuxHidrawDevice(path)
 
 
-def open_enumerated_device(device_info: dict[str, Any]) -> Any:
+def open_enumerated_device(device_info: dict[str, object]) -> HidDevice:
     """Open one enumerated HID device, resolving Linux interface paths when needed."""
     require_hid()
     path = device_info.get("path", b"")
+    if not isinstance(path, (str, bytes)) or not path:
+        raise RuntimeError("HID enumeration returned an invalid device path")
     original_path = os.fsdecode(path)
     resolved_path = _resolve_hidraw_path(original_path)
     try:
         if resolved_path is not None:
             # libusb may detach usbhid and leave .NET/WebHID unable to discover the board after close.
             return _open_hidraw_device(resolved_path)
-        device = hid.device()
+        device = cast(_OpenableHidDevice, _hid_module().device())
         device.open_path(path)
     except OSError as error:
         raise RuntimeError(
@@ -145,21 +169,19 @@ def open_enumerated_device(device_info: dict[str, Any]) -> Any:
     return device
 
 
-def _device_path_matches(device_info: dict[str, Any], requested_path: str) -> bool:
+def _device_path_matches(device_info: dict[str, object], requested_path: str) -> bool:
     """Return whether a hidapi path matches a command-line path string."""
     path = device_info.get("path", b"")
-    if isinstance(path, bytes):
-        path = path.decode("utf-8", errors="surrogateescape")
-    return path == requested_path
+    return isinstance(path, (str, bytes)) and os.fsdecode(path) == requested_path
 
 
 def enumerate_devices() -> list[dict[str, object]]:
     """List PicoUart HID interfaces without opening them."""
-    require_hid()
+    devices = cast(list[dict[str, object]], _hid_module().enumerate(VENDOR_ID, PRODUCT_ID))
     # Some hidapi backends omit usage metadata. Constrain these fallbacks to
     # PicoUart's product string or known vendor HID interface.
     return [
-        info for info in hid.enumerate(VENDOR_ID, PRODUCT_ID)
+        info for info in devices
         if (info.get("usage_page") == USAGE_PAGE and info.get("usage") == USAGE)
         or (
             not info.get("usage_page") and not info.get("usage")
@@ -170,9 +192,8 @@ def enumerate_devices() -> list[dict[str, object]]:
     ]
 
 
-def open_device(serial_number: str | None = None, device_path: str | None = None) -> Any:
+def open_device(serial_number: str | None = None, device_path: str | None = None) -> HidDevice:
     """Open PicoUart's vendor-defined HID collection."""
-    require_hid()
     if serial_number is not None and device_path is not None:
         raise RuntimeError("--serial and --device-path cannot be used together")
 

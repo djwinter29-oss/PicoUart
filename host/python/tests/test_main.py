@@ -98,14 +98,17 @@ def test_main_status_text_retries_empty_reads_and_selects_device_path(monkeypatc
         def __exit__(self, *_args):
             pass
 
-        def read_status(self, timeout_ms):
+        def read_status(self, timeout_ms, *, deadline):
             read_timeouts.append(timeout_ms)
+            read_deadlines.append(deadline)
             return None if len(read_timeouts) == 1 else status
 
     monkeypatch.setattr(cli, "PicoUartHid", FakeClient)
+    read_deadlines = []
 
     assert cli.main(["--device-path", "/dev/hidraw7", "status", "--timeout", "1"]) == 0
     assert len(read_timeouts) == 2
+    assert len(set(read_deadlines)) == 1
     output = capsys.readouterr().out
     assert output.startswith("cdc0 state=ready measurement=1")
     assert "seq=17" in output
@@ -227,7 +230,7 @@ def test_main_reports_hid_errors_and_status_timeouts(monkeypatch, capsys):
     monkeypatch.setattr(cli.time, "monotonic", lambda: next(times))
 
     class EmptyClient(BrokenClient):
-        def read_status(self, _timeout_ms):
+        def read_status(self, _timeout_ms, *, deadline):
             return None
 
     monkeypatch.setattr(cli, "PicoUartHid", EmptyClient)

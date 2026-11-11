@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import Any
+from typing import TypeVar
 
 from .protocol import (
     CHANNEL_SIZE,
@@ -44,7 +44,7 @@ from .protocol import (
     parse_telemetry,
     require_payload,
 )
-from .transport import open_device
+from .transport import HidDevice, open_device
 from .types import (
     ChannelDiagnostic,
     ChannelFeatureSample,
@@ -62,9 +62,10 @@ from .types import (
 
 COMMAND_TIMEOUT_S = 3.0
 COMMAND_POLL_INTERVAL_S = 0.05
+_TransferResult = TypeVar("_TransferResult")
 
 
-def read_feature(device: Any, report_id: int, payload_size: int) -> bytes:
+def read_feature(device: HidDevice, report_id: int, payload_size: int) -> bytes:
     """Read a fixed-size feature report, excluding its HID report ID."""
     return require_payload(device.get_feature_report(report_id, payload_size + 1), report_id, payload_size)
 
@@ -98,7 +99,7 @@ class PicoUartHid:
         self,
         serial_number: str | None = None,
         device_path: str | None = None,
-        device: Any | None = None,
+        device: HidDevice | None = None,
     ) -> None:
         if device is not None and (serial_number is not None or device_path is not None):
             raise ValueError("an injected device cannot be combined with a device selector")
@@ -118,16 +119,21 @@ class PicoUartHid:
         self._last_input_at: list[float | None] = [None] * UART_CHANNEL_COUNT
         self._ignored_gap = [False] * UART_CHANNEL_COUNT
 
-    def _require_open(self) -> Any:
+    def _require_open(self) -> HidDevice:
         if self._closed:
             raise RuntimeError("PicoUart HID connection is closed")
         return self._device
 
-    def _read_device_info(self) -> DeviceIdentity:
+    def _read_device_info(self, deadline: float | None = None) -> DeviceIdentity:
         if self._device_info is None:
+            timeout_s = COMMAND_TIMEOUT_S if deadline is None else min(
+                COMMAND_TIMEOUT_S, deadline - time.monotonic()
+            )
+            if timeout_s <= 0:
+                raise RuntimeError("HID feature transfer timed out; outcome is unconfirmed")
             report = self._bounded_transfer(
                 lambda: self._require_open().get_feature_report(REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE + 1),
-                COMMAND_TIMEOUT_S,
+                timeout_s,
             )
             if report is None:
                 raise RuntimeError("invalid identity report ID")
@@ -136,14 +142,18 @@ class PicoUartHid:
             )
         return self._device_info
 
-    def _bounded_transfer(self, operation: Callable[[], Any], timeout_s: float = COMMAND_TIMEOUT_S) -> Any:
+    def _bounded_transfer(
+        self,
+        operation: Callable[[], _TransferResult],
+        timeout_s: float = COMMAND_TIMEOUT_S,
+    ) -> _TransferResult:
         """Bound synchronous hidapi feature I/O and quarantine a call that returns late."""
         with self._transfer_state_lock:
             if self._transfer_in_flight:
                 raise RuntimeError("a previous HID feature transfer is still in flight")
             self._transfer_in_flight = True
         completed = threading.Event()
-        result: list[Any] = []
+        result: list[_TransferResult] = []
         failure: list[Exception] = []
 
         def run() -> None:
@@ -172,7 +182,7 @@ class PicoUartHid:
         return result[0]
 
     def _read_feature(self, report_id: int, payload_size: int, deadline: float | None = None) -> bytes:
-        self._read_device_info()
+        self._read_device_info(deadline)
         remaining = COMMAND_TIMEOUT_S if deadline is None else min(COMMAND_TIMEOUT_S, deadline - time.monotonic())
         if remaining <= 0:
             raise RuntimeError("board-control operation timed out; outcome is unconfirmed")
@@ -210,12 +220,16 @@ class PicoUartHid:
         telemetry = self.read_telemetry()
         return {"mcu": info["mcu"], "mcu_id": info["mcu_id"], "system_clock_hz": telemetry["system_clock_hz"]}
 
-    def read_configuration(self) -> Configuration:
+    def read_configuration(self, *, deadline: float | None = None) -> Configuration:
         """Read immutable boot metadata independently of the action result."""
+        if deadline is not None and not math.isfinite(deadline):
+            raise ValueError("deadline must be finite")
         with self._lock:
             if self._configuration is None:
                 self._configuration = parse_configuration(
-                    self._read_feature(REPORT_ID_CONFIGURATION, CONFIGURATION_SIZE), self._read_device_info())
+                    self._read_feature(REPORT_ID_CONFIGURATION, CONFIGURATION_SIZE, deadline),
+                    self._read_device_info(deadline),
+                )
             return deepcopy(self._configuration)
 
     def read_configuration_save(self) -> ControlResult:
@@ -266,14 +280,19 @@ class PicoUartHid:
                 ),
             }
 
-    def read_status(self, timeout_ms: int = 250) -> StatusSnapshot | None:
-        """Read one Input report, derive its counter increments, and return the latest channel snapshot."""
+    def read_status(self, timeout_ms: int = 250, *, deadline: float | None = None) -> StatusSnapshot | None:
+        """Read one Input report; the optional absolute deadline includes metadata and Input reads."""
         if timeout_ms < 0:
             raise ValueError("timeout_ms must not be negative")
+        if deadline is not None and not math.isfinite(deadline):
+            raise ValueError("deadline must be finite")
         with self._lock:
-            self._read_device_info()
-            configuration = self.read_configuration()
-            report = self._require_open().read(CHANNEL_SIZE + 1, timeout_ms)
+            self._read_device_info(deadline)
+            configuration = self.read_configuration(deadline=deadline)
+            input_timeout_ms = timeout_ms
+            if deadline is not None:
+                input_timeout_ms = min(timeout_ms, max(0, int((deadline - time.monotonic()) * 1000)))
+            report = self._require_open().read(CHANNEL_SIZE + 1, input_timeout_ms)
             if not report:
                 return None
             if len(report) != CHANNEL_SIZE + 1 or not REPORT_ID_CHANNEL_BASE <= report[0] < (
@@ -312,8 +331,8 @@ class PicoUartHid:
                     if remaining <= 0 or not self._lock.acquire(timeout=remaining):
                         raise TimeoutError("CDC readiness timed out waiting for HID lock")
                     try:
-                        identity = self._read_device_info()
-                        configuration = self.read_configuration()
+                        identity = self._read_device_info(deadline)
+                        configuration = self.read_configuration(deadline=deadline)
                         sample = parse_channel(
                             self._read_feature(REPORT_ID_CHANNEL_BASE + index, CHANNEL_SIZE, deadline),
                             index,
@@ -555,7 +574,7 @@ class PicoUartHid:
         self.close()
 
 
-def read_board_status(device: Any) -> dict[str, object]:
+def read_board_status(device: HidDevice) -> dict[str, object]:
     """Read static identity/capabilities and current temperature."""
     info = parse_device_info(read_feature(device, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE))
     telemetry = parse_telemetry(read_feature(device, REPORT_ID_TELEMETRY, TELEMETRY_SIZE))
@@ -563,35 +582,35 @@ def read_board_status(device: Any) -> dict[str, object]:
     return {**info, "temperature_celsius": temperature, "hid_led_enabled": info["hid_led_available"]}
 
 
-def read_board_temperature(device: Any) -> float:
+def read_board_temperature(device: HidDevice) -> float:
     """Read the internal RP2 sensor estimate in degrees Celsius."""
     parse_device_info(read_feature(device, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE))
     return float(parse_telemetry(read_feature(device, REPORT_ID_TELEMETRY, TELEMETRY_SIZE))["temperature_celsius"])
 
 
-def read_firmware_version(device: Any) -> str:
+def read_firmware_version(device: HidDevice) -> str:
     info = parse_device_info(read_feature(device, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE))
     return str(info["firmware_version"])
 
 
-def read_configuration(device: Any) -> Configuration:
+def read_configuration(device: HidDevice) -> Configuration:
     return PicoUartHid(device=device).read_configuration()
 
 
-def read_hardware_info(device: Any) -> dict[str, object]:
+def read_hardware_info(device: HidDevice) -> dict[str, object]:
     info = parse_device_info(read_feature(device, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE))
     telemetry = parse_telemetry(read_feature(device, REPORT_ID_TELEMETRY, TELEMETRY_SIZE))
     return {"mcu": info["mcu"], "mcu_id": info["mcu_id"], "system_clock_hz": telemetry["system_clock_hz"]}
 
 
-def read_telemetry(device: Any) -> Telemetry:
+def read_telemetry(device: HidDevice) -> Telemetry:
     parse_device_info(read_feature(device, REPORT_ID_DEVICE_INFO, DEVICE_INFO_SIZE))
     return parse_telemetry(read_feature(device, REPORT_ID_TELEMETRY, TELEMETRY_SIZE))
 
 
-def read_overflow_counts(device: Any) -> list[int]:
+def read_overflow_counts(device: HidDevice) -> list[int]:
     return PicoUartHid(device=device).read_overflow_counts()
 
 
-def reset_board(device: Any) -> None:
+def reset_board(device: HidDevice) -> None:
     PicoUartHid(device=device).reset_board()

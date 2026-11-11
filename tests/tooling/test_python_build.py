@@ -6,6 +6,7 @@ from email.parser import BytesParser
 from importlib.metadata import version as installed_version
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -157,3 +158,37 @@ def test_python_wheel_workflows_stage_shared_dashboard_assets(repo_root, workflo
             staging = "cp -R host/web/src/. host/python/src/pico_uart/dashboard/assets/"
             build = "python -m pip wheel --no-deps host/python --wheel-dir dist"
             assert content.index(staging) < content.index(build)
+
+
+def test_python_launcher_dispatches_to_application_module(repo_root, tmp_path):
+    checkout = tmp_path / "checkout"
+    host_python = checkout / "host/python"
+    launcher_dir = checkout / "tools/host"
+    environment_dir = host_python / ".venv"
+    python_executable = environment_dir / "bin/python"
+    (host_python / "src").mkdir(parents=True)
+    launcher_dir.mkdir(parents=True)
+    shutil.copytree(repo_root / "host/python/src/pico_uart", host_python / "src/pico_uart")
+    shutil.copy2(repo_root / "tools/host/run-python.sh", launcher_dir / "run-python.sh")
+    permission_check = launcher_dir / "hid-permissions-check.sh"
+    permission_check.write_text("#!/usr/bin/env sh\nexit 0\n")
+    permission_check.chmod(0o755)
+    python_executable.parent.mkdir(parents=True)
+    python_executable.write_text(
+        "#!/usr/bin/env sh\n"
+        'if [ "$1" = "-c" ] && [ "$2" = "import flask, hid" ]; then exit 0; fi\n'
+        f"exec {shlex.quote(sys.executable)} \"$@\"\n"
+    )
+    python_executable.chmod(0o755)
+
+    result = subprocess.run(
+        [str(launcher_dir / "run-python.sh"), "dashboard", "--help"],
+        cwd=checkout,
+        env={**os.environ, "VENV_DIR": str(environment_dir)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "usage: main.py dashboard" in result.stdout

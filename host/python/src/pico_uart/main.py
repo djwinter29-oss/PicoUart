@@ -53,7 +53,10 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     monitor_parser = commands.add_parser("monitor", help="print periodic status reports")
     monitor_parser.add_argument("--duration", type=float, default=5.0, help="monitor duration in seconds")
     status_parser = commands.add_parser("status", help="read one channel status report")
-    status_parser.add_argument("--timeout", type=float, default=2.0, help="status read timeout in seconds")
+    status_parser.add_argument(
+        "--timeout", type=float, default=2.0,
+        help="status acquisition timeout in seconds after opening the HID device",
+    )
     status_parser.add_argument("--json", action="store_true", help="print status as JSON")
     commands.add_parser("temperature", help="read the internal board temperature")
     commands.add_parser("version", help="read the firmware semantic version (MAJOR.MINOR.PATCH)")
@@ -104,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
                 status = None
                 while status is None and time.monotonic() < deadline:
                     remaining_ms = max(1, min(250, int((deadline - time.monotonic()) * 1000)))
-                    status = client.read_status(remaining_ms)
+                    status = client.read_status(remaining_ms, deadline=deadline)
                 if status is None:
                     raise RuntimeError("timed out without receiving a valid status report")
                 if arguments.json:

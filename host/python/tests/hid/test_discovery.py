@@ -135,6 +135,12 @@ def test_discovery_reports_open_failure_when_hidraw_fallback_fails(monkeypatch, 
         hid_module.open_device()
 
 
+@pytest.mark.parametrize("path", [7, "", b""])
+def test_open_enumerated_device_rejects_invalid_path(hid_module, path):
+    with pytest.raises(RuntimeError, match="invalid device path"):
+        hid_module.open_enumerated_device({"path": path})
+
+
 @pytest.mark.skipif(transport.os.name != "posix", reason="Linux hidraw sysfs paths are POSIX-only")
 def test_resolve_hidraw_path_matches_sysfs_interface(monkeypatch):
     link = Path("/sys/class/hidraw/hidraw7/device")

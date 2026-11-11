@@ -78,33 +78,7 @@ select = ["B", "E4", "E7", "E9", "F", "I"]
 
 [tool.mypy]
 python_version = "3.10"
-files = [
-	"src/pico_uart/hid/types.py",
-	"src/pico_uart/hid/protocol.py",
-	"src/pico_uart/hid/client.py",
-	"src/pico_uart/hid/transport.py",
-	"src/pico_uart/dashboard/app.py",
-	"src/pico_uart/dashboard/boards.py",
-	"src/pico_uart/dashboard/monitor.py",
-	"src/pico_uart/dashboard/types.py",
-	"src/pico_uart/main.py",
-]
+files = ["src/pico_uart"]
+disallow_untyped_defs = true
 check_untyped_defs = true
-ignore_missing_imports = true
 warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = "pico_uart.dashboard.app"
-disallow_untyped_defs = true
-
-[[tool.mypy.overrides]]
-module = "pico_uart.dashboard.boards"
-disallow_untyped_defs = true
-
-[[tool.mypy.overrides]]
-module = "pico_uart.dashboard.monitor"
-disallow_untyped_defs = true
-
-[[tool.mypy.overrides]]
-module = "pico_uart.dashboard.types"
-disallow_untyped_defs = true

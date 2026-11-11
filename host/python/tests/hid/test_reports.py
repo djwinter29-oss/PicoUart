@@ -518,6 +518,23 @@ def test_late_feature_transfer_is_bounded_and_quarantines_the_connection(monkeyp
         client.read_control()
 
 
+def test_status_deadline_bounds_metadata_feature_transfers():
+    client = PicoUartHid(device=FakeHidDevice({}))
+    transfer_timeouts = []
+    bounded_transfer = client._bounded_transfer
+
+    def record_timeout(operation, timeout_s=3.0):
+        transfer_timeouts.append(timeout_s)
+        return bounded_transfer(operation, timeout_s)
+
+    client._bounded_transfer = record_timeout
+    deadline = time.monotonic() + 1.0
+
+    assert client.read_status(0, deadline=deadline) is None
+    assert len(transfer_timeouts) == 2
+    assert all(0 < timeout <= 1.0 for timeout in transfer_timeouts)
+
+
 def test_close_waits_for_timed_out_feature_transfer_before_closing_device(monkeypatch):
     import pico_uart.hid.client as client_module
 
