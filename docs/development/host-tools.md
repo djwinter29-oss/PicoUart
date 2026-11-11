@@ -273,6 +273,10 @@ The shared `/api/status` contract includes per-channel lifecycle, Input sequence
 and `overflow_counts` derived from explicitly fetched diagnostics (unknown entries are null). Board-action results
 are returned by action endpoints, not as a .NET-only `control` field in the status snapshot.
 
+Host tests validate software contracts, not physical USB/HID enumeration or UART signaling. For board testing, use the
+[test documentation index](../tests/README.md); release qualification remains separate and requires the exact packaged
+artifacts and matching hashes described in the [release HIL gates](../deployment/releasing.md#release-hil-gates).
+
 ### Local .NET Publishing
 
 Publish a framework-dependent build when the target has the .NET 10 ASP.NET Core Runtime installed:

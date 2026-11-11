@@ -203,41 +203,57 @@ public sealed class PicoUartHid : IDisposable
     }
 
     public ChannelStatus? ReadStatus(int timeoutMs = 250)
+        => ReadStatus(timeoutMs, timeoutMs);
+
+    internal ChannelStatus? ReadStatus(int timeoutMs, int operationTimeoutMs)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(timeoutMs);
+        if (timeoutMs > 0) ArgumentOutOfRangeException.ThrowIfNegativeOrZero(operationTimeoutMs);
+        var timer = Stopwatch.StartNew();
         lock (gate)
         {
             CheckConnection();
             if (timeoutMs == 0) return null;
-            stream.ReadTimeout = timeoutMs;
+            var remainingMs = RemainingTimeoutMs(timer, operationTimeoutMs);
+            if (remainingMs <= 0) return null;
+            var info = ReadIdentity(remainingMs);
+            remainingMs = RemainingTimeoutMs(timer, operationTimeoutMs);
+            if (remainingMs <= 0) return null;
+            var config = ReadConfiguration(remainingMs);
+            remainingMs = RemainingTimeoutMs(timer, operationTimeoutMs);
+            if (remainingMs <= 0) return null;
+            stream.ReadTimeout = Math.Min(timeoutMs, remainingMs);
             var report = new byte[stream.Device.GetMaxInputReportLength()];
             int count;
             try { count = stream.Read(report, 0, report.Length); }
             catch (TimeoutException) { return null; }
             if (count != Protocol.ChannelSize + 1)
                 throw new InvalidOperationException("unexpected HID channel report size");
-            var info = ReadIdentity();
-            var config = ReadConfiguration();
             return Protocol.ParseChannel(report[0], report.AsSpan(1, count - 1), info, config);
         }
     }
 
-    public BoardIdentity ReadIdentity()
+    public BoardIdentity ReadIdentity() => ReadIdentity(3000);
+
+    private BoardIdentity ReadIdentity(int timeoutMs)
     {
         lock (gate)
         {
             CheckConnection();
-            return identity ??= Protocol.ParseIdentity(ReadFeature(Protocol.IdentityReportId, Protocol.IdentitySize));
+            return identity ??= Protocol.ParseIdentity(
+                ReadFeature(Protocol.IdentityReportId, Protocol.IdentitySize, timeoutMs));
         }
     }
 
-    public ConfigurationStatus ReadConfiguration()
+    public ConfigurationStatus ReadConfiguration() => ReadConfiguration(3000);
+
+    private ConfigurationStatus ReadConfiguration(int timeoutMs)
     {
         lock (gate)
         {
-            var info = ReadIdentity();
+            var info = ReadIdentity(timeoutMs);
             return configuration ??= Protocol.ParseConfiguration(
-                ReadFeature(Protocol.ConfigurationReportId, Protocol.ConfigurationSize), info);
+                ReadFeature(Protocol.ConfigurationReportId, Protocol.ConfigurationSize, timeoutMs), info);
         }
     }
 
@@ -453,6 +469,9 @@ public sealed class PicoUartHid : IDisposable
 
     private ActionResult ReadActionResultCore(int timeoutMs) =>
         Protocol.ParseActionResult(ReadFeature(Protocol.ActionReportId, Protocol.ActionSize, timeoutMs));
+
+    private static int RemainingTimeoutMs(Stopwatch timer, int timeoutMs) =>
+        Math.Max(0, (int)(timeoutMs - timer.Elapsed.TotalMilliseconds));
 
     private static IOException Unconfirmed(string message) => new(message);
 }

@@ -27,7 +27,8 @@ try
     {
         case "status":
             var sample = StatusSnapshot.Poll(
-                client.ReadStatus, TimeSpan.FromSeconds(options.StatusTimeout))
+                (readTimeoutMs, operationTimeoutMs) => client.ReadStatus(readTimeoutMs, operationTimeoutMs),
+                TimeSpan.FromSeconds(options.StatusTimeout))
                 ?? throw new InvalidOperationException("no status report arrived before timeout");
             Console.WriteLine(StatusSnapshot.ToSortedJson(
                 StatusSnapshot.FromFirstSample(sample, DateTimeOffset.UtcNow)));

@@ -136,6 +136,16 @@ public sealed class OptionsTests
         Assert.Throws<ArgumentException>(() => Options.Parse(["status", "--timeout", input]));
     }
 
+    [Theory]
+    [InlineData("status", "--duration", "10")]
+    [InlineData("web", "--duration", "10")]
+    [InlineData("monitor", "--port", "5001")]
+    [InlineData("status", "--port", "5001")]
+    public void CommandSpecificOptionsAreRejectedForOtherCommands(string command, string option, string value)
+    {
+        Assert.Throws<ArgumentException>(() => Options.Parse([command, option, value]));
+    }
+
     [Fact]
     public void DeviceSelectorsAreMutuallyExclusiveBeforeOpeningHardware()
     {

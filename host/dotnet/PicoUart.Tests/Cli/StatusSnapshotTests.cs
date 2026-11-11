@@ -95,30 +95,48 @@ public sealed class StatusSnapshotTests
     public void PollReturnsTheFirstSampleAndCapsEachReadAt250Ms()
     {
         var calls = new List<int>();
+        var operationTimeouts = new List<int>();
         var sample = new ChannelStatus(0, "ready", 1, 115200, 8, 1, "none", 1, 500, 1, 2, 3, 4);
         ChannelStatus? found = null;
         var reads = 0;
-        found = StatusSnapshot.Poll(timeoutMs =>
+        found = StatusSnapshot.Poll((timeoutMs, operationTimeoutMs) =>
         {
             calls.Add(timeoutMs);
+            operationTimeouts.Add(operationTimeoutMs);
             return ++reads == 3 ? sample : null;
         }, TimeSpan.FromMilliseconds(800));
         Assert.Same(sample, found);
         Assert.Equal(3, calls.Count);
         Assert.All(calls, timeoutMs => Assert.InRange(timeoutMs, 1, 250));
+        Assert.All(operationTimeouts, timeoutMs => Assert.InRange(timeoutMs, 1, 800));
+        Assert.All(calls.Zip(operationTimeouts), pair => Assert.True(pair.First <= pair.Second));
     }
 
     [Fact]
     public void PollReturnsNullWhenEveryReadIsEmpty()
     {
         var calls = 0;
-        var found = StatusSnapshot.Poll(_ =>
+        var found = StatusSnapshot.Poll((_, _) =>
         {
             calls++;
             return null;
         }, TimeSpan.FromMilliseconds(30));
         Assert.Null(found);
         Assert.True(calls >= 1);
+    }
+
+    [Fact]
+    public void PollDoesNotReturnASampleProducedAfterItsDeadline()
+    {
+        var sample = new ChannelStatus(0, "ready", 1, 115200, 8, 1, "none", 1, 500, 1, 2, 3, 4);
+
+        var found = StatusSnapshot.Poll((_, _) =>
+        {
+            Thread.Sleep(50);
+            return sample;
+        }, TimeSpan.FromMilliseconds(10));
+
+        Assert.Null(found);
     }
 
     private static void AssertSorted(JsonElement element)

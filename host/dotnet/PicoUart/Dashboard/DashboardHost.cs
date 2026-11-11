@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using PicoUart.Hid;
 using PicoUart.Wire;
@@ -12,6 +13,8 @@ namespace PicoUart.Dashboard;
 
 internal static class DashboardHost
 {
+    private const long MaxConfigurationRequestBytes = 1024;
+
     public static async Task RunAsync(int port, string? serialNumber, string? devicePath)
     {
         var builder = WebApplication.CreateBuilder(Array.Empty<string>());
@@ -121,6 +124,15 @@ internal static class DashboardHost
         });
         app.MapPost("/api/configuration", async (HttpContext context, DashboardBoards dashboard) =>
         {
+            var bodyLimit = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if (bodyLimit is null || bodyLimit.IsReadOnly)
+                throw new InvalidOperationException("configuration request size limit is unavailable");
+            bodyLimit.MaxRequestBodySize = MaxConfigurationRequestBytes;
+            if (context.Request.ContentLength > MaxConfigurationRequestBytes)
+                return Results.Json(new
+                {
+                    error = $"configuration request exceeds {MaxConfigurationRequestBytes} bytes"
+                }, statusCode: 413);
             var token = context.Session.GetString("csrf_token");
             var supplied = context.Request.Headers["X-CSRF-Token"].ToString();
             if (token is null || !CryptographicOperations.FixedTimeEquals(
@@ -136,6 +148,13 @@ internal static class DashboardHost
                 var result = dashboard.SaveConfiguration(
                     context.Request.Query["board"], request.Profile, request.UnsafeOverclock);
                 return Results.Json(result, Protocol.JsonOptions);
+            }
+            catch (BadHttpRequestException error) when (error.StatusCode == StatusCodes.Status413PayloadTooLarge)
+            {
+                return Results.Json(new
+                {
+                    error = $"configuration request exceeds {MaxConfigurationRequestBytes} bytes"
+                }, statusCode: 413);
             }
             catch (Exception error) when (error is JsonException or ArgumentException
                 || HidErrors.IsDeviceError(error))

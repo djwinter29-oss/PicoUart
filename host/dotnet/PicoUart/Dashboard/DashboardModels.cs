@@ -36,6 +36,7 @@ public sealed class DashboardChannel(int id)
     internal byte? MeasurementBaseline { get; set; }
     internal long LastInputTimestamp { get; set; }
     internal bool Stale { get; set; }
+    internal bool IgnoredOutOfOrderSequence { get; set; }
 }
 
 public sealed record BoardControlStatus(byte Action, byte Status, byte ErrorReason, string? Error);
@@ -104,9 +105,13 @@ public sealed class DashboardSnapshot
             first = true;
         }
         var advance = first ? 1 : (source.Sequence - channel.Sequence!.Value + 65536) & 65535;
-        if (!first && (advance == 0 || advance >= 32768))
+        if (!first && advance == 0) return;
+        if (!first && advance > 32768)
         {
-            MarkIncomplete(channel);
+            channel.TrafficIncomplete = true;
+            if (!channel.IgnoredOutOfOrderSequence)
+                channel.TrafficGaps++;
+            channel.IgnoredOutOfOrderSequence = true;
             return;
         }
         var exact = source.IntervalMs is > 0 and < ushort.MaxValue;
@@ -125,6 +130,7 @@ public sealed class DashboardSnapshot
         channel.UpdatedAt = UpdatedAt = DateTimeOffset.UtcNow;
         channel.LastInputTimestamp = now;
         channel.Stale = false;
+        channel.IgnoredOutOfOrderSequence = false;
         var counters = new Traffic
         {
             UartTx = source.UartTxBytes,

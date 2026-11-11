@@ -71,6 +71,39 @@ public sealed class DashboardTests
     }
 
     [Fact]
+    public void DuplicateSequenceDoesNotCreateTrafficGapOrReplaceSample()
+    {
+        var snapshot = new DashboardSnapshot();
+        snapshot.Apply(Sample(10, 500, 100));
+        var updatedAt = snapshot.Channels[0].UpdatedAt;
+
+        snapshot.Apply(Sample(10, 500, 500));
+
+        Assert.Equal(0, snapshot.Channels[0].TrafficGaps);
+        Assert.False(snapshot.Channels[0].TrafficIncomplete);
+        Assert.Equal(updatedAt, snapshot.Channels[0].UpdatedAt);
+        Assert.Equal(100d, snapshot.Channels[0].Totals.UartTx);
+    }
+
+    [Fact]
+    public void RepeatedOutOfOrderSamplesCountOneGapUntilSequenceRecovers()
+    {
+        var snapshot = new DashboardSnapshot();
+        snapshot.Apply(Sample(10, 500, 100));
+        snapshot.Apply(Sample(9, 500, 90));
+        snapshot.Apply(Sample(9, 500, 90));
+
+        Assert.Equal(1, snapshot.Channels[0].TrafficGaps);
+        Assert.Equal((ushort)10, snapshot.Channels[0].Sequence);
+
+        snapshot.Apply(Sample(11, 500, 200));
+        snapshot.Apply(Sample(10, 500, 100));
+
+        Assert.Equal(2, snapshot.Channels[0].TrafficGaps);
+        Assert.Equal((ushort)11, snapshot.Channels[0].Sequence);
+    }
+
+    [Fact]
     public void ActionAndSaveStatusReflectReport20Result()
     {
         var snapshot = new DashboardSnapshot();

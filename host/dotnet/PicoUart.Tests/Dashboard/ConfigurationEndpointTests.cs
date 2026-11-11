@@ -96,6 +96,7 @@ public sealed class ConfigurationEndpointTests
             Assert.Equal(64, token.Length);
             const string valid = "{\"profile\":0,\"unsafe_overclock\":false}";
             await AssertResponse(valid, 403);
+            await AssertPostError("/api/actions/toggle-led?board=unknown", 403);
             http.DefaultRequestHeaders.Add("X-CSRF-Token", "invalid");
             await AssertResponse(valid, 403);
             http.DefaultRequestHeaders.Remove("X-CSRF-Token");
@@ -105,6 +106,18 @@ public sealed class ConfigurationEndpointTests
             await AssertResponse("{\"profile\":1,\"unsafe_overclock\":false}", 400);
             await AssertResponse("{\"profile\":0,\"unsafe_overclock\":false,\"extra\":0}", 400);
             await AssertResponse(valid, 409);
+            using (var oversizedContent = new StringContent(new string('x', 2048), Encoding.UTF8, "application/json"))
+            using (var oversizedResponse = await http.PostAsync("/api/configuration?board=unknown", oversizedContent))
+            {
+                Assert.Equal(413, (int)oversizedResponse.StatusCode);
+                using var body = JsonDocument.Parse(await oversizedResponse.Content.ReadAsStringAsync());
+                Assert.Contains("1024 bytes", body.RootElement.GetProperty("error").GetString());
+            }
+
+            await AssertGetError("/api/status?board=unknown", 409);
+            await AssertGetError("/api/diagnostics?board=unknown", 409);
+            await AssertPostError("/api/actions/toggle-led?board=unknown", 409);
+            await AssertPostError("/api/actions/unknown?board=unknown", 404);
             using var snapshot = JsonDocument.Parse(await http.GetStringAsync("/api/status"));
             Assert.Equal(JsonValueKind.Null, snapshot.RootElement.GetProperty("configuration_save").ValueKind);
             Assert.Equal(JsonValueKind.Null, snapshot.RootElement.GetProperty("configuration_save_error").ValueKind);
@@ -124,6 +137,23 @@ public sealed class ConfigurationEndpointTests
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             Assert.False(string.IsNullOrEmpty(body.RootElement.GetProperty("error").GetString()));
             Assert.False(body.RootElement.TryGetProperty("ok", out _));
+        }
+
+        async Task AssertGetError(string path, int expectedStatus)
+        {
+            using var response = await http.GetAsync(path);
+            Assert.Equal(expectedStatus, (int)response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.False(string.IsNullOrEmpty(body.RootElement.GetProperty("error").GetString()));
+        }
+
+        async Task AssertPostError(string path, int expectedStatus)
+        {
+            using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync(path, content);
+            Assert.Equal(expectedStatus, (int)response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.False(string.IsNullOrEmpty(body.RootElement.GetProperty("error").GetString()));
         }
     }
 }

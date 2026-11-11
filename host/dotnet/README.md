@@ -77,7 +77,8 @@ validation, traffic accounting, fault-history interpretation, and command timing
 
 `status` exits non-zero when no report arrives before its timeout. **Unlike the Python CLI, .NET `monitor` can finish
 successfully with no reports.** `status` prints the same six-entry `channels` snapshot as Python `status --json`,
-with sorted object keys. It retries for `--timeout` seconds (default 2); each read waits at most 250 ms.
+with sorted object keys. It retries for `--timeout` seconds (default 2); each Input read waits at most 250 ms, and
+first-time metadata reads share the remaining timeout.
 `monitor` still prints one channel object per line. Field rules are in the
 [host tools guide](../../docs/development/host-tools.md#python-test-automation).
 Your runner must check sample availability and channel health, not just the exit code.
