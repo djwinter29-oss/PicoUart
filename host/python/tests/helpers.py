@@ -4,7 +4,7 @@
 
 import struct
 
-from pico_uart import protocol as hid
+from pico_uart.hid import protocol as hid
 
 
 def device_info_bytes(*, product_id=1, serial=bytes.fromhex("0123456789ABCDEF"),

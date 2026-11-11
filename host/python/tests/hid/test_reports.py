@@ -11,8 +11,8 @@ from helpers import (
     FakeHidDevice, channel_bytes, control_bytes, device_info_bytes, telemetry_bytes,
     configuration_bytes, diagnostic_bytes,
 )
-from pico_uart.client import PicoUartHid, read_telemetry as read_telemetry_from_device
-from pico_uart.protocol import (
+from pico_uart.hid.client import PicoUartHid, read_telemetry as read_telemetry_from_device
+from pico_uart.hid.protocol import (
     CHANNEL_SIZE,
     CONTROL_SIZE,
     DEVICE_INFO_SIZE,
@@ -118,7 +118,7 @@ def test_ready_wait_accepts_pending_then_applied_for_all_channels(monkeypatch):
 
 def test_ready_wait_rejects_ready_sample_returned_after_deadline(monkeypatch):
     from types import SimpleNamespace
-    import pico_uart.client as client_module
+    import pico_uart.hid.client as client_module
     now = [0.0]
     monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now[0]))
     client = PicoUartHid(device=FakeHidDevice({}))
@@ -392,7 +392,7 @@ def test_duplicate_and_old_sequence_reports_never_add_traffic_or_interval_twice(
 
 @pytest.mark.parametrize("resumed_sequence", [100, 99, 40000, 0])
 def test_stale_stream_rebaselines_any_sequence_then_resumes_accounting(resumed_sequence):
-    from pico_uart.protocol import parse_channel
+    from pico_uart.hid.protocol import parse_channel
 
     client = PicoUartHid(device=FakeHidDevice({}))
     client._apply_input(0, parse_channel(channel_bytes(sequence=100)), 0.0)
@@ -492,7 +492,7 @@ def test_capability_masks_gate_led_reset_and_save_commands():
 
 
 def test_late_feature_transfer_is_bounded_and_quarantines_the_connection(monkeypatch):
-    import pico_uart.client as client_module
+    import pico_uart.hid.client as client_module
 
     started = threading.Event()
 
@@ -512,7 +512,7 @@ def test_late_feature_transfer_is_bounded_and_quarantines_the_connection(monkeyp
 
 
 def test_close_waits_for_timed_out_feature_transfer_before_closing_device(monkeypatch):
-    import pico_uart.client as client_module
+    import pico_uart.hid.client as client_module
 
     started = threading.Event()
     release = threading.Event()

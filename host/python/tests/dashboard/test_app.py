@@ -7,8 +7,8 @@ import re
 
 import pytest
 
-from pico_uart.web import app as web_app
-from pico_uart.web.app import create_app
+from pico_uart.dashboard import app as web_app
+from pico_uart.dashboard.app import create_app
 
 
 class FakeDashboard:
@@ -89,10 +89,13 @@ def test_dashboard_serves_static_assets_safely():
     client = create_app(FakeDashboard()).test_client()
     page = client.get("/")
     assert page.status_code == 200
+    assert page.headers["Cache-Control"] == "no-store"
     assert b"<title>PicoUart Diagnostics | Python</title>" in page.data
+    assert client.get("/api/status").headers["Cache-Control"] == "no-store"
     for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
         response = client.get(f"/{path}")
         assert response.status_code == 200
+        assert response.headers["Cache-Control"] == "no-store"
         assert response.data
         assert response.headers["X-Content-Type-Options"] == "nosniff"
 
@@ -101,7 +104,7 @@ def test_dashboard_serves_static_assets_safely():
     ("", "0.0.0-debug"), ("1.2.3", "1.2.3"), ("<script>", "&lt;script&gt;"),
 ])
 def test_dashboard_shows_host_version_safely(monkeypatch, version, expected):
-    monkeypatch.setattr("pico_uart.web.app.__version__", "0.0.0-debug")
+    monkeypatch.setattr("pico_uart.dashboard.app.__version__", "0.0.0-debug")
     monkeypatch.setenv("PICO_UART_HOST_VERSION", version)
     page = create_app(FakeDashboard()).test_client().get("/").data.decode()
     assert f'aria-label="Host application version">{expected}</span>' in page
@@ -109,10 +112,10 @@ def test_dashboard_shows_host_version_safely(monkeypatch, version, expected):
 
 def test_run_server_suppresses_routine_access_logs(monkeypatch, caplog):
     class FakeApp:
-        def run(self, **_kwargs):
+        def run(self, **kwargs):
+            assert kwargs["request_handler"] is web_app._QuietRequestHandler
+            kwargs["request_handler"].log_request(None, 200, 1)
             logger = logging.getLogger("werkzeug")
-            logger.info("GET /")
-            logger.info("GET /api/status")
             logger.warning("request warning")
             logger.error("request error")
 
@@ -125,11 +128,13 @@ def test_run_server_suppresses_routine_access_logs(monkeypatch, caplog):
 
     monkeypatch.setattr(web_app, "BoardRegistry", FakeRegistry)
     monkeypatch.setattr(web_app, "create_app", lambda *_args, **_kwargs: FakeApp())
+    logger = logging.getLogger("werkzeug")
+    previous_level = logger.level
     with caplog.at_level(logging.INFO, logger="werkzeug"):
         web_app.run_server()
-    assert "GET /" not in caplog.text
-    assert "request warning" in caplog.text
-    assert "request error" in caplog.text
+        assert logger.level == logging.INFO
+    assert logger.level == previous_level
+    assert [record.getMessage() for record in caplog.records] == ["request warning", "request error"]
 
 
 def test_dashboard_sanitizes_reset_capability_errors():

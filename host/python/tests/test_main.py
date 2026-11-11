@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Ji Dong
-"""Hardware-free tests for the public PicoUart command-line interface."""
+"""Hardware-free tests for the public PicoUart command-line entry point."""
 
 from __future__ import annotations
 
 import runpy
 import re
+import sys
 
 import pytest
 
-from pico_uart import cli
+from pico_uart import main as cli
 
 
 @pytest.mark.parametrize(
@@ -113,7 +114,7 @@ def test_main_status_text_retries_empty_reads_and_selects_device_path(monkeypatc
 
 def test_monitor_preserves_all_six_hil_health_tokens_in_one_publication_round(monkeypatch, capsys):
     from helpers import FakeHidDevice, channel_bytes
-    from pico_uart.client import PicoUartHid
+    from pico_uart.hid.client import PicoUartHid
 
     device = FakeHidDevice({}, inputs=[
         (10 + index, channel_bytes(sequence=1)) for index in range(6)
@@ -168,7 +169,7 @@ def test_main_rejects_invalid_command_arguments(arguments, message):
 
 
 def test_main_web_starts_server_with_port_and_selector(monkeypatch):
-    from pico_uart.web import app as web_app
+    from pico_uart.dashboard import app as web_app
 
     calls = []
     monkeypatch.setattr(
@@ -183,7 +184,7 @@ def test_main_web_starts_server_with_port_and_selector(monkeypatch):
 
 @pytest.mark.parametrize("error", [OSError("bind failed"), RuntimeError("server failed")])
 def test_main_web_reports_server_errors(monkeypatch, capsys, error):
-    from pico_uart.web import app as web_app
+    from pico_uart.dashboard import app as web_app
 
     def fail(*_arguments):
         raise error
@@ -224,10 +225,12 @@ def test_main_reports_hid_errors_and_status_timeouts(monkeypatch, capsys):
     assert "timed out without receiving" in capsys.readouterr().err
 
 
-def test_module_entrypoint_exits_with_cli_status(monkeypatch):
-    monkeypatch.setattr(cli, "main", lambda: 7)
+def test_main_module_entrypoint_runs_cli(monkeypatch, capsys):
+    monkeypatch.delitem(sys.modules, "pico_uart.main", raising=False)
+    monkeypatch.setattr(sys, "argv", ["pico-uart", "--help"])
 
     with pytest.raises(SystemExit) as error:
-        runpy.run_module("pico_uart.__main__", run_name="__main__")
+        runpy.run_module("pico_uart.main", run_name="__main__")
 
-    assert error.value.code == 7
+    assert error.value.code == 0
+    assert "usage: pico-uart" in capsys.readouterr().out

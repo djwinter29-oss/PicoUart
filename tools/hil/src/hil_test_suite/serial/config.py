@@ -35,7 +35,7 @@ CBAUD = termios.CBAUD
 
 def pico_uart_endpoint(path: str) -> tuple[str, int] | None:
     """Resolve a Linux TTY to its PicoUart USB serial and CDC index, never its ttyACM ordinal."""
-    from pico_uart.transport import PRODUCT_ID, VENDOR_ID
+    from pico_uart.hid.transport import PRODUCT_ID, VENDOR_ID
 
     device = Path("/sys/class/tty") / Path(os.path.realpath(path)).name / "device"
     if not device.exists():

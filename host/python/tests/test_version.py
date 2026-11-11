@@ -13,5 +13,4 @@ def test_package_exports_its_installed_version():
     except PackageNotFoundError:
         assert pico_uart.__version__ == "0.0.0-debug"
     else:
-        expected_version = "0.0.0-debug" if installed_version == "0.0.0.dev0" else installed_version
-        assert pico_uart.__version__ == expected_version
+        assert pico_uart.__version__ == installed_version

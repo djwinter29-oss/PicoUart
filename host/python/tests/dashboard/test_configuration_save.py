@@ -6,10 +6,10 @@ from unittest.mock import patch
 
 import pytest
 
-from pico_uart.client import PicoUartHid
+from pico_uart.hid.client import PicoUartHid
 from helpers import control_bytes, device_info_bytes
-from pico_uart.web.app import create_app
-from pico_uart.protocol import REPORT_ID_CONTROL, REPORT_ID_DEVICE_INFO
+from pico_uart.dashboard.app import create_app
+from pico_uart.hid.protocol import REPORT_ID_CONTROL, REPORT_ID_DEVICE_INFO
 
 
 class ConfigDevice:
@@ -85,7 +85,7 @@ def test_partial_write_mismatch_and_timeout_are_not_success():
         PicoUartHid(device=ConfigDevice(written=8)).save_configuration(0)
     with pytest.raises(RuntimeError, match="does not match"):
         PicoUartHid(device=ConfigDevice(result_profile=1)).save_configuration(0)
-    with patch("pico_uart.client.time.monotonic", side_effect=[0, 1, 4]), patch("pico_uart.client.time.sleep"):
+    with patch("pico_uart.hid.client.time.monotonic", side_effect=[0, 1, 4]), patch("pico_uart.hid.client.time.sleep"):
         with pytest.raises(RuntimeError, match="timed out"):
             PicoUartHid(device=ConfigDevice(status=1)).save_configuration(0)
 
@@ -103,7 +103,7 @@ def test_pending_save_is_not_replaced():
 ])
 def test_save_report_rejects_malformed_payload(payload):
     with pytest.raises(RuntimeError):
-        from pico_uart.protocol import parse_control
+        from pico_uart.hid.protocol import parse_control
 
         parse_control(payload)
 

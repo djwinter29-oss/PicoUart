@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-import pico_uart as hid
+import pico_uart
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -23,6 +23,6 @@ def hid_module():
     # hidapi is a native extension; it may be unavailable in sandboxes without a
     # prebuilt wheel for the host Python. Skip HID-dependent tests rather than
     # failing collection for the whole suite.
-    if hid.hid is None:
+    if pico_uart.hid.transport.hid is None:
         pytest.skip("hidapi runtime not installed; skipping HID-dependent test")
-    return hid
+    return pico_uart

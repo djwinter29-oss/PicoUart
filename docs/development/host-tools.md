@@ -118,8 +118,9 @@ The supported high-level API is `PicoUartHid` and the methods described here, pl
 `read_board_status`, `read_board_temperature`, `read_firmware_version`, `read_configuration`, `read_hardware_info`,
 `read_overflow_counts`, `read_telemetry`, and `reset_board`.
 Report parsers, IDs and sizes, USB identifiers, raw HID access, and generic feature-report helpers are low-level
-exports tied to the firmware report contract. Prefer their owning `pico_uart.protocol`, `pico_uart.transport`,
-and `pico_uart.client` modules when using them directly.
+exports tied to the firmware report contract. Prefer their owning `pico_uart.hid.protocol`,
+`pico_uart.hid.transport`, and `pico_uart.hid.client` modules when using them directly.
+The optional third-party hidapi module is available as `pico_uart.hid.transport.hid`.
 
 ### UART readiness
 
@@ -185,8 +186,8 @@ The commands below build locally; they do not publish to PyPI.
 Stage the shared dashboard into the Python package, then build the wheel from the repository root:
 
 ```bash
-mkdir -p host/python/src/pico_uart/web/assets
-cp -R host/web/src/. host/python/src/pico_uart/web/assets/
+mkdir -p host/python/src/pico_uart/dashboard/assets
+cp -R host/web/src/. host/python/src/pico_uart/dashboard/assets/
 uv build --wheel --directory host/python
 ```
 

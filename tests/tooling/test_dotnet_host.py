@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from pico_uart.web.monitor import empty_snapshot
+from pico_uart.dashboard.monitor import empty_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[2]

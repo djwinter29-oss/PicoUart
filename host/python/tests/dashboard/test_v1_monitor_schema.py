@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from pico_uart.web.monitor import BoardMonitor, empty_snapshot
+from pico_uart.dashboard.monitor import BoardMonitor, empty_snapshot
 
 
 def test_empty_snapshot_uses_per_channel_accounting_fields():
@@ -48,7 +48,7 @@ def test_metadata_polling_uses_hid_cadence_without_sleeping_between_input_reads(
     service._client_factory = Client
     service._apply_status = lambda status: service._snapshot.update(refresh_interval_ms=750)
     service._read_metadata = read_metadata
-    monkeypatch.setattr("pico_uart.web.monitor.time.monotonic", lambda: now)
+    monkeypatch.setattr("pico_uart.dashboard.monitor.time.monotonic", lambda: now)
     service._poll()
     assert reads == [0.25, 1.0, 1.75]
 
@@ -159,7 +159,7 @@ def test_static_identity_masks_and_dynamic_clock_keep_their_own_report_sources()
 
 def test_non_save_control_result_is_idle_for_save_ui_and_capability_failure_is_explicit():
     from helpers import control_bytes
-    from pico_uart.protocol import parse_control
+    from pico_uart.hid.protocol import parse_control
 
     service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Ji Dong
-"""Pure decoders for the selected PicoUart HID layouts."""
+"""Pure decoders for PicoUart HID report layouts."""
 
 import struct
 

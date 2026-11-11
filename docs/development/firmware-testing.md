@@ -118,5 +118,5 @@ default system interpreter:
 
 ```sh
 PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
-host/python/.venv/bin/python -m pico_uart --help
+host/python/.venv/bin/python -m pico_uart.main --help
 ```

@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Ji Dong
-"""Mocked hidapi discovery tests for fail-closed collection selection."""
+"""Mocked HID discovery tests for fail-closed collection selection."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-from pico_uart import transport
+from pico_uart.hid import transport
 
 
 @pytest.fixture

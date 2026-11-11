@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Ji Dong
-"""Command-line interface for PicoUart HID diagnostics and board controls."""
+"""Command-line entry point for PicoUart HID diagnostics and board controls."""
 
 import argparse
 import json
@@ -8,7 +8,7 @@ import math
 import sys
 import time
 
-from .client import PicoUartHid
+from .hid.client import PicoUartHid
 
 
 def print_status(status: dict[str, object]) -> None:
@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
         if not 1 <= arguments.port <= 65535:
             raise SystemExit("--port must be between 1 and 65535")
         try:
-            from .web.app import run_server
+            from .dashboard.app import run_server
 
             run_server(arguments.port, arguments.serial, arguments.device_path)
         except (OSError, RuntimeError) as error:
@@ -123,3 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

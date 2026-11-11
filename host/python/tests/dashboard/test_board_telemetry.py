@@ -5,8 +5,8 @@
 import pytest
 
 from helpers import FakeHidDevice, device_info_bytes, telemetry_bytes
-from pico_uart.client import PicoUartHid
-from pico_uart.protocol import (
+from pico_uart.hid.client import PicoUartHid
+from pico_uart.hid.protocol import (
     REPORT_ID_DEVICE_INFO,
     REPORT_ID_TELEMETRY,
     parse_device_info,

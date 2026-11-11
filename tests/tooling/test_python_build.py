@@ -26,7 +26,7 @@ def python_project(repo_root, tmp_path):
                     ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"))
     shutil.copytree(repo_root / "host/python/tests", project / "tests",
                     ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(repo_root / "host/web/src", project / "src/pico_uart/web/assets")
+    shutil.copytree(repo_root / "host/web/src", project / "src/pico_uart/dashboard/assets")
     return project
 
 
@@ -120,7 +120,7 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
     )
     assert result.returncode == 0, result.stdout + result.stderr
     expected_assets = {
-        f"pico_uart/web/assets/{asset.relative_to(repo_root / 'host/web/src').as_posix()}": asset.read_bytes()
+        f"pico_uart/dashboard/assets/{asset.relative_to(repo_root / 'host/web/src').as_posix()}": asset.read_bytes()
         for asset in (repo_root / "host/web/src").rglob("*")
         if asset.is_file() and "__pycache__" not in asset.parts and asset.suffix != ".pyc"
     }
@@ -133,11 +133,13 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
             assert metadata["Version"] == expected_version
             assert metadata["License-Expression"] == "BSD-3-Clause"
             assert set(metadata.get_all("Requires-Dist")) == set(runtime_requirements)
+            entry_points = wheel.read(f"pico_uart-{expected_version}.dist-info/entry_points.txt").decode()
+            assert "pico-uart = pico_uart.main:main" in entry_points
             assert wheel.read(f"pico_uart-{expected_version}.dist-info/licenses/LICENSE") == license_text
             if directory != editable_directory:
                 for name, content in expected_assets.items():
                     assert wheel.read(name) == content
-                assert {name for name in wheel.namelist() if name.startswith("pico_uart/web/assets/")} == set(
+                assert {name for name in wheel.namelist() if name.startswith("pico_uart/dashboard/assets/")} == set(
                     expected_assets
                 )
             assert not any(name.startswith(("tests/", "pico_uart/tests/")) for name in wheel.namelist())
@@ -147,6 +149,6 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
 @pytest.mark.parametrize("workflow", ["release.yml", "publish-pypi.yml"])
 def test_python_wheel_workflows_stage_shared_dashboard_assets(repo_root, workflow):
             content = (repo_root / ".github/workflows" / workflow).read_text()
-            staging = "cp -R host/web/src/. host/python/src/pico_uart/web/assets/"
+            staging = "cp -R host/web/src/. host/python/src/pico_uart/dashboard/assets/"
             build = "python -m pip wheel --no-deps host/python --wheel-dir dist"
             assert content.index(staging) < content.index(build)

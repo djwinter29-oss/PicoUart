@@ -171,8 +171,8 @@ jobs:
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          mkdir -p host/python/src/pico_uart/web/assets
-          cp -R host/web/src/. host/python/src/pico_uart/web/assets/
+          mkdir -p host/python/src/pico_uart/dashboard/assets
+          cp -R host/web/src/. host/python/src/pico_uart/dashboard/assets/
           python -m pip wheel --no-deps host/python --wheel-dir dist
 
       - name: Verify installed Python release
@@ -186,7 +186,7 @@ jobs:
           host-wheel-check/bin/python - <<'PY'
           from importlib.metadata import version
           import os
-          from pico_uart.web.app import create_app
+          from pico_uart.dashboard.app import create_app
           expected = os.environ['VERSION']
           assert version('pico-uart') == expected
           page = create_app(object()).test_client().get('/')

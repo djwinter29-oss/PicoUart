@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Ji Dong
-"""Discover boards and share one monitor per board across dashboard requests."""
+"""Discover boards and share one monitor per dashboard across requests."""
 
 import hashlib
 import os
 import threading
 from typing import Any, Callable
 
-from ..transport import enumerate_devices
+from ..hid.transport import enumerate_devices
 from .monitor import BoardMonitor, empty_snapshot
 
 

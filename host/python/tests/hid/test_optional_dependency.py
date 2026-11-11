@@ -42,7 +42,7 @@ def _hid_unavailable():
 
 def test_module_imports_without_hidapi_installed():
     with _hid_unavailable() as module:
-        assert module.hid is None
+        assert module.hid.transport.hid is None
         # Constants (used by contract tests) must remain usable without hidapi.
         assert module.VENDOR_ID == 0x2E8A
         assert module.PRODUCT_ID == 0x116B
@@ -71,13 +71,13 @@ def test_hid_unavailable_helper_restores_real_hid_afterward(monkeypatch, body_fa
     expected = pytest.raises(ValueError) if body_fails else contextlib.nullcontext()
     with expected:
         with _hid_unavailable() as module:
-            assert module.hid is None
+            assert module.hid.transport.hid is None
             if body_fails:
                 raise ValueError("test body failed")
 
     assert sys.modules["hid"] is fake_hid
     assert sys.modules["pico_uart"] is baseline
-    assert baseline.hid is fake_hid
+    assert baseline.hid.transport.hid is fake_hid
 
 
 def test_docs_do_not_point_at_unrelated_wiring_setup_doc(repo_root):
@@ -86,7 +86,7 @@ def test_docs_do_not_point_at_unrelated_wiring_setup_doc(repo_root):
     explain the hidapi fallback inline instead of linking to it.
     """
     unrelated_doc_reference = "hil-fixture-setup" + ".md"
-    this_file = repo_root / "host/python/tests/test_hid_optional_dependency.py"
+    this_file = repo_root / "host/python/tests/hid/test_optional_dependency.py"
     conftest_file = repo_root / "host/python/tests/conftest.py"
     assert unrelated_doc_reference not in this_file.read_text()
     assert unrelated_doc_reference not in conftest_file.read_text()

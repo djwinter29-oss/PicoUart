@@ -9,8 +9,8 @@ import threading
 import time
 from typing import Any, Callable
 
-from ..client import PicoUartHid, _empty_channel
-from ..protocol import UART_CHANNEL_COUNT
+from ..hid.client import PicoUartHid, _empty_channel
+from ..hid.protocol import UART_CHANNEL_COUNT
 
 
 TRAFFIC_FIELDS = {

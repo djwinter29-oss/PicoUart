@@ -27,7 +27,7 @@ Issues = "https://github.com/djwinter29-oss/PicoUart/issues"
 Releases = "https://github.com/djwinter29-oss/PicoUart/releases"
 
 [project.scripts]
-pico-uart = "pico_uart.cli:main"
+pico-uart = "pico_uart.main:main"
 
 [dependency-groups]
 test = ["pytest==9.1.1"]
@@ -50,7 +50,7 @@ root = "../.."
 git_describe_command = "git describe --dirty --tags --long --match v[0-9]*.[0-9]*.[0-9]*"
 
 [tool.hatch.build]
-artifacts = ["src/pico_uart/web/assets/**"]
+artifacts = ["src/pico_uart/dashboard/assets/**"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pico_uart"]

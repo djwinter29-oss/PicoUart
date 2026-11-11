@@ -4,7 +4,7 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .client import (
+from .hid.client import (
     PicoUartHid,
     read_board_status,
     read_board_temperature,
@@ -15,7 +15,7 @@ from .client import (
     read_telemetry,
     reset_board,
 )
-from .protocol import (
+from .hid.protocol import (
     CHANNEL_SIZE,
     COMMAND_LED_OFF,
     COMMAND_LED_ON,
@@ -44,14 +44,13 @@ from .protocol import (
     parse_telemetry,
     require_payload,
 )
-from .transport import (
+from .hid.transport import (
     HID_INTERFACE_NUMBER,
     PRODUCT_ID,
     PRODUCT_STRING,
     USAGE,
     USAGE_PAGE,
     VENDOR_ID,
-    hid,
     open_device,
     open_enumerated_device,
 )
@@ -60,9 +59,6 @@ try:
     __version__ = version("pico-uart")
 except PackageNotFoundError:
     __version__ = "0.0.0-debug"
-else:
-    if __version__ == "0.0.0.dev0":
-        __version__ = "0.0.0-debug"
 
 __all__ = [
     "__version__",
@@ -101,7 +97,6 @@ __all__ = [
     "USAGE",
     "USAGE_PAGE",
     "VENDOR_ID",
-    "hid",
     "open_device",
     "open_enumerated_device",
     "parse_channel",

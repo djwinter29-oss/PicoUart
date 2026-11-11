@@ -4,16 +4,21 @@
 
 from __future__ import annotations
 
-import logging
+import os
 from pathlib import Path
 import secrets
-import os
 
 from flask import Flask, jsonify, render_template, request, send_from_directory, session
 from werkzeug.exceptions import BadRequest
+from werkzeug.serving import WSGIRequestHandler
 
 from .. import __version__
 from .boards import BoardRegistry
+
+
+class _QuietRequestHandler(WSGIRequestHandler):
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+        pass
 
 
 def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
@@ -36,6 +41,7 @@ def create_app(service: BoardRegistry | None = None, port: int = 5000) -> Flask:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; connect-src 'self'; img-src 'self'; "
             "style-src 'self'; script-src 'self'; frame-ancestors 'none'"
@@ -135,9 +141,14 @@ def run_server(
     device_path: str | None = None,
 ) -> None:
     """Run the dashboard on loopback only; never expose board controls to a LAN."""
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)
     dashboard = BoardRegistry(serial_number, device_path)
     try:
-        create_app(dashboard, port=port).run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
+        create_app(dashboard, port=port).run(
+            host="127.0.0.1",
+            port=port,
+            debug=False,
+            use_reloader=False,
+            request_handler=_QuietRequestHandler,
+        )
     finally:
         dashboard.close()

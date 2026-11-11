@@ -7,8 +7,8 @@ import re
 
 import pytest
 
-from pico_uart.web.app import create_app
-from pico_uart.web.boards import BoardRegistry
+from pico_uart.dashboard.app import create_app
+from pico_uart.dashboard.boards import BoardRegistry
 
 
 def device(serial, path):
