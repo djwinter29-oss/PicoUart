@@ -52,7 +52,7 @@ function fixture(html) {
   };
 }
 
-test("webhid report age text tracks freshness", () => {
+test("webhid report age text tracks monotonic freshness", () => {
   const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
   const document = fixture(html);
   globalThis.document = document;
@@ -60,21 +60,92 @@ test("webhid report age text tracks freshness", () => {
     const age = document.querySelector("#sample-time");
     updateReportAge({ connected: false }, 10000);
     assert.equal(age.hidden, true);
-    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:00.000Z"));
+    updateReportAge({ connected: true, telemetry_received_at: 10000 }, 10000);
     assert.equal(age.hidden, true);
-    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:03.000Z"));
+    updateReportAge({ connected: true, telemetry_received_at: 10000 }, 13000);
     assert.equal(age.hidden, true);
-    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:00:05.000Z"));
+    updateReportAge({ connected: true, telemetry_received_at: 10000 }, 15000);
     assert.equal(age.hidden, false);
     assert.equal(age.textContent, "Telemetry stale · 5 s ago");
     assert.equal(age.dataset.stale, "true");
-    updateReportAge({ connected: true, updated_at: null }, Date.parse("2026-01-01T00:00:05.000Z"));
+    updateReportAge({ connected: true, telemetry_received_at: null }, 15000);
     assert.equal(age.textContent, "Waiting for telemetry");
     assert.equal(age.hidden, false);
-    updateReportAge({ connected: true, updated_at: "2026-01-01T00:00:05.000Z" }, Date.parse("2026-01-01T00:00:05.000Z"));
+    updateReportAge({ connected: true, telemetry_received_at: 15000 }, 15000);
     assert.equal(age.hidden, true);
     assert.equal(age.dataset.stale, "false");
   } finally {
+    delete globalThis.document;
+  }
+});
+
+test("telemetry, channel and diagnostics ages ignore wall-clock changes", () => {
+  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+  const document = fixture(html);
+  const originalNow = Date.now;
+  const originalPerformance = Object.getOwnPropertyDescriptor(globalThis, "performance");
+  let monotonicNow = 10000;
+  Date.now = () => 100000;
+  Object.defineProperty(globalThis, "performance", {
+    configurable: true,
+    value: { now: () => monotonicNow },
+  });
+  globalThis.document = document;
+  const channel = {
+    id: 98,
+    channel_state: 2,
+    channel_state_name: "Ready",
+    uart_measurement_state: 1,
+    uart_measurement_state_name: "Current",
+    baud_rate: 115200,
+    data_bits: 8,
+    parity: "N",
+    stop_bits: 1,
+    counters: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 },
+    rates: { uart_tx: null, uart_rx: null, usb_tx: null, usb_rx: null },
+    input_received_at: 10000,
+  };
+  const diagnostic = {
+    received_at: 10000,
+    uart_measurement_state: 1,
+    uart_measurement_state_name: "Current",
+    uart_sample_age_100ms: 0,
+    rx_dropped_bytes: 0,
+    rx_error_observations: 0,
+    last_configuration_error_reason: 0,
+    last_configuration_error: "None recorded",
+    last_fault_uptime_s: 0,
+    peaks: { uart_tx: 0, uart_rx: 0, cdc_tx: 0, cdc_rx: 0 },
+  };
+  const dashboard = {
+    connected: true,
+    telemetry_received_at: 10000,
+    identity: null,
+    telemetry: null,
+    configuration: null,
+    channels: [channel],
+    channel_diagnostics: [diagnostic],
+    diagnostics_errors: [],
+    traffic_incomplete: false,
+  };
+
+  try {
+    renderDashboard(dashboard);
+    Date.now = () => -3_500_000;
+    monotonicNow = 14000;
+    updateReportAge(dashboard);
+    updateChannelFreshness(dashboard);
+    assert.equal(document.querySelector("#sample-time").textContent, "Telemetry stale · 4 s ago");
+    assert.equal(document.querySelector("#channel-rows").children[0].children[1].children[0].hidden, true);
+
+    document.querySelector("#channel-rows").children[0].children[4].children[0].click();
+    updateDiagnosticsAge();
+    assert.equal(document.querySelector("#channel-diagnostics-content").children[0].textContent,
+      "Diagnostics read 4 s ago");
+  } finally {
+    Date.now = originalNow;
+    if (originalPerformance) Object.defineProperty(globalThis, "performance", originalPerformance);
+    else delete globalThis.performance;
     delete globalThis.document;
   }
 });
@@ -87,6 +158,7 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     const dashboard = {
       connected: true,
       updated_at: new Date().toISOString(),
+      telemetry_received_at: performance.now(),
       identity: {
         product_name: "PicoUart",
         serial_number: "ABC123",
@@ -120,10 +192,13 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
         counters: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 },
         rates: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 },
         input_updated_at: new Date().toISOString(),
+        input_received_at: performance.now(),
         feature_updated_at: null,
+        feature_received_at: null,
       })),
       channel_diagnostics: Array.from({ length: 6 }, () => ({
         updated_at: new Date().toISOString(),
+        received_at: performance.now(),
         uart_measurement_state: 1,
         uart_measurement_state_name: "Current",
         uart_sample_age_100ms: 0,
@@ -176,14 +251,14 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     assert.equal(metricRows[2].children[2].textContent, "2,100 B");
     assert.equal(metricRows[3].children[2].textContent, "2,100 B");
     const staleDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
-      ({ ...channel, input_updated_at: new Date(Date.now() - 5000).toISOString() })) };
+      ({ ...channel, input_received_at: performance.now() - 5000 })) };
     renderDashboard(staleDashboard);
     assert.equal(lifecycle.children[0].hidden, true);
     assert.equal(lifecycle.children[1].textContent, "— Unavailable");
     const recentDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
-      ({ ...channel, input_updated_at: new Date(Date.now() - 1000).toISOString() })) };
+      ({ ...channel, input_received_at: performance.now() - 1000 })) };
     renderDashboard(recentDashboard);
-    updateChannelFreshness(recentDashboard, Date.now() + 3001);
+    updateChannelFreshness(recentDashboard, performance.now() + 3001);
     assert.equal(lifecycle.children[0].hidden, true);
     assert.equal(lifecycle.children[1].textContent, "— Unavailable");
     assert.equal(document.querySelector("#channel-rows").children[0].children[3]
@@ -253,20 +328,21 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     const refreshedDashboard = {
       ...dashboard,
       channel_diagnostics: dashboard.channel_diagnostics.map((diagnostic, index) => index === 0
-        ? { ...diagnostic, rx_dropped_bytes: 99, last_fault_uptime_s: 1, updated_at: refreshedAt }
+        ? { ...diagnostic, rx_dropped_bytes: 99, last_fault_uptime_s: 1, updated_at: refreshedAt,
+          received_at: performance.now() - 2000 }
         : diagnostic),
     };
     renderDashboard(refreshedDashboard);
     const diagnosticsContent = document.querySelector("#channel-diagnostics-content");
     assert.equal(document.querySelector("#channel-diagnostics-dialog").open, true);
     assert.equal(diagnosticsContent.children[1].children[5].textContent, "99 B");
-    updateDiagnosticsAge(Date.parse(refreshedAt) + 3500);
+    updateDiagnosticsAge(refreshedDashboard.channel_diagnostics[0].received_at + 3500);
     assert.equal(diagnosticsContent.children[0].textContent, "Diagnostics read 3 s ago");
 
     const erroredDashboard = {
       ...refreshedDashboard,
       channels: refreshedDashboard.channels.map((channel, index) => index === 0
-        ? { ...channel, error: "Malformed report", input_updated_at: null }
+        ? { ...channel, error: "Malformed report", input_updated_at: null, input_received_at: null }
         : channel),
     };
     renderDashboard(erroredDashboard);
@@ -276,7 +352,7 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     assert.equal(document.querySelector("#status-message").parentElement.dataset.error, "true");
 
     renderDashboard({ ...dashboard, connected: false, channels: dashboard.channels.map(channel => ({
-      ...channel, input_updated_at: null, uart_measurement_state_name: null,
+      ...channel, input_updated_at: null, input_received_at: null, uart_measurement_state_name: null,
     })) });
     assert.equal(lifecycle.children[0].hidden, true);
     assert.equal(lifecycle.children[1].textContent, "— Unavailable");
@@ -344,7 +420,9 @@ test("cached or unavailable UART measurements never display a retained UART rate
     counters: { uart_tx: 1000, uart_rx: 0, usb_tx: 1000, usb_rx: 0 },
     rates: { uart_tx: 1000, uart_rx: 1000, usb_tx: 1000, usb_rx: 1000 },
     input_updated_at: new Date().toISOString(),
+    input_received_at: performance.now(),
     feature_updated_at: null,
+    feature_received_at: null,
   };
   const dashboard = {
     connected: true,
@@ -381,7 +459,9 @@ test("traffic continuity loss remains visible after rate recovery", () => {
     counters: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 },
     rates: { uart_tx: 1000, uart_rx: 1000, usb_tx: 1000, usb_rx: 1000 },
     input_updated_at: new Date().toISOString(),
+    input_received_at: performance.now(),
     feature_updated_at: null,
+    feature_received_at: null,
     traffic_gaps: 1,
   }));
   const dashboard = {

@@ -376,12 +376,21 @@ Release gates and deployment/rollback steps belong in the
 
 ### WebHID Checks
 
-Run the hardware-free browser checks used by CI:
+Run the hardware-free unit checks:
 
 ```sh
 node --check host/direct/src/js/view.mjs
 node --check host/direct/src/js/app.mjs
 node --test host/direct/tests/*.test.mjs
+```
+
+The Direct Dashboard CI job also installs pinned Playwright and Chromium, then runs the simulated-device browser
+smoke flow:
+
+```sh
+python -m pip install playwright==1.63.0
+python -m playwright install --with-deps chromium
+python host/direct/tests/browser_smoke.py
 ```
 
 The test suite also checks the independent and shared renderers' presentation contracts; it does not open native USB

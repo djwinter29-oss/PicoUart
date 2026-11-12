@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
-import { PicoUartWebHid } from "./device.mjs?v=29";
-import { renderDashboard, updateChannelFreshness, updateDiagnosticsAge, updateReportAge } from "./view.mjs?v=29";
+import { PicoUartWebHid, channelsReadyForConfigurationSave } from "./device.mjs?v=31";
+import { renderDashboard, updateChannelFreshness, updateDiagnosticsAge, updateReportAge } from "./view.mjs?v=31";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");
@@ -62,19 +62,15 @@ function renderConfiguration(state) {
     }
   }
   profileSelect.value = selectedProfile === null ? "" : String(selectedProfile);
-  const channels = Array.isArray(dashboard.channels) ? dashboard.channels : [];
-  const channelsReady = channels.length === 6 && channels.every(channel =>
-    channel?.channel_state === 0 && channel?.input_updated_at
-      && Date.now() - Date.parse(channel.input_updated_at) <= 3000);
-  const saveAvailable = Boolean(identity?.capabilities & 4) && dashboard.configuration !== null
-    && !dashboard.configuration_save_storage_error;
-  const enabled = state.phase === "connected" && saveAvailable && channelsReady;
-  const profileChanged = saveAvailable && selectedProfile !== baselineProfile;
+  const enabled = configurationSaveReady(state);
+  const canSave = configurationSaveAllowed(state);
   const recoveryPending = Boolean(dashboard.configuration_save_unconfirmed);
   profileSelect.disabled = state.phase !== "connected" || !Boolean(identity?.capabilities & 4) || !options.length;
   unsafeAcknowledgement.disabled = !enabled || selectedProfile === 0;
   saveButton.hidden = !Boolean(identity?.capabilities & 4);
-  saveButton.disabled = !enabled || !profileChanged || recoveryPending;
+  saveButton.disabled = !canSave;
+  confirmConfigurationButton.disabled = !configurationDialog.open || !canSave
+    || selectedProfile !== 0 && !unsafeAcknowledgement.checked;
   recoveryPanel.hidden = !recoveryPending;
   const previousProfile = dashboard.configuration_save_profile;
   const storedProfile = dashboard.configuration?.stored_profile;
@@ -118,12 +114,40 @@ function renderConfiguration(state) {
     || Boolean(saveMessage && !saveMessage.includes("rebooting")));
 }
 
+function configurationSaveReady(state, now = performance.now()) {
+  const dashboard = state.dashboard;
+  return state.phase === "connected" && Boolean(dashboard.identity?.capabilities & 4)
+    && dashboard.configuration !== null && !dashboard.configuration_save_storage_error
+    && channelsReadyForConfigurationSave(dashboard.channels, now);
+}
+
+function configurationSaveAllowed(state, now = performance.now()) {
+  const dashboard = state.dashboard;
+  const mask = dashboard.identity?.clock_profile_mask;
+  const profiles = Number.isInteger(mask)
+    ? [...Array(5).keys()].filter(profile => mask & (1 << profile)) : [];
+  const baselineProfile = dashboard.configuration?.stored_profile ?? profiles[0] ?? null;
+  return configurationSaveReady(state, now) && Number.isInteger(selectedProfile)
+    && profiles.includes(selectedProfile) && selectedProfile !== baselineProfile
+    && !dashboard.configuration_save_unconfirmed;
+}
+
+function updateConfigurationSaveReadiness(state) {
+  const ready = configurationSaveReady(state);
+  const allowed = configurationSaveAllowed(state);
+  unsafeAcknowledgement.disabled = !ready || selectedProfile === 0;
+  saveButton.disabled = !allowed;
+  confirmConfigurationButton.disabled = !configurationDialog.open || !allowed
+    || selectedProfile !== 0 && !unsafeAcknowledgement.checked;
+}
+
 function profileName(profile) {
   return ["SDK default", "150 MHz", "200 MHz", "250 MHz", "280 MHz"][profile] ?? "Unknown profile";
 }
 
 function openConfigurationDialog() {
-  if (saveButton.disabled) return;
+  updateConfigurationSaveReadiness(client.state);
+  if (!configurationSaveAllowed(client.state)) return;
   const nonDefault = selectedProfile !== 0;
   configurationDialogProfile.textContent = `Selected profile: ${profileName(selectedProfile)}.`;
   unsafeAcknowledgement.checked = false;
@@ -131,12 +155,15 @@ function openConfigurationDialog() {
   acknowledgementLabel.hidden = !nonDefault;
   confirmConfigurationButton.disabled = nonDefault;
   configurationDialog.showModal();
+  updateConfigurationSaveReadiness(client.state);
 }
 
 async function saveConfiguration() {
   const profile = selectedProfile;
   const nonDefault = profile !== 0;
-  if (!configurationDialog.open || saveButton.disabled || nonDefault && !unsafeAcknowledgement.checked) return;
+  updateConfigurationSaveReadiness(client.state);
+  if (!configurationDialog.open || !configurationSaveAllowed(client.state)
+    || nonDefault && !unsafeAcknowledgement.checked) return;
   const generation = client.generation;
   const description = profileName(profile);
   configurationDialog.close();
@@ -255,7 +282,7 @@ profileSelect.addEventListener("change", () => {
 saveButton.addEventListener("click", openConfigurationDialog);
 document.querySelector("#cancel-configuration").addEventListener("click", () => configurationDialog.close());
 unsafeAcknowledgement.addEventListener("change", () => {
-  confirmConfigurationButton.disabled = !unsafeAcknowledgement.checked;
+  updateConfigurationSaveReadiness(client.state);
 });
 confirmConfigurationButton.addEventListener("click", saveConfiguration);
 diagnosticsButton.addEventListener("click", async () => {
@@ -284,4 +311,5 @@ globalThis.setInterval(() => {
   updateReportAge(client.state.dashboard);
   updateChannelFreshness(client.state.dashboard);
   updateDiagnosticsAge();
+  updateConfigurationSaveReadiness(client.state);
 }, 1000);

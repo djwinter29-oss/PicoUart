@@ -356,7 +356,9 @@ function emptyChannel(id) {
     input_counters: null,
     input_measurement_state: null,
     input_updated_at: null,
+    input_received_at: null,
     feature_updated_at: null,
+    feature_received_at: null,
     feature_error: null,
     diagnostics: null,
     error: null,
@@ -386,11 +388,18 @@ function emptyDashboard() {
     traffic_gaps: 0,
     traffic_incomplete: false,
     updated_at: null,
+    telemetry_received_at: null,
   };
 }
 
 export function matchesPicoUart(device) {
   return device?.vendorId === DEVICE_FILTER.vendorId && device?.productId === DEVICE_FILTER.productId;
+}
+
+export function channelsReadyForConfigurationSave(channels, now = performance.now()) {
+  return Array.isArray(channels) && channels.length === CHANNEL_COUNT && channels.every(channel =>
+    channel?.channel_state === 0 && Number.isFinite(channel?.input_received_at)
+      && now >= channel.input_received_at && now - channel.input_received_at <= MAX_REPORT_AGE_MS);
 }
 
 export class PicoUartWebHid {
@@ -638,6 +647,7 @@ export class PicoUartWebHid {
       ...snapshot,
       counters: snapshot.counters,
       feature_updated_at: new Date().toISOString(),
+      feature_received_at: performance.now(),
       feature_error: null,
       error: null,
       rates: snapshot.uart_measurement_state === 1 ? previous.rates
@@ -648,6 +658,7 @@ export class PicoUartWebHid {
       input_counters: previous.input_counters,
       input_measurement_state: previous.input_measurement_state,
       input_updated_at: previous.input_updated_at,
+      input_received_at: previous.input_received_at,
       rate_samples: previous.rate_samples,
       uart_rate_samples: snapshot.uart_measurement_state === 1 ? previous.uart_rate_samples : [],
       traffic_gaps: previous.traffic_gaps,
@@ -657,10 +668,11 @@ export class PicoUartWebHid {
   applyInputSnapshot(snapshot) {
     const dashboard = this.state.dashboard;
     const previous = dashboard.channels[snapshot.id];
-    const now = Date.now();
-    const previousTime = Date.parse(previous.input_updated_at);
+    const now = performance.now();
+    const previousTime = previous.input_received_at;
     const stale = previous.sequence !== null
-      && (!Number.isFinite(previousTime) || now - previousTime > MAX_REPORT_AGE_MS);
+      && (!Number.isFinite(previousTime) || now < previousTime
+        || now - previousTime > MAX_REPORT_AGE_MS);
     const first = previous.sequence === null || stale;
     const advance = first ? null : (snapshot.sequence - previous.sequence + 65536) % 65536;
     if (!first && (advance === 0 || advance >= 32768)) return;
@@ -718,8 +730,10 @@ export class PicoUartWebHid {
       uart_rate_samples: uartRateSamples,
       input_counters: snapshot.counters,
       input_measurement_state: snapshot.uart_measurement_state,
-      input_updated_at: new Date(now).toISOString(),
+      input_updated_at: new Date().toISOString(),
+      input_received_at: now,
       feature_updated_at: previous.feature_updated_at,
+      feature_received_at: previous.feature_received_at,
       feature_error: null,
       error: null,
       traffic_gaps: channelGaps,
@@ -745,7 +759,9 @@ export class PicoUartWebHid {
       rates: null,
       error: message,
       input_updated_at: null,
+      input_received_at: null,
       feature_updated_at: null,
+      feature_received_at: null,
       rate_samples: [],
       uart_rate_samples: [],
     };
@@ -755,7 +771,8 @@ export class PicoUartWebHid {
   failFeatureChannel(id, message) {
     const dashboard = this.state.dashboard;
     const channels = [...dashboard.channels];
-    channels[id] = { ...channels[id], feature_updated_at: null, feature_error: message };
+    channels[id] = { ...channels[id], feature_updated_at: null, feature_received_at: null,
+      feature_error: message };
     this.update({ dashboard: { ...dashboard, channels } });
   }
 
@@ -769,7 +786,7 @@ export class PicoUartWebHid {
   async readTelemetry() {
     const telemetry = decodeTelemetryReport(await this.readFeature(3, 20), this.information);
     this.update({ dashboard: { ...this.state.dashboard, telemetry, telemetry_error: null,
-      updated_at: new Date().toISOString() } });
+      updated_at: new Date().toISOString(), telemetry_received_at: performance.now() } });
   }
 
   async readActionResult() {
@@ -803,7 +820,8 @@ export class PicoUartWebHid {
         if (!isCurrent()) return false;
         const diagnostics = [...this.state.dashboard.channel_diagnostics];
         const errors = [...this.state.dashboard.diagnostics_errors];
-        diagnostics[channel] = { ...diagnostic, updated_at: new Date().toISOString() };
+        diagnostics[channel] = { ...diagnostic, updated_at: new Date().toISOString(),
+          received_at: performance.now() };
         errors[channel] = null;
         this.update({ dashboard: { ...this.state.dashboard,
           channel_diagnostics: diagnostics, diagnostics_errors: errors } });
@@ -930,6 +948,10 @@ export class PicoUartWebHid {
       const previous = this.state.dashboard.action_result;
       if (previous.status === 1 || previous.status === 2 && [3, 4].includes(previous.action)) {
         throw new Error("A board action is pending or awaiting reboot.");
+      }
+      if (action === 4 && !channelsReadyForConfigurationSave(this.state.dashboard.channels)) {
+        throw new Error("Configuration save requires six Closed channels with fresh Input reports; "
+          + "no command was sent.");
       }
       const flags = action === 3 ? 1 : action === 4 ? 1 | (profile === 0 ? 0 : 2) : 0;
       const request = encodeActionRequest(action, action === 4 ? profile : 0, flags);

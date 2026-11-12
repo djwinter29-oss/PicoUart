@@ -60,7 +60,8 @@ connection.
 **Board LED** sends explicit identification On/Off commands; its indicator shows physical output.
 The capability-gated **Reboot board** control requests a standalone reboot. The **Boot configuration** section saves
 the selected boot-time clock profile; a verified save automatically reboots the board and briefly disconnects USB.
-Close all CDC ports and stop external UART traffic first; non-default clocks require explicit unsafe-overclock
+The save flow requires six Closed channels with fresh Input reports and disables its confirmation if those reports
+expire. Close all CDC ports and stop external UART traffic first; non-default clocks require explicit unsafe-overclock
 acknowledgement. The dashboard records an uncertain save in browser session storage; if storage is unavailable it
 continues read-only monitoring but disables saves.
 

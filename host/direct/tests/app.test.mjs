@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
+import { channelsReadyForConfigurationSave } from "../src/js/device.mjs";
 
 function fixture(secure = true, hid = {}) {
   const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
@@ -59,8 +60,11 @@ function fixture(secure = true, hid = {}) {
     .replace(/^import .*;\n/gm, "");
   let polling;
   let agePolling;
+  let monotonicNow = 10000;
   const freshnessUpdates = [];
   vm.runInNewContext(source, { document, navigator: { hid }, isSecureContext: secure,
+    performance: { now: () => monotonicNow },
+    channelsReadyForConfigurationSave,
     PicoUartWebHid: FakeClient, renderDashboard() {},
     updateReportAge(data) { assert.equal(data, client.state.dashboard); },
     updateChannelFreshness(data) { freshnessUpdates.push(data); },
@@ -70,6 +74,7 @@ function fixture(secure = true, hid = {}) {
       else agePolling = { callback, interval };
     } });
   return { html, client, polling, agePolling, freshnessUpdates,
+    setMonotonicNow(value) { monotonicNow = value; },
     get: id => document.querySelector(`#${id}`) };
 }
 
@@ -113,13 +118,25 @@ test("one connection button belongs to Device overview, with no separate refresh
   assert.doesNotMatch(configuration, /configuration-note|configuration-detail|configuration-status/);
 });
 
+test("Direct Dashboard entry and imported modules share a cache generation", () => {
+  const { html } = fixture();
+  const appSource = readFileSync(new URL("../src/js/app.mjs", import.meta.url), "utf8");
+  const entryVersion = html.match(/src="js\/app\.mjs\?v=(\d+)"/)?.[1];
+  const moduleVersions = [...appSource.matchAll(/from "\.\/(?:device|view)\.mjs\?v=(\d+)"/g)]
+    .map(([, version]) => version);
+
+  assert.ok(entryVersion);
+  assert.equal(moduleVersions.length, 2);
+  assert.ok(moduleVersions.every(version => version === entryVersion));
+});
+
 test("persistent configuration uses target profiles and gates unsafe saves", async () => {
   const { client, get } = fixture();
   client.saveConfigurationResult = { action: 4, status: 2 };
   client.state.dashboard = { connected: true, hardware: { mcu_id: 2 },
     identity: { capabilities: 7, clock_profile_mask: 31 },
     configuration: { stored_profile: 2 }, configuration_save: { status: 0, profile: 2 },
-    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_updated_at: new Date().toISOString() })) };
+    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_received_at: 10000 })) };
   client.state.phase = "connected";
   client.render(client.state);
   const profile = get("configuration-profile");
@@ -165,7 +182,7 @@ test("Save & Reboot stays disabled until the selected profile differs from its b
   const { client, get } = fixture();
   client.state.dashboard = { identity: { capabilities: 4, clock_profile_mask: 31 },
     configuration: { stored_profile: null },
-    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_updated_at: new Date().toISOString() })) };
+    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_received_at: 10000 })) };
   client.state.phase = "connected";
   client.render(client.state);
   const profile = get("configuration-profile");
@@ -180,6 +197,53 @@ test("Save & Reboot stays disabled until the selected profile differs from its b
   assert.equal(saveButton.disabled, true);
 });
 
+test("configuration save readiness expires from monotonic Input age", () => {
+  const { client, get, setMonotonicNow } = fixture();
+  client.state.dashboard = {
+    identity: { capabilities: 4, clock_profile_mask: 31 },
+    configuration: { stored_profile: 2 },
+    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_received_at: 10000 })),
+  };
+  client.state.phase = "connected";
+  client.render(client.state);
+  get("configuration-profile").value = "1";
+  get("configuration-profile").change();
+  assert.equal(get("save-configuration").disabled, false);
+
+  setMonotonicNow(13001);
+  client.render(client.state);
+  assert.equal(get("save-configuration").disabled, true);
+});
+
+test("age timer disables an open save confirmation and prevents submission", async () => {
+  const { client, get, setMonotonicNow, agePolling } = fixture();
+  client.saveConfigurationResult = { action: 4, status: 2 };
+  client.state.dashboard = {
+    identity: { capabilities: 4, clock_profile_mask: 31 },
+    configuration: { stored_profile: 2 },
+    channels: Array.from({ length: 6 }, () => ({ channel_state: 0, input_received_at: 10000 })),
+  };
+  client.state.phase = "connected";
+  client.render(client.state);
+  get("configuration-profile").value = "1";
+  get("configuration-profile").change();
+  get("save-configuration").click();
+  assert.equal(get("configuration-dialog").open, true);
+  get("configuration-unsafe-ack").checked = true;
+  get("configuration-unsafe-ack").change();
+  assert.equal(get("confirm-configuration").disabled, false);
+
+  setMonotonicNow(13001);
+  agePolling.callback();
+  assert.equal(get("save-configuration").disabled, true);
+  assert.equal(get("confirm-configuration").disabled, true);
+  await get("confirm-configuration").click();
+  assert.equal(client.calls.some(call => Array.isArray(call) && call[0] === "save-configuration"), false);
+  get("cancel-configuration").click();
+  get("save-configuration").click();
+  assert.equal(get("configuration-dialog").open, false);
+});
+
 test("profile hydration waits for configuration readback and preserves user edits", () => {
   const { client, get } = fixture();
   client.state.dashboard = {
@@ -187,7 +251,7 @@ test("profile hydration waits for configuration readback and preserves user edit
     configuration: null,
     channels: Array.from({ length: 6 }, () => ({
       channel_state: 0,
-      input_updated_at: new Date().toISOString(),
+      input_received_at: 10000,
     })),
   };
   client.state.phase = "connected";
@@ -220,7 +284,7 @@ test("unavailable recovery storage keeps monitoring visible and gates configurat
     configuration_save_storage_error: "Browser storage is unavailable",
     channels: Array.from({ length: 6 }, () => ({
       channel_state: 0,
-      input_updated_at: new Date().toISOString(),
+      input_received_at: 10000,
     })),
   };
   client.state.phase = "connected";
@@ -239,7 +303,7 @@ test("Save & Reboot never reports success without a confirmed completion result"
     configuration: { stored_profile: 2 },
     channels: Array.from({ length: 6 }, () => ({
       channel_state: 0,
-      input_updated_at: new Date().toISOString(),
+      input_received_at: 10000,
     })),
   };
   client.state.phase = "connected";
@@ -267,7 +331,7 @@ test("uncertain saves require a fresh readback and explicit acknowledgement befo
     configuration_recovery_ready: false,
     channels: Array.from({ length: 6 }, () => ({
       channel_state: 0,
-      input_updated_at: new Date().toISOString(),
+      input_received_at: 10000,
     })),
   };
   client.state.phase = "connected";
@@ -368,7 +432,7 @@ test("late configuration-save outcomes are shown as belonging to the previous co
     configuration: { stored_profile: 2 },
     channels: Array.from({ length: 6 }, () => ({
       channel_state: 0,
-      input_updated_at: new Date().toISOString(),
+      input_received_at: 10000,
     })),
   };
   client.state.phase = "connected";
@@ -392,7 +456,7 @@ test("late configuration-save outcomes are shown as belonging to the previous co
     configuration: { stored_profile: 0 },
     channels: Array.from({ length: 6 }, () => ({
       channel_state: 0,
-      input_updated_at: new Date().toISOString(),
+      input_received_at: 10000,
     })),
   };
   client.phase("connected");

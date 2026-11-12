@@ -203,6 +203,10 @@ test("failure to persist save recovery prevents command submission", async () =>
     clock_profile_mask: 0x1f,
   };
   client.state.phase = "connected";
+  client.state.dashboard.channels = Array.from({ length: 6 }, () => ({
+    channel_state: 0,
+    input_received_at: performance.now(),
+  }));
   client.readActionResult = async () => {
     client.state.dashboard.action_result = { action: 0, status: 0 };
   };
@@ -258,6 +262,10 @@ test("uncertain saves persist by board UID until a fresh readback is explicitly 
   first.state.phase = "connected";
   first.state.dashboard.connected = true;
   first.state.dashboard.identity = identity;
+  first.state.dashboard.channels = Array.from({ length: 6 }, () => ({
+    channel_state: 0,
+    input_received_at: performance.now(),
+  }));
 
   try {
     await assert.rejects(first.saveConfiguration(1, true, true), /outcome is unconfirmed/);
@@ -648,6 +656,10 @@ test("a SET transport rejection identifies the board-action outcome as unconfirm
   client.device = { async sendFeatureReport() { throw new Error("USB transfer rejected"); } };
   client.state.phase = "connected";
   client.information = { serial_number: "2020202020202020", capabilities: 4, clock_profile_mask: 31 };
+  client.state.dashboard.channels = Array.from({ length: 6 }, () => ({
+    channel_state: 0,
+    input_received_at: performance.now(),
+  }));
   client.readActionResult = async () => {
     client.state.dashboard.action_result = { action: 0, status: 0 };
   };
@@ -679,6 +691,10 @@ test("a completed save returns its confirmed action result", async () => {
   };
   client.state.phase = "connected";
   client.information = { serial_number: "4040404040404040", capabilities: 4, clock_profile_mask: 31 };
+  client.state.dashboard.channels = Array.from({ length: 6 }, () => ({
+    channel_state: 0,
+    input_received_at: performance.now(),
+  }));
   client.readActionResult = async () => {
     client.state.dashboard.action_result = { action: 0, status: 0 };
   };
@@ -689,11 +705,61 @@ test("a completed save returns its confirmed action result", async () => {
   assert.deepEqual(result, { action: 4, status: 2, status_name: "Completed", error_reason: 0 });
 });
 
+test("configuration save rechecks Closed and fresh channels after action preflight", async () => {
+  for (const invalidState of ["ready", "stale"]) {
+    let finishPreflight;
+    let writes = 0;
+    const client = new PicoUartWebHid(null);
+    client.device = { async sendFeatureReport() { writes++; } };
+    client.state.phase = "connected";
+    client.information = {
+      serial_number: invalidState === "ready" ? "6161616161616161" : "6262626262626262",
+      capabilities: 4,
+      clock_profile_mask: 31,
+    };
+    client.state.dashboard.channels = Array.from({ length: 6 }, () => ({
+      channel_state: 0,
+      input_received_at: performance.now(),
+    }));
+    client.readActionResult = () => new Promise(resolve => {
+      finishPreflight = () => {
+        client.state.dashboard.action_result = { action: 0, status: 0 };
+        resolve();
+      };
+    });
+
+    const action = client.saveConfiguration(0, false, true);
+    await new Promise(resolve => globalThis.setImmediate(resolve));
+    assert.equal(typeof finishPreflight, "function");
+    if (invalidState === "ready") {
+      client.state.dashboard.channels = client.state.dashboard.channels.map(channel => ({
+        ...channel,
+        channel_state: 2,
+      }));
+    } else {
+      client.state.dashboard.channels = client.state.dashboard.channels.map(channel => ({
+        ...channel,
+        input_received_at: performance.now() - 4000,
+      }));
+    }
+    finishPreflight();
+
+    await assert.rejects(action, /six Closed channels with fresh Input reports; no command was sent/);
+    assert.equal(writes, 0);
+  }
+});
+
 test("traffic rates use clean device intervals and reset across gaps", () => {
   const client = new PicoUartWebHid(null);
-  const originalNow = Date.now;
+  const originalDateNow = Date.now;
+  const originalPerformance = Object.getOwnPropertyDescriptor(globalThis, "performance");
   let now = 1000;
-  Date.now = () => now;
+  let wallNow = 10000;
+  Date.now = () => wallNow;
+  Object.defineProperty(globalThis, "performance", {
+    configurable: true,
+    value: { now: () => now },
+  });
   try {
     client.applyInputSnapshot(channelSnapshot({ sequence: 10, counters: 100 }));
     now = 2500;
@@ -722,8 +788,23 @@ test("traffic rates use clean device intervals and reset across gaps", () => {
     assert.equal(client.state.dashboard.channels[0].rates.usb_tx, 2000);
     assert.equal(client.state.dashboard.channels[0].rates.uart_tx, 2000);
     assert.equal(client.state.dashboard.traffic_incomplete, true);
+
+    now = 7500;
+    wallNow += 3_600_000;
+    client.applyInputSnapshot(channelSnapshot({ sequence: 18, counters: 7100 }));
+    assert.equal(client.state.dashboard.channels[0].traffic_gaps, 1);
+    assert.equal(client.state.dashboard.channels[0].rates.usb_tx, 2000);
+
+    now += 4200;
+    wallNow -= 7_200_000;
+    client.applyInputSnapshot(channelSnapshot({ sequence: 19, counters: 8100 }));
+    assert.equal(client.state.dashboard.channels[0].traffic_gaps, 2);
+    assert.equal(client.state.dashboard.channels[0].rates.usb_tx, null);
+    assert.equal(client.state.dashboard.traffic_incomplete, true);
   } finally {
-    Date.now = originalNow;
+    Date.now = originalDateNow;
+    if (originalPerformance) Object.defineProperty(globalThis, "performance", originalPerformance);
+    else delete globalThis.performance;
   }
 });
 

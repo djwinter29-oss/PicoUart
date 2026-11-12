@@ -24,8 +24,8 @@ function serviceLoad(value) {
   return value === null ? "--" : `${(value / 100).toFixed(1)}%`;
 }
 
-export function updateReportAge(data, now = Date.now()) {
-  const sample = Date.parse(data.updated_at);
+export function updateReportAge(data, now = performance.now()) {
+  const sample = data.telemetry_received_at;
   const age = document.querySelector("#sample-time");
   const seconds = Number.isFinite(sample) ? Math.max(0, Math.floor((now - sample) / 1000)) : null;
   const stale = seconds !== null && seconds > 3;
@@ -36,9 +36,8 @@ export function updateReportAge(data, now = Date.now()) {
 }
 
 function channelFresh(channel, now) {
-  const inputTime = Date.parse(channel.input_updated_at);
-  const featureTime = Date.parse(channel.feature_updated_at);
-  const sample = Number.isFinite(inputTime) ? inputTime : featureTime;
+  const sample = Number.isFinite(channel.input_received_at)
+    ? channel.input_received_at : channel.feature_received_at;
   return Number.isFinite(sample) && now >= sample && now - sample <= 3000;
 }
 
@@ -55,7 +54,7 @@ let diagnosticsReadAt = null;
 let openDiagnosticsSample = null;
 let openDiagnosticsError = null;
 
-export function updateDiagnosticsAge(now = Date.now()) {
+export function updateDiagnosticsAge(now = performance.now()) {
   if (!openDiagnosticsDialog?.open || !diagnosticsAgeElement) return;
   const seconds = Number.isFinite(diagnosticsReadAt)
     ? Math.max(0, Math.floor((now - diagnosticsReadAt) / 1000)) : null;
@@ -81,7 +80,7 @@ function showChannelDiagnostics(id, channel, diagnostic, capacities, data) {
   }
   diagnosticsAgeElement = document.createElement("p");
   diagnosticsAgeElement.className = "diagnostics-age";
-  diagnosticsReadAt = Date.parse(diagnostic.updated_at);
+  diagnosticsReadAt = diagnostic.received_at;
   content.append(diagnosticsAgeElement);
   updateDiagnosticsAge();
   const uartAvailable = diagnostic.uart_measurement_state !== 0;
@@ -181,7 +180,7 @@ function createChannelRow(id) {
   return view;
 }
 
-function renderChannels(data, now = Date.now()) {
+function renderChannels(data, now = performance.now()) {
   const body = document.querySelector("#channel-rows");
   const capacities = data.configuration?.capacities;
   const activeIds = new Set();
@@ -249,7 +248,7 @@ function renderChannels(data, now = Date.now()) {
   }
 }
 
-export function updateChannelFreshness(data, now = Date.now()) {
+export function updateChannelFreshness(data, now = performance.now()) {
   renderChannels(data, now);
 }
 

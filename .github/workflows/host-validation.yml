@@ -19,11 +19,22 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Setup Python for browser smoke test
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Chromium browser test
+        run: |
+          python -m pip install playwright==1.63.0
+          python -m playwright install --with-deps chromium
+
       - name: Check Direct Dashboard page and client
         run: |
           node --check host/direct/src/js/view.mjs
           node --check host/direct/src/js/app.mjs
           node --test host/direct/tests/*.test.mjs host/web/tests/*.test.mjs
+          python host/direct/tests/browser_smoke.py
 
   host-apps:
     name: Host Python + .NET (${{ matrix.os }})
