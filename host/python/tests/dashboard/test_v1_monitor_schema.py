@@ -27,6 +27,7 @@ def test_metadata_polling_uses_hid_cadence_without_sleeping_between_input_reads(
     service._lock = threading.RLock()
     service._stop = threading.Event()
     service._snapshot = empty_snapshot()
+    service._configuration_outcome_unconfirmed = False
     now = 0.0
     reads = []
 
@@ -111,6 +112,7 @@ def test_static_identity_masks_and_dynamic_clock_keep_their_own_report_sources()
     service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
     service._snapshot = empty_snapshot()
+    service._configuration_outcome_unconfirmed = False
 
     class Client:
         def read_identity(self):
@@ -145,6 +147,7 @@ def test_static_identity_masks_and_dynamic_clock_keep_their_own_report_sources()
             return {"stored_profile": 2, "channel_count": 6}
 
     client = Client()
+    service._client = client
     service._read_static(client)
     service._read_telemetry(client)
     service._read_control(client)
@@ -165,6 +168,7 @@ def test_non_save_control_result_is_idle_for_save_ui_and_capability_failure_is_e
     service = object.__new__(BoardMonitor)
     service._lock = threading.RLock()
     service._snapshot = empty_snapshot()
+    service._configuration_outcome_unconfirmed = False
 
     class Client:
         def read_control(self):
@@ -173,11 +177,13 @@ def test_non_save_control_result_is_idle_for_save_ui_and_capability_failure_is_e
         def read_configuration(self):
             return {"stored_profile": None}
 
+    client = Client()
+    service._client = client
     service._snapshot["identity"] = {"capabilities": 4}
-    service._read_control(Client())
+    service._read_control(client)
     assert service.snapshot()["configuration_save"] == {"status": 0, "action": 0, "error_reason": 0, "error": "none"}
     assert service.snapshot()["configuration_save_error"] is None
     service._snapshot["identity"] = {"capabilities": 0}
-    service._read_control(Client())
+    service._read_control(client)
     assert service.snapshot()["configuration_save"] is None
     assert service.snapshot()["configuration_save_error"]

@@ -221,6 +221,24 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     assert.equal(diagnostics[13].textContent, "0 B (0.0%)");
     assert.equal(diagnostics[15].textContent, "1 B (0.0%)");
 
+    const unavailableDiagnostics = {
+      ...dashboard,
+      channel_diagnostics: dashboard.channel_diagnostics.map((diagnostic, index) => index === 0
+        ? { ...diagnostic, uart_measurement_state: 0, uart_measurement_state_name: "Unavailable",
+          uart_sample_age_100ms: 255, rx_dropped_bytes: 0, rx_error_observations: 0, last_fault_uptime_s: 0,
+          peaks: { uart_tx: 0, uart_rx: 0, cdc_tx: 123, cdc_rx: 456 } }
+        : diagnostic),
+    };
+    renderDashboard(unavailableDiagnostics);
+    const unavailableValues = document.querySelector("#channel-diagnostics-content").children[1].children;
+    assert.equal(unavailableValues[5].textContent, "Unavailable");
+    assert.equal(unavailableValues[7].textContent, "Unavailable");
+    assert.equal(unavailableValues[11].textContent, "Unavailable");
+    assert.equal(unavailableValues[13].textContent, "Unavailable");
+    assert.equal(unavailableValues[15].textContent, "Unavailable");
+    assert.match(unavailableValues[17].textContent, /^123 B/);
+    assert.match(unavailableValues[19].textContent, /^456 B/);
+
     const refreshedAt = new Date(Date.now() - 2000).toISOString();
     const refreshedDashboard = {
       ...dashboard,

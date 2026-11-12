@@ -11,6 +11,20 @@ namespace PicoUart.Tests;
 public sealed class DashboardTests
 {
     [Fact]
+    public void UnconfirmedSaveErrorSurvivesConnectionSnapshotReplacement()
+    {
+        using var service = new DashboardService(null, null);
+        const string warning = "command outcome is unconfirmed; do not retry";
+
+        service.RecordUnconfirmedConfigurationSaveError(warning);
+        service.ReplaceSnapshot(new() { Connected = true });
+
+        using var status = JsonDocument.Parse(service.SnapshotJson());
+        Assert.True(status.RootElement.GetProperty("connected").GetBoolean());
+        Assert.Equal(warning, status.RootElement.GetProperty("configuration_save_error").GetString());
+    }
+
+    [Fact]
     public void StatusKeepsActionResultsSeparateAndDerivesOverflowCountsFromDiagnostics()
     {
         var snapshot = new DashboardSnapshot();

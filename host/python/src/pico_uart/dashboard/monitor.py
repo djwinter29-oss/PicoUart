@@ -10,11 +10,13 @@ import time
 from collections.abc import Callable
 from copy import deepcopy
 
-from ..hid.client import PicoUartHid
+from ..hid.client import ControlOutcomeUnconfirmed, PicoUartHid
 from ..hid.inputs import empty_channel
 from ..hid.protocol import (
     CAPABILITY_CONFIGURATION_SAVE,
     COMMAND_SAVE_CONFIGURATION,
+    STATUS_IDLE,
+    STATUS_PENDING,
     UART_CHANNEL_COUNT,
     UNAVAILABLE_U16,
 )
@@ -27,6 +29,9 @@ REFRESH_INTERVAL_MIN_MS = 500
 REFRESH_INTERVAL_MAX_MS = 1000
 RECONNECT_DELAY_S = 1.0
 RECONNECT_DELAY_MAX_S = 8.0
+CONFIGURATION_OUTCOME_UNCONFIRMED = (
+    "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+)
 
 
 def public_error(error: Exception) -> str:
@@ -81,6 +86,7 @@ class BoardMonitor:
         self._stop = threading.Event()
         self._client: PicoUartHid | None = None
         self._snapshot: BoardSnapshot = empty_snapshot()
+        self._configuration_outcome_unconfirmed = False
         self._thread = threading.Thread(target=self._poll, name="pico-uart-monitor", daemon=True)
         self._thread.start()
 
@@ -109,10 +115,20 @@ class BoardMonitor:
         self._require_client().reset_board()
 
     def save_configuration(self, profile: int, unsafe_overclock: bool) -> None:
-        result = self._require_client().save_configuration(profile, unsafe_overclock)
+        client = self._require_client()
+        try:
+            result = client.save_configuration(profile, unsafe_overclock)
+        except ControlOutcomeUnconfirmed:
+            with self._lock:
+                self._configuration_outcome_unconfirmed = True
+                self._snapshot["configuration_save"] = None
+                self._snapshot["configuration_save_error"] = CONFIGURATION_OUTCOME_UNCONFIRMED
+            raise
         with self._lock:
-            self._snapshot["configuration_save"] = result
-            self._snapshot["configuration_save_error"] = None
+            if self._client is client:
+                self._configuration_outcome_unconfirmed = False
+                self._snapshot["configuration_save"] = result
+                self._snapshot["configuration_save_error"] = None
 
     def read_diagnostics(self) -> BoardSnapshot:
         """Refresh details only on explicit request, independently of Input cadence."""
@@ -121,9 +137,12 @@ class BoardMonitor:
             diagnostics = client.read_channel_diagnostics()
         except (OSError, RuntimeError) as error:
             with self._lock:
-                self._snapshot["diagnostics_error"] = public_error(error)
+                if self._client is client:
+                    self._snapshot["diagnostics_error"] = public_error(error)
             raise
         with self._lock:
+            if self._client is not client:
+                return deepcopy(self._snapshot)
             self._snapshot["channel_diagnostics"] = diagnostics
             self._snapshot["diagnostics_error"] = None
             self._snapshot["overflow_counts"] = [item["rx_overrun_count"] for item in diagnostics]
@@ -153,6 +172,8 @@ class BoardMonitor:
                     self._client = client
                     self._snapshot = empty_snapshot()
                     self._snapshot["connected"] = True
+                    if self._configuration_outcome_unconfirmed:
+                        self._snapshot["configuration_save_error"] = CONFIGURATION_OUTCOME_UNCONFIRMED
                 next_metadata_read = 0.0
                 while not self._stop.is_set():
                     status = client.read_status(timeout_ms=250)
@@ -200,7 +221,10 @@ class BoardMonitor:
             snapshot["configuration"] = None
             snapshot["configuration_error"] = None
             snapshot["configuration_save"] = None
-            snapshot["configuration_save_error"] = None
+            snapshot["configuration_save_error"] = (
+                CONFIGURATION_OUTCOME_UNCONFIRMED
+                if self._configuration_outcome_unconfirmed else None
+            )
             snapshot["channel_diagnostics"] = None
 
     def _apply_status(self, status: StatusSnapshot) -> None:
@@ -251,6 +275,8 @@ class BoardMonitor:
         except (OSError, RuntimeError) as error:
             message = public_error(error)
             with self._lock:
+                if self._client is not client:
+                    return
                 self._snapshot["led"] = None
                 self._snapshot["led_error"] = message
                 self._snapshot["runtime"] = None
@@ -268,6 +294,8 @@ class BoardMonitor:
                 self._snapshot["metadata_error"] = message
             return
         with self._lock:
+            if self._client is not client:
+                return
             self._snapshot["led"] = (
                 LedSnapshot(manual_on=telemetry["led"], output_on=telemetry["led"])
                 if self._snapshot["identity"] and self._snapshot["identity"]["hid_led_available"]
@@ -293,21 +321,40 @@ class BoardMonitor:
             configuration = client.read_configuration()
         except (OSError, RuntimeError) as error:
             with self._lock:
+                if self._client is not client:
+                    return
                 self._snapshot["configuration"] = None
                 self._snapshot["configuration_error"] = public_error(error)
         else:
             with self._lock:
+                if self._client is not client:
+                    return
                 self._snapshot["configuration"] = configuration
                 self._snapshot["configuration_error"] = None
         try:
             result = client.read_control()
         except (OSError, RuntimeError) as error:
             with self._lock:
-                self._snapshot["configuration_save_error"] = public_error(error)
+                if self._client is client and not self._configuration_outcome_unconfirmed:
+                    self._snapshot["configuration_save_error"] = public_error(error)
             return
         save: ControlResult | None = result
         with self._lock:
+            if self._client is not client:
+                return
             identity = self._snapshot["identity"]
+            confirmed_save_result = (
+                result["action"] == COMMAND_SAVE_CONFIGURATION
+                and result["status"] not in (STATUS_IDLE, STATUS_PENDING)
+                and identity is not None
+                and bool(identity["capabilities"] & CAPABILITY_CONFIGURATION_SAVE)
+            )
+            if self._configuration_outcome_unconfirmed and not confirmed_save_result:
+                self._snapshot["configuration_save"] = None
+                self._snapshot["configuration_save_error"] = CONFIGURATION_OUTCOME_UNCONFIRMED
+                return
+            if self._configuration_outcome_unconfirmed:
+                self._configuration_outcome_unconfirmed = False
             save_error = None
             if identity is None or not identity["capabilities"] & CAPABILITY_CONFIGURATION_SAVE:
                 save = None
@@ -323,6 +370,8 @@ class BoardMonitor:
         except (OSError, RuntimeError) as error:
             message = public_error(error)
             with self._lock:
+                if self._client is not client:
+                    return False
                 self._snapshot["identity"] = None
                 self._snapshot["identity_error"] = message
                 self._snapshot["hardware"] = None
@@ -331,6 +380,8 @@ class BoardMonitor:
                 self._snapshot["metadata_error"] = message
             return False
         with self._lock:
+            if self._client is not client:
+                return False
             self._snapshot["identity"] = identity
             self._snapshot["identity_error"] = None
             self._snapshot["hardware"] = HardwareSnapshot(

@@ -14,10 +14,12 @@ const configurationDialogProfile = document.querySelector("#configuration-dialog
 const confirmConfigurationButton = document.querySelector("#confirm-configuration");
 const overclockAcknowledgement = document.querySelector("#overclock-ack");
 const overclockAcknowledgementLabel = document.querySelector("#overclock-acknowledgement");
+const configurationRecovery = document.querySelector("#configuration-recovery");
+const configurationRecoveryMessage = document.querySelector("#configuration-recovery-message");
+const acknowledgeConfigurationOutcomeButton = document.querySelector("#acknowledge-configuration-outcome");
 document.querySelector("#close-diagnostics").addEventListener("click", () => diagnosticsDialog.close());
 document.querySelector("#refresh-diagnostics").addEventListener("click", async () => {
-  diagnosticData = null;
-  diagnosticError = null;
+  invalidateDiagnostics();
   renderDiagnosticContent(diagnosticsContent, Number(diagnosticsContent.dataset.channel));
   await loadDiagnostics();
 });
@@ -30,8 +32,14 @@ let selectedBoard = null;
 let selectedLabel = "";
 let configurationProfileDirty = false;
 let configurationSavePending = false;
+const pendingConfigurationProfiles = new Map();
+const uncertainConfigurationBoards = new Set();
+const acknowledgedConfigurationWarnings = new Map();
+const configurationRecoveryStatusFloor = new Map();
+const configurationRecoveryReadyBoards = new Set();
 let selectionVersion = 0;
 let refreshing = null;
+let statusRequestId = 0;
 let scanning = false;
 let scanError = null;
 let refreshIntervalMs = 500;
@@ -45,8 +53,16 @@ const channelRowViews = new Map();
 const MIN_TRAFFIC_RATE_WINDOW_MS = 1000;
 const TRAFFIC_RATE_WINDOW_MS = 5000;
 const MAX_RATE_ELAPSED_MS = 8000;
+const STATUS_REQUEST_TIMEOUT_MS = 5000;
+const BOARD_SCAN_TIMEOUT_MS = 10000;
+const DIAGNOSTICS_REQUEST_TIMEOUT_MS = 15000;
+const CONTROL_REQUEST_TIMEOUT_MS = 30000;
 let reportSample = null;
 let reportReceivedAt = 0;
+const boardActionErrors = new Map();
+let diagnosticReadAt = null;
+let diagnosticAgeElement = null;
+let diagnosticEpoch = 0;
 
 const directions = [
   ["UART TX", "uart_tx", true],
@@ -76,6 +92,25 @@ function setRefreshInterval(interval) {
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   refreshIntervalMs = delay;
   refreshTimer = window.setInterval(refresh, delay);
+}
+
+async function fetchJson(url, options, timeoutMs) {
+  const controller = new AbortController();
+  let rejectTimeout;
+  const timeout = new Promise((_, reject) => { rejectTimeout = reject; });
+  const timeoutId = window.setTimeout(() => {
+    controller.abort();
+    rejectTimeout(new Error(`Request timed out after ${timeoutMs} ms`));
+  }, timeoutMs);
+  const request = (async () => {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return { response, data: await response.json() };
+  })();
+  try {
+    return await Promise.race([request, timeout]);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 function makeCell(className, text) {
@@ -151,9 +186,27 @@ function renderStaticConfiguration(data) {
   for (const option of clockProfile.options) {
     option.disabled = !(profileMask & (1 << Number(option.value)));
   }
-  if (configurationProfileDirty && configuration?.stored_profile === Number(clockProfile.value)) {
-    configurationProfileDirty = false;
+  const pendingProfile = pendingConfigurationProfiles.get(selectedBoard);
+  const storedProfile = configuration?.stored_profile ?? 0;
+  if (!actionBusy && configurationSavePending && Number.isInteger(pendingProfile) && configuration
+    && (configuration.stored_profile === null || Number.isInteger(configuration.stored_profile))
+    && storedProfile === pendingProfile) {
     configurationSavePending = false;
+    configurationProfileDirty = false;
+    pendingConfigurationProfiles.delete(selectedBoard);
+    uncertainConfigurationBoards.delete(selectedBoard);
+    const warning = configurationSaveWarning(data);
+    if (warning) acknowledgedConfigurationWarnings.set(selectedBoard, warning);
+    else acknowledgedConfigurationWarnings.delete(selectedBoard);
+    configurationRecoveryStatusFloor.delete(selectedBoard);
+    configurationRecoveryReadyBoards.delete(selectedBoard);
+    if (boardActionErrors.get(selectedBoard)?.action === "configuration") {
+      boardActionErrors.delete(selectedBoard);
+    }
+    overclockAcknowledgement.checked = false;
+  } else if (configurationProfileDirty && !configurationSavePending
+    && configuration?.stored_profile === Number(clockProfile.value)) {
+    configurationProfileDirty = false;
     overclockAcknowledgement.checked = false;
   }
   if (!configurationProfileDirty && configuration
@@ -165,6 +218,14 @@ function renderStaticConfiguration(data) {
   document.querySelector("#uart-rx-capacity").textContent = formatBytes(configuration?.uart_rx_ring_capacity_bytes);
   document.querySelector("#cdc-tx-capacity").textContent = formatBytes(configuration?.cdc_tx_fifo_capacity_bytes);
   document.querySelector("#cdc-rx-capacity").textContent = formatBytes(configuration?.cdc_rx_fifo_capacity_bytes);
+
+  const total = identity?.ram_total_bytes;
+  const reserved = identity?.ram_reserved_bytes;
+  document.querySelector("#ram-usage").textContent = Number.isSafeInteger(total) && total > 0
+    && Number.isSafeInteger(reserved) && reserved >= 0 && reserved <= total
+    ? `${(reserved / 1024).toFixed(1)} / ${(total / 1024).toFixed(0)} KiB`
+      + ` (${(reserved / total * 100).toFixed(1)}%)`
+    : "--";
 
   const pinMap = document.querySelector("#pin-map");
   pinMap.replaceChildren();
@@ -202,14 +263,27 @@ function renderStaticConfiguration(data) {
   });
   table.append(thead, body);
   pinMap.append(table);
+}
 
-  const total = identity?.ram_total_bytes;
-  const reserved = identity?.ram_reserved_bytes;
-  document.querySelector("#ram-usage").textContent = Number.isSafeInteger(total) && total > 0
-    && Number.isSafeInteger(reserved) && reserved >= 0 && reserved <= total
-    ? `${(reserved / 1024).toFixed(1)} / ${(total / 1024).toFixed(0)} KiB`
-      + ` (${(reserved / total * 100).toFixed(1)}%)`
-    : "--";
+function configurationSaveWarning(data) {
+  const error = data?.configuration_save_error;
+  return typeof error === "string" && /outcome is unconfirmed/i.test(error) ? error : null;
+}
+
+function renderConfigurationRecovery(data) {
+  const configuration = data?.configuration;
+  const canAcknowledge = uncertainConfigurationBoards.has(selectedBoard)
+    && configurationRecoveryReadyBoards.has(selectedBoard)
+    && !actionBusy
+    && data?.connected && configuration
+    && (configuration.stored_profile === null || Number.isInteger(configuration.stored_profile))
+    && !data.configuration_error && !data.error;
+  configurationRecovery.hidden = !canAcknowledge;
+  if (!canAcknowledge) return;
+  const storedProfile = configuration.stored_profile ?? 0;
+  const storedLabel = [...clockProfile.options].find(option => Number(option.value) === storedProfile)?.textContent
+    ?? `Unknown profile (${storedProfile})`;
+  configurationRecoveryMessage.textContent = `The save outcome is unconfirmed. Current stored profile: ${storedLabel}.`;
 }
 
 function updateConfigurationControls(data) {
@@ -232,41 +306,66 @@ function currentRates(channel, now, data) {
   const id = channel.id;
   const identity = data.identity?.device_uid ?? data.identity?.serial_number;
   const uptime = data.runtime?.uptime_ms;
+  const observedInterval = channel.observed_interval_ms;
   const totals = Object.fromEntries(directions.map(([, key]) => [key, channel.totals?.[key]]));
   let history = channelHistory.get(id);
+  const readerRestarted = history && Number.isSafeInteger(observedInterval)
+    && Number.isSafeInteger(history.observedInterval) && observedInterval < history.observedInterval;
   if (!data.connected || !history || history.identity !== identity
-    || (Number.isFinite(uptime) && Number.isFinite(history.uptime) && uptime < history.uptime)) {
-    history = { identity, uptime, sequence: channel.sequence, measurement: channel.uart_measurement_state,
-      sequenceReceivedAt: now, samples: [] };
+    || (Number.isFinite(uptime) && Number.isFinite(history.uptime) && uptime < history.uptime)
+    || readerRestarted) {
+    history = { identity, uptime, sequence: null, trafficGaps: channel.traffic_gaps ?? 0,
+      observedInterval, sequenceReceivedAt: now, stale: false, usbSamples: [], uartSamples: [] };
     channelHistory.set(id, history);
   }
-  if (Number.isInteger(channel.sequence) && !Number.isInteger(history.sequence)) {
+  const stale = now - history.sequenceReceivedAt > 3000;
+  const sequenceDelta = Number.isInteger(channel.sequence) && Number.isInteger(history.sequence)
+    ? (channel.sequence - history.sequence + 65536) % 65536 : null;
+  const newSample = Number.isInteger(channel.sequence)
+    && (history.sequence === null || sequenceDelta > 0 && sequenceDelta < 32768);
+  const sequenceJump = sequenceDelta !== null && sequenceDelta > 1 && sequenceDelta < 32768;
+  const trafficGaps = channel.traffic_gaps ?? history.trafficGaps;
+  const gap = trafficGaps !== history.trafficGaps;
+  const intervalValid = Number.isInteger(channel.interval_ms)
+    && channel.interval_ms > 0 && channel.interval_ms < 65535;
+  const totalsValid = Object.values(totals).every(value =>
+    Number.isInteger(value) && value >= 0 && value <= 0xffffffff);
+  if (stale && !history.stale || gap || newSample && !intervalValid) {
+    history.usbSamples = [];
+    history.uartSamples = [];
+  }
+  if (sequenceJump) history.uartSamples = [];
+  if (newSample) {
     history.sequence = channel.sequence;
     history.sequenceReceivedAt = now;
-  } else if (Number.isInteger(channel.sequence) && Number.isInteger(history.sequence)
-    && channel.sequence !== history.sequence) {
-    const sequenceDelta = (channel.sequence - history.sequence + 65536) % 65536;
-    if (sequenceDelta > 0 && sequenceDelta < 32768) {
-      history.sequence = channel.sequence;
-      history.sequenceReceivedAt = now;
-    }
+    history.stale = false;
+  } else if (stale) {
+    history.stale = true;
   }
-  if (data.connected && Object.values(totals).every(Number.isSafeInteger)) {
-    history.samples.push({ receivedAt: now, totals, measurement: channel.uart_measurement_state });
-    const cutoff = now - TRAFFIC_RATE_WINDOW_MS;
-    while (history.samples.length > 2 && history.samples[1].receivedAt <= cutoff) history.samples.shift();
+  if (gap) history.trafficGaps = trafficGaps;
+  const baselineAfterGap = gap && !newSample && history.sequence !== null;
+  if (data.connected && (newSample || baselineAfterGap) && totalsValid && Number.isSafeInteger(observedInterval)) {
+    const sample = { observedInterval, totals };
+    history.usbSamples.push(sample);
+    if (channel.uart_measurement_state === 1) history.uartSamples.push(sample);
+    else history.uartSamples = [];
+    for (const samples of [history.usbSamples, history.uartSamples]) {
+      while (samples.length > 2
+        && samples[1].observedInterval <= observedInterval - TRAFFIC_RATE_WINDOW_MS) samples.shift();
+    }
   }
   const rates = {};
   for (const [, key, uart] of directions) {
-    const samples = uart ? history.samples.filter(sample => sample.measurement !== 0) : history.samples;
+    const samples = uart ? history.uartSamples : history.usbSamples;
     const baseline = samples[0];
     const latest = samples.at(-1);
-    const elapsed = latest && baseline ? latest.receivedAt - baseline.receivedAt : 0;
-    rates[key] = elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS && elapsed <= MAX_RATE_ELAPSED_MS
+    const elapsed = latest && baseline ? latest.observedInterval - baseline.observedInterval : 0;
+    rates[key] = !stale && elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS && elapsed <= MAX_RATE_ELAPSED_MS
       ? ((latest.totals[key] - baseline.totals[key]) >>> 0) * 1000 / elapsed : null;
   }
-  history.uptime = uptime;
-  const fresh = data.connected && now - history.sequenceReceivedAt <= 3000;
+  if (Number.isFinite(uptime)) history.uptime = uptime;
+  if (Number.isSafeInteger(observedInterval)) history.observedInterval = observedInterval;
+  const fresh = data.connected && Number.isInteger(history.sequence) && now - history.sequenceReceivedAt <= 3000;
   return { rates, fresh };
 }
 
@@ -280,7 +379,9 @@ function measurementStatus(value) {
 }
 
 function diagnosticEntry(id) {
-  if (Array.isArray(diagnosticData)) return diagnosticData.find(item => item.id === id) ?? diagnosticData[id] ?? null;
+  if (Array.isArray(diagnosticData)) {
+    return diagnosticData.find(item => item?.id === id) ?? diagnosticData[id] ?? null;
+  }
   if (diagnosticData && typeof diagnosticData === "object") {
     return diagnosticData[id] ?? diagnosticData.channel_diagnostics?.[id] ?? null;
   }
@@ -295,6 +396,7 @@ function peakValue(bytes, capacity) {
 
 function renderDiagnosticContent(container, id) {
   container.replaceChildren();
+  diagnosticAgeElement = null;
   if (!diagnosticData && !diagnosticError) {
     container.textContent = "Loading channel diagnostics...";
     return;
@@ -303,28 +405,40 @@ function renderDiagnosticContent(container, id) {
     container.textContent = `Diagnostics unavailable: ${diagnosticError}`;
     return;
   }
+  diagnosticAgeElement = document.createElement("p");
+  diagnosticAgeElement.className = "diagnostics-age";
+  container.append(diagnosticAgeElement);
   const diagnostic = diagnosticEntry(id);
   if (!diagnostic) {
-    container.textContent = "Diagnostics unavailable for this channel.";
+    const unavailable = document.createElement("p");
+    unavailable.textContent = "Diagnostics unavailable for this channel.";
+    container.append(unavailable);
+    updateDiagnosticsAge();
     return;
   }
   const config = latestData?.configuration ?? {};
+  const uartMeasurementAvailable = diagnostic.uart_measurement_state === 1
+    || diagnostic.uart_measurement_state === 2;
+  const noFaultRecorded = diagnostic.last_fault_uptime_s === 0 && diagnostic.rx_overrun_count === 0
+    && diagnostic.rx_error_count === 0 && diagnostic.last_control_error_reason === 0;
+  const lastFault = noFaultRecorded
+    ? uartMeasurementAvailable ? "None recorded" : "Unavailable"
+    : `${diagnostic.last_fault_uptime_s?.toLocaleString() ?? "--"} s uptime`;
   const fields = [
     ["UART measurement", measurementLabel(diagnostic.uart_measurement_state)],
     ["UART sample age", diagnostic.uart_measurement_state === 0 ? "Unavailable"
       : diagnostic.uart_sample_age_100ms === 255 ? "At least 25.5 s"
         : `${(diagnostic.uart_sample_age_100ms / 10).toFixed(1)} s`],
-    ["Known RX bytes dropped", formatBytes(diagnostic.rx_overrun_count)],
-    ["RX controller error observations", diagnostic.rx_error_count?.toLocaleString() ?? "--"],
+    ["Known RX bytes dropped", uartMeasurementAvailable ? formatBytes(diagnostic.rx_overrun_count) : "Unavailable"],
+    ["RX controller error observations",
+      uartMeasurementAvailable ? diagnostic.rx_error_count?.toLocaleString() ?? "--" : "Unavailable"],
     ["Last configuration error", errorReasons[diagnostic.last_control_error_reason]
       ?? `Unknown (${diagnostic.last_control_error_reason ?? "--"})`],
-    ["Last fault observed", diagnostic.last_fault_uptime_s === 0 && diagnostic.rx_overrun_count === 0
-      && diagnostic.rx_error_count === 0 && diagnostic.last_control_error_reason === 0
-      ? "None recorded" : `${diagnostic.last_fault_uptime_s?.toLocaleString() ?? "--"} s uptime`],
-    ["UART TX ring observed peak since boot", peakValue(
-      diagnostic.uart_tx_ring_peak_bytes, config.uart_tx_ring_capacity_bytes)],
-    ["UART RX ring observed peak since boot", peakValue(
-      diagnostic.uart_rx_ring_peak_bytes, config.uart_rx_ring_capacity_bytes)],
+    ["Last fault observed", lastFault],
+    ["UART TX ring observed peak since boot", uartMeasurementAvailable
+      ? peakValue(diagnostic.uart_tx_ring_peak_bytes, config.uart_tx_ring_capacity_bytes) : "Unavailable"],
+    ["UART RX ring observed peak since boot", uartMeasurementAvailable
+      ? peakValue(diagnostic.uart_rx_ring_peak_bytes, config.uart_rx_ring_capacity_bytes) : "Unavailable"],
     ["CDC TX FIFO observed peak since boot", peakValue(
       diagnostic.cdc_tx_fifo_peak_bytes, config.cdc_tx_fifo_capacity_bytes)],
     ["CDC RX FIFO observed peak since boot", peakValue(
@@ -339,31 +453,56 @@ function renderDiagnosticContent(container, id) {
     list.append(term, detail);
   }
   container.append(list);
+  updateDiagnosticsAge();
+}
+
+function updateDiagnosticsAge(now = Date.now()) {
+  if (!diagnosticAgeElement || !diagnosticsDialog.open || !Number.isFinite(diagnosticReadAt)) return;
+  const seconds = Math.max(0, Math.floor((now - diagnosticReadAt) / 1000));
+  diagnosticAgeElement.textContent = `Diagnostics read ${seconds} s ago`;
+}
+
+function invalidateDiagnostics() {
+  diagnosticEpoch++;
+  diagnosticBoard = null;
+  diagnosticData = null;
+  diagnosticError = null;
+  diagnosticReadAt = null;
 }
 
 async function loadDiagnostics() {
-  if (!selectedBoard || diagnosticRequest) return diagnosticRequest;
+  if (!selectedBoard) return;
   const board = selectedBoard;
-  const version = selectionVersion;
-  diagnosticRequest = (async () => {
+  const selection = selectionVersion;
+  const epoch = diagnosticEpoch;
+  if (diagnosticRequest?.selection === selection && diagnosticRequest.epoch === epoch) {
+    return diagnosticRequest.promise;
+  }
+  const request = { selection, epoch, promise: null };
+  request.promise = (async () => {
     diagnosticError = null;
     try {
-      const response = await fetch(`/api/diagnostics?board=${encodeURIComponent(board)}`, { cache: "no-store" });
-      const result = await response.json();
+      const { response, data: result } = await fetchJson(
+        `/api/diagnostics?board=${encodeURIComponent(board)}`,
+        { cache: "no-store" },
+        DIAGNOSTICS_REQUEST_TIMEOUT_MS,
+      );
       if (!response.ok) throw new Error(result.error || `Diagnostics request failed (${response.status})`);
-      if (version !== selectionVersion) return;
+      if (selection !== selectionVersion || epoch !== diagnosticEpoch) return;
       diagnosticData = result.channel_diagnostics ?? result;
       diagnosticBoard = board;
+      diagnosticReadAt = Date.now();
     } catch (error) {
-      if (version === selectionVersion) diagnosticError = error.message;
+      if (selection === selectionVersion && epoch === diagnosticEpoch) diagnosticError = error.message;
     } finally {
-      diagnosticRequest = null;
-      if (version === selectionVersion) {
+      if (diagnosticRequest === request) diagnosticRequest = null;
+      if (selection === selectionVersion && epoch === diagnosticEpoch) {
         renderDiagnosticContent(diagnosticsContent, Number(diagnosticsContent.dataset.channel));
       }
     }
   })();
-  return diagnosticRequest;
+  diagnosticRequest = request;
+  return request.promise;
 }
 
 function buildDiagnosticsCell(channel) {
@@ -401,7 +540,9 @@ function createChannelRow(id) {
   const state = document.createElement("span");
   const measurement = document.createElement("small");
   measurement.className = "health-flags";
-  lifecycle.append(state, measurement);
+  const history = document.createElement("small");
+  history.className = "traffic-history";
+  lifecycle.append(state, measurement, history);
   row.append(lifecycle);
 
   const configuration = document.createElement("td");
@@ -434,7 +575,7 @@ function createChannelRow(id) {
   const diagnostics = buildDiagnosticsCell({ id });
   row.append(diagnostics);
   return { row, configuration, settings, state, measurement, metrics,
-    diagnosticsButton: diagnostics.children[0] };
+    history, diagnosticsButton: diagnostics.children[0] };
 }
 
 function renderChannels(data) {
@@ -463,12 +604,19 @@ function renderChannels(data) {
     view.measurement.textContent = stale ? "— Unavailable" : measurementStatus(channel.uart_measurement_state);
     view.measurement.title = stale ? "Channel snapshot unavailable or stale."
       : `Measurement status: ${measurementLabel(channel.uart_measurement_state).toLowerCase()}.`;
-    directions.forEach(([label, key]) => {
+    view.history.hidden = channel.traffic_incomplete !== true;
+    view.history.textContent = view.history.hidden ? "" : "History incomplete";
+    view.history.title = `Traffic history includes ${channel.traffic_gaps ?? 0} known gap(s).`;
+    directions.forEach(([label, key, uart]) => {
       const metric = view.metrics.get(key);
       metric.rate.textContent = rates.rates?.[key] != null
         ? `${(rates.rates[key] / 1000).toFixed(1)} KB/s` : "-- KB/s";
-      metric.total.textContent = formatBytes(channel.totals?.[key]);
-      metric.metric.title = `${label}: ${formatBytes(channel.totals?.[key])} since firmware boot, modulo 2^32.`;
+      const sampleAvailable = Number.isInteger(channel.sequence);
+      const uartMeasurementAvailable = !uart
+        || channel.uart_measurement_state === 1 || channel.uart_measurement_state === 2;
+      const total = sampleAvailable && uartMeasurementAvailable ? formatBytes(channel.totals?.[key]) : "--";
+      metric.total.textContent = total;
+      metric.metric.title = `${label}: ${total} since firmware boot, modulo 2^32.`;
     });
     view.diagnosticsButton.disabled = !data.connected;
   });
@@ -482,11 +630,19 @@ function renderChannels(data) {
 
 function render(data) {
   const reconnected = data.connected && !latestData?.connected;
-  if (reconnected) {
+  const previousUptime = latestData?.runtime?.uptime_ms;
+  const uptime = data.runtime?.uptime_ms;
+  const rebooted = data.connected && latestData?.connected
+    && Number.isFinite(previousUptime) && Number.isFinite(uptime) && uptime < previousUptime;
+  const previousUid = deviceUid(latestData?.identity);
+  const currentUid = deviceUid(data.identity);
+  const deviceChanged = data.connected && latestData?.connected
+    && previousUid !== "--" && currentUid !== "--" && previousUid !== currentUid;
+  const disconnected = !data.connected && latestData?.connected;
+  const diagnosticsInvalidated = reconnected || disconnected || rebooted || deviceChanged;
+  if (diagnosticsInvalidated) {
     channelHistory.clear();
-    diagnosticBoard = null;
-    diagnosticData = null;
-    diagnosticError = null;
+    invalidateDiagnostics();
   }
   latestData = data;
   connection.dataset.state = data.connected ? "connected" : "disconnected";
@@ -503,6 +659,7 @@ function render(data) {
   document.querySelector("#serial").textContent = deviceUid(data.identity);
   renderStaticConfiguration(data);
   updateConfigurationControls(data);
+  renderConfigurationRecovery(data);
   const runtime = data.runtime;
   document.querySelector("#uptime").textContent = Number.isFinite(runtime?.uptime_ms)
     ? uptimeLabel(runtime.uptime_ms) : "--";
@@ -532,33 +689,68 @@ function render(data) {
   updateReportAge(data);
   renderChannels(data);
 
-  const message = scanError || data.error
+  const saveWarning = configurationSaveWarning(data);
+  const configurationSaveError = saveWarning
+    && acknowledgedConfigurationWarnings.get(selectedBoard) === saveWarning
+    ? null : data.configuration_save_error;
+  const message = scanError || data.error || boardActionErrors.get(selectedBoard)?.message
     || (data.identity_error ? `Device identity unavailable: ${data.identity_error}` : null)
     || (data.configuration_error ? `Board configuration unavailable: ${data.configuration_error}` : null)
+    || (configurationSaveError ? `Configuration save outcome: ${configurationSaveError}` : null)
     || (data.runtime_error ? `Runtime telemetry unavailable: ${data.runtime_error}` : null)
     || (data.led_error ? `LED state unavailable: ${data.led_error}` : null)
     || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
   statusMessage.textContent = message;
   statusMessage.parentElement.dataset.error = Boolean(scanError || data.error || data.identity_error
-    || data.configuration_error || data.runtime_error || data.led_error || !data.connected);
+    || boardActionErrors.has(selectedBoard) || data.configuration_error || configurationSaveError
+    || data.runtime_error || data.led_error || !data.connected);
+  if (diagnosticsInvalidated && diagnosticsDialog.open) {
+    if (!data.connected) diagnosticError = "Board disconnected; reconnect before reading diagnostics.";
+    renderDiagnosticContent(diagnosticsContent, Number(diagnosticsContent.dataset.channel));
+    if (data.connected) loadDiagnostics();
+  }
 }
 
 async function refresh() {
   if (refreshing === selectionVersion) return;
   const version = selectionVersion;
+  const requestId = ++statusRequestId;
   refreshing = version;
   try {
     const query = selectedBoard ? `?board=${encodeURIComponent(selectedBoard)}` : "";
-    const response = await fetch(`/api/status${query}`, { cache: "no-store" });
-    const data = await response.json();
+    const { response, data } = await fetchJson(
+      `/api/status${query}`, { cache: "no-store" }, STATUS_REQUEST_TIMEOUT_MS);
     if (version !== selectionVersion) return;
     if (!response.ok) throw new Error(data.error || `Status request failed (${response.status})`);
+    const saveWarning = configurationSaveWarning(data);
+    if (!saveWarning) {
+      acknowledgedConfigurationWarnings.delete(selectedBoard);
+    } else if (acknowledgedConfigurationWarnings.has(selectedBoard)) {
+      const acknowledgedWarning = acknowledgedConfigurationWarnings.get(selectedBoard);
+      if (acknowledgedWarning === null) {
+        acknowledgedConfigurationWarnings.set(selectedBoard, saveWarning);
+      } else if (acknowledgedWarning !== saveWarning) {
+        acknowledgedConfigurationWarnings.delete(selectedBoard);
+      }
+    }
+    if (!actionBusy && saveWarning && !acknowledgedConfigurationWarnings.has(selectedBoard)) {
+      if (!uncertainConfigurationBoards.has(selectedBoard)) {
+        uncertainConfigurationBoards.add(selectedBoard);
+        pendingConfigurationProfiles.set(selectedBoard, null);
+        configurationRecoveryStatusFloor.set(selectedBoard, requestId - 1);
+      }
+      if (selectedBoard !== null) configurationSavePending = true;
+    }
+    if (uncertainConfigurationBoards.has(selectedBoard)
+      && requestId > (configurationRecoveryStatusFloor.get(selectedBoard) ?? Number.POSITIVE_INFINITY)) {
+      configurationRecoveryReadyBoards.add(selectedBoard);
+    }
     setRefreshInterval(data.connected ? data.refresh_interval_ms : 500);
     render(data);
   } catch (error) {
     if (version !== selectionVersion) return;
     setRefreshInterval(500);
-    if (latestData) render({ ...latestData, connected: false, error: error.message });
+    if (latestData) render({ ...latestData, error: error.message });
     statusMessage.textContent = error.message;
     statusMessage.parentElement.dataset.error = "true";
   } finally {
@@ -569,7 +761,7 @@ async function refresh() {
 function selectBoard(id, label) {
   if (selectedBoard === id) return;
   configurationProfileDirty = false;
-  configurationSavePending = false;
+  configurationSavePending = id !== null && pendingConfigurationProfiles.has(id);
   overclockAcknowledgement.checked = false;
   selectedBoard = id;
   setRefreshInterval(500);
@@ -577,9 +769,7 @@ function selectBoard(id, label) {
   selectionVersion++;
   channelHistory.clear();
   reportSample = null;
-  diagnosticBoard = null;
-  diagnosticData = null;
-  diagnosticError = null;
+  invalidateDiagnostics();
   diagnosticsDialog.close();
   render({
     connected: false,
@@ -592,8 +782,8 @@ async function rescanBoards() {
   scanning = true;
   rescanButton.disabled = true;
   try {
-    const response = await fetch("/api/boards", { cache: "no-store" });
-    const result = await response.json();
+    const { response, data: result } = await fetchJson(
+      "/api/boards", { cache: "no-store" }, BOARD_SCAN_TIMEOUT_MS);
     if (!response.ok) throw new Error(result.error || `Board scan failed (${response.status})`);
     scanError = null;
     boardSelect.replaceChildren();
@@ -635,22 +825,32 @@ async function rescanBoards() {
 async function runAction(action) {
   if (!selectedBoard || actionBusy) return;
   const board = selectedBoard;
+  let responseStatus = null;
   actionBusy = true;
   boardSelect.disabled = true;
   actionButtons.forEach(button => { button.disabled = true; });
   try {
-    const response = await fetch(`/api/actions/${action}?board=${encodeURIComponent(board)}`, {
-      method: "POST",
-      headers: { "X-CSRF-Token": token },
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `Action failed (${response.status})`);
+    const { response, data: result } = await fetchJson(
+      `/api/actions/${action}?board=${encodeURIComponent(board)}`,
+      { method: "POST", headers: { "X-CSRF-Token": token } },
+      CONTROL_REQUEST_TIMEOUT_MS,
+    );
+    if (!response.ok) {
+      responseStatus = response.status;
+      throw new Error(result.error || `Action failed (${response.status})`);
+    }
+    if (boardActionErrors.get(board)?.action === action) boardActionErrors.delete(board);
     statusMessage.textContent = action === "reset"
       ? "Reboot command sent; USB will reconnect shortly." : "LED toggle command sent";
     statusMessage.parentElement.dataset.error = "false";
     await refresh();
   } catch (error) {
-    statusMessage.textContent = error.message;
+    const uncertain = responseStatus === null || responseStatus >= 500 || /outcome is unconfirmed/i.test(error.message);
+    const message = uncertain
+      ? `Board action outcome is unconfirmed; reconnect and inspect before retrying. ${error.message}`
+      : error.message;
+    boardActionErrors.set(board, { action, message });
+    statusMessage.textContent = message;
     statusMessage.parentElement.dataset.error = "true";
   } finally {
     actionBusy = false;
@@ -687,23 +887,57 @@ async function saveConfiguration() {
   configurationDialog.close();
 
   const board = selectedBoard;
+  let responseStatus = null;
+  configurationSavePending = true;
+  pendingConfigurationProfiles.set(board, profile);
   actionBusy = true;
   boardSelect.disabled = true;
   actionButtons.forEach(button => { button.disabled = true; });
+  updateConfigurationControls(latestData);
+  statusMessage.textContent = `Saving ${profileLabel} and waiting for board confirmation...`;
+  statusMessage.parentElement.dataset.error = "false";
   try {
-    const response = await fetch(`/api/configuration?board=${encodeURIComponent(board)}`, {
-      method: "POST",
-      headers: { "X-CSRF-Token": token, "Content-Type": "application/json" },
-      body: JSON.stringify({ profile, unsafe_overclock: unsafeOverclock }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `Configuration save failed (${response.status})`);
+    const { response, data: result } = await fetchJson(
+      `/api/configuration?board=${encodeURIComponent(board)}`,
+      {
+        method: "POST",
+        headers: { "X-CSRF-Token": token, "Content-Type": "application/json" },
+        body: JSON.stringify({ profile, unsafe_overclock: unsafeOverclock }),
+      },
+      CONTROL_REQUEST_TIMEOUT_MS,
+    );
+    if (!response.ok) {
+      responseStatus = response.status;
+      throw new Error(result.error || `Configuration save failed (${response.status})`);
+    }
     configurationProfileDirty = true;
     configurationSavePending = true;
+    uncertainConfigurationBoards.delete(board);
+    acknowledgedConfigurationWarnings.delete(board);
+    configurationRecoveryStatusFloor.delete(board);
+    configurationRecoveryReadyBoards.delete(board);
+    if (boardActionErrors.get(board)?.action === "configuration") boardActionErrors.delete(board);
     statusMessage.textContent = `Saved ${profileLabel}; board is rebooting.`;
     statusMessage.parentElement.dataset.error = "false";
   } catch (error) {
-    statusMessage.textContent = error.message;
+    const uncertain = responseStatus === null || responseStatus >= 500 || /outcome is unconfirmed/i.test(error.message);
+    const message = uncertain
+      ? `Configuration save outcome is unconfirmed; reconnect and inspect before retrying. ${error.message}`
+      : error.message;
+    configurationSavePending = uncertain;
+    if (uncertain) uncertainConfigurationBoards.add(board);
+    else pendingConfigurationProfiles.delete(board);
+    if (uncertain) {
+      acknowledgedConfigurationWarnings.delete(board);
+      configurationRecoveryStatusFloor.set(board, statusRequestId);
+      configurationRecoveryReadyBoards.delete(board);
+    } else {
+      configurationRecoveryStatusFloor.delete(board);
+      configurationRecoveryReadyBoards.delete(board);
+      uncertainConfigurationBoards.delete(board);
+    }
+    boardActionErrors.set(board, { action: "configuration", message });
+    statusMessage.textContent = message;
     statusMessage.parentElement.dataset.error = "true";
   } finally {
     actionBusy = false;
@@ -715,7 +949,32 @@ async function saveConfiguration() {
       || !(latestData.identity?.capabilities & 1) || ledOutput == null;
     document.querySelector("#reset-board").disabled = !latestData?.connected;
     updateConfigurationControls(latestData);
+    renderConfigurationRecovery(latestData);
   }
+}
+
+function acknowledgeConfigurationOutcome() {
+  const board = selectedBoard;
+  const configuration = latestData?.configuration;
+  if (!board || !configurationSavePending || !uncertainConfigurationBoards.has(board)
+    || !configurationRecoveryReadyBoards.has(board)
+    || actionBusy
+    || !latestData.connected || latestData.configuration_error || !configuration
+    || (configuration.stored_profile !== null && !Number.isInteger(configuration.stored_profile))) return;
+  clockProfile.value = String(configuration.stored_profile ?? 0);
+  configurationProfileDirty = false;
+  configurationSavePending = false;
+  pendingConfigurationProfiles.delete(board);
+  uncertainConfigurationBoards.delete(board);
+  acknowledgedConfigurationWarnings.set(board, configurationSaveWarning(latestData));
+  configurationRecoveryStatusFloor.delete(board);
+  configurationRecoveryReadyBoards.delete(board);
+  if (boardActionErrors.get(board)?.action === "configuration") boardActionErrors.delete(board);
+  overclockAcknowledgement.checked = false;
+  updateConfigurationControls(latestData);
+  renderConfigurationRecovery(latestData);
+  statusMessage.textContent = "Stored profile inspected; choose a profile to retry if needed.";
+  statusMessage.parentElement.dataset.error = "false";
 }
 
 document.querySelector("#toggle-led").addEventListener("click", () => runAction("toggle-led"));
@@ -736,6 +995,7 @@ clockProfile.addEventListener("change", () => {
 saveConfigurationButton.addEventListener("click", openConfigurationConfirmation);
 document.querySelector("#cancel-configuration").addEventListener("click", () => configurationDialog.close());
 confirmConfigurationButton.addEventListener("click", saveConfiguration);
+acknowledgeConfigurationOutcomeButton.addEventListener("click", acknowledgeConfigurationOutcome);
 overclockAcknowledgement.addEventListener("change", () => {
   confirmConfigurationButton.disabled = !overclockAcknowledgement.checked;
 });
@@ -747,3 +1007,7 @@ boardSelect.addEventListener("change", () => {
 rescanButton.addEventListener("click", rescanBoards);
 rescanBoards();
 setRefreshInterval(500);
+window.setInterval(() => {
+  if (latestData) render(latestData);
+  updateDiagnosticsAge();
+}, 1000);

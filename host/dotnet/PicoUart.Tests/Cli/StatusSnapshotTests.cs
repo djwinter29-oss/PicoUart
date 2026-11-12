@@ -139,6 +139,38 @@ public sealed class StatusSnapshotTests
         Assert.Null(found);
     }
 
+    [Fact]
+    public void ReadWithinDeadlineBoundsNativeReadAndRejectsLateSample()
+    {
+        var sample = new ChannelStatus(0, "ready", 1, 115200, 8, 1, "none", 1, 500, 1, 2, 3, 4);
+        var readTimeoutMs = 0;
+        var operationTimeoutMs = 0;
+
+        var found = StatusSnapshot.ReadWithinDeadline((readTimeout, operationTimeout) =>
+        {
+            readTimeoutMs = readTimeout;
+            operationTimeoutMs = operationTimeout;
+            Thread.Sleep(50);
+            return sample;
+        }, TimeSpan.FromMilliseconds(10));
+
+        Assert.Null(found);
+        Assert.InRange(readTimeoutMs, 1, 10);
+        Assert.InRange(operationTimeoutMs, readTimeoutMs, 10);
+    }
+
+    [Fact]
+    public void ReadWithinDeadlineTreatsAnExpiredReadTimeoutAsNoSample()
+    {
+        var found = StatusSnapshot.ReadWithinDeadline((_, _) =>
+        {
+            Thread.Sleep(50);
+            throw new TimeoutException();
+        }, TimeSpan.FromMilliseconds(10));
+
+        Assert.Null(found);
+    }
+
     private static void AssertSorted(JsonElement element)
     {
         switch (element.ValueKind)

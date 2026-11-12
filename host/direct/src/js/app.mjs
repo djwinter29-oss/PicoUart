@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
-import { PicoUartWebHid } from "./device.mjs?v=24";
-import { renderDashboard, updateChannelFreshness, updateDiagnosticsAge, updateReportAge } from "./view.mjs?v=24";
+import { PicoUartWebHid } from "./device.mjs?v=25";
+import { renderDashboard, updateChannelFreshness, updateDiagnosticsAge, updateReportAge } from "./view.mjs?v=25";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");
@@ -23,6 +23,7 @@ document.querySelector("#close-channel-diagnostics").addEventListener("click", (
 let selectedProfile = null;
 let saveMessage = "";
 let operationNotice = "";
+let operationNoticeError = false;
 
 function resetConfigurationDraft() {
   if (configurationDialog.open) configurationDialog.close();
@@ -115,6 +116,7 @@ async function saveConfiguration() {
   const profile = selectedProfile;
   const nonDefault = profile !== 0;
   if (!configurationDialog.open || saveButton.disabled || nonDefault && !unsafeAcknowledgement.checked) return;
+  const generation = client.generation;
   const description = profileName(profile);
   configurationDialog.close();
   saveMessage = "Saving profile; do not retry if the result is unconfirmed.";
@@ -124,9 +126,18 @@ async function saveConfiguration() {
     if (result?.action !== 4 || result.status !== 2) {
       throw new Error("Save did not return confirmed completion; outcome is unconfirmed.");
     }
+    if (generation !== client.generation) {
+      showOperationNotice(`Previous connection configuration save: Saved ${description}; Pico is rebooting. `
+        + "Reconnect manually to verify its boot configuration.");
+      return;
+    }
     saveMessage = `Saved ${description}; Pico is rebooting. Reconnect manually to verify its boot configuration.`;
     renderConfiguration(client.state);
   } catch (error) {
+    if (generation !== client.generation) {
+      showOperationError("Configuration save", error, generation);
+      return;
+    }
     saveMessage = error.message;
     renderConfiguration(client.state);
   }
@@ -153,7 +164,7 @@ function render(state) {
   diagnosticsButton.disabled = !connected || busy || !dashboard.identity;
   if (operationNotice) {
     statusMessage.textContent = operationNotice;
-    statusMessage.parentElement.dataset.error = "true";
+    statusMessage.parentElement.dataset.error = String(operationNoticeError);
   } else if (!connected || state.error) {
     statusMessage.textContent = state.error ?? state.message;
     statusMessage.parentElement.dataset.error = String(Boolean(state.error) || state.phase === "unsupported");
@@ -163,15 +174,23 @@ function render(state) {
 const hid = globalThis.isSecureContext ? navigator.hid : undefined;
 const client = new PicoUartWebHid(hid, render);
 function showOperationError(label, error, generation) {
-  operationNotice = generation === client.generation
-    ? `${label}: ${error.message}` : `Previous connection ${label.toLowerCase()}: ${error.message}`;
+  showOperationNotice(generation === client.generation
+    ? `${label}: ${error.message}` : `Previous connection ${label.toLowerCase()}: ${error.message}`, true);
+}
+function showOperationNotice(message, isError = false) {
+  operationNotice = message;
+  operationNoticeError = isError;
   render(client.state);
+}
+function clearOperationNotice() {
+  operationNotice = "";
+  operationNoticeError = false;
 }
 
 render(client.state);
 connectButton.addEventListener("click", () => {
   if (client.state.phase === "disconnected") {
-    operationNotice = "";
+    clearOperationNotice();
     client.connect();
   } else {
     client.disconnect();
@@ -180,7 +199,7 @@ connectButton.addEventListener("click", () => {
 toggleLedButton.addEventListener("click", async () => {
   const on = client.state.dashboard.telemetry?.led.output_on;
   if (on == null) return;
-  operationNotice = "";
+  clearOperationNotice();
   render(client.state);
   const generation = client.generation;
   try {
@@ -196,7 +215,7 @@ document.querySelector("#cancel-reboot").addEventListener("click", () => rebootD
 document.querySelector("#confirm-reboot").addEventListener("click", async () => {
   if (!rebootDialog.open || rebootButton.disabled) return;
   rebootDialog.close();
-  operationNotice = "";
+  clearOperationNotice();
   render(client.state);
   const generation = client.generation;
   try {
@@ -218,7 +237,7 @@ unsafeAcknowledgement.addEventListener("change", () => {
 });
 confirmConfigurationButton.addEventListener("click", saveConfiguration);
 diagnosticsButton.addEventListener("click", async () => {
-  operationNotice = "";
+  clearOperationNotice();
   render(client.state);
   const generation = client.generation;
   try {

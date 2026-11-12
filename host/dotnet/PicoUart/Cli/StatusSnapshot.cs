@@ -39,6 +39,20 @@ internal sealed record StatusSnapshot(StatusChannel[] Channels)
         return null;
     }
 
+    /// <summary>Read once within a capture budget and discard a sample completed at or after its deadline.</summary>
+    internal static ChannelStatus? ReadWithinDeadline(Func<int, int, ChannelStatus?> read, TimeSpan timeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        var clock = Stopwatch.StartNew();
+        var remainingMs = timeout.TotalMilliseconds;
+        var operationTimeoutMs = remainingMs >= int.MaxValue
+            ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(remainingMs));
+        ChannelStatus? sample;
+        try { sample = read(Math.Min(250, operationTimeoutMs), operationTimeoutMs); }
+        catch (TimeoutException) when (clock.Elapsed >= timeout) { return null; }
+        return clock.Elapsed >= timeout ? null : sample;
+    }
+
     /// <summary>Serialize with recursively sorted object keys, matching Python <c>sort_keys=True</c>.</summary>
     internal static string ToSortedJson(StatusSnapshot snapshot)
     {

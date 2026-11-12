@@ -9,7 +9,8 @@ import pytest
 from helpers import channel_bytes, configuration_bytes, device_info_bytes, diagnostic_bytes, telemetry_bytes
 
 from pico_uart.dashboard.boards import MISSED_SCANS_BEFORE_REAP, BoardRegistry
-from pico_uart.dashboard.monitor import BoardMonitor
+from pico_uart.dashboard.monitor import BoardMonitor, empty_snapshot
+from pico_uart.hid.client import ControlOutcomeUnconfirmed
 from pico_uart.hid.inputs import InputTracker
 from pico_uart.hid.protocol import (
     parse_channel,
@@ -106,6 +107,183 @@ def test_actions_reach_client_and_publish_results(monitor):
     board_monitor.reset_board()
     board_monitor.save_configuration(1, True)
     assert "reset" in client.calls and ("save", 1, True) in client.calls
+    assert board_monitor.snapshot()["configuration_save"]["status"] == 2
+
+
+def test_old_telemetry_completion_cannot_overwrite_reconnected_snapshot(monitor):
+    board_monitor, old_client = monitor
+    assert board_monitor.close()
+    entered, release = threading.Event(), threading.Event()
+    with board_monitor._lock:
+        board_monitor._client = old_client
+
+    def delayed_telemetry():
+        result = parse_telemetry(telemetry_bytes(uptime_ms=9999))
+        entered.set()
+        assert release.wait(timeout=2)
+        return result
+
+    old_client.read_telemetry = delayed_telemetry
+    worker = threading.Thread(target=board_monitor._read_telemetry, args=(old_client,))
+    worker.start()
+    try:
+        assert entered.wait(timeout=1)
+        new_client = StubClient()
+        with board_monitor._lock:
+            board_monitor._client = new_client
+            board_monitor._snapshot = empty_snapshot()
+            board_monitor._snapshot["connected"] = True
+            board_monitor._snapshot["identity"] = new_client.identity
+            board_monitor._snapshot["runtime"] = parse_telemetry(
+                telemetry_bytes(uptime_ms=10)
+            )["runtime"]
+        release.set()
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        assert board_monitor.snapshot()["runtime"]["uptime_ms"] == 10
+    finally:
+        release.set()
+        worker.join(timeout=1)
+
+
+def test_old_telemetry_error_cannot_mark_reconnected_snapshot_failed(monitor):
+    board_monitor, old_client = monitor
+    assert board_monitor.close()
+    entered, release = threading.Event(), threading.Event()
+    with board_monitor._lock:
+        board_monitor._client = old_client
+
+    def delayed_failure():
+        entered.set()
+        assert release.wait(timeout=2)
+        raise OSError("old connection disconnected")
+
+    old_client.read_telemetry = delayed_failure
+    worker = threading.Thread(target=board_monitor._read_telemetry, args=(old_client,))
+    worker.start()
+    try:
+        assert entered.wait(timeout=1)
+        new_client = StubClient()
+        with board_monitor._lock:
+            board_monitor._client = new_client
+            board_monitor._snapshot = empty_snapshot()
+            board_monitor._snapshot["connected"] = True
+            board_monitor._snapshot["identity"] = new_client.identity
+            board_monitor._snapshot["runtime"] = parse_telemetry(
+                telemetry_bytes(uptime_ms=10)
+            )["runtime"]
+        release.set()
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        snapshot = board_monitor.snapshot()
+        assert snapshot["runtime"]["uptime_ms"] == 10
+        assert snapshot["runtime_error"] is None
+    finally:
+        release.set()
+        worker.join(timeout=1)
+
+
+def test_old_diagnostics_completion_cannot_publish_into_reconnected_snapshot(monitor):
+    board_monitor, old_client = monitor
+    assert board_monitor.close()
+    entered, release = threading.Event(), threading.Event()
+    original = old_client.read_channel_diagnostics
+    with board_monitor._lock:
+        board_monitor._client = old_client
+
+    def delayed_diagnostics():
+        result = original()
+        entered.set()
+        assert release.wait(timeout=2)
+        return result
+
+    old_client.read_channel_diagnostics = delayed_diagnostics
+    worker = threading.Thread(target=board_monitor.read_diagnostics)
+    worker.start()
+    try:
+        assert entered.wait(timeout=1)
+        with board_monitor._lock:
+            board_monitor._client = StubClient()
+            board_monitor._snapshot["channel_diagnostics"] = None
+            board_monitor._snapshot["overflow_counts"] = [None] * 6
+        release.set()
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        assert board_monitor.snapshot()["channel_diagnostics"] is None
+        assert board_monitor.snapshot()["overflow_counts"] == [None] * 6
+    finally:
+        release.set()
+        worker.join(timeout=1)
+
+
+def test_old_save_completion_cannot_replace_reconnected_control_result(monitor):
+    board_monitor, old_client = monitor
+    assert board_monitor.close()
+    entered, release = threading.Event(), threading.Event()
+    original = old_client.save_configuration
+    with board_monitor._lock:
+        board_monitor._client = old_client
+
+    def delayed_save(profile, unsafe_overclock):
+        result = original(profile, unsafe_overclock)
+        entered.set()
+        assert release.wait(timeout=2)
+        return result
+
+    old_client.save_configuration = delayed_save
+    worker = threading.Thread(target=board_monitor.save_configuration, args=(0, False))
+    worker.start()
+    try:
+        assert entered.wait(timeout=1)
+        with board_monitor._lock:
+            board_monitor._client = StubClient()
+            board_monitor._snapshot["configuration_save"] = {
+                "status": 0, "action": 0, "error_reason": 0, "error": "none"
+            }
+        release.set()
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        assert board_monitor.snapshot()["configuration_save"]["action"] == 0
+    finally:
+        release.set()
+        worker.join(timeout=1)
+
+
+def test_unconfirmed_save_survives_polling_and_reconnect_until_confirmed(monitor):
+    board_monitor, client = monitor
+    assert board_monitor.close()
+
+    def fail_save(*_args):
+        raise ControlOutcomeUnconfirmed("disconnect after submission")
+
+    client.save_configuration = fail_save
+    with board_monitor._lock:
+        board_monitor._client = client
+    with pytest.raises(ControlOutcomeUnconfirmed):
+        board_monitor.save_configuration(0, False)
+    error = board_monitor.snapshot()["configuration_save_error"]
+    assert "outcome is unconfirmed" in error
+
+    class StopAfterConnectClient(StubClient):
+        def read_status(self, timeout_ms):
+            board_monitor._stop.set()
+
+    reconnected = StopAfterConnectClient()
+    board_monitor._client_factory = lambda: reconnected
+    board_monitor._stop.clear()
+    board_monitor._poll()
+    assert board_monitor.snapshot()["configuration_save_error"] == error
+
+    with board_monitor._lock:
+        board_monitor._client = reconnected
+        board_monitor._snapshot["identity"] = reconnected.identity
+    board_monitor._read_control(reconnected)
+    assert board_monitor.snapshot()["configuration_save_error"] == error
+    reconnected.read_control = lambda: {
+        "status": 2, "action": 4, "error_reason": 0, "error": "none"
+    }
+    board_monitor._read_control(reconnected)
+    assert board_monitor.snapshot()["configuration_save_error"] is None
     assert board_monitor.snapshot()["configuration_save"]["status"] == 2
 
 

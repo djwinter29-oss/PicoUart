@@ -268,6 +268,51 @@ test("unconfirmed action outcomes remain visible after disconnect without attach
   assert.doesNotMatch(get("status-message").textContent, /outcome is unconfirmed/);
 });
 
+test("late configuration-save outcomes are shown as belonging to the previous connection", async () => {
+  const { client, get } = fixture();
+  client.state.dashboard = {
+    identity: { capabilities: 4, clock_profile_mask: 31 },
+    configuration: { stored_profile: 2 },
+    channels: Array.from({ length: 6 }, () => ({
+      channel_state: 0,
+      input_updated_at: new Date().toISOString(),
+    })),
+  };
+  client.state.phase = "connected";
+  client.render(client.state);
+  let rejectSave;
+  client.saveConfiguration = (...args) => {
+    client.calls.push(["save-configuration", ...args]);
+    return new Promise((_, reject) => { rejectSave = reject; });
+  };
+  get("configuration-profile").value = "1";
+  get("configuration-profile").change();
+  get("save-configuration").click();
+  get("configuration-unsafe-ack").checked = true;
+  get("configuration-unsafe-ack").change();
+  const pendingSave = get("confirm-configuration").click();
+
+  client.generation++;
+  client.phase("disconnected");
+  client.state.dashboard = {
+    identity: { capabilities: 4, clock_profile_mask: 31 },
+    configuration: { stored_profile: 0 },
+    channels: Array.from({ length: 6 }, () => ({
+      channel_state: 0,
+      input_updated_at: new Date().toISOString(),
+    })),
+  };
+  client.phase("connected");
+  rejectSave(new Error("Board action submission failed; outcome is unconfirmed."));
+  await pendingSave;
+
+  assert.equal(get("configuration-message").textContent, "");
+  assert.match(get("status-message").textContent,
+    /^Previous connection configuration save: .*outcome is unconfirmed/);
+  assert.equal(get("status-message").parentElement.dataset.error, "true");
+  assert.deepEqual(client.calls, [["save-configuration", 1, true, true]]);
+});
+
 test("connection button reflects lifecycle, routes clicks and recovers after failure or unplug", () => {
   const { client, get } = fixture();
   const button = get("connect");

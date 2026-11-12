@@ -135,8 +135,12 @@ class BoardRegistry:
                 raise RuntimeError("dashboard is shutting down")
             if not board_id or board_id not in self._known:
                 raise RuntimeError("unknown board; rescan and select a listed board")
-            if board_id in self._retired_monitors:
-                raise RuntimeError("previous board monitor cleanup is still pending")
+            retired = self._retired_monitors.get(board_id)
+            if retired is not None:
+                if retired.is_stopped:
+                    del self._retired_monitors[board_id]
+                else:
+                    raise RuntimeError("previous board monitor cleanup is still pending")
             if board_id not in self._monitors:
                 board = self._known[board_id]
                 self._monitors[board_id] = self._monitor_factory(

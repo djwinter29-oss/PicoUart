@@ -215,14 +215,18 @@ compare before and after a run, accounting for resets and saturation.
 `status` on either host retries until its timeout. The default is 2 seconds, and each read waits at most 250 ms.
 Python and .NET select that limit with `--timeout`. `status` fails when the timeout expires with no valid report.
 Python `monitor` fails if it receives no valid reports, but can succeed after one report even if later reads time out.
-Python `monitor` passes its capture deadline through identity, configuration, and Input reads and excludes reports
-that complete after the deadline. Both hosts fail on device errors.
+Python and .NET `monitor` pass the remaining capture deadline through metadata and Input reads and exclude reports
+that complete at or after the deadline. Both hosts fail on device errors.
 A successful command does not establish continuous reporting or healthy channels; the runner must evaluate reported
 states and counters rather than treating the exit code as the test result.
 
-Dashboard save and board-action errors after command submission may report that the outcome is unconfirmed, including
+Dashboard save and board-action errors after command submission report that the outcome is unconfirmed, including
 when the connection drops before a result is read. Reconnect and inspect board state before deciding what to do; never
-automatically retry a save or reboot. Firmware rejections with a confirmed result are reported separately.
+automatically retry a save or reboot. The hosted dashboard bounds complete HTTP requests, including response bodies;
+a timed-out write is still unconfirmed because the server may have completed it. Firmware rejections with a confirmed
+result are reported separately. Both Python and .NET retain an unconfirmed save in the shared board snapshot across
+reconnects, and both use the same wording so the browser can gate a save after a page reload. After
+a fresh status read, explicitly inspect and acknowledge the stored profile before retrying.
 
 ## Python Distribution
 
@@ -409,7 +413,10 @@ physical board; separate server processes and standalone HID clients do not shar
 
 Closing a registry requests monitor shutdown and waits for active readers within the host's shutdown deadline. If that
 deadline expires, reader cleanup remains owned and continues in the background. HID clients defer closing their native
-handle until in-flight transfers return; a new reader for the same device waits for that cleanup before opening it.
+handle until in-flight transfers return; a replacement reader never opens before cleanup completes. While cleanup is
+pending, requests for that board receive a retryable error instead of blocking an HTTP worker. Results from an old HID
+session are discarded if the monitor has already connected a replacement session. A rediscovered board becomes
+available to status requests as soon as its retired reader has stopped; another board-list rescan is not required.
 
 `GET /api/boards` returns `boards` (`id`, `product_name`, `serial_number`, `device_path`) and `default_board_id`.
 Pass the opaque `id` as `?board=ID` to `GET /api/status` and `POST /api/actions/{toggle-led,reset}`. A status request
@@ -486,6 +493,8 @@ The selected board's client checks MCU compatibility and acknowledgement; firmwa
 HTTP success (`{"ok": true}`) means the serialized save action reported Completed after verification,
 not just a successful HID transfer. The result has no request ID or echoed profile; only one controlling host may write.
 Timeout/disconnect leaves an unconfirmed outcome and must not cause an automatic destructive retry.
+Python retains an unconfirmed save warning in the shared board snapshot across polling and reconnects. A matching
+terminal save result clears it; an unrelated or idle control result does not.
 Snapshots expose the independent `configuration_save` result (`action`, `status`, `error_reason`) and
 `configuration_save_error`; the existing `configuration` remains read-only boot metadata.
 

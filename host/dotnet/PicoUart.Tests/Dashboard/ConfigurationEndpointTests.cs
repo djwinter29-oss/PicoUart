@@ -210,18 +210,18 @@ public sealed class ConfigurationEndpointTests
             Assert.Equal((uint)0, dashboard.SavedProfile);
 
             dashboard.ActionError = new ControlOutcomeUnconfirmedException(
-                "command outcome unconfirmed; do not retry; reconnect and verify board state",
+                "command outcome is unconfirmed; do not retry; reconnect and verify board state",
                 new IOException("private native detail"));
             using var uncertainActionContent = new StringContent("{}", Encoding.UTF8, "application/json");
             using var uncertainActionResponse =
                 await http.PostAsync($"/api/actions/toggle-led?board={boardId}", uncertainActionContent);
             Assert.Equal(HttpStatusCode.ServiceUnavailable, uncertainActionResponse.StatusCode);
             var uncertainActionBody = await uncertainActionResponse.Content.ReadAsStringAsync();
-            Assert.Contains("do not retry", uncertainActionBody);
+            Assert.Contains("outcome is unconfirmed", uncertainActionBody);
             Assert.DoesNotContain("private native detail", uncertainActionBody);
 
             dashboard.SaveError = new ControlOutcomeUnconfirmedException(
-                "command outcome unconfirmed; do not retry; reconnect and verify board state",
+                "command outcome is unconfirmed; do not retry; reconnect and verify board state",
                 new IOException("private native detail"));
             using var uncertainSaveContent = new StringContent(
                 "{\"profile\":0,\"unsafe_overclock\":false}", Encoding.UTF8, "application/json");
@@ -229,7 +229,7 @@ public sealed class ConfigurationEndpointTests
                 $"/api/configuration?board={boardId}", uncertainSaveContent);
             Assert.Equal(HttpStatusCode.ServiceUnavailable, uncertainSaveResponse.StatusCode);
             var uncertainSaveBody = await uncertainSaveResponse.Content.ReadAsStringAsync();
-            Assert.Contains("do not retry", uncertainSaveBody);
+            Assert.Contains("outcome is unconfirmed", uncertainSaveBody);
             Assert.DoesNotContain("private native detail", uncertainSaveBody);
 
             using var status = JsonDocument.Parse(await http.GetStringAsync($"/api/status?board={boardId}"));

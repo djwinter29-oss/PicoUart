@@ -463,7 +463,7 @@ public sealed class PicoUartHid : IDisposable
         catch (Exception error) when (submissionAttempted && HidErrors.IsDeviceError(error))
         {
             transferUnconfirmed = true;
-            throw Unconfirmed("command outcome unconfirmed; do not retry; reconnect and verify board state", error);
+            throw Unconfirmed("command outcome is unconfirmed; do not retry; reconnect and verify board state", error);
         }
     }
 
@@ -473,19 +473,20 @@ public sealed class PicoUartHid : IDisposable
         while (true)
         {
             var remaining = timeoutMs - (int)timer.ElapsedMilliseconds;
-            if (remaining <= 0) throw Unconfirmed("board action outcome unconfirmed; reconnect before further I/O");
+            if (remaining <= 0)
+                throw Unconfirmed("board action outcome is unconfirmed; reconnect before further I/O");
             var result = read(remaining);
             if (timer.ElapsedMilliseconds >= timeoutMs)
-                throw Unconfirmed("board action outcome unconfirmed; reconnect before further I/O");
+                throw Unconfirmed("board action outcome is unconfirmed; reconnect before further I/O");
             if (result.Action != action)
-                throw Unconfirmed("board action outcome unconfirmed: result belongs to another action");
+                throw Unconfirmed("board action outcome is unconfirmed: result belongs to another action");
             if (result.Status == 2) return result;
             if (result.Status is >= 3 and <= 6)
                 throw new ControlRequestRejectedException(
                     $"board action rejected: status {result.Status}, error {result.ErrorReason}"
                     + (result.Status == 5 ? "; stop UART traffic and close all CDC ports" : ""));
             if (result.Status != 1)
-                throw Unconfirmed("board action outcome unconfirmed: no matching result");
+                throw Unconfirmed("board action outcome is unconfirmed: no matching result");
             remaining = timeoutMs - (int)timer.ElapsedMilliseconds;
             if (remaining > 0) Thread.Sleep(Math.Min(50, remaining));
         }

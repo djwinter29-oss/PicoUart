@@ -84,19 +84,24 @@ function showChannelDiagnostics(id, channel, diagnostic, capacities, data) {
   diagnosticsReadAt = Date.parse(diagnostic.updated_at);
   content.append(diagnosticsAgeElement);
   updateDiagnosticsAge();
+  const uartAvailable = diagnostic.uart_measurement_state !== 0;
   const values = [
     ["UART measurement", diagnostic.uart_measurement_state_name],
     ["UART sample age", diagnostic.uart_measurement_state === 0 ? "Unavailable"
       : diagnostic.uart_sample_age_100ms === 255 ? "At least 25.5 s"
         : `${(diagnostic.uart_sample_age_100ms / 10).toFixed(1)} s`],
-    ["Known RX bytes dropped", `${diagnostic.rx_dropped_bytes.toLocaleString()} B`],
-    ["RX controller error observations", diagnostic.rx_error_observations.toLocaleString()],
+    ["Known RX bytes dropped", uartAvailable ? `${diagnostic.rx_dropped_bytes.toLocaleString()} B` : "Unavailable"],
+    ["RX controller error observations",
+      uartAvailable ? diagnostic.rx_error_observations.toLocaleString() : "Unavailable"],
     ["Last configuration error", faultReasonName(diagnostic)],
-    ["Last fault observed", diagnostic.last_fault_uptime_s === 0 && diagnostic.rx_dropped_bytes === 0
-      && diagnostic.rx_error_observations === 0 && diagnostic.last_configuration_error_reason === 0
-      ? "None recorded" : `${diagnostic.last_fault_uptime_s.toLocaleString()} s uptime`],
-    ["UART TX ring observed peak since boot", displayPeak(diagnostic.peaks.uart_tx, capacities?.uart_tx)],
-    ["UART RX ring observed peak since boot", displayPeak(diagnostic.peaks.uart_rx, capacities?.uart_rx)],
+    ["Last fault observed", diagnostic.last_fault_uptime_s === 0 && diagnostic.last_configuration_error_reason === 0
+      && (!uartAvailable || diagnostic.rx_dropped_bytes === 0 && diagnostic.rx_error_observations === 0)
+      ? uartAvailable ? "None recorded" : "Unavailable"
+      : `${diagnostic.last_fault_uptime_s.toLocaleString()} s uptime`],
+    ["UART TX ring observed peak since boot", uartAvailable
+      ? displayPeak(diagnostic.peaks.uart_tx, capacities?.uart_tx) : "Unavailable"],
+    ["UART RX ring observed peak since boot", uartAvailable
+      ? displayPeak(diagnostic.peaks.uart_rx, capacities?.uart_rx) : "Unavailable"],
     ["CDC TX FIFO observed peak since boot", displayPeak(diagnostic.peaks.cdc_tx, capacities?.cdc_tx)],
     ["CDC RX FIFO observed peak since boot", displayPeak(diagnostic.peaks.cdc_rx, capacities?.cdc_rx)],
   ];

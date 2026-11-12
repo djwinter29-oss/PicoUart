@@ -10,8 +10,8 @@ Copyright (c) 2026 Ji Dong
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PicoUart Diagnostics | {{ dashboard_type }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/css/dashboard.css?v=35">
-  <script src="/js/dashboard.js?v=38" defer></script>
+  <link rel="stylesheet" href="/css/dashboard.css?v=37">
+  <script src="/js/dashboard.js?v=41" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -86,6 +86,12 @@ Copyright (c) 2026 Ji Dong
         <div class="summary-item"><span>UART RX ring capacity</span><strong id="uart-rx-capacity">--</strong></div>
         <div class="summary-item"><span>CDC TX FIFO capacity</span><strong id="cdc-tx-capacity">--</strong></div>
         <div class="summary-item"><span>CDC RX FIFO capacity</span><strong id="cdc-rx-capacity">--</strong></div>
+      </div>
+      <div class="configuration-recovery" id="configuration-recovery" hidden>
+        <span id="configuration-recovery-message"></span>
+        <button class="button button-small" id="acknowledge-configuration-outcome" type="button">
+          I inspected the stored profile
+        </button>
       </div>
       <details class="pin-map-disclosure">
         <summary>Pin mapping</summary>

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Ji Dong
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
@@ -97,6 +98,26 @@ public sealed class DashboardBoardsTests
             while (boards.RetiringReaderCount != 0 && deadline.Elapsed < TimeSpan.FromSeconds(2))
                 await Task.Delay(10);
         }
+    }
+
+    [Fact]
+    public async Task ReaderReturnsPromptlyWhileRetiredReaderCleanupIsPending()
+    {
+        using var boards = new DashboardBoards(null, null,
+            () => [new("/a", "test-A", "PicoUart")],
+            (serial, path) => new(serial, path));
+        var id = boards.Boards().Boards[0].Id;
+        var cleanup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var retiring = (Dictionary<string, Task>)typeof(DashboardBoards)
+            .GetField("retiring", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(boards)!;
+        retiring.Add(id, cleanup.Task);
+
+        var error = Assert.Throws<IOException>(() => boards.Reader(id));
+        Assert.Contains("cleanup is still pending", error.Message);
+
+        cleanup.SetResult();
+        Assert.NotNull(boards.Reader(id));
+        await boards.StopAsync(CancellationToken.None);
     }
 
     [Fact]

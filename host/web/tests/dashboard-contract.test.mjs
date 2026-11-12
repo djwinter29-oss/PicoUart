@@ -40,13 +40,13 @@ test("dashboard uses the HID snapshot and diagnostic contract fields", () => {
     "init_failed",
     "control_pending",
     "cpu_usage_basis_points",
-    "configuration_save",
     "active_profile",
   ]) assert.ok(!dashboard.includes(legacy), `legacy field remains: ${legacy}`);
+  assert.doesNotMatch(dashboard, /data\.configuration_save\b/);
 });
 
 test("diagnostics are requested on demand rather than at snapshot cadence", () => {
-  assert.match(dashboard, /fetch\(`\/api\/diagnostics\?board=/);
+  assert.match(dashboard, /fetchJson\(\s*`\/api\/diagnostics\?board=/);
   assert.match(dashboard, /diagnosticsDialog\.showModal\(\)[\s\S]*?loadDiagnostics\(\)/);
   assert.match(dashboard, /#refresh-diagnostics[\s\S]*?await loadDiagnostics\(\)/);
   const refresh = dashboard.match(/async function refresh\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
@@ -87,13 +87,17 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(dashboard, /rebootDialog\.showModal\(\)/);
   assert.match(dashboard, /rebootDialog\.close\(\)[\s\S]*?runAction\("reset"\)/);
   assert.doesNotMatch(dashboard, /window\.confirm\(/);
-  assert.match(dashboard, /fetch\(`\/api\/configuration\?board=/);
+  assert.match(dashboard, /fetchJson\(\s*`\/api\/configuration\?board=/);
   assert.match(dashboard, /JSON\.stringify\(\{ profile, unsafe_overclock: unsafeOverclock \}\)/);
   assert.match(dashboard, /configurationDialog\.showModal\(\)/);
   assert.match(dashboard, /saveConfigurationButton\.addEventListener\("click", openConfigurationConfirmation\)/);
   assert.match(dashboard, /confirmConfigurationButton\.addEventListener\("click", saveConfiguration\)/);
   assert.match(dashboard, /configurationSavePending = true/);
   assert.match(dashboard, /configurationSavePending \|\| !available/);
+  assert.match(markup, /id="configuration-recovery"/);
+  assert.match(markup, /id="acknowledge-configuration-outcome"/);
+  assert.match(dashboard, /await Promise\.race\(\[request, timeout\]\)/);
+  assert.match(dashboard, /view\.history\.textContent = view\.history\.hidden \? "" : "History incomplete"/);
   assert.match(markup, /<th class="traffic-heading" scope="col" title="[^"]+">\s*<span class="traffic-heading-title">Traffic<\/span>\s*<span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB<\/span>\s*<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
   assert.match(markup, /title="Rates ramp from a one-second to a five-second average as samples arrive\./);
   assert.match(markup, /<dialog class="diagnostics-dialog" id="diagnostics-dialog"/);
@@ -103,7 +107,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.doesNotMatch(markup, /CPU load|unsafe overclock/);
   assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
   assert.match(markup, /Uptime[\s\S]*?Board temperature[\s\S]*?Service load \(Core 0 \/ Core 1\)/);
-  assert.match(dashboard, /total\.textContent = formatBytes\(channel\.totals\?\.\[key\]\)/);
+  assert.match(dashboard, /const total = sampleAvailable && uartMeasurementAvailable \? formatBytes\(channel\.totals\?\.\[key\]\) : "--"/);
   assert.match(dashboard, /latest\.totals\[key\] - baseline\.totals\[key\]/);
   assert.match(dashboard, /elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS/);
   assert.match(dashboard, /const channelRowViews = new Map\(\)/);
@@ -114,6 +118,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(dashboard, /function measurementStatus\(value\)/);
   assert.match(dashboard, /view\.state\.hidden = stale/);
   assert.match(dashboard, /view\.measurement\.textContent = stale \? "— Unavailable" : measurementStatus\(channel\.uart_measurement_state\)/);
+  assert.match(dashboard, /view\.history\.hidden = channel\.traffic_incomplete !== true/);
   assert.match(dashboard, /configuration\.append\(settings\)/);
   assert.doesNotMatch(dashboard, /pins\.textContent/);
   assert.match(stylesheet, /\.health-flags \{[^}]*height: 2\.8em;[^}]*overflow: hidden;/);
@@ -127,6 +132,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(stylesheet, /col\.throughput-column \{ width: 54%; \}/);
   assert.match(stylesheet, /col\.diagnostics-column \{ width: 10%; \}/);
   assert.match(stylesheet, /\.channels-section table \{ min-width: 1080px; \}/);
+  assert.match(stylesheet, /@media \(max-width: 1100px\) \{\s*\.channels-section table \{ min-width: 1080px; \}\s*\}/);
   assert.match(stylesheet, /#clock-profile \{[^}]*min-height: 38px;[^}]*border-radius: 7px;[^}]*font: 600 14px var\(--mono\); \}/);
   assert.match(stylesheet, /\.channels-section tbody td:last-child \{ padding-inline: 6px; \}/);
   assert.match(stylesheet, /\.traffic b \{[^}]*text-align: right;/);

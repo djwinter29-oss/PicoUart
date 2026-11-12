@@ -144,7 +144,7 @@ const CHANNEL_STATES = ["Closed", "Starting", "Ready", "Configuring", "Error"];
 const MEASUREMENT_STATES = ["Unavailable", "Current", "Cached"];
 const PARITY_NAMES = ["N", "O", "E"];
 
-export function decodeChannelSnapshot(report, reportId, identity, configuration) {
+export function decodeChannelSnapshot(report, reportId, identity) {
   if (!Number.isInteger(reportId) || reportId < 10 || reportId > 15) {
     throw new Error("Unexpected channel snapshot report ID");
   }
@@ -164,7 +164,7 @@ export function decodeChannelSnapshot(report, reportId, identity, configuration)
     usb_tx: data.getUint32(22, true),
     usb_rx: data.getUint32(26, true),
   };
-  const pio = Boolean(identity && configuration
+  const pio = Boolean(identity
     && !(identity.hardware_channel_mask & (1 << (reportId - 10))));
   if (version !== 1 || state > 4 || measurementState > 2
     || (baud ? baud < 50 || baud > 3000000 || dataBits < 5 || dataBits > 8
@@ -335,6 +335,7 @@ export class PicoUartWebHid {
     this.transferToken = 0;
     this.ioBlocked = false;
     this.pendingTransfers = new Set();
+    this.initialRefreshGeneration = null;
     this.inputListener = null;
     this.retryAfter = new Map();
     this.state = {
@@ -374,8 +375,7 @@ export class PicoUartWebHid {
         || !this.information || event.reportId < 10 || event.reportId > 15) return;
       try {
         const report = payload(event.data, 30, `Channel ${event.reportId - 10} snapshot`, event.reportId);
-        const snapshot = decodeChannelSnapshot(report, event.reportId, this.information,
-          this.state.dashboard.configuration);
+        const snapshot = decodeChannelSnapshot(report, event.reportId, this.information);
         this.applyInputSnapshot(snapshot);
       } catch (error) {
         this.failChannel(event.reportId - 10, error.message);
@@ -551,7 +551,7 @@ export class PicoUartWebHid {
     };
     const incomplete = sequenceGap || stale || !intervalValid
       || snapshot.uart_measurement_state !== 1
-      || previous.sequence !== null && previous.uart_measurement_state !== 1;
+      || previous.sequence !== null && previous.input_measurement_state !== 1;
     this.update({ dashboard: {
       ...dashboard,
       channels,
@@ -599,26 +599,25 @@ export class PicoUartWebHid {
     const generation = this.generation;
     const isCurrent = () => this.isCurrent(generation, device);
     for (let channel = 0; channel < CHANNEL_COUNT; channel++) {
-      if (!isCurrent() || !this.information || this.ioBlocked) return;
+      if (!isCurrent() || !this.information || this.ioBlocked) return false;
       try {
         const snapshot = decodeChannelSnapshot(
-          await this.readFeature(10 + channel, 30), 10 + channel,
-          this.information, this.state.dashboard.configuration);
-        if (!isCurrent()) return;
+          await this.readFeature(10 + channel, 30), 10 + channel, this.information);
+        if (!isCurrent()) return false;
         this.applyFeatureSnapshot(snapshot);
       } catch (error) {
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         this.failChannel(channel, error.message);
-        if (this.ioBlocked) return;
+        if (this.ioBlocked) return false;
       }
     }
     for (let channel = 0; channel < CHANNEL_COUNT; channel++) {
-      if (!isCurrent() || this.ioBlocked) return;
+      if (!isCurrent() || this.ioBlocked) return false;
       try {
         const diagnostic = decodeChannelDiagnostics(
           await this.readFeature(30 + channel, 24), 30 + channel,
           this.state.dashboard.configuration);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         const diagnostics = [...this.state.dashboard.channel_diagnostics];
         const errors = [...this.state.dashboard.diagnostics_errors];
         diagnostics[channel] = { ...diagnostic, updated_at: new Date().toISOString() };
@@ -626,23 +625,26 @@ export class PicoUartWebHid {
         this.update({ dashboard: { ...this.state.dashboard,
           channel_diagnostics: diagnostics, diagnostics_errors: errors } });
       } catch (error) {
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         const diagnostics = [...this.state.dashboard.channel_diagnostics];
         const errors = [...this.state.dashboard.diagnostics_errors];
         diagnostics[channel] = null;
         errors[channel] = error.message;
         this.update({ dashboard: { ...this.state.dashboard,
           channel_diagnostics: diagnostics, diagnostics_errors: errors } });
-        if (this.ioBlocked) return;
+        if (this.ioBlocked) return false;
       }
     }
+    return isCurrent() && !this.ioBlocked;
   }
 
   async refresh(initial = false) {
     const device = this.device;
     const generation = this.generation;
+    if (initial && device) this.initialRefreshGeneration = generation;
+    const includeInitialDetails = this.initialRefreshGeneration === generation;
     if (!device || this.actionInFlight || this.state.phase !== "connected"
-      || this.ioBlocked || this.refreshInFlight) return;
+      || this.ioBlocked || this.transferActive || this.pendingTransfers.size || this.refreshInFlight) return;
     this.refreshInFlight = true;
     let finishRefresh;
     this.refreshComplete = new Promise(resolve => { finishRefresh = resolve; });
@@ -681,7 +683,10 @@ export class PicoUartWebHid {
         if (!this.isCurrent(generation, device)) return;
         this.update({ dashboard: { ...this.state.dashboard, telemetry: null, telemetry_error: error.message } });
       }
-      if (initial) await this.readChannelDetails();
+      if (includeInitialDetails && await this.readChannelDetails()
+        && this.isCurrent(generation, device)) {
+        this.initialRefreshGeneration = null;
+      }
       if (!this.isCurrent(generation, device)) return;
       this.update({ message: "HID status received",
         error: this.state.dashboard.identity_error ?? this.state.dashboard.configuration_error

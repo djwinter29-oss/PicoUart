@@ -118,36 +118,34 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
     {
         while (true)
         {
-            Task? cleanup;
             lock (gate)
             {
                 if (closed) throw new InvalidOperationException("dashboard is shutting down");
                 if (boardId is null || !known.TryGetValue(boardId, out var board))
                     throw new InvalidOperationException("unknown board; rescan and select a listed board");
-                if (retiring.TryGetValue(boardId, out cleanup))
+                if (retiring.TryGetValue(boardId, out var cleanup))
                 {
-                    // Wait outside the registry lock before allowing a replacement reader.
+                    if (!cleanup.IsCompleted)
+                        throw new IOException("board cleanup is still pending; retry the request shortly");
+                    cleanup.GetAwaiter().GetResult();
+                    if (retiring.TryGetValue(boardId, out var current) && ReferenceEquals(current, cleanup))
+                        retiring.Remove(boardId);
+                    continue;
                 }
-                else
+
+                if (!monitors.TryGetValue(boardId, out var monitor))
                 {
-                    if (!monitors.TryGetValue(boardId, out var monitor))
+                    monitor = createMonitor(board.SerialNumber, board.SerialNumber is null ? board.DevicePath : null);
+                    try { monitor.StartAsync(CancellationToken.None).GetAwaiter().GetResult(); }
+                    catch
                     {
-                        monitor = createMonitor(board.SerialNumber, board.SerialNumber is null ? board.DevicePath : null);
-                        try { monitor.StartAsync(CancellationToken.None).GetAwaiter().GetResult(); }
-                        catch
-                        {
-                            monitor.Dispose();
-                            throw;
-                        }
-                        monitors.Add(boardId, monitor);
+                        monitor.Dispose();
+                        throw;
                     }
-                    return monitor;
+                    monitors.Add(boardId, monitor);
                 }
+                return monitor;
             }
-            cleanup.GetAwaiter().GetResult();
-            lock (gate)
-                if (retiring.TryGetValue(boardId!, out var current) && ReferenceEquals(current, cleanup))
-                    retiring.Remove(boardId!);
         }
     }
 

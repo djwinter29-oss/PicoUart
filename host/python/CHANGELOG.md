@@ -6,6 +6,9 @@ User-facing changes to the `pico-uart` Python package.
 
 ### Changes
 
+- Python dashboard monitor results are now scoped to their HID connection. Unconfirmed save outcomes remain visible
+  across reconnects until a matching terminal save result confirms the outcome, and a stopped retired reader no
+  longer needs an extra board rescan before replacement.
 - Dashboard snapshots no longer include raw HID OS errors or device paths; details go to the log. The monitor
   reconnects with a capped exponential backoff (1 s to 8 s), and `BoardMonitor` and `BoardRegistry` are context
   managers.

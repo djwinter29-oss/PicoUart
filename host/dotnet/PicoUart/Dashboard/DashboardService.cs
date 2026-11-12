@@ -12,6 +12,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
     private readonly object gate = new();
     private DashboardSnapshot snapshot = new();
     private PicoUartHid? client;
+    private string? unconfirmedConfigurationSaveError;
 
     public string SnapshotJson()
     {
@@ -71,6 +72,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 {
                     snapshot.ConfigurationSave = result;
                     snapshot.ConfigurationSaveError = null;
+                    unconfirmedConfigurationSaveError = null;
                     if (connection.LastActionResult is not null) snapshot.ApplyAction(connection.LastActionResult);
                     snapshot.ConfigurationSave = new(2, 0, profile);
                 }
@@ -79,6 +81,8 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
         }
         catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
         {
+            if (error is ControlOutcomeUnconfirmedException)
+                RecordUnconfirmedConfigurationSaveError(error.Message);
             lock (gate)
             {
                 if (ReferenceEquals(client, connection))
@@ -189,7 +193,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 lock (gate)
                 {
                     client = connection;
-                    snapshot = new() { Connected = true };
+                    ReplaceSnapshot(new() { Connected = true });
                 }
                 var nextMetadataRead = Stopwatch.GetTimestamp();
                 var initialChannelsRead = false;
@@ -291,7 +295,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     if (ReferenceEquals(client, connection))
                     {
                         client = null;
-                        snapshot = new() { Error = error.Message };
+                        ReplaceSnapshot(new() { Error = error.Message });
                     }
                 }
             }
@@ -309,4 +313,24 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }, stoppingToken);
+
+    /// <summary>Retain an uncertain save result independently of the connection that submitted it.</summary>
+    internal void RecordUnconfirmedConfigurationSaveError(string error)
+    {
+        lock (gate)
+        {
+            unconfirmedConfigurationSaveError = error;
+            snapshot.ConfigurationSaveError = error;
+        }
+    }
+
+    /// <summary>Replace per-connection state without discarding unresolved save uncertainty.</summary>
+    internal void ReplaceSnapshot(DashboardSnapshot replacement)
+    {
+        lock (gate)
+        {
+            replacement.ConfigurationSaveError = unconfirmedConfigurationSaveError;
+            snapshot = replacement;
+        }
+    }
 }

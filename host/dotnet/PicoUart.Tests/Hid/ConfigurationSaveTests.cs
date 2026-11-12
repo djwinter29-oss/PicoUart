@@ -51,7 +51,8 @@ public sealed class ConfigurationSaveTests
     [Fact]
     public void WaitForActionTimesOutWithoutCompletion()
     {
-        Assert.Throws<ControlOutcomeUnconfirmedException>(() =>
+        var error = Assert.Throws<ControlOutcomeUnconfirmedException>(() =>
             PicoUartHid.WaitForAction(4, _ => new(4, 1, 0), timeoutMs: 1));
+        Assert.Contains("outcome is unconfirmed", error.Message);
     }
 }

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { decodeBoardConfiguration, DEVICE_FILTER, identityDiscoveryLength, matchesPicoUart,
-  PicoUartWebHid } from "../src/js/device.mjs";
+  decodeChannelSnapshot, PicoUartWebHid } from "../src/js/device.mjs";
 
 function channelSnapshot({ id = 0, sequence, interval = 500, measurement = 1, counters = 0 }) {
   const values = typeof counters === "number"
@@ -140,6 +140,28 @@ test("WebHID normalizes Report ID prefixes on Input snapshots", () => {
   device.inputListener({ device, reportId: 10, data: new DataView(report.buffer) });
   assert.equal(client.state.dashboard.channels[0].baud_rate, 115200);
   assert.equal(client.state.dashboard.channels[0].sequence, 1);
+});
+
+test("PIO framing restrictions use validated identity when configuration is unavailable", () => {
+  const bytes = new Uint8Array(30);
+  const report = new DataView(bytes.buffer);
+  report.setUint8(0, 1);
+  report.setUint8(1, 2);
+  report.setUint8(2, 1);
+  report.setUint32(3, 115200, true);
+  report.setUint8(7, 7);
+  report.setUint8(8, 2);
+  report.setUint8(9, 2);
+  report.setUint16(10, 1, true);
+  report.setUint16(12, 500, true);
+
+  assert.throws(() => decodeChannelSnapshot(report, 12, { hardware_channel_mask: 0x03 }),
+    /Invalid channel snapshot fields/);
+
+  report.setUint8(7, 8);
+  report.setUint8(8, 1);
+  report.setUint8(9, 0);
+  assert.equal(decodeChannelSnapshot(report, 12, { hardware_channel_mask: 0x03 }).parity, "N");
 });
 
 test("diagnostic reads stop without updating state when the connection changes", async () => {
@@ -374,17 +396,65 @@ test("Feature snapshots do not change Input counters, sequence or rate baselines
   Date.now = () => now;
   try {
     client.applyInputSnapshot(channelSnapshot({ sequence: 10, counters: 100 }));
-    client.applyFeatureSnapshot(channelSnapshot({ sequence: 50, counters: 150 }));
+    client.applyFeatureSnapshot(channelSnapshot({ sequence: 50, measurement: 2, counters: 150 }));
     const channelAfterFeature = client.state.dashboard.channels[0];
     assert.equal(channelAfterFeature.counters.uart_tx, 150);
     assert.equal(channelAfterFeature.sequence, 10);
     assert.equal(channelAfterFeature.input_counters.uart_tx, 100);
+    assert.equal(channelAfterFeature.uart_measurement_state, 2);
 
     now += 500;
     client.applyInputSnapshot(channelSnapshot({ sequence: 11, counters: 200 }));
     assert.equal(client.state.dashboard.channels[0].deltas.uart_tx, 100);
     assert.equal(client.state.dashboard.channels[0].sequence, 11);
+    assert.equal(client.state.dashboard.traffic_incomplete, false);
   } finally {
     Date.now = originalNow;
   }
+});
+
+test("initial channel reads survive a refresh already running for the previous connection", async () => {
+  const client = new PicoUartWebHid(null);
+  const oldDevice = {};
+  const newDevice = {};
+  client.device = oldDevice;
+  client.generation = 1;
+  client.state.phase = "connected";
+  client.information = { hardware_channel_mask: 0x3f };
+  client.state.dashboard.configuration = {};
+  client.state.dashboard.action_result = {};
+  let finishOldTelemetry;
+  client.readTelemetry = () => new Promise(resolve => { finishOldTelemetry = resolve; });
+
+  const oldRefresh = client.refresh();
+  await Promise.resolve();
+  assert.equal(typeof finishOldTelemetry, "function");
+
+  client.device = newDevice;
+  client.generation = 2;
+  client.information = null;
+  client.state.dashboard = {
+    ...client.state.dashboard,
+    identity: null,
+    configuration: null,
+    action_result: null,
+  };
+  const initialReads = [];
+  client.discoverIdentity = async () => {
+    client.information = { hardware_channel_mask: 0x3f };
+    return true;
+  };
+  client.readConfiguration = async () => { client.state.dashboard.configuration = {}; };
+  client.readActionResult = async () => { client.state.dashboard.action_result = {}; };
+  client.readTelemetry = async () => {};
+  client.readChannelDetails = async () => { initialReads.push("channels and diagnostics"); return true; };
+
+  await client.refresh(true);
+  assert.deepEqual(initialReads, []);
+  finishOldTelemetry();
+  await oldRefresh;
+
+  await client.refresh();
+  assert.deepEqual(initialReads, ["channels and diagnostics"]);
+  assert.equal(client.initialRefreshGeneration, null);
 });

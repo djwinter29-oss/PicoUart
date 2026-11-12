@@ -218,11 +218,13 @@ def test_reaped_monitor_remains_owned_until_cleanup_finishes():
     assert created == [first]
 
     first.finished = True
-    registry.boards()
-    replacement = registry._monitor(board_id)
-    assert replacement is not first
+    replacement = registry.snapshot(board_id)
+    assert replacement["connected"] is True
+    replacement_monitor = registry._monitor(board_id)
+    assert replacement_monitor is not first
     assert len(created) == 2
-    assert registry.close() is False
+    created[1].finished = True
+    assert registry.close() is True
 
 
 def test_registry_shutdown_reports_pending_reaped_monitor():
