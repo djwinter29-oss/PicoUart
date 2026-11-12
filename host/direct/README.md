@@ -49,9 +49,9 @@ payload capture. For scripted status samples and traffic logs, use the
 the browser before another client monitors the same board.
 
 Traffic statistics are cumulative byte counters, not raw UART messages. A missing report can make throughput estimates
-incomplete without confirming byte loss; counter wrap can also make an increment unknowable. A quiet or
-healthy-looking page alone is not evidence that an automated test passed. The continuity notice signals incomplete
-observation, not confirmed byte loss, and remains for the current connection. See the
+incomplete without confirming byte loss. Counter wrap can make an increment unknowable if at least `2^32` bytes pass
+between samples. A quiet or healthy-looking page alone is not evidence that an automated test passed. The continuity
+notice signals incomplete observation, not confirmed byte loss, and remains for the current connection. See the
 [HID report reference](../../docs/design/usb/hid-report-reference.md) for counter and measurement semantics.
 
 ## Other Commands And Controls

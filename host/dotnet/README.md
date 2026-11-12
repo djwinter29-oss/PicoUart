@@ -33,19 +33,31 @@ or Python installation is needed. See
 [distribution details](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/deployment/host-app-distribution.md#net-downloads)
 for supported downloads and packaging limitations.
 
-### Install as a NuGet .NET tool (planned)
+### Install as a NuGet .NET tool
 
-The planned `PicoUart.DotNet` package is a .NET global tool for the CLI and dashboard, **not a C# library**. It is not
-published yet. Unlike the self-contained archives, the tool requires the .NET 10 SDK to install and the compatible
-.NET 10 and ASP.NET Core runtimes to run. Its initial OS targets are intended to match the release targets above and
-must be qualified on each platform before publication.
+`PicoUart.DotNet` is a .NET global tool for the CLI and dashboard, **not a C# library**. Check the
+[distribution guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/deployment/host-app-distribution.md#distribution-channels)
+for its current availability; until it is listed as a current channel, use the self-contained archives above. Unlike
+the archives, the tool requires the .NET 10 SDK to install and compatible .NET 10 and ASP.NET Core runtimes to run.
+The archive target list does not define NuGet tool support; see the distribution guide for current platform information.
 
-Once published, install, run, update, or remove it with:
+Install and start the tool:
 
 ```sh
 dotnet tool install --global PicoUart.DotNet
 pico-uart-dotnet status
+pico-uart-dotnet web
+```
+
+Update it with:
+
+```sh
 dotnet tool update --global PicoUart.DotNet
+```
+
+Remove it with:
+
+```sh
 dotnet tool uninstall --global PicoUart.DotNet
 ```
 
@@ -54,7 +66,10 @@ The tool package does not expose a supported C# library API. For source-level cl
 
 ## Quick Start
 
-Connect the flashed board, then run from the extracted archive directory on Linux/macOS:
+For a NuGet tool installation, use `pico-uart-dotnet` instead of `./PicoUart` or `PicoUart.exe` in the archive
+examples below; the same commands and options apply.
+
+For an archive installation, connect the flashed board and run from the extracted directory on Linux/macOS:
 
 ```sh
 ./PicoUart status
@@ -90,12 +105,15 @@ counts independently:
 
 `overruns` returns `null` when a channel's dropped-byte count is Unavailable; zero means a valid or Cached measurement
 establishes zero. `status` waits up to `--timeout` seconds (default 2) and exits non-zero without a valid report.
+`status` returns after the first valid channel Input report, so only that channel is populated; other channels remain
+waiting placeholders.
 Unlike the Python CLI, .NET `monitor` can finish successfully without receiving reports; check its output for samples
 and channel health.
 
-Each monitor line is a channel snapshot (`id` 0-5) with its own 16-bit `sequence` and measured `interval_ms`. The four
-byte counters are totals since MCU boot modulo `2^32`; the first sample seeds the baseline, and gaps reset the rate
-window. Dropped-byte counts and buffer peaks are cumulative since boot. The
+Each monitor line is a raw channel snapshot (`id` 0-5) with its own `sequence`, measured `interval_ms`, and byte
+counters. The CLI does not calculate rate deltas or traffic gaps; automation that needs them must derive them from
+sequences, counter values, and intervals, or use the dashboard. The four byte counters are totals since MCU boot modulo
+`2^32`. Dropped-byte counts and buffer peaks are cumulative since boot. The
 [HID contract](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md) defines
 the authoritative field meanings and traffic accounting. Your test runner must check sample availability and channel
 health, not just the exit code.
@@ -111,11 +129,11 @@ Read-only commands include `hardware`, `config`, `telemetry`, `temperature`, and
 `./PicoUart --help` for all commands.
 
 `toggle-led` changes the board LED. `reset` reboots the board and requires firmware reset support, enabled by default.
-The dashboard's **Reboot only** button uses this command and can also save a persistent boot-time clock profile. A
-verified save automatically reboots. Stop UART traffic, close CDC ports, and read the
+The dashboard's **Reboot** button requests a standalone reboot; **Save & Reboot** saves a persistent boot-time clock
+profile and then reboots. Stop UART traffic, close CDC ports, and read the
 [configuration precautions](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#persistent-configuration)
-before changing it. After reconnecting, inspect the active profile and any fallback reason; a verified save does not
-establish overclock stability.
+before changing it. After reconnecting, inspect the stored profile request and reported system clock separately. The
+host cannot report an active profile or fallback reason, and a verified save does not establish overclock stability.
 
 Controls validate device identity and capabilities, serialize requests, and verify terminal results. Commands have
 three-second transfer/result deadlines and are never automatically retried after an uncertain outcome. Reconnect and
@@ -142,6 +160,11 @@ define the full field and refresh semantics.
 - **Windows `unsupported report size or layout version` with matching v0.10.0 host and firmware:** use a host build
   containing the descriptor-padding fix; reflashing the board is not required.
 - **Missing web files:** re-extract the complete archive; do not move only the executable.
+- **`pico-uart-dotnet` not found after installation:** check that the global tool directory is on `PATH`
+  (`$HOME/.dotnet/tools` on Linux/macOS or `%USERPROFILE%\.dotnet\tools` on Windows), then restart the shell.
+- **Missing .NET runtime:** run `dotnet --list-runtimes` and install the .NET 10 SDK, which includes the required .NET
+  and ASP.NET Core runtimes. See
+  [Microsoft's .NET tool troubleshooting guide](https://learn.microsoft.com/en-us/dotnet/core/tools/troubleshoot-usage-issues).
 - **Need framework logs:** set `Logging__LogLevel__Microsoft=Information` before launching. Startup normally prints one
   dashboard URL while retaining warnings and errors.
 

@@ -44,7 +44,15 @@ python -m pip install "pico-uart[dashboard]"
 ```
 
 This installs the latest stable release. To opt in to prerelease builds for testing, add `--pre`.
-The dashboard extra installs Flask; the HID API and CLI work without it.
+The dashboard extra installs Flask; the HID API and CLI work without it. For API and CLI use without the dashboard,
+install the base package:
+
+```sh
+python -m pip install pico-uart
+```
+
+**Using PyPI 0.11.0?** Earlier releases use the base install above, include Flask by default, and use `pico-uart web`.
+The optional dashboard extra and `pico-uart dashboard` command below require a release that provides them.
 For an isolated dashboard installation, use `pipx install "pico-uart[dashboard]"` instead.
 
 Connect a Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), then run:
@@ -131,7 +139,8 @@ before changing settings.
 
 ## Documentation
 
-- [Python package release notes](https://github.com/djwinter29-oss/PicoUart/blob/main/host/python/CHANGELOG.md)
+- [Published release notes](https://github.com/djwinter29-oss/PicoUart/releases)
+- [Upcoming changes (unreleased)](https://github.com/djwinter29-oss/PicoUart/blob/main/host/python/CHANGELOG.md)
 - [Installation from a checkout, tests, and host development](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md)
 - [Project, firmware, and wiring](https://github.com/djwinter29-oss/PicoUart)
 - [HID report reference and compatibility](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
