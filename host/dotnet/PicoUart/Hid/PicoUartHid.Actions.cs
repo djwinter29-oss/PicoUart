@@ -15,6 +15,7 @@ public sealed partial class PicoUartHid
     {
         lock (gate)
         {
+            LastActionResult = null;
             var output = ReadLed().OutputOn
                 ?? throw new InvalidOperationException("board identification LED unavailable");
             return SendAction(output ? (byte)1 : (byte)2);
