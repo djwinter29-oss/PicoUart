@@ -44,4 +44,27 @@ public sealed class DashboardServiceTests
         using var status = JsonDocument.Parse(service.SnapshotJson());
         Assert.Equal(JsonValueKind.Null, status.RootElement.GetProperty("channel_diagnostics")[0].ValueKind);
     }
+
+    [Fact]
+    public void RejectedSaveDoesNotReusePreviousActionResultForNewProfile()
+    {
+        using var service = new DashboardService(null, null);
+        var connection = (PicoUartHid)RuntimeHelpers.GetUninitializedObject(typeof(PicoUartHid));
+        SetPrivateField(connection, "gate", new object());
+        SetPrivateField(connection, "rebootScheduled", true);
+        SetPrivateField(connection, "<LastActionResult>k__BackingField", new ActionResult(4, 2, 0));
+        SetPrivateField(service, "client", connection);
+        service.ReplaceSnapshot(new() { Connected = true, ConfigurationSave = new(2, 0, 0) });
+
+        var error = Assert.Throws<InvalidOperationException>(() => service.SaveConfiguration(2, true));
+
+        using var status = JsonDocument.Parse(service.SnapshotJson());
+        var save = status.RootElement.GetProperty("configuration_save");
+        Assert.Equal((byte)2, save.GetProperty("status").GetByte());
+        Assert.Equal((uint)0, save.GetProperty("profile").GetUInt32());
+        Assert.Equal(error.Message, status.RootElement.GetProperty("configuration_save_error").GetString());
+    }
+
+    private static void SetPrivateField(object target, string name, object? value) =>
+        target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
 }

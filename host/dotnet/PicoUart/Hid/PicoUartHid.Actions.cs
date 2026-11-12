@@ -38,10 +38,10 @@ public sealed partial class PicoUartHid
 
     private ActionResult SendAction(byte action, uint profile = 0, bool unsafeOverclock = false)
     {
+        LastActionResult = null;
         CheckConnection();
         if (rebootScheduled) throw new InvalidOperationException("board reboot already scheduled; reconnect");
         var info = ReadIdentity();
-        LastActionResult = null;
         var prior = ReadActionResultCore(3000);
         if (prior.Status == 1 || (prior.Status == 2 && prior.Action is 3 or 4))
             throw new InvalidOperationException("a board action is pending or reboot is already scheduled; reconnect");

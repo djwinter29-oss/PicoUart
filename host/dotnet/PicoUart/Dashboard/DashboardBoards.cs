@@ -123,7 +123,8 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
                     }
                 }
                 var preferred = boards.FirstOrDefault(board =>
-                    (serialNumber is not null && board.SerialNumber == serialNumber)
+                    (serialNumber is not null && string.Equals(board.SerialNumber, serialNumber,
+                        StringComparison.OrdinalIgnoreCase))
                     || (devicePath is not null && board.DevicePath == devicePath));
                 return new(boards.ToArray(), preferred?.Id ??
                     (serialNumber is null && devicePath is null ? boards.FirstOrDefault()?.Id : null),

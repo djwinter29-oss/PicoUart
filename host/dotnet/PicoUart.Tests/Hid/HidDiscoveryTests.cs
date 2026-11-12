@@ -33,6 +33,31 @@ public sealed class HidDiscoveryTests
     }
 
     [Fact]
+    public void SerialSelectionIgnoresUnreadableSiblingMetadataWhenAUniqueMatchExists()
+    {
+        var devices = new[]
+        {
+            new Candidate("/healthy", "0123456789ABCDEF", false),
+            new Candidate("/unreadable", "8899AABBCCDDEEFF", false, true)
+        };
+        var matches = HidDiscovery.MatchingDevices(devices, "0123456789ABCDEF", null,
+            device => device.Path, device => ReadSerial(device), _ => true);
+
+        Assert.Equal("/healthy", Assert.Single(matches).Path);
+    }
+
+    [Fact]
+    public void SerialSelectionSurfacesMetadataFailureWhenNoReadableMatchExists()
+    {
+        var device = new Candidate("/unreadable", "0123456789ABCDEF", false, true);
+
+        var error = Assert.Throws<IOException>(() => HidDiscovery.MatchingDevices(
+            [device], device.Serial, null, candidate => candidate.Path, ReadSerial, _ => true));
+
+        Assert.Equal("serial metadata is unreadable", error.Message);
+    }
+
+    [Fact]
     public async Task DiscoveredBoardPreservesMissingUsbSerialForPathFallback()
     {
         var board = HidDiscovery.CreateBoard("/serial-less", null, ProtocolTests.Identity());
@@ -56,5 +81,10 @@ public sealed class HidDiscoveryTests
         await boards.StopAsync(CancellationToken.None);
     }
 
-    private sealed record Candidate(string Path, string? Serial, bool DescriptorFails);
+    private sealed record Candidate(
+        string Path, string? Serial, bool DescriptorFails, bool SerialFails = false);
+
+    private static string? ReadSerial(Candidate device) => device.SerialFails
+        ? throw new IOException("serial metadata is unreadable")
+        : device.Serial;
 }

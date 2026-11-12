@@ -27,13 +27,29 @@ internal static class HidDiscovery
 
     internal static TDevice[] MatchingDevices<TDevice>(IEnumerable<TDevice> devices, string? serialNumber,
         string? devicePath, Func<TDevice, string> getDevicePath, Func<TDevice, string?> getSerialNumber,
-        Func<TDevice, bool> isPicoUartDevice) =>
-        devices
-            .Where(device => devicePath is null || getDevicePath(device) == devicePath)
-            .Where(device => serialNumber is null
-                || string.Equals(getSerialNumber(device), serialNumber, StringComparison.OrdinalIgnoreCase))
-            .Where(isPicoUartDevice)
-            .ToArray();
+        Func<TDevice, bool> isPicoUartDevice)
+    {
+        var matches = new List<TDevice>();
+        Exception? metadataError = null;
+        foreach (var device in devices)
+        {
+            if (devicePath is not null && getDevicePath(device) != devicePath) continue;
+            if (serialNumber is not null)
+            {
+                string? candidateSerial;
+                try { candidateSerial = getSerialNumber(device); }
+                catch (Exception error) when (HidErrors.IsDeviceError(error))
+                {
+                    metadataError ??= error;
+                    continue;
+                }
+                if (!string.Equals(candidateSerial, serialNumber, StringComparison.OrdinalIgnoreCase)) continue;
+            }
+            if (isPicoUartDevice(device)) matches.Add(device);
+        }
+        if (matches.Count == 0 && metadataError is not null) throw metadataError;
+        return matches.ToArray();
+    }
 
     internal static HidBoard[] Discover() => DiscoverDevices(
         DeviceList.Local.GetHidDevices(0x2E8A, 0x116B),

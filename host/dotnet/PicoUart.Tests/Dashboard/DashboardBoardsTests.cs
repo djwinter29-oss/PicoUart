@@ -82,6 +82,19 @@ public sealed class DashboardBoardsTests
     }
 
     [Fact]
+    public async Task PreferredSerialSelectionIgnoresHexadecimalCase()
+    {
+        using var boards = new DashboardBoards("0123456789abcdef", null,
+            () => [new("/board", "0123456789ABCDEF", "PicoUart")],
+            (serial, path) => new(serial, path));
+
+        var listing = boards.Boards();
+
+        Assert.Equal(listing.Boards[0].Id, listing.DefaultBoardId);
+        await boards.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task RepeatedMissingScansRetireReaderBeforeItCanBeRecreated()
     {
         HidBoard[] attached = [new("/a", "test-A", "PicoUart")];
