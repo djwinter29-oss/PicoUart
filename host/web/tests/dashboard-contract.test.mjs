@@ -45,6 +45,12 @@ test("dashboard uses the HID snapshot and diagnostic contract fields", () => {
   assert.doesNotMatch(dashboard, /data\.configuration_save\b/);
 });
 
+test("control uncertainty is driven by structured fields rather than error wording", () => {
+  assert.match(dashboard, /data\?\.configuration_save_unconfirmed !== true/);
+  assert.match(dashboard, /errorResult\?\.outcome_unconfirmed === "boolean"/);
+  assert.doesNotMatch(dashboard, /\/outcome is unconfirmed\/i/);
+});
+
 test("diagnostics are requested on demand rather than at snapshot cadence", () => {
   assert.match(dashboard, /fetchJson\(\s*`\/api\/diagnostics\?board=/);
   assert.match(dashboard, /diagnosticsDialog\.showModal\(\)[\s\S]*?loadDiagnostics\(\)/);

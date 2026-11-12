@@ -103,6 +103,7 @@ public sealed class BoardMonitor : BackgroundService
                         snapshot.ApplyAction(new(4, result.Status, result.ErrorReason));
                         snapshot.ConfigurationSave = result;
                         snapshot.ConfigurationSaveError = null;
+                        snapshot.ConfigurationSaveUnconfirmed = false;
                         unconfirmedConfigurationSaveError = null;
                     }
                 }
@@ -128,6 +129,7 @@ public sealed class BoardMonitor : BackgroundService
                             snapshot.ConfigurationSave = new(result.Status, result.ErrorReason, profile);
                         }
                         snapshot.ConfigurationSaveError = error.Message;
+                        snapshot.ConfigurationSaveUnconfirmed = unconfirmedConfigurationSaveError is not null;
                     }
                 }
                 throw;
@@ -207,14 +209,10 @@ public sealed class BoardMonitor : BackgroundService
                 if (!ReferenceEquals(client, connection)) return;
                 if (unconfirmedConfigurationSaveError is not null)
                 {
-                    if (result?.Action == 4 && result.Status is >= 2 and <= 6)
-                        unconfirmedConfigurationSaveError = null;
-                    else
-                    {
-                        snapshot.ConfigurationSave = null;
-                        snapshot.ConfigurationSaveError = unconfirmedConfigurationSaveError;
-                        return;
-                    }
+                    snapshot.ConfigurationSave = null;
+                    snapshot.ConfigurationSaveError = unconfirmedConfigurationSaveError;
+                    snapshot.ConfigurationSaveUnconfirmed = true;
+                    return;
                 }
                 if (errorMessage is not null)
                 {
@@ -222,6 +220,7 @@ public sealed class BoardMonitor : BackgroundService
                         logger.LogWarning("HID control result unavailable: {Error}", errorMessage);
                     snapshot.ConfigurationSave = null;
                     snapshot.ConfigurationSaveError = errorMessage;
+                    snapshot.ConfigurationSaveUnconfirmed = false;
                     return;
                 }
                 if (result is null) return;
@@ -232,6 +231,7 @@ public sealed class BoardMonitor : BackgroundService
                 else if (previous?.Status == result.Status && previous.ErrorReason == result.ErrorReason)
                     snapshot.ConfigurationSave = previous;
                 snapshot.ConfigurationSaveError = result.Action == 4 ? snapshot.Control?.Error : null;
+                snapshot.ConfigurationSaveUnconfirmed = false;
             }
         }
         finally { controlGate.Release(); }
@@ -438,6 +438,7 @@ public sealed class BoardMonitor : BackgroundService
         {
             unconfirmedConfigurationSaveError = error;
             snapshot.ConfigurationSaveError = error;
+            snapshot.ConfigurationSaveUnconfirmed = true;
         }
     }
 
@@ -447,6 +448,7 @@ public sealed class BoardMonitor : BackgroundService
         lock (gate)
         {
             replacement.ConfigurationSaveError = unconfirmedConfigurationSaveError;
+            replacement.ConfigurationSaveUnconfirmed = unconfirmedConfigurationSaveError is not null;
             snapshot = replacement;
         }
     }

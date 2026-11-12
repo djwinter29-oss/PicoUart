@@ -142,12 +142,46 @@ def test_configuration_endpoint_requires_csrf_and_validated_json():
     assert dashboard.calls == [("chosen", 0, False)]
 
 
+def test_configuration_endpoint_rejects_bodies_over_one_kibibyte():
+    class Dashboard:
+        calls = []
+
+        def save_configuration(self, *_args):
+            self.calls.append(True)
+
+    dashboard = Dashboard()
+    client = create_app(dashboard).test_client()
+    client.get("/")
+    with client.session_transaction() as session:
+        token = session["csrf_token"]
+    headers = {"X-CSRF-Token": token}
+    body = '{"profile":0,"unsafe_overclock":false}'
+
+    at_limit = client.post(
+        "/api/configuration",
+        data=body + " " * (1024 - len(body)),
+        content_type="application/json",
+        headers=headers,
+    )
+    oversized = client.post(
+        "/api/configuration",
+        data=body + " " * (1025 - len(body)),
+        content_type="application/json",
+        headers=headers,
+    )
+
+    assert at_limit.status_code == 200
+    assert oversized.status_code == 413
+    assert oversized.json == {"error": "request body exceeds 1024 bytes"}
+    assert dashboard.calls == [True]
+
+
 @pytest.mark.parametrize("error,status,message", [
     (ValueError("bad profile"), 400, "invalid request"),
     (RuntimeError("busy"), 409, "request could not be completed"),
     (OSError("disconnected"), 503, "service temporarily unavailable"),
 ])
-def test_configuration_endpoint_sanitizes_errors(error, status, message):
+def test_configuration_endpoint_sanitizes_errors(error, status, message, caplog):
     class Dashboard:
         def save_configuration(self, *args):
             raise error
@@ -159,7 +193,11 @@ def test_configuration_endpoint_sanitizes_errors(error, status, message):
     response = client.post("/api/configuration", json={"profile": 0, "unsafe_overclock": False},
                            headers={"X-CSRF-Token": token})
     assert response.status_code == status
-    assert response.json == {"error": message}
+    assert response.json["error"] == message
+    if status != 400:
+        assert response.json["outcome_unconfirmed"] is False
+    if isinstance(error, RuntimeError) and not isinstance(error, ControlRequestRejected):
+        assert "configuration save failed: busy" in caplog.text
 
 
 def test_configuration_endpoint_preserves_unconfirmed_outcome_warning(caplog):
@@ -179,7 +217,8 @@ def test_configuration_endpoint_preserves_unconfirmed_outcome_warning(caplog):
 
     assert response.status_code == 409
     assert response.json == {
-        "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+        "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying",
+        "outcome_unconfirmed": True,
     }
     assert "outcome is unconfirmed" in caplog.text
 
@@ -200,7 +239,10 @@ def test_configuration_endpoint_preserves_confirmed_firmware_rejection():
     )
 
     assert response.status_code == 409
-    assert response.json == {"error": "firmware rejected the board-control request (error 1)"}
+    assert response.json == {
+        "error": "firmware rejected the board-control request (error 1)",
+        "outcome_unconfirmed": False,
+    }
 
 
 def test_disconnect_after_save_submission_preserves_unconfirmed_outcome_and_logs_cause(caplog):
@@ -231,6 +273,7 @@ def test_disconnect_after_save_submission_preserves_unconfirmed_outcome_and_logs
     assert len(device.writes) == 1
     assert response.status_code == 409
     assert response.json == {
-        "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+        "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying",
+        "outcome_unconfirmed": True,
     }
     assert "simulated hidraw path: permission denied" in caplog.text

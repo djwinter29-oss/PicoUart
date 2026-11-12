@@ -181,7 +181,11 @@ internal static class DashboardHost
     }
 
     private static IResult DeviceErrorResponse(Exception error) =>
-        ErrorResponse(error, error switch
+        Results.Json(new
+        {
+            error = error.Message,
+            outcome_unconfirmed = error is ControlOutcomeUnconfirmedException
+        }, Protocol.JsonOptions, statusCode: error switch
         {
             TimeoutException => 504,
             IOException or UnauthorizedAccessException => 503,

@@ -249,7 +249,7 @@ def test_old_save_completion_cannot_replace_reconnected_control_result(monitor):
         worker.join(timeout=1)
 
 
-def test_unconfirmed_save_survives_polling_and_reconnect_until_confirmed(monitor):
+def test_unconfirmed_save_survives_old_control_results_until_a_new_save_is_confirmed(monitor):
     board_monitor, client = monitor
     assert board_monitor.close()
 
@@ -263,6 +263,7 @@ def test_unconfirmed_save_survives_polling_and_reconnect_until_confirmed(monitor
         board_monitor.save_configuration(0, False)
     error = board_monitor.snapshot()["configuration_save_error"]
     assert "outcome is unconfirmed" in error
+    assert board_monitor.snapshot()["configuration_save_unconfirmed"] is True
 
     class StopAfterConnectClient(StubClient):
         def read_status(self, timeout_ms):
@@ -277,14 +278,158 @@ def test_unconfirmed_save_survives_polling_and_reconnect_until_confirmed(monitor
     with board_monitor._lock:
         board_monitor._client = reconnected
         board_monitor._snapshot["identity"] = reconnected.identity
+
+    reconnected.read_control = lambda: {
+        "status": 5, "action": 4, "error_reason": 6, "error": "cdc_session_open"
+    }
     board_monitor._read_control(reconnected)
     assert board_monitor.snapshot()["configuration_save_error"] == error
+    assert board_monitor.snapshot()["configuration_save_unconfirmed"] is True
+    assert board_monitor.snapshot()["configuration_save"] is None
+
     reconnected.read_control = lambda: {
         "status": 2, "action": 4, "error_reason": 0, "error": "none"
     }
     board_monitor._read_control(reconnected)
-    assert board_monitor.snapshot()["configuration_save_error"] is None
-    assert board_monitor.snapshot()["configuration_save"]["status"] == 2
+    assert board_monitor.snapshot()["configuration_save_error"] == error
+    assert board_monitor.snapshot()["configuration_save_unconfirmed"] is True
+    assert board_monitor.snapshot()["configuration_save"] is None
+
+    board_monitor.save_configuration(0, False)
+    snapshot = board_monitor.snapshot()
+    assert snapshot["configuration_save_error"] is None
+    assert snapshot["configuration_save_unconfirmed"] is False
+    assert snapshot["configuration_save"]["status"] == 2
+
+
+def test_stale_control_read_cannot_clear_a_new_unconfirmed_save(monitor):
+    board_monitor, client = monitor
+    assert board_monitor.close()
+    with board_monitor._lock:
+        board_monitor._client = client
+
+    captured, publish = threading.Event(), threading.Event()
+    stale_result = {"status": 5, "action": 4, "error_reason": 6, "error": "cdc_session_open"}
+
+    def delayed_read_control():
+        captured.set()
+        assert publish.wait(timeout=2)
+        return stale_result
+
+    def fail_save(_profile, _unsafe_overclock):
+        raise ControlOutcomeUnconfirmed("disconnect after submission")
+
+    client.read_control = delayed_read_control
+    client.save_configuration = fail_save
+    worker = threading.Thread(target=board_monitor._read_control, args=(client,))
+    worker.start()
+    try:
+        assert captured.wait(timeout=1)
+        with pytest.raises(ControlOutcomeUnconfirmed):
+            board_monitor.save_configuration(0, False)
+        before = board_monitor.snapshot()
+        assert before["configuration_save_error"] == (
+            "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+        )
+        assert before["configuration_save_unconfirmed"] is True
+        publish.set()
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        snapshot = board_monitor.snapshot()
+        assert snapshot["configuration_save"] is None
+        assert snapshot["configuration_save_error"] == (
+            "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+        )
+        assert snapshot["configuration_save_unconfirmed"] is True
+    finally:
+        publish.set()
+        worker.join(timeout=1)
+
+
+def test_control_read_started_during_save_cannot_clear_unconfirmed_outcome():
+    class PausingLock:
+        def __init__(self):
+            self._lock = threading.RLock()
+            self.pause_thread_id = None
+            self.pause_next_exit = False
+            self.transition_published = threading.Event()
+            self.resume_saver = threading.Event()
+
+        def __enter__(self):
+            self._lock.acquire()
+            return self
+
+        def __exit__(self, *_args):
+            self._lock.release()
+            if (threading.get_ident() == self.pause_thread_id and self.pause_next_exit):
+                self.pause_next_exit = False
+                self.transition_published.set()
+                assert self.resume_saver.wait(timeout=2)
+
+    client = StubClient()
+    board_monitor = BoardMonitor(client_factory=lambda: client)
+    board_monitor.close()
+    lock = PausingLock()
+    board_monitor._lock = lock
+    with lock:
+        board_monitor._client = client
+        board_monitor._snapshot["connected"] = True
+        board_monitor._snapshot["identity"] = client.identity
+
+    save_started = threading.Event()
+    fail_save = threading.Event()
+    old_result_captured = threading.Event()
+    publish_old_result = threading.Event()
+    stale_result = {"status": 5, "action": 4, "error_reason": 6, "error": "cdc_session_open"}
+
+    def unconfirmed_save(_profile, _unsafe_overclock):
+        save_started.set()
+        assert fail_save.wait(timeout=2)
+        lock.pause_thread_id = threading.get_ident()
+        lock.pause_next_exit = True
+        raise ControlOutcomeUnconfirmed("disconnect after submission")
+
+    def delayed_control_read():
+        old_result_captured.set()
+        assert publish_old_result.wait(timeout=2)
+        return stale_result
+
+    client.save_configuration = unconfirmed_save
+    client.read_control = delayed_control_read
+    save_errors = []
+
+    def save():
+        try:
+            board_monitor.save_configuration(0, False)
+        except ControlOutcomeUnconfirmed as error:
+            save_errors.append(str(error))
+
+    saver = threading.Thread(target=save)
+    reader = threading.Thread(target=board_monitor._read_control, args=(client,))
+    try:
+        saver.start()
+        assert save_started.wait(timeout=1)
+        reader.start()
+        assert old_result_captured.wait(timeout=1)
+        fail_save.set()
+        assert lock.transition_published.wait(timeout=1)
+        assert board_monitor.snapshot()["configuration_save_unconfirmed"] is True
+        publish_old_result.set()
+        reader.join(timeout=1)
+        assert not reader.is_alive()
+        lock.resume_saver.set()
+        saver.join(timeout=1)
+        assert not saver.is_alive()
+        snapshot = board_monitor.snapshot()
+        assert save_errors
+        assert snapshot["configuration_save"] is None
+        assert snapshot["configuration_save_unconfirmed"] is True
+    finally:
+        fail_save.set()
+        publish_old_result.set()
+        lock.resume_saver.set()
+        saver.join(timeout=1)
+        reader.join(timeout=1)
 
 
 def test_led_action_remains_successful_when_telemetry_refresh_fails(monitor):

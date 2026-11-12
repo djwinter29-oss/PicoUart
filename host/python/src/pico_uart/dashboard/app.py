@@ -11,7 +11,7 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory, session
 from flask.typing import ResponseReturnValue
-from werkzeug.exceptions import BadRequest
+from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 from werkzeug.serving import WSGIRequestHandler
 
 from .. import __version__
@@ -20,6 +20,7 @@ from .boards import BoardRegistry
 from .types import DashboardService
 
 _LOGGER = logging.getLogger(__name__)
+MAX_CONFIGURATION_REQUEST_BYTES = 1024
 
 
 class _QuietRequestHandler(WSGIRequestHandler):
@@ -38,19 +39,25 @@ def _parse_configuration_body(body: object) -> tuple[int, bool] | None:
     return profile, unsafe_overclock
 
 
-def _control_failure(error: RuntimeError) -> tuple[dict[str, str], int]:
+def _control_failure(error: RuntimeError, operation: str) -> tuple[dict[str, str | bool], int]:
     if isinstance(error, ControlOutcomeUnconfirmed):
         _LOGGER.warning("PicoUart board-control outcome is unconfirmed: %s", error.__cause__ or error)
         return {
-            "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+            "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying",
+            "outcome_unconfirmed": True,
         }, 409
     if isinstance(error, ControlRequestRejected):
-        return {"error": str(error)}, 409
-    return {"error": "request could not be completed"}, 409
+        return {"error": str(error), "outcome_unconfirmed": False}, 409
+    _log_runtime_error(operation, error)
+    return {"error": "request could not be completed", "outcome_unconfirmed": False}, 409
 
 
 def _log_operational_error(operation: str, error: OSError) -> None:
     _LOGGER.error("PicoUart dashboard %s failed: %s", operation, error, exc_info=True)
+
+
+def _log_runtime_error(operation: str, error: RuntimeError) -> None:
+    _LOGGER.warning("PicoUart dashboard %s failed: %s", operation, error)
 
 
 def create_app(service: DashboardService | None = None, port: int = 5000) -> Flask:
@@ -62,6 +69,7 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
     app.config.update(
         SECRET_KEY=secrets.token_bytes(32),
         TRUSTED_HOSTS=["localhost", "127.0.0.1"],
+        MAX_CONTENT_LENGTH=MAX_CONFIGURATION_REQUEST_BYTES,
         SESSION_COOKIE_NAME=f"PicoUart.Python.Session.{port}",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
@@ -79,6 +87,10 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
             "style-src 'self'; script-src 'self'; frame-ancestors 'none'"
         )
         return response
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def request_too_large(_error: RequestEntityTooLarge) -> tuple[Response, int]:
+        return jsonify(error=f"request body exceeds {MAX_CONFIGURATION_REQUEST_BYTES} bytes"), 413
 
     @app.before_request
     def require_csrf_token() -> ResponseReturnValue | None:
@@ -112,14 +124,16 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
     def status() -> ResponseReturnValue:
         try:
             return jsonify(dashboard.snapshot(request.args.get("board")))
-        except RuntimeError:
+        except RuntimeError as error:
+            _log_runtime_error("status read", error)
             return jsonify(error="request could not be completed"), 409
 
     @app.get("/api/boards")
     def boards() -> ResponseReturnValue:
         try:
             return jsonify(dashboard.boards())
-        except RuntimeError:
+        except RuntimeError as error:
+            _log_runtime_error("board discovery", error)
             return jsonify(error="request could not be completed"), 409
         except OSError as error:
             _log_operational_error("board discovery", error)
@@ -129,7 +143,8 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
     def diagnostics() -> ResponseReturnValue:
         try:
             return jsonify(dashboard.read_diagnostics(request.args.get("board")))
-        except RuntimeError:
+        except RuntimeError as error:
+            _log_runtime_error("diagnostic read", error)
             return jsonify(error="diagnostic read could not be completed"), 409
         except OSError as error:
             _log_operational_error("diagnostic read", error)
@@ -152,11 +167,11 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
         except ValueError:
             return jsonify(error="invalid request"), 400
         except RuntimeError as error:
-            response, status_code = _control_failure(error)
+            response, status_code = _control_failure(error, "configuration save")
             return jsonify(response), status_code
         except OSError as error:
             _log_operational_error("configuration save", error)
-            return jsonify(error="service temporarily unavailable"), 503
+            return jsonify(error="service temporarily unavailable", outcome_unconfirmed=False), 503
         return jsonify(ok=True)
 
     @app.post("/api/actions/<action>")
@@ -169,11 +184,11 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
             else:
                 return jsonify(error="unknown action"), 404
         except RuntimeError as error:
-            response, status_code = _control_failure(error)
+            response, status_code = _control_failure(error, f"board action {action}")
             return jsonify(response), status_code
         except OSError as error:
             _log_operational_error("board action", error)
-            return jsonify(error="service temporarily unavailable"), 503
+            return jsonify(error="service temporarily unavailable", outcome_unconfirmed=False), 503
         return jsonify(ok=True)
 
     return app

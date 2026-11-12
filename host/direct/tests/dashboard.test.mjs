@@ -60,6 +60,7 @@ function snapshot(serial, mcuId = 2, storedProfile = 2) {
     board_model_id: mcuId === 1 ? 1 : 3, firmware_version: "1.2.3", ram_total_bytes: 270336,
     ram_reserved_bytes: 1024 },
     updated_at: "2026-01-01T00:00:00Z", traffic_incomplete: false,
+    configuration_save_unconfirmed: false,
     hardware: { mcu: mcuId === 1 ? "RP2040" : "RP2350", mcu_id: mcuId, system_clock_hz: 150000000 },
     runtime: { uptime_ms: 3723000, service_load_basis_points: [2500, 500], system_clock_hz: 150000000 },
     configuration: { stored_profile: storedProfile, reset_cause: 1,
@@ -634,16 +635,63 @@ test("uncertain configuration outcome survives healthy polling and keeps save ga
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const saving = view.element("confirm-configuration").events.click();
-  await view.respond({ error: "board action outcome is unconfirmed; inspect before retrying" }, 409);
+  await view.respond({ error: "retry state unavailable", outcome_unconfirmed: true }, 409);
   await saving;
   assert.match(view.element("status-message").textContent, /outcome is unconfirmed/);
 
   view.tick();
   const healthy = snapshot("first");
   healthy.configuration_save_error = "outcome is unconfirmed; inspect before retrying";
+  healthy.configuration_save_unconfirmed = true;
   await view.respond(healthy);
   assert.match(view.element("status-message").textContent, /outcome is unconfirmed/);
   assert.equal(view.element("save-configuration").disabled, true);
+});
+
+test("configuration recovery uses the structured uncertainty flag, not message wording", async () => {
+  const view = page();
+  await connect(view);
+
+  const textOnly = snapshot("first");
+  textOnly.configuration_save = { status: 5, error_reason: 6 };
+  textOnly.configuration_save_error = "old wording says outcome is unconfirmed";
+  view.tick();
+  await view.respond(textOnly);
+  view.element("clock-profile").value = "1";
+  view.element("clock-profile").events.change();
+  assert.equal(view.element("configuration-recovery").hidden, true);
+  assert.equal(view.element("save-configuration").disabled, false);
+
+  const structured = snapshot("first");
+  structured.configuration_save = null;
+  structured.configuration_save_error = "control result unavailable";
+  structured.configuration_save_unconfirmed = true;
+  view.tick();
+  await view.respond(structured);
+  assert.equal(view.element("configuration-recovery").hidden, false);
+  assert.equal(view.element("save-configuration").disabled, true);
+});
+
+test("structured control failures override status codes and error wording", async () => {
+  const view = page();
+  await connect(view);
+
+  const action = view.element("toggle-led").events.click();
+  await view.respond({ error: "LED preflight failed", outcome_unconfirmed: false }, 503);
+  await action;
+  assert.equal(view.element("status-message").textContent, "LED preflight failed");
+
+  view.element("clock-profile").value = "1";
+  view.element("clock-profile").events.change();
+  view.element("save-configuration").events.click();
+  view.element("overclock-ack").checked = true;
+  view.element("overclock-ack").events.change();
+  const save = view.element("confirm-configuration").events.click();
+  await view.respond({ error: "save preflight failed", outcome_unconfirmed: false }, 503);
+  await save;
+  assert.equal(view.element("status-message").textContent, "save preflight failed");
+  assert.equal(view.element("clock-profile").disabled, false);
+  assert.equal(view.element("configuration-recovery").hidden, true);
 });
 
 test("profile selection locks during save and readback completes the submitted profile", async () => {
@@ -679,11 +727,12 @@ test("matching readback suppresses the retained warning until it clears", async 
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const saving = view.element("confirm-configuration").events.click();
-  await view.respond({ error: "configuration save outcome is unconfirmed" }, 409);
+  await view.respond({ error: "save confirmation missing", outcome_unconfirmed: true }, 409);
   await saving;
 
   const resolved = snapshot("first", 2, 1);
   resolved.configuration_save_error = "configuration save outcome is unconfirmed";
+  resolved.configuration_save_unconfirmed = true;
   view.tick();
   await view.respond(resolved);
   assert.equal(view.element("clock-profile").disabled, false);
@@ -703,7 +752,7 @@ test("uncertain saves require explicit inspection before another save", async ()
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const saving = view.element("confirm-configuration").events.click();
-  await view.respond({ error: "board action outcome is unconfirmed" }, 409);
+  await view.respond({ error: "save confirmation missing", outcome_unconfirmed: true }, 409);
   await saving;
 
   view.tick();
@@ -725,6 +774,7 @@ test("uncertain saves require explicit inspection before another save", async ()
   await view.respond(snapshot("first"));
   const nextUncertainSave = snapshot("first");
   nextUncertainSave.configuration_save_error = "new configuration save outcome is unconfirmed";
+  nextUncertainSave.configuration_save_unconfirmed = true;
   view.tick();
   await view.respond(nextUncertainSave);
   assert.match(view.element("status-message").textContent, /new configuration save outcome is unconfirmed/);
@@ -759,7 +809,7 @@ test("confirmed action retry clears only that action's previous uncertainty", as
   const view = page();
   await connect(view);
   const failed = view.element("toggle-led").events.click();
-  await view.respond({ error: "board action outcome is unconfirmed" }, 409);
+  await view.respond({ error: "control result unavailable", outcome_unconfirmed: true }, 409);
   await failed;
   assert.match(view.element("status-message").textContent, /outcome is unconfirmed/);
 
@@ -781,7 +831,7 @@ test("configuration recovery survives board switches until readback or acknowled
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const saving = view.element("confirm-configuration").events.click();
-  await view.respond({ error: "board action outcome is unconfirmed" }, 409);
+  await view.respond({ error: "save confirmation missing", outcome_unconfirmed: true }, 409);
   await saving;
 
   view.change("B");
@@ -799,6 +849,7 @@ test("reloaded dashboard recovers an unconfirmed save from the status contract",
   await view.respond(catalog);
   const status = snapshot("first");
   status.configuration_save_error = "command outcome is unconfirmed; do not retry; reconnect and verify board state";
+  status.configuration_save_unconfirmed = true;
   await view.respond(status);
   view.element("clock-profile").value = "1";
   view.element("clock-profile").events.change();

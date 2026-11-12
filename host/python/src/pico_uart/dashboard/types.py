@@ -64,6 +64,7 @@ class BoardSnapshot(TypedDict):
     configuration_error: str | None
     configuration_save: ControlResult | None
     configuration_save_error: str | None
+    configuration_save_unconfirmed: bool
     identity: DeviceIdentity | None
     identity_error: str | None
     runtime: RuntimeTelemetry | None

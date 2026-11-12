@@ -25,6 +25,7 @@ public sealed class BoardMonitorTests
         using var status = JsonDocument.Parse(service.SnapshotJson());
         Assert.True(status.RootElement.GetProperty("connected").GetBoolean());
         Assert.Equal(warning, status.RootElement.GetProperty("configuration_save_error").GetString());
+        Assert.True(status.RootElement.GetProperty("configuration_save_unconfirmed").GetBoolean());
     }
 
     [Fact]
@@ -71,7 +72,8 @@ public sealed class BoardMonitorTests
             var save = status.RootElement.GetProperty("configuration_save");
             Assert.Equal((byte)2, save.GetProperty("status").GetByte());
             Assert.Equal((uint)0, save.GetProperty("profile").GetUInt32());
-            Assert.Equal(error.Message, status.RootElement.GetProperty("configuration_save_error").GetString());
+            Assert.False(status.RootElement.GetProperty("configuration_save_unconfirmed").GetBoolean());
+            Assert.Contains("reboot already scheduled", error.Message);
             Assert.Single(stream.Writes);
         }
         finally { await service.StopAsync(CancellationToken.None); }
@@ -374,9 +376,16 @@ public sealed class BoardMonitorTests
     }
 
     [Fact]
-    public async Task UnconfirmedWarningSurvivesIdleAndClearsOnlyOnTerminalSave()
+    public async Task UnconfirmedWarningSurvivesRetainedControlResultUntilNewSaveIsConfirmed()
     {
         using var stream = new ScriptedHidStream();
+        stream.Result = new(4, 5, 6);
+        var controlReads = 0;
+        stream.FeatureRead = id =>
+        {
+            if (id == Protocol.ActionReportId) Interlocked.Increment(ref controlReads);
+            return stream.DefaultFeature(id);
+        };
         using var connection = stream.CreateClient();
         using var service = new BoardMonitor(() => connection);
         service.RecordUnconfirmedConfigurationSaveError("save outcome is unconfirmed");
@@ -388,9 +397,20 @@ public sealed class BoardMonitorTests
             Assert.Equal("save outcome is unconfirmed",
                 initial.RootElement.GetProperty("configuration_save_error").GetString());
             Assert.Equal(JsonValueKind.Null, initial.RootElement.GetProperty("configuration_save").ValueKind);
-            stream.Result = new(4, 2, 0);
-            using var recovered = await WaitForStatus(service,
-                value => value.GetProperty("configuration_save_error").ValueKind == JsonValueKind.Null);
+            Assert.True(SpinWait.SpinUntil(
+                () => Volatile.Read(ref controlReads) >= 1, TimeSpan.FromSeconds(3)));
+            await Task.Delay(50);
+            using var retained = JsonDocument.Parse(service.SnapshotJson());
+            Assert.Equal("save outcome is unconfirmed",
+                retained.RootElement.GetProperty("configuration_save_error").GetString());
+            Assert.Equal(JsonValueKind.Null, retained.RootElement.GetProperty("configuration_save").ValueKind);
+            Assert.True(retained.RootElement.GetProperty("configuration_save_unconfirmed").GetBoolean());
+
+            stream.Result = new(0, 0, 0);
+            service.SaveConfiguration(0, false);
+            using var recovered = JsonDocument.Parse(service.SnapshotJson());
+            Assert.Equal(JsonValueKind.Null, recovered.RootElement.GetProperty("configuration_save_error").ValueKind);
+            Assert.False(recovered.RootElement.GetProperty("configuration_save_unconfirmed").GetBoolean());
             Assert.Equal((byte)2,
                 recovered.RootElement.GetProperty("configuration_save").GetProperty("status").GetByte());
         }

@@ -15,8 +15,6 @@ from ..hid.inputs import empty_channel
 from ..hid.protocol import (
     CAPABILITY_CONFIGURATION_SAVE,
     COMMAND_SAVE_CONFIGURATION,
-    STATUS_IDLE,
-    STATUS_PENDING,
     UART_CHANNEL_COUNT,
     UNAVAILABLE_U16,
 )
@@ -55,6 +53,7 @@ def empty_snapshot() -> BoardSnapshot:
         "configuration_error": None,
         "configuration_save": None,
         "configuration_save_error": None,
+        "configuration_save_unconfirmed": False,
         "identity": None,
         "identity_error": None,
         "runtime": None,
@@ -87,6 +86,7 @@ class BoardMonitor:
         self._client: PicoUartHid | None = None
         self._snapshot: BoardSnapshot = empty_snapshot()
         self._configuration_outcome_unconfirmed = False
+        self._control_generation = 0
         self._thread = threading.Thread(target=self._poll, name="pico-uart-monitor", daemon=True)
         self._thread.start()
 
@@ -116,19 +116,28 @@ class BoardMonitor:
 
     def save_configuration(self, profile: int, unsafe_overclock: bool) -> None:
         client = self._require_client()
+        with self._lock:
+            self._control_generation += 1
+        outcome_unconfirmed = False
+        result: ControlResult | None = None
         try:
             result = client.save_configuration(profile, unsafe_overclock)
         except ControlOutcomeUnconfirmed:
-            with self._lock:
-                self._configuration_outcome_unconfirmed = True
-                self._snapshot["configuration_save"] = None
-                self._snapshot["configuration_save_error"] = CONFIGURATION_OUTCOME_UNCONFIRMED
+            outcome_unconfirmed = True
             raise
-        with self._lock:
-            if self._client is client:
-                self._configuration_outcome_unconfirmed = False
-                self._snapshot["configuration_save"] = result
-                self._snapshot["configuration_save_error"] = None
+        finally:
+            with self._lock:
+                self._control_generation += 1
+                if outcome_unconfirmed:
+                    self._configuration_outcome_unconfirmed = True
+                    self._snapshot["configuration_save"] = None
+                    self._snapshot["configuration_save_error"] = CONFIGURATION_OUTCOME_UNCONFIRMED
+                    self._snapshot["configuration_save_unconfirmed"] = True
+                elif result is not None and self._client is client:
+                    self._configuration_outcome_unconfirmed = False
+                    self._snapshot["configuration_save"] = result
+                    self._snapshot["configuration_save_error"] = None
+                    self._snapshot["configuration_save_unconfirmed"] = False
 
     def read_diagnostics(self) -> BoardSnapshot:
         """Refresh details only on explicit request, independently of Input cadence."""
@@ -174,6 +183,7 @@ class BoardMonitor:
                     self._snapshot["connected"] = True
                     if self._configuration_outcome_unconfirmed:
                         self._snapshot["configuration_save_error"] = CONFIGURATION_OUTCOME_UNCONFIRMED
+                        self._snapshot["configuration_save_unconfirmed"] = True
                 next_metadata_read = 0.0
                 while not self._stop.is_set():
                     status = client.read_status(timeout_ms=250)
@@ -225,6 +235,7 @@ class BoardMonitor:
                 CONFIGURATION_OUTCOME_UNCONFIRMED
                 if self._configuration_outcome_unconfirmed else None
             )
+            snapshot["configuration_save_unconfirmed"] = self._configuration_outcome_unconfirmed
             snapshot["channel_diagnostics"] = None
 
     def _apply_status(self, status: StatusSnapshot) -> None:
@@ -317,6 +328,10 @@ class BoardMonitor:
                 )
 
     def _read_control(self, client: PicoUartHid) -> None:
+        with self._lock:
+            if self._client is not client:
+                return
+            generation = self._control_generation
         try:
             configuration = client.read_configuration()
         except (OSError, RuntimeError) as error:
@@ -335,26 +350,22 @@ class BoardMonitor:
             result = client.read_control()
         except (OSError, RuntimeError) as error:
             with self._lock:
-                if self._client is client and not self._configuration_outcome_unconfirmed:
+                if (self._client is client and generation == self._control_generation
+                        and not self._configuration_outcome_unconfirmed):
                     self._snapshot["configuration_save_error"] = public_error(error)
+                    self._snapshot["configuration_save_unconfirmed"] = False
             return
         save: ControlResult | None = result
         with self._lock:
-            if self._client is not client:
+            if self._client is not client or generation != self._control_generation:
                 return
             identity = self._snapshot["identity"]
-            confirmed_save_result = (
-                result["action"] == COMMAND_SAVE_CONFIGURATION
-                and result["status"] not in (STATUS_IDLE, STATUS_PENDING)
-                and identity is not None
-                and bool(identity["capabilities"] & CAPABILITY_CONFIGURATION_SAVE)
-            )
-            if self._configuration_outcome_unconfirmed and not confirmed_save_result:
+            if self._configuration_outcome_unconfirmed:
                 self._snapshot["configuration_save"] = None
                 self._snapshot["configuration_save_error"] = CONFIGURATION_OUTCOME_UNCONFIRMED
+                self._snapshot["configuration_save_unconfirmed"] = True
                 return
-            if self._configuration_outcome_unconfirmed:
-                self._configuration_outcome_unconfirmed = False
+            self._snapshot["configuration_save_unconfirmed"] = False
             save_error = None
             if identity is None or not identity["capabilities"] & CAPABILITY_CONFIGURATION_SAVE:
                 save = None

@@ -68,7 +68,7 @@ def test_dashboard_maps_action_errors_and_unknown_actions():
     headers = {"X-CSRF-Token": _csrf_token(client)}
     response = client.post("/api/actions/toggle-led", headers=headers)
     assert response.status_code == 503
-    assert response.json == {"error": "service temporarily unavailable"}
+    assert response.json == {"error": "service temporarily unavailable", "outcome_unconfirmed": False}
     assert client.post("/api/actions/unknown", headers=headers).status_code == 404
 
 
@@ -84,7 +84,7 @@ def test_dashboard_logs_private_operational_error_for_board_actions(caplog):
     )
 
     assert response.status_code == 503
-    assert response.json == {"error": "service temporarily unavailable"}
+    assert response.json == {"error": "service temporarily unavailable", "outcome_unconfirmed": False}
     assert "board action failed" in caplog.text
     assert "hidraw3: simulated disconnect" in caplog.text
 
@@ -102,9 +102,35 @@ def test_dashboard_preserves_unconfirmed_action_outcome(caplog):
 
     assert response.status_code == 409
     assert response.json == {
-        "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+        "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying",
+        "outcome_unconfirmed": True,
     }
     assert "outcome is unconfirmed" in caplog.text
+
+
+@pytest.mark.parametrize(("path", "operation"), [
+    ("/api/status", "status read"),
+    ("/api/boards", "board discovery"),
+    ("/api/diagnostics", "diagnostic read"),
+])
+def test_dashboard_logs_runtime_errors_while_sanitizing_responses(caplog, path, operation):
+    class BrokenDashboard(FakeDashboard):
+        def snapshot(self, board_id=None):
+            raise RuntimeError("duplicate PicoUart board identity")
+
+        def boards(self):
+            raise RuntimeError("duplicate PicoUart board identity")
+
+        def read_diagnostics(self, board_id=None):
+            raise RuntimeError("duplicate PicoUart board identity")
+
+    client = create_app(BrokenDashboard()).test_client()
+    with caplog.at_level(logging.WARNING, logger="pico_uart.dashboard.app"):
+        response = client.get(path)
+
+    assert response.status_code == 409
+    assert "duplicate PicoUart board identity" not in response.get_data(as_text=True)
+    assert f"PicoUart dashboard {operation} failed: duplicate PicoUart board identity" in caplog.text
 
 
 def test_dashboard_rejects_untrusted_host_before_serving_controls():
@@ -221,4 +247,4 @@ def test_dashboard_sanitizes_reset_capability_errors():
         headers={"X-CSRF-Token": _csrf_token(client)},
     )
     assert response.status_code == 409
-    assert response.json == {"error": "request could not be completed"}
+    assert response.json == {"error": "request could not be completed", "outcome_unconfirmed": False}

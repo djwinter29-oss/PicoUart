@@ -520,16 +520,20 @@ Follow the [save safety contract](../design/usb/hid-report-reference.md#save-and
 
 Python and .NET expose `POST /api/configuration?board=<id>` with the same session CSRF header as board actions.
 The JSON object must contain exactly `profile` (integer `0` through `4`, using the IDs in the linked HID report) and
-`unsafe_overclock` (boolean).
+`unsafe_overclock` (boolean); request bodies are limited to 1 KiB on both hosts.
 The selected board's client checks MCU compatibility and acknowledgement; firmware validates them independently.
 HTTP success means the serialized save action reported Completed after verification, not just a successful HID transfer.
 Python returns `{"ok": true}`; .NET returns the terminal action result. The result has no request ID or echoed profile;
 only one controlling host may write.
 Timeout/disconnect leaves an unconfirmed outcome and must not cause an automatic destructive retry.
-Python and .NET retain an unconfirmed save warning in the shared board snapshot across polling and reconnects. A matching
-terminal save result clears it; an unrelated or idle control result does not.
+Python and .NET retain an unconfirmed save warning in the shared board snapshot across polling and reconnects. The
+device exposes one retained, uncorrelated control result, so reading a terminal result cannot prove it belongs to the
+uncertain request and does not clear the warning. Only a later save confirmed successful by that request clears it.
+Browser acknowledgement is local to the current page; a reload shows the warning again until a save is confirmed.
 Snapshots expose the independent `configuration_save` result (`status`, `error_reason`) and
-`configuration_save_error`; the existing `configuration` remains read-only boot metadata.
+`configuration_save_error` plus the machine-readable `configuration_save_unconfirmed` flag; the existing
+`configuration` remains read-only boot metadata. Control error responses include `outcome_unconfirmed` so the shared
+renderer does not infer retry safety from localized or changeable error text.
 
 ### Channel diagnostics and traffic presentation
 

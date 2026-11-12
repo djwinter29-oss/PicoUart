@@ -134,6 +134,7 @@ public sealed class DashboardHostTests
             using var snapshot = JsonDocument.Parse(await http.GetStringAsync("/api/status"));
             Assert.Equal(JsonValueKind.Null, snapshot.RootElement.GetProperty("configuration_save").ValueKind);
             Assert.Equal(JsonValueKind.Null, snapshot.RootElement.GetProperty("configuration_save_error").ValueKind);
+            Assert.False(snapshot.RootElement.GetProperty("configuration_save_unconfirmed").GetBoolean());
         }
         finally
         {
@@ -150,6 +151,8 @@ public sealed class DashboardHostTests
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             Assert.False(string.IsNullOrEmpty(body.RootElement.GetProperty("error").GetString()));
             Assert.False(body.RootElement.TryGetProperty("ok", out _));
+            if (expectedStatus == 409)
+                Assert.False(body.RootElement.GetProperty("outcome_unconfirmed").GetBoolean());
         }
 
         async Task AssertGetError(string path, int expectedStatus)
@@ -222,8 +225,12 @@ public sealed class DashboardHostTests
                 await http.PostAsync($"/api/actions/toggle-led?board={boardId}", uncertainActionContent);
             Assert.Equal(HttpStatusCode.ServiceUnavailable, uncertainActionResponse.StatusCode);
             var uncertainActionBody = await uncertainActionResponse.Content.ReadAsStringAsync();
-            Assert.Contains("outcome is unconfirmed", uncertainActionBody);
-            Assert.DoesNotContain("private native detail", uncertainActionBody);
+            using (var body = JsonDocument.Parse(uncertainActionBody))
+            {
+                Assert.Contains("outcome is unconfirmed", body.RootElement.GetProperty("error").GetString());
+                Assert.True(body.RootElement.GetProperty("outcome_unconfirmed").GetBoolean());
+                Assert.DoesNotContain("private native detail", uncertainActionBody);
+            }
 
             dashboard.SaveError = new ControlOutcomeUnconfirmedException(
                 "command outcome is unconfirmed; do not retry; reconnect and verify board state",
@@ -234,8 +241,12 @@ public sealed class DashboardHostTests
                 $"/api/configuration?board={boardId}", uncertainSaveContent);
             Assert.Equal(HttpStatusCode.ServiceUnavailable, uncertainSaveResponse.StatusCode);
             var uncertainSaveBody = await uncertainSaveResponse.Content.ReadAsStringAsync();
-            Assert.Contains("outcome is unconfirmed", uncertainSaveBody);
-            Assert.DoesNotContain("private native detail", uncertainSaveBody);
+            using (var body = JsonDocument.Parse(uncertainSaveBody))
+            {
+                Assert.Contains("outcome is unconfirmed", body.RootElement.GetProperty("error").GetString());
+                Assert.True(body.RootElement.GetProperty("outcome_unconfirmed").GetBoolean());
+                Assert.DoesNotContain("private native detail", uncertainSaveBody);
+            }
 
             using var status = JsonDocument.Parse(await http.GetStringAsync($"/api/status?board={boardId}"));
             Assert.Equal((byte)2, status.RootElement.GetProperty("configuration_save")

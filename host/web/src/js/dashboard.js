@@ -267,7 +267,8 @@ function renderStaticConfiguration(data) {
 
 function configurationSaveWarning(data) {
   const error = data?.configuration_save_error;
-  return typeof error === "string" && /outcome is unconfirmed/i.test(error) ? error : null;
+  if (data?.configuration_save_unconfirmed !== true) return null;
+  return typeof error === "string" ? error : "Configuration save outcome is unconfirmed";
 }
 
 function renderConfigurationRecovery(data) {
@@ -842,6 +843,7 @@ async function runAction(action) {
   if (!selectedBoard || actionBusy) return;
   const board = selectedBoard;
   let responseStatus = null;
+  let errorResult = null;
   actionBusy = true;
   boardSelect.disabled = true;
   actionButtons.forEach(button => { button.disabled = true; });
@@ -853,6 +855,7 @@ async function runAction(action) {
     );
     if (!response.ok) {
       responseStatus = response.status;
+      errorResult = result;
       throw new Error(result.error || `Action failed (${response.status})`);
     }
     if (boardActionErrors.get(board)?.action === action) boardActionErrors.delete(board);
@@ -861,7 +864,9 @@ async function runAction(action) {
     statusMessage.parentElement.dataset.error = "false";
     await refresh();
   } catch (error) {
-    const uncertain = responseStatus === null || responseStatus >= 500 || /outcome is unconfirmed/i.test(error.message);
+    const uncertain = typeof errorResult?.outcome_unconfirmed === "boolean"
+      ? errorResult.outcome_unconfirmed
+      : responseStatus === null || responseStatus >= 500;
     const message = uncertain
       ? `Board action outcome is unconfirmed; reconnect and inspect before retrying. ${error.message}`
       : error.message;
@@ -904,6 +909,7 @@ async function saveConfiguration() {
 
   const board = selectedBoard;
   let responseStatus = null;
+  let errorResult = null;
   configurationSavePending = true;
   pendingConfigurationProfiles.set(board, profile);
   actionBusy = true;
@@ -924,6 +930,7 @@ async function saveConfiguration() {
     );
     if (!response.ok) {
       responseStatus = response.status;
+      errorResult = result;
       throw new Error(result.error || `Configuration save failed (${response.status})`);
     }
     configurationProfileDirty = true;
@@ -936,7 +943,9 @@ async function saveConfiguration() {
     statusMessage.textContent = `Saved ${profileLabel}; board is rebooting.`;
     statusMessage.parentElement.dataset.error = "false";
   } catch (error) {
-    const uncertain = responseStatus === null || responseStatus >= 500 || /outcome is unconfirmed/i.test(error.message);
+    const uncertain = typeof errorResult?.outcome_unconfirmed === "boolean"
+      ? errorResult.outcome_unconfirmed
+      : responseStatus === null || responseStatus >= 500;
     const message = uncertain
       ? `Configuration save outcome is unconfirmed; reconnect and inspect before retrying. ${error.message}`
       : error.message;

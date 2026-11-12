@@ -53,6 +53,7 @@ public sealed class DashboardSnapshot
     public string? ConfigurationError { get; set; }
     public ConfigurationSaveStatus? ConfigurationSave { get; set; }
     public string? ConfigurationSaveError { get; set; }
+    public bool ConfigurationSaveUnconfirmed { get; set; }
     public BoardIdentity? Identity { get; set; }
     public string? IdentityError { get; set; }
     public RuntimeStatus? Runtime { get; set; }
@@ -87,6 +88,7 @@ public sealed class DashboardSnapshot
         {
             ConfigurationSave = new(result.Status, result.ErrorReason, null);
             ConfigurationSaveError = Control.Error;
+            ConfigurationSaveUnconfirmed = false;
         }
     }
 

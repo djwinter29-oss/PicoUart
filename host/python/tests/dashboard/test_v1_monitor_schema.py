@@ -12,6 +12,7 @@ from pico_uart.dashboard.monitor import BoardMonitor, empty_snapshot
 def test_empty_snapshot_uses_per_channel_accounting_fields():
     snapshot = empty_snapshot()
     assert "sequence" not in snapshot
+    assert snapshot["configuration_save_unconfirmed"] is False
     assert len(snapshot["channels"]) == 6
     for channel in snapshot["channels"]:
         assert channel["sequence"] is None
@@ -28,6 +29,7 @@ def test_metadata_polling_uses_hid_cadence_without_sleeping_between_input_reads(
     service._stop = threading.Event()
     service._snapshot = empty_snapshot()
     service._configuration_outcome_unconfirmed = False
+    service._control_generation = 0
     now = 0.0
     reads = []
 
@@ -113,6 +115,7 @@ def test_static_identity_masks_and_dynamic_clock_keep_their_own_report_sources()
     service._lock = threading.RLock()
     service._snapshot = empty_snapshot()
     service._configuration_outcome_unconfirmed = False
+    service._control_generation = 0
 
     class Client:
         def read_identity(self):
@@ -169,6 +172,7 @@ def test_non_save_control_result_is_idle_for_save_ui_and_capability_failure_is_e
     service._lock = threading.RLock()
     service._snapshot = empty_snapshot()
     service._configuration_outcome_unconfirmed = False
+    service._control_generation = 0
 
     class Client:
         def read_control(self):
@@ -183,6 +187,7 @@ def test_non_save_control_result_is_idle_for_save_ui_and_capability_failure_is_e
     service._read_control(client)
     assert service.snapshot()["configuration_save"] == {"status": 0, "action": 0, "error_reason": 0, "error": "none"}
     assert service.snapshot()["configuration_save_error"] is None
+    assert service.snapshot()["configuration_save_unconfirmed"] is False
     service._snapshot["identity"] = {"capabilities": 0}
     service._read_control(client)
     assert service.snapshot()["configuration_save"] is None
