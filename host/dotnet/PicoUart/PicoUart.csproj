@@ -1,6 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>pico-uart-dotnet</ToolCommandName>
+    <PackageId>PicoUart.DotNet</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
+    <Authors>Ji Dong</Authors>
+    <PackageProjectUrl>https://github.com/djwinter29-oss/PicoUart</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/djwinter29-oss/PicoUart</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Description>PicoUart .NET diagnostic CLI and local dashboard for the six-channel USB-to-UART bridge.</Description>
+    <PackageTags>pico-uart;raspberry-pi-pico;uart;hid;diagnostics</PackageTags>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <MinVerTagPrefix>v</MinVerTagPrefix>
     <MinVerAutoIncrement>patch</MinVerAutoIncrement>
@@ -18,5 +30,8 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

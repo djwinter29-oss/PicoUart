@@ -9,7 +9,7 @@ for publisher setup, manual tests, retries, and rollback. Published host artifac
 | Application | Current Channel And Workflow Output | Planned, Not Currently Published |
 | --- | --- | --- |
 | Python | Release wheel on GitHub and PyPI; recommend `pipx` for application installation | Source distribution after rebuild qualification; no native installer planned |
-| .NET | Self-contained archives on GitHub Releases, with no installed .NET runtime required | Linux `.deb`, signed Windows `.msi`, signed and notarized macOS `.app` |
+| .NET | Self-contained archives on GitHub Releases, with no installed .NET runtime required | `PicoUart.DotNet` NuGet global tool (framework-dependent CLI/dashboard, not a C# library); Linux `.deb`, signed Windows `.msi`, signed and notarized macOS `.app` |
 | Direct Dashboard | Static HTTPS site on GitHub Pages | Downloadable static archive; no application installer or backend planned |
 
 Python/.NET package only the shared frontend assets in `host/web/src`; shared tests remain in `host/web/tests`.
@@ -22,7 +22,7 @@ preparation step.
 The [Python package](https://pypi.org/project/pico-uart/) is available on PyPI. Stable publication reuses the verified
 GitHub Release wheel; explicit development publication uploads a marked version to the same public index.
 Prefer pipx for isolated application use, or a virtual environment for Python API use. Installation and pre-release
-selection belong in the [Python guide](../../host/python/README.md#install); Linux-only HIL tooling is separate.
+selection belong in the [Python guide](../../host/python/README.md#quick-start); Linux-only HIL tooling is separate.
 
 The wheel includes the shared dashboard, with its installed package version exposed to the UI. Source archives have
 standalone rebuild regression coverage but are not current release assets. Publishing them still requires explicit

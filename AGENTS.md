@@ -34,8 +34,8 @@ provisioning and its update script. Those snapshot assumptions do not apply to e
 ## Build, Test, And Run
 
 Use [tools/README.md](tools/README.md) for command mappings and [docs/tests/README.md](docs/tests/README.md) to choose
-validation scope. There is no boot `start` command; the diagnostics dashboard is `pico-uart dashboard` and is started
-only when someone is using it.
+validation scope. There is no boot `start` command. Start dashboards or test servers only when requested or for
+bounded validation, and stop temporary services when the work is done.
 
 Firmware development, flashing, and HIL use the Linux wrappers documented in [tools/README.md](tools/README.md). Native
 Windows firmware-development wrappers are not supported; Windows users should use WSL2 Ubuntu. The Python host tools

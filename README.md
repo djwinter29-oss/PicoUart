@@ -87,8 +87,9 @@ Use the [port map](docs/hardware-setup.md#port-map) to find the pins for your ch
 **Setup checkpoint:** the host should list six PicoUart serial ports. That confirms USB enumeration, not UART wiring.
 Confirm communication by exchanging expected data with your connected device at its required baud rate and framing.
 
-If the serial port cannot be opened, check its OS permissions. Dashboard/HID access is separate; see
-[dashboard permissions](#dashboards).
+If none or fewer than six ports appear, check the firmware and USB data connection, then identify ports by USB
+interface using the [port identification guide](docs/hardware-setup.md#find-the-serial-ports). If a listed port cannot
+be opened, check its OS permissions. Dashboard/HID access is separate; see [dashboard permissions](#dashboards).
 
 ## Test Automation
 
@@ -139,9 +140,9 @@ See the [Direct Dashboard guide](host/direct/README.md) for controls and connect
 
 ### Local Python Dashboard
 
-Install [pico-uart](https://pypi.org/project/pico-uart/) with its dashboard extra, run `pico-uart dashboard`, and
-open <http://127.0.0.1:5000/>.
-See the [Python guide](host/python/README.md) for installation and connection troubleshooting.
+Install [pico-uart](https://pypi.org/project/pico-uart/) using the
+[Python guide](host/python/README.md#quick-start), run `pico-uart dashboard`, and open <http://127.0.0.1:5000/>.
+See the Python guide for connection troubleshooting.
 
 ### Local .NET Dashboard
 
@@ -153,6 +154,10 @@ See the [.NET host guide](host/dotnet/README.md) for supported downloads and con
 ## Hardware Compatibility
 
 The prebuilt **`pico`** and **`pico2`** firmware images target the standard non-wireless boards:
+
+A build target does not by itself qualify an artifact or its performance; see the
+[release HIL gates](docs/deployment/releasing.md#release-hil-gates) and
+[measured-performance evidence](docs/tests/records/README.md#evidence-index).
 
 <table align="center">
     <thead>
@@ -201,7 +206,7 @@ Carrier-board LEDs and USB-to-I2C are not supported; see the
 | Understand PR and release checks | [GitHub Actions: validation and releases](docs/development/github-actions.md) |
 | Publish or test a release | [Release qualification](docs/deployment/releasing.md), [host publishing](docs/deployment/host-app-publishing.md) |
 | Review validation and hardware evidence | [Test guide](docs/tests/README.md), [dated HIL records](docs/tests/records/README.md) |
-| Contribute | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md) |
+| Contribute | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md), [Security reporting](SECURITY.md) |
 
 Host tests do not replace physical hardware qualification; see the [test guide](docs/tests/README.md) for validation
 scope and release gates.

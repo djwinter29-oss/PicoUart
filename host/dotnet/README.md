@@ -1,23 +1,26 @@
 # PicoUart .NET Host
 
-**Monitor six UARTs from your terminal, test runner, or browser.** The .NET host provides a diagnostics CLI, local
-dashboard, and C# HID client for PicoUart on Raspberry Pi Pico and Pico 2.
+**Monitor six UARTs from your terminal, test runner, or browser.** The .NET host provides a diagnostics CLI and local
+dashboard for PicoUart on Raspberry Pi Pico and Pico 2.
 
 Diagnostics use a separate USB HID interface, so your existing serial tools can keep using the six USB CDC ports.
 This application does not capture UART payloads or set baud rates and framing; use your serial tools for those tasks.
 
 ## Requirements
 
-- A computer matching one of the release targets below; no .NET or Python installation is needed
+- A computer matching one of the release targets below; the release archive needs no installed .NET runtime
 - A Raspberry Pi Pico or Pico 2 running compatible
-	[PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to this computer over USB
+  [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected over USB
 - Access to the board's HID interface; Linux may need
-	[device permissions](../../tools/README.md#linux-hid-permissions)
+  [device permissions](https://github.com/djwinter29-oss/PicoUart/blob/main/tools/README.md#linux-hid-permissions)
 
 ## Install
 
-Download a self-contained host archive from [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases).
-Choose the target for the computer running the application, not the Pico:
+### Install from GitHub Releases
+
+Download a self-contained host archive from
+[GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases). Choose the target for the computer running the
+application, not the Pico:
 
 | Computer | Release Target | Archive |
 | --- | --- | --- |
@@ -27,38 +30,57 @@ Choose the target for the computer running the application, not the Pico:
 
 Extract the **whole archive**, keeping its `web` directory and other files beside the executable. No .NET SDK, runtime,
 or Python installation is needed. See
-[distribution details](../../docs/deployment/host-app-distribution.md#net-downloads)
+[distribution details](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/deployment/host-app-distribution.md#net-downloads)
 for supported downloads and packaging limitations.
+
+### Install as a NuGet .NET tool (planned)
+
+The planned `PicoUart.DotNet` package is a .NET global tool for the CLI and dashboard, **not a C# library**. It is not
+published yet. Unlike the self-contained archives, the tool requires the .NET 10 SDK to install and the compatible
+.NET 10 and ASP.NET Core runtimes to run. Its initial OS targets are intended to match the release targets above and
+must be qualified on each platform before publication.
+
+Once published, install, run, update, or remove it with:
+
+```sh
+dotnet tool install --global PicoUart.DotNet
+pico-uart-dotnet status
+dotnet tool update --global PicoUart.DotNet
+dotnet tool uninstall --global PicoUart.DotNet
+```
+
+The tool package does not expose a supported C# library API. For source-level client details, see the
+[host development guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#net-development).
 
 ## Quick Start
 
-Connect the flashed board, then run from the extracted directory on Linux/macOS:
+Connect the flashed board, then run from the extracted archive directory on Linux/macOS:
 
 ```sh
 ./PicoUart status
 ./PicoUart web
 ```
 
-On Windows PowerShell, use `.\PicoUart.exe status` or `.\PicoUart.exe web` instead. The remaining CLI examples use the
-Linux/macOS executable spelling; substitute `.\PicoUart.exe` on Windows.
+On Windows PowerShell, use `.\PicoUart.exe status` or `.\PicoUart.exe web`. The remaining archive examples use the
+Linux/macOS spelling; substitute `.\PicoUart.exe` on Windows.
 
-Open <http://127.0.0.1:5000/>. The dashboard binds to loopback, works without browser WebHID support, and shows channel
-health and traffic, dropped-byte counts, firmware and hardware identity, clock, and temperature. Use
-`./PicoUart web --port 5001` if the default port is occupied. This starts a local server, not a system service.
+Open <http://127.0.0.1:5000/>. The dashboard binds to loopback, needs no browser WebHID support, and shows channel
+health and traffic, dropped-byte counts, firmware and hardware identity, clock, and temperature. Stop it with
+**Ctrl+C**; it is a local server, not a system service. If the port is occupied, run `./PicoUart web --port 5001`.
 
 For browser-only diagnostics without installing a host application, use the separate
 [Direct Dashboard on GitHub Pages](https://djwinter29-oss.github.io/PicoUart/) in desktop Chrome or Edge, with the board
 connected to the computer running that browser.
 
-For multiple boards, use `./PicoUart --serial ABC123 status` or `--device-path PATH`, but not both. Ambiguous matches
-are rejected. Use **Board** and **Rescan** in the dashboard; see
-[board selection and shared monitoring](../../docs/development/host-tools.md#board-selection-and-shared-monitoring).
+For multiple boards, use `./PicoUart --serial ABC123 status` or `./PicoUart --device-path PATH`, but not both. Ambiguous
+matches are rejected. Use **Board** and **Rescan** in the dashboard; see
+[board selection and shared monitoring](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#board-selection-and-shared-monitoring).
 Use one HID monitor/server per physical board; separate processes do not share its input reports or traffic totals.
 
 ## Test Automation
 
-Status and monitor samples are JSON by default; `--json` is accepted but unnecessary. Have your test runner save a
-snapshot, launch a timed monitor alongside a serial test, or collect cumulative RX dropped-byte counts independently:
+Save a status snapshot, launch a timed JSON-lines monitor alongside a serial test, or collect cumulative dropped-byte
+counts independently:
 
 ```sh
 ./PicoUart status > uart-status.json
@@ -66,91 +88,71 @@ snapshot, launch a timed monitor alongside a serial test, or collect cumulative 
 ./PicoUart overruns > uart-dropped-bytes.json
 ```
 
-The `overruns` JSON array contains `null` for channels whose UART diagnostics are Unavailable; zero is reported only
-when a valid or Cached measurement establishes that count. `status` and `monitor` consume channel Input reports
-independently of boot configuration, which remains available through the separate `config` command and dashboard
-metadata.
+`overruns` returns `null` when a channel's dropped-byte count is Unavailable; zero means a valid or Cached measurement
+establishes zero. `status` waits up to `--timeout` seconds (default 2) and exits non-zero without a valid report.
+Unlike the Python CLI, .NET `monitor` can finish successfully without receiving reports; check its output for samples
+and channel health.
 
-Each monitor line contains one channel's combined snapshot, identified by `id` (0-5), with its own 16-bit `sequence`
-and measured `interval_ms`. Four byte counters report totals since MCU boot modulo $2^{32}$; derive increments with
-modulo subtraction between Input reports and use the measured interval, not host arrival time, for rates. The first
-Input per channel seeds the boot total and rate baseline. Feature reads do not advance the interval or sequence and
-must not be accumulated as traffic. A report gap resets the rate window, while counters recover totals unless more
-than one wrap could have occurred between observations. Dropped-byte counts and buffer peaks are cumulative since boot.
-The [consolidated HID v1 contract](../../docs/design/usb/hid-report-reference.md) is authoritative for layouts,
-validation, traffic accounting, fault-history interpretation, and command timing; legacy layouts are not supported.
+Each monitor line is a channel snapshot (`id` 0-5) with its own 16-bit `sequence` and measured `interval_ms`. The four
+byte counters are totals since MCU boot modulo `2^32`; the first sample seeds the baseline, and gaps reset the rate
+window. Dropped-byte counts and buffer peaks are cumulative since boot. The
+[HID contract](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md) defines
+the authoritative field meanings and traffic accounting. Your test runner must check sample availability and channel
+health, not just the exit code.
 
-`status` exits non-zero when no report arrives before its timeout. **Unlike the Python CLI, .NET `monitor` can finish
-successfully with no reports.** `status` prints the same six-entry `channels` snapshot as Python `status --json`,
-with sorted object keys. It retries for `--timeout` seconds (default 2); each Input read waits at most 250 ms.
-The status timeout and monitor duration start after device discovery, opening, and identity validation; they are not
-process-lifetime deadlines and do not bound final native-handle cleanup. Timed `monitor` reads are bounded by the
-remaining capture duration, and samples completing at or after the deadline are excluded.
-`monitor` still prints one channel object per line. Field rules are in the
-[host tools guide](../../docs/development/host-tools.md#python-test-automation).
-Your runner must check sample availability and channel health, not just the exit code.
-Without `--duration`, monitoring continues until interrupted. Device errors are printed to stderr and return non-zero.
+Timed monitor samples completing at or after the duration deadline are excluded. Timeouts start after device discovery,
+opening, and identity validation; they do not bound process startup or final native-handle cleanup. See
+[test automation details](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-test-automation).
 
 ## Other Commands And Controls
 
-Read-only commands include `hardware`, `config`, `temperature`, and `version`. Hardware, configuration, and overrun
-results are JSON; temperature and firmware version are plain values. Use `./PicoUart --help` for command options.
+Read-only commands include `hardware`, `config`, `telemetry`, `temperature`, and
+`version`; `overruns` reads dropped-byte counts. Results are JSON unless the command reports a plain value. Run
+`./PicoUart --help` for all commands.
 
-`toggle-led` changes the board LED. `reset` reboots the board and is refused unless firmware advertises reset support,
-which is enabled by default. The dashboard's **Reboot only** button uses it, and can also save a persistent boot-time
-clock profile; a verified save
-automatically reboots the board, independently of the optional reset command. Stop UART traffic, close CDC ports, and
-read the [configuration precautions](../../docs/development/host-tools.md#persistent-configuration) before changing it.
-After reconnecting, check the actual active profile and any fallback reason rather than assuming the requested clock
-became active. A verified save does not establish overclock stability.
+`toggle-led` changes the board LED. `reset` reboots the board and requires firmware reset support, enabled by default.
+The dashboard's **Reboot only** button uses this command and can also save a persistent boot-time clock profile. A
+verified save automatically reboots. Stop UART traffic, close CDC ports, and read the
+[configuration precautions](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#persistent-configuration)
+before changing it. After reconnecting, inspect the active profile and any fallback reason; a verified save does not
+establish overclock stability.
 
-LED toggling reads telemetry, sends an explicit On/Off assignment, and refreshes telemetry after the confirmed action.
-All controls validate static identity/capabilities, serialize requests, and verify a terminal report-20 result for the
-requested action. The protocol has no request ID or deduplication. Commands have 3-second transfer/result deadlines;
-an uncertain outcome is never retried automatically. Reconnect and verify board state before retrying. Reset is one
-action; save completion means flash verification succeeded and automatic reboot was scheduled, not that the next boot
-succeeded.
+Controls validate device identity and capabilities, serialize requests, and verify terminal results. Commands have
+three-second transfer/result deadlines and are never automatically retried after an uncertain outcome. Reconnect and
+inspect board state before retrying. Save completion means flash verification succeeded and reboot was scheduled, not
+that the next boot succeeded.
 
-### Dashboard JSON
+### Dashboard Data
 
-Existing board, hardware, runtime, LED, configuration, and traffic field names are retained. Identity and telemetry
-fields follow the [consolidated HID contract](../../docs/design/usb/hid-report-reference.md); `led.output_on` is
-nullable when the identification LED is unavailable.
-
-Each `channels[]` item adds `updated_at` (ISO timestamp of its last Input), `sequence`, `observed_interval_ms`,
-`traffic_gaps`, and sticky `traffic_incomplete`. Measurement time sums complete valid Input intervals after the first
-sample; the renderer can divide changes in totals by changes in this time, invalidating a window when that channel's
-gap count changes. There is no board-wide `sequence`. Top-level gap/incomplete fields summarize all channels.
-After three seconds without an accepted Input, the next sample establishes a fresh baseline regardless of sequence;
-its deltas are excluded, preventing old-sequence filtering from blocking recovery after a pause or USB reset.
-`channel_diagnostics[]` is indexed by channel and may contain null before state is available. Diagnostics use flat
-fields such as `rx_overrun_count` and `rx_error_count`; see the
-[diagnostics report contract](../../docs/design/usb/hid-report-reference.md#reports-30-35-channel-diagnostics).
-`configuration_save.status` uses report-20 statuses 0-6; a non-save result projects to idle `{status: 0, profile: null}`.
-An unavailable save capability sets `configuration_save_error`; an unread/failed control read leaves the result null.
-Populated traffic fields use byte increments, not bytes/second, consistently with Python. See
-[snapshot, stale-state, and diagnostics-refresh semantics](../../docs/development/host-tools.md#channel-diagnostics-and-traffic-presentation)
-before consuming the API.
+The dashboard's channel snapshots include per-channel update times, sequences, measured intervals, traffic gaps, and
+diagnostic counters. Missing measurements may be `null`; do not treat unavailable values as zero. The
+[host development guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#channel-diagnostics-and-traffic-presentation)
+and [HID reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
+define the full field and refresh semantics.
 
 ## Troubleshooting
 
 - **Board not found:** check compatible firmware, the USB data cable, and any board selector. USB must be accessible to
-	the computer running the host. Without a compatible board, HID commands failing is expected.
-- **Access denied:** follow the Linux HID permission guide above. After using an older Python/libusb client, a detached
-	HID driver may need the other client closed and the board's USB cable reconnected.
+  the computer running the host. Without a compatible board, HID commands failing is expected.
+- **Access denied:** follow the
+  [Linux HID permission guide](https://github.com/djwinter29-oss/PicoUart/blob/main/tools/README.md#linux-hid-permissions).
+  After using an older Python/libusb client, close it and reconnect the board to restore HID discovery.
 - **No valid reports:** check firmware compatibility and the USB connection. Missing reports are not zero traffic;
   verify that monitor output contains samples even when the command exits successfully.
-- **Windows `unsupported report size or layout version` with matching v0.10.0 host and firmware:** that host counts
-  Windows-reconstructed descriptor padding as payload. Use a host build containing the descriptor-padding fix;
-  it excludes trailing constant padding while still validating report IDs, payload sizes, and layout versions.
-  This host-only fix does not require reflashing the board.
+- **Windows `unsupported report size or layout version` with matching v0.10.0 host and firmware:** use a host build
+  containing the descriptor-padding fix; reflashing the board is not required.
 - **Missing web files:** re-extract the complete archive; do not move only the executable.
 - **Need framework logs:** set `Logging__LogLevel__Microsoft=Information` before launching. Startup normally prints one
-	dashboard URL while retaining warnings and errors.
+  dashboard URL while retaining warnings and errors.
 
-## Documentation
+Saving configuration reboots the board. Close all CDC ports and stop UART traffic first; review the
+[save safety contract](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md#save-and-reboot-safety).
 
-- [Project, firmware, and wiring](../../README.md)
-- [Host development and source-checkout setup](../../docs/development/host-tools.md#net-development)
-- [HID report reference and compatibility](../../docs/design/usb/hid-report-reference.md)
-- [Security and lab-only USB identity](../../SECURITY.md)
+## Documentation And Feedback
+
+- [Project, firmware, and wiring](https://github.com/djwinter29-oss/PicoUart)
+- [Host development and source-checkout setup](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#net-development)
+- [HID report reference and compatibility](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
+- [Security policy and trust model](https://github.com/djwinter29-oss/PicoUart/blob/main/SECURITY.md)
+- [Report an issue or request a feature](https://github.com/djwinter29-oss/PicoUart/issues)
+- [BSD 3-Clause License](https://github.com/djwinter29-oss/PicoUart/blob/main/LICENSE)
