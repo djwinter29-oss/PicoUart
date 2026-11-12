@@ -169,12 +169,17 @@ def test_dashboard_serves_static_assets_safely():
     assert page.headers["Cache-Control"] == "no-store"
     assert b"<title>PicoUart Diagnostics | Python</title>" in page.data
     assert client.get("/api/status").headers["Cache-Control"] == "no-store"
-    for path in ("css/dashboard.css", "js/dashboard.js", "favicon.svg"):
+    for path in (
+        "css/dashboard.css", "js/dashboard.js", "js/api.mjs", "js/traffic.mjs",
+        "js/view.mjs", "js/diagnostics.mjs", "js/control-confirmation.mjs", "favicon.svg",
+    ):
         with client.get(f"/{path}") as response:
             assert response.status_code == 200
             assert response.headers["Cache-Control"] == "no-store"
             assert response.data
             assert response.headers["X-Content-Type-Options"] == "nosniff"
+            if path.endswith((".js", ".mjs")):
+                assert response.mimetype in ("text/javascript", "application/javascript")
 
 
 @pytest.mark.parametrize("version,expected", [

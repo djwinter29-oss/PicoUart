@@ -550,6 +550,31 @@ def test_control_read_errors_are_published(monitor):
     assert board_monitor.snapshot()["configuration_save_error"] == "control failed"
 
 
+def test_failed_control_read_clears_previous_result_without_marking_it_unconfirmed(monitor):
+    board_monitor, client = monitor
+    assert board_monitor.close()
+    with board_monitor._lock:
+        board_monitor._client = client
+    client.read_control = lambda: {
+        "status": 2, "action": 4, "error_reason": 0, "error": "none"
+    }
+
+    board_monitor._read_control(client)
+    assert board_monitor.snapshot()["configuration_save"]["action"] == 4
+    assert board_monitor.snapshot()["configuration_save_unconfirmed"] is False
+
+    def failed_control_read():
+        raise RuntimeError("control report unavailable")
+
+    client.read_control = failed_control_read
+    board_monitor._read_control(client)
+
+    snapshot = board_monitor.snapshot()
+    assert snapshot["configuration_save"] is None
+    assert snapshot["configuration_save_error"] == "control report unavailable"
+    assert snapshot["configuration_save_unconfirmed"] is False
+
+
 def test_identity_read_error_is_published(monitor):
     board_monitor, client = monitor
     client.fail = "identity"

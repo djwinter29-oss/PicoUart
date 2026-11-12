@@ -207,7 +207,9 @@ function renderChannels(data, now = Date.now()) {
     view.validity.textContent = !fresh || measurementState === "unavailable" ? "— Unavailable"
       : measurementState === "cached" ? "CACHED" : measurementState === "current" ? "LIVE" : "— Unavailable";
     if (channel.error) view.validity.textContent = "READ ERROR";
-    view.validity.title = channel.error ? `Channel snapshot unavailable: ${channel.error}`
+    else if (channel.feature_error && !fresh) view.validity.textContent = "FEATURE ERROR";
+    view.validity.title = channel.error ? `Input snapshot unavailable: ${channel.error}`
+      : channel.feature_error ? `Feature snapshot unavailable: ${channel.feature_error}`
       : !fresh ? "Channel snapshot unavailable or stale."
       : measurementState === "unavailable" ? "Measurement data unavailable."
         : `Measurement status: ${measurementState}.`;
@@ -219,11 +221,12 @@ function renderChannels(data, now = Date.now()) {
       : "Last successfully applied UART setting, not the latest requested setting.";
     directions.forEach(([label, key]) => {
       const metric = view.metrics.get(key);
-      metric.rate.textContent = fresh && channel.rates?.[key] != null
+      const uartUnavailable = key.startsWith("uart_") && measurementState !== "current";
+      metric.rate.textContent = fresh && !uartUnavailable && channel.rates?.[key] != null
         ? `${(channel.rates[key] / 1000).toFixed(1)} KB/s` : "-- KB/s";
       const counter = channel.counters[key];
-      const uartUnavailable = key.startsWith("uart_") && measurementState === "unavailable";
-      metric.total.textContent = fresh && !uartUnavailable && counter !== null
+      const uartTotalUnavailable = key.startsWith("uart_") && measurementState === "unavailable";
+      metric.total.textContent = fresh && !uartTotalUnavailable && counter !== null
         ? `${counter.toLocaleString()} B` : "--";
       metric.metric.title = `${label}: bytes since firmware boot, modulo 2^32.`;
     });
@@ -252,6 +255,11 @@ export function updateChannelFreshness(data, now = Date.now()) {
 
 export function renderDashboard(data) {
   const statusMessage = document.querySelector("#status-message");
+  const continuityWarning = document.querySelector("#traffic-continuity-warning");
+  continuityWarning.hidden = !data.traffic_incomplete;
+  const continuityMessage = "Some input reports, intervals, or UART measurements were unavailable. Rates use valid "
+    + "samples and may be unavailable while they rebaseline; continuous observation cannot be verified.";
+  if (continuityWarning.textContent !== continuityMessage) continuityWarning.textContent = continuityMessage;
   document.querySelector("#connection-label").textContent = data.connected ? "Connected" : "Disconnected";
   document.querySelector("#product-name").textContent = data.identity?.product_name ?? "--";
   document.querySelector("#board-model").textContent = data.identity?.board_model && data.identity?.mcu
@@ -268,7 +276,10 @@ export function renderDashboard(data) {
     ? `${serviceLoad(runtime.service_load_basis_points[0])} / ${serviceLoad(runtime.service_load_basis_points[1])}`
     : "--";
   const identity = data.identity;
-  document.querySelector("#ram-usage").textContent = identity
+  const ramKnown = Number.isSafeInteger(identity?.ram_reserved_bytes) && identity.ram_reserved_bytes >= 0
+    && Number.isSafeInteger(identity.ram_total_bytes) && identity.ram_total_bytes > 0
+    && identity.ram_reserved_bytes <= identity.ram_total_bytes;
+  document.querySelector("#ram-usage").textContent = ramKnown
     ? `${(identity.ram_reserved_bytes / 1024).toFixed(1)} / ${(identity.ram_total_bytes / 1024).toFixed(0)} KiB`
       + ` (${(identity.ram_reserved_bytes / identity.ram_total_bytes * 100).toFixed(1)}%)`
     : "--";
@@ -287,12 +298,14 @@ export function renderDashboard(data) {
     ? `Latest board action: ${action.status_name}${action.action ? `, action ${action.action}` : ""}`
       + (action.error_reason ? ` (reason ${action.error_reason})` : "") : null;
   const channelError = data.channels.find(channel => channel.error);
+  const featureError = data.channels.find(channel => channel.feature_error);
   statusMessage.textContent = data.identity_error ? `Device identity unavailable: ${data.identity_error}`
     : data.configuration_error ? `Board configuration unavailable: ${data.configuration_error}`
       : data.telemetry_error ? `Live telemetry unavailable: ${data.telemetry_error}`
         : data.action_error ? `Board action: ${data.action_error}`
           : channelError ? `CDC${channelError.id} snapshot unavailable: ${channelError.error}`
-            : actionMessage ?? (data.connected ? "HID status is available" : "Waiting for a PicoUart HID interface");
+            : featureError ? `CDC${featureError.id} Feature snapshot unavailable: ${featureError.feature_error}`
+              : actionMessage ?? (data.connected ? "HID status is available" : "Waiting for a PicoUart HID interface");
   statusMessage.parentElement.dataset.error = String(Boolean(data.identity_error || data.configuration_error
-    || data.telemetry_error || data.action_error || channelError || !data.connected));
+    || data.telemetry_error || data.action_error || channelError || featureError || !data.connected));
 }

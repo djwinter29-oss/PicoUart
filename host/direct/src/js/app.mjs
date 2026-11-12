@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
-import { PicoUartWebHid } from "./device.mjs?v=25";
-import { renderDashboard, updateChannelFreshness, updateDiagnosticsAge, updateReportAge } from "./view.mjs?v=25";
+import { PicoUartWebHid } from "./device.mjs?v=29";
+import { renderDashboard, updateChannelFreshness, updateDiagnosticsAge, updateReportAge } from "./view.mjs?v=29";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");
@@ -11,6 +11,9 @@ const statusMessage = document.querySelector("#status-message");
 const profileSelect = document.querySelector("#configuration-profile");
 const unsafeAcknowledgement = document.querySelector("#configuration-unsafe-ack");
 const saveButton = document.querySelector("#save-configuration");
+const recoveryPanel = document.querySelector("#configuration-recovery");
+const recoveryMessage = document.querySelector("#configuration-recovery-message");
+const acknowledgeRecoveryButton = document.querySelector("#acknowledge-configuration-recovery");
 const configurationDialog = document.querySelector("#configuration-dialog");
 const rebootDialog = document.querySelector("#reboot-dialog");
 const configurationDialogProfile = document.querySelector("#configuration-dialog-profile");
@@ -21,6 +24,7 @@ const diagnosticsButton = document.querySelector("#refresh-diagnostics");
 document.querySelector("#close-channel-diagnostics").addEventListener("click", () =>
   document.querySelector("#channel-diagnostics-dialog").close());
 let selectedProfile = null;
+let profileDraftEdited = false;
 let saveMessage = "";
 let operationNotice = "";
 let operationNoticeError = false;
@@ -29,6 +33,7 @@ function resetConfigurationDraft() {
   if (configurationDialog.open) configurationDialog.close();
   if (rebootDialog.open) rebootDialog.close();
   selectedProfile = null;
+  profileDraftEdited = false;
   unsafeAcknowledgement.checked = false;
   saveMessage = "";
 }
@@ -41,8 +46,10 @@ function renderConfiguration(state) {
       .map(profile => [profile, ["SDK default", "150 MHz", "200 MHz", "250 MHz", "280 MHz"][profile]])
     : [];
   const baselineProfile = dashboard.configuration?.stored_profile ?? options[0]?.[0] ?? null;
-  if (selectedProfile === null) {
-    selectedProfile = baselineProfile;
+  if (!profileDraftEdited) {
+    selectedProfile = dashboard.configuration === null
+      ? selectedProfile ?? options[0]?.[0] ?? null
+      : baselineProfile;
   }
   if (profileSelect.children.length !== options.length
     || options.some(([profile], index) => profileSelect.children[index]?.value !== String(profile))) {
@@ -59,13 +66,24 @@ function renderConfiguration(state) {
   const channelsReady = channels.length === 6 && channels.every(channel =>
     channel?.channel_state === 0 && channel?.input_updated_at
       && Date.now() - Date.parse(channel.input_updated_at) <= 3000);
-  const saveAvailable = Boolean(identity?.capabilities & 4) && dashboard.configuration !== null;
+  const saveAvailable = Boolean(identity?.capabilities & 4) && dashboard.configuration !== null
+    && !dashboard.configuration_save_storage_error;
   const enabled = state.phase === "connected" && saveAvailable && channelsReady;
   const profileChanged = saveAvailable && selectedProfile !== baselineProfile;
+  const recoveryPending = Boolean(dashboard.configuration_save_unconfirmed);
   profileSelect.disabled = state.phase !== "connected" || !Boolean(identity?.capabilities & 4) || !options.length;
   unsafeAcknowledgement.disabled = !enabled || selectedProfile === 0;
   saveButton.hidden = !Boolean(identity?.capabilities & 4);
-  saveButton.disabled = !enabled || !profileChanged;
+  saveButton.disabled = !enabled || !profileChanged || recoveryPending;
+  recoveryPanel.hidden = !recoveryPending;
+  const previousProfile = dashboard.configuration_save_profile;
+  const storedProfile = dashboard.configuration?.stored_profile;
+  recoveryMessage.textContent = recoveryPending
+    ? `Previous save for ${profileName(previousProfile)} is unconfirmed. Inspect the current stored profile `
+      + `(${storedProfile == null ? "not reported" : profileName(storedProfile)}).`
+    : "";
+  acknowledgeRecoveryButton.disabled = !recoveryPending || !dashboard.configuration_recovery_ready
+    || Boolean(dashboard.configuration_save_storage_error) || state.phase !== "connected";
   const resetCause = dashboard.configuration?.reset_cause;
   document.querySelector("#reset-cause").textContent = resetCause == null ? "--"
     : ["Unknown (not distinguished)", "Power-on", "Watchdog reset", "Software-requested reset", "HardFault recovery",
@@ -92,8 +110,11 @@ function renderConfiguration(state) {
     const value = capacity?.[key];
     document.querySelector(`#${id}`).textContent = Number.isSafeInteger(value) ? `${value.toLocaleString()} B` : "--";
   }
-  configurationMessage.textContent = saveMessage || dashboard.configuration_error || "";
-  configurationMessage.dataset.error = String(Boolean(!saveMessage && dashboard.configuration_error)
+  const messages = [saveMessage || dashboard.configuration_error, dashboard.configuration_save_storage_error]
+    .filter(Boolean);
+  configurationMessage.textContent = messages.join(" ");
+  configurationMessage.dataset.error = String(Boolean(dashboard.configuration_error
+    || dashboard.configuration_save_storage_error)
     || Boolean(saveMessage && !saveMessage.includes("rebooting")));
 }
 
@@ -156,7 +177,7 @@ function render(state) {
   connectButton.textContent = state.phase === "connecting" ? "Connecting..."
     : state.phase === "disconnecting" ? "Disconnecting..." : connected ? "Disconnect" : "Connect";
   connectButton.className = `button ${connected ? "button-danger" : "button-secondary"}`;
-  connectButton.disabled = !["disconnected", "connected", "reading"].includes(state.phase);
+  connectButton.disabled = client.lifecycleBlocked || !["disconnected", "connected", "reading"].includes(state.phase);
   const led = dashboard.telemetry?.led.output_on;
   toggleLedButton.disabled = !connected || busy || led == null || !(dashboard.identity?.capabilities & 1);
   rebootButton.hidden = !(dashboard.identity?.capabilities & 2);
@@ -226,6 +247,7 @@ document.querySelector("#confirm-reboot").addEventListener("click", async () => 
 });
 profileSelect.addEventListener("change", () => {
   selectedProfile = Number(profileSelect.value);
+  profileDraftEdited = true;
   unsafeAcknowledgement.checked = false;
   saveMessage = "";
   renderConfiguration(client.state);
@@ -245,6 +267,17 @@ diagnosticsButton.addEventListener("click", async () => {
   } catch (error) {
     showOperationError("Diagnostics", error, generation);
   }
+});
+acknowledgeRecoveryButton.addEventListener("click", () => {
+  if (acknowledgeRecoveryButton.disabled) return;
+  clearOperationNotice();
+  try {
+    client.acknowledgeConfigurationRecovery();
+    saveMessage = "Stored configuration inspected; a new save may now be submitted.";
+  } catch (error) {
+    saveMessage = error.message;
+  }
+  renderConfiguration(client.state);
 });
 globalThis.setInterval(() => client.refresh(), 1000);
 globalThis.setInterval(() => {

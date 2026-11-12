@@ -13,8 +13,11 @@ const MAX_RATE_ELAPSED_MS = 8000;
 const MAX_REPORT_AGE_MS = 3000;
 const ACTION_DEADLINE_MS = 3000;
 const ACTION_POLL_MS = 50;
+const DEVICE_LIFECYCLE_TIMEOUT_MS = 3000;
 const UINT32_MAX = 0xffffffff;
 const IDENTITY_REPORT_LENGTH = 27;
+const SAVE_RECOVERY_STORAGE_PREFIX = "picouart.direct.save-recovery.";
+const inMemorySaveRecovery = new Map();
 const CLOCK_PROFILES = new Map([
   [0, "SDK default"], [1, "150 MHz"], [2, "200 MHz"], [3, "250 MHz"], [4, "280 MHz"],
 ]);
@@ -36,8 +39,71 @@ function payload(report, expectedLength, reportName, reportId = null) {
   return new DataView(report.buffer, report.byteOffset, report.byteLength);
 }
 
-export function identityDiscoveryLength() {
-  return IDENTITY_REPORT_LENGTH;
+function saveRecoveryKey(uid) {
+  if (!/^[0-9A-F]{16}$/.test(uid ?? "")) throw new Error("Validated board UID required for save recovery.");
+  return `${SAVE_RECOVERY_STORAGE_PREFIX}${uid}`;
+}
+
+function readSaveRecovery(uid) {
+  const key = saveRecoveryKey(uid);
+  let stored;
+  try {
+    stored = globalThis.sessionStorage?.getItem(key);
+  } catch (error) {
+    return {
+      profile: inMemorySaveRecovery.get(uid) ?? null,
+      error: `Browser recovery storage is unavailable: ${error.message}`,
+    };
+  }
+  const value = stored === null || stored === undefined ? inMemorySaveRecovery.get(uid) : Number(stored);
+  if (value === undefined) return { profile: null, error: null };
+  if (!Number.isInteger(value) || value < 0 || value > 4) {
+    return {
+      profile: null,
+      error: "Stored save-recovery record is invalid; inspect the board configuration before continuing.",
+    };
+  }
+  inMemorySaveRecovery.set(uid, value);
+  return { profile: value, error: null };
+}
+
+function recordSaveRecovery(uid, profile) {
+  const key = saveRecoveryKey(uid);
+  globalThis.sessionStorage?.setItem(key, String(profile));
+  inMemorySaveRecovery.set(uid, profile);
+}
+
+function clearSaveRecovery(uid) {
+  const key = saveRecoveryKey(uid);
+  globalThis.sessionStorage?.removeItem(key);
+  inMemorySaveRecovery.delete(uid);
+}
+
+export function identityDiscoveryLength(device) {
+  const reports = [];
+  const visit = collections => {
+    for (const collection of collections ?? []) {
+      for (const report of collection.featureReports ?? []) {
+        if (report.reportId === 1) reports.push(report);
+      }
+      visit(collection.children);
+    }
+  };
+  visit(device?.collections);
+  if (reports.length !== 1) throw new Error("HID Feature report 1 length unavailable or ambiguous");
+  const items = reports[0].items;
+  if (!Array.isArray(items) || !items.length) throw new Error("HID Feature report 1 length is invalid");
+  const bitLength = items.reduce((total, item) => {
+    if (!Number.isSafeInteger(item.reportSize) || item.reportSize < 1
+      || !Number.isSafeInteger(item.reportCount) || item.reportCount < 1) {
+      throw new Error("HID Feature report 1 length is invalid");
+    }
+    return total + item.reportSize * item.reportCount;
+  }, 0);
+  if (!Number.isSafeInteger(bitLength) || bitLength % 8 || bitLength < 24 || bitLength > 504) {
+    throw new Error("HID Feature report 1 length is invalid");
+  }
+  return bitLength / 8;
 }
 
 export function decodeIdentityPrefix(report, declaredLength) {
@@ -47,7 +113,7 @@ export function decodeIdentityPrefix(report, declaredLength) {
 }
 
 export function decodeDeviceInformation(report) {
-  const data = payload(report, 27, "Identity Feature report");
+  const data = payload(report, IDENTITY_REPORT_LENGTH, "Identity Feature report");
   if (data.getUint8(0) !== 1) throw new Error("Unsupported PicoUart identity layout");
   const productId = data.getUint16(1, true);
   if (productId !== PRODUCT_ID_PICOUART) throw new Error(`Unsupported PicoUart product ID 0x${productId.toString(16).padStart(4, "0")}`);
@@ -291,6 +357,7 @@ function emptyChannel(id) {
     input_measurement_state: null,
     input_updated_at: null,
     feature_updated_at: null,
+    feature_error: null,
     diagnostics: null,
     error: null,
     traffic_gaps: 0,
@@ -304,6 +371,11 @@ function emptyDashboard() {
     identity_error: null,
     configuration: null,
     configuration_error: null,
+    configuration_save_error: null,
+    configuration_save_unconfirmed: false,
+    configuration_save_profile: null,
+    configuration_save_storage_error: null,
+    configuration_recovery_ready: false,
     telemetry: null,
     telemetry_error: null,
     action_result: null,
@@ -334,6 +406,10 @@ export class PicoUartWebHid {
     this.activeTransfer = null;
     this.transferToken = 0;
     this.ioBlocked = false;
+    this.pendingLifecycle = null;
+    this.lifecycleDevice = null;
+    this.lifecycleDisconnected = false;
+    this.lifecycleBlocked = false;
     this.pendingTransfers = new Set();
     this.initialRefreshGeneration = null;
     this.inputListener = null;
@@ -345,7 +421,16 @@ export class PicoUartWebHid {
       dashboard: emptyDashboard(),
     };
     this.onDisconnect = event => {
-      if (event.device !== this.device && event.device !== this.pendingDevice) return;
+      if (event.device !== this.device && event.device !== this.pendingDevice
+        && event.device !== this.lifecycleDevice) return;
+      if (this.pendingLifecycle?.failed) {
+        this.pendingLifecycle = null;
+        this.lifecycleBlocked = false;
+        this.lifecycleDevice = null;
+        this.lifecycleDisconnected = false;
+      } else if (this.pendingLifecycle) {
+        this.lifecycleDisconnected = true;
+      }
       this.generation++;
       this.removeInputListener(event.device);
       this.device = null;
@@ -366,6 +451,66 @@ export class PicoUartWebHid {
 
   isCurrent(generation, device) {
     return generation === this.generation && device === this.device;
+  }
+
+  async runLifecycle(device, name, operation, {
+    onLateResolve = null, onLateReject = null, retainBlockOnLateFailure = false,
+  } = {}) {
+    if (this.lifecycleBlocked) throw new Error("Another HID lifecycle operation is still pending.");
+    const operationToken = Symbol(name);
+    this.pendingLifecycle = operationToken;
+    this.lifecycleDevice = device;
+    this.lifecycleDisconnected = false;
+    this.lifecycleBlocked = true;
+    let timer;
+    const timeout = {};
+    const nativeOperation = Promise.resolve().then(operation);
+    try {
+      return await Promise.race([nativeOperation, new Promise((_, reject) => {
+        timer = globalThis.setTimeout(() => reject(timeout), DEVICE_LIFECYCLE_TIMEOUT_MS);
+      })]);
+    } catch (error) {
+      if (error !== timeout) throw error;
+      let settling;
+      settling = nativeOperation.then(
+        result => onLateResolve ? onLateResolve(result) : null,
+        failure => onLateReject ? onLateReject(failure) : Promise.reject(failure),
+      ).then(
+        () => null,
+        failure => failure,
+      ).then(failure => {
+        if (this.pendingLifecycle !== settling) return;
+        if (failure instanceof Error && retainBlockOnLateFailure && !this.lifecycleDisconnected) {
+          this.pendingLifecycle = { failed: true, device };
+          this.lifecycleBlocked = true;
+          this.update({ message: "HID open could not be safely closed; unplug the board to reconnect.",
+            error: failure.message });
+          return;
+        }
+        this.pendingLifecycle = null;
+        this.lifecycleDevice = null;
+        this.lifecycleDisconnected = false;
+        this.lifecycleBlocked = false;
+        if (failure instanceof Error) {
+          this.update({ message: "HID operation settled with an error", error: failure.message });
+        } else if (this.state.phase === "disconnected" && this.state.error?.includes("timed out")) {
+          this.update({ message: "HID operation settled; reconnect is available", error: null });
+        } else {
+          this.update({});
+        }
+      });
+      this.pendingLifecycle = settling;
+      throw new Error(`${name} timed out; HID operations are blocked until it settles.`);
+    } finally {
+      globalThis.clearTimeout(timer);
+      if (this.pendingLifecycle === operationToken) {
+        this.pendingLifecycle = null;
+        this.lifecycleDevice = null;
+        this.lifecycleDisconnected = false;
+        this.lifecycleBlocked = false;
+        this.update({});
+      }
+    }
   }
 
   addInputListener(device, generation) {
@@ -449,9 +594,34 @@ export class PicoUartWebHid {
       throw new Error(`Unsupported PicoUart identity layout version ${prefix.layout_version}`);
     }
     const identity = decodeDeviceInformation(identityReport);
+    const pendingSave = readSaveRecovery(identity.serial_number);
     this.information = identity;
-    this.update({ dashboard: { ...this.state.dashboard, identity, identity_error: null } });
+    this.update({ dashboard: { ...this.state.dashboard, identity, identity_error: null,
+      configuration_save_error: pendingSave.error
+        ?? (pendingSave.profile === null ? null : "Previous save outcome is unconfirmed."),
+      configuration_save_unconfirmed: pendingSave.profile !== null,
+      configuration_save_profile: pendingSave.profile,
+      configuration_save_storage_error: pendingSave.error,
+      configuration_recovery_ready: false } });
     return true;
+  }
+
+  acknowledgeConfigurationRecovery() {
+    const identity = this.information;
+    const dashboard = this.state.dashboard;
+    if (!identity || !dashboard.configuration_save_unconfirmed || !dashboard.configuration
+      || !dashboard.configuration_recovery_ready) {
+      throw new Error("Read the current board configuration before acknowledging save recovery.");
+    }
+    const recovery = readSaveRecovery(identity.serial_number);
+    if (recovery.error) throw new Error(recovery.error);
+    if (recovery.profile === null) {
+      throw new Error("No unconfirmed save is recorded for this board.");
+    }
+    clearSaveRecovery(identity.serial_number);
+    this.update({ dashboard: { ...dashboard, configuration_save_error: null,
+      configuration_save_unconfirmed: false, configuration_save_profile: null,
+      configuration_save_storage_error: null, configuration_recovery_ready: false } });
   }
 
   updateChannel(index, changes) {
@@ -462,12 +632,16 @@ export class PicoUartWebHid {
 
   applyFeatureSnapshot(snapshot) {
     const previous = this.state.dashboard.channels[snapshot.id];
+    if (previous.sequence !== null
+      && (snapshot.sequence - previous.sequence + 65536) % 65536 >= 32768) return;
     this.updateChannel(snapshot.id, {
       ...snapshot,
       counters: snapshot.counters,
       feature_updated_at: new Date().toISOString(),
+      feature_error: null,
       error: null,
-      rates: previous.rates,
+      rates: snapshot.uart_measurement_state === 1 ? previous.rates
+        : { ...previous.rates, uart_tx: null, uart_rx: null },
       deltas: previous.deltas,
       sequence: previous.sequence,
       interval_ms: previous.interval_ms,
@@ -475,7 +649,7 @@ export class PicoUartWebHid {
       input_measurement_state: previous.input_measurement_state,
       input_updated_at: previous.input_updated_at,
       rate_samples: previous.rate_samples,
-      uart_rate_samples: previous.uart_rate_samples,
+      uart_rate_samples: snapshot.uart_measurement_state === 1 ? previous.uart_rate_samples : [],
       traffic_gaps: previous.traffic_gaps,
     });
   }
@@ -546,6 +720,7 @@ export class PicoUartWebHid {
       input_measurement_state: snapshot.uart_measurement_state,
       input_updated_at: new Date(now).toISOString(),
       feature_updated_at: previous.feature_updated_at,
+      feature_error: null,
       error: null,
       traffic_gaps: channelGaps,
     };
@@ -577,10 +752,18 @@ export class PicoUartWebHid {
     this.update({ dashboard: { ...dashboard, channels } });
   }
 
+  failFeatureChannel(id, message) {
+    const dashboard = this.state.dashboard;
+    const channels = [...dashboard.channels];
+    channels[id] = { ...channels[id], feature_updated_at: null, feature_error: message };
+    this.update({ dashboard: { ...dashboard, channels } });
+  }
+
   async readConfiguration() {
     const configuration = decodeBoardConfiguration(
       await this.readFeature(2, 36), this.information);
-    this.update({ dashboard: { ...this.state.dashboard, configuration, configuration_error: null } });
+    this.update({ dashboard: { ...this.state.dashboard, configuration, configuration_error: null,
+      configuration_recovery_ready: this.state.dashboard.configuration_save_unconfirmed } });
   }
 
   async readTelemetry() {
@@ -607,7 +790,7 @@ export class PicoUartWebHid {
         this.applyFeatureSnapshot(snapshot);
       } catch (error) {
         if (!isCurrent()) return false;
-        this.failChannel(channel, error.message);
+        this.failFeatureChannel(channel, error.message);
         if (this.ioBlocked) return false;
       }
     }
@@ -715,13 +898,19 @@ export class PicoUartWebHid {
     const device = this.device, generation = this.generation;
     await this.refreshComplete;
     if (!device || !this.isCurrent(generation, device)
-      || this.state.phase !== "connected" || this.actionInFlight) {
+      || this.state.phase !== "connected" || this.actionInFlight || this.lifecycleBlocked) {
       throw new Error("Board action cancelled before submission; no command was sent.");
     }
     const identity = this.information;
     if (!identity) throw new Error("Read a supported device identity before sending commands.");
     const capability = action <= 2 ? 1 : action === 3 ? 2 : 4;
     if (!(identity.capabilities & capability)) throw new Error("Board-action capability unavailable.");
+    const recoveryUid = action === 4 ? identity.serial_number : null;
+    const recovery = action === 4 ? readSaveRecovery(recoveryUid) : null;
+    if (recovery?.error) throw new Error(recovery.error);
+    if (recovery && recovery.profile !== null) {
+      throw new Error("Inspect and acknowledge the stored configuration before retrying an unconfirmed save.");
+    }
     if (action === 3 && !confirmed || action === 4 && !confirmed) {
       throw new Error("Confirm the destructive board action before continuing.");
     }
@@ -735,6 +924,7 @@ export class PicoUartWebHid {
     this.update({ phase: "writing", message: "Sending board action", error: null });
     let requestStarted = false;
     let outcomeConfirmed = false;
+    let recoveryPrepared = false;
     try {
       await this.readActionResult();
       const previous = this.state.dashboard.action_result;
@@ -743,16 +933,26 @@ export class PicoUartWebHid {
       }
       const flags = action === 3 ? 1 : action === 4 ? 1 | (profile === 0 ? 0 : 2) : 0;
       const request = encodeActionRequest(action, action === 4 ? profile : 0, flags);
+      if (action === 4) {
+        try {
+          recordSaveRecovery(recoveryUid, profile);
+        } catch (error) {
+          this.update({ dashboard: { ...this.state.dashboard,
+            configuration_save_storage_error: `Browser recovery storage is unavailable: ${error.message}` } });
+          throw error;
+        }
+        recoveryPrepared = true;
+      }
       await this.transfer(() => {
         requestStarted = true;
         return device.sendFeatureReport(20, request);
       }, 3000);
-      const deadline = Date.now() + ACTION_DEADLINE_MS;
-      while (Date.now() < deadline) {
+      const deadline = performance.now() + ACTION_DEADLINE_MS;
+      while (performance.now() < deadline) {
         if (!this.isCurrent(generation, device)) {
           throw new Error("HID connection changed during action; outcome is unconfirmed.");
         }
-        const remaining = deadline - Date.now();
+        const remaining = deadline - performance.now();
         const result = decodeActionResult(await this.readFeature(20, 4, remaining));
         this.update({ dashboard: { ...this.state.dashboard, action_result: result, action_error: null } });
         if (result.action !== action) {
@@ -760,6 +960,21 @@ export class PicoUartWebHid {
         }
         if (result.status === 2) {
           outcomeConfirmed = true;
+          if (action === 4 && recoveryPrepared) {
+            try {
+              clearSaveRecovery(recoveryUid);
+              recoveryPrepared = false;
+              this.update({ dashboard: { ...this.state.dashboard, configuration_save_error: null,
+                configuration_save_unconfirmed: false, configuration_save_profile: null,
+                configuration_save_storage_error: null, configuration_recovery_ready: false } });
+            } catch (error) {
+              recoveryPrepared = false;
+              this.update({ dashboard: { ...this.state.dashboard,
+                configuration_save_error: `Save completed, but its recovery record could not be cleared: ${error.message}`,
+                configuration_save_unconfirmed: true, configuration_save_profile: profile,
+                configuration_save_storage_error: error.message, configuration_recovery_ready: false } });
+            }
+          }
           return result;
         }
         if (result.status !== 1) {
@@ -767,7 +982,7 @@ export class PicoUartWebHid {
           throw new Error(`Board action ${result.status_name.toLowerCase()} (reason ${result.error_reason}).`);
         }
         await new Promise(resolve => globalThis.setTimeout(resolve, Math.min(ACTION_POLL_MS,
-          Math.max(0, deadline - Date.now()))));
+          Math.max(0, deadline - performance.now()))));
       }
       throw new Error("Timed out awaiting board action; outcome is unconfirmed.");
     } catch (error) {
@@ -775,6 +990,30 @@ export class PicoUartWebHid {
         error = new Error(`Board action submission failed; outcome is unconfirmed: ${error.message}`);
       } else if (!requestStarted && !error.message.includes("no command was sent")) {
         error = new Error(`${error.message}; no command was sent.`);
+      }
+      if (action === 4 && recoveryPrepared) {
+        if (requestStarted && !outcomeConfirmed) {
+          if (this.isCurrent(generation, device)) {
+            this.update({ dashboard: { ...this.state.dashboard, configuration_save_error: error.message,
+              configuration_save_unconfirmed: true, configuration_save_profile: profile,
+              configuration_recovery_ready: false } });
+          }
+        } else {
+          let cleanupError = null;
+          try {
+            clearSaveRecovery(recoveryUid);
+          } catch (failure) {
+            cleanupError = failure;
+          }
+          if (this.isCurrent(generation, device)) {
+            this.update({ dashboard: { ...this.state.dashboard,
+              configuration_save_error: cleanupError
+                ? `Save recovery record could not be cleared: ${cleanupError.message}` : null,
+              configuration_save_unconfirmed: false, configuration_save_profile: null,
+              configuration_save_storage_error: cleanupError?.message ?? null,
+              configuration_recovery_ready: false } });
+          }
+        }
       }
       if (this.isCurrent(generation, device)) {
         this.update({ dashboard: { ...this.state.dashboard, action_error: error.message } });
@@ -802,7 +1041,7 @@ export class PicoUartWebHid {
   }
 
   async connect() {
-    if (!this.hid || this.state.phase !== "disconnected") return;
+    if (!this.hid || this.lifecycleBlocked || this.state.phase !== "disconnected") return;
     const generation = ++this.generation;
     this.update({ phase: "connecting", message: "Selecting PicoUart HID interface", error: null,
       dashboard: emptyDashboard() });
@@ -819,9 +1058,21 @@ export class PicoUartWebHid {
       }
       selected = devices[0];
       this.pendingDevice = selected;
-      if (!selected.opened) await selected.open();
+      if (!selected.opened) {
+        await this.runLifecycle(selected, "HID open", () => selected.open(), {
+          onLateResolve: async () => {
+            if (selected.opened) await selected.close();
+          },
+          onLateReject: async () => {
+            if (selected.opened) await selected.close();
+          },
+          retainBlockOnLateFailure: true,
+        });
+      }
       if (generation !== this.generation) {
-        if (selected.opened) await selected.close();
+        if (selected.opened) {
+          await this.runLifecycle(selected, "HID close", () => selected.close());
+        }
         return;
       }
       this.pendingDevice = null;
@@ -834,10 +1085,10 @@ export class PicoUartWebHid {
       this.addInputListener(selected, generation);
       await this.refresh(true);
     } catch (error) {
-      if (selected?.opened) {
+      if (selected?.opened && !this.lifecycleBlocked) {
         this.removeInputListener(selected);
         try {
-          await selected.close();
+          await this.runLifecycle(selected, "HID close", () => selected.close());
         } catch (closeError) {
           error = new Error(`${error.message}; ${closeError.message}`);
         }
@@ -851,7 +1102,7 @@ export class PicoUartWebHid {
   }
 
   async disconnect() {
-    if (!this.hid) return;
+    if (!this.hid || this.lifecycleBlocked) return;
     const device = this.device ?? this.pendingDevice;
     const generation = ++this.generation;
     this.transferToken++;
@@ -859,20 +1110,39 @@ export class PicoUartWebHid {
     this.pendingDevice = device;
     this.removeInputListener(device);
     this.update({ phase: "disconnecting", message: "Closing HID interface" });
-    try {
-      if (device?.opened) await device.close();
+    const finishDisconnect = () => {
       if (generation !== this.generation) return;
       this.pendingDevice = null;
       this.information = null;
       this.ioBlocked = false;
       this.update({ phase: "disconnected", message: "Device disconnected",
         dashboard: emptyDashboard() });
-    } catch (error) {
+    };
+    const restoreConnection = error => {
       if (generation !== this.generation) return;
       this.device = device;
       this.pendingDevice = null;
       this.addInputListener(device, generation);
       this.update({ phase: "connected", message: "Disconnect failed", error: error.message });
+    };
+    try {
+      if (device?.opened) {
+        await this.runLifecycle(device, "HID close", () => device.close(), {
+          onLateResolve: finishDisconnect,
+          onLateReject: error => restoreConnection(error),
+        });
+      }
+      if (generation !== this.generation) return;
+      finishDisconnect();
+    } catch (error) {
+      if (generation !== this.generation) return;
+      if (this.lifecycleBlocked) {
+        this.update({ phase: "disconnecting", message: "Waiting for HID close to complete", error: error.message });
+        return;
+      }
+      this.device = device;
+      this.pendingDevice = null;
+      restoreConnection(error);
     }
   }
 }

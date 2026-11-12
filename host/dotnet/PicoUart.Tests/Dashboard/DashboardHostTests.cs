@@ -94,7 +94,16 @@ public sealed class DashboardHostTests
             var stylesheet = await http.GetStringAsync("/css/dashboard.css");
             Assert.Contains("#toggle-led[data-state=\"off\"]", stylesheet);
             var script = await http.GetStringAsync("/js/dashboard.js");
-            Assert.Contains("const channelRowViews = new Map()", script);
+            Assert.Contains("./view.mjs?v=", script);
+            Assert.Contains("type=\"module\"", page);
+            foreach (var module in new[] { "api", "traffic", "view", "diagnostics" })
+            {
+                using var asset = await http.GetAsync($"/js/{module}.mjs?v=1");
+                asset.EnsureSuccessStatusCode();
+                Assert.Contains(asset.Content.Headers.ContentType?.MediaType,
+                    new[] { "text/javascript", "application/javascript" });
+                Assert.Contains("export ", await asset.Content.ReadAsStringAsync());
+            }
             Assert.NotNull(handler.CookieContainer.GetCookies(http.BaseAddress!)[$"PicoUart.DotNet.Session.{port}"]);
             var token = Regex.Match(page, "[A-F0-9]{64}").Value;
             Assert.Equal(64, token.Length);

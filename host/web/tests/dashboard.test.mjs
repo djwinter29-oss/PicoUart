@@ -4,11 +4,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
+import { runDashboard } from "./dashboard-source.mjs";
 
-const html = readFileSync(new URL("../../web/src/index.html", import.meta.url), "utf8");
-const script = readFileSync(new URL("../../web/src/js/dashboard.js", import.meta.url), "utf8");
+const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
 test("host versions belong to the wordmark rather than the page heading", () => {
-  for (const path of ["../../web/src/index.html", "../src/index.html"]) {
+  for (const path of ["../src/index.html", "../../direct/src/index.html"]) {
     const page = readFileSync(new URL(path, import.meta.url), "utf8");
     assert.match(page, /class="wordmark"[\s\S]*?id="host-version"[\s\S]*?<\/a>/);
     assert.match(page, /<strong>PicoUart<\/strong>\s*<span class="brand-meta"><small>[^<]+<\/small>\s*<span class="host-version"/);
@@ -129,7 +129,7 @@ function page() {
       }, { once: true });
     }),
   });
-  vm.runInContext(script, context);
+  runDashboard(context);
   return {
     context, requests, get intervalMs() { return intervalMs; }, element: id => elements.get(`#${id}`),
     tick: () => interval(),
@@ -162,6 +162,13 @@ async function connect(view) {
   assert.ok(view.requests[0], `Status request missing: ${view.element("status-message").textContent}`);
   assert.equal(view.requests[0].url, "/api/status?board=A");
   await view.respond(snapshot("first"));
+}
+
+async function respondToConfigurationPreflight(view) {
+  const board = view.element("board-select").value;
+  assert.equal(view.requests[0]?.url, `/api/status?board=${board}`);
+  await view.respond(snapshot(board === "B" ? "second" : "first"));
+  assert.equal(view.requests[0]?.url, `/api/configuration?board=${board}`);
 }
 
 test("Python and .NET display all assigned reset causes and preserve unknown codes", async () => {
@@ -551,7 +558,7 @@ test("diagnostics timeout renders a visible read error and permits another reque
   await opening;
 
   assert.match(view.element("diagnostics-content").textContent, /Diagnostics unavailable: Request timed out/);
-  assert.equal(vm.runInContext("diagnosticRequest", view.context), null);
+  assert.equal(view.requests.length, 0);
   view.element("refresh-diagnostics").events.click();
   assert.equal(view.requests.at(-1).url, "/api/diagnostics?board=A");
 });
@@ -626,6 +633,148 @@ test("diagnostics refresh after a reboot with unchanged board identity", async (
   assert.match(view.element("diagnostics-content").textContent, /Diagnostics read 0 s ago/);
 });
 
+test("canceling reboot during fresh-status preflight prevents the reset action", async () => {
+  const view = page();
+  await connect(view);
+  view.element("reset-board").events.click();
+  assert.equal(view.element("reboot-dialog").open, true);
+
+  const confirming = view.element("confirm-reboot").events.click();
+  assert.equal(view.requests[0].url, "/api/status?board=A");
+  view.element("cancel-reboot").events.click();
+  await view.respond(snapshot("first"));
+  await confirming;
+
+  assert.equal(view.element("reboot-dialog").open, false);
+  assert.equal(view.requests.length, 0, "cancel must not submit a reset after preflight completes");
+});
+
+test("canceling save during fresh-status preflight restores controls without submitting", async () => {
+  const view = page();
+  await connect(view);
+  view.element("clock-profile").value = "1";
+  view.element("clock-profile").events.change();
+  view.element("save-configuration").events.click();
+  view.element("overclock-ack").checked = true;
+  view.element("overclock-ack").events.change();
+
+  const confirming = view.element("confirm-configuration").events.click();
+  assert.equal(view.element("clock-profile").disabled, true, "profile must lock during preflight");
+  view.element("cancel-configuration").events.click();
+  await view.respond(snapshot("first"));
+  await confirming;
+
+  assert.equal(view.requests.length, 0, "cancel must not submit a configuration save");
+  assert.equal(view.element("clock-profile").disabled, false);
+  assert.equal(view.element("status-message").textContent, "HID telemetry is live");
+});
+
+test("a new unconfirmed-save warning during preflight blocks the save and opens recovery", async () => {
+  const view = page();
+  await connect(view);
+  view.element("clock-profile").value = "1";
+  view.element("clock-profile").events.change();
+  view.element("save-configuration").events.click();
+  view.element("overclock-ack").checked = true;
+  view.element("overclock-ack").events.change();
+
+  const saving = view.element("confirm-configuration").events.click();
+  const uncertain = snapshot("first");
+  uncertain.configuration_save = null;
+  uncertain.configuration_save_error = "a prior configuration save is unconfirmed";
+  uncertain.configuration_save_unconfirmed = true;
+  await view.respond(uncertain);
+  await saving;
+
+  assert.equal(view.requests.length, 0, "preflight uncertainty must not send another configuration POST");
+  assert.equal(view.element("configuration-dialog").open, false);
+  assert.equal(view.element("configuration-recovery").hidden, false);
+  assert.equal(view.element("save-configuration").disabled, true);
+  assert.match(view.element("status-message").textContent, /inspect the unconfirmed configuration save/i);
+});
+
+test("an explicitly acknowledged outcome permits a retry with the retained warning", async () => {
+  const view = page();
+  await connect(view);
+  const uncertain = snapshot("first");
+  uncertain.configuration_save = null;
+  uncertain.configuration_save_error = "configuration save outcome is unconfirmed";
+  uncertain.configuration_save_unconfirmed = true;
+  view.tick();
+  await view.respond(uncertain);
+  view.element("acknowledge-configuration-outcome").events.click();
+
+  view.element("clock-profile").value = "3";
+  view.element("clock-profile").events.change();
+  view.element("save-configuration").events.click();
+  view.element("overclock-ack").checked = true;
+  view.element("overclock-ack").events.change();
+  const saving = view.element("confirm-configuration").events.click();
+  await view.respond(uncertain);
+
+  assert.equal(view.requests[0]?.url, "/api/configuration?board=A");
+  await view.respond({ ok: true });
+  await saving;
+});
+
+test("an older poll cannot overwrite newer preflight data or invalidate a new confirmation", async () => {
+  const view = page();
+  await connect(view);
+  const pendingPoll = view.tick();
+  const olderRequest = view.requests.shift();
+
+  view.element("reset-board").events.click();
+  const confirming = view.element("confirm-reboot").events.click();
+  view.element("cancel-reboot").events.click();
+  const newer = snapshot("first");
+  newer.runtime.uptime_ms += 10000;
+  await view.respond(newer);
+  await confirming;
+  assert.equal(view.requests.length, 0, "canceling preflight must not submit a reset");
+
+  view.element("reset-board").events.click();
+  const generation = vm.runInContext("deviceGeneration", view.context);
+  const older = snapshot("first");
+  older.runtime.uptime_ms += 5000;
+  olderRequest.resolve({ ok: true, status: 200, json: async () => older });
+  await pendingPoll;
+
+  assert.equal(vm.runInContext("latestData.runtime.uptime_ms", view.context), newer.runtime.uptime_ms);
+  assert.equal(vm.runInContext("deviceGeneration", view.context), generation);
+  assert.equal(view.element("reboot-dialog").open, true);
+});
+
+test("physical-device replacement clears drafts and device-scoped recovery notices", async () => {
+  const view = page();
+  await connect(view);
+  view.element("clock-profile").value = "4";
+  view.element("clock-profile").events.change();
+  view.element("overclock-ack").checked = true;
+
+  const failedAction = view.element("toggle-led").events.click();
+  await view.respond({ error: "LED action outcome is unconfirmed", outcome_unconfirmed: true }, 409);
+  await failedAction;
+  const uncertain = snapshot("first");
+  uncertain.configuration_save = null;
+  uncertain.configuration_save_error = "configuration save outcome is unconfirmed";
+  uncertain.configuration_save_unconfirmed = true;
+  view.tick();
+  await view.respond(uncertain);
+  assert.equal(view.element("configuration-recovery").hidden, false);
+
+  const replacement = snapshot("replacement", 2, 1);
+  view.tick();
+  await view.respond(replacement);
+
+  assert.equal(view.element("clock-profile").value, "1");
+  assert.equal(view.element("overclock-ack").checked, false);
+  assert.equal(view.element("save-configuration").disabled, true);
+  assert.equal(view.element("configuration-recovery").hidden, true);
+  assert.equal(vm.runInContext("boardActionErrors.has('A')", view.context), false);
+  assert.equal(view.element("board-select").children.find(option => option.value === "A").textContent,
+    "PicoUart / REPLACEMENT");
+});
+
 test("uncertain configuration outcome survives healthy polling and keeps save gated", async () => {
   const view = page();
   await connect(view);
@@ -635,6 +784,7 @@ test("uncertain configuration outcome survives healthy polling and keeps save ga
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const saving = view.element("confirm-configuration").events.click();
+  await respondToConfigurationPreflight(view);
   await view.respond({ error: "retry state unavailable", outcome_unconfirmed: true }, 409);
   await saving;
   assert.match(view.element("status-message").textContent, /outcome is unconfirmed/);
@@ -687,6 +837,7 @@ test("structured control failures override status codes and error wording", asyn
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const save = view.element("confirm-configuration").events.click();
+  await respondToConfigurationPreflight(view);
   await view.respond({ error: "save preflight failed", outcome_unconfirmed: false }, 503);
   await save;
   assert.equal(view.element("status-message").textContent, "save preflight failed");
@@ -706,6 +857,7 @@ test("profile selection locks during save and readback completes the submitted p
 
   assert.equal(view.element("clock-profile").disabled, true);
   assert.equal(view.element("save-configuration").disabled, true);
+  await respondToConfigurationPreflight(view);
   await view.respond({ ok: true });
   await saving;
   view.tick();
@@ -727,6 +879,7 @@ test("matching readback suppresses the retained warning until it clears", async 
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const saving = view.element("confirm-configuration").events.click();
+  await respondToConfigurationPreflight(view);
   await view.respond({ error: "save confirmation missing", outcome_unconfirmed: true }, 409);
   await saving;
 
@@ -752,6 +905,7 @@ test("uncertain saves require explicit inspection before another save", async ()
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const saving = view.element("confirm-configuration").events.click();
+  await respondToConfigurationPreflight(view);
   await view.respond({ error: "save confirmation missing", outcome_unconfirmed: true }, 409);
   await saving;
 
@@ -790,6 +944,7 @@ test("configuration timeout preserves uncertainty until the user inspects readba
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const saving = view.element("confirm-configuration").events.click();
+  await respondToConfigurationPreflight(view);
   const request = view.requests[0];
   view.expireTimeouts(30000);
   await saving;
@@ -831,6 +986,7 @@ test("configuration recovery survives board switches until readback or acknowled
   view.element("overclock-ack").checked = true;
   view.element("overclock-ack").events.change();
   const saving = view.element("confirm-configuration").events.click();
+  await respondToConfigurationPreflight(view);
   await view.respond({ error: "save confirmation missing", outcome_unconfirmed: true }, 409);
   await saving;
 

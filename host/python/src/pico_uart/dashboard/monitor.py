@@ -352,6 +352,7 @@ class BoardMonitor:
             with self._lock:
                 if (self._client is client and generation == self._control_generation
                         and not self._configuration_outcome_unconfirmed):
+                    self._snapshot["configuration_save"] = None
                     self._snapshot["configuration_save_error"] = public_error(error)
                     self._snapshot["configuration_save_unconfirmed"] = False
             return

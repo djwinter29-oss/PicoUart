@@ -51,7 +51,9 @@ board.
 Traffic statistics are not raw UART messages. Firmware counters show bytes since MCU boot modulo $2^{32}$, so a
 missing report does not by itself lose totals; it resets the current throughput window. If counters may have wrapped
 more than once between observations, the exact increment is unknowable. A quiet or healthy-looking page alone is not
-evidence that an automated test passed.
+evidence that an automated test passed. The continuity notice can reflect missed/stale reports, invalid intervals, or
+unavailable UART measurements; it signals incomplete observation, not confirmed byte loss, and remains for the current
+connection.
 
 ## Other Commands And Controls
 
@@ -59,7 +61,8 @@ evidence that an automated test passed.
 The capability-gated **Reboot board** control requests a standalone reboot. The **Boot configuration** section saves
 the selected boot-time clock profile; a verified save automatically reboots the board and briefly disconnects USB.
 Close all CDC ports and stop external UART traffic first; non-default clocks require explicit unsafe-overclock
-acknowledgement.
+acknowledgement. The dashboard records an uncertain save in browser session storage; if storage is unavailable it
+continues read-only monitoring but disables saves.
 
 Report 2 provides the stored clock-profile request, pin mapping, capacities, and reset cause. It does not report the
 configuration source, fallback reason, or an active clock profile. Report 3 provides the running system clock; do not

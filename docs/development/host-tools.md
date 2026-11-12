@@ -411,6 +411,23 @@ contract; do not add a second frontend. The [.NET integration tests](../../tests
 shared assets and API behavior. Distribution details belong in the [Python](../../host/python/README.md) and
 [.NET](../../host/dotnet/README.md) guides.
 
+The shared page loads native ES modules; no bundler or generated frontend copy is needed during development:
+
+- [dashboard.js](../../host/web/src/js/dashboard.js): page state, board selection, status polling, and control workflows.
+- [api.mjs](../../host/web/src/js/api.mjs): bounded JSON requests and request timeouts.
+- [traffic.mjs](../../host/web/src/js/traffic.mjs): rate windows, freshness, and counter history.
+- [view.mjs](../../host/web/src/js/view.mjs): display formatting and reusable channel rows.
+- [diagnostics.mjs](../../host/web/src/js/diagnostics.mjs): on-demand dialog reads, cached results, and read age.
+
+Keep module imports explicit. Diagnostics receive current board/selection state through a callback so late responses
+remain isolated from a newly selected board. When changing a module's cache version, update all importers to the same
+URL; the HTML entry also has a cache version. Both hosts package the entire asset tree, including module dependencies.
+Run the shared behavior and presentation checks with:
+
+```sh
+node --test host/web/tests/*.test.mjs host/direct/tests/*.test.mjs
+```
+
 All dashboards hide the header's sample age while reports are fresh. When updates exceed the existing freshness
 threshold, they show `Telemetry stale` with the sample age; a connected board without a sample shows
 `Waiting for telemetry`. Disconnected boards hide the sample-age indicator.

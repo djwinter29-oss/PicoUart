@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
+import { runDashboard } from "../../web/tests/dashboard-source.mjs";
 import { renderDashboard, updateChannelFreshness, updateDiagnosticsAge, updateReportAge } from "../src/js/view.mjs";
 
 class Element {
@@ -25,6 +26,7 @@ class Element {
   get textContent() { return this.text + this.children.map(child => child.textContent).join(""); }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
+  remove() {}
   contains(target) { return this.children.some(child => child === target || child.contains?.(target)); }
   addEventListener(event, callback) { this.events[event] = callback; }
   click() { this.events.click?.(); }
@@ -152,6 +154,14 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     assert.equal(lifecycle.children[0].textContent, "Ready");
     assert.equal(lifecycle.children[0].hidden, false);
     assert.equal(lifecycle.children[1].textContent, "LIVE");
+    const featureErrorDashboard = { ...dashboard, channels: dashboard.channels.map((channel, index) =>
+      index === 0 ? { ...channel, feature_error: "Feature report unavailable" } : channel) };
+    renderDashboard(featureErrorDashboard);
+    assert.equal(lifecycle.children[1].textContent, "LIVE");
+    assert.equal(lifecycle.children[1].title, "Feature snapshot unavailable: Feature report unavailable");
+    assert.equal(document.querySelector("#status-message").textContent,
+      "CDC0 Feature snapshot unavailable: Feature report unavailable");
+    assert.equal(document.querySelector("#status-message").parentElement.dataset.error, "true");
     const cachedDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
       ({ ...channel, uart_measurement_state_name: "Cached" })) };
     renderDashboard(cachedDashboard);
@@ -291,7 +301,7 @@ test("host web updateReportAge keeps telemetry wording", () => {
     fetch: () => new Promise(() => {}),
     window: { setInterval() {}, clearInterval() {} },
   });
-  vm.runInContext(readFileSync(new URL("../../web/src/js/dashboard.js", import.meta.url), "utf8"), context);
+  runDashboard(context);
   context.data = { connected: true, updated_at: "2026-01-01T00:00:00.000Z" };
   context.now = Date.parse("2026-01-01T00:00:00.000Z");
   vm.runInContext("updateReportAge(data, now)", context);
@@ -316,4 +326,101 @@ test("host web updateReportAge keeps telemetry wording", () => {
   context.data.connected = false;
   vm.runInContext("updateReportAge(data, now)", context);
   assert.equal(age.hidden, true);
+});
+
+test("cached or unavailable UART measurements never display a retained UART rate", () => {
+  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+  const document = fixture(html);
+  globalThis.document = document;
+  const channel = {
+    id: 99,
+    channel_state: 2,
+    channel_state_name: "Ready",
+    uart_measurement_state_name: "Cached",
+    baud_rate: 115200,
+    data_bits: 8,
+    parity: "N",
+    stop_bits: 1,
+    counters: { uart_tx: 1000, uart_rx: 0, usb_tx: 1000, usb_rx: 0 },
+    rates: { uart_tx: 1000, uart_rx: 1000, usb_tx: 1000, usb_rx: 1000 },
+    input_updated_at: new Date().toISOString(),
+    feature_updated_at: null,
+  };
+  const dashboard = {
+    connected: true,
+    identity: null,
+    telemetry: null,
+    configuration: null,
+    channels: [channel],
+    channel_diagnostics: [],
+    traffic_incomplete: false,
+  };
+  try {
+    renderDashboard(dashboard);
+    const metrics = document.querySelector("#channel-rows").children[0].children[3].children[0].children;
+    assert.equal(metrics[0].children[1].textContent, "-- KB/s");
+    assert.equal(metrics[2].children[1].textContent, "1.0 KB/s");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("traffic continuity loss remains visible after rate recovery", () => {
+  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+  const document = fixture(html);
+  globalThis.document = document;
+  const channels = Array.from({ length: 6 }, (_, id) => ({
+    id,
+    channel_state: 2,
+    channel_state_name: "Ready",
+    uart_measurement_state_name: "Current",
+    baud_rate: 115200,
+    data_bits: 8,
+    parity: "N",
+    stop_bits: 1,
+    counters: { uart_tx: 0, uart_rx: 0, usb_tx: 0, usb_rx: 0 },
+    rates: { uart_tx: 1000, uart_rx: 1000, usb_tx: 1000, usb_rx: 1000 },
+    input_updated_at: new Date().toISOString(),
+    feature_updated_at: null,
+    traffic_gaps: 1,
+  }));
+  const dashboard = {
+    connected: true,
+    identity: null,
+    telemetry: null,
+    configuration: null,
+    action_result: null,
+    channels,
+    channel_diagnostics: Array(6).fill(null),
+    diagnostics_errors: Array(6).fill(null),
+    traffic_incomplete: true,
+    traffic_gaps: 1,
+    updated_at: null,
+  };
+  try {
+    renderDashboard(dashboard);
+    const warning = document.querySelector("#traffic-continuity-warning");
+    assert.equal(warning.hidden, false);
+    assert.match(warning.textContent, /continuous observation cannot be verified/);
+    renderDashboard({ ...dashboard, traffic_incomplete: false, traffic_gaps: 0 });
+    assert.equal(warning.hidden, true);
+
+    renderDashboard({ ...dashboard, traffic_gaps: 0, channels: channels.map(channel => ({
+      ...channel,
+      uart_measurement_state_name: "Unavailable",
+      rates: { uart_tx: null, uart_rx: null, usb_tx: null, usb_rx: null },
+    })) });
+    assert.equal(warning.hidden, false);
+    assert.match(warning.textContent, /Some input reports, intervals, or UART measurements were unavailable/);
+    assert.doesNotMatch(warning.textContent, /reports were missed|Rates have recovered/i);
+
+    renderDashboard({ ...dashboard, identity: {
+      product_id: 2,
+      product_name: "Unknown product (0x0002)",
+      layout_version: 1,
+    } });
+    assert.equal(document.querySelector("#ram-usage").textContent, "--");
+  } finally {
+    delete globalThis.document;
+  }
 });

@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
+import {
+  fetchJson, STATUS_REQUEST_TIMEOUT_MS, BOARD_SCAN_TIMEOUT_MS, CONTROL_REQUEST_TIMEOUT_MS,
+} from "./api.mjs?v=1";
+import { channelHistory } from "./traffic.mjs?v=1";
+import {
+  formatBytes, uptimeLabel, formatPin, boardIdentityName, deviceUid, resetCauseName, renderChannels,
+} from "./view.mjs?v=1";
+import { createDiagnostics } from "./diagnostics.mjs?v=1";
+import {
+  createControlConfirmation, matchesControlConfirmation, resolveStatusMessage,
+} from "./control-confirmation.mjs?v=1";
+
 const token = document.querySelector('meta[name="csrf-token"]').content;
 const connection = document.querySelector("#connection");
 const channelRows = document.querySelector("#channel-rows");
@@ -17,12 +29,6 @@ const overclockAcknowledgementLabel = document.querySelector("#overclock-acknowl
 const configurationRecovery = document.querySelector("#configuration-recovery");
 const configurationRecoveryMessage = document.querySelector("#configuration-recovery-message");
 const acknowledgeConfigurationOutcomeButton = document.querySelector("#acknowledge-configuration-outcome");
-document.querySelector("#close-diagnostics").addEventListener("click", () => diagnosticsDialog.close());
-document.querySelector("#refresh-diagnostics").addEventListener("click", async () => {
-  invalidateDiagnostics();
-  renderDiagnosticContent(diagnosticsContent, Number(diagnosticsContent.dataset.channel));
-  await loadDiagnostics();
-});
 const actionButtons = [...document.querySelectorAll(".actions button")];
 const boardSelect = document.querySelector("#board-select");
 const rescanButton = document.querySelector("#rescan-boards");
@@ -40,51 +46,25 @@ const configurationRecoveryReadyBoards = new Set();
 let selectionVersion = 0;
 let refreshing = null;
 let statusRequestId = 0;
+let latestAcceptedStatusRequestId = 0;
+let configurationPreflightInProgress = false;
 let scanning = false;
 let scanError = null;
+let deviceGeneration = 0;
+let rebootConfirmation = null;
+let configurationConfirmation = null;
+let configurationConfirmationProfile = null;
 let refreshIntervalMs = 500;
 let refreshTimer = null;
-let diagnosticBoard = null;
-let diagnosticData = null;
-let diagnosticError = null;
-let diagnosticRequest = null;
-const channelHistory = new Map();
-const channelRowViews = new Map();
-const MIN_TRAFFIC_RATE_WINDOW_MS = 1000;
-const TRAFFIC_RATE_WINDOW_MS = 5000;
-const MAX_RATE_ELAPSED_MS = 8000;
-const STATUS_REQUEST_TIMEOUT_MS = 5000;
-const BOARD_SCAN_TIMEOUT_MS = 10000;
-const DIAGNOSTICS_REQUEST_TIMEOUT_MS = 15000;
-const CONTROL_REQUEST_TIMEOUT_MS = 30000;
 let reportSample = null;
 let reportReceivedAt = 0;
 const boardActionErrors = new Map();
-let diagnosticReadAt = null;
-let diagnosticAgeElement = null;
-let diagnosticEpoch = 0;
 
-const directions = [
-  ["UART TX", "uart_tx", true],
-  ["UART RX", "uart_rx", true],
-  ["USB RX", "usb_rx", false],
-  ["USB TX", "usb_tx", false],
-];
-const channelStates = ["closed", "starting", "ready", "configuring", "error"];
-const measurementStates = ["Unavailable", "Current", "Cached"];
-const resetCauses = [
-  "Unknown (not distinguished)", "Power-on", "Watchdog reset", "Software-requested reset", "HardFault recovery",
-  "Power-on or brownout", "Brownout", "RUN-pin reset", "Debugger reset", "User-requested reboot",
-  "Configuration-save reboot",
-];
-const errorReasons = [
-  "None recorded",
-  "Unsupported baud setting",
-  "Unsupported framing",
-  "Backend configuration failed",
-  "Control operation timed out",
-  "Other or unknown configuration error",
-];
+const { buildDiagnosticsCell, invalidateDiagnostics, updateDiagnosticsAge, refreshDiagnostics } = createDiagnostics({
+  diagnosticsDialog,
+  diagnosticsContent,
+  getContext: () => ({ selectedBoard, selectionVersion, latestData }),
+});
 
 function setRefreshInterval(interval) {
   const delay = Number.isFinite(interval) ? Math.max(500, Math.min(1000, interval)) : 500;
@@ -92,32 +72,6 @@ function setRefreshInterval(interval) {
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   refreshIntervalMs = delay;
   refreshTimer = window.setInterval(refresh, delay);
-}
-
-async function fetchJson(url, options, timeoutMs) {
-  const controller = new AbortController();
-  let rejectTimeout;
-  const timeout = new Promise((_, reject) => { rejectTimeout = reject; });
-  const timeoutId = window.setTimeout(() => {
-    controller.abort();
-    rejectTimeout(new Error(`Request timed out after ${timeoutMs} ms`));
-  }, timeoutMs);
-  const request = (async () => {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    return { response, data: await response.json() };
-  })();
-  try {
-    return await Promise.race([request, timeout]);
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
-}
-
-function makeCell(className, text) {
-  const cell = document.createElement("td");
-  if (className) cell.className = className;
-  cell.textContent = text;
-  return cell;
 }
 
 function updateReportAge(data, now = Date.now()) {
@@ -134,49 +88,6 @@ function updateReportAge(data, now = Date.now()) {
   age.textContent = Number.isFinite(sample)
     ? `Telemetry stale · ${seconds} s ago` : "Waiting for telemetry";
   age.dataset.stale = String(stale);
-}
-
-function formatBytes(value) {
-  return Number.isSafeInteger(value) && value >= 0 ? `${value.toLocaleString()} B` : "--";
-}
-
-function uptimeLabel(milliseconds) {
-  const seconds = Math.floor(milliseconds / 1000);
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor(seconds / 3600) % 24;
-  const minutes = Math.floor(seconds / 60) % 60;
-  const remainder = seconds % 60;
-  return `${days ? `${days}d ` : ""}${hours}h ${minutes}m ${remainder}s`;
-}
-
-function formatPin(value) {
-  return Number.isInteger(value) && value >= 0 && value < 255 ? `GP${value}` : "--";
-}
-
-function boardModelName(value) {
-  return ({ 0: "Unknown / unspecified", 1: "Pico", 2: "Pico W", 3: "Pico 2", 4: "Pico 2 W" })[value]
-    ?? (value == null ? "--" : `Unknown board model (${value})`);
-}
-
-function microcontrollerName(value) {
-  if (typeof value === "string") return value;
-  return ({ 1: "RP2040", 2: "RP2350" })[value] ?? (value == null ? "--" : `Unknown MCU (${value})`);
-}
-
-function boardIdentityName(board, microcontroller) {
-  const boardName = boardModelName(board);
-  const mcuName = microcontrollerName(microcontroller);
-  return boardName === "--" || mcuName === "--" ? boardName : `${boardName} (${mcuName})`;
-}
-
-function deviceUid(identity) {
-  const uid = identity?.device_uid ?? identity?.serial_number;
-  if (Array.isArray(uid)) return uid.map(value => Number(value).toString(16).padStart(2, "0")).join("").toUpperCase();
-  return typeof uid === "string" ? uid.toUpperCase() : "--";
-}
-
-function resetCauseName(value) {
-  return resetCauses[value] ?? (value == null ? "--" : `Unknown (${value})`);
 }
 
 function renderStaticConfiguration(data) {
@@ -291,354 +202,167 @@ function updateConfigurationControls(data) {
   const identity = data?.identity;
   const capabilities = identity?.capabilities ?? 0;
   const profile = Number(clockProfile.value);
-  const profileSupported = Number.isInteger(profile) && Boolean((identity?.clock_profile_mask ?? 0) & (1 << profile));
+  clockProfile.disabled = actionBusy || configurationSavePending || !data?.connected
+    || !(capabilities & 4) || !identity?.clock_profile_mask;
+  saveConfigurationButton.hidden = !(capabilities & 4);
+  saveConfigurationButton.disabled = actionBusy || configurationSavePending
+    || !configurationProfileCanBeSaved(data, profile);
+}
+
+function configurationProfileCanBeSaved(data, profile) {
+  const identity = data?.identity;
+  const capabilities = identity?.capabilities ?? 0;
   const storedProfile = data?.configuration?.stored_profile;
   const controlReadFailed = data?.configuration_save == null && Boolean(data?.configuration_save_error)
     && !configurationSaveWarning(data);
   const available = Boolean(data?.connected && (capabilities & 4) && data?.configuration
     && !controlReadFailed && (storedProfile === null || Number.isInteger(storedProfile)));
-  const profileChanged = available && profile !== (storedProfile ?? 0);
-  clockProfile.disabled = actionBusy || configurationSavePending || !data?.connected
-    || !(capabilities & 4) || !identity?.clock_profile_mask;
-  saveConfigurationButton.hidden = !(capabilities & 4);
-  saveConfigurationButton.disabled = actionBusy || configurationSavePending || !available
-    || !profileChanged || !profileSupported;
+  const profileSupported = Number.isInteger(profile)
+    && Boolean((identity?.clock_profile_mask ?? 0) & (1 << profile));
+  return available && profile !== (storedProfile ?? 0) && profileSupported;
 }
 
-function currentRates(channel, now, data) {
-  const id = channel.id;
-  const identity = data.identity?.device_uid ?? data.identity?.serial_number;
-  const uptime = data.runtime?.uptime_ms;
-  const observedInterval = channel.observed_interval_ms;
-  const updatedAt = typeof channel.updated_at === "string" ? Date.parse(channel.updated_at) : NaN;
-  const totals = Object.fromEntries(directions.map(([, key]) => [key, channel.totals?.[key]]));
-  let history = channelHistory.get(id);
-  const readerRestarted = history && Number.isSafeInteger(observedInterval)
-    && Number.isSafeInteger(history.observedInterval) && observedInterval < history.observedInterval;
-  if (!data.connected || !history || history.identity !== identity
-    || (Number.isFinite(uptime) && Number.isFinite(history.uptime) && uptime < history.uptime)
-    || readerRestarted) {
-    history = { identity, uptime, sequence: null, trafficGaps: channel.traffic_gaps ?? 0,
-      observedInterval, updatedAt, sequenceReceivedAt: now, stale: false, usbSamples: [], uartSamples: [] };
-    channelHistory.set(id, history);
+function closeControlConfirmations() {
+  if (configurationDialog.open) configurationDialog.close();
+  if (rebootDialog.open) rebootDialog.close();
+  rebootConfirmation = null;
+  configurationConfirmation = null;
+  configurationConfirmationProfile = null;
+}
+
+function invalidateControlConfirmations() {
+  deviceGeneration++;
+  closeControlConfirmations();
+}
+
+function rejectControlConfirmation(message) {
+  invalidateControlConfirmations();
+  statusMessage.textContent = message;
+  statusMessage.parentElement.dataset.error = "true";
+}
+
+function currentControlConfirmation(action) {
+  return createControlConfirmation(
+    action, selectedBoard, deviceUid(latestData?.identity), deviceGeneration, latestData?.connected === true,
+  );
+}
+
+function controlConfirmationIsCurrent(binding, action) {
+  return matchesControlConfirmation(
+    binding, action, selectedBoard, deviceUid(latestData?.identity), deviceGeneration, latestData?.connected === true,
+  );
+}
+
+async function revalidateControlConfirmation(binding, action) {
+  if (!controlConfirmationIsCurrent(binding, action)) {
+    rejectControlConfirmation("Confirmation canceled: the selected board or device connection changed.");
+    return false;
   }
-  const historyStale = now - history.sequenceReceivedAt > 3000;
-  const observationAdvanced = Number.isSafeInteger(observedInterval)
-    && Number.isSafeInteger(history.observedInterval) && observedInterval > history.observedInterval;
-  const reportAdvanced = Number.isFinite(updatedAt) && Number.isFinite(history.updatedAt)
-    && updatedAt !== history.updatedAt || observationAdvanced;
-  const rebaseline = historyStale && reportAdvanced && Number.isInteger(channel.sequence);
-  const stale = historyStale && !rebaseline;
-  const sequenceDelta = Number.isInteger(channel.sequence) && Number.isInteger(history.sequence)
-    ? (channel.sequence - history.sequence + 65536) % 65536 : null;
-  const newSample = Number.isInteger(channel.sequence)
-    && (history.sequence === null || rebaseline || sequenceDelta > 0 && sequenceDelta < 32768);
-  const sequenceJump = sequenceDelta !== null && sequenceDelta > 1 && sequenceDelta < 32768;
-  const trafficGaps = channel.traffic_gaps ?? history.trafficGaps;
-  const gap = trafficGaps !== history.trafficGaps;
-  const intervalValid = Number.isInteger(channel.interval_ms)
-    && channel.interval_ms > 0 && channel.interval_ms < 65535;
-  const totalsValid = Object.values(totals).every(value =>
-    Number.isInteger(value) && value >= 0 && value <= 0xffffffff);
-  if (rebaseline || stale && !history.stale || gap || newSample && !intervalValid) {
-    history.usbSamples = [];
-    history.uartSamples = [];
+  try {
+    const query = `?board=${encodeURIComponent(binding.boardId)}`;
+    const requestId = ++statusRequestId;
+    const { response, data } = await fetchJson(
+      `/api/status${query}`, { cache: "no-store" }, STATUS_REQUEST_TIMEOUT_MS);
+    if (selectedBoard !== binding.boardId || deviceGeneration !== binding.generation) {
+      rejectControlConfirmation("Confirmation canceled: the selected board or device connection changed.");
+      return false;
+    }
+    let status = data;
+    if (response.ok) {
+      if (!acceptStatus(data, requestId)) status = latestData;
+    } else if (requestId <= latestAcceptedStatusRequestId) {
+      status = latestData;
+    } else {
+      throw new Error(data.error || `Status request failed (${response.status})`);
+    }
+    if (!status) throw new Error("Status is unavailable");
+    const physicalUid = deviceUid(status.identity);
+    if (!status.connected) {
+      rejectControlConfirmation("Confirmation canceled: the selected board is disconnected.");
+      return false;
+    }
+    if (physicalUid === "--") {
+      rejectControlConfirmation("Cannot confirm action: the selected board's physical device UID is unavailable.");
+      return false;
+    }
+    if (physicalUid !== binding.physicalUid) {
+      rejectControlConfirmation("Confirmation canceled: the selected board's physical device UID changed.");
+      return false;
+    }
+    const saveWarning = configurationSaveWarning(status);
+    if (action === "configuration" && saveWarning
+      && acknowledgedConfigurationWarnings.get(binding.boardId) !== saveWarning) {
+      rejectControlConfirmation("Inspect the unconfirmed configuration save outcome before retrying.");
+      return false;
+    }
+    if (!controlConfirmationIsCurrent(binding, action)) {
+      rejectControlConfirmation("Confirmation canceled: the selected board or device connection changed.");
+      return false;
+    }
+    return true;
+  } catch (error) {
+    rejectControlConfirmation(`Cannot verify the selected board before control: ${error.message}`);
+    return false;
   }
-  if (sequenceJump) history.uartSamples = [];
-  if (newSample) {
-    history.sequence = channel.sequence;
-    history.sequenceReceivedAt = now;
-    history.stale = false;
-  } else if (stale) {
-    history.stale = true;
+}
+
+function clearSelectedBoardStateForDeviceChange(data) {
+  configurationProfileDirty = false;
+  configurationSavePending = false;
+  pendingConfigurationProfiles.delete(selectedBoard);
+  uncertainConfigurationBoards.delete(selectedBoard);
+  acknowledgedConfigurationWarnings.delete(selectedBoard);
+  configurationRecoveryStatusFloor.delete(selectedBoard);
+  configurationRecoveryReadyBoards.delete(selectedBoard);
+  boardActionErrors.delete(selectedBoard);
+  overclockAcknowledgement.checked = false;
+
+  const uid = deviceUid(data.identity);
+  const product = data.identity?.product_name;
+  if (typeof product === "string" && uid !== "--") {
+    selectedLabel = `${product} / ${uid}`;
+    const option = [...boardSelect.options].find(item => item.value === selectedBoard);
+    if (option) option.textContent = selectedLabel;
   }
-  if (gap) history.trafficGaps = trafficGaps;
-  const baselineAfterGap = gap && !newSample && history.sequence !== null;
-  if (data.connected && (newSample || baselineAfterGap) && totalsValid && Number.isSafeInteger(observedInterval)) {
-    const sample = { observedInterval, totals };
-    history.usbSamples.push(sample);
-    if (channel.uart_measurement_state === 1) history.uartSamples.push(sample);
-    else history.uartSamples = [];
-    for (const samples of [history.usbSamples, history.uartSamples]) {
-      while (samples.length > 2
-        && samples[1].observedInterval <= observedInterval - TRAFFIC_RATE_WINDOW_MS) samples.shift();
+}
+
+function acceptStatus(data, requestId) {
+  if (requestId <= latestAcceptedStatusRequestId) return false;
+  latestAcceptedStatusRequestId = requestId;
+
+  const previousUid = deviceUid(latestData?.identity);
+  const currentUid = deviceUid(data.identity);
+  const deviceChanged = data.connected && latestData?.connected && previousUid !== currentUid;
+  if (deviceChanged) clearSelectedBoardStateForDeviceChange(data);
+
+  const saveWarning = configurationSaveWarning(data);
+  if (!saveWarning) {
+    acknowledgedConfigurationWarnings.delete(selectedBoard);
+  } else if (acknowledgedConfigurationWarnings.has(selectedBoard)) {
+    const acknowledgedWarning = acknowledgedConfigurationWarnings.get(selectedBoard);
+    if (acknowledgedWarning === null) {
+      acknowledgedConfigurationWarnings.set(selectedBoard, saveWarning);
+    } else if (acknowledgedWarning !== saveWarning) {
+      acknowledgedConfigurationWarnings.delete(selectedBoard);
     }
   }
-  const rates = {};
-  for (const [, key, uart] of directions) {
-    const samples = uart ? history.uartSamples : history.usbSamples;
-    const baseline = samples[0];
-    const latest = samples.at(-1);
-    const elapsed = latest && baseline ? latest.observedInterval - baseline.observedInterval : 0;
-    rates[key] = !stale && elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS && elapsed <= MAX_RATE_ELAPSED_MS
-      ? ((latest.totals[key] - baseline.totals[key]) >>> 0) * 1000 / elapsed : null;
-  }
-  if (Number.isFinite(uptime)) history.uptime = uptime;
-  if (newSample || baselineAfterGap) {
-    if (Number.isSafeInteger(observedInterval)) history.observedInterval = observedInterval;
-    if (Number.isFinite(updatedAt)) history.updatedAt = updatedAt;
-  }
-  const fresh = data.connected && Number.isInteger(history.sequence) && now - history.sequenceReceivedAt <= 3000;
-  return { rates, fresh };
-}
-
-function measurementLabel(value) {
-  return measurementStates[value] ?? "Unknown";
-}
-
-function measurementStatus(value) {
-  const state = measurementLabel(value).toLowerCase();
-  return state === "current" ? "LIVE" : state === "cached" ? "CACHED" : "— Unavailable";
-}
-
-function diagnosticEntry(id) {
-  if (Array.isArray(diagnosticData)) {
-    return diagnosticData.find(item => item?.id === id) ?? diagnosticData[id] ?? null;
-  }
-  if (diagnosticData && typeof diagnosticData === "object") {
-    return diagnosticData[id] ?? diagnosticData.channel_diagnostics?.[id] ?? null;
-  }
-  return null;
-}
-
-function peakValue(bytes, capacity) {
-  const result = formatBytes(bytes);
-  return Number.isSafeInteger(bytes) && Number.isSafeInteger(capacity) && capacity > 0 && bytes <= capacity
-    ? `${result} (${(bytes / capacity * 100).toFixed(1)}%)` : result;
-}
-
-function renderDiagnosticContent(container, id) {
-  container.replaceChildren();
-  diagnosticAgeElement = null;
-  if (!diagnosticData && !diagnosticError) {
-    container.textContent = "Loading channel diagnostics...";
-    return;
-  }
-  if (diagnosticError) {
-    container.textContent = `Diagnostics unavailable: ${diagnosticError}`;
-    return;
-  }
-  diagnosticAgeElement = document.createElement("p");
-  diagnosticAgeElement.className = "diagnostics-age";
-  container.append(diagnosticAgeElement);
-  const diagnostic = diagnosticEntry(id);
-  if (!diagnostic) {
-    const unavailable = document.createElement("p");
-    unavailable.textContent = "Diagnostics unavailable for this channel.";
-    container.append(unavailable);
-    updateDiagnosticsAge();
-    return;
-  }
-  const config = latestData?.configuration ?? {};
-  const uartMeasurementAvailable = diagnostic.uart_measurement_state === 1
-    || diagnostic.uart_measurement_state === 2;
-  const noFaultRecorded = diagnostic.last_fault_uptime_s === 0 && diagnostic.rx_overrun_count === 0
-    && diagnostic.rx_error_count === 0 && diagnostic.last_control_error_reason === 0;
-  const lastFault = noFaultRecorded
-    ? uartMeasurementAvailable ? "None recorded" : "Unavailable"
-    : `${diagnostic.last_fault_uptime_s?.toLocaleString() ?? "--"} s uptime`;
-  const fields = [
-    ["UART measurement", measurementLabel(diagnostic.uart_measurement_state)],
-    ["UART sample age", diagnostic.uart_measurement_state === 0 ? "Unavailable"
-      : diagnostic.uart_sample_age_100ms === 255 ? "At least 25.5 s"
-        : `${(diagnostic.uart_sample_age_100ms / 10).toFixed(1)} s`],
-    ["Known RX bytes dropped", uartMeasurementAvailable ? formatBytes(diagnostic.rx_overrun_count) : "Unavailable"],
-    ["RX controller error observations",
-      uartMeasurementAvailable ? diagnostic.rx_error_count?.toLocaleString() ?? "--" : "Unavailable"],
-    ["Last configuration error", errorReasons[diagnostic.last_control_error_reason]
-      ?? `Unknown (${diagnostic.last_control_error_reason ?? "--"})`],
-    ["Last fault observed", lastFault],
-    ["UART TX ring observed peak since boot", uartMeasurementAvailable
-      ? peakValue(diagnostic.uart_tx_ring_peak_bytes, config.uart_tx_ring_capacity_bytes) : "Unavailable"],
-    ["UART RX ring observed peak since boot", uartMeasurementAvailable
-      ? peakValue(diagnostic.uart_rx_ring_peak_bytes, config.uart_rx_ring_capacity_bytes) : "Unavailable"],
-    ["CDC TX FIFO observed peak since boot", peakValue(
-      diagnostic.cdc_tx_fifo_peak_bytes, config.cdc_tx_fifo_capacity_bytes)],
-    ["CDC RX FIFO observed peak since boot", peakValue(
-      diagnostic.cdc_rx_fifo_peak_bytes, config.cdc_rx_fifo_capacity_bytes)],
-  ];
-  const list = document.createElement("dl");
-  for (const [label, value] of fields) {
-    const term = document.createElement("dt");
-    const detail = document.createElement("dd");
-    term.textContent = label;
-    detail.textContent = value;
-    list.append(term, detail);
-  }
-  container.append(list);
-  updateDiagnosticsAge();
-}
-
-function updateDiagnosticsAge(now = Date.now()) {
-  if (!diagnosticAgeElement || !diagnosticsDialog.open || !Number.isFinite(diagnosticReadAt)) return;
-  const seconds = Math.max(0, Math.floor((now - diagnosticReadAt) / 1000));
-  diagnosticAgeElement.textContent = `Diagnostics read ${seconds} s ago`;
-}
-
-function invalidateDiagnostics() {
-  diagnosticEpoch++;
-  diagnosticBoard = null;
-  diagnosticData = null;
-  diagnosticError = null;
-  diagnosticReadAt = null;
-}
-
-async function loadDiagnostics() {
-  if (!selectedBoard) return;
-  const board = selectedBoard;
-  const selection = selectionVersion;
-  const epoch = diagnosticEpoch;
-  if (diagnosticRequest?.selection === selection && diagnosticRequest.epoch === epoch) {
-    return diagnosticRequest.promise;
-  }
-  const request = { selection, epoch, promise: null };
-  request.promise = (async () => {
-    diagnosticError = null;
-    try {
-      const { response, data: result } = await fetchJson(
-        `/api/diagnostics?board=${encodeURIComponent(board)}`,
-        { cache: "no-store" },
-        DIAGNOSTICS_REQUEST_TIMEOUT_MS,
-      );
-      if (!response.ok) throw new Error(result.error || `Diagnostics request failed (${response.status})`);
-      if (selection !== selectionVersion || epoch !== diagnosticEpoch) return;
-      diagnosticData = result.channel_diagnostics ?? result;
-      diagnosticBoard = board;
-      diagnosticReadAt = Date.now();
-    } catch (error) {
-      if (selection === selectionVersion && epoch === diagnosticEpoch) diagnosticError = error.message;
-    } finally {
-      if (diagnosticRequest === request) diagnosticRequest = null;
-      if (selection === selectionVersion && epoch === diagnosticEpoch) {
-        renderDiagnosticContent(diagnosticsContent, Number(diagnosticsContent.dataset.channel));
-      }
+  if ((!actionBusy || configurationPreflightInProgress)
+    && saveWarning && !acknowledgedConfigurationWarnings.has(selectedBoard)) {
+    if (!uncertainConfigurationBoards.has(selectedBoard)) {
+      uncertainConfigurationBoards.add(selectedBoard);
+      pendingConfigurationProfiles.set(selectedBoard, null);
+      configurationRecoveryStatusFloor.set(selectedBoard, requestId - 1);
     }
-  })();
-  diagnosticRequest = request;
-  return request.promise;
-}
-
-function buildDiagnosticsCell(channel) {
-  const cell = document.createElement("td");
-  const button = document.createElement("button");
-  button.className = "button button-small diagnostics-action";
-  button.type = "button";
-  button.textContent = "Diagnostics";
-  button.disabled = !latestData?.connected;
-  button.addEventListener("click", async () => {
-    diagnosticsDialog.querySelector("h2").textContent = `CDC${channel.id} diagnostics`;
-    diagnosticsContent.dataset.channel = String(channel.id);
-    renderDiagnosticContent(diagnosticsContent, channel.id);
-    diagnosticsDialog.showModal();
-    if (diagnosticBoard !== selectedBoard || (!diagnosticData && !diagnosticError)) await loadDiagnostics();
-  });
-  cell.append(button);
-  return cell;
-}
-
-function createChannelRow(id) {
-  const row = document.createElement("tr");
-  const port = document.createElement("td");
-  const portName = document.createElement("span");
-  portName.className = "port-name";
-  const portIndex = document.createElement("span");
-  portIndex.className = "port-index";
-  portIndex.textContent = String(id + 1).padStart(2, "0");
-  portName.append(portIndex, document.createTextNode(`CDC${id}`));
-  port.append(portName);
-  row.append(port);
-
-  const lifecycle = document.createElement("td");
-  lifecycle.className = "channel-status";
-  const state = document.createElement("span");
-  const measurement = document.createElement("small");
-  measurement.className = "health-flags";
-  const history = document.createElement("small");
-  history.className = "traffic-history";
-  lifecycle.append(state, measurement, history);
-  row.append(lifecycle);
-
-  const configuration = document.createElement("td");
-  configuration.className = "uart-configuration";
-  configuration.title = "Applied baud and framing; GPIO assignments are static board configuration.";
-  const settings = document.createElement("strong");
-  configuration.append(settings);
-  row.append(configuration);
-
-  const traffic = document.createElement("td");
-  traffic.className = "traffic";
-  const metrics = new Map();
-  const metricGrid = document.createElement("div");
-  metricGrid.className = "traffic-metrics";
-  directions.forEach(([label, key]) => {
-    const metric = document.createElement("span");
-    const direction = document.createElement("span");
-    direction.className = "traffic-label";
-    direction.textContent = label;
-    const rate = document.createElement("b");
-    const total = document.createElement("span");
-    total.className = "traffic-total";
-    metric.append(direction, rate, total);
-    metricGrid.append(metric);
-    metrics.set(key, { metric, rate, total });
-  });
-  traffic.append(metricGrid);
-  row.append(traffic);
-
-  const diagnostics = buildDiagnosticsCell({ id });
-  row.append(diagnostics);
-  return { row, configuration, settings, state, measurement, metrics,
-    history, diagnosticsButton: diagnostics.children[0] };
-}
-
-function renderChannels(data) {
-  const channels = Array.isArray(data.channels) ? data.channels : [];
-  const now = Date.now();
-  const activeIds = new Set();
-  channels.forEach(channel => {
-    const id = channel.id;
-    activeIds.add(id);
-    let view = channelRowViews.get(id);
-    if (!view) {
-      view = createChannelRow(id);
-      channelRowViews.set(id, view);
-      channelRows.append(view.row);
-    }
-    const rates = currentRates(channel, now, data);
-    view.settings.textContent = Number.isInteger(channel.baud_rate) && channel.baud_rate > 0
-      ? `${channel.baud_rate.toLocaleString()} ${channel.data_bits}`
-        + `${({ none: "N", odd: "O", even: "E" })[channel.parity] ?? "?"}${channel.stop_bits}`
-      : "--";
-    const stale = !rates.fresh;
-    const stateName = stale ? "unknown" : channelStates[channel.state] ?? channel.state;
-    view.state.className = `state state-${stateName === "error" ? "attention" : stateName}`;
-    view.state.textContent = stateName === "error" ? "Attention" : stateName;
-    view.state.hidden = stale;
-    view.measurement.textContent = stale ? "— Unavailable" : measurementStatus(channel.uart_measurement_state);
-    view.measurement.title = stale ? "Channel snapshot unavailable or stale."
-      : `Measurement status: ${measurementLabel(channel.uart_measurement_state).toLowerCase()}.`;
-    view.history.hidden = channel.traffic_incomplete !== true;
-    view.history.textContent = view.history.hidden ? "" : "History incomplete";
-    view.history.title = `Traffic history includes ${channel.traffic_gaps ?? 0} known gap(s).`;
-    directions.forEach(([label, key, uart]) => {
-      const metric = view.metrics.get(key);
-      metric.rate.textContent = rates.rates?.[key] != null
-        ? `${(rates.rates[key] / 1000).toFixed(1)} KB/s` : "-- KB/s";
-      const sampleAvailable = Number.isInteger(channel.sequence);
-      const uartMeasurementAvailable = !uart
-        || channel.uart_measurement_state === 1 || channel.uart_measurement_state === 2;
-      const total = sampleAvailable && uartMeasurementAvailable ? formatBytes(channel.totals?.[key]) : "--";
-      metric.total.textContent = total;
-      metric.metric.title = `${label}: ${total} since firmware boot, modulo 2^32.`;
-    });
-    view.diagnosticsButton.disabled = !data.connected;
-  });
-  for (const [id, view] of channelRowViews) {
-    if (!activeIds.has(id)) {
-      view.row.remove();
-      channelRowViews.delete(id);
-    }
+    if (selectedBoard !== null) configurationSavePending = true;
   }
+  if (uncertainConfigurationBoards.has(selectedBoard)
+    && requestId > (configurationRecoveryStatusFloor.get(selectedBoard) ?? Number.POSITIVE_INFINITY)) {
+    configurationRecoveryReadyBoards.add(selectedBoard);
+  }
+
+  setRefreshInterval(data.connected ? data.refresh_interval_ms : 500);
+  render(data);
+  return true;
 }
 
 function render(data) {
@@ -650,10 +374,11 @@ function render(data) {
   const previousUid = deviceUid(latestData?.identity);
   const currentUid = deviceUid(data.identity);
   const deviceChanged = data.connected && latestData?.connected
-    && previousUid !== "--" && currentUid !== "--" && previousUid !== currentUid;
+    && previousUid !== currentUid;
   const disconnected = !data.connected && latestData?.connected;
   const diagnosticsInvalidated = reconnected || disconnected || rebooted || deviceChanged;
   if (diagnosticsInvalidated) {
+    invalidateControlConfirmations();
     channelHistory.clear();
     invalidateDiagnostics();
   }
@@ -700,27 +425,29 @@ function render(data) {
   resetButton.hidden = !(capabilities & 2);
   resetButton.disabled = actionBusy || !data.connected;
   updateReportAge(data);
-  renderChannels(data);
+  renderChannels(data, channelRows, buildDiagnosticsCell);
 
   const saveWarning = configurationSaveWarning(data);
   const configurationSaveError = saveWarning
     && acknowledgedConfigurationWarnings.get(selectedBoard) === saveWarning
     ? null : data.configuration_save_error;
-  const message = scanError || data.error || boardActionErrors.get(selectedBoard)?.message
-    || (data.identity_error ? `Device identity unavailable: ${data.identity_error}` : null)
-    || (data.configuration_error ? `Board configuration unavailable: ${data.configuration_error}` : null)
-    || (configurationSaveError ? `Configuration save outcome: ${configurationSaveError}` : null)
-    || (data.runtime_error ? `Runtime telemetry unavailable: ${data.runtime_error}` : null)
-    || (data.led_error ? `LED state unavailable: ${data.led_error}` : null)
-    || (data.connected ? "HID telemetry is live" : "Waiting for a PicoUart HID interface");
+  const message = resolveStatusMessage({
+    boardActionError: boardActionErrors.get(selectedBoard)?.message,
+    scanError,
+    dataError: data.error,
+    identityError: data.identity_error,
+    configurationError: data.configuration_error,
+    configurationSaveError,
+    runtimeError: data.runtime_error,
+    ledError: data.led_error,
+    connected: data.connected,
+  });
   statusMessage.textContent = message;
   statusMessage.parentElement.dataset.error = Boolean(scanError || data.error || data.identity_error
     || boardActionErrors.has(selectedBoard) || data.configuration_error || configurationSaveError
     || data.runtime_error || data.led_error || !data.connected);
   if (diagnosticsInvalidated && diagnosticsDialog.open) {
-    if (!data.connected) diagnosticError = "Board disconnected; reconnect before reading diagnostics.";
-    renderDiagnosticContent(diagnosticsContent, Number(diagnosticsContent.dataset.channel));
-    if (data.connected) loadDiagnostics();
+    refreshDiagnostics(data.connected);
   }
 }
 
@@ -735,33 +462,10 @@ async function refresh() {
       `/api/status${query}`, { cache: "no-store" }, STATUS_REQUEST_TIMEOUT_MS);
     if (version !== selectionVersion) return;
     if (!response.ok) throw new Error(data.error || `Status request failed (${response.status})`);
-    const saveWarning = configurationSaveWarning(data);
-    if (!saveWarning) {
-      acknowledgedConfigurationWarnings.delete(selectedBoard);
-    } else if (acknowledgedConfigurationWarnings.has(selectedBoard)) {
-      const acknowledgedWarning = acknowledgedConfigurationWarnings.get(selectedBoard);
-      if (acknowledgedWarning === null) {
-        acknowledgedConfigurationWarnings.set(selectedBoard, saveWarning);
-      } else if (acknowledgedWarning !== saveWarning) {
-        acknowledgedConfigurationWarnings.delete(selectedBoard);
-      }
-    }
-    if (!actionBusy && saveWarning && !acknowledgedConfigurationWarnings.has(selectedBoard)) {
-      if (!uncertainConfigurationBoards.has(selectedBoard)) {
-        uncertainConfigurationBoards.add(selectedBoard);
-        pendingConfigurationProfiles.set(selectedBoard, null);
-        configurationRecoveryStatusFloor.set(selectedBoard, requestId - 1);
-      }
-      if (selectedBoard !== null) configurationSavePending = true;
-    }
-    if (uncertainConfigurationBoards.has(selectedBoard)
-      && requestId > (configurationRecoveryStatusFloor.get(selectedBoard) ?? Number.POSITIVE_INFINITY)) {
-      configurationRecoveryReadyBoards.add(selectedBoard);
-    }
-    setRefreshInterval(data.connected ? data.refresh_interval_ms : 500);
-    render(data);
+    acceptStatus(data, requestId);
   } catch (error) {
     if (version !== selectionVersion) return;
+    if (requestId < latestAcceptedStatusRequestId) return;
     setRefreshInterval(500);
     if (latestData) render({ ...latestData, error: error.message });
     statusMessage.textContent = error.message;
@@ -773,6 +477,7 @@ async function refresh() {
 
 function selectBoard(id, label) {
   if (selectedBoard === id) return;
+  invalidateControlConfirmations();
   configurationProfileDirty = false;
   configurationSavePending = id !== null && pendingConfigurationProfiles.has(id);
   overclockAcknowledgement.checked = false;
@@ -811,6 +516,7 @@ async function rescanBoards() {
       boardSelect.append(option);
     }
     if (selectedBoard && !result.boards.some(board => board.id === selectedBoard)) {
+      invalidateControlConfirmations();
       const missing = document.createElement("option");
       missing.value = selectedBoard;
       missing.textContent = `${selectedLabel} (not found)`;
@@ -839,9 +545,14 @@ async function rescanBoards() {
   }
 }
 
-async function runAction(action) {
+async function runAction(action, confirmation = null) {
   if (!selectedBoard || actionBusy) return;
-  const board = selectedBoard;
+  if (action === "reset" && !controlConfirmationIsCurrent(confirmation, action)) {
+    rejectControlConfirmation("Confirmation canceled: the selected board or device connection changed.");
+    return;
+  }
+  const board = confirmation?.boardId ?? selectedBoard;
+  if (action === "reset") invalidateControlConfirmations();
   let responseStatus = null;
   let errorResult = null;
   actionBusy = true;
@@ -888,6 +599,13 @@ async function runAction(action) {
 
 function openConfigurationConfirmation() {
   if (saveConfigurationButton.disabled) return;
+  const binding = currentControlConfirmation("configuration");
+  if (!binding) {
+    rejectControlConfirmation(
+      "Cannot confirm action: the selected board is disconnected or its physical device UID is unavailable.",
+    );
+    return;
+  }
   const profile = Number(clockProfile.value);
   const requiresAcknowledgement = profile !== 0;
   const profileLabel = clockProfile.selectedOptions[0]?.textContent ?? "selected clock profile";
@@ -896,75 +614,94 @@ function openConfigurationConfirmation() {
   overclockAcknowledgement.disabled = !requiresAcknowledgement;
   overclockAcknowledgementLabel.hidden = !requiresAcknowledgement;
   confirmConfigurationButton.disabled = requiresAcknowledgement;
+  configurationConfirmation = binding;
+  configurationConfirmationProfile = profile;
   configurationDialog.showModal();
 }
 
 async function saveConfiguration() {
-  const profile = Number(clockProfile.value);
+  const binding = configurationConfirmation;
+  const profile = configurationConfirmationProfile;
   const unsafeOverclock = profile !== 0;
-  if (!configurationDialog.open || !selectedBoard || actionBusy || saveConfigurationButton.disabled
+  if (!configurationDialog.open || !selectedBoard || actionBusy || !Number.isInteger(profile)
     || (unsafeOverclock && !overclockAcknowledgement.checked)) return;
-  const profileLabel = clockProfile.selectedOptions[0]?.textContent ?? "selected clock profile";
-  configurationDialog.close();
-
-  const board = selectedBoard;
   let responseStatus = null;
   let errorResult = null;
-  configurationSavePending = true;
-  pendingConfigurationProfiles.set(board, profile);
   actionBusy = true;
   boardSelect.disabled = true;
   actionButtons.forEach(button => { button.disabled = true; });
   updateConfigurationControls(latestData);
-  statusMessage.textContent = `Saving ${profileLabel} and waiting for board confirmation...`;
-  statusMessage.parentElement.dataset.error = "false";
   try {
-    const { response, data: result } = await fetchJson(
-      `/api/configuration?board=${encodeURIComponent(board)}`,
-      {
-        method: "POST",
-        headers: { "X-CSRF-Token": token, "Content-Type": "application/json" },
-        body: JSON.stringify({ profile, unsafe_overclock: unsafeOverclock }),
-      },
-      CONTROL_REQUEST_TIMEOUT_MS,
-    );
-    if (!response.ok) {
-      responseStatus = response.status;
-      errorResult = result;
-      throw new Error(result.error || `Configuration save failed (${response.status})`);
+    configurationPreflightInProgress = true;
+    const preflightValid = await revalidateControlConfirmation(binding, "configuration");
+    configurationPreflightInProgress = false;
+    if (!preflightValid) return;
+    if (!configurationDialog.open || configurationConfirmation !== binding) return;
+    if (profile !== Number(clockProfile.value) || !configurationProfileCanBeSaved(latestData, profile)
+      || (unsafeOverclock && !overclockAcknowledgement.checked)) {
+      rejectControlConfirmation("Configuration changed; review and reopen the save confirmation.");
+      return;
     }
-    configurationProfileDirty = true;
+    const profileLabel = clockProfile.selectedOptions[0]?.textContent ?? "selected clock profile";
+    configurationDialog.close();
+    configurationConfirmation = null;
+    configurationConfirmationProfile = null;
+    invalidateControlConfirmations();
+
+    const board = binding.boardId;
     configurationSavePending = true;
-    uncertainConfigurationBoards.delete(board);
-    acknowledgedConfigurationWarnings.delete(board);
-    configurationRecoveryStatusFloor.delete(board);
-    configurationRecoveryReadyBoards.delete(board);
-    if (boardActionErrors.get(board)?.action === "configuration") boardActionErrors.delete(board);
-    statusMessage.textContent = `Saved ${profileLabel}; board is rebooting.`;
+    pendingConfigurationProfiles.set(board, profile);
+    statusMessage.textContent = `Saving ${profileLabel} and waiting for board confirmation...`;
     statusMessage.parentElement.dataset.error = "false";
-  } catch (error) {
-    const uncertain = typeof errorResult?.outcome_unconfirmed === "boolean"
-      ? errorResult.outcome_unconfirmed
-      : responseStatus === null || responseStatus >= 500;
-    const message = uncertain
-      ? `Configuration save outcome is unconfirmed; reconnect and inspect before retrying. ${error.message}`
-      : error.message;
-    configurationSavePending = uncertain;
-    if (uncertain) uncertainConfigurationBoards.add(board);
-    else pendingConfigurationProfiles.delete(board);
-    if (uncertain) {
+    try {
+      const { response, data: result } = await fetchJson(
+        `/api/configuration?board=${encodeURIComponent(board)}`,
+        {
+          method: "POST",
+          headers: { "X-CSRF-Token": token, "Content-Type": "application/json" },
+          body: JSON.stringify({ profile, unsafe_overclock: unsafeOverclock }),
+        },
+        CONTROL_REQUEST_TIMEOUT_MS,
+      );
+      if (!response.ok) {
+        responseStatus = response.status;
+        errorResult = result;
+        throw new Error(result.error || `Configuration save failed (${response.status})`);
+      }
+      configurationProfileDirty = true;
+      configurationSavePending = true;
+      uncertainConfigurationBoards.delete(board);
       acknowledgedConfigurationWarnings.delete(board);
-      configurationRecoveryStatusFloor.set(board, statusRequestId);
-      configurationRecoveryReadyBoards.delete(board);
-    } else {
       configurationRecoveryStatusFloor.delete(board);
       configurationRecoveryReadyBoards.delete(board);
-      uncertainConfigurationBoards.delete(board);
+      if (boardActionErrors.get(board)?.action === "configuration") boardActionErrors.delete(board);
+      statusMessage.textContent = `Saved ${profileLabel}; board is rebooting.`;
+      statusMessage.parentElement.dataset.error = "false";
+    } catch (error) {
+      const uncertain = typeof errorResult?.outcome_unconfirmed === "boolean"
+        ? errorResult.outcome_unconfirmed
+        : responseStatus === null || responseStatus >= 500;
+      const message = uncertain
+        ? `Configuration save outcome is unconfirmed; reconnect and inspect before retrying. ${error.message}`
+        : error.message;
+      configurationSavePending = uncertain;
+      if (uncertain) uncertainConfigurationBoards.add(board);
+      else pendingConfigurationProfiles.delete(board);
+      if (uncertain) {
+        acknowledgedConfigurationWarnings.delete(board);
+        configurationRecoveryStatusFloor.set(board, statusRequestId);
+        configurationRecoveryReadyBoards.delete(board);
+      } else {
+        configurationRecoveryStatusFloor.delete(board);
+        configurationRecoveryReadyBoards.delete(board);
+        uncertainConfigurationBoards.delete(board);
+      }
+      boardActionErrors.set(board, { action: "configuration", message });
+      statusMessage.textContent = message;
+      statusMessage.parentElement.dataset.error = "true";
     }
-    boardActionErrors.set(board, { action: "configuration", message });
-    statusMessage.textContent = message;
-    statusMessage.parentElement.dataset.error = "true";
   } finally {
+    configurationPreflightInProgress = false;
     actionBusy = false;
     boardSelect.disabled = !boardSelect.value;
     rescanButton.disabled = scanning;
@@ -1004,13 +741,28 @@ function acknowledgeConfigurationOutcome() {
 
 document.querySelector("#toggle-led").addEventListener("click", () => runAction("toggle-led"));
 document.querySelector("#reset-board").addEventListener("click", () => {
-  if (!actionBusy && selectedBoard) rebootDialog.showModal();
+  if (actionBusy || !selectedBoard) return;
+  const binding = currentControlConfirmation("reset");
+  if (!binding) {
+    rejectControlConfirmation(
+      "Cannot confirm action: the selected board is disconnected or its physical device UID is unavailable.",
+    );
+    return;
+  }
+  rebootConfirmation = binding;
+  rebootDialog.showModal();
 });
-document.querySelector("#cancel-reboot").addEventListener("click", () => rebootDialog.close());
-document.querySelector("#confirm-reboot").addEventListener("click", () => {
-  if (!rebootDialog.open || actionBusy || !selectedBoard) return;
+document.querySelector("#cancel-reboot").addEventListener("click", () => {
   rebootDialog.close();
-  runAction("reset");
+  rebootConfirmation = null;
+});
+document.querySelector("#confirm-reboot").addEventListener("click", async () => {
+  const binding = rebootConfirmation;
+  if (!rebootDialog.open || actionBusy || !await revalidateControlConfirmation(binding, "reset")) return;
+  if (!rebootDialog.open || rebootConfirmation !== binding) return;
+  rebootDialog.close();
+  rebootConfirmation = null;
+  runAction("reset", binding);
 });
 clockProfile.addEventListener("change", () => {
   configurationProfileDirty = true;
@@ -1018,7 +770,11 @@ clockProfile.addEventListener("change", () => {
   updateConfigurationControls(latestData);
 });
 saveConfigurationButton.addEventListener("click", openConfigurationConfirmation);
-document.querySelector("#cancel-configuration").addEventListener("click", () => configurationDialog.close());
+document.querySelector("#cancel-configuration").addEventListener("click", () => {
+  configurationDialog.close();
+  configurationConfirmation = null;
+  configurationConfirmationProfile = null;
+});
 confirmConfigurationButton.addEventListener("click", saveConfiguration);
 acknowledgeConfigurationOutcomeButton.addEventListener("click", acknowledgeConfigurationOutcome);
 overclockAcknowledgement.addEventListener("change", () => {

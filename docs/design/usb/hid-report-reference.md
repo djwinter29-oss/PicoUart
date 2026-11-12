@@ -433,8 +433,15 @@ Malformed/unsupported SET requests publish their rejection unless an in-flight o
   cancel, or postpone it. Completed means ready to reboot, not proof of a successful subsequent boot.
 - Timeout/disconnect means unconfirmed, not cancelled or definitely failed. Never automatically retry reboot/save.
   Reconnect and inspect boot configuration. Reconnection alone does not prove a particular request caused reboot.
+- The Direct Dashboard records an unconfirmed save by validated board UID. On reconnect, it requires a fresh report 2
+  read and explicit user acknowledgement before allowing another save; this is recovery guidance, not proof of which
+  request produced the stored profile.
 - Without request IDs, delayed or repeated requests can execute again after the protected operation ends.
   No exactly-once guarantee or multi-client correlation is provided. The host must not replay old writes.
+
+WebHID open/close timeouts do not cancel browser operations. Keep reconnect disabled while the native operation is still
+pending; if an open completes late, close the interface before allowing another connection. If that cleanup fails,
+unplug the board before retrying.
 
 ## Reports 10-15: Channel Snapshots
 

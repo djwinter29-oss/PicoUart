@@ -42,6 +42,12 @@ function fixture(secure = true, hid = {}) {
       this.calls.push(["save-configuration", profile, unsafeOverclock]);
       return this.saveConfigurationResult;
     }
+    acknowledgeConfigurationRecovery() {
+      this.calls.push("acknowledge-configuration-recovery");
+      this.state.dashboard.configuration_save_unconfirmed = false;
+      this.state.dashboard.configuration_recovery_ready = false;
+      this.render(this.state);
+    }
     reboot(confirmed) { this.calls.push(["reboot", confirmed]); }
     clearConfigurationSaveMessage() { this.state.configurationSaveMessage = ""; }
     phase(phase, error = null) {
@@ -174,6 +180,58 @@ test("Save & Reboot stays disabled until the selected profile differs from its b
   assert.equal(saveButton.disabled, true);
 });
 
+test("profile hydration waits for configuration readback and preserves user edits", () => {
+  const { client, get } = fixture();
+  client.state.dashboard = {
+    identity: { capabilities: 4, clock_profile_mask: 31 },
+    configuration: null,
+    channels: Array.from({ length: 6 }, () => ({
+      channel_state: 0,
+      input_updated_at: new Date().toISOString(),
+    })),
+  };
+  client.state.phase = "connected";
+  client.render(client.state);
+
+  const profile = get("configuration-profile");
+  const saveButton = get("save-configuration");
+  assert.equal(profile.value, "0");
+  assert.equal(saveButton.disabled, true);
+
+  client.state.dashboard.configuration = { stored_profile: 2 };
+  client.render(client.state);
+  assert.equal(profile.value, "2");
+  assert.equal(saveButton.disabled, true);
+
+  profile.value = "1";
+  profile.change();
+  assert.equal(saveButton.disabled, false);
+  client.state.dashboard.configuration = { stored_profile: 3 };
+  client.render(client.state);
+  assert.equal(profile.value, "1");
+  assert.equal(saveButton.disabled, false);
+});
+
+test("unavailable recovery storage keeps monitoring visible and gates configuration saves", () => {
+  const { client, get } = fixture();
+  client.state.dashboard = {
+    identity: { capabilities: 4, clock_profile_mask: 31 },
+    configuration: { stored_profile: 2 },
+    configuration_save_storage_error: "Browser storage is unavailable",
+    channels: Array.from({ length: 6 }, () => ({
+      channel_state: 0,
+      input_updated_at: new Date().toISOString(),
+    })),
+  };
+  client.state.phase = "connected";
+  client.render(client.state);
+
+  assert.equal(get("configuration-profile").disabled, false);
+  assert.equal(get("save-configuration").disabled, true);
+  assert.equal(get("configuration-message").textContent, "Browser storage is unavailable");
+  assert.equal(get("configuration-message").dataset.error, "true");
+});
+
 test("Save & Reboot never reports success without a confirmed completion result", async () => {
   const { client, get } = fixture();
   client.state.dashboard = {
@@ -197,6 +255,41 @@ test("Save & Reboot never reports success without a confirmed completion result"
   assert.match(get("configuration-message").textContent, /confirmed completion; outcome is unconfirmed/);
   assert.doesNotMatch(get("configuration-message").textContent, /^Saved/);
   assert.equal(get("configuration-message").dataset.error, "true");
+});
+
+test("uncertain saves require a fresh readback and explicit acknowledgement before retry", () => {
+  const { client, get } = fixture();
+  client.state.dashboard = {
+    identity: { capabilities: 4, clock_profile_mask: 31, serial_number: "0123456789ABCDEF" },
+    configuration: { stored_profile: 2 },
+    configuration_save_unconfirmed: true,
+    configuration_save_profile: 1,
+    configuration_recovery_ready: false,
+    channels: Array.from({ length: 6 }, () => ({
+      channel_state: 0,
+      input_updated_at: new Date().toISOString(),
+    })),
+  };
+  client.state.phase = "connected";
+  client.render(client.state);
+
+  const profile = get("configuration-profile");
+  profile.value = "1";
+  profile.change();
+  assert.equal(get("save-configuration").disabled, true);
+  assert.equal(get("configuration-recovery").hidden, false);
+  assert.equal(get("configuration-recovery-message").textContent,
+    "Previous save for 150 MHz is unconfirmed. Inspect the current stored profile (200 MHz).");
+  assert.equal(get("acknowledge-configuration-recovery").disabled, true);
+
+  client.state.dashboard.configuration_recovery_ready = true;
+  client.render(client.state);
+  const acknowledge = get("acknowledge-configuration-recovery");
+  assert.equal(acknowledge.disabled, false);
+  acknowledge.click();
+  assert.deepEqual(client.calls, ["acknowledge-configuration-recovery"]);
+  assert.equal(get("configuration-recovery").hidden, true);
+  assert.equal(get("save-configuration").disabled, false);
 });
 
 test("configuration read failures disable Save and remain visible without the removed summary", () => {
