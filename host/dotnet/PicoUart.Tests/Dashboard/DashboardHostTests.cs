@@ -74,8 +74,11 @@ public sealed class DashboardHostTests
         var output = process.StandardOutput.ReadToEndAsync();
         var errors = process.StandardError.ReadToEndAsync();
         using var handler = new HttpClientHandler { CookieContainer = new CookieContainer() };
-        using var http = new HttpClient(handler) { BaseAddress = new($"http://127.0.0.1:{port}"),
-            Timeout = TimeSpan.FromSeconds(5) };
+        using var http = new HttpClient(handler)
+        {
+            BaseAddress = new($"http://127.0.0.1:{port}"),
+            Timeout = TimeSpan.FromSeconds(5)
+        };
         handler.CookieContainer.Add(http.BaseAddress!, new Cookie($"PicoUart.Session.{port}", "legacy-cookie"));
         handler.CookieContainer.Add(http.BaseAddress!, new Cookie($"PicoUart.Python.Session.{port}", "python-cookie"));
         try
@@ -198,6 +201,7 @@ public sealed class DashboardHostTests
             Assert.Equal((byte)1, action.RootElement.GetProperty("action").GetByte());
             Assert.Equal((byte)2, action.RootElement.GetProperty("status").GetByte());
             Assert.Equal(boardId, dashboard.LastBoardId);
+            Assert.True(dashboard.LastActionToken.CanBeCanceled);
 
             using var saveContent = new StringContent(
                 "{\"profile\":0,\"unsafe_overclock\":false}", Encoding.UTF8, "application/json");
@@ -208,6 +212,7 @@ public sealed class DashboardHostTests
             Assert.Equal((byte)2, save.RootElement.GetProperty("status").GetByte());
             Assert.Equal(boardId, dashboard.LastBoardId);
             Assert.Equal((uint)0, dashboard.SavedProfile);
+            Assert.True(dashboard.LastSaveToken.CanBeCanceled);
 
             dashboard.ActionError = new ControlOutcomeUnconfirmedException(
                 "command outcome is unconfirmed; do not retry; reconnect and verify board state",
@@ -244,14 +249,41 @@ public sealed class DashboardHostTests
         }
     }
 
+    [Theory]
+    [InlineData(false, HttpStatusCode.ServiceUnavailable)]
+    [InlineData(true, HttpStatusCode.GatewayTimeout)]
+    public async Task DiagnosticsRouteReturnsAnExplicitDeviceFailure(bool timeout, HttpStatusCode expected)
+    {
+        var dashboard = new FakeDashboardBoards
+        {
+            DiagnosticsError = timeout
+                ? new TimeoutException("diagnostics timed out")
+                : new IOException("diagnostics acquisition failed")
+        };
+        await using var app = await DashboardHost.CreateApplicationAsync(0, dashboard);
+        await app.StartAsync();
+        using var http = new HttpClient { BaseAddress = new(app.Urls.Single()) };
+        try
+        {
+            using var response = await http.GetAsync("/api/diagnostics?board=test-board");
+            Assert.Equal(expected, response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(dashboard.DiagnosticsError.Message, body.RootElement.GetProperty("error").GetString());
+        }
+        finally { await app.StopAsync(); }
+    }
+
     private sealed class FakeDashboardBoards : IDashboardBoards
     {
         private readonly DashboardSnapshot snapshot = new();
 
         public string? LastBoardId { get; private set; }
+        public CancellationToken LastActionToken { get; private set; }
+        public CancellationToken LastSaveToken { get; private set; }
         public uint? SavedProfile { get; private set; }
         public Exception? ActionError { get; set; }
         public Exception? SaveError { get; set; }
+        public Exception? DiagnosticsError { get; set; }
 
         public DashboardBoardList Boards() => new([], null, []);
 
@@ -261,17 +293,21 @@ public sealed class DashboardHostTests
             return JsonSerializer.Serialize(snapshot, Protocol.JsonOptions);
         }
 
-        public BoardControlStatus Action(string? boardId, string action)
+        public BoardControlStatus Action(
+            string? boardId, string action, CancellationToken cancellationToken = default)
         {
             LastBoardId = boardId;
+            LastActionToken = cancellationToken;
             if (ActionError is not null) throw ActionError;
             snapshot.ApplyAction(new(action == "toggle-led" ? (byte)1 : (byte)3, 2, 0));
             return snapshot.Control!;
         }
 
-        public BoardControlStatus SaveConfiguration(string? boardId, uint profile, bool unsafeOverclock)
+        public BoardControlStatus SaveConfiguration(
+            string? boardId, uint profile, bool unsafeOverclock, CancellationToken cancellationToken = default)
         {
             LastBoardId = boardId;
+            LastSaveToken = cancellationToken;
             if (SaveError is not null) throw SaveError;
             SavedProfile = profile;
             snapshot.ApplyAction(new(4, 2, 0));
@@ -280,7 +316,11 @@ public sealed class DashboardHostTests
             return snapshot.Control!;
         }
 
-        public string DiagnosticsJson(string? boardId) => "[]";
+        public string DiagnosticsJson(string? boardId)
+        {
+            if (DiagnosticsError is not null) throw DiagnosticsError;
+            return "[]";
+        }
     }
 
     private sealed class ChunkedContent(byte[] payload) : HttpContent

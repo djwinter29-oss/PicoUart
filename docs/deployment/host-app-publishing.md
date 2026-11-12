@@ -16,6 +16,14 @@ modes bypass the full cross-project gate but still run scoped checks and remain 
 The [Publish .NET Packages workflow](../../.github/workflows/publish-dotnet.yml) is called by Release after host
 validation. It builds self-contained archives, verifies extraction, native CLI startup, and version metadata, and
 returns archives and per-target checksums for the automatically published release. It does not create its own GitHub Release.
+The extracted archive also runs [the host smoke check](../../tools/release/check-dotnet-host.py): dashboard startup,
+canonical static assets, empty status, session/CSRF checks, and graceful shutdown. These probes never enumerate or
+control attached boards. From the repository, point the check at an archive extracted outside the checkout:
+
+```sh
+python3 tools/release/check-dotnet-host.py /path/to/extracted-host
+```
+
 The [distribution guide](host-app-distribution.md#net-downloads) owns supported targets and installation boundaries.
 
 For an independent packaging test:

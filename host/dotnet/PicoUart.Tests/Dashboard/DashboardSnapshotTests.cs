@@ -8,7 +8,7 @@ using Xunit;
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class DashboardModelsTests
+public sealed class DashboardSnapshotTests
 {
     [Fact]
     public void StatusKeepsActionResultsSeparateAndDerivesOverflowCountsFromDiagnostics()
@@ -59,7 +59,32 @@ public sealed class DashboardModelsTests
         Assert.Equal(750, snapshot.RefreshIntervalMs);
         Assert.Equal(750ul, snapshot.Channels[0].ObservedIntervalMs);
         Assert.Equal(850d, snapshot.Channels[0].Totals.UartTx);
-        Assert.Equal(1000d, snapshot.Channels[0].Traffic.UartTx);
+        Assert.Equal(750d, snapshot.Channels[0].Traffic.UartTx);
+    }
+
+    [Fact]
+    public void PopulatedSnapshotsMatchTheSharedPythonContract()
+    {
+        using var cases = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "host-input-cases.json")));
+        foreach (var testCase in cases.RootElement.EnumerateArray())
+        {
+            var snapshot = new DashboardSnapshot();
+            foreach (var source in testCase.GetProperty("samples").EnumerateArray())
+                snapshot.Apply(Sample(source.GetProperty("sequence").GetUInt16(),
+                    source.GetProperty("interval_ms").GetUInt16(), source.GetProperty("uart_tx").GetUInt32()) with
+                {
+                    UartRxBytes = source.GetProperty("uart_rx").GetUInt32(),
+                    CdcTxBytes = source.GetProperty("usb_tx").GetUInt32(),
+                    CdcRxBytes = source.GetProperty("usb_rx").GetUInt32(),
+                    UartMeasurementState = source.TryGetProperty("uart_measurement_state", out var state)
+                        ? state.GetByte() : (byte)1
+                });
+            using var actual = JsonDocument.Parse(JsonSerializer.Serialize(snapshot.Channels[0], Protocol.JsonOptions));
+            foreach (var expected in testCase.GetProperty("expected").EnumerateObject())
+                Assert.True(JsonElement.DeepEquals(expected.Value, actual.RootElement.GetProperty(expected.Name)),
+                    $"{testCase.GetProperty("name").GetString()}: {expected.Name}");
+        }
     }
 
     [Fact]
@@ -151,8 +176,27 @@ public sealed class DashboardModelsTests
         snapshot.Apply(Sample(1, 500, 100));
         snapshot.Channels[0].LastInputTimestamp -= 4L * System.Diagnostics.Stopwatch.Frequency;
         snapshot.MarkStale();
+        var updatedAt = snapshot.Channels[0].UpdatedAt;
+        snapshot.ApplyFeature(Sample(2, 500, 200));
+        snapshot.ApplyFeature(Sample(3, 500, 300));
+        snapshot.MarkStale();
         Assert.Equal("unknown", snapshot.Channels[0].State);
+        Assert.Null(snapshot.Channels[0].ChannelState);
+        Assert.Null(snapshot.Channels[0].CdcOpen);
+        Assert.Null(snapshot.Channels[0].UartMeasurementState);
+        Assert.Null(snapshot.Channels[0].BaudRate);
         Assert.True(snapshot.Channels[0].TrafficIncomplete);
+        Assert.Equal(1, snapshot.Channels[0].TrafficGaps);
+        Assert.Equal((ushort)1, snapshot.Channels[0].Sequence);
+        Assert.Equal(updatedAt, snapshot.Channels[0].UpdatedAt);
+        Assert.Equal(100d, snapshot.Channels[0].Totals.UartTx);
+
+        snapshot.Apply(Sample(0, 500, 300));
+        Assert.Equal("ready", snapshot.Channels[0].State);
+        Assert.True(snapshot.Channels[0].CdcOpen);
+        Assert.Null(snapshot.Channels[0].Traffic.UartTx);
+        snapshot.Apply(Sample(1, 750, 450));
+        Assert.Equal(150d, snapshot.Channels[0].Traffic.UartTx);
     }
 
     private static ChannelStatus Sample(ushort sequence, ushort interval, uint uartTx) =>

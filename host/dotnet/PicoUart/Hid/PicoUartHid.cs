@@ -6,7 +6,7 @@ using PicoUart.Wire;
 
 namespace PicoUart.Hid;
 
-public sealed partial class PicoUartHid : IDisposable
+public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
 {
     private readonly HidStream stream;
     private readonly HidStreamLifetime streamLifetime;
@@ -16,6 +16,16 @@ public sealed partial class PicoUartHid : IDisposable
     private ConfigurationStatus? configuration;
     private bool disposed;
     private bool transferUnconfirmed;
+
+    internal PicoUartHid(HidStream stream, BoardIdentity identity)
+    {
+        this.stream = stream;
+        this.identity = identity;
+        devicePath = stream.Device.DevicePath;
+        streamLifetime = new(stream.Dispose, devicePath);
+        stream.ReadTimeout = 250;
+        stream.WriteTimeout = 3000;
+    }
 
     public PicoUartHid(string? serialNumber = null, string? devicePath = null)
     {

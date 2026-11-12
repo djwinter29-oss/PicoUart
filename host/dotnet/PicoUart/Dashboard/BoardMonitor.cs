@@ -2,17 +2,31 @@
 // Copyright (c) 2026 Ji Dong
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using PicoUart.Hid;
 using PicoUart.Wire;
 
 namespace PicoUart.Dashboard;
 
-public sealed class DashboardService(string? serialNumber, string? devicePath) : BackgroundService
+public sealed class BoardMonitor : BackgroundService
 {
+    private static readonly TimeSpan ControlQueueTimeout = TimeSpan.FromSeconds(5);
     private readonly object gate = new();
+    private readonly SemaphoreSlim controlGate = new(1, 1);
+    private readonly Func<PicoUartHid> connect;
+    private readonly ILogger<BoardMonitor> logger;
     private DashboardSnapshot snapshot = new();
     private PicoUartHid? client;
     private string? unconfirmedConfigurationSaveError;
+
+    public BoardMonitor(string? serialNumber, string? devicePath, ILogger<BoardMonitor>? logger = null)
+        : this(() => new PicoUartHid(serialNumber, devicePath), logger) { }
+
+    internal BoardMonitor(Func<PicoUartHid> connect, ILogger<BoardMonitor>? logger = null)
+    {
+        this.connect = connect;
+        this.logger = logger ?? NullLogger<BoardMonitor>.Instance;
+    }
 
     public string SnapshotJson()
     {
@@ -23,107 +37,129 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
         }
     }
 
-    public BoardControlStatus Action(string action)
+    public BoardControlStatus Action(string action, CancellationToken cancellationToken = default)
     {
-        var connection = Connection();
+        WaitForControl(cancellationToken);
         try
         {
-            var result = action switch
+            cancellationToken.ThrowIfCancellationRequested();
+            var connection = Connection();
+            try
             {
-                "toggle-led" => connection.ToggleLed(),
-                "reset" => connection.ResetBoard(),
-                _ => throw new ArgumentException("unknown board action", nameof(action))
-            };
-            lock (gate)
-                if (ReferenceEquals(client, connection)) snapshot.ApplyAction(result);
-            if (action == "toggle-led") ReadTelemetry(connection);
-            return ToControlStatus(result);
-        }
-        catch (Exception error)
-        {
-            lock (gate)
-            {
-                if (ReferenceEquals(client, connection))
+                var result = action switch
                 {
-                    if (connection.LastActionResult is not null)
-                        snapshot.ApplyAction(connection.LastActionResult);
-                    if (action == "toggle-led" && error is ControlOutcomeUnconfirmedException)
-                    {
-                        snapshot.Led = null;
-                        snapshot.LedError = error.Message;
-                    }
-                    else if (action == "toggle-led" && connection.LastActionResult is null)
-                        snapshot.LedError = error.Message;
-                }
+                    "toggle-led" => connection.ToggleLed(cancellationToken),
+                    "reset" => connection.ResetBoard(cancellationToken),
+                    _ => throw new ArgumentException("unknown board action", nameof(action))
+                };
+                lock (gate)
+                    if (ReferenceEquals(client, connection)) snapshot.ApplyAction(result);
+                if (action == "toggle-led") ReadTelemetry(connection);
+                return ToControlStatus(result);
             }
-            throw;
+            catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
+            {
+                var result = error switch
+                {
+                    ControlRequestRejectedException rejected => rejected.Result,
+                    ControlOutcomeUnconfirmedException unconfirmed => unconfirmed.Result,
+                    _ => null
+                };
+                lock (gate)
+                {
+                    if (ReferenceEquals(client, connection))
+                    {
+                        if (result is not null) snapshot.ApplyAction(result);
+                        if (action == "toggle-led" && error is ControlOutcomeUnconfirmedException)
+                        {
+                            snapshot.Led = null;
+                            snapshot.LedError = error.Message;
+                        }
+                        else if (action == "toggle-led" && result is null)
+                            snapshot.LedError = error.Message;
+                    }
+                }
+                throw;
+            }
         }
+        finally { controlGate.Release(); }
     }
 
-    public BoardControlStatus SaveConfiguration(uint profile, bool unsafeOverclock)
+    public BoardControlStatus SaveConfiguration(
+        uint profile, bool unsafeOverclock, CancellationToken cancellationToken = default)
     {
-        var connection = Connection();
+        WaitForControl(cancellationToken);
         try
         {
-            var result = connection.SaveConfiguration(profile, unsafeOverclock);
-            lock (gate)
+            cancellationToken.ThrowIfCancellationRequested();
+            var connection = Connection();
+            try
             {
-                if (ReferenceEquals(client, connection))
+                var result = connection.SaveConfiguration(profile, unsafeOverclock, cancellationToken);
+                lock (gate)
                 {
-                    snapshot.ConfigurationSave = result;
-                    snapshot.ConfigurationSaveError = null;
-                    unconfirmedConfigurationSaveError = null;
-                    if (connection.LastActionResult is not null) snapshot.ApplyAction(connection.LastActionResult);
-                    snapshot.ConfigurationSave = new(2, 0, profile);
-                }
-            }
-            return ToControlStatus(new(4, result.Status, result.ErrorReason));
-        }
-        catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
-        {
-            if (error is ControlOutcomeUnconfirmedException)
-                RecordUnconfirmedConfigurationSaveError(error.Message);
-            lock (gate)
-            {
-                if (ReferenceEquals(client, connection))
-                {
-                    var result = connection.LastActionResult;
-                    if (result?.Action == 4)
+                    if (ReferenceEquals(client, connection))
                     {
-                        snapshot.ApplyAction(result);
-                        snapshot.ConfigurationSave = new(result.Status, result.ErrorReason, profile);
+                        snapshot.ApplyAction(new(4, result.Status, result.ErrorReason));
+                        snapshot.ConfigurationSave = result;
+                        snapshot.ConfigurationSaveError = null;
+                        unconfirmedConfigurationSaveError = null;
                     }
-                    snapshot.ConfigurationSaveError = error.Message;
                 }
+                return ToControlStatus(new(4, result.Status, result.ErrorReason));
             }
-            throw;
+            catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
+            {
+                if (error is ControlOutcomeUnconfirmedException)
+                    RecordUnconfirmedConfigurationSaveError(error.Message);
+                var result = error switch
+                {
+                    ControlRequestRejectedException rejected => rejected.Result,
+                    ControlOutcomeUnconfirmedException unconfirmed => unconfirmed.Result,
+                    _ => null
+                };
+                lock (gate)
+                {
+                    if (ReferenceEquals(client, connection))
+                    {
+                        if (result?.Action == 4)
+                        {
+                            snapshot.ApplyAction(result);
+                            snapshot.ConfigurationSave = new(result.Status, result.ErrorReason, profile);
+                        }
+                        snapshot.ConfigurationSaveError = error.Message;
+                    }
+                }
+                throw;
+            }
         }
+        finally { controlGate.Release(); }
     }
 
     public string DiagnosticsJson()
     {
         var connection = Connection();
-        var diagnostics = new ChannelDiagnostics?[Protocol.ChannelCount];
-        var errors = new List<string>();
-        for (var index = 0; index < Protocol.ChannelCount; index++)
+        try
         {
-            try { diagnostics[index] = connection.ReadChannelDiagnostic(index); }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
-            {
-                errors.Add($"CDC{index}: {error.Message}");
-            }
+            return PublishDiagnostics(connection, connection.ReadChannelDiagnostics());
         }
-        return PublishDiagnostics(connection, diagnostics, errors);
+        catch (Exception error) when (HidErrors.IsDeviceError(error))
+        {
+            lock (gate)
+                if (ReferenceEquals(client, connection)) snapshot.DiagnosticsError = error.Message;
+            logger.LogWarning(error, "HID diagnostics refresh failed; retaining the last successful diagnostics");
+            throw;
+        }
     }
 
-    internal string PublishDiagnostics(PicoUartHid connection, ChannelDiagnostics?[] diagnostics, List<string> errors)
+    internal string PublishDiagnostics(PicoUartHid connection, ChannelDiagnostics[] diagnostics)
     {
         lock (gate)
         {
             if (!ReferenceEquals(client, connection))
                 throw new IOException("board connection changed during diagnostics; retry the request");
             Array.Copy(diagnostics, snapshot.ChannelDiagnostics, diagnostics.Length);
-            snapshot.DiagnosticsError = errors.Count == 0 ? null : string.Join("; ", errors);
+            snapshot.DiagnosticsError = null;
             return JsonSerializer.Serialize(diagnostics, Protocol.JsonOptions);
         }
     }
@@ -135,11 +171,71 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 snapshot.Error ?? "PicoUart HID interface is not connected");
     }
 
+    private void WaitForControl(CancellationToken cancellationToken)
+    {
+        if (!controlGate.Wait(ControlQueueTimeout, cancellationToken))
+            throw new TimeoutException("timed out waiting for another board control operation");
+    }
+
     private static BoardControlStatus ToControlStatus(ActionResult result) =>
         new(result.Action, result.Status, result.ErrorReason,
             result.Status is >= 3 and <= 6
                 ? $"board action {Protocol.ActionStatusName(result.Status)} (error {result.ErrorReason})"
                 : null);
+
+    private void ReadControl(PicoUartHid connection)
+    {
+        controlGate.Wait();
+        try
+        {
+            ActionResult? result = null;
+            string? errorMessage = null;
+            try
+            {
+                var identity = connection.ReadIdentity();
+                if ((identity.Capabilities & 4) == 0)
+                    errorMessage = "configuration save capability is unavailable";
+                else
+                    result = connection.ReadActionResult();
+            }
+            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            {
+                errorMessage = error.Message;
+            }
+            lock (gate)
+            {
+                if (!ReferenceEquals(client, connection)) return;
+                if (unconfirmedConfigurationSaveError is not null)
+                {
+                    if (result?.Action == 4 && result.Status is >= 2 and <= 6)
+                        unconfirmedConfigurationSaveError = null;
+                    else
+                    {
+                        snapshot.ConfigurationSave = null;
+                        snapshot.ConfigurationSaveError = unconfirmedConfigurationSaveError;
+                        return;
+                    }
+                }
+                if (errorMessage is not null)
+                {
+                    if (snapshot.ConfigurationSaveError != errorMessage)
+                        logger.LogWarning("HID control result unavailable: {Error}", errorMessage);
+                    snapshot.ConfigurationSave = null;
+                    snapshot.ConfigurationSaveError = errorMessage;
+                    return;
+                }
+                if (result is null) return;
+                var previous = snapshot.ConfigurationSave;
+                snapshot.ApplyAction(result);
+                if (result.Action != 4)
+                    snapshot.ConfigurationSave = new(0, 0, null);
+                else if (previous?.Status == result.Status && previous.ErrorReason == result.ErrorReason)
+                    snapshot.ConfigurationSave = previous;
+                snapshot.ConfigurationSaveError = result.Action == 4 ? snapshot.Control?.Error : null;
+            }
+        }
+        finally { controlGate.Release(); }
+    }
 
     private void ReadTelemetry(PicoUartHid connection)
     {
@@ -188,12 +284,15 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.Run(async () =>
     {
+        string? lastConnectionError = null;
         while (!stoppingToken.IsCancellationRequested)
         {
             PicoUartHid? connection = null;
             try
             {
-                connection = new(serialNumber, devicePath);
+                connection = connect();
+                lastConnectionError = null;
+                logger.LogInformation("PicoUart HID connected: {DeviceUid}", connection.ReadIdentity().DeviceUid);
                 lock (gate)
                 {
                     client = connection;
@@ -242,7 +341,6 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                         }
                         var failedFeatureRead = false;
                         var featureReadAttempted = info is not null && !initialChannelsRead;
-                        string? featureError = null;
                         var features = new List<ChannelStatus>();
                         if (featureReadAttempted)
                         {
@@ -252,7 +350,8 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                                 catch (Exception error) when (HidErrors.IsDeviceError(error))
                                 {
                                     failedFeatureRead = true;
-                                    featureError ??= error.Message;
+                                    logger.LogWarning(error,
+                                        "Initial channel Feature read failed for CDC{Channel}", index);
                                 }
                             }
                         }
@@ -275,11 +374,11 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                                 snapshot.ConfigurationError = configurationError;
                             ApplyTelemetry(info, telemetry, telemetryError);
                             foreach (var feature in features) snapshot.ApplyFeature(feature);
-                            if (featureReadAttempted) snapshot.DiagnosticsError = featureError;
                             if (featureReadAttempted) initialChannelsRead = !failedFeatureRead;
                             nextMetadataRead = Stopwatch.GetTimestamp()
                                 + Stopwatch.Frequency * snapshot.RefreshIntervalMs / 1000;
                         }
+                        ReadControl(connection);
                     }
                     var status = connection.ReadStatus();
                     lock (gate)
@@ -293,6 +392,9 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
             }
             catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
+                if (lastConnectionError != error.Message)
+                    logger.LogWarning(error, "PicoUart HID unavailable; reconnect pending");
+                lastConnectionError = error.Message;
                 lock (gate)
                 {
                     if (ReferenceEquals(client, connection))
@@ -308,8 +410,19 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                     if (ReferenceEquals(client, connection)) client = null;
                 if (connection is not null)
                 {
-                    try { await connection.DisposeAsync().AsTask().WaitAsync(stoppingToken); }
+                    try
+                    {
+                        var cleanup = connection.DisposeAsync();
+                        if (!cleanup.IsCompleted)
+                            logger.LogWarning("Waiting for in-flight native HID transfers before reconnecting");
+                        await cleanup.AsTask().WaitAsync(stoppingToken);
+                    }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+                    catch (Exception error) when (HidErrors.IsDeviceError(error))
+                    {
+                        logger.LogError(error, "Native HID cleanup failed");
+                        throw;
+                    }
                 }
             }
             try { await Task.Delay(1000, stoppingToken); }
@@ -320,6 +433,7 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
     /// <summary>Retain an uncertain save result independently of the connection that submitted it.</summary>
     internal void RecordUnconfirmedConfigurationSaveError(string error)
     {
+        logger.LogWarning("HID save outcome unconfirmed; do not retry automatically: {Error}", error);
         lock (gate)
         {
             unconfirmedConfigurationSaveError = error;

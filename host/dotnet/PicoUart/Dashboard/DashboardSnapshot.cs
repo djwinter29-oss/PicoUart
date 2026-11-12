@@ -18,7 +18,7 @@ public sealed class DashboardChannel(int id)
     public int Id { get; } = id;
     public string State { get; set; } = "unknown";
     public byte? ChannelState { get; set; }
-    public bool CdcOpen { get; set; }
+    public bool? CdcOpen { get; set; } = false;
     public byte? UartMeasurementState { get; set; }
     public uint? BaudRate { get; set; }
     public byte? DataBits { get; set; }
@@ -91,7 +91,10 @@ public sealed class DashboardSnapshot
     }
 
     /// <summary>Apply on-demand state without advancing interrupt traffic or freshness.</summary>
-    public void ApplyFeature(ChannelStatus source) => ApplyState(source);
+    public void ApplyFeature(ChannelStatus source)
+    {
+        if (!Channels[source.Id].Stale) ApplyState(source);
+    }
 
     public void Apply(ChannelStatus source)
     {
@@ -149,13 +152,12 @@ public sealed class DashboardSnapshot
         if (!first && !gap && exact && previous is not null)
         {
             var uartCurrent = source.UartMeasurementState == 1 && previousMeasurement == 1;
-            var scale = 1000.0 / source.IntervalMs;
             channel.Traffic = new()
             {
-                UartTx = uartCurrent ? Delta(source.UartTxBytes, previous.UartTx) * scale : null,
-                UartRx = uartCurrent ? Delta(source.UartRxBytes, previous.UartRx) * scale : null,
-                UsbTx = Delta(source.CdcTxBytes, previous.UsbTx) * scale,
-                UsbRx = Delta(source.CdcRxBytes, previous.UsbRx) * scale
+                UartTx = uartCurrent ? Delta(source.UartTxBytes, previous.UartTx) : null,
+                UartRx = uartCurrent ? Delta(source.UartRxBytes, previous.UartRx) : null,
+                UsbTx = Delta(source.CdcTxBytes, previous.UsbTx),
+                UsbRx = Delta(source.CdcRxBytes, previous.UsbRx)
             };
             channel.ObservedIntervalMs += source.IntervalMs;
         }
@@ -173,6 +175,13 @@ public sealed class DashboardSnapshot
             channel.Stale = true;
             MarkIncomplete(channel);
             channel.State = "unknown";
+            channel.ChannelState = null;
+            channel.CdcOpen = null;
+            channel.UartMeasurementState = null;
+            channel.BaudRate = null;
+            channel.DataBits = null;
+            channel.StopBits = null;
+            channel.Parity = null;
             channel.Traffic = new();
         }
     }
@@ -183,7 +192,11 @@ public sealed class DashboardSnapshot
         channel.State = source.State;
         channel.ChannelState = source.State switch
         {
-            "closed" => 0, "starting" => 1, "ready" => 2, "configuring" => 3, "error" => 4,
+            "closed" => 0,
+            "starting" => 1,
+            "ready" => 2,
+            "configuring" => 3,
+            "error" => 4,
             _ => throw new ArgumentException("invalid channel state", nameof(source))
         };
         channel.CdcOpen = channel.ChannelState != 0;

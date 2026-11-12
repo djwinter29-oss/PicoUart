@@ -2,7 +2,6 @@
 // Copyright (c) 2026 Ji Dong
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Reflection;
 using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
@@ -11,7 +10,7 @@ using Xunit;
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class DashboardBoardsTests
+public sealed class DashboardBoardRegistryTests
 {
     [Fact]
     public void DiscoveryContinuesAfterDeviceSpecificReadFailure()
@@ -33,12 +32,12 @@ public sealed class DashboardBoardsTests
     [Fact]
     public async Task ConcurrentViewersShareOneReaderPerBoardUntilShutdown()
     {
-        var created = new ConcurrentBag<(string? Serial, string? Path, DashboardService Reader)>();
-        using var boards = new DashboardBoards(null, null,
+        var created = new ConcurrentBag<(string? Serial, string? Path, BoardMonitor Reader)>();
+        using var boards = new DashboardBoardRegistry(null, null,
             () => [new("/a", "test-A", "PicoUart"), new("/b", "test-B", "PicoUart")],
             (serial, path) =>
             {
-                var reader = new DashboardService(serial, path);
+                var reader = new BoardMonitor(() => throw new IOException("simulated disconnected board"));
                 created.Add((serial, path, reader));
                 return reader;
             });
@@ -68,8 +67,8 @@ public sealed class DashboardBoardsTests
     public async Task RescanKeepsMissingReadersAndReconnectsBySerialRatherThanOldPath()
     {
         HidBoard[] attached = [new("/a", "test-A", "PicoUart"), new("/b", "test-B", "PicoUart")];
-        using var boards = new DashboardBoards("test-A", null, () => attached,
-            (serial, path) => new(serial, path));
+        using var boards = new DashboardBoardRegistry("test-A", null, () => attached,
+            (serial, path) => new(() => throw new IOException("simulated disconnected board")));
         var first = boards.Boards().DefaultBoardId!;
         var reader = boards.Reader(first);
         attached = [new("/b", "test-B", "PicoUart")];
@@ -84,9 +83,9 @@ public sealed class DashboardBoardsTests
     [Fact]
     public async Task PreferredSerialSelectionIgnoresHexadecimalCase()
     {
-        using var boards = new DashboardBoards("0123456789abcdef", null,
+        using var boards = new DashboardBoardRegistry("0123456789abcdef", null,
             () => [new("/board", "0123456789ABCDEF", "PicoUart")],
-            (serial, path) => new(serial, path));
+            (serial, path) => new(() => throw new IOException("simulated disconnected board")));
 
         var listing = boards.Boards();
 
@@ -98,10 +97,10 @@ public sealed class DashboardBoardsTests
     public async Task RepeatedMissingScansRetireReaderBeforeItCanBeRecreated()
     {
         HidBoard[] attached = [new("/a", "test-A", "PicoUart")];
-        var created = new List<DashboardService>();
-        using var boards = new DashboardBoards(null, null, () => attached, (serial, path) =>
+        var created = new List<BoardMonitor>();
+        using var boards = new DashboardBoardRegistry(null, null, () => attached, (serial, path) =>
         {
-            var reader = new DashboardService(serial, path);
+            var reader = new BoardMonitor(() => throw new IOException("simulated disconnected board"));
             created.Add(reader);
             return reader;
         });
@@ -133,21 +132,46 @@ public sealed class DashboardBoardsTests
     [Fact]
     public async Task ReaderReturnsPromptlyWhileRetiredReaderCleanupIsPending()
     {
-        using var boards = new DashboardBoards(null, null,
-            () => [new("/a", "test-A", "PicoUart")],
-            (serial, path) => new(serial, path));
+        using var stream = new ScriptedHidStream();
+        using var connection = stream.CreateClient();
+        using var started = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        stream.InputRead = () =>
+        {
+            started.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(3))) throw new TimeoutException("reader probe was not released");
+            throw new TimeoutException("no simulated Input report");
+        };
+        HidBoard[] attached = [new("/a", "test-A", "PicoUart")];
+        var creations = 0;
+        using var boards = new DashboardBoardRegistry(null, null,
+            () => attached, (serial, path) => ++creations == 1
+                ? new(() => connection)
+                : new(() => throw new IOException("simulated disconnected board")));
         var id = boards.Boards().Boards[0].Id;
-        var cleanup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var retiring = (Dictionary<string, Task>)typeof(DashboardBoards)
-            .GetField("retiring", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(boards)!;
-        retiring.Add(id, cleanup.Task);
+        boards.Reader(id);
+        try
+        {
+            Assert.True(started.Wait(TimeSpan.FromSeconds(3)));
+            attached = [];
+            boards.Boards();
+            boards.Boards();
+            boards.Boards();
+            attached = [new("/new-path", "test-A", "PicoUart")];
+            boards.Boards();
 
-        var error = Assert.Throws<IOException>(() => boards.Reader(id));
-        Assert.Contains("cleanup is still pending", error.Message);
-
-        cleanup.SetResult();
-        Assert.NotNull(boards.Reader(id));
-        await boards.StopAsync(CancellationToken.None);
+            var read = Task.Run(() => Assert.Throws<IOException>(() => boards.Reader(id)));
+            Assert.Contains("cleanup is still pending", (await read.WaitAsync(TimeSpan.FromSeconds(1))).Message);
+            release.Set();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            while (boards.RetiringReaderCount != 0) await Task.Delay(10, timeout.Token);
+            Assert.NotNull(boards.Reader(id));
+        }
+        finally
+        {
+            release.Set();
+            await boards.StopAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
@@ -155,12 +179,11 @@ public sealed class DashboardBoardsTests
     {
         HidBoard[] attached = [new("/a", null, "PicoUart"), new("/b", null, "")];
         string? selectedPath = null;
-        using var boards = new DashboardBoards(null, "/b", () => attached, (serial, path) =>
+        using var boards = new DashboardBoardRegistry(null, "/b", () => attached, (serial, path) =>
         {
             selectedPath = path;
             Assert.Null(serial);
-            // Do not try to open an actual OS device in this test.
-            return new("nonexistent-test-board", null);
+            return new(() => throw new IOException("simulated disconnected board"));
         });
         var listing = boards.Boards();
         Assert.NotEqual(listing.Boards[0].Id, listing.Boards[1].Id);
@@ -177,7 +200,8 @@ public sealed class DashboardBoardsTests
     public async Task DiscoveryFailuresAreReportedWithoutHidingHealthyBoardsOrRetiringKnownReaders()
     {
         HidBoard[] attached = [new("/board", "test-A", "PicoUart")];
-        using var boards = new DashboardBoards(null, null, () => attached, (serial, path) => new(serial, path));
+        using var boards = new DashboardBoardRegistry(null, null, () => attached,
+            (serial, path) => new(() => throw new IOException("simulated disconnected board")));
         var initial = boards.Boards();
         var boardId = initial.Boards[0].Id;
         var reader = boards.Reader(boardId);

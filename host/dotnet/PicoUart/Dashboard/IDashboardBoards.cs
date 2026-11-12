@@ -8,7 +8,9 @@ public interface IDashboardBoards
 {
     DashboardBoardList Boards();
     string SnapshotJson(string? boardId);
-    BoardControlStatus Action(string? boardId, string action);
-    BoardControlStatus SaveConfiguration(string? boardId, uint profile, bool unsafeOverclock);
+    BoardControlStatus Action(
+        string? boardId, string action, CancellationToken cancellationToken = default);
+    BoardControlStatus SaveConfiguration(
+        string? boardId, uint profile, bool unsafeOverclock, CancellationToken cancellationToken = default);
     string DiagnosticsJson(string? boardId);
 }

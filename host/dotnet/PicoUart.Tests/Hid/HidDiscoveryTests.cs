@@ -63,11 +63,11 @@ public sealed class HidDiscoveryTests
         var board = HidDiscovery.CreateBoard("/serial-less", null, ProtocolTests.Identity());
         string? selectedSerial = null;
         string? selectedPath = null;
-        using var boards = new DashboardBoards(null, null, () => [board], (serial, path) =>
+        using var boards = new DashboardBoardRegistry(null, null, () => [board], (serial, path) =>
         {
             selectedSerial = serial;
             selectedPath = path;
-            return new("nonexistent-test-board", null);
+            return new(() => throw new IOException("simulated disconnected board"));
         });
 
         var catalog = boards.Boards();

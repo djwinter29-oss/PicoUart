@@ -121,7 +121,7 @@ def test_host_apps_validate_python_and_dotnet_on_all_platforms() -> None:
 
     assert "os: [ubuntu-latest, macos-latest, windows-latest]" in job
     assert "fail-fast: false" in job
-    assert 'dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"' in job
+    assert 'dotnet test host/dotnet/PicoUart.sln -c Release --filter "Category=Unit"' in job
     assert "python -m pytest -c pyproject.toml" in job
     assert "if: runner.os == 'Windows'" in job
     assert "tools/validation/run-host-tests.sh --skip-python" in job

@@ -38,7 +38,8 @@ Archives include the shared dashboard; the application passes its assembly's tag
 installed .NET runtime required.
 Self-contained does not mean a single executable or the absence of OS library/device-permission requirements.
 The [.NET packaging workflow](../../.github/workflows/publish-dotnet.yml) owns archive names, targets, and checksums.
-Its extracted-artifact checks establish native CLI startup and version metadata, not physical HID/UART compatibility.
+Its extracted-artifact checks establish native CLI/dashboard startup, static assets, session/CSRF handling, graceful
+shutdown, and version metadata, not physical HID/UART compatibility.
 Check the actual release assets: a workflow target does not mean every historical release supplied that archive.
 
 The [.NET host guide](../../host/dotnet/README.md#install) owns user installation. The

@@ -184,6 +184,11 @@ automatically retry reboot or save. There is no request ID or multi-client owner
 An LED toggle is successful once firmware confirms the command; a later telemetry refresh failure does not turn that
 confirmed action into a failure.
 
+The .NET dashboard bounds waiting for its control queue to five seconds. Control cancellation tokens are honored
+while acquiring the HID client and between read-only preflight steps, including immediately before native SET begins.
+A Feature read already in progress is not canceled by the token; its existing deadline and deferred-cleanup rules still
+apply. After SET begins, result verification and uncertainty handling continue even if the request is canceled.
+
 ## Python Test Automation
 
 Run diagnostics alongside the serial test; these commands do not start a test or capture UART payloads.
@@ -271,7 +276,8 @@ dotnet run --project host/dotnet/PicoUart -- web --port 5001
 Its JSON matches the Python `channels` snapshot in [Python test automation](#python-test-automation). .NET
 `monitor` still prints one channel object per line.
 On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
-The C# `PicoUartHid` class owns a connection and implements `IDisposable`; `Protocol` provides typed report decoders.
+The C# `PicoUartHid` class owns a connection and implements `IDisposable` and `IAsyncDisposable`;
+`Protocol` provides typed report decoders.
 The HID implementation separates responsibilities without changing that public client:
 
 - [PicoUartHid.cs](../../host/dotnet/PicoUart/Hid/PicoUartHid.cs) owns the connection, caches, and typed reads.
@@ -283,6 +289,14 @@ The HID implementation separates responsibilities without changing that public c
 - [HidStreamLifetime.cs](../../host/dotnet/PicoUart/Hid/HidStreamLifetime.cs) owns in-flight native transfers and
   deferred cleanup, including the per-device barrier against reopening before cleanup completes.
 
+Dashboard source names reflect their ownership:
+
+- [BoardMonitor.cs](../../host/dotnet/PicoUart/Dashboard/BoardMonitor.cs) owns one board's polling, controls, and reconnects.
+- [DashboardBoardRegistry.cs](../../host/dotnet/PicoUart/Dashboard/DashboardBoardRegistry.cs) discovers boards and shares
+  their monitors between viewers.
+- [DashboardSnapshot.cs](../../host/dotnet/PicoUart/Dashboard/DashboardSnapshot.cs) folds samples into API state and
+  traffic accounting.
+
 Python and .NET share `host/web/src`; tests live in `host/web/tests`. Keep frontend changes backend-neutral rather than
 adding a separate C# frontend.
 
@@ -291,10 +305,13 @@ Build and run the hardware-free unit suite:
 ```sh
 dotnet build host/dotnet/PicoUart.sln
 dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"
+dotnet format host/dotnet/PicoUart.sln --verify-no-changes --no-restore
 ```
 
-Unit tests run without a board. Cross-backend integration checks publish the .NET application and verify its shared
-frontend and HTTP contract:
+Unit tests use scripted HID streams without opening physical devices. Shared
+[Input-accounting cases](../../tests/contracts/host-input-cases.json) exercise populated Python/.NET snapshots, including
+non-nominal intervals, wraparound, sequence gaps, and cached UART measurements. Cross-backend integration checks publish
+the .NET application and verify its shared frontend and HTTP contract:
 
 ```sh
 host/python/.venv/bin/python -m pytest tests/tooling/test_dotnet_host.py
@@ -505,12 +522,13 @@ Python and .NET expose `POST /api/configuration?board=<id>` with the same sessio
 The JSON object must contain exactly `profile` (integer `0` through `4`, using the IDs in the linked HID report) and
 `unsafe_overclock` (boolean).
 The selected board's client checks MCU compatibility and acknowledgement; firmware validates them independently.
-HTTP success (`{"ok": true}`) means the serialized save action reported Completed after verification,
-not just a successful HID transfer. The result has no request ID or echoed profile; only one controlling host may write.
+HTTP success means the serialized save action reported Completed after verification, not just a successful HID transfer.
+Python returns `{"ok": true}`; .NET returns the terminal action result. The result has no request ID or echoed profile;
+only one controlling host may write.
 Timeout/disconnect leaves an unconfirmed outcome and must not cause an automatic destructive retry.
-Python retains an unconfirmed save warning in the shared board snapshot across polling and reconnects. A matching
+Python and .NET retain an unconfirmed save warning in the shared board snapshot across polling and reconnects. A matching
 terminal save result clears it; an unrelated or idle control result does not.
-Snapshots expose the independent `configuration_save` result (`action`, `status`, `error_reason`) and
+Snapshots expose the independent `configuration_save` result (`status`, `error_reason`) and
 `configuration_save_error`; the existing `configuration` remains read-only boot metadata.
 
 ### Channel diagnostics and traffic presentation
@@ -520,7 +538,12 @@ All three dashboards show applied baud/framing from the
 never from a hard-coded board map or a CDC request that might have been rejected.
 `GET /api/diagnostics?board=<id>` explicitly refreshes `channel_diagnostics` (six records in channel order).
 `diagnostics_error` is independent; failed reads surface an error and do not replace old measurements with zeros,
-while unrelated valid reports remain visible. Versioned HID payloads require their current version-1 layouts; no
+while unrelated valid reports remain visible. The .NET refresh is all-or-nothing: it publishes a new array only after
+all six reads succeed. Any failed read returns a non-success HTTP response with `error`, including when earlier
+channels succeeded; native I/O/access failures return 503 and timeouts return 504. The previous successful array and
+derived overflow counts remain last-known data, with `diagnostics_error` set until a complete refresh succeeds.
+The browser does not advance diagnostic read age on a failed refresh.
+Versioned HID payloads require their current version-1 layouts; no
 legacy decoder or missing-report compatibility mode is provided. IDs 10-15 each publish a complete 30-byte channel
 snapshot every 500 ms and support the same layout through read-only Feature access. Feature reads can obtain
 initial or on-demand state, but their overlapping traffic deltas never enter rates or totals.
@@ -531,6 +554,9 @@ Channel API records carry independent `sequence`, `updated_at`, `traffic_gaps`, 
 `observed_interval_ms` alongside byte `totals`. The interval accumulates complete observed Input intervals,
 excluding the first sample; renderers compute rate windows from its change rather than host receipt timing.
 Feature reads supply state only and never advance these traffic-observation fields.
+`traffic` contains per-Input modulo-32-bit byte increments, not rates, with null for an unusable interval or UART
+measurement. Earlier .NET builds scaled these fields into bytes/second; consumers should use the shared byte semantics.
+The renderer derives rates from totals and observed intervals rather than depending on that historical discrepancy.
 
 Lifecycle badges distinguish Closed, Starting, Ready, Configuring, Error, and host-side Unknown/stale.
 Historical RX faults and the last configuration error remain separate from current lifecycle; they do not turn a
@@ -551,6 +577,10 @@ that channel's rates stale. After staleness or a host read pause, treat rate con
 stale/rebaseline, and ignored out-of-order events. An invalid interval marks continuity incomplete but is not itself a
 sequence gap; an invalid first interval therefore does not increment `traffic_gaps`. The monotonic count lets each
 page invalidate its current rate window while retaining the sticky `traffic_incomplete` notice.
+When a .NET channel becomes stale, `state` becomes `unknown`; `channel_state`, `cdc_open`, UART measurement validity,
+and applied framing become null rather than claiming current Ready/open state. Counters, sequence, and the last Input
+timestamp remain historical. Initial Feature retries cannot restore live fields on a stale channel; the next accepted
+Input restores state and establishes a new rate baseline.
 
 The independent WebHID renderer and hosted renderer retain their separate assets; the shared Node presentation tests
 exercise the same rate, read-only fault flag, fallback and state contracts against both.

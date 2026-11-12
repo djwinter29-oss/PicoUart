@@ -3,6 +3,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using PicoUart.Hid;
 using PicoUart.Wire;
 
@@ -13,7 +14,7 @@ public sealed record DashboardDiscoveryError(string DevicePath, string? SerialNu
 public sealed record DashboardBoardList(
     DashboardBoard[] Boards, string? DefaultBoardId, DashboardDiscoveryError[] DiscoveryErrors);
 
-public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoards
+public sealed class DashboardBoardRegistry : IHostedService, IDisposable, IDashboardBoards
 {
     private const int MissingScansBeforeRetirement = 3;
     private readonly object gate = new();
@@ -21,9 +22,10 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
     private readonly string? serialNumber;
     private readonly string? devicePath;
     private readonly Func<HidBoard[]> discover;
-    private readonly Func<string?, string?, DashboardService> createMonitor;
+    private readonly Func<string?, string?, BoardMonitor> createMonitor;
+    private readonly ILogger<DashboardBoardRegistry> logger;
     private readonly Dictionary<string, DashboardBoard> known = new();
-    private readonly Dictionary<string, DashboardService> monitors = new();
+    private readonly Dictionary<string, BoardMonitor> monitors = new();
     private readonly Dictionary<string, int> missingScans = new();
     private readonly Dictionary<string, Task> retiring = new();
     private bool closed;
@@ -33,16 +35,20 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
         get { lock (gate) return retiring.Count; }
     }
 
-    public DashboardBoards(string? serialNumber, string? devicePath)
-        : this(serialNumber, devicePath, PicoUartHid.Discover, (serial, path) => new(serial, path)) { }
+    public DashboardBoardRegistry(string? serialNumber, string? devicePath, ILoggerFactory? loggerFactory = null)
+        : this(serialNumber, devicePath, PicoUartHid.Discover,
+            (serial, path) => new(serial, path, loggerFactory?.CreateLogger<BoardMonitor>()),
+            loggerFactory?.CreateLogger<DashboardBoardRegistry>())
+    { }
 
-    internal DashboardBoards(string? serialNumber, string? devicePath, Func<HidBoard[]> discover,
-        Func<string?, string?, DashboardService> createMonitor)
+    internal DashboardBoardRegistry(string? serialNumber, string? devicePath, Func<HidBoard[]> discover,
+        Func<string?, string?, BoardMonitor> createMonitor, ILogger<DashboardBoardRegistry>? logger = null)
     {
         this.serialNumber = serialNumber;
         this.devicePath = devicePath;
         this.discover = discover;
         this.createMonitor = createMonitor;
+        this.logger = logger ?? NullLogger<DashboardBoardRegistry>.Instance;
     }
 
     public DashboardBoardList Boards()
@@ -111,7 +117,9 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
                         retiring[id] = retirement;
                         _ = retirement.ContinueWith(completed =>
                         {
-                            if (completed.IsFaulted) _ = completed.Exception;
+                            if (completed.IsFaulted)
+                                logger.LogError(completed.Exception,
+                                    "HID reader retirement failed for board {BoardId}", id);
                             if (!completed.IsCompletedSuccessfully) return;
                             lock (gate)
                             {
@@ -133,7 +141,7 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
         }
     }
 
-    internal DashboardService Reader(string? boardId)
+    internal BoardMonitor Reader(string? boardId)
     {
         while (true)
         {
@@ -171,10 +179,13 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
     public string SnapshotJson(string? boardId) => boardId is null
         ? JsonSerializer.Serialize(new DashboardSnapshot(), Protocol.JsonOptions) : Reader(boardId).SnapshotJson();
 
-    public BoardControlStatus Action(string? boardId, string action) => Reader(boardId).Action(action);
+    public BoardControlStatus Action(
+        string? boardId, string action, CancellationToken cancellationToken = default) =>
+        Reader(boardId).Action(action, cancellationToken);
 
-    public BoardControlStatus SaveConfiguration(string? boardId, uint profile, bool unsafeOverclock) =>
-        Reader(boardId).SaveConfiguration(profile, unsafeOverclock);
+    public BoardControlStatus SaveConfiguration(
+        string? boardId, uint profile, bool unsafeOverclock, CancellationToken cancellationToken = default) =>
+        Reader(boardId).SaveConfiguration(profile, unsafeOverclock, cancellationToken);
 
     public string DiagnosticsJson(string? boardId) => Reader(boardId).DiagnosticsJson();
 
@@ -182,7 +193,7 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        DashboardService[] readers;
+        BoardMonitor[] readers;
         Task[] pendingRetirements;
         lock (gate)
         {

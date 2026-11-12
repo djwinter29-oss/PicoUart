@@ -92,6 +92,7 @@ jobs:
           from pathlib import Path
           import shutil
           import subprocess
+          import sys
           import tempfile
           version, rid = os.environ['VERSION'], os.environ['RID']
           root = Path('build/host-release').resolve()
@@ -104,8 +105,8 @@ jobs:
               extracted = Path(directory)
               shutil.unpack_archive(archive, extracted)
               assert f'PicoUart/{version}' in json.loads((extracted / 'PicoUart.deps.json').read_text())['libraries']
-              executable = extracted / ('PicoUart.exe' if rid.startswith('win-') else 'PicoUart')
-              subprocess.run([str(executable), '--help'], cwd=extracted, check=True)
+              subprocess.run([sys.executable, 'tools/release/check-dotnet-host.py', str(extracted)],
+                             check=True, timeout=60)
           files = sorted(path for path in dist.iterdir() if path.is_file())
           checksums = ''.join(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n' for path in files)
           (dist / f'SHA256SUMS-host-{rid}.txt').write_text(checksums, encoding='utf-8')

@@ -82,9 +82,10 @@ validation, traffic accounting, fault-history interpretation, and command timing
 
 `status` exits non-zero when no report arrives before its timeout. **Unlike the Python CLI, .NET `monitor` can finish
 successfully with no reports.** `status` prints the same six-entry `channels` snapshot as Python `status --json`,
-with sorted object keys. It retries for `--timeout` seconds (default 2); each Input read waits at most 250 ms, and
-first-time identity reads share the remaining timeout. Timed `monitor` reads are bounded by the remaining capture
-duration, and samples completing at or after the deadline are excluded.
+with sorted object keys. It retries for `--timeout` seconds (default 2); each Input read waits at most 250 ms.
+The status timeout and monitor duration start after device discovery, opening, and identity validation; they are not
+process-lifetime deadlines and do not bound final native-handle cleanup. Timed `monitor` reads are bounded by the
+remaining capture duration, and samples completing at or after the deadline are excluded.
 `monitor` still prints one channel object per line. Field rules are in the
 [host tools guide](../../docs/development/host-tools.md#python-test-automation).
 Your runner must check sample availability and channel health, not just the exit code.
@@ -122,10 +123,14 @@ sample; the renderer can divide changes in totals by changes in this time, inval
 gap count changes. There is no board-wide `sequence`. Top-level gap/incomplete fields summarize all channels.
 After three seconds without an accepted Input, the next sample establishes a fresh baseline regardless of sequence;
 its deltas are excluded, preventing old-sequence filtering from blocking recovery after a pause or USB reset.
-`channel_diagnostics[]` is indexed by channel and may contain null before state is available. Fault objects retain
-`faults.<name>.count` only; `last_fault_uptime_s` is shared by all four categories, not a per-fault timestamp.
+`channel_diagnostics[]` is indexed by channel and may contain null before state is available. Diagnostics use flat
+fields such as `rx_overrun_count` and `rx_error_count`; see the
+[diagnostics report contract](../../docs/design/usb/hid-report-reference.md#reports-30-35-channel-diagnostics).
 `configuration_save.status` uses report-20 statuses 0-6; a non-save result projects to idle `{status: 0, profile: null}`.
 An unavailable save capability sets `configuration_save_error`; an unread/failed control read leaves the result null.
+Populated traffic fields use byte increments, not bytes/second, consistently with Python. See
+[snapshot, stale-state, and diagnostics-refresh semantics](../../docs/development/host-tools.md#channel-diagnostics-and-traffic-presentation)
+before consuming the API.
 
 ## Troubleshooting
 

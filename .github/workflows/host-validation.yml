@@ -50,7 +50,10 @@ jobs:
         run: python -m pip install --group host/python/pyproject.toml:dev host/python
 
       - name: Run .NET unit tests
-        run: dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"
+        run: dotnet test host/dotnet/PicoUart.sln -c Release --filter "Category=Unit"
+
+      - name: Verify .NET formatting
+        run: dotnet format host/dotnet/PicoUart.sln --verify-no-changes --no-restore
 
       - name: Run Python tests and published host contracts
         run: python -m pytest -c pyproject.toml

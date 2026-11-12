@@ -292,8 +292,10 @@ function updateConfigurationControls(data) {
   const profile = Number(clockProfile.value);
   const profileSupported = Number.isInteger(profile) && Boolean((identity?.clock_profile_mask ?? 0) & (1 << profile));
   const storedProfile = data?.configuration?.stored_profile;
+  const controlReadFailed = data?.configuration_save == null && Boolean(data?.configuration_save_error)
+    && !configurationSaveWarning(data);
   const available = Boolean(data?.connected && (capabilities & 4) && data?.configuration
-    && (storedProfile === null || Number.isInteger(storedProfile)));
+    && !controlReadFailed && (storedProfile === null || Number.isInteger(storedProfile)));
   const profileChanged = available && profile !== (storedProfile ?? 0);
   clockProfile.disabled = actionBusy || configurationSavePending || !data?.connected
     || !(capabilities & 4) || !identity?.clock_profile_mask;
@@ -307,6 +309,7 @@ function currentRates(channel, now, data) {
   const identity = data.identity?.device_uid ?? data.identity?.serial_number;
   const uptime = data.runtime?.uptime_ms;
   const observedInterval = channel.observed_interval_ms;
+  const updatedAt = typeof channel.updated_at === "string" ? Date.parse(channel.updated_at) : NaN;
   const totals = Object.fromEntries(directions.map(([, key]) => [key, channel.totals?.[key]]));
   let history = channelHistory.get(id);
   const readerRestarted = history && Number.isSafeInteger(observedInterval)
@@ -315,14 +318,20 @@ function currentRates(channel, now, data) {
     || (Number.isFinite(uptime) && Number.isFinite(history.uptime) && uptime < history.uptime)
     || readerRestarted) {
     history = { identity, uptime, sequence: null, trafficGaps: channel.traffic_gaps ?? 0,
-      observedInterval, sequenceReceivedAt: now, stale: false, usbSamples: [], uartSamples: [] };
+      observedInterval, updatedAt, sequenceReceivedAt: now, stale: false, usbSamples: [], uartSamples: [] };
     channelHistory.set(id, history);
   }
-  const stale = now - history.sequenceReceivedAt > 3000;
+  const historyStale = now - history.sequenceReceivedAt > 3000;
+  const observationAdvanced = Number.isSafeInteger(observedInterval)
+    && Number.isSafeInteger(history.observedInterval) && observedInterval > history.observedInterval;
+  const reportAdvanced = Number.isFinite(updatedAt) && Number.isFinite(history.updatedAt)
+    && updatedAt !== history.updatedAt || observationAdvanced;
+  const rebaseline = historyStale && reportAdvanced && Number.isInteger(channel.sequence);
+  const stale = historyStale && !rebaseline;
   const sequenceDelta = Number.isInteger(channel.sequence) && Number.isInteger(history.sequence)
     ? (channel.sequence - history.sequence + 65536) % 65536 : null;
   const newSample = Number.isInteger(channel.sequence)
-    && (history.sequence === null || sequenceDelta > 0 && sequenceDelta < 32768);
+    && (history.sequence === null || rebaseline || sequenceDelta > 0 && sequenceDelta < 32768);
   const sequenceJump = sequenceDelta !== null && sequenceDelta > 1 && sequenceDelta < 32768;
   const trafficGaps = channel.traffic_gaps ?? history.trafficGaps;
   const gap = trafficGaps !== history.trafficGaps;
@@ -330,7 +339,7 @@ function currentRates(channel, now, data) {
     && channel.interval_ms > 0 && channel.interval_ms < 65535;
   const totalsValid = Object.values(totals).every(value =>
     Number.isInteger(value) && value >= 0 && value <= 0xffffffff);
-  if (stale && !history.stale || gap || newSample && !intervalValid) {
+  if (rebaseline || stale && !history.stale || gap || newSample && !intervalValid) {
     history.usbSamples = [];
     history.uartSamples = [];
   }
@@ -364,7 +373,10 @@ function currentRates(channel, now, data) {
       ? ((latest.totals[key] - baseline.totals[key]) >>> 0) * 1000 / elapsed : null;
   }
   if (Number.isFinite(uptime)) history.uptime = uptime;
-  if (Number.isSafeInteger(observedInterval)) history.observedInterval = observedInterval;
+  if (newSample || baselineAfterGap) {
+    if (Number.isSafeInteger(observedInterval)) history.observedInterval = observedInterval;
+    if (Number.isFinite(updatedAt)) history.updatedAt = updatedAt;
+  }
   const fresh = data.connected && Number.isInteger(history.sequence) && now - history.sequenceReceivedAt <= 3000;
   return { rates, fresh };
 }

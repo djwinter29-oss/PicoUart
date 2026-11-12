@@ -204,6 +204,29 @@ test("hosted profile selection supports unset defaults and preserves unsaved edi
   assert.equal(profile.disabled, true);
 });
 
+test("control result read failures gate saves and preserve edits and rejection recovery", async () => {
+  const view = page();
+  await connect(view);
+  const profile = view.element("clock-profile");
+  profile.value = "1";
+  profile.events.change();
+  assert.equal(view.element("save-configuration").disabled, false);
+
+  view.tick();
+  await view.respond({ ...snapshot("first"), configuration_save: null,
+    configuration_save_error: "simulated control read failure" });
+  assert.equal(view.element("save-configuration").disabled, true);
+  assert.equal(profile.disabled, false);
+  assert.equal(profile.value, "1");
+  assert.match(view.element("status-message").textContent, /simulated control read failure/);
+
+  view.tick();
+  await view.respond({ ...snapshot("first"), configuration_save: { status: 5, error_reason: 6 },
+    configuration_save_error: "board action Busy; close CDC ports" });
+  assert.equal(view.element("save-configuration").disabled, false);
+  assert.equal(profile.value, "1");
+});
+
 test("hosted pages select independently and render board labels as text", async () => {
   const alice = page(), bob = page();
   assert.equal(alice.intervalMs, 500);
@@ -301,6 +324,39 @@ test("Python dashboard rates use device intervals and reset across gaps or inval
   updateRates(makeChannel(2, 1600, 500), 32000);
   rates = updateRates(makeChannel(3, 2100, 1000), 32500);
   assert.equal(rates.usb_tx, 1000);
+});
+
+test("hosted rates rebaseline after a long pause only when a report has advanced", () => {
+  const view = page();
+  vm.runInContext("channelHistory.clear()", view.context);
+  const data = { connected: true, identity: { serial_number: "A" }, runtime: { uptime_ms: 1000 } };
+  const firstTime = Date.parse("2026-01-01T00:00:00Z");
+  const channel = (sequence, total, observed_interval_ms, updatedAt) => ({
+    id: 0, sequence, interval_ms: 500, observed_interval_ms, updated_at: new Date(updatedAt).toISOString(),
+    traffic_gaps: 0, uart_measurement_state: 1,
+    totals: { uart_tx: total, uart_rx: total, usb_tx: total, usb_rx: total },
+  });
+  const sample = (value, now) => {
+    view.context.rateChannel = value;
+    view.context.rateNow = now;
+    view.context.rateData = data;
+    return vm.runInContext("currentRates(rateChannel, rateNow, rateData)", view.context);
+  };
+
+  assert.equal(sample(channel(102, 100, 0, firstTime), 1000).fresh, true);
+  const resumedAt = 1000 + 32769 * 500;
+  assert.equal(sample(channel(102, 100, 0, firstTime), resumedAt).fresh, false);
+
+  const observedInterval = 32769 * 500;
+  let result = sample(channel(32871, 32769100, observedInterval, firstTime + observedInterval), resumedAt + 1);
+  assert.equal(result.fresh, true);
+  assert.equal(result.rates.usb_tx, null);
+  result = sample(channel(32872, 32770100, observedInterval + 500, firstTime + observedInterval + 500),
+    resumedAt + 501);
+  assert.equal(result.rates.usb_tx, null);
+  result = sample(channel(32873, 32771100, observedInterval + 1000, firstTime + observedInterval + 1000),
+    resumedAt + 1001);
+  assert.equal(result.rates.usb_tx, 2000);
 });
 
 test("Unavailable UART measurements do not render placeholder counters as zero", async () => {

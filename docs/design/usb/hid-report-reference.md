@@ -667,7 +667,9 @@ which occurred. See [Hardware Setup](../../hardware-setup.md).
    Validate and timestamp independently of snapshots; never treat separate captures as atomic.
 
 Steady state: 1–2 telemetry GETs/second plus nominally 12 channel Input packets/second; no periodic channel Feature
-reads. Features can supply initial state without waiting for Input. Read errors invalidate affected live data, not
+reads. Python/.NET dashboards also refresh report 20 at metadata cadence when save is available to project the latest
+save result; these reads never execute actions. Features can supply initial state without waiting for Input.
+Read errors invalidate affected live data, not
 unrelated static data; valid responses restore it. Mark a channel stale after three seconds without Input.
 Features do not restore Input continuity. Disconnect/reboot discards caches and pending-action assumptions;
 rediscover identity, capabilities, and configuration.

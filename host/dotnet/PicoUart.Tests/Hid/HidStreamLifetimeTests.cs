@@ -76,4 +76,18 @@ public sealed class HidStreamLifetimeTests
 
         Assert.Throws<ObjectDisposedException>(() => lifetime.Transfer(() => true, timeoutMs: 10));
     }
+
+    [Fact]
+    public async Task FailedNativeCleanupKeepsDeviceReopeningBlocked()
+    {
+        var path = $"failed-cleanup-{Guid.NewGuid():N}";
+        var lifetime = new HidStreamLifetime(() => throw new IOException("native cleanup failed"), path);
+        lifetime.TrackDeviceCleanup(path);
+
+        Assert.Throws<IOException>(() => lifetime.Dispose());
+        await Assert.ThrowsAsync<IOException>(() => lifetime.Cleanup);
+
+        var error = Assert.Throws<IOException>(() => HidStreamLifetime.EnsureDeviceCleanupComplete(path));
+        Assert.Equal("native cleanup failed", error.Message);
+    }
 }
