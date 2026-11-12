@@ -223,12 +223,12 @@ def test_main_dashboard_reports_server_errors(monkeypatch, capsys, error):
     assert str(error) in capsys.readouterr().err
 
 
-def test_main_dashboard_explains_optional_dependency(monkeypatch, capsys):
+def test_main_dashboard_explains_missing_dependency(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "flask", None)
     monkeypatch.delitem(sys.modules, "pico_uart.dashboard.app", raising=False)
 
     assert cli.main(["dashboard"]) == 1
-    assert "install pico-uart[dashboard]" in capsys.readouterr().err
+    assert "python -m pip install pico-uart" in capsys.readouterr().err
 
 
 def test_main_reports_hid_errors_and_status_timeouts(monkeypatch, capsys):
@@ -267,6 +267,17 @@ def test_main_module_entrypoint_runs_cli(monkeypatch, capsys):
 
     with pytest.raises(SystemExit) as error:
         runpy.run_module("pico_uart.main", run_name="__main__")
+
+    assert error.value.code == 0
+    assert "usage: pico-uart" in capsys.readouterr().out
+
+
+def test_package_module_entrypoint_runs_cli(monkeypatch, capsys):
+    monkeypatch.delitem(sys.modules, "pico_uart.__main__", raising=False)
+    monkeypatch.setattr(sys, "argv", ["pico-uart", "--help"])
+
+    with pytest.raises(SystemExit) as error:
+        runpy.run_module("pico_uart", run_name="__main__")
 
     assert error.value.code == 0
     assert "usage: pico-uart" in capsys.readouterr().out

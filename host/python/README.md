@@ -40,20 +40,15 @@ py -m venv .venv
 Then install the package:
 
 ```sh
-python -m pip install "pico-uart[dashboard]"
-```
-
-This installs the latest stable release. To opt in to prerelease builds for testing, add `--pre`.
-The dashboard extra installs Flask; the HID API and CLI work without it. For API and CLI use without the dashboard,
-install the base package:
-
-```sh
 python -m pip install pico-uart
 ```
 
-**Using PyPI 0.11.0?** Earlier releases use the base install above, include Flask by default, and use `pico-uart web`.
-The optional dashboard extra and `pico-uart dashboard` command below require a release that provides them.
-For an isolated dashboard installation, use `pipx install "pico-uart[dashboard]"` instead.
+This installs the latest stable release with the API, CLI, and dashboard. To opt in to prerelease builds for testing,
+add `--pre`.
+
+**Using PyPI 0.11.0?** That release includes Flask with this same install, but starts the dashboard with
+`pico-uart web`; use `pico-uart dashboard` with a release that provides that command.
+For an isolated installation, use `pipx install pico-uart` instead.
 
 Connect a Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), then run:
 
@@ -127,7 +122,7 @@ transfer.
 - **PowerShell activation blocked:** run these commands directly:
 
   ```powershell
-  .\.venv\Scripts\python.exe -m pip install "pico-uart[dashboard]"
+  .\.venv\Scripts\python.exe -m pip install pico-uart
   .\.venv\Scripts\pico-uart.exe dashboard
   ```
 - **No valid reports:** check firmware compatibility and the USB connection. A timeout does not mean zero traffic.

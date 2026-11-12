@@ -125,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         except ModuleNotFoundError as error:
             if error.name != "flask":
                 raise
-            print("error: install pico-uart[dashboard] to use the dashboard command", file=sys.stderr)
+            print("error: Flask is missing; reinstall with `python -m pip install pico-uart`", file=sys.stderr)
             return 1
         except (OSError, RuntimeError) as error:
             print(f"error: {error}", file=sys.stderr)

@@ -182,7 +182,7 @@ jobs:
           set -eu
           python -m venv build/host-wheel-check
           wheel_url="$(python -c "from pathlib import Path; print(next(Path('dist').glob('*.whl')).resolve().as_uri())")"
-          build/host-wheel-check/bin/python -m pip install "pico-uart[dashboard] @ ${wheel_url}"
+          build/host-wheel-check/bin/python -m pip install "pico-uart @ ${wheel_url}"
           cd build
           host-wheel-check/bin/python - <<'PY'
           from importlib.metadata import version

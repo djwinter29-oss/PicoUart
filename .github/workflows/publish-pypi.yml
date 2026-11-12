@@ -156,7 +156,7 @@ jobs:
           set -eu
           python -m venv build/development-check
           wheel_url="$(python -c "from pathlib import Path; print(next(Path('dist').glob('*.whl')).resolve().as_uri())")"
-          build/development-check/bin/python -m pip install "pico-uart[dashboard] @ ${wheel_url}"
+          build/development-check/bin/python -m pip install "pico-uart @ ${wheel_url}"
           cd build
           development-check/bin/python - <<'PY'
           from importlib.metadata import version

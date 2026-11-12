@@ -158,9 +158,9 @@ The top-level `PicoUartHid` API remains unchanged, but implementation-module imp
 | `pico_uart.transport` | `pico_uart.hid.transport` |
 | `pico_uart.web` | `pico_uart.dashboard` |
 
-Use `pico-uart` or `python -m pico_uart.main`; `python -m pico_uart` is no longer supported. This is an intentional
-breaking change for callers that import these implementation modules directly. The old raw hidapi root export is
-also replaced by `pico_uart.hid.transport.hid`.
+Use `pico-uart` or `python -m pico_uart` to invoke the CLI; `python -m pico_uart.main` is also available for direct
+module invocation. Moving the implementation modules is an intentional breaking change for callers that import them
+directly. The old raw hidapi root export is also replaced by `pico_uart.hid.transport.hid`.
 
 ### UART readiness
 
