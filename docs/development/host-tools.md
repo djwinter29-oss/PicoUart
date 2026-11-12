@@ -272,6 +272,17 @@ Its JSON matches the Python `channels` snapshot in [Python test automation](#pyt
 `monitor` still prints one channel object per line.
 On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
 The C# `PicoUartHid` class owns a connection and implements `IDisposable`; `Protocol` provides typed report decoders.
+The HID implementation separates responsibilities without changing that public client:
+
+- [PicoUartHid.cs](../../host/dotnet/PicoUart/Hid/PicoUartHid.cs) owns the connection, caches, and typed reads.
+- [PicoUartHid.Actions.cs](../../host/dotnet/PicoUart/Hid/PicoUartHid.Actions.cs) implements serialized board controls
+  as part of the same client, sharing its lock and timeout quarantine rather than opening another connection.
+- [HidDiscovery.cs](../../host/dotnet/PicoUart/Hid/HidDiscovery.cs) handles enumeration, selection, and USB identity.
+- [HidReports.cs](../../host/dotnet/PicoUart/Hid/HidReports.cs) adapts descriptors and native Feature framing;
+  [Protocol.cs](../../host/dotnet/PicoUart/Wire/Protocol.cs) remains responsible for product payload validation.
+- [HidStreamLifetime.cs](../../host/dotnet/PicoUart/Hid/HidStreamLifetime.cs) owns in-flight native transfers and
+  deferred cleanup, including the per-device barrier against reopening before cleanup completes.
+
 Python and .NET share `host/web/src`; tests live in `host/web/tests`. Keep frontend changes backend-neutral rather than
 adding a separate C# frontend.
 
@@ -419,6 +430,9 @@ session are discarded if the monitor has already connected a replacement session
 available to status requests as soon as its retired reader has stopped; another board-list rescan is not required.
 
 `GET /api/boards` returns `boards` (`id`, `product_name`, `serial_number`, `device_path`) and `default_board_id`.
+The .NET host also returns `discovery_errors` (`device_path`, optional `serial_number`, and `error`) for individual
+devices it could not inspect; a failed device does not hide other successfully discovered boards. The shared dashboard
+shows these errors after a rescan.
 Pass the opaque `id` as `?board=ID` to `GET /api/status` and `POST /api/actions/{toggle-led,reset}`. A status request
 without a board returns an empty six-channel snapshot; actions require a known board and the existing session CSRF
 token. Unknown IDs and duplicate board identities fail explicitly. Servers remain loopback-only; this is not a change
@@ -445,7 +459,8 @@ service-load semantics, and RAM accounting.
 
 Snapshots can be partially available. Static identity, firmware version, MCU, capabilities, and total RAM come from
 report 1; temperature, LED state, uptime, service load, and current clock come from report 3.
-Overflow counts come from each channel's `rx_overrun_count`, not board telemetry. A telemetry failure
+Overflow counts come from each channel's `rx_overrun_count`, not board telemetry; .NET reports null when UART
+measurements are Unavailable, rather than treating placeholder zeros as measured counts. A telemetry failure
 clears affected board values without discarding valid channel snapshots, static information,
 boot configuration, or command results. A device-information failure must not substitute invented identity or
 capabilities, and board controls remain disabled until capabilities have been validated.

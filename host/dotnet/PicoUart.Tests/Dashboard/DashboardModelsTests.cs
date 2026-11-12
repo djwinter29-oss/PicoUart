@@ -1,35 +1,24 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
+using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Wire;
-using System.Text.Json;
 using Xunit;
 
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class DashboardTests
+public sealed class DashboardModelsTests
 {
-    [Fact]
-    public void UnconfirmedSaveErrorSurvivesConnectionSnapshotReplacement()
-    {
-        using var service = new DashboardService(null, null);
-        const string warning = "command outcome is unconfirmed; do not retry";
-
-        service.RecordUnconfirmedConfigurationSaveError(warning);
-        service.ReplaceSnapshot(new() { Connected = true });
-
-        using var status = JsonDocument.Parse(service.SnapshotJson());
-        Assert.True(status.RootElement.GetProperty("connected").GetBoolean());
-        Assert.Equal(warning, status.RootElement.GetProperty("configuration_save_error").GetString());
-    }
-
     [Fact]
     public void StatusKeepsActionResultsSeparateAndDerivesOverflowCountsFromDiagnostics()
     {
         var snapshot = new DashboardSnapshot();
         Assert.All(snapshot.OverflowCounts, count => Assert.Null(count));
         snapshot.ChannelDiagnostics[2] = new(2, 1, 0, 0, 17, 0, 0, 0, 0, 0, 0);
+        snapshot.ChannelDiagnostics[3] = new(3, 0, byte.MaxValue, 0, 0, 0, 0, 0, 0, 0, 0);
+        snapshot.ChannelDiagnostics[4] = new(4, 2, 1, 0, 9, 0, 0, 0, 0, 0, 0);
+        Assert.Equal(new uint?[] { null, null, 17, null, 9, null }, snapshot.OverflowCounts);
         snapshot.ApplyAction(new(2, 2, 0));
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
         Assert.False(json.RootElement.TryGetProperty("control", out _));

@@ -113,13 +113,17 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                 errors.Add($"CDC{index}: {error.Message}");
             }
         }
+        return PublishDiagnostics(connection, diagnostics, errors);
+    }
+
+    internal string PublishDiagnostics(PicoUartHid connection, ChannelDiagnostics?[] diagnostics, List<string> errors)
+    {
         lock (gate)
         {
-            if (ReferenceEquals(client, connection))
-            {
-                Array.Copy(diagnostics, snapshot.ChannelDiagnostics, diagnostics.Length);
-                snapshot.DiagnosticsError = errors.Count == 0 ? null : string.Join("; ", errors);
-            }
+            if (!ReferenceEquals(client, connection))
+                throw new IOException("board connection changed during diagnostics; retry the request");
+            Array.Copy(diagnostics, snapshot.ChannelDiagnostics, diagnostics.Length);
+            snapshot.DiagnosticsError = errors.Count == 0 ? null : string.Join("; ", errors);
             return JsonSerializer.Serialize(diagnostics, Protocol.JsonOptions);
         }
     }
@@ -236,9 +240,8 @@ public sealed class DashboardService(string? serialNumber, string? devicePath) :
                                 telemetryError = error.Message;
                             }
                         }
-                        var hasConfiguration = configuration is not null || !needsConfiguration;
                         var failedFeatureRead = false;
-                        var featureReadAttempted = info is not null && hasConfiguration && !initialChannelsRead;
+                        var featureReadAttempted = info is not null && !initialChannelsRead;
                         string? featureError = null;
                         var features = new List<ChannelStatus>();
                         if (featureReadAttempted)

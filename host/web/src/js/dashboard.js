@@ -785,7 +785,11 @@ async function rescanBoards() {
     const { response, data: result } = await fetchJson(
       "/api/boards", { cache: "no-store" }, BOARD_SCAN_TIMEOUT_MS);
     if (!response.ok) throw new Error(result.error || `Board scan failed (${response.status})`);
-    scanError = null;
+    const discoveryErrors = result.discovery_errors || [];
+    scanError = discoveryErrors.length
+      ? `Some boards could not be inspected: ${discoveryErrors
+        .map(item => `${item.device_path}: ${item.error}`).join("; ")}`
+      : null;
     boardSelect.replaceChildren();
     for (const board of result.boards) {
       const option = document.createElement("option");

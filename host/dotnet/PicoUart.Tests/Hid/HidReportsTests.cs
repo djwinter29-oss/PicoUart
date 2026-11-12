@@ -8,7 +8,7 @@ using Xunit;
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class ReportDescriptorTests
+public sealed class HidReportsTests
 {
     private static ReportDescriptor Descriptor(bool padded, int identitySize = Protocol.IdentitySize)
     {
@@ -46,16 +46,16 @@ public sealed class ReportDescriptorTests
         var identity = Assert.Single(features, report => report.ReportID == Protocol.IdentityReportId);
 
         Assert.Equal(padded ? 37 : 28, identity.Length);
-        Assert.Equal(28, PicoUartHid.ReportDataLength(identity));
-        PicoUartHid.ValidateReports(
-            features.Select(report => (report.ReportID, PicoUartHid.ReportDataLength(report))),
-            inputs.Select(report => (report.ReportID, PicoUartHid.ReportDataLength(report))));
+        Assert.Equal(28, HidReports.ReportDataLength(identity));
+        HidReports.ValidateReports(
+            features.Select(report => (report.ReportID, HidReports.ReportDataLength(report))),
+            inputs.Select(report => (report.ReportID, HidReports.ReportDataLength(report))));
 
         var buffer = new byte[37];
         buffer[0] = Protocol.IdentityReportId;
         ProtocolTests.IdentityPayload().CopyTo(buffer, 1);
-        var payload = PicoUartHid.FeaturePayload(buffer, Protocol.IdentityReportId,
-            PicoUartHid.ReportDataLength(identity) - 1, prefixSize: 1);
+        var payload = HidReports.FeaturePayload(buffer, Protocol.IdentityReportId,
+            HidReports.ReportDataLength(identity) - 1, prefixSize: 1);
         Assert.Equal(ProtocolTests.Identity(), Protocol.ParseIdentity(payload));
     }
 
@@ -68,7 +68,7 @@ public sealed class ReportDescriptorTests
         Array.Fill(buffer, Protocol.IdentityReportId, 0, prefixSize);
         ProtocolTests.IdentityPayload().CopyTo(buffer, prefixSize);
 
-        var payload = PicoUartHid.FeaturePayload(buffer, Protocol.IdentityReportId,
+        var payload = HidReports.FeaturePayload(buffer, Protocol.IdentityReportId,
             Protocol.IdentitySize, prefixSize);
 
         Assert.Equal(ProtocolTests.Identity(), Protocol.ParseIdentity(payload));
@@ -80,11 +80,11 @@ public sealed class ReportDescriptorTests
     public void PaddingDoesNotHideIncompatiblePayloadSizes(int identitySize)
     {
         var descriptor = Descriptor(true, identitySize);
-        Assert.Throws<InvalidOperationException>(() => PicoUartHid.ValidateReports(
+        Assert.Throws<InvalidOperationException>(() => HidReports.ValidateReports(
             descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
-                .Select(report => (report.ReportID, PicoUartHid.ReportDataLength(report))),
+                .Select(report => (report.ReportID, HidReports.ReportDataLength(report))),
             descriptor.DeviceItems.SelectMany(item => item.InputReports)
-                .Select(report => (report.ReportID, PicoUartHid.ReportDataLength(report)))));
+                .Select(report => (report.ReportID, HidReports.ReportDataLength(report)))));
     }
 
     [Fact]
@@ -93,10 +93,10 @@ public sealed class ReportDescriptorTests
         var report = new Report();
         report.DataItems.Add(new DataItem { ElementCount = 1, ElementBits = 8, Flags = DataItemFlags.Constant });
         report.DataItems.Add(new DataItem { ElementCount = 1, ElementBits = 8 });
-        Assert.Throws<InvalidOperationException>(() => PicoUartHid.ReportDataLength(report));
+        Assert.Throws<InvalidOperationException>(() => HidReports.ReportDataLength(report));
 
         var partial = new Report();
         partial.DataItems.Add(new DataItem { ElementCount = 1, ElementBits = 7 });
-        Assert.Throws<InvalidOperationException>(() => PicoUartHid.ReportDataLength(partial));
+        Assert.Throws<InvalidOperationException>(() => HidReports.ReportDataLength(partial));
     }
 }

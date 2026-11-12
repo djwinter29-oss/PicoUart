@@ -860,6 +860,20 @@ test("scan errors remain visible across status refresh until a successful rescan
   assert.equal(view.element("status-message").textContent, "HID telemetry is live");
 });
 
+test("per-device discovery errors remain visible alongside healthy boards", async () => {
+  const view = page();
+  await connect(view);
+  view.element("rescan-boards").events.click();
+  await view.respond({
+    ...catalog,
+    discovery_errors: [{ device_path: "/dev/hidraw-error", serial_number: "unreadable", error: "identity report failed" }],
+  });
+  await view.respond(snapshot("first"));
+  assert.equal(view.element("board-select").value, "A");
+  assert.match(view.element("status-message").textContent, /Some boards could not be inspected/);
+  assert.match(view.element("status-message").textContent, /identity report failed/);
+});
+
 test("actions target the selected board and prevent switching until completion", async () => {
   const view = page();
   await connect(view);

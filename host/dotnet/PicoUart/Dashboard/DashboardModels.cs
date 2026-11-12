@@ -65,7 +65,8 @@ public sealed class DashboardSnapshot
     public ChannelDiagnostics?[] ChannelDiagnostics { get; } = new ChannelDiagnostics?[Protocol.ChannelCount];
     public string? DiagnosticsError { get; set; }
     public BoardStatus? Board { get; set; }
-    public uint?[] OverflowCounts => ChannelDiagnostics.Select(diagnostic => diagnostic?.RxOverrunCount).ToArray();
+    public uint?[] OverflowCounts =>
+        ChannelDiagnostics.Select(diagnostic => diagnostic?.KnownRxOverrunCount).ToArray();
     internal BoardControlStatus? Control { get; set; }
     public DashboardChannel[] Channels { get; } = Enumerable.Range(0, Protocol.ChannelCount)
         .Select(index => new DashboardChannel(index)).ToArray();

@@ -9,7 +9,7 @@ using Xunit;
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class HidStatusDeadlineTests
+public sealed class PicoUartHidTests
 {
     [Fact]
     public async Task ReadStatusReturnsWhenClientLockExceedsOperationBudget()

@@ -14,6 +14,23 @@ namespace PicoUart.Tests;
 public sealed class DashboardBoardsTests
 {
     [Fact]
+    public void DiscoveryContinuesAfterDeviceSpecificReadFailure()
+    {
+        var devices = HidDiscovery.DiscoverDevices(
+            new[] { "healthy", "unreadable" },
+            device => device == "unreadable"
+                ? throw new IOException("identity report failed")
+                : new HidBoard($"/{device}", device, "PicoUart"),
+            (device, error) => new($"/{device}", device, "PicoUart unavailable", error.Message));
+
+        Assert.Equal(2, devices.Length);
+        Assert.Equal("healthy", devices[0].SerialNumber);
+        Assert.Null(devices[0].Error);
+        Assert.Equal("unreadable", devices[1].SerialNumber);
+        Assert.Equal("identity report failed", devices[1].Error);
+    }
+
+    [Fact]
     public async Task ConcurrentViewersShareOneReaderPerBoardUntilShutdown()
     {
         var created = new ConcurrentBag<(string? Serial, string? Path, DashboardService Reader)>();
@@ -140,6 +157,34 @@ public sealed class DashboardBoardsTests
         Assert.Equal("/b", selectedPath);
         attached = [new("/a", "duplicate", "PicoUart"), new("/b", "duplicate", "PicoUart")];
         Assert.Throws<InvalidOperationException>(() => boards.Boards());
+        await boards.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task DiscoveryFailuresAreReportedWithoutHidingHealthyBoardsOrRetiringKnownReaders()
+    {
+        HidBoard[] attached = [new("/board", "test-A", "PicoUart")];
+        using var boards = new DashboardBoards(null, null, () => attached, (serial, path) => new(serial, path));
+        var initial = boards.Boards();
+        var boardId = initial.Boards[0].Id;
+        var reader = boards.Reader(boardId);
+
+        attached =
+        [
+            new("/board", "test-A", "PicoUart", "identity report failed"),
+            new("/healthy", "test-B", "PicoUart")
+        ];
+        var listing = boards.Boards();
+
+        var healthy = Assert.Single(listing.Boards);
+        Assert.Equal("test-B", healthy.SerialNumber);
+        Assert.Equal(healthy.Id, listing.DefaultBoardId);
+        var error = Assert.Single(listing.DiscoveryErrors);
+        Assert.Equal("/board", error.DevicePath);
+        Assert.Equal("test-A", error.SerialNumber);
+        Assert.Equal("identity report failed", error.Error);
+        Assert.Same(reader, boards.Reader(boardId));
+
         await boards.StopAsync(CancellationToken.None);
     }
 }

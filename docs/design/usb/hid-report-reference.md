@@ -143,9 +143,10 @@ Board model is the configured build target, not hardware detection. A W model do
 Wi-Fi/Bluetooth operations; capabilities describe actual functionality.
 
 Tag `v1.2.3` builds advertise firmware `1.2.3`. USB descriptor `bcdDevice` still carries only major.minor as BCD.
-Report 2 is the single source of `channel_count`. The hardware mask has no bits set above that count; derive the
-PIO mask within that width instead of sending a redundant second mask. Current PicoUart hardware mask is `0x03`.
-Hosts need a valid report 2 before interpreting the backend mask; identity and board capabilities remain usable
+Report 2 is the single source of `channel_count`, which is six for the supported PicoUart layout. The hardware mask
+has no bits set above that count; reject such masks before accepting channel reports, and derive the PIO mask within
+that width instead of sending a redundant second mask. Current PicoUart hardware mask is `0x03`. A valid report 2 is
+still required to interpret the channel count and configuration fields; identity and board capabilities remain usable
 if that read fails.
 
 | Capability bit | Meaning |

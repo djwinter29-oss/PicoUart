@@ -9,7 +9,9 @@ using PicoUart.Wire;
 namespace PicoUart.Dashboard;
 
 public sealed record DashboardBoard(string Id, string ProductName, string? SerialNumber, string DevicePath);
-public sealed record DashboardBoardList(DashboardBoard[] Boards, string? DefaultBoardId);
+public sealed record DashboardDiscoveryError(string DevicePath, string? SerialNumber, string Error);
+public sealed record DashboardBoardList(
+    DashboardBoard[] Boards, string? DefaultBoardId, DashboardDiscoveryError[] DiscoveryErrors);
 
 public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoards
 {
@@ -55,7 +57,9 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
             {
                 if (closed) throw new InvalidOperationException("dashboard is shutting down");
                 var seen = new HashSet<string>();
-                var boards = devices.Select(device =>
+                var boards = new List<DashboardBoard>();
+                var errors = new List<DashboardDiscoveryError>();
+                foreach (var device in devices)
                 {
                     var serial = string.IsNullOrEmpty(device.SerialNumber) ? null : device.SerialNumber;
                     var identity = serial is null ? $"path:{device.DevicePath}" : $"serial:{serial}";
@@ -63,11 +67,24 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
                     if (!seen.Add(id))
                         throw new InvalidOperationException(
                             "duplicate PicoUart board identity; board serials must be unique");
-                    var board = new DashboardBoard(id,
-                        string.IsNullOrEmpty(device.ProductName) ? "PicoUart" : device.ProductName, serial,
-                        device.DevicePath);
-                    return board;
-                }).ToArray();
+                    if (device.Error is not null)
+                    {
+                        errors.Add(new(device.DevicePath, serial, device.Error));
+                        if (serial is not null) missingScans.Remove(id);
+                        if (serial is null)
+                        {
+                            foreach (var knownBoard in known.Values.Where(
+                                board => board.DevicePath == device.DevicePath))
+                            {
+                                seen.Add(knownBoard.Id);
+                                missingScans.Remove(knownBoard.Id);
+                            }
+                        }
+                        continue;
+                    }
+                    boards.Add(new(id, string.IsNullOrEmpty(device.ProductName) ? "PicoUart" : device.ProductName,
+                        serial, device.DevicePath));
+                }
                 foreach (var board in boards)
                 {
                     known[board.Id] = board;
@@ -108,8 +125,9 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
                 var preferred = boards.FirstOrDefault(board =>
                     (serialNumber is not null && board.SerialNumber == serialNumber)
                     || (devicePath is not null && board.DevicePath == devicePath));
-                return new(boards, preferred?.Id ??
-                    (serialNumber is null && devicePath is null ? boards.FirstOrDefault()?.Id : null));
+                return new(boards.ToArray(), preferred?.Id ??
+                    (serialNumber is null && devicePath is null ? boards.FirstOrDefault()?.Id : null),
+                    errors.ToArray());
             }
         }
     }

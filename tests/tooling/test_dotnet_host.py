@@ -165,7 +165,8 @@ def test_dotnet_board_catalog_and_invalid_selection(server):
     status, _, payload = request(server, "/api/boards")
     assert status == 200
     listing = json.loads(payload)
-    assert listing.keys() == {"boards", "default_board_id"}
+    assert listing.keys() == {"boards", "default_board_id", "discovery_errors"}
+    assert listing["discovery_errors"] == []
     for board in listing["boards"]:
         assert board.keys() == {"id", "product_name", "serial_number", "device_path"}
     assert listing["default_board_id"] is None or listing["default_board_id"] in {

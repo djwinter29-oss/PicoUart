@@ -14,7 +14,7 @@ using Xunit;
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class ConfigurationEndpointTests
+public sealed class DashboardHostTests
 {
     [Theory]
     [InlineData("{\"profile\":0,\"unsafe_overclock\":false}", 0u, false)]
@@ -253,7 +253,7 @@ public sealed class ConfigurationEndpointTests
         public Exception? ActionError { get; set; }
         public Exception? SaveError { get; set; }
 
-        public DashboardBoardList Boards() => new([], null);
+        public DashboardBoardList Boards() => new([], null, []);
 
         public string SnapshotJson(string? boardId)
         {

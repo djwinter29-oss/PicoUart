@@ -66,6 +66,11 @@ snapshot, launch a timed monitor alongside a serial test, or collect cumulative 
 ./PicoUart overruns > uart-dropped-bytes.json
 ```
 
+The `overruns` JSON array contains `null` for channels whose UART diagnostics are Unavailable; zero is reported only
+when a valid or Cached measurement establishes that count. `status` and `monitor` consume channel Input reports
+independently of boot configuration, which remains available through the separate `config` command and dashboard
+metadata.
+
 Each monitor line contains one channel's combined snapshot, identified by `id` (0-5), with its own 16-bit `sequence`
 and measured `interval_ms`. Four byte counters report totals since MCU boot modulo $2^{32}$; derive increments with
 modulo subtraction between Input reports and use the measured interval, not host arrival time, for rates. The first
@@ -78,7 +83,7 @@ validation, traffic accounting, fault-history interpretation, and command timing
 `status` exits non-zero when no report arrives before its timeout. **Unlike the Python CLI, .NET `monitor` can finish
 successfully with no reports.** `status` prints the same six-entry `channels` snapshot as Python `status --json`,
 with sorted object keys. It retries for `--timeout` seconds (default 2); each Input read waits at most 250 ms, and
-first-time metadata reads share the remaining timeout. Timed `monitor` reads are bounded by the remaining capture
+first-time identity reads share the remaining timeout. Timed `monitor` reads are bounded by the remaining capture
 duration, and samples completing at or after the deadline are excluded.
 `monitor` still prints one channel object per line. Field rules are in the
 [host tools guide](../../docs/development/host-tools.md#python-test-automation).
