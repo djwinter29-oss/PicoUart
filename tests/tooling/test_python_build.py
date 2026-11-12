@@ -87,10 +87,9 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
     project = python_project
     metadata_project = parse((project / "pyproject.toml").read_text())["project"]
     runtime_requirements = set(metadata_project["dependencies"])
-    dashboard_requirements = set(metadata_project["optional-dependencies"]["dashboard"])
-    expected_requirements = runtime_requirements | {
-        f"{requirement}; extra == 'dashboard'" for requirement in dashboard_requirements
-    }
+    assert runtime_requirements == {"flask==3.1.3", "hidapi==0.14.0.post4"}
+    assert "optional-dependencies" not in metadata_project
+    expected_requirements = runtime_requirements
     environment = {key: value for key, value in os.environ.items()
                    if key not in ("PICO_UART_HOST_VERSION", "SETUPTOOLS_SCM_PRETEND_VERSION")}
     if version:
@@ -141,6 +140,7 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
             assert set(metadata.get_all("Requires-Dist")) == expected_requirements
             entry_points = wheel.read(f"pico_uart-{expected_version}.dist-info/entry_points.txt").decode()
             assert "pico-uart = pico_uart.main:main" in entry_points
+            assert "pico_uart/__main__.py" in wheel.namelist()
             assert wheel.read(f"pico_uart-{expected_version}.dist-info/licenses/LICENSE") == license_text
             if directory != editable_directory:
                 for name, content in expected_assets.items():

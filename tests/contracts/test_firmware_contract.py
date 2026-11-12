@@ -28,13 +28,9 @@ def test_python_project_declares_dependencies_without_lock_files(repo_root):
     pin_pattern = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;\\]+)", re.MULTILINE)
     project = parse((requirement_dir / "pyproject.toml").read_text())
     runtime_pins = dict(pin_pattern.findall("\n".join(project["project"]["dependencies"])))
-    assert runtime_pins == {"hidapi": "0.14.0.post4"}
-    dashboard_pins = dict(pin_pattern.findall(
-        "\n".join(project["project"]["optional-dependencies"]["dashboard"])
-    ))
-    assert dashboard_pins == {"flask": "3.1.3"}
+    assert runtime_pins == {"flask": "3.1.3", "hidapi": "0.14.0.post4"}
+    assert "optional-dependencies" not in project["project"]
     assert "pytest==9.1.1" in project["dependency-groups"]["test"]
-    assert "flask==3.1.3" in project["dependency-groups"]["dev"]
     assert "mypy==2.4.1" in project["dependency-groups"]["dev"]
     assert "ruff==0.17.3" in project["dependency-groups"]["dev"]
     assert all(requirement in project["dependency-groups"]["dev"]
