@@ -48,16 +48,42 @@ function displayPeak(value, capacity) {
     ? `${formatted} (${(value / capacity * 100).toFixed(1)}%)` : formatted;
 }
 
+let openDiagnosticsId = null;
+let openDiagnosticsDialog = null;
+let diagnosticsAgeElement = null;
+let diagnosticsReadAt = null;
+let openDiagnosticsSample = null;
+let openDiagnosticsError = null;
+
+export function updateDiagnosticsAge(now = Date.now()) {
+  if (!openDiagnosticsDialog?.open || !diagnosticsAgeElement) return;
+  const seconds = Number.isFinite(diagnosticsReadAt)
+    ? Math.max(0, Math.floor((now - diagnosticsReadAt) / 1000)) : null;
+  diagnosticsAgeElement.textContent = seconds === null
+    ? "Diagnostics read time unavailable" : `Diagnostics read ${seconds} s ago`;
+}
+
 function showChannelDiagnostics(id, channel, diagnostic, capacities, data) {
   const dialog = document.querySelector("#channel-diagnostics-dialog");
   const content = document.querySelector("#channel-diagnostics-content");
+  openDiagnosticsId = id;
+  openDiagnosticsDialog = dialog;
+  openDiagnosticsSample = diagnostic;
+  openDiagnosticsError = data.diagnostics_errors?.[id] ?? null;
   document.querySelector("#channel-diagnostics-title").textContent = `CDC${id} diagnostics`;
   content.replaceChildren();
+  diagnosticsAgeElement = null;
+  diagnosticsReadAt = null;
   if (!diagnostic) {
     content.textContent = data.diagnostics_errors?.[id] ?? "Channel diagnostics unavailable.";
-    dialog.showModal();
+    if (!dialog.open) dialog.showModal();
     return;
   }
+  diagnosticsAgeElement = document.createElement("p");
+  diagnosticsAgeElement.className = "diagnostics-age";
+  diagnosticsReadAt = Date.parse(diagnostic.updated_at);
+  content.append(diagnosticsAgeElement);
+  updateDiagnosticsAge();
   const values = [
     ["UART measurement", diagnostic.uart_measurement_state_name],
     ["UART sample age", diagnostic.uart_measurement_state === 0 ? "Unavailable"
@@ -83,7 +109,7 @@ function showChannelDiagnostics(id, channel, diagnostic, capacities, data) {
     list.append(term, detail);
   }
   content.append(list);
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
 }
 
 const channelRowViews = new Map();
@@ -150,9 +176,8 @@ function createChannelRow(id) {
   return view;
 }
 
-function renderChannels(data) {
+function renderChannels(data, now = Date.now()) {
   const body = document.querySelector("#channel-rows");
-  const now = Date.now();
   const capacities = data.configuration?.capacities;
   const activeIds = new Set();
   data.channels.forEach((channel, index) => {
@@ -176,7 +201,9 @@ function renderChannels(data) {
     view.state.hidden = !fresh;
     view.validity.textContent = !fresh || measurementState === "unavailable" ? "— Unavailable"
       : measurementState === "cached" ? "CACHED" : measurementState === "current" ? "LIVE" : "— Unavailable";
-    view.validity.title = !fresh ? "Channel snapshot unavailable or stale."
+    if (channel.error) view.validity.textContent = "READ ERROR";
+    view.validity.title = channel.error ? `Channel snapshot unavailable: ${channel.error}`
+      : !fresh ? "Channel snapshot unavailable or stale."
       : measurementState === "unavailable" ? "Measurement data unavailable."
         : `Measurement status: ${measurementState}.`;
     view.settings.textContent = fresh && channel.baud_rate
@@ -190,13 +217,21 @@ function renderChannels(data) {
       metric.rate.textContent = fresh && channel.rates?.[key] != null
         ? `${(channel.rates[key] / 1000).toFixed(1)} KB/s` : "-- KB/s";
       const counter = channel.counters[key];
-      metric.total.textContent = fresh && counter !== null ? `${counter.toLocaleString()} B` : "--";
+      const uartUnavailable = key.startsWith("uart_") && measurementState === "unavailable";
+      metric.total.textContent = fresh && !uartUnavailable && counter !== null
+        ? `${counter.toLocaleString()} B` : "--";
       metric.metric.title = `${label}: bytes since firmware boot, modulo 2^32.`;
     });
     view.channel = channel;
     view.diagnostic = diagnostic;
     view.capacities = capacities;
     view.data = data;
+    const dialog = document.querySelector("#channel-diagnostics-dialog");
+    if (dialog.open && openDiagnosticsId === id
+      && (diagnostic !== openDiagnosticsSample
+        || (data.diagnostics_errors?.[id] ?? null) !== openDiagnosticsError)) {
+      showChannelDiagnostics(id, channel, diagnostic, capacities, data);
+    }
   });
   for (const [id, view] of channelRowViews) {
     if (!activeIds.has(id)) {
@@ -204,6 +239,10 @@ function renderChannels(data) {
       channelRowViews.delete(id);
     }
   }
+}
+
+export function updateChannelFreshness(data, now = Date.now()) {
+  renderChannels(data, now);
 }
 
 export function renderDashboard(data) {
@@ -242,11 +281,13 @@ export function renderDashboard(data) {
   const actionMessage = action && action.status_name !== "Idle"
     ? `Latest board action: ${action.status_name}${action.action ? `, action ${action.action}` : ""}`
       + (action.error_reason ? ` (reason ${action.error_reason})` : "") : null;
+  const channelError = data.channels.find(channel => channel.error);
   statusMessage.textContent = data.identity_error ? `Device identity unavailable: ${data.identity_error}`
     : data.configuration_error ? `Board configuration unavailable: ${data.configuration_error}`
       : data.telemetry_error ? `Live telemetry unavailable: ${data.telemetry_error}`
         : data.action_error ? `Board action: ${data.action_error}`
-          : actionMessage ?? (data.connected ? "HID status is available" : "Waiting for a PicoUart HID interface");
+          : channelError ? `CDC${channelError.id} snapshot unavailable: ${channelError.error}`
+            : actionMessage ?? (data.connected ? "HID status is available" : "Waiting for a PicoUart HID interface");
   statusMessage.parentElement.dataset.error = String(Boolean(data.identity_error || data.configuration_error
-    || data.telemetry_error || data.action_error || !data.connected));
+    || data.telemetry_error || data.action_error || channelError || !data.connected));
 }

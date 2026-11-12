@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
-import { PicoUartWebHid } from "./device.mjs?v=22";
-import { renderDashboard, updateReportAge } from "./view.mjs?v=22";
+import { PicoUartWebHid } from "./device.mjs?v=24";
+import { renderDashboard, updateChannelFreshness, updateDiagnosticsAge, updateReportAge } from "./view.mjs?v=24";
 
 const connectButton = document.querySelector("#connect");
 const toggleLedButton = document.querySelector("#toggle-led");
@@ -22,6 +22,7 @@ document.querySelector("#close-channel-diagnostics").addEventListener("click", (
   document.querySelector("#channel-diagnostics-dialog").close());
 let selectedProfile = null;
 let saveMessage = "";
+let operationNotice = "";
 
 function resetConfigurationDraft() {
   if (configurationDialog.open) configurationDialog.close();
@@ -119,7 +120,10 @@ async function saveConfiguration() {
   saveMessage = "Saving profile; do not retry if the result is unconfirmed.";
   renderConfiguration(client.state);
   try {
-    await client.saveConfiguration(profile, unsafeAcknowledgement.checked, true);
+    const result = await client.saveConfiguration(profile, unsafeAcknowledgement.checked, true);
+    if (result?.action !== 4 || result.status !== 2) {
+      throw new Error("Save did not return confirmed completion; outcome is unconfirmed.");
+    }
     saveMessage = `Saved ${description}; Pico is rebooting. Reconnect manually to verify its boot configuration.`;
     renderConfiguration(client.state);
   } catch (error) {
@@ -147,7 +151,10 @@ function render(state) {
   rebootButton.hidden = !(dashboard.identity?.capabilities & 2);
   rebootButton.disabled = !connected || busy;
   diagnosticsButton.disabled = !connected || busy || !dashboard.identity;
-  if (!connected || state.error) {
+  if (operationNotice) {
+    statusMessage.textContent = operationNotice;
+    statusMessage.parentElement.dataset.error = "true";
+  } else if (!connected || state.error) {
     statusMessage.textContent = state.error ?? state.message;
     statusMessage.parentElement.dataset.error = String(Boolean(state.error) || state.phase === "unsupported");
   }
@@ -155,16 +162,31 @@ function render(state) {
 
 const hid = globalThis.isSecureContext ? navigator.hid : undefined;
 const client = new PicoUartWebHid(hid, render);
+function showOperationError(label, error, generation) {
+  operationNotice = generation === client.generation
+    ? `${label}: ${error.message}` : `Previous connection ${label.toLowerCase()}: ${error.message}`;
+  render(client.state);
+}
+
 render(client.state);
-connectButton.addEventListener("click", () =>
-  client.state.phase === "disconnected" ? client.connect() : client.disconnect());
+connectButton.addEventListener("click", () => {
+  if (client.state.phase === "disconnected") {
+    operationNotice = "";
+    client.connect();
+  } else {
+    client.disconnect();
+  }
+});
 toggleLedButton.addEventListener("click", async () => {
   const on = client.state.dashboard.telemetry?.led.output_on;
   if (on == null) return;
+  operationNotice = "";
+  render(client.state);
+  const generation = client.generation;
   try {
     await client.setLed(!on);
   } catch (error) {
-    if (client.state.phase !== "disconnected") client.update({ error: error.message });
+    showOperationError("Board action", error, generation);
   }
 });
 rebootButton.addEventListener("click", () => {
@@ -174,10 +196,13 @@ document.querySelector("#cancel-reboot").addEventListener("click", () => rebootD
 document.querySelector("#confirm-reboot").addEventListener("click", async () => {
   if (!rebootDialog.open || rebootButton.disabled) return;
   rebootDialog.close();
+  operationNotice = "";
+  render(client.state);
+  const generation = client.generation;
   try {
     await client.reboot(true);
   } catch (error) {
-    if (client.state.phase !== "disconnected") client.update({ error: error.message });
+    showOperationError("Board action", error, generation);
   }
 });
 profileSelect.addEventListener("change", () => {
@@ -193,11 +218,18 @@ unsafeAcknowledgement.addEventListener("change", () => {
 });
 confirmConfigurationButton.addEventListener("click", saveConfiguration);
 diagnosticsButton.addEventListener("click", async () => {
+  operationNotice = "";
+  render(client.state);
+  const generation = client.generation;
   try {
     await client.refreshDiagnostics();
   } catch (error) {
-    if (client.state.phase !== "disconnected") client.update({ error: error.message });
+    showOperationError("Diagnostics", error, generation);
   }
 });
 globalThis.setInterval(() => client.refresh(), 1000);
-globalThis.setInterval(() => updateReportAge(client.state.dashboard), 1000);
+globalThis.setInterval(() => {
+  updateReportAge(client.state.dashboard);
+  updateChannelFreshness(client.state.dashboard);
+  updateDiagnosticsAge();
+}, 1000);

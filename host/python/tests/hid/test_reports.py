@@ -634,6 +634,49 @@ def test_status_deadline_bounds_lock_contention():
         worker.join(timeout=1)
 
 
+@pytest.mark.parametrize("cached", [False, True])
+def test_configuration_deadline_bounds_lock_contention(cached):
+    client = PicoUartHid(device=FakeHidDevice({}))
+    if cached:
+        client.read_configuration()
+    held = threading.Event()
+    release = threading.Event()
+
+    def hold_lock():
+        with client._lock:
+            held.set()
+            release.wait(timeout=1)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    try:
+        assert held.wait(timeout=1)
+        outcome = []
+        finished = threading.Event()
+
+        def read_configuration():
+            try:
+                client.read_configuration(deadline=time.monotonic() + 0.02)
+            except Exception as error:
+                outcome.append(error)
+            finally:
+                finished.set()
+
+        reader = threading.Thread(target=read_configuration)
+        reader.start()
+        try:
+            assert finished.wait(timeout=0.1)
+            assert isinstance(outcome[0], TimeoutError)
+            assert not release.is_set()
+        finally:
+            release.set()
+            reader.join(timeout=1)
+    finally:
+        release.set()
+        holder.join(timeout=1)
+    assert not holder.is_alive()
+
+
 def test_input_read_is_refused_while_a_timed_out_feature_transfer_is_running(monkeypatch):
     import pico_uart.hid.client as client_module
 
@@ -695,3 +738,30 @@ def test_close_waits_for_timed_out_feature_transfer_before_closing_device(monkey
     release.set()
     assert client.wait_closed(timeout_s=1)
     assert device.closed
+
+
+def test_closing_one_wrapper_does_not_hold_another_wrappers_deadline_lock():
+    close_entered = threading.Event()
+    release_close = threading.Event()
+
+    class SlowCloseDevice(FakeHidDevice):
+        def close(self):
+            close_entered.set()
+            release_close.wait(timeout=1)
+            super().close()
+
+    device = SlowCloseDevice({})
+    owner = PicoUartHid(device=device)
+    reader = PicoUartHid(device=device)
+    close_worker = threading.Thread(target=owner.close)
+    close_worker.start()
+    try:
+        assert close_entered.wait(timeout=1)
+        started = time.monotonic()
+        with pytest.raises(RuntimeError, match="connection is closed"):
+            reader.read_status(timeout_ms=1, deadline=started + 0.02)
+        assert time.monotonic() - started < 0.1
+    finally:
+        release_close.set()
+        close_worker.join(timeout=1)
+    assert not close_worker.is_alive()

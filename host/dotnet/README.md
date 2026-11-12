@@ -97,18 +97,18 @@ read the [configuration precautions](../../docs/development/host-tools.md#persis
 After reconnecting, check the actual active profile and any fallback reason rather than assuming the requested clock
 became active. A verified save does not establish overclock stability.
 
-LED toggling reads telemetry and sends an explicit On/Off assignment. All controls first validate cached static
-identity/capabilities, serialize requests, and verify the matching command/request ID and terminal result. Commands
-have 3-second transfer/result deadlines; a timeout is unconfirmed, never an automatic retry. Reconnect after an
-unconfirmed transfer. Reset performs a fresh arm/reboot sequence; save completion means flash verification succeeded
-and automatic reboot was scheduled, not that the next boot succeeded.
+LED toggling reads telemetry, sends an explicit On/Off assignment, and refreshes telemetry after the confirmed action.
+All controls validate static identity/capabilities, serialize requests, and verify a terminal report-20 result for the
+requested action. The protocol has no request ID or deduplication. Commands have 3-second transfer/result deadlines;
+an uncertain outcome is never retried automatically. Reconnect and verify board state before retrying. Reset is one
+action; save completion means flash verification succeeded and automatic reboot was scheduled, not that the next boot
+succeeded.
 
 ### Dashboard JSON
 
-Existing board, hardware, runtime, LED, configuration, and traffic field names are retained. `identity` additionally
-exposes `firmware_major/minor/patch`, `firmware_version`, `mcu_id`, `mcu`, `hardware_channel_mask`, `pio_channel_mask`,
-`capabilities`, `clock_profile_mask`, and `ram_total_bytes`. `led.manual_on` and `led.output_on` both represent the
-explicit identification output (or null when unavailable).
+Existing board, hardware, runtime, LED, configuration, and traffic field names are retained. Identity and telemetry
+fields follow the [consolidated HID contract](../../docs/design/usb/hid-report-reference.md); `led.output_on` is
+nullable when the identification LED is unavailable.
 
 Each `channels[]` item adds `updated_at` (ISO timestamp of its last Input), `sequence`, `observed_interval_ms`,
 `traffic_gaps`, and sticky `traffic_incomplete`. Measurement time sums complete valid Input intervals after the first
@@ -118,7 +118,7 @@ After three seconds without an accepted Input, the next sample establishes a fre
 its deltas are excluded, preventing old-sequence filtering from blocking recovery after a pause or USB reset.
 `channel_diagnostics[]` is indexed by channel and may contain null before state is available. Fault objects retain
 `faults.<name>.count` only; `last_fault_uptime_s` is shared by all four categories, not a per-fault timestamp.
-`configuration_save.status` uses report-2 statuses 0-6; a non-save result projects to idle `{status: 0, profile: null}`.
+`configuration_save.status` uses report-20 statuses 0-6; a non-save result projects to idle `{status: 0, profile: null}`.
 An unavailable save capability sets `configuration_save_error`; an unread/failed control read leaves the result null.
 
 ## Troubleshooting

@@ -70,6 +70,34 @@ public sealed class DashboardTests
         Assert.True(snapshot.Channels[0].TrafficGaps >= 1);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(ushort.MaxValue)]
+    public void InvalidFirstInputIntervalMarksContinuityIncomplete(ushort interval)
+    {
+        var snapshot = new DashboardSnapshot();
+
+        snapshot.Apply(Sample(1, interval, 100));
+
+        Assert.True(snapshot.Channels[0].TrafficIncomplete);
+        Assert.Equal(0, snapshot.Channels[0].TrafficGaps);
+        Assert.Equal(0ul, snapshot.Channels[0].ObservedIntervalMs);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(ushort.MaxValue)]
+    public void InvalidContiguousInputIntervalDoesNotCountAsSequenceGap(ushort interval)
+    {
+        var snapshot = new DashboardSnapshot();
+        snapshot.Apply(Sample(1, 500, 100));
+
+        snapshot.Apply(Sample(2, interval, 200));
+
+        Assert.True(snapshot.Channels[0].TrafficIncomplete);
+        Assert.Equal(0, snapshot.Channels[0].TrafficGaps);
+    }
+
     [Fact]
     public void DuplicateSequenceDoesNotCreateTrafficGapOrReplaceSample()
     {

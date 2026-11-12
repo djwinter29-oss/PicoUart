@@ -111,8 +111,10 @@ internal static class DashboardHost
                 return DeviceErrorResponse(error);
             }
         });
-        app.MapPost("/api/actions/{action}", (string action, HttpContext context, IDashboardBoards dashboard) =>
+        app.MapPost("/api/actions/{action}", (
+            string action, HttpContext context, IDashboardBoards dashboard, ILoggerFactory loggerFactory) =>
         {
+            var logger = loggerFactory.CreateLogger("PicoUart.DashboardHost");
             var token = context.Session.GetString("csrf_token");
             var supplied = context.Request.Headers["X-CSRF-Token"].ToString();
             if (token is null || !CryptographicOperations.FixedTimeEquals(
@@ -126,11 +128,14 @@ internal static class DashboardHost
             }
             catch (Exception error) when (HidErrors.IsDeviceError(error))
             {
+                logger.LogWarning(error, "HID control action {Action} failed", action);
                 return DeviceErrorResponse(error);
             }
         });
-        app.MapPost("/api/configuration", async (HttpContext context, IDashboardBoards dashboard) =>
+        app.MapPost("/api/configuration", async (
+            HttpContext context, IDashboardBoards dashboard, ILoggerFactory loggerFactory) =>
         {
+            var logger = loggerFactory.CreateLogger("PicoUart.DashboardHost");
             if (context.Request.ContentLength > MaxConfigurationRequestBytes)
                 return ConfigurationRequestTooLarge();
             var requestBody = await ReadConfigurationBodyAsync(context.Request.Body, context.RequestAborted);
@@ -160,6 +165,7 @@ internal static class DashboardHost
                     IOException or UnauthorizedAccessException => 503,
                     _ => 409
                 };
+                logger.LogWarning(error, "HID configuration save failed");
                 return ErrorResponse(error, status);
             }
         });

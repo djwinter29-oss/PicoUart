@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
@@ -60,6 +61,42 @@ public sealed class DashboardBoardsTests
         Assert.Equal(first, boards.Boards().DefaultBoardId);
         Assert.Same(reader, boards.Reader(first));
         await boards.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task RepeatedMissingScansRetireReaderBeforeItCanBeRecreated()
+    {
+        HidBoard[] attached = [new("/a", "test-A", "PicoUart")];
+        var created = new List<DashboardService>();
+        using var boards = new DashboardBoards(null, null, () => attached, (serial, path) =>
+        {
+            var reader = new DashboardService(serial, path);
+            created.Add(reader);
+            return reader;
+        });
+        var id = boards.Boards().Boards[0].Id;
+        var original = boards.Reader(id);
+        attached = [];
+
+        boards.Boards();
+        boards.Boards();
+        boards.Boards();
+        await WaitForRetirement();
+
+        Assert.Throws<InvalidOperationException>(() => boards.Reader(id));
+        Assert.Equal(0, boards.RetiringReaderCount);
+        attached = [new("/new-path", "test-A", "PicoUart")];
+        boards.Boards();
+        Assert.NotSame(original, boards.Reader(id));
+        Assert.Equal(2, created.Count);
+        await boards.StopAsync(CancellationToken.None);
+
+        async Task WaitForRetirement()
+        {
+            var deadline = Stopwatch.StartNew();
+            while (boards.RetiringReaderCount != 0 && deadline.Elapsed < TimeSpan.FromSeconds(2))
+                await Task.Delay(10);
+        }
     }
 
     [Fact]

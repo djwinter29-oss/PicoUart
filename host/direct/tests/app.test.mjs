@@ -27,6 +27,7 @@ function fixture(secure = true, hid = {}) {
     constructor(hid, render) {
       client = this;
       this.render = render;
+      this.generation = 0;
       this.calls = [];
       this.state = { phase: hid ? "disconnected" : "unsupported", dashboard: {},
       configurationSaveMessage: "",
@@ -37,7 +38,10 @@ function fixture(secure = true, hid = {}) {
     refresh() { this.calls.push("refresh"); }
     toggleLed() { this.calls.push("toggle-led"); }
     setLed(on) { this.calls.push("toggle-led"); this.state.dashboard.led = { output_on: on, manual_on: on }; }
-    saveConfiguration(profile, unsafeOverclock) { this.calls.push(["save-configuration", profile, unsafeOverclock]); }
+    saveConfiguration(profile, unsafeOverclock) {
+      this.calls.push(["save-configuration", profile, unsafeOverclock]);
+      return this.saveConfigurationResult;
+    }
     reboot(confirmed) { this.calls.push(["reboot", confirmed]); }
     clearConfigurationSaveMessage() { this.state.configurationSaveMessage = ""; }
     phase(phase, error = null) {
@@ -49,14 +53,18 @@ function fixture(secure = true, hid = {}) {
     .replace(/^import .*;\n/gm, "");
   let polling;
   let agePolling;
+  const freshnessUpdates = [];
   vm.runInNewContext(source, { document, navigator: { hid }, isSecureContext: secure,
     PicoUartWebHid: FakeClient, renderDashboard() {},
     updateReportAge(data) { assert.equal(data, client.state.dashboard); },
+    updateChannelFreshness(data) { freshnessUpdates.push(data); },
+    updateDiagnosticsAge() {},
     setInterval(callback, interval) {
       if (!polling) polling = { callback, interval };
       else agePolling = { callback, interval };
     } });
-  return { html, client, polling, agePolling, get: id => document.querySelector(`#${id}`) };
+  return { html, client, polling, agePolling, freshnessUpdates,
+    get: id => document.querySelector(`#${id}`) };
 }
 
 test("Direct Dashboard distinguishes all assigned reset causes and preserves unknown codes", () => {
@@ -99,8 +107,9 @@ test("one connection button belongs to Device overview, with no separate refresh
   assert.doesNotMatch(configuration, /configuration-note|configuration-detail|configuration-status/);
 });
 
-test("persistent configuration uses target profiles and gates unsafe saves", () => {
+test("persistent configuration uses target profiles and gates unsafe saves", async () => {
   const { client, get } = fixture();
+  client.saveConfigurationResult = { action: 4, status: 2 };
   client.state.dashboard = { connected: true, hardware: { mcu_id: 2 },
     identity: { capabilities: 7, clock_profile_mask: 31 },
     configuration: { stored_profile: 2 }, configuration_save: { status: 0, profile: 2 },
@@ -124,8 +133,9 @@ test("persistent configuration uses target profiles and gates unsafe saves", () 
   get("configuration-unsafe-ack").checked = true;
   get("configuration-unsafe-ack").change();
   assert.equal(get("confirm-configuration").disabled, false);
-  get("confirm-configuration").click();
+  await get("confirm-configuration").click();
   assert.deepEqual(client.calls.at(-1), ["save-configuration", 1, true]);
+  assert.match(get("configuration-message").textContent, /^Saved 150 MHz/);
   assert.equal(get("configuration-dialog").open, false);
   profile.value = "0";
   profile.change();
@@ -164,6 +174,31 @@ test("Save & Reboot stays disabled until the selected profile differs from its b
   assert.equal(saveButton.disabled, true);
 });
 
+test("Save & Reboot never reports success without a confirmed completion result", async () => {
+  const { client, get } = fixture();
+  client.state.dashboard = {
+    identity: { capabilities: 4, clock_profile_mask: 31 },
+    configuration: { stored_profile: 2 },
+    channels: Array.from({ length: 6 }, () => ({
+      channel_state: 0,
+      input_updated_at: new Date().toISOString(),
+    })),
+  };
+  client.state.phase = "connected";
+  client.render(client.state);
+  get("configuration-profile").value = "1";
+  get("configuration-profile").change();
+  get("save-configuration").click();
+  get("configuration-unsafe-ack").checked = true;
+  get("configuration-unsafe-ack").change();
+
+  await get("confirm-configuration").click();
+
+  assert.match(get("configuration-message").textContent, /confirmed completion; outcome is unconfirmed/);
+  assert.doesNotMatch(get("configuration-message").textContent, /^Saved/);
+  assert.equal(get("configuration-message").dataset.error, "true");
+});
+
 test("configuration read failures disable Save and remain visible without the removed summary", () => {
   const { client, get } = fixture();
   client.state.dashboard = { connected: true, hardware: { mcu_id: 1 },
@@ -198,12 +233,39 @@ test("board reboot uses the shared confirmation modal and requires explicit conf
 });
 
 test("metadata continues refreshing automatically every second", () => {
-  const { client, polling, agePolling } = fixture();
+  const { client, polling, agePolling, freshnessUpdates } = fixture();
   assert.equal(polling.interval, 1000);
   polling.callback();
   assert.deepEqual(client.calls, ["refresh"]);
   assert.equal(agePolling.interval, 1000);
   agePolling.callback();
+  assert.deepEqual(freshnessUpdates, [client.state.dashboard]);
+});
+
+test("unconfirmed action outcomes remain visible after disconnect without attaching to the next connection", async () => {
+  const { client, get } = fixture();
+  client.generation = 3;
+  client.state.phase = "connected";
+  client.state.dashboard.identity = { capabilities: 2 };
+  let rejectReboot;
+  client.reboot = confirmed => {
+    client.calls.push(["reboot", confirmed]);
+    return new Promise((_, reject) => { rejectReboot = reject; });
+  };
+  client.render(client.state);
+  get("reboot-board").click();
+  const pending = get("confirm-reboot").click();
+  client.generation++;
+  client.phase("disconnected", "Device unplugged");
+  rejectReboot(new Error("Board action submission failed; outcome is unconfirmed."));
+  await pending;
+
+  assert.match(get("status-message").textContent, /^Previous connection board action: .*outcome is unconfirmed/);
+  assert.equal(get("status-message").parentElement.dataset.error, "true");
+  get("connect").click();
+  client.generation++;
+  client.phase("connecting");
+  assert.doesNotMatch(get("status-message").textContent, /outcome is unconfirmed/);
 });
 
 test("connection button reflects lifecycle, routes clicks and recovers after failure or unplug", () => {

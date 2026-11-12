@@ -96,7 +96,8 @@ public sealed class DashboardSnapshot
     {
         var channel = Channels[source.Id];
         var now = Stopwatch.GetTimestamp();
-        var first = channel.Sequence is null;
+        var noPriorSample = channel.Sequence is null;
+        var first = noPriorSample;
         var stale = !first && (channel.Stale
             || Stopwatch.GetElapsedTime(channel.LastInputTimestamp, now).TotalSeconds >= 3);
         if (stale)
@@ -119,7 +120,8 @@ public sealed class DashboardSnapshot
             || Stopwatch.GetElapsedTime(channel.LastInputTimestamp, now).TotalSeconds >= 3);
         var previous = channel.CounterBaseline;
         var previousMeasurement = channel.MeasurementBaseline;
-        if (!first && ((gap && !channel.Stale) || !exact))
+        if (!exact) channel.TrafficIncomplete = true;
+        if (!first && gap && !channel.Stale)
             MarkIncomplete(channel);
         Connected = true;
         Error = null;

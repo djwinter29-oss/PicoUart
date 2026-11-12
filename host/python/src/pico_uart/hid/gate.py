@@ -21,20 +21,23 @@ class _DeviceState:
         self.close_error: OSError | None = None
 
 
+# Finalizers may re-enter while cyclic GC runs during state allocation.
 _DEVICE_STATES: dict[int, _DeviceState] = {}
-_DEVICE_STATES_LOCK = threading.Lock()
+_DEVICE_STATES_LOCK = threading.RLock()
 
 
 def _acquire_device_state(device: HidDevice) -> tuple[int, _DeviceState]:
     key = id(device)
     with _DEVICE_STATES_LOCK:
-        state = _DEVICE_STATES.setdefault(key, _DeviceState())
+        state = _DEVICE_STATES.get(key)
+        if state is None:
+            state = _DEVICE_STATES[key] = _DeviceState()
         state.references += 1
-    return key, state
+        return key, state
 
 
 def _release_device_state(key: int, state: _DeviceState) -> None:
-    with _DEVICE_STATES_LOCK, state.lock:
+    with _DEVICE_STATES_LOCK:
         state.references -= 1
         if state.references == 0 and _DEVICE_STATES.get(key) is state:
             del _DEVICE_STATES[key]
@@ -65,40 +68,46 @@ class DeviceGate:
 
     def abort_transfer(self) -> None:
         """Release the slot when the transfer worker could not be started."""
-        with self._state.lock:
-            self._state.in_flight = False
+        self._end_transfer()
 
     def end_transfer(self, completed: threading.Event | None = None) -> None:
         """Release the slot, finish a deferred close, then signal a waiting feature caller."""
+        self._end_transfer(completed)
+
+    def _end_transfer(self, completed: threading.Event | None = None) -> None:
+        close_device = False
         with self._state.lock:
             self._state.in_flight = False
             if self._state.closing and not self._state.device_closed:
                 self._state.device_closed = True
-                try:
-                    self.device.close()
-                except OSError as error:
-                    self._state.close_error = error
-                finally:
-                    self._state.close_complete.set()
-            if completed is not None:
-                completed.set()
-        _release_idle_device_state(self._state_key, self._state)
+                close_device = True
+        if close_device:
+            self._close_device()
+        if completed is not None:
+            completed.set()
 
     def close(self) -> bool:
         """Close now, or defer while a transfer is in flight; return whether the handle is closed."""
+        close_device = False
         with self._state.lock:
             self._state.closing = True
             if not self._state.in_flight and not self._state.device_closed:
                 self._state.device_closed = True
-                try:
-                    self.device.close()
-                except OSError as error:
-                    self._state.close_error = error
-                    raise
-                finally:
-                    self._state.close_complete.set()
+                close_device = True
+        if close_device:
+            self._close_device()
         self._raise_close_error()
         return self._state.close_complete.is_set()
+
+    def _close_device(self) -> None:
+        try:
+            self.device.close()
+        except OSError as error:
+            with self._state.lock:
+                self._state.close_error = error
+        finally:
+            with self._state.lock:
+                self._state.close_complete.set()
 
     def wait_closed(self, timeout_s: float | None) -> bool:
         """Wait for the handle to close; return false on timeout."""
@@ -111,10 +120,3 @@ class DeviceGate:
         with self._state.lock:
             if self._state.close_error is not None:
                 raise self._state.close_error
-
-
-def _release_idle_device_state(key: int, state: _DeviceState) -> None:
-    """Discard a shared state after its wrappers and any in-flight call are gone."""
-    with _DEVICE_STATES_LOCK, state.lock:
-        if state.references == 0 and not state.in_flight and _DEVICE_STATES.get(key) is state:
-            del _DEVICE_STATES[key]

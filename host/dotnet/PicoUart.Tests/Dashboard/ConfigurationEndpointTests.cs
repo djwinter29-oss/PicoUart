@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using PicoUart.Dashboard;
+using PicoUart.Hid;
 using PicoUart.Wire;
 using Xunit;
 
@@ -208,6 +209,29 @@ public sealed class ConfigurationEndpointTests
             Assert.Equal(boardId, dashboard.LastBoardId);
             Assert.Equal((uint)0, dashboard.SavedProfile);
 
+            dashboard.ActionError = new ControlOutcomeUnconfirmedException(
+                "command outcome unconfirmed; do not retry; reconnect and verify board state",
+                new IOException("private native detail"));
+            using var uncertainActionContent = new StringContent("{}", Encoding.UTF8, "application/json");
+            using var uncertainActionResponse =
+                await http.PostAsync($"/api/actions/toggle-led?board={boardId}", uncertainActionContent);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, uncertainActionResponse.StatusCode);
+            var uncertainActionBody = await uncertainActionResponse.Content.ReadAsStringAsync();
+            Assert.Contains("do not retry", uncertainActionBody);
+            Assert.DoesNotContain("private native detail", uncertainActionBody);
+
+            dashboard.SaveError = new ControlOutcomeUnconfirmedException(
+                "command outcome unconfirmed; do not retry; reconnect and verify board state",
+                new IOException("private native detail"));
+            using var uncertainSaveContent = new StringContent(
+                "{\"profile\":0,\"unsafe_overclock\":false}", Encoding.UTF8, "application/json");
+            using var uncertainSaveResponse = await http.PostAsync(
+                $"/api/configuration?board={boardId}", uncertainSaveContent);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, uncertainSaveResponse.StatusCode);
+            var uncertainSaveBody = await uncertainSaveResponse.Content.ReadAsStringAsync();
+            Assert.Contains("do not retry", uncertainSaveBody);
+            Assert.DoesNotContain("private native detail", uncertainSaveBody);
+
             using var status = JsonDocument.Parse(await http.GetStringAsync($"/api/status?board={boardId}"));
             Assert.Equal((byte)2, status.RootElement.GetProperty("configuration_save")
                 .GetProperty("status").GetByte());
@@ -226,6 +250,8 @@ public sealed class ConfigurationEndpointTests
 
         public string? LastBoardId { get; private set; }
         public uint? SavedProfile { get; private set; }
+        public Exception? ActionError { get; set; }
+        public Exception? SaveError { get; set; }
 
         public DashboardBoardList Boards() => new([], null);
 
@@ -238,6 +264,7 @@ public sealed class ConfigurationEndpointTests
         public BoardControlStatus Action(string? boardId, string action)
         {
             LastBoardId = boardId;
+            if (ActionError is not null) throw ActionError;
             snapshot.ApplyAction(new(action == "toggle-led" ? (byte)1 : (byte)3, 2, 0));
             return snapshot.Control!;
         }
@@ -245,6 +272,7 @@ public sealed class ConfigurationEndpointTests
         public BoardControlStatus SaveConfiguration(string? boardId, uint profile, bool unsafeOverclock)
         {
             LastBoardId = boardId;
+            if (SaveError is not null) throw SaveError;
             SavedProfile = profile;
             snapshot.ApplyAction(new(4, 2, 0));
             snapshot.ConfigurationSave = new(2, 0, profile);

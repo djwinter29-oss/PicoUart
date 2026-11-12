@@ -13,14 +13,23 @@ public sealed record DashboardBoardList(DashboardBoard[] Boards, string? Default
 
 public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoards
 {
+    private const int MissingScansBeforeRetirement = 3;
     private readonly object gate = new();
+    private readonly object scanGate = new();
     private readonly string? serialNumber;
     private readonly string? devicePath;
     private readonly Func<HidBoard[]> discover;
     private readonly Func<string?, string?, DashboardService> createMonitor;
     private readonly Dictionary<string, DashboardBoard> known = new();
     private readonly Dictionary<string, DashboardService> monitors = new();
+    private readonly Dictionary<string, int> missingScans = new();
+    private readonly Dictionary<string, Task> retiring = new();
     private bool closed;
+
+    internal int RetiringReaderCount
+    {
+        get { lock (gate) return retiring.Count; }
+    }
 
     public DashboardBoards(string? serialNumber, string? devicePath)
         : this(serialNumber, devicePath, PicoUartHid.Discover, (serial, path) => new(serial, path)) { }
@@ -36,49 +45,109 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
 
     public DashboardBoardList Boards()
     {
-        lock (gate)
+        lock (scanGate)
         {
-            if (closed) throw new InvalidOperationException("dashboard is shutting down");
-            var seen = new HashSet<string>();
-            var boards = discover().Select(device =>
+            lock (gate)
+                if (closed) throw new InvalidOperationException("dashboard is shutting down");
+
+            var devices = discover();
+            lock (gate)
             {
-                var serial = string.IsNullOrEmpty(device.SerialNumber) ? null : device.SerialNumber;
-                var identity = serial is null ? $"path:{device.DevicePath}" : $"serial:{serial}";
-                var id = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
-                if (!seen.Add(id))
-                    throw new InvalidOperationException("duplicate PicoUart board identity; board serials must be unique");
-                var board = new DashboardBoard(id, string.IsNullOrEmpty(device.ProductName) ? "PicoUart" : device.ProductName,
-                    serial, device.DevicePath);
-                return board;
-            }).ToArray();
-            foreach (var board in boards) known[board.Id] = board;
-            var preferred = boards.FirstOrDefault(board =>
-                (serialNumber is not null && board.SerialNumber == serialNumber)
-                || (devicePath is not null && board.DevicePath == devicePath));
-            return new(boards, preferred?.Id ??
-                (serialNumber is null && devicePath is null ? boards.FirstOrDefault()?.Id : null));
+                if (closed) throw new InvalidOperationException("dashboard is shutting down");
+                var seen = new HashSet<string>();
+                var boards = devices.Select(device =>
+                {
+                    var serial = string.IsNullOrEmpty(device.SerialNumber) ? null : device.SerialNumber;
+                    var identity = serial is null ? $"path:{device.DevicePath}" : $"serial:{serial}";
+                    var id = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
+                    if (!seen.Add(id))
+                        throw new InvalidOperationException(
+                            "duplicate PicoUart board identity; board serials must be unique");
+                    var board = new DashboardBoard(id,
+                        string.IsNullOrEmpty(device.ProductName) ? "PicoUart" : device.ProductName, serial,
+                        device.DevicePath);
+                    return board;
+                }).ToArray();
+                foreach (var board in boards)
+                {
+                    known[board.Id] = board;
+                    missingScans.Remove(board.Id);
+                }
+                foreach (var id in known.Keys.Where(id => !seen.Contains(id)).ToArray())
+                {
+                    var absentScans = missingScans.GetValueOrDefault(id) + 1;
+                    if (absentScans < MissingScansBeforeRetirement)
+                    {
+                        missingScans[id] = absentScans;
+                        continue;
+                    }
+
+                    known.Remove(id);
+                    missingScans.Remove(id);
+                    if (monitors.Remove(id, out var reader))
+                    {
+                        var retirement = Task.Run(async () =>
+                        {
+                            try { await reader.StopAsync(CancellationToken.None); }
+                            finally { reader.Dispose(); }
+                        });
+                        retiring[id] = retirement;
+                        _ = retirement.ContinueWith(completed =>
+                        {
+                            if (completed.IsFaulted) _ = completed.Exception;
+                            if (!completed.IsCompletedSuccessfully) return;
+                            lock (gate)
+                            {
+                                if (retiring.TryGetValue(id, out var current)
+                                    && ReferenceEquals(current, retirement))
+                                    retiring.Remove(id);
+                            }
+                        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                    }
+                }
+                var preferred = boards.FirstOrDefault(board =>
+                    (serialNumber is not null && board.SerialNumber == serialNumber)
+                    || (devicePath is not null && board.DevicePath == devicePath));
+                return new(boards, preferred?.Id ??
+                    (serialNumber is null && devicePath is null ? boards.FirstOrDefault()?.Id : null));
+            }
         }
     }
 
     internal DashboardService Reader(string? boardId)
     {
-        lock (gate)
+        while (true)
         {
-            if (closed) throw new InvalidOperationException("dashboard is shutting down");
-            if (boardId is null || !known.TryGetValue(boardId, out var board))
-                throw new InvalidOperationException("unknown board; rescan and select a listed board");
-            if (!monitors.TryGetValue(boardId, out var monitor))
+            Task? cleanup;
+            lock (gate)
             {
-                monitor = createMonitor(board.SerialNumber, board.SerialNumber is null ? board.DevicePath : null);
-                try { monitor.StartAsync(CancellationToken.None).GetAwaiter().GetResult(); }
-                catch
+                if (closed) throw new InvalidOperationException("dashboard is shutting down");
+                if (boardId is null || !known.TryGetValue(boardId, out var board))
+                    throw new InvalidOperationException("unknown board; rescan and select a listed board");
+                if (retiring.TryGetValue(boardId, out cleanup))
                 {
-                    monitor.Dispose();
-                    throw;
+                    // Wait outside the registry lock before allowing a replacement reader.
                 }
-                monitors.Add(boardId, monitor);
+                else
+                {
+                    if (!monitors.TryGetValue(boardId, out var monitor))
+                    {
+                        monitor = createMonitor(board.SerialNumber, board.SerialNumber is null ? board.DevicePath : null);
+                        try { monitor.StartAsync(CancellationToken.None).GetAwaiter().GetResult(); }
+                        catch
+                        {
+                            monitor.Dispose();
+                            throw;
+                        }
+                        monitors.Add(boardId, monitor);
+                    }
+                    return monitor;
+                }
             }
-            return monitor;
+            cleanup.GetAwaiter().GetResult();
+            lock (gate)
+                if (retiring.TryGetValue(boardId!, out var current) && ReferenceEquals(current, cleanup))
+                    retiring.Remove(boardId!);
         }
     }
 
@@ -97,12 +166,18 @@ public sealed class DashboardBoards : IHostedService, IDisposable, IDashboardBoa
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         DashboardService[] readers;
+        Task[] pendingRetirements;
         lock (gate)
         {
             closed = true;
             readers = monitors.Values.ToArray();
+            pendingRetirements = retiring.Values.ToArray();
         }
-        await Task.WhenAll(readers.Select(reader => reader.StopAsync(cancellationToken)));
+        await Task.WhenAll(readers.Select(async reader =>
+        {
+            try { await reader.StopAsync(cancellationToken); }
+            finally { reader.Dispose(); }
+        }).Concat(pendingRetirements)).WaitAsync(cancellationToken);
     }
 
     public void Dispose()

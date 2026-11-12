@@ -5,10 +5,10 @@
 from unittest.mock import patch
 
 import pytest
-from helpers import control_bytes, device_info_bytes
+from helpers import FakeHidDevice, control_bytes, device_info_bytes
 
 from pico_uart.dashboard.app import create_app
-from pico_uart.hid.client import PicoUartHid
+from pico_uart.hid.client import ControlOutcomeUnconfirmed, ControlRequestRejected, PicoUartHid
 from pico_uart.hid.protocol import REPORT_ID_CONTROL, REPORT_ID_DEVICE_INFO
 
 
@@ -88,7 +88,7 @@ def test_partial_write_mismatch_and_timeout_are_not_success():
     with (
         patch("pico_uart.hid.client.time.monotonic", side_effect=[0, 1, 4]),
         patch("pico_uart.hid.client.time.sleep"),
-        pytest.raises(RuntimeError, match="timed out"),
+        pytest.raises(RuntimeError, match="outcome is unconfirmed"),
     ):
         PicoUartHid(device=ConfigDevice(status=1)).save_configuration(0)
 
@@ -165,7 +165,7 @@ def test_configuration_endpoint_sanitizes_errors(error, status, message):
 def test_configuration_endpoint_preserves_unconfirmed_outcome_warning(caplog):
     class UnconfirmedDashboard:
         def save_configuration(self, *_args):
-            raise RuntimeError("board-control operation timed out; outcome is unconfirmed")
+            raise ControlOutcomeUnconfirmed("board-control operation timed out; outcome is unconfirmed")
 
     client = create_app(UnconfirmedDashboard()).test_client()
     client.get("/")
@@ -182,3 +182,55 @@ def test_configuration_endpoint_preserves_unconfirmed_outcome_warning(caplog):
         "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
     }
     assert "outcome is unconfirmed" in caplog.text
+
+
+def test_configuration_endpoint_preserves_confirmed_firmware_rejection():
+    class RejectedDashboard:
+        def save_configuration(self, *_args):
+            raise ControlRequestRejected("firmware rejected the board-control request (error 1)")
+
+    client = create_app(RejectedDashboard()).test_client()
+    client.get("/")
+    with client.session_transaction() as session:
+        token = session["csrf_token"]
+    response = client.post(
+        "/api/configuration",
+        json={"profile": 0, "unsafe_overclock": False},
+        headers={"X-CSRF-Token": token},
+    )
+
+    assert response.status_code == 409
+    assert response.json == {"error": "firmware rejected the board-control request (error 1)"}
+
+
+def test_disconnect_after_save_submission_preserves_unconfirmed_outcome_and_logs_cause(caplog):
+    class DisconnectAfterWrite(FakeHidDevice):
+        def get_feature_report(self, report_id, size):
+            if report_id == REPORT_ID_CONTROL and self.writes:
+                raise OSError("simulated hidraw path: permission denied")
+            return super().get_feature_report(report_id, size)
+
+    device = DisconnectAfterWrite({REPORT_ID_CONTROL: control_bytes()})
+
+    class BoardService:
+        def save_configuration(self, _board_id, profile, unsafe_overclock):
+            board.save_configuration(profile, unsafe_overclock)
+
+    with PicoUartHid(device=device) as board:
+        client = create_app(BoardService()).test_client()
+        client.get("/")
+        with client.session_transaction() as session:
+            token = session["csrf_token"]
+        with caplog.at_level("WARNING", logger="pico_uart.dashboard.app"):
+            response = client.post(
+                "/api/configuration",
+                json={"profile": 0, "unsafe_overclock": False},
+                headers={"X-CSRF-Token": token},
+            )
+
+    assert len(device.writes) == 1
+    assert response.status_code == 409
+    assert response.json == {
+        "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
+    }
+    assert "simulated hidraw path: permission denied" in caplog.text

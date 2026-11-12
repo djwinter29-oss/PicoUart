@@ -9,12 +9,65 @@ namespace PicoUart.Hid;
 
 public sealed record HidBoard(string DevicePath, string? SerialNumber, string ProductName);
 
-internal sealed class HidStreamLifetime(Action dispose)
+internal sealed class HidStreamLifetime(Action dispose, string? devicePath = null)
 {
+    private static readonly object CleanupGate = new();
+    private static readonly Dictionary<string, HashSet<Task>> PendingDeviceCleanup = new();
     private readonly object gate = new();
+    private readonly TaskCompletionSource cleanup = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int activeTransfers;
     private bool disposeRequested;
     private bool disposeStarted;
+
+    public Task Cleanup => cleanup.Task;
+
+    public static void EnsureDeviceCleanupComplete(string devicePath)
+    {
+        while (true)
+        {
+            Task[] pending;
+            lock (CleanupGate)
+            {
+                if (!PendingDeviceCleanup.TryGetValue(devicePath, out var tasks)) return;
+                pending = tasks.ToArray();
+            }
+
+            var incomplete = pending.Any(task => !task.IsCompleted);
+            if (incomplete)
+                throw new IOException("previous HID cleanup is still pending; retry before opening this device");
+            Task.WhenAll(pending).GetAwaiter().GetResult();
+
+            lock (CleanupGate)
+            {
+                if (!PendingDeviceCleanup.TryGetValue(devicePath, out var tasks)) continue;
+                foreach (var task in pending) tasks.Remove(task);
+                if (tasks.Count == 0) PendingDeviceCleanup.Remove(devicePath);
+            }
+        }
+    }
+
+    public void TrackDeviceCleanup(string devicePath)
+    {
+        var completion = Cleanup;
+        if (completion.IsCompletedSuccessfully) return;
+        lock (CleanupGate)
+        {
+            if (!PendingDeviceCleanup.TryGetValue(devicePath, out var tasks))
+                PendingDeviceCleanup.Add(devicePath, tasks = []);
+            tasks.Add(completion);
+        }
+        _ = completion.ContinueWith(completed =>
+        {
+            if (completed.IsFaulted) _ = completed.Exception;
+            if (!completed.IsCompletedSuccessfully) return;
+            lock (CleanupGate)
+            {
+                if (!PendingDeviceCleanup.TryGetValue(devicePath, out var tasks)) return;
+                tasks.Remove(completion);
+                if (tasks.Count == 0) PendingDeviceCleanup.Remove(devicePath);
+            }
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
 
     public T Transfer<T>(Func<T> transfer, int timeoutMs)
     {
@@ -39,7 +92,12 @@ internal sealed class HidStreamLifetime(Action dispose)
             CompleteTransfer();
             throw;
         }
-        return operation.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)).GetAwaiter().GetResult();
+        try { return operation.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)).GetAwaiter().GetResult(); }
+        catch (TimeoutException)
+        {
+            if (devicePath is not null) TrackDeviceCleanup(devicePath);
+            throw;
+        }
     }
 
     public void Dispose()
@@ -51,7 +109,7 @@ internal sealed class HidStreamLifetime(Action dispose)
             disposeNow = activeTransfers == 0 && !disposeStarted;
             if (disposeNow) disposeStarted = true;
         }
-        if (disposeNow) dispose();
+        if (disposeNow) DisposeNative();
     }
 
     private void CompleteTransfer()
@@ -63,7 +121,21 @@ internal sealed class HidStreamLifetime(Action dispose)
             disposeNow = disposeRequested && activeTransfers == 0 && !disposeStarted;
             if (disposeNow) disposeStarted = true;
         }
-        if (disposeNow) dispose();
+        if (disposeNow) DisposeNative();
+    }
+
+    private void DisposeNative()
+    {
+        try
+        {
+            dispose();
+            cleanup.TrySetResult();
+        }
+        catch (Exception error)
+        {
+            cleanup.TrySetException(error);
+            throw;
+        }
     }
 }
 
@@ -71,6 +143,7 @@ public sealed class PicoUartHid : IDisposable
 {
     private readonly HidStream stream;
     private readonly HidStreamLifetime streamLifetime;
+    private readonly string devicePath;
     private readonly object gate = new();
     private BoardIdentity? identity;
     private ConfigurationStatus? configuration;
@@ -92,13 +165,15 @@ public sealed class PicoUartHid : IDisposable
         if (devices.Length != 1)
             throw new InvalidOperationException("multiple PicoUart HID interfaces matched; use --serial or --device-path");
         var device = devices[0];
+        HidStreamLifetime.EnsureDeviceCleanupComplete(device.DevicePath);
+        this.devicePath = device.DevicePath;
         var descriptor = device.GetReportDescriptor();
         var identityReports = descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
             .Where(report => report.ReportID == Protocol.IdentityReportId).ToArray();
         if (identityReports.Length != 1 || ReportDataLength(identityReports[0]) < 4)
             throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
         stream = device.Open();
-        streamLifetime = new(stream.Dispose);
+        streamLifetime = new(stream.Dispose, device.DevicePath);
         try
         {
             stream.ReadTimeout = 250;
@@ -117,6 +192,7 @@ public sealed class PicoUartHid : IDisposable
         }
         catch
         {
+            streamLifetime.TrackDeviceCleanup(device.DevicePath);
             streamLifetime.Dispose();
             throw;
         }
@@ -134,8 +210,9 @@ public sealed class PicoUartHid : IDisposable
             .Where(report => report.ReportID == Protocol.IdentityReportId).ToArray();
         if (features.Length != 1 || ReportDataLength(features[0]) < 4)
             throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
+        HidStreamLifetime.EnsureDeviceCleanupComplete(device.DevicePath);
         var candidate = device.Open();
-        var lifetime = new HidStreamLifetime(candidate.Dispose);
+        var lifetime = new HidStreamLifetime(candidate.Dispose, device.DevicePath);
         try
         {
             candidate.ReadTimeout = 3000;
@@ -152,6 +229,7 @@ public sealed class PicoUartHid : IDisposable
         }
         finally
         {
+            lifetime.TrackDeviceCleanup(device.DevicePath);
             lifetime.Dispose();
         }
     }
@@ -210,7 +288,9 @@ public sealed class PicoUartHid : IDisposable
         ArgumentOutOfRangeException.ThrowIfNegative(timeoutMs);
         if (timeoutMs > 0) ArgumentOutOfRangeException.ThrowIfNegativeOrZero(operationTimeoutMs);
         var timer = Stopwatch.StartNew();
-        lock (gate)
+        var lockTimeout = timeoutMs == 0 ? 0 : RemainingTimeoutMs(timer, operationTimeoutMs);
+        if (!Monitor.TryEnter(gate, lockTimeout)) return null;
+        try
         {
             CheckConnection();
             if (timeoutMs == 0) return null;
@@ -230,6 +310,10 @@ public sealed class PicoUartHid : IDisposable
             if (count != Protocol.ChannelSize + 1)
                 throw new InvalidOperationException("unexpected HID channel report size");
             return Protocol.ParseChannel(report[0], report.AsSpan(1, count - 1), info, config);
+        }
+        finally
+        {
+            Monitor.Exit(gate);
         }
     }
 
@@ -328,9 +412,7 @@ public sealed class PicoUartHid : IDisposable
         {
             var output = ReadLed().OutputOn
                 ?? throw new InvalidOperationException("board identification LED unavailable");
-            var result = SendAction(output ? (byte)1 : (byte)2);
-            ReadTelemetry();
-            return result;
+            return SendAction(output ? (byte)1 : (byte)2);
         }
     }
 
@@ -360,8 +442,10 @@ public sealed class PicoUartHid : IDisposable
             throw new InvalidOperationException("a board action is pending or reboot is already scheduled; reconnect");
         var payload = Protocol.BuildAction(action, info, profile, unsafeOverclock);
         byte[] report = [Protocol.ActionReportId, .. payload];
+        var submissionAttempted = false;
         try
         {
+            submissionAttempted = true;
             Transfer(() => { stream.SetFeature(report); return true; }, 3000);
             var result = WaitForAction(action, timeout =>
             {
@@ -372,10 +456,14 @@ public sealed class PicoUartHid : IDisposable
             rebootScheduled = action is 3 or 4;
             return result;
         }
-        catch (Exception error) when (error is TimeoutException or IOException)
+        catch (ControlRequestRejectedException)
+        {
+            throw;
+        }
+        catch (Exception error) when (submissionAttempted && HidErrors.IsDeviceError(error))
         {
             transferUnconfirmed = true;
-            throw;
+            throw Unconfirmed("command outcome unconfirmed; do not retry; reconnect and verify board state", error);
         }
     }
 
@@ -393,7 +481,7 @@ public sealed class PicoUartHid : IDisposable
                 throw Unconfirmed("board action outcome unconfirmed: result belongs to another action");
             if (result.Status == 2) return result;
             if (result.Status is >= 3 and <= 6)
-                throw new InvalidOperationException(
+                throw new ControlRequestRejectedException(
                     $"board action rejected: status {result.Status}, error {result.ErrorReason}"
                     + (result.Status == 5 ? "; stop UART traffic and close all CDC ports" : ""));
             if (result.Status != 1)
@@ -411,8 +499,15 @@ public sealed class PicoUartHid : IDisposable
             disposed = true;
             identity = null;
             configuration = null;
+            streamLifetime.TrackDeviceCleanup(devicePath);
             streamLifetime.Dispose();
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        await streamLifetime.Cleanup.ConfigureAwait(false);
     }
 
     private void CheckConnection()
@@ -473,5 +568,6 @@ public sealed class PicoUartHid : IDisposable
     private static int RemainingTimeoutMs(Stopwatch timer, int timeoutMs) =>
         Math.Max(0, (int)(timeoutMs - timer.Elapsed.TotalMilliseconds));
 
-    private static IOException Unconfirmed(string message) => new(message);
+    private static ControlOutcomeUnconfirmedException Unconfirmed(string message, Exception? innerException = null) =>
+        new(message, innerException);
 }

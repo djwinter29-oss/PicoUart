@@ -129,6 +129,20 @@ def test_discovery_failure_is_explicit_without_opening_a_reader():
     assert not registry._monitors
 
 
+def test_discovery_failure_is_logged_without_leaking_details_to_http(caplog):
+    def fail():
+        raise OSError("hidraw3: permission denied")
+
+    registry = BoardRegistry(discover=fail, monitor_factory=Monitor)
+    with caplog.at_level("ERROR", logger="pico_uart.dashboard.app"):
+        response = create_app(registry).test_client().get("/api/boards")
+
+    assert response.status_code == 503
+    assert response.json == {"error": "service temporarily unavailable"}
+    assert "board discovery failed" in caplog.text
+    assert "hidraw3: permission denied" in caplog.text
+
+
 @pytest.mark.parametrize(
     ("invalid_device", "message"),
     [

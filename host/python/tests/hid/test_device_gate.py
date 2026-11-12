@@ -2,11 +2,51 @@
 # Copyright (c) 2026 Ji Dong
 """DeviceGate close/transfer coordination."""
 
+import os
+import subprocess
+import sys
 import threading
+from pathlib import Path
 
 import pytest
 
 from pico_uart.hid.gate import DeviceGate
+
+
+def test_registry_is_safe_when_gc_runs_during_state_allocation():
+    script = """
+import gc
+import pico_uart.hid.gate as gate
+
+class Device:
+    def close(self):
+        pass
+
+original_state = gate._DeviceState
+class CollectingState(original_state):
+    def __init__(self):
+        gc.collect()
+        super().__init__()
+
+device = Device()
+wrapper = gate.DeviceGate(device)
+device.wrapper = wrapper
+del device, wrapper
+gate._DeviceState = CollectingState
+gate.DeviceGate(Device())
+"""
+    package_root = Path(__file__).resolve().parents[2]
+    environment = {**os.environ, "PYTHONPATH": str(package_root / "src")}
+
+    subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=package_root,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
 
 
 class Device:

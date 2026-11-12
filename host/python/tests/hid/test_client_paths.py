@@ -29,6 +29,31 @@ def test_toggle_led_requires_hardware_and_never_writes_without_it():
     assert device.writes == []
 
 
+def test_confirmed_led_command_is_not_failed_by_a_later_telemetry_disconnect():
+    class DisconnectAfterCommand(FakeHidDevice):
+        telemetry_reads = 0
+
+        def get_feature_report(self, report_id, size):
+            if report_id == hid.REPORT_ID_TELEMETRY:
+                self.telemetry_reads += 1
+                if self.writes:
+                    raise OSError("telemetry disconnected after confirmed command")
+            if report_id == hid.REPORT_ID_CONTROL and self.writes:
+                return [report_id, *control_bytes(action=self.writes[-1][2], status=2)]
+            return super().get_feature_report(report_id, size)
+
+    device = DisconnectAfterCommand({
+        hid.REPORT_ID_DEVICE_INFO: device_info_bytes(),
+        hid.REPORT_ID_TELEMETRY: telemetry_bytes(led=0),
+        hid.REPORT_ID_CONTROL: control_bytes(),
+    })
+
+    PicoUartHid(device=device).toggle_led()
+
+    assert device.writes == [[hid.REPORT_ID_CONTROL, 1, hid.COMMAND_LED_ON, 0, 0]]
+    assert device.telemetry_reads == 1
+
+
 def test_reset_requires_enabled_firmware_flag():
     with pytest.raises(RuntimeError, match="reset is disabled"):
         PicoUartHid(device=_device(capabilities=5)).reset_board()

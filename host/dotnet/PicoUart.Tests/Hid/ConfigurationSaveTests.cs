@@ -44,13 +44,14 @@ public sealed class ConfigurationSaveTests
     [Fact]
     public void WaitForActionRejectsMismatchedOrRejectedResults()
     {
-        Assert.Throws<IOException>(() => PicoUartHid.WaitForAction(4, _ => new(3, 2, 0)));
-        Assert.Throws<InvalidOperationException>(() => PicoUartHid.WaitForAction(4, _ => new(4, 5, 6)));
+        Assert.Throws<ControlOutcomeUnconfirmedException>(() => PicoUartHid.WaitForAction(4, _ => new(3, 2, 0)));
+        Assert.Throws<ControlRequestRejectedException>(() => PicoUartHid.WaitForAction(4, _ => new(4, 5, 6)));
     }
 
     [Fact]
     public void WaitForActionTimesOutWithoutCompletion()
     {
-        Assert.Throws<IOException>(() => PicoUartHid.WaitForAction(4, _ => new(4, 1, 0), timeoutMs: 1));
+        Assert.Throws<ControlOutcomeUnconfirmedException>(() =>
+            PicoUartHid.WaitForAction(4, _ => new(4, 1, 0), timeoutMs: 1));
     }
 }

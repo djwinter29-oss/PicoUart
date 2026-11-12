@@ -109,6 +109,17 @@ def test_actions_reach_client_and_publish_results(monitor):
     assert board_monitor.snapshot()["configuration_save"]["status"] == 2
 
 
+def test_led_action_remains_successful_when_telemetry_refresh_fails(monitor):
+    board_monitor, client = monitor
+    client.fail = "telemetry"
+
+    board_monitor.toggle_led()
+
+    snapshot = board_monitor.snapshot()
+    assert client.led is False
+    assert snapshot["led_error"] == "telemetry failed"
+
+
 def test_slow_action_does_not_block_snapshot_reads(monitor):
     board_monitor, client = monitor
     worker = threading.Thread(target=board_monitor.toggle_led)

@@ -53,7 +53,14 @@ try
             Console.WriteLine(client.ReadBoardStatus().TemperatureCelsius.ToString(CultureInfo.InvariantCulture));
             break;
         case "version": Console.WriteLine(client.ReadBoardStatus().FirmwareVersion); break;
-        case "toggle-led": client.ToggleLed(); break;
+        case "toggle-led":
+            client.ToggleLed();
+            try { client.ReadTelemetry(); }
+            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            {
+                Console.Error.WriteLine($"LED action succeeded; telemetry refresh failed: {error.Message}");
+            }
+            break;
         case "reset": client.ResetBoard(); break;
     }
     return 0;

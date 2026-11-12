@@ -15,6 +15,7 @@ from werkzeug.exceptions import BadRequest
 from werkzeug.serving import WSGIRequestHandler
 
 from .. import __version__
+from ..hid.client import ControlOutcomeUnconfirmed, ControlRequestRejected
 from .boards import BoardRegistry
 from .types import DashboardService
 
@@ -38,12 +39,18 @@ def _parse_configuration_body(body: object) -> tuple[int, bool] | None:
 
 
 def _control_failure(error: RuntimeError) -> tuple[dict[str, str], int]:
-    if "outcome is unconfirmed" in str(error):
-        _LOGGER.warning("PicoUart board-control outcome is unconfirmed: %s", error)
+    if isinstance(error, ControlOutcomeUnconfirmed):
+        _LOGGER.warning("PicoUart board-control outcome is unconfirmed: %s", error.__cause__ or error)
         return {
             "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying"
         }, 409
+    if isinstance(error, ControlRequestRejected):
+        return {"error": str(error)}, 409
     return {"error": "request could not be completed"}, 409
+
+
+def _log_operational_error(operation: str, error: OSError) -> None:
+    _LOGGER.error("PicoUart dashboard %s failed: %s", operation, error, exc_info=True)
 
 
 def create_app(service: DashboardService | None = None, port: int = 5000) -> Flask:
@@ -114,7 +121,8 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
             return jsonify(dashboard.boards())
         except RuntimeError:
             return jsonify(error="request could not be completed"), 409
-        except OSError:
+        except OSError as error:
+            _log_operational_error("board discovery", error)
             return jsonify(error="service temporarily unavailable"), 503
 
     @app.get("/api/diagnostics")
@@ -123,7 +131,8 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
             return jsonify(dashboard.read_diagnostics(request.args.get("board")))
         except RuntimeError:
             return jsonify(error="diagnostic read could not be completed"), 409
-        except OSError:
+        except OSError as error:
+            _log_operational_error("diagnostic read", error)
             return jsonify(error="service temporarily unavailable"), 503
 
     @app.post("/api/configuration")
@@ -145,7 +154,8 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
         except RuntimeError as error:
             response, status_code = _control_failure(error)
             return jsonify(response), status_code
-        except OSError:
+        except OSError as error:
+            _log_operational_error("configuration save", error)
             return jsonify(error="service temporarily unavailable"), 503
         return jsonify(ok=True)
 
@@ -161,7 +171,8 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
         except RuntimeError as error:
             response, status_code = _control_failure(error)
             return jsonify(response), status_code
-        except OSError:
+        except OSError as error:
+            _log_operational_error("board action", error)
             return jsonify(error="service temporarily unavailable"), 503
         return jsonify(ok=True)
 

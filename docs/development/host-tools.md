@@ -129,6 +129,9 @@ establish a clean current UART rate. Convenience methods include `read_runtime()
 `read_overflow_counts()`, and `read_hardware_info()`.
 `timeout_ms=0` is implemented as a bounded 1 ms poll because hidapi interprets zero as an unbounded wait. When provided,
 the absolute `deadline` also bounds client-lock acquisition and metadata reads.
+`read_configuration(deadline=...)` likewise bounds client-lock acquisition, including when returning cached
+configuration; if the deadline expires before that return, it raises `TimeoutError`. Feature-read errors retain the
+usual HID `OSError`/`RuntimeError` behavior.
 
 The supported high-level API is `PicoUartHid` and the methods described here, plus the module-level functions
 `read_board_status`, `read_board_temperature`, `read_firmware_version`, `read_configuration`, `read_hardware_info`,
@@ -178,6 +181,8 @@ the optional reset command. Follow the [save safety contract](../design/usb/hid-
 and [persistent configuration workflow](#persistent-configuration) before changing settings.
 Actions use one serialized controlling host. Timeout or disconnect means the outcome is unconfirmed; never
 automatically retry reboot or save. There is no request ID or multi-client ownership guarantee.
+An LED toggle is successful once firmware confirms the command; a later telemetry refresh failure does not turn that
+confirmed action into a failure.
 
 ## Python Test Automation
 
@@ -215,8 +220,9 @@ that complete after the deadline. Both hosts fail on device errors.
 A successful command does not establish continuous reporting or healthy channels; the runner must evaluate reported
 states and counters rather than treating the exit code as the test result.
 
-Dashboard save and board-action errors may report that the outcome is unconfirmed. Reconnect and inspect board state
-before deciding what to do; never automatically retry a save or reboot.
+Dashboard save and board-action errors after command submission may report that the outcome is unconfirmed, including
+when the connection drops before a result is read. Reconnect and inspect board state before deciding what to do; never
+automatically retry a save or reboot. Firmware rejections with a confirmed result are reported separately.
 
 ## Python Distribution
 
@@ -401,9 +407,9 @@ them, retry disconnected boards, and are reaped after repeated scans no longer f
 belong to the shared reader's current connection, not to a browser session. Run only one host monitor/server per
 physical board; separate server processes and standalone HID clients do not share these readers.
 
-Closing a registry requests monitor shutdown and returns whether all polling threads stopped within one second. A false
-result means cleanup is still pending; the server logs a warning and lets the monitor finish in the background. The HID
-client defers closing its native handle until any in-flight feature transfer returns.
+Closing a registry requests monitor shutdown and waits for active readers within the host's shutdown deadline. If that
+deadline expires, reader cleanup remains owned and continues in the background. HID clients defer closing their native
+handle until in-flight transfers return; a new reader for the same device waits for that cleanup before opening it.
 
 `GET /api/boards` returns `boards` (`id`, `product_name`, `serial_number`, `device_path`) and `default_board_id`.
 Pass the opaque `id` as `?board=ID` to `GET /api/status` and `POST /api/actions/{toggle-led,reset}`. A status request
@@ -517,9 +523,10 @@ gap resets that channel's current rate window, but the next counter recovers tot
 have occurred between samples. Initial/stale windows and windows containing report gaps or zero/saturated intervals
 show `--` for the affected rate; they recover after a clean window. Three seconds without a new Input sample makes
 that channel's rates stale. After staleness or a host read pause, treat rate continuity as uncertain even when a
-16-bit sequence matches. One channel's gap does not invalidate other channels. `traffic_gaps` is a monotonic count of
-incomplete status observations, allowing each page to invalidate its current rate window while retaining the sticky
-`traffic_incomplete` notice.
+16-bit sequence matches. One channel's gap does not invalidate other channels. `traffic_gaps` counts sequence-loss,
+stale/rebaseline, and ignored out-of-order events. An invalid interval marks continuity incomplete but is not itself a
+sequence gap; an invalid first interval therefore does not increment `traffic_gaps`. The monotonic count lets each
+page invalidate its current rate window while retaining the sticky `traffic_incomplete` notice.
 
 The independent WebHID renderer and hosted renderer retain their separate assets; the shared Node presentation tests
 exercise the same rate, read-only fault flag, fallback and state contracts against both.

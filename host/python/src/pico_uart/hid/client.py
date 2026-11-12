@@ -65,6 +65,18 @@ BAUD_READY_TOLERANCE = 0.03
 _TransferResult = TypeVar("_TransferResult")
 
 
+class ControlOutcomeUnconfirmed(RuntimeError):
+    """A submitted board-control request may have executed, but its result was not confirmed."""
+
+
+class ControlRequestRejected(RuntimeError):
+    """Firmware returned a result confirming that a board-control request was not accepted."""
+
+
+class _TransferNotStarted(RuntimeError):
+    """A HID transfer was refused before its device operation could run."""
+
+
 def _require_channel_index(index: int) -> None:
     if type(index) is not int or not 0 <= index < UART_CHANNEL_COUNT:
         raise ValueError("channel index must be 0 through 5")
@@ -122,7 +134,10 @@ class PicoUartHid:
         timeout_s: float = COMMAND_TIMEOUT_S,
     ) -> _TransferResult:
         """Bound synchronous hidapi feature I/O and quarantine a call that returns late."""
-        self._gate.begin_transfer()
+        try:
+            self._gate.begin_transfer()
+        except RuntimeError as error:
+            raise _TransferNotStarted(str(error)) from error
         completed = threading.Event()
         result: list[_TransferResult] = []
         failure: list[Exception] = []
@@ -138,9 +153,9 @@ class PicoUartHid:
         worker = threading.Thread(target=run, name="pico-uart-hid-transfer", daemon=True)
         try:
             worker.start()
-        except RuntimeError:
+        except RuntimeError as error:
             self._gate.abort_transfer()
-            raise
+            raise _TransferNotStarted(str(error)) from error
         if not completed.wait(max(0.0, timeout_s)):
             raise RuntimeError("HID feature transfer timed out; outcome is unconfirmed")
         if failure:
@@ -159,7 +174,8 @@ class PicoUartHid:
         return require_payload(report, report_id, payload_size)
 
     def _send_feature(self, report: list[int]) -> int:
-        return self._bounded_transfer(lambda: self._require_open().send_feature_report(report))
+        device = self._gate.device
+        return self._bounded_transfer(lambda: device.send_feature_report(report))
 
     def read_identity(self) -> DeviceIdentity:
         """Read static device identity, firmware, capabilities, and memory information."""
@@ -193,13 +209,26 @@ class PicoUartHid:
         """Read immutable boot metadata independently of the action result."""
         if deadline is not None and not math.isfinite(deadline):
             raise ValueError("deadline must be finite")
-        with self._lock:
+        if deadline is None:
+            self._lock.acquire()
+        else:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not self._lock.acquire(timeout=min(remaining, threading.TIMEOUT_MAX)):
+                raise TimeoutError("configuration read timed out waiting for HID lock")
+        try:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("configuration read timed out waiting for HID lock")
             if self._configuration is None:
                 self._configuration = parse_configuration(
                     self._read_feature(REPORT_ID_CONFIGURATION, CONFIGURATION_SIZE, deadline),
                     self._read_device_info(deadline),
                 )
-            return deepcopy(self._configuration)
+            configuration = deepcopy(self._configuration)
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("configuration read timed out")
+            return configuration
+        finally:
+            self._lock.release()
 
     def read_configuration_save(self) -> ControlResult:
         """Read the latest device-global action result."""
@@ -365,7 +394,6 @@ class PicoUartHid:
                 raise RuntimeError("identification LED is unavailable")
             current = bool(self.read_telemetry()["led"])
             self._execute_command(COMMAND_LED_OFF if current else COMMAND_LED_ON)
-            self.read_telemetry()
 
     def reset_board(self) -> None:
         """Request one explicitly confirmed reboot; never retry an unconfirmed outcome."""
@@ -404,17 +432,33 @@ class PicoUartHid:
             raise RuntimeError("a rebooting operation is already scheduled; reconnect to inspect the result")
         payload = bytes((1, command, flags, profile))
         report = [REPORT_ID_CONTROL, *payload]
-        written = self._send_feature(report)
+        try:
+            written = self._send_feature(report)
+        except _TransferNotStarted:
+            raise
+        except (OSError, RuntimeError) as error:
+            raise ControlOutcomeUnconfirmed(
+                "board-control command submission failed; outcome is unconfirmed"
+            ) from error
         if written != len(report):
-            raise RuntimeError(f"HID control write was incomplete: wrote {written} bytes")
+            raise ControlOutcomeUnconfirmed(
+                f"HID control write was incomplete: wrote {written} bytes; outcome is unconfirmed"
+            )
 
         deadline = time.monotonic() + COMMAND_TIMEOUT_S
         while True:
             if time.monotonic() >= deadline:
-                raise RuntimeError("board-control operation timed out; outcome is unconfirmed")
-            result = parse_control(self._read_feature(REPORT_ID_CONTROL, CONTROL_SIZE, deadline))
+                raise ControlOutcomeUnconfirmed("board-control operation timed out; outcome is unconfirmed")
+            try:
+                result = parse_control(self._read_feature(REPORT_ID_CONTROL, CONTROL_SIZE, deadline))
+            except (OSError, RuntimeError) as error:
+                raise ControlOutcomeUnconfirmed(
+                    "board-control result could not be confirmed; outcome is unconfirmed"
+                ) from error
             if result["action"] != command:
-                raise RuntimeError("board-control result does not match this request; outcome is unconfirmed")
+                raise ControlOutcomeUnconfirmed(
+                    "board-control result does not match this request; outcome is unconfirmed"
+                )
             status = int(result["status"])
             if status == STATUS_COMPLETED:
                 return result
@@ -425,12 +469,12 @@ class PicoUartHid:
                 STATUS_FAILED: "board-control operation failed",
             }
             if status in errors:
-                raise RuntimeError(f"{errors[status]} (error {result['error_reason']})")
+                raise ControlRequestRejected(f"{errors[status]} (error {result['error_reason']})")
             if status not in (STATUS_IDLE, STATUS_PENDING):
                 raise RuntimeError("firmware returned an invalid board-control status")
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise RuntimeError("board-control operation timed out; outcome is unconfirmed")
+                raise ControlOutcomeUnconfirmed("board-control operation timed out; outcome is unconfirmed")
             time.sleep(min(COMMAND_POLL_INTERVAL_S, remaining))
 
     def close(self) -> bool:

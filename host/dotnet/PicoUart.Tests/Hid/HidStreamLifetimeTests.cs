@@ -33,6 +33,42 @@ public sealed class HidStreamLifetimeTests
     }
 
     [Fact]
+    public async Task CompletedCleanupDoesNotRemoveAnotherPendingDeviceCleanup()
+    {
+        using var started = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var lifetime = new HidStreamLifetime(() => { }, "cleanup-test-path");
+        var completed = new HidStreamLifetime(() => { });
+        Assert.Throws<TimeoutException>(() => lifetime.Transfer(() =>
+        {
+            started.Set();
+            release.Wait();
+            return true;
+        }, timeoutMs: 20));
+        Assert.True(started.Wait(TimeSpan.FromSeconds(1)));
+        lifetime.Dispose();
+        try
+        {
+            completed.TrackDeviceCleanup("cleanup-test-path");
+            completed.Dispose();
+            await completed.Cleanup;
+
+            var error = Assert.Throws<IOException>(
+                () => HidStreamLifetime.EnsureDeviceCleanupComplete("cleanup-test-path"));
+            Assert.Contains("still pending", error.Message);
+
+            release.Set();
+            await lifetime.Cleanup.WaitAsync(TimeSpan.FromSeconds(1));
+            HidStreamLifetime.EnsureDeviceCleanupComplete("cleanup-test-path");
+        }
+        finally
+        {
+            release.Set();
+            await lifetime.Cleanup.WaitAsync(TimeSpan.FromSeconds(1));
+        }
+    }
+
+    [Fact]
     public void DisposePreventsStartingAnotherTransfer()
     {
         var lifetime = new HidStreamLifetime(() => { });

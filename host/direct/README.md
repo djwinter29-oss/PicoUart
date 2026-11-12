@@ -56,18 +56,20 @@ evidence that an automated test passed.
 ## Other Commands And Controls
 
 **Board LED** sends explicit identification On/Off commands; its indicator shows physical output.
-The **Boot configuration** section saves the selected boot-time clock profile. A verified save automatically
-reboots the board and briefly disconnects USB, even though there is no standalone reset command. Close all CDC ports
-and stop external UART traffic first; non-default clocks require explicit unsafe-overclock acknowledgement.
+The capability-gated **Reboot board** control requests a standalone reboot. The **Boot configuration** section saves
+the selected boot-time clock profile; a verified save automatically reboots the board and briefly disconnects USB.
+Close all CDC ports and stop external UART traffic first; non-default clocks require explicit unsafe-overclock
+acknowledgement.
 
-Persistent configuration source, fallback reason, and active/stored clock profiles are read from report 2; this
-diagnostic does not expose credentials or raw flash contents.
-After reconnecting, inspect the actual active profile and any fallback reason rather than assuming the requested clock
+Report 2 provides the stored clock-profile request, pin mapping, capacities, and reset cause. It does not report the
+configuration source, fallback reason, or an active clock profile. Report 3 provides the running system clock; do not
+infer a profile from that frequency. This diagnostic does not expose credentials or raw flash contents.
+After reconnecting, inspect both the stored request and the running clock rather than assuming the requested profile
 became active. A verified save does not establish overclock stability. See the
 [configuration procedure](../../docs/development/host-tools.md#persistent-configuration).
 
-Writes are limited to user-initiated LED state changes and configuration save. Firmware flashing and WebSerial payload access
-are not implemented.
+Writes are limited to user-initiated LED state changes, standalone reboot, and configuration save. Firmware flashing
+and WebSerial payload access are not implemented.
 
 ## Troubleshooting
 

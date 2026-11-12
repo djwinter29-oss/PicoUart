@@ -9,6 +9,7 @@ import pytest
 
 from pico_uart.dashboard import app as web_app
 from pico_uart.dashboard.app import create_app
+from pico_uart.hid.client import ControlOutcomeUnconfirmed
 
 
 class FakeDashboard:
@@ -71,10 +72,27 @@ def test_dashboard_maps_action_errors_and_unknown_actions():
     assert client.post("/api/actions/unknown", headers=headers).status_code == 404
 
 
+def test_dashboard_logs_private_operational_error_for_board_actions(caplog):
+    class BrokenDashboard(FakeDashboard):
+        def toggle_led(self, board_id=None):
+            raise OSError("hidraw3: simulated disconnect")
+
+    client = create_app(BrokenDashboard()).test_client()
+    response = client.post(
+        "/api/actions/toggle-led",
+        headers={"X-CSRF-Token": _csrf_token(client)},
+    )
+
+    assert response.status_code == 503
+    assert response.json == {"error": "service temporarily unavailable"}
+    assert "board action failed" in caplog.text
+    assert "hidraw3: simulated disconnect" in caplog.text
+
+
 def test_dashboard_preserves_unconfirmed_action_outcome(caplog):
     class UnconfirmedDashboard(FakeDashboard):
         def toggle_led(self, board_id=None):
-            raise RuntimeError("HID feature transfer timed out; outcome is unconfirmed")
+            raise ControlOutcomeUnconfirmed("HID feature transfer timed out; outcome is unconfirmed")
 
     client = create_app(UnconfirmedDashboard()).test_client()
     response = client.post(

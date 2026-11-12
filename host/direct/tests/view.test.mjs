@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
-import { renderDashboard, updateReportAge } from "../src/js/view.mjs";
+import { renderDashboard, updateChannelFreshness, updateDiagnosticsAge, updateReportAge } from "../src/js/view.mjs";
 
 class Element {
   constructor(tag = "") {
@@ -156,11 +156,28 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
       ({ ...channel, uart_measurement_state_name: "Cached" })) };
     renderDashboard(cachedDashboard);
     assert.equal(lifecycle.children[1].textContent, "CACHED");
+    const unavailableDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
+      ({ ...channel, uart_measurement_state_name: "Unavailable", counters: { ...channel.counters,
+        uart_tx: 0, uart_rx: 0, usb_tx: 2100, usb_rx: 2100 } })) };
+    renderDashboard(unavailableDashboard);
+    const metricRows = document.querySelector("#channel-rows").children[0].children[3].children[0].children;
+    assert.equal(metricRows[0].children[2].textContent, "--");
+    assert.equal(metricRows[1].children[2].textContent, "--");
+    assert.equal(metricRows[2].children[2].textContent, "2,100 B");
+    assert.equal(metricRows[3].children[2].textContent, "2,100 B");
     const staleDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
       ({ ...channel, input_updated_at: new Date(Date.now() - 5000).toISOString() })) };
     renderDashboard(staleDashboard);
     assert.equal(lifecycle.children[0].hidden, true);
     assert.equal(lifecycle.children[1].textContent, "— Unavailable");
+    const recentDashboard = { ...dashboard, channels: dashboard.channels.map(channel =>
+      ({ ...channel, input_updated_at: new Date(Date.now() - 1000).toISOString() })) };
+    renderDashboard(recentDashboard);
+    updateChannelFreshness(recentDashboard, Date.now() + 3001);
+    assert.equal(lifecycle.children[0].hidden, true);
+    assert.equal(lifecycle.children[1].textContent, "— Unavailable");
+    assert.equal(document.querySelector("#channel-rows").children[0].children[3]
+      .children[0].children[0].children[1].textContent, "-- KB/s");
     renderDashboard(dashboard);
     const traffic = document.querySelector("#channel-rows").children[0].children[3].children[0];
     assert.deepEqual(traffic.children.map(metric => metric.children[0].textContent), [
@@ -190,7 +207,7 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     diagnosticsButton.click();
     assert.equal(document.querySelector("#channel-diagnostics-dialog").open, true);
     assert.equal(document.querySelector("#channel-diagnostics-title").textContent, "CDC0 diagnostics");
-    const diagnostics = document.querySelector("#channel-diagnostics-content").children[0].children;
+    const diagnostics = document.querySelector("#channel-diagnostics-content").children[1].children;
     assert.equal(diagnostics.length, 20);
     assert.deepEqual(diagnostics.filter((_, index) => index % 2 === 0).map(term => term.textContent), [
       "UART measurement", "UART sample age", "Known RX bytes dropped", "RX controller error observations",
@@ -203,6 +220,32 @@ test("webhid render updates live cells without replacing diagnostics buttons", (
     assert.equal(diagnostics[11].textContent, "None recorded");
     assert.equal(diagnostics[13].textContent, "0 B (0.0%)");
     assert.equal(diagnostics[15].textContent, "1 B (0.0%)");
+
+    const refreshedAt = new Date(Date.now() - 2000).toISOString();
+    const refreshedDashboard = {
+      ...dashboard,
+      channel_diagnostics: dashboard.channel_diagnostics.map((diagnostic, index) => index === 0
+        ? { ...diagnostic, rx_dropped_bytes: 99, last_fault_uptime_s: 1, updated_at: refreshedAt }
+        : diagnostic),
+    };
+    renderDashboard(refreshedDashboard);
+    const diagnosticsContent = document.querySelector("#channel-diagnostics-content");
+    assert.equal(document.querySelector("#channel-diagnostics-dialog").open, true);
+    assert.equal(diagnosticsContent.children[1].children[5].textContent, "99 B");
+    updateDiagnosticsAge(Date.parse(refreshedAt) + 3500);
+    assert.equal(diagnosticsContent.children[0].textContent, "Diagnostics read 3 s ago");
+
+    const erroredDashboard = {
+      ...refreshedDashboard,
+      channels: refreshedDashboard.channels.map((channel, index) => index === 0
+        ? { ...channel, error: "Malformed report", input_updated_at: null }
+        : channel),
+    };
+    renderDashboard(erroredDashboard);
+    assert.equal(lifecycle.children[1].textContent, "READ ERROR");
+    assert.equal(document.querySelector("#status-message").textContent,
+      "CDC0 snapshot unavailable: Malformed report");
+    assert.equal(document.querySelector("#status-message").parentElement.dataset.error, "true");
 
     renderDashboard({ ...dashboard, connected: false, channels: dashboard.channels.map(channel => ({
       ...channel, input_updated_at: null, uart_measurement_state_name: null,

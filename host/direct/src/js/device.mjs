@@ -286,6 +286,9 @@ function emptyChannel(id) {
     deltas: null,
     rates: null,
     rate_samples: [],
+    uart_rate_samples: [],
+    input_counters: null,
+    input_measurement_state: null,
     input_updated_at: null,
     feature_updated_at: null,
     diagnostics: null,
@@ -328,9 +331,10 @@ export class PicoUartWebHid {
     this.information = null;
     this.actionInFlight = false;
     this.transferActive = false;
+    this.activeTransfer = null;
     this.transferToken = 0;
     this.ioBlocked = false;
-    this.pendingTransfers = new WeakSet();
+    this.pendingTransfers = new Set();
     this.inputListener = null;
     this.retryAfter = new Map();
     this.state = {
@@ -367,7 +371,7 @@ export class PicoUartWebHid {
     this.removeInputListener(device);
     this.inputListener = event => {
       if (event.device !== device || !this.isCurrent(generation, device)
-        || event.reportId < 10 || event.reportId > 15) return;
+        || !this.information || event.reportId < 10 || event.reportId > 15) return;
       try {
         const report = payload(event.data, 30, `Channel ${event.reportId - 10} snapshot`, event.reportId);
         const snapshot = decodeChannelSnapshot(report, event.reportId, this.information,
@@ -388,11 +392,12 @@ export class PicoUartWebHid {
   async transfer(operation, timeout = 3000) {
     const device = this.device;
     const generation = this.generation;
-    if (!device || this.ioBlocked || this.transferActive || this.pendingTransfers.has(device)) {
+    if (!device || this.ioBlocked || this.transferActive || this.pendingTransfers.size) {
       throw new Error("A HID transfer is still active or unconfirmed; disconnect before continuing.");
     }
     this.transferActive = true;
     const token = ++this.transferToken;
+    this.activeTransfer = token;
     let timer;
     const pending = Promise.resolve().then(operation);
     this.pendingTransfers.add(device);
@@ -414,7 +419,10 @@ export class PicoUartWebHid {
       throw error;
     } finally {
       globalThis.clearTimeout(timer);
-      if (token === this.transferToken) this.transferActive = false;
+      if (this.activeTransfer === token) {
+        this.activeTransfer = null;
+        this.transferActive = false;
+      }
     }
   }
 
@@ -461,7 +469,13 @@ export class PicoUartWebHid {
       error: null,
       rates: previous.rates,
       deltas: previous.deltas,
+      sequence: previous.sequence,
+      interval_ms: previous.interval_ms,
+      input_counters: previous.input_counters,
+      input_measurement_state: previous.input_measurement_state,
       input_updated_at: previous.input_updated_at,
+      rate_samples: previous.rate_samples,
+      uart_rate_samples: previous.uart_rate_samples,
       traffic_gaps: previous.traffic_gaps,
     });
   }
@@ -479,26 +493,43 @@ export class PicoUartWebHid {
     const sequenceGap = !first && advance !== 1;
     const intervalValid = snapshot.interval_ms > 0 && snapshot.interval_ms < 65535;
     const continuous = !first && !sequenceGap && intervalValid;
-    const elapsed = Number.isFinite(previousTime) ? now - previousTime : 0;
-    const rateSamples = first ? [] : [...previous.rate_samples];
-    rateSamples.push({ receivedAt: now, counters: snapshot.counters,
-      measurement: snapshot.uart_measurement_state });
-    const cutoff = now - TRAFFIC_RATE_WINDOW_MS;
-    while (rateSamples.length > 2 && rateSamples[1].receivedAt <= cutoff) rateSamples.shift();
-    const baseline = rateSamples[0];
-    const rateElapsed = now - baseline.receivedAt;
-    const rateWindowValid = rateSamples.length > 1 && rateElapsed > 0 && rateElapsed <= MAX_RATE_ELAPSED_MS;
+    const previousCounters = previous.input_counters;
     const deltas = Object.fromEntries(Object.keys(snapshot.counters).map(name => [
       name,
-      continuous ? (snapshot.counters[name] - previous.counters[name]) >>> 0 : null,
+      continuous && previousCounters
+        ? (snapshot.counters[name] - previousCounters[name]) >>> 0 : null,
     ]));
+    const rateSamples = continuous && previous.rate_samples.length
+      ? [...previous.rate_samples, {
+        deviceTimeMs: previous.rate_samples.at(-1).deviceTimeMs + snapshot.interval_ms,
+        counters: snapshot.counters,
+      }]
+      : [{ deviceTimeMs: 0, counters: snapshot.counters }];
+    const rateCutoff = rateSamples.at(-1).deviceTimeMs - TRAFFIC_RATE_WINDOW_MS;
+    while (rateSamples.length > 2 && rateSamples[1].deviceTimeMs <= rateCutoff) rateSamples.shift();
+    const uartContinuous = Boolean(continuous && previous.input_measurement_state === 1
+      && snapshot.uart_measurement_state === 1 && previous.uart_rate_samples.length);
+    const uartRateSamples = snapshot.uart_measurement_state === 1
+      ? uartContinuous
+        ? [...previous.uart_rate_samples, {
+          deviceTimeMs: previous.uart_rate_samples.at(-1).deviceTimeMs + snapshot.interval_ms,
+          counters: snapshot.counters,
+        }]
+        : [{ deviceTimeMs: 0, counters: snapshot.counters }]
+      : [];
+    if (uartRateSamples.length) {
+      const uartRateCutoff = uartRateSamples.at(-1).deviceTimeMs - TRAFFIC_RATE_WINDOW_MS;
+      while (uartRateSamples.length > 2 && uartRateSamples[1].deviceTimeMs <= uartRateCutoff) {
+        uartRateSamples.shift();
+      }
+    }
     const rates = Object.fromEntries(Object.entries(snapshot.counters).map(([name, counter]) => {
       const uart = name === "uart_tx" || name === "uart_rx";
-      const samples = uart ? rateSamples.filter(sample => sample.measurement !== 0) : rateSamples;
-      const rateBaseline = samples[0];
+      const samples = uart ? uartRateSamples : rateSamples;
+      const baseline = samples[0];
       const latest = samples.at(-1);
-      const elapsed = rateBaseline && latest ? latest.receivedAt - rateBaseline.receivedAt : 0;
-      const delta = rateBaseline && latest ? (counter - rateBaseline.counters[name]) >>> 0 : 0;
+      const elapsed = latest ? latest.deviceTimeMs - baseline.deviceTimeMs : 0;
+      const delta = latest && elapsed > 0 ? (counter - baseline.counters[name]) >>> 0 : 0;
       return [name, elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS && elapsed <= MAX_RATE_ELAPSED_MS
         ? delta * 1000 / elapsed : null];
     }));
@@ -510,6 +541,9 @@ export class PicoUartWebHid {
       deltas,
       rates,
       rate_samples: rateSamples,
+      uart_rate_samples: uartRateSamples,
+      input_counters: snapshot.counters,
+      input_measurement_state: snapshot.uart_measurement_state,
       input_updated_at: new Date(now).toISOString(),
       feature_updated_at: previous.feature_updated_at,
       error: null,
@@ -537,6 +571,8 @@ export class PicoUartWebHid {
       error: message,
       input_updated_at: null,
       feature_updated_at: null,
+      rate_samples: [],
+      uart_rate_samples: [],
     };
     this.update({ dashboard: { ...dashboard, channels } });
   }
@@ -559,24 +595,30 @@ export class PicoUartWebHid {
   }
 
   async readChannelDetails() {
+    const device = this.device;
+    const generation = this.generation;
+    const isCurrent = () => this.isCurrent(generation, device);
     for (let channel = 0; channel < CHANNEL_COUNT; channel++) {
-      if (!this.device || this.ioBlocked) return;
+      if (!isCurrent() || !this.information || this.ioBlocked) return;
       try {
         const snapshot = decodeChannelSnapshot(
           await this.readFeature(10 + channel, 30), 10 + channel,
           this.information, this.state.dashboard.configuration);
+        if (!isCurrent()) return;
         this.applyFeatureSnapshot(snapshot);
       } catch (error) {
-        if (this.device) this.failChannel(channel, error.message);
+        if (!isCurrent()) return;
+        this.failChannel(channel, error.message);
         if (this.ioBlocked) return;
       }
     }
     for (let channel = 0; channel < CHANNEL_COUNT; channel++) {
-      if (!this.device || this.ioBlocked) return;
+      if (!isCurrent() || this.ioBlocked) return;
       try {
         const diagnostic = decodeChannelDiagnostics(
           await this.readFeature(30 + channel, 24), 30 + channel,
           this.state.dashboard.configuration);
+        if (!isCurrent()) return;
         const diagnostics = [...this.state.dashboard.channel_diagnostics];
         const errors = [...this.state.dashboard.diagnostics_errors];
         diagnostics[channel] = { ...diagnostic, updated_at: new Date().toISOString() };
@@ -584,7 +626,7 @@ export class PicoUartWebHid {
         this.update({ dashboard: { ...this.state.dashboard,
           channel_diagnostics: diagnostics, diagnostics_errors: errors } });
       } catch (error) {
-        if (!this.device) return;
+        if (!isCurrent()) return;
         const diagnostics = [...this.state.dashboard.channel_diagnostics];
         const errors = [...this.state.dashboard.diagnostics_errors];
         diagnostics[channel] = null;
@@ -668,7 +710,9 @@ export class PicoUartWebHid {
     const device = this.device, generation = this.generation;
     await this.refreshComplete;
     if (!device || !this.isCurrent(generation, device)
-      || this.state.phase !== "connected" || this.actionInFlight) return;
+      || this.state.phase !== "connected" || this.actionInFlight) {
+      throw new Error("Board action cancelled before submission; no command was sent.");
+    }
     const identity = this.information;
     if (!identity) throw new Error("Read a supported device identity before sending commands.");
     const capability = action <= 2 ? 1 : action === 3 ? 2 : 4;
@@ -684,6 +728,8 @@ export class PicoUartWebHid {
     }
     this.actionInFlight = true;
     this.update({ phase: "writing", message: "Sending board action", error: null });
+    let requestStarted = false;
+    let outcomeConfirmed = false;
     try {
       await this.readActionResult();
       const previous = this.state.dashboard.action_result;
@@ -692,7 +738,10 @@ export class PicoUartWebHid {
       }
       const flags = action === 3 ? 1 : action === 4 ? 1 | (profile === 0 ? 0 : 2) : 0;
       const request = encodeActionRequest(action, action === 4 ? profile : 0, flags);
-      await this.transfer(() => device.sendFeatureReport(20, request), 3000);
+      await this.transfer(() => {
+        requestStarted = true;
+        return device.sendFeatureReport(20, request);
+      }, 3000);
       const deadline = Date.now() + ACTION_DEADLINE_MS;
       while (Date.now() < deadline) {
         if (!this.isCurrent(generation, device)) {
@@ -704,8 +753,12 @@ export class PicoUartWebHid {
         if (result.action !== action) {
           throw new Error("Latest board-action result does not match; outcome is unconfirmed.");
         }
-        if (result.status === 2) return result;
+        if (result.status === 2) {
+          outcomeConfirmed = true;
+          return result;
+        }
         if (result.status !== 1) {
+          outcomeConfirmed = true;
           throw new Error(`Board action ${result.status_name.toLowerCase()} (reason ${result.error_reason}).`);
         }
         await new Promise(resolve => globalThis.setTimeout(resolve, Math.min(ACTION_POLL_MS,
@@ -713,6 +766,11 @@ export class PicoUartWebHid {
       }
       throw new Error("Timed out awaiting board action; outcome is unconfirmed.");
     } catch (error) {
+      if (requestStarted && !outcomeConfirmed && !error.message.includes("outcome is unconfirmed")) {
+        error = new Error(`Board action submission failed; outcome is unconfirmed: ${error.message}`);
+      } else if (!requestStarted && !error.message.includes("no command was sent")) {
+        error = new Error(`${error.message}; no command was sent.`);
+      }
       if (this.isCurrent(generation, device)) {
         this.update({ dashboard: { ...this.state.dashboard, action_error: error.message } });
       }
