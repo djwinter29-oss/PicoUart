@@ -143,9 +143,10 @@ Board model is the configured build target, not hardware detection. A W model do
 Wi-Fi/Bluetooth operations; capabilities describe actual functionality.
 
 Tag `v1.2.3` builds advertise firmware `1.2.3`. USB descriptor `bcdDevice` still carries only major.minor as BCD.
-Report 2 is the single source of `channel_count`. The hardware mask has no bits set above that count; derive the
-PIO mask within that width instead of sending a redundant second mask. Current PicoUart hardware mask is `0x03`.
-Hosts need a valid report 2 before interpreting the backend mask; identity and board capabilities remain usable
+Report 2 is the single source of `channel_count`, which is six for the supported PicoUart layout. The hardware mask
+has no bits set above that count; reject such masks before accepting channel reports, and derive the PIO mask within
+that width instead of sending a redundant second mask. Current PicoUart hardware mask is `0x03`. A valid report 2 is
+still required to interpret the channel count and configuration fields; identity and board capabilities remain usable
 if that read fails.
 
 | Capability bit | Meaning |
@@ -432,8 +433,15 @@ Malformed/unsupported SET requests publish their rejection unless an in-flight o
   cancel, or postpone it. Completed means ready to reboot, not proof of a successful subsequent boot.
 - Timeout/disconnect means unconfirmed, not cancelled or definitely failed. Never automatically retry reboot/save.
   Reconnect and inspect boot configuration. Reconnection alone does not prove a particular request caused reboot.
+- The Direct Dashboard records an unconfirmed save by validated board UID. On reconnect, it requires a fresh report 2
+  read and explicit user acknowledgement before allowing another save; this is recovery guidance, not proof of which
+  request produced the stored profile.
 - Without request IDs, delayed or repeated requests can execute again after the protected operation ends.
   No exactly-once guarantee or multi-client correlation is provided. The host must not replay old writes.
+
+WebHID open/close timeouts do not cancel browser operations. Keep reconnect disabled while the native operation is still
+pending; if an open completes late, close the interface before allowing another connection. If that cleanup fails,
+unplug the board before retrying.
 
 ## Reports 10-15: Channel Snapshots
 
@@ -666,7 +674,9 @@ which occurred. See [Hardware Setup](../../hardware-setup.md).
    Validate and timestamp independently of snapshots; never treat separate captures as atomic.
 
 Steady state: 1–2 telemetry GETs/second plus nominally 12 channel Input packets/second; no periodic channel Feature
-reads. Features can supply initial state without waiting for Input. Read errors invalidate affected live data, not
+reads. Python/.NET dashboards also refresh report 20 at metadata cadence when save is available to project the latest
+save result; these reads never execute actions. Features can supply initial state without waiting for Input.
+Read errors invalidate affected live data, not
 unrelated static data; valid responses restore it. Mark a channel stale after three seconds without Input.
 Features do not restore Input continuity. Disconnect/reboot discards caches and pending-action assumptions;
 rediscover identity, capabilities, and configuration.

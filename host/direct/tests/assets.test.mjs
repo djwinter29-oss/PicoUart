@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { dashboardScript } from "../../web/tests/dashboard-source.mjs";
 
 const root = fileURLToPath(new URL("../src/", import.meta.url));
 
@@ -30,8 +31,8 @@ test("both dashboards explain platform reset evidence and unknown causes", () =>
   for (const sourceRoot of [new URL("../src/", import.meta.url), new URL("../../web/src/", import.meta.url)]) {
     const html = readFileSync(new URL("index.html", sourceRoot), "utf8");
     assert.match(html, /title="[^"]*Pico combines power-on and brownout; Pico 2 distinguishes them\.[^"]*">Reset cause/);
-    const script = readFileSync(new URL(sourceRoot.pathname.endsWith("/web/src/") ? "js/dashboard.js" : "js/app.mjs",
-      sourceRoot), "utf8");
+    const script = sourceRoot.pathname.endsWith("/web/src/") ? dashboardScript()
+      : readFileSync(new URL("js/app.mjs", sourceRoot), "utf8");
     assert.ok(script.includes('"Unknown (not distinguished)"'));
   }
 });
@@ -45,6 +46,36 @@ test("HTML references only WebHID-owned assets", () => {
   assert.match(html, /href="css\/dashboard\.css(?:\?v=\d+)?"/);
   assert.match(html, /href="favicon\.svg"/);
   assert.ok(!html.includes("shared/"));
+});
+
+test("Direct Dashboard keeps focus indicators high-contrast and channel metrics scrollable", () => {
+  const dashboardStyles = readFileSync(join(root, "css/dashboard.css"), "utf8");
+  const directStyles = readFileSync(join(root, "css/direct.css"), "utf8");
+  const focusColor = dashboardStyles.match(/--teal-dark:\s*(#[a-f\d]{6})/i)?.[1];
+  assert.ok(focusColor, "focus color must resolve to the existing dark teal token");
+  const hexToRgb = value => value.match(/[a-f\d]{2}/gi).map(component => Number.parseInt(component, 16) / 255)
+    .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  const luminance = color => {
+    const [red, green, blue] = hexToRgb(color);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const contrast = (first, second) => {
+    const values = [luminance(first), luminance(second)].sort((left, right) => right - left);
+    return (values[0] + 0.05) / (values[1] + 0.05);
+  };
+  assert.ok(contrast(focusColor, "#ffffff") >= 3, "focus indicator must contrast with paper");
+  assert.ok(contrast(focusColor, "#f4f7f6") >= 3, "focus indicator must contrast with canvas");
+  for (const [styles, selector] of [
+    [dashboardStyles, ".button:focus-visible"],
+    [dashboardStyles, ".pin-map-disclosure > summary:focus-visible"],
+    [directStyles, "#configuration-profile:focus-visible, #configuration-unsafe-ack:focus-visible"],
+  ]) {
+    assert.match(styles, new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{[^}]*outline:\\s*3px solid var\\(--teal-dark\\)`));
+  }
+  assert.match(dashboardStyles, /\.channel-table-content\s*\{\s*min-width:\s*1080px;\s*\}/);
+  assert.match(readFileSync(join(root, "index.html"), "utf8"),
+    /<div class="table-scroll">\s*<div class="channel-table-content">\s*<table>/);
+  assert.doesNotMatch(dashboardStyles, /@media \(max-width: 960px\)[\s\S]*?\.channel-table-content/);
 });
 
 for (const frontend of ["web", "direct"]) {

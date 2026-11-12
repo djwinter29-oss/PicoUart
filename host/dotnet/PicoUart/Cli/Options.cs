@@ -11,6 +11,7 @@ internal sealed record Options(
     {
         string? command = null, serial = null, devicePath = null;
         var port = 5000;
+        var portSpecified = false;
         double? duration = null;
         double? statusTimeout = null;
         for (var index = 0; index < arguments.Length; index++)
@@ -28,6 +29,7 @@ internal sealed record Options(
                     case "--port":
                         if (!int.TryParse(value, out port) || port is < 1 or > 65535)
                             throw new ArgumentException("port must be between 1 and 65535");
+                        portSpecified = true;
                         break;
                     case "--duration":
                         duration = ParsePositiveSeconds(value, "duration");
@@ -48,6 +50,10 @@ internal sealed record Options(
             throw new ArgumentException($"unknown command: {command}");
         if (statusTimeout is not null && command != "status")
             throw new ArgumentException("--timeout is only valid for status");
+        if (duration is not null && command != "monitor")
+            throw new ArgumentException("--duration is only valid for monitor");
+        if (portSpecified && command != "web")
+            throw new ArgumentException("--port is only valid for web");
         return new(command, serial, devicePath, port, duration, statusTimeout ?? 2);
     }
 

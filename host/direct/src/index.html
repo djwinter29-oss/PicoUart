@@ -10,9 +10,9 @@ Copyright (c) 2026 Ji Dong
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PicoUart | Direct Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/dashboard.css?v=26">
-  <link rel="stylesheet" href="css/direct.css?v=8">
-  <script type="module" src="js/app.mjs?v=20"></script>
+  <link rel="stylesheet" href="css/dashboard.css?v=27">
+  <link rel="stylesheet" href="css/direct.css?v=11">
+  <script type="module" src="js/app.mjs?v=31"></script>
 </head>
 <body>
   <header class="topbar">
@@ -85,6 +85,12 @@ Copyright (c) 2026 Ji Dong
           </table>
         </div>
       </details>
+      <div class="configuration-recovery" id="configuration-recovery" hidden>
+        <p id="configuration-recovery-message" role="status" aria-live="polite"></p>
+        <button class="button button-secondary" id="acknowledge-configuration-recovery" type="button" disabled>
+          I inspected the stored profile
+        </button>
+      </div>
       <p class="configuration-message" id="configuration-message" role="status" aria-live="polite"></p>
     </section>
 
@@ -131,24 +137,27 @@ Copyright (c) 2026 Ji Dong
       <div class="section-heading">
         <h2 id="channels-title">UART channels <span>CDC0–CDC5</span></h2>
       </div>
+      <p class="traffic-continuity-warning" id="traffic-continuity-warning" role="status" aria-live="polite" hidden></p>
       <div class="table-scroll">
-        <table>
-          <colgroup>
-            <col class="port-column"><col class="health-column"><col class="configuration-column">
-            <col class="throughput-column"><col class="diagnostics-column">
-          </colgroup>
-          <thead><tr>
-            <th scope="col">Port</th>
-            <th scope="col">Channel status</th>
-            <th scope="col">UART configuration</th>
-            <th class="traffic-heading" scope="col" title="Rates ramp from a one-second to a five-second average as samples arrive.">
-              <span class="traffic-heading-title">Traffic</span>
-              <span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB</span>
-            </th>
-            <th scope="col">Diagnostics</th>
-          </tr></thead>
-          <tbody id="channel-rows"></tbody>
-        </table>
+        <div class="channel-table-content">
+          <table>
+            <colgroup>
+              <col class="port-column"><col class="health-column"><col class="configuration-column">
+              <col class="throughput-column"><col class="diagnostics-column">
+            </colgroup>
+            <thead><tr>
+              <th scope="col">Port</th>
+              <th scope="col">Channel status</th>
+              <th scope="col">UART configuration</th>
+              <th class="traffic-heading" scope="col" title="Rates ramp from a one-second to a five-second average as samples arrive.">
+                <span class="traffic-heading-title">Traffic</span>
+                <span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB</span>
+              </th>
+              <th scope="col">Diagnostics</th>
+            </tr></thead>
+            <tbody id="channel-rows"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 

@@ -12,13 +12,6 @@ PYTHON_EXE="${PYTHON_EXE:-}"
 SKIP_C=0
 SKIP_PYTHON=0
 SANITIZE=0
-NO_HIDAPI_LOCK_FILE=""
-
-cleanup() {
-    if [ -n "$NO_HIDAPI_LOCK_FILE" ]; then
-        rm -f "$NO_HIDAPI_LOCK_FILE"
-    fi
-}
 CURRENT_CHILD_PID=""
 # ponytail: set only while run_interruptible is between starting the launch of
 # a command and publishing its PID into CURRENT_CHILD_PID (see
@@ -104,7 +97,6 @@ run_interruptible() {
     return "$command_status"
 }
 
-trap cleanup EXIT
 trap 'forward_signal HUP 129' HUP
 trap 'forward_signal INT 130' INT
 trap 'forward_signal TERM 143' TERM
@@ -191,9 +183,10 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
         exit 1
     fi
 
+    CDPATH='' cd -- "$REPO_ROOT"
     echo "=== Host Python tests (pytest) ==="
-    LOCK_FILE="$REPO_ROOT/host/python/requirements-lock.txt"
-    if run_interruptible "$PYTHON_EXE" -m pip install -q --require-hashes -r "$LOCK_FILE"; then
+    if run_interruptible "$PYTHON_EXE" -m pip install -q \
+        --group host/python/pyproject.toml:dev "$REPO_ROOT/host/python"; then
         :
     else
         INSTALL_STATUS=$?
@@ -202,25 +195,13 @@ if [ "$SKIP_PYTHON" -eq 0 ]; then
         fi
         # hidapi is a native extension with no prebuilt wheel for every Python
         # build (for example a very new CPython); its sdist build then fails.
-        # ponytail: retry once after any install failure; pip has no stable
-        # machine-readable cause here. Never ignore failure of the hashed
-        # fallback install. Add structured cause detection if pip supports it.
+        # ponytail: retry once without installing the project/runtime
+        # dependencies after any install failure. pip has no stable
+        # machine-readable cause here. Never ignore failure of this fallback.
         # HID-dependent tests skip only when hidapi is actually unavailable.
-        echo "Warning: full requirements-lock.txt install failed; retrying without hidapi" >&2
+        echo "Warning: full host install failed; retrying development dependencies without hidapi" >&2
         echo "so non-HID host tests can still run. HID tests skip if hidapi is unavailable." >&2
-        NO_HIDAPI_LOCK_FILE=$(mktemp)
-        if ! "$PYTHON_EXE" "$SCRIPT_DIR/filter_lock_exclude.py" \
-            --exclude hidapi "$LOCK_FILE" > "$NO_HIDAPI_LOCK_FILE"; then
-            echo "Could not safely filter hidapi from the locked requirements." >&2
-            exit 1
-        fi
-        if grep -q '^hidapi==' "$NO_HIDAPI_LOCK_FILE" \
-            || grep -q '# via hidapi' "$NO_HIDAPI_LOCK_FILE"; then
-            echo "Could not safely exclude hidapi from the locked requirements; refusing partial install." >&2
-            exit 1
-        fi
-        run_interruptible "$PYTHON_EXE" -m pip install -q --require-hashes -r "$NO_HIDAPI_LOCK_FILE"
+        run_interruptible "$PYTHON_EXE" -m pip install -q --group host/python/pyproject.toml:dev
     fi
-    CDPATH='' cd -- "$REPO_ROOT"
     run_interruptible "$PYTHON_EXE" -m pytest -c pyproject.toml
 fi

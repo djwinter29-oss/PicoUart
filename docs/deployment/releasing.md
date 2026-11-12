@@ -248,4 +248,4 @@ Direct Dashboard and Python development-publish modes leave **tag** empty and ge
 Tags use plain `vMAJOR.MINOR.PATCH` with no pre-release suffix. The release version resolver owns tag bounds; firmware
 build limits may differ. Firmware reports the semantic version over HID and major/minor in `bcdDevice`; see the
 [HID Report Reference](../design/usb/hid-report-reference.md) for encoding details. Release workflows own the SDK and
-toolchain pins and install the reviewed, hash-locked Python requirements.
+toolchain pins; Python runtime dependencies are declared by the host package and resolved during installation.

@@ -1,0 +1,51 @@
+[
+  {
+    "name": "non-nominal interval reports byte increments",
+    "samples": [
+      {"sequence": 1, "interval_ms": 500, "uart_tx": 100, "uart_rx": 200, "usb_tx": 300, "usb_rx": 400},
+      {"sequence": 2, "interval_ms": 750, "uart_tx": 850, "uart_rx": 350, "usb_tx": 600, "usb_rx": 1000}
+    ],
+    "expected": {
+      "traffic": {"uart_tx": 750, "uart_rx": 150, "usb_tx": 300, "usb_rx": 600},
+      "totals": {"uart_tx": 850, "uart_rx": 350, "usb_tx": 600, "usb_rx": 1000},
+      "observed_interval_ms": 750, "traffic_gaps": 0, "traffic_incomplete": false
+    }
+  },
+  {
+    "name": "counter and sequence wrap",
+    "samples": [
+      {"sequence": 65535, "interval_ms": 500, "uart_tx": 4294967286, "uart_rx": 0, "usb_tx": 0, "usb_rx": 0},
+      {"sequence": 0, "interval_ms": 750, "uart_tx": 20, "uart_rx": 0, "usb_tx": 0, "usb_rx": 0}
+    ],
+    "expected": {
+      "traffic": {"uart_tx": 30, "uart_rx": 0, "usb_tx": 0, "usb_rx": 0},
+      "totals": {"uart_tx": 20, "uart_rx": 0, "usb_tx": 0, "usb_rx": 0},
+      "observed_interval_ms": 750, "traffic_gaps": 0, "traffic_incomplete": false
+    }
+  },
+  {
+    "name": "sequence gap retains totals without inventing a rate window",
+    "samples": [
+      {"sequence": 1, "interval_ms": 500, "uart_tx": 100, "uart_rx": 0, "usb_tx": 0, "usb_rx": 0},
+      {"sequence": 3, "interval_ms": 500, "uart_tx": 300, "uart_rx": 0, "usb_tx": 0, "usb_rx": 0}
+    ],
+    "expected": {
+      "traffic": {"uart_tx": null, "uart_rx": null, "usb_tx": null, "usb_rx": null},
+      "totals": {"uart_tx": 300, "uart_rx": 0, "usb_tx": 0, "usb_rx": 0},
+      "observed_interval_ms": 0, "traffic_gaps": 1, "traffic_incomplete": true
+    }
+  },
+  {
+    "name": "cached UART measurements do not affect valid USB increments",
+    "samples": [
+      {"sequence": 1, "interval_ms": 500, "uart_tx": 100, "uart_rx": 200, "usb_tx": 300, "usb_rx": 400},
+      {"sequence": 2, "interval_ms": 750, "uart_tx": 100, "uart_rx": 200, "usb_tx": 600, "usb_rx": 1000,
+       "uart_measurement_state": 2}
+    ],
+    "expected": {
+      "traffic": {"uart_tx": null, "uart_rx": null, "usb_tx": 300, "usb_rx": 600},
+      "totals": {"uart_tx": 100, "uart_rx": 200, "usb_tx": 600, "usb_rx": 1000},
+      "observed_interval_ms": 750, "traffic_gaps": 0, "traffic_incomplete": false
+    }
+  }
+]

@@ -23,7 +23,7 @@ internal sealed record StatusSnapshot(StatusChannel[] Channels)
     }
 
     /// <summary>Retry until one Input arrives. Each read waits at most 250 ms, matching Python status.</summary>
-    internal static ChannelStatus? Poll(Func<int, ChannelStatus?> read, TimeSpan timeout)
+    internal static ChannelStatus? Poll(Func<int, int, ChannelStatus?> read, TimeSpan timeout)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
         var clock = Stopwatch.StartNew();
@@ -31,11 +31,26 @@ internal sealed record StatusSnapshot(StatusChannel[] Channels)
         {
             var remainingMs = (timeout - clock.Elapsed).TotalMilliseconds;
             if (remainingMs <= 0) break;
-            var slice = (int)Math.Min(250, Math.Max(1, remainingMs));
-            var sample = read(slice);
+            var operationTimeoutMs = remainingMs >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)remainingMs);
+            var sample = read(Math.Min(250, operationTimeoutMs), operationTimeoutMs);
+            if (clock.Elapsed >= timeout) return null;
             if (sample is not null) return sample;
         }
         return null;
+    }
+
+    /// <summary>Read once within a capture budget and discard a sample completed at or after its deadline.</summary>
+    internal static ChannelStatus? ReadWithinDeadline(Func<int, int, ChannelStatus?> read, TimeSpan timeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        var clock = Stopwatch.StartNew();
+        var remainingMs = timeout.TotalMilliseconds;
+        var operationTimeoutMs = remainingMs >= int.MaxValue
+            ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(remainingMs));
+        ChannelStatus? sample;
+        try { sample = read(Math.Min(250, operationTimeoutMs), operationTimeoutMs); }
+        catch (TimeoutException) when (clock.Elapsed >= timeout) { return null; }
+        return clock.Elapsed >= timeout ? null : sample;
     }
 
     /// <summary>Serialize with recursively sorted object keys, matching Python <c>sort_keys=True</c>.</summary>

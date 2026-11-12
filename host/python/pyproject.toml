@@ -27,13 +27,15 @@ Issues = "https://github.com/djwinter29-oss/PicoUart/issues"
 Releases = "https://github.com/djwinter29-oss/PicoUart/releases"
 
 [project.scripts]
-pico-uart = "pico_uart.cli:main"
+pico-uart = "pico_uart.main:main"
 
 [dependency-groups]
 test = ["pytest==9.1.1"]
 dev = [
 	{include-group = "test"},
 	"pytest-cov==6.2.1",
+	"mypy==2.4.1",
+	"ruff==0.17.3",
 	"hatchling==1.32.4",
 	"hatch-vcs==0.5.0",
 	"editables==0.5",
@@ -45,18 +47,43 @@ tag-pattern = '^v(?P<version>\d+\.\d+\.\d+)$'
 fallback-version = "0.0.0.dev0"
 
 [tool.hatch.version.raw-options]
-search_parent_directories = true
+root = "../.."
+git_describe_command = "git describe --dirty --tags --long --match v[0-9]*.[0-9]*.[0-9]*"
 
-[tool.hatch.build.hooks.custom]
+[tool.hatch.build]
+artifacts = ["src/pico_uart/dashboard/assets/**"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pico_uart"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/hatch_build.py", "/requirements*.txt"]
+include = ["/src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["B", "C4", "E4", "E7", "E9", "F", "I", "RET", "SIM", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src/pico_uart", "tests"]
+mypy_path = ["src", "tests"]
+explicit_package_bases = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+warn_unused_ignores = true
+
+# Tests stay unannotated; they are still checked for import and call-signature errors against the typed sources.
+[[tool.mypy.overrides]]
+module = ["helpers", "conftest", "test_main", "test_version", "test_evidence_index", "dashboard.*", "hid.*"]
+disallow_untyped_defs = false
+check_untyped_defs = false

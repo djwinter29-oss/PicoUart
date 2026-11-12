@@ -38,12 +38,13 @@ Use [Repository Tools](tools/README.md) for commands:
 | Change | Validation |
 | --- | --- |
 | Firmware | Relevant native tests and contracts; build both `pico` and `pico2`. See [test scope](docs/development/firmware-testing.md#test-scope). |
-| Python, .NET, or browser tools | Tests for the affected host application and any shared assets or contracts; see [host development](docs/development/host-tools.md). |
+| Python, .NET, or browser tools | Relevant tests and applicable lint/type checks for the host application and shared contracts; see [host development](docs/development/host-tools.md). |
 | Documentation only | Check links, examples, and rendered formatting; run `git diff --check`. |
 
 For Python tests, use the virtual environment from the
 [host setup guide](docs/development/host-tools.md#python-environment-setup). When using the host-test wrapper, set
-`PYTHON_EXE=host/python/.venv/bin/python` so it does not try to install into the system interpreter.
+`PYTHON_EXE` to that environment's interpreter (for example, `host/python/.venv/bin/python` on Linux, macOS, or WSL)
+so it does not try to install into the system interpreter. See the setup guide for native Windows paths.
 
 Hardware HIL is not required for every pull request. If hardware is unavailable, report that limitation rather than
 claiming hardware validation. Exact-artifact HIL is required for release qualification; see the
@@ -62,7 +63,7 @@ claiming hardware validation. Exact-artifact HIL is required for release qualifi
 
 ## Reporting Security Issues
 
-Do not open a public issue for suspected vulnerabilities. Follow [SECURITY.md](SECURITY.md) instead.
+Do not publish vulnerability details; follow the reporting instructions in [SECURITY.md](SECURITY.md).
 
 ## Code of Conduct
 

@@ -29,17 +29,21 @@ officially representing the project in public spaces.
 
 Choose the route that applies:
 
-- **Project conduct concerns:** use **Report content**, then **Report to repository admins**, if available.
+- **Project conduct tied to GitHub content:** on the relevant issue, pull request, discussion, or comment, use
+  **Report content**, then **Report to repository admins**, if available. This is a report about that content, not a
+  general private inbox.
 - **Suspected GitHub policy violations:** use
-  [GitHub's abuse reporting form](https://support.github.com/contact/report-abuse), including when a maintainer is involved.
+  [GitHub's abuse reporting form](https://support.github.com/contact/report-abuse), including when a maintainer is
+  involved.
 
-Include relevant links, what happened, and any concerns about a reviewer's involvement. Do not post sensitive details
-in a public issue or use security vulnerability reporting for conduct concerns. See
+The project has no reporting channel for off-platform incidents unless they also violate GitHub policy. Do not post
+sensitive details in a public issue or use security vulnerability reporting for conduct concerns. See
 [GitHub's reporting instructions](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam).
 
 **Available channels:** the project currently uses GitHub's reporting tools and has no separate private reporting inbox.
 An additional private project channel will be listed here only when someone can reliably monitor it.
-If repository-admin reporting is unavailable, there is no private project reporting fallback.
+If repository-admin reporting is unavailable, there is no private project reporting fallback. Include relevant links and
+context in the report form when it allows; note any conflict of interest through an available private route.
 GitHub Support handles GitHub policy violations, not enforcement of this code, and does not automatically forward
 reports to maintainers.
 
@@ -53,8 +57,11 @@ route for these cases.
 Sensitive information is shared only as needed for review and enforcement; absolute confidentiality cannot be
 guaranteed. GitHub handles reports sent to its Support team under its own policies.
 
+For nonurgent cases, maintainers should review available context and seek accounts from involved parties where feasible
+before deciding. Serious or ongoing harm may require immediate protective action.
+
 Depending on severity and repetition, maintainers may request a correction, issue a warning, remove content, temporarily
-restrict participation, or permanently exclude a participant. Serious incidents may warrant immediate exclusion.
+restrict participation, or permanently exclude a participant.
 
 Response times depend on maintainer availability. Where a private reply channel exists, maintainers should communicate
 decisions and restriction terms; participants may provide new context to request reconsideration. GitHub Support is
@@ -62,4 +69,5 @@ not an appeal body for project decisions.
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/), version 2.1.
+This Code of Conduct is adapted from the
+[Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).

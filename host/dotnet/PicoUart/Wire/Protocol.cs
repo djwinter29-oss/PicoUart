@@ -39,7 +39,10 @@ public sealed record ChannelStatus(int Id, string State, byte UartMeasurementSta
 public sealed record ChannelDiagnostics(int Id, byte UartMeasurementState, byte UartSampleAge100Ms,
     byte LastControlErrorReason, uint RxOverrunCount, uint RxErrorCount, uint LastFaultUptimeS,
     ushort UartTxRingPeakBytes, ushort UartRxRingPeakBytes, ushort CdcTxFifoPeakBytes,
-    ushort CdcRxFifoPeakBytes);
+    ushort CdcRxFifoPeakBytes)
+{
+    internal uint? KnownRxOverrunCount => UartMeasurementState == 0 ? null : RxOverrunCount;
+}
 public sealed record ActionResult(byte Action, byte Status, byte ErrorReason);
 
 public static class Protocol
@@ -93,8 +96,7 @@ public static class Protocol
         var count = payload[2];
         Require(count == ChannelCount, "unsupported PicoUart channel count");
         Require(stored == byte.MaxValue || stored <= 4, "invalid stored clock profile");
-        Require((identity.HardwareChannelMask & ~((1 << count) - 1)) == 0,
-            "hardware channel mask exceeds the channel count");
+        ValidateHardwareChannelMask(identity);
         var pins = new ChannelPins[count];
         for (var channel = 0; channel < count; channel++)
         {
@@ -131,8 +133,7 @@ public static class Protocol
             new(BinaryPrimitives.ReadUInt64LittleEndian(payload[4..]), loads), clock);
     }
 
-    public static ChannelStatus ParseChannel(byte reportId, ReadOnlySpan<byte> payload,
-        BoardIdentity identity, ConfigurationStatus configuration)
+    public static ChannelStatus ParseChannel(byte reportId, ReadOnlySpan<byte> payload, BoardIdentity identity)
     {
         Require(reportId >= ChannelReportId && reportId < ChannelReportId + ChannelCount,
             "invalid channel report ID");
@@ -145,6 +146,7 @@ public static class Protocol
         var stopBits = payload[8];
         var parity = payload[9];
         Require(state <= 4 && measurement <= 2, "invalid channel or UART measurement state");
+        ValidateHardwareChannelMask(identity);
         Require(measurement != 0 || (U32(payload, 14) == 0 && U32(payload, 18) == 0),
             "unavailable UART counters must be zero placeholders");
         Require(baud == 0
@@ -275,6 +277,9 @@ public static class Protocol
         BinaryPrimitives.ReadUInt16LittleEndian(data[offset..]);
     private static uint U32(ReadOnlySpan<byte> data, int offset) =>
         BinaryPrimitives.ReadUInt32LittleEndian(data[offset..]);
+    private static void ValidateHardwareChannelMask(BoardIdentity identity) =>
+        Require((identity.HardwareChannelMask & ~((1 << ChannelCount) - 1)) == 0,
+            "hardware channel mask exceeds the channel count");
     private static void Layout(ReadOnlySpan<byte> payload, int size) =>
         Require(payload.Length == size && payload[0] == LayoutVersion,
             "unsupported report size or layout version");

@@ -1,0 +1,316 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
+"""Mocked HID discovery tests for fail-closed collection selection."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from pico_uart.hid import transport
+
+
+@pytest.fixture
+def hid_module():
+    if transport.hid is None:
+        pytest.skip("hidapi runtime not installed; skipping HID discovery test")
+    return transport
+
+
+def _install_hid_mock(monkeypatch, hid_module, devices):
+    opened_paths = []
+
+    class Device:
+        def open_path(self, path):
+            opened_paths.append(path)
+
+    monkeypatch.setattr(
+        hid_module.hid,
+        "enumerate",
+        lambda vendor_id, product_id: devices,
+    )
+    monkeypatch.setattr(hid_module.hid, "device", Device)
+    return opened_paths
+
+
+def _exact_device(hid_module, path=b"correct"):
+    return {
+        "path": path,
+        "usage_page": hid_module.USAGE_PAGE,
+        "usage": hid_module.USAGE,
+    }
+
+
+def test_discovery_opens_correct_collection_among_incorrect(monkeypatch, hid_module):
+    devices = [
+        {"path": b"incorrect", "usage_page": 1, "usage": 2},
+        _exact_device(hid_module),
+    ]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    hid_module.open_device()
+
+    assert opened_paths == [b"correct"]
+
+
+def test_enumeration_lists_validated_interfaces_without_opening(monkeypatch, hid_module):
+    exact = _exact_device(hid_module)
+    fallback = {"path": b"fallback", "product_string": hid_module.PRODUCT_STRING}
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, [
+        exact, fallback,
+        {"path": b"wrong", "usage_page": 1, "usage": 2},
+        {"path": b"wrong-interface", "product_string": hid_module.PRODUCT_STRING, "interface_number": 0},
+    ])
+    assert hid_module.enumerate_devices() == [exact, fallback]
+    assert opened_paths == []
+    hid_module.open_device()
+    assert opened_paths == [exact["path"]]
+
+
+def test_discovery_resolves_linux_interface_path_to_hidraw(monkeypatch, hid_module):
+    devices = [_exact_device(hid_module, b"1-3:1.12")]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda path: "/dev/hidraw7")
+    adapter = object()
+    monkeypatch.setattr(hid_module, "_open_hidraw_device", lambda path: adapter)
+    assert hid_module.open_device() is adapter
+    assert opened_paths == []
+
+
+def test_discovery_uses_hidraw_without_attempting_libusb_open(monkeypatch, hid_module):
+    devices = [_exact_device(hid_module, b"1-3:1.12")]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+    fallback_device = object()
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda path: "/dev/hidraw7")
+    monkeypatch.setattr(hid_module, "_open_hidraw_device", lambda path: fallback_device)
+
+    class FailingDevice:
+        def open_path(self, path):
+            opened_paths.append(path)
+            raise OSError("libusb open failed")
+
+    monkeypatch.setattr(hid_module.hid, "device", FailingDevice)
+
+    assert hid_module.open_device() is fallback_device
+    assert opened_paths == []
+
+
+def test_discovery_uses_hidapi_when_no_hidraw_path_is_available(monkeypatch, hid_module):
+    devices = [_exact_device(hid_module, b"native-path")]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda _path: None)
+
+    class Device:
+        def open_path(self, path):
+            opened_paths.append(path)
+            if path == b"1-3:1.12":
+                raise OSError("libusb open failed")
+
+    monkeypatch.setattr(hid_module.hid, "device", Device)
+
+    result = hid_module.open_device()
+
+    assert isinstance(result, Device)
+    assert opened_paths == [b"native-path"]
+
+
+def test_discovery_reports_open_failure_when_hidraw_fallback_fails(monkeypatch, hid_module):
+    devices = [_exact_device(hid_module, b"1-3:1.12")]
+    _install_hid_mock(monkeypatch, hid_module, devices)
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda _path: "/dev/hidraw7")
+    monkeypatch.setattr(
+        hid_module,
+        "_open_hidraw_device",
+        lambda _path: (_ for _ in ()).throw(OSError("permission denied")),
+    )
+
+    class FailingDevice:
+        def open_path(self, _path):
+            raise OSError("libusb open failed")
+
+    monkeypatch.setattr(hid_module.hid, "device", FailingDevice)
+
+    with pytest.raises(RuntimeError, match="hidraw permissions"):
+        hid_module.open_device()
+
+
+@pytest.mark.parametrize("path", [7, "", b""])
+def test_open_enumerated_device_rejects_invalid_path(hid_module, path):
+    with pytest.raises(RuntimeError, match="invalid device path"):
+        hid_module.open_enumerated_device({"path": path})
+
+
+@pytest.mark.skipif(transport.os.name != "posix", reason="Linux hidraw sysfs paths are POSIX-only")
+def test_resolve_hidraw_path_matches_sysfs_interface(monkeypatch):
+    link = Path("/sys/class/hidraw/hidraw7/device")
+    monkeypatch.setattr(transport.Path, "glob", lambda *_args: [link])
+    monkeypatch.setattr(
+        transport.os.path,
+        "realpath",
+        lambda _path: "/sys/devices/platform/1-3:1.12",
+    )
+
+    assert transport._resolve_hidraw_path("1-3:1.12") == "/dev/hidraw7"
+
+
+def test_discovery_reports_original_path_when_hidraw_resolution_fails(monkeypatch, hid_module):
+    devices = [_exact_device(hid_module, b"1-3:1.12")]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+    monkeypatch.setattr(hid_module, "_resolve_hidraw_path", lambda path: None)
+
+    class FailingDevice:
+        def open_path(self, path):
+            opened_paths.append(path)
+            raise OSError("libusb open failed")
+
+    monkeypatch.setattr(hid_module.hid, "device", FailingDevice)
+
+    with pytest.raises(RuntimeError, match="1-3:1.12"):
+        hid_module.open_device()
+
+
+def test_discovery_rejects_only_incorrect_collection(monkeypatch, hid_module):
+    opened_paths = _install_hid_mock(
+        monkeypatch,
+        hid_module,
+        [{"path": b"incorrect", "usage_page": 1, "usage": 2}],
+    )
+
+    with pytest.raises(RuntimeError, match="expected usage metadata"):
+        hid_module.open_device()
+    assert opened_paths == []
+
+
+def test_discovery_allows_unique_validated_missing_usage_fallback(monkeypatch, hid_module):
+    devices = [
+        {
+            "path": b"fallback",
+            "product_string": hid_module.PRODUCT_STRING,
+            "interface_number": hid_module.HID_INTERFACE_NUMBER,
+        }
+    ]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    hid_module.open_device()
+
+    assert opened_paths == [b"fallback"]
+
+
+def test_discovery_allows_empty_product_on_expected_interface(monkeypatch, hid_module):
+    devices = [
+        {
+            "path": b"linux-hidraw",
+            "product_string": "",
+            "interface_number": hid_module.HID_INTERFACE_NUMBER,
+        }
+    ]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    hid_module.open_device()
+
+    assert opened_paths == [b"linux-hidraw"]
+
+
+def test_discovery_rejects_empty_product_with_unknown_interface(monkeypatch, hid_module):
+    devices = [
+        {
+            "path": b"ambiguous",
+            "product_string": "",
+            "interface_number": None,
+        }
+    ]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    with pytest.raises(RuntimeError, match="expected usage metadata"):
+        hid_module.open_device()
+    assert opened_paths == []
+
+
+@pytest.mark.parametrize("interface_number", [None, -1])
+def test_discovery_allows_unknown_interface_metadata(monkeypatch, hid_module, interface_number):
+    devices = [
+        {
+            "path": b"fallback",
+            "product_string": hid_module.PRODUCT_STRING,
+            "interface_number": interface_number,
+        }
+    ]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    hid_module.open_device()
+
+    assert opened_paths == [b"fallback"]
+
+
+def test_discovery_rejects_missing_usage_with_wrong_interface(monkeypatch, hid_module):
+    devices = [
+        {
+            "path": b"wrong-interface",
+            "product_string": hid_module.PRODUCT_STRING,
+            "interface_number": hid_module.HID_INTERFACE_NUMBER - 1,
+        }
+    ]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    with pytest.raises(RuntimeError, match="expected usage metadata"):
+        hid_module.open_device()
+    assert opened_paths == []
+
+
+def test_discovery_rejects_multiple_exact_matches(monkeypatch, hid_module):
+    opened_paths = _install_hid_mock(
+        monkeypatch,
+        hid_module,
+        [_exact_device(hid_module, b"first"), _exact_device(hid_module, b"second")],
+    )
+
+    with pytest.raises(RuntimeError, match="multiple PicoUart HID interfaces"):
+        hid_module.open_device()
+    assert opened_paths == []
+
+
+def test_discovery_selects_exact_match_by_serial(monkeypatch, hid_module):
+    devices = [
+        {**_exact_device(hid_module, b"first"), "serial_number": "first-serial"},
+        {**_exact_device(hid_module, b"second"), "serial_number": "second-serial"},
+    ]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    hid_module.open_device(serial_number="second-serial")
+
+    assert opened_paths == [b"second"]
+
+
+def test_discovery_rejects_unknown_serial(monkeypatch, hid_module):
+    devices = [{**_exact_device(hid_module), "serial_number": "known-serial"}]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    with pytest.raises(RuntimeError, match="interface not found"):
+        hid_module.open_device(serial_number="unknown-serial")
+    assert opened_paths == []
+
+
+def test_discovery_selects_exact_match_by_path(monkeypatch, hid_module):
+    devices = [_exact_device(hid_module, b"first"), _exact_device(hid_module, b"second")]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    hid_module.open_device(device_path="second")
+
+    assert opened_paths == [b"second"]
+
+
+def test_discovery_rejects_multiple_missing_usage_fallbacks(monkeypatch, hid_module):
+    devices = [
+        {
+            "path": path,
+            "product_string": hid_module.PRODUCT_STRING,
+            "interface_number": hid_module.HID_INTERFACE_NUMBER,
+        }
+        for path in (b"first", b"second")
+    ]
+    opened_paths = _install_hid_mock(monkeypatch, hid_module, devices)
+
+    with pytest.raises(RuntimeError, match="multiple PicoUart HID interfaces"):
+        hid_module.open_device()
+    assert opened_paths == []

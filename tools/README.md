@@ -45,13 +45,13 @@ tools/hil/.venv/bin/pico-uart-hil startup --help
 python3 tools/release/verify-build.py --help
 ```
 
-Python and .NET launchers default to `web` and pass application arguments through unchanged, for example
+Python and .NET launchers default to their local dashboard and pass application arguments through unchanged, for example
 `tools/host/run-python.sh --serial ABC123 status` or `tools/host/run-dotnet.sh web --port 5001`.
 Each dashboard instance needs its own port and uses a port-specific session cookie. Run only one HID monitor per
 physical board; select a different board for each process:
 
 ```sh
-tools/host/run-python.sh --serial <serial-1> web --port 5001
+tools/host/run-python.sh --serial <serial-1> dashboard --port 5001
 tools/host/run-dotnet.sh --serial <serial-2> web --port 5002
 ```
 
@@ -61,8 +61,8 @@ Run each launcher with `--help` for prerequisites and environment overrides.
 The Python/.NET launchers check local USB/HID permissions before starting; they do not install rules automatically.
 The Direct Dashboard does not check the server's USB permissions because the browser may run on another computer.
 
-The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it), installing the hash-locked
-runtime dependencies only if Flask or hidapi cannot import. Bootstrap uses public PyPI only and ignores machine/user
+The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it), installing the package with its
+`dashboard` extra if Flask or hidapi cannot import. Bootstrap uses public PyPI only and ignores machine/user
 pip index configuration, avoiding unrelated private feeds. It runs source directly, without activating the environment or
 installing the package editable. Refresh dependencies explicitly after dependency changes using the
 [developer setup](../docs/development/host-tools.md#python-environment-setup).

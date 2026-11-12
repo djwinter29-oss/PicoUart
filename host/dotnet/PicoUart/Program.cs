@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using PicoUart.Cli;
@@ -27,7 +28,8 @@ try
     {
         case "status":
             var sample = StatusSnapshot.Poll(
-                client.ReadStatus, TimeSpan.FromSeconds(options.StatusTimeout))
+                (readTimeoutMs, operationTimeoutMs) => client.ReadStatus(readTimeoutMs, operationTimeoutMs),
+                TimeSpan.FromSeconds(options.StatusTimeout))
                 ?? throw new InvalidOperationException("no status report arrived before timeout");
             Console.WriteLine(StatusSnapshot.ToSortedJson(
                 StatusSnapshot.FromFirstSample(sample, DateTimeOffset.UtcNow)));
@@ -36,10 +38,24 @@ try
             using (var stop = new CancellationTokenSource())
             {
                 Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; stop.Cancel(); };
-                if (options.Duration is not null) stop.CancelAfter(TimeSpan.FromSeconds(options.Duration.Value));
-                while (!stop.IsCancellationRequested)
+                var duration = options.Duration is null ? (TimeSpan?)null
+                    : TimeSpan.FromSeconds(options.Duration.Value);
+                var capture = Stopwatch.StartNew();
+                while (!stop.IsCancellationRequested && (duration is null || capture.Elapsed < duration))
                 {
-                    var status = client.ReadStatus();
+                    ChannelStatus? status;
+                    if (duration is { } window)
+                    {
+                        var remaining = window - capture.Elapsed;
+                        if (remaining <= TimeSpan.Zero) break;
+                        status = StatusSnapshot.ReadWithinDeadline(
+                            (readTimeoutMs, operationTimeoutMs) =>
+                                client.ReadStatus(readTimeoutMs, operationTimeoutMs),
+                            remaining);
+                    }
+                    else
+                        status = client.ReadStatus();
+                    if (duration is { } deadline && capture.Elapsed >= deadline) break;
                     if (status is not null) WriteJson(status);
                 }
             }
@@ -51,8 +67,15 @@ try
         case "temperature":
             Console.WriteLine(client.ReadBoardStatus().TemperatureCelsius.ToString(CultureInfo.InvariantCulture));
             break;
-        case "version": Console.WriteLine(client.ReadBoardStatus().FirmwareVersion); break;
-        case "toggle-led": client.ToggleLed(); break;
+        case "version": Console.WriteLine(client.ReadIdentity().FirmwareVersion); break;
+        case "toggle-led":
+            client.ToggleLed();
+            try { client.ReadTelemetry(); }
+            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            {
+                Console.Error.WriteLine($"LED action succeeded; telemetry refresh failed: {error.Message}");
+            }
+            break;
         case "reset": client.ResetBoard(); break;
     }
     return 0;

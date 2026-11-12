@@ -2,22 +2,22 @@
 # Copyright (c) 2026 Ji Dong
 """Published .NET host contract checks; skipped when no SDK is available."""
 
-import http.client
 import html
+import http.client
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
-
-from pico_uart.web.monitor import empty_snapshot
-
+from pico_uart.dashboard.monitor import empty_snapshot
+from pico_uart.hid.inputs import InputTracker
 
 ROOT = Path(__file__).resolve().parents[2]
 DOTNET = os.environ.get("DOTNET_EXE") or shutil.which("dotnet")
@@ -29,7 +29,8 @@ def published_host(tmp_path_factory, packaged_version):
     output = tmp_path_factory.mktemp("dotnet-host")
     result = subprocess.run(
         [DOTNET, "publish", str(ROOT / "host/dotnet/PicoUart"), "-o", str(output)]
-        + (["-p:Version=" + packaged_version] if packaged_version != "0.0.0-debug" else []),
+        + ["-p:MinVerVersionOverride=" + packaged_version],
+        check=False,
         capture_output=True,
         text=True,
         timeout=120,
@@ -137,6 +138,36 @@ def test_dotnet_packages_only_shared_source_assets(published_host):
     }
 
 
+def test_extracted_dotnet_host_passes_release_smoke(published_host, tmp_path):
+    archive = shutil.make_archive(str(tmp_path / "host"), "gztar", root_dir=published_host)
+    extracted = tmp_path / "extracted"
+    unpack_options = {"filter": "data"} if sys.version_info >= (3, 12) else {}
+    shutil.unpack_archive(archive, extracted, **unpack_options)
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools/release/check-dotnet-host.py"), str(extracted)],
+        check=False, capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_populated_python_snapshots_match_the_shared_dotnet_contract():
+    cases = json.loads((ROOT / "tests/contracts/host-input-cases.json").read_text())
+    for case in cases:
+        tracker = InputTracker()
+        for index, source in enumerate(case["samples"]):
+            sample = {
+                "sequence": source["sequence"], "interval_ms": source["interval_ms"],
+                "uart_tx_bytes": source["uart_tx"], "uart_rx_bytes": source["uart_rx"],
+                "cdc_tx_bytes": source["usb_tx"], "cdc_rx_bytes": source["usb_rx"],
+                "uart_measurement_state": source.get("uart_measurement_state", 1),
+                "state": "ready", "channel_state": 2, "cdc_open": True,
+                "baud_rate": 115200, "data_bits": 8, "stop_bits": 1, "parity": "none",
+            }
+            tracker.apply(0, sample, index * 0.75)
+        actual = tracker.snapshot()["channels"][0]
+        assert {key: actual[key] for key in case["expected"]} == case["expected"], case["name"]
+
+
 def test_dotnet_refresh_interval_matches_python_default(server):
     status, _, payload = request(server, "/api/status")
     assert status == 200
@@ -165,7 +196,8 @@ def test_dotnet_board_catalog_and_invalid_selection(server):
     status, _, payload = request(server, "/api/boards")
     assert status == 200
     listing = json.loads(payload)
-    assert listing.keys() == {"boards", "default_board_id"}
+    assert listing.keys() == {"boards", "default_board_id", "discovery_errors"}
+    assert listing["discovery_errors"] == []
     for board in listing["boards"]:
         assert board.keys() == {"id", "product_name", "serial_number", "device_path"}
     assert listing["default_board_id"] is None or listing["default_board_id"] in {
@@ -204,6 +236,7 @@ def test_dotnet_controls_reject_bad_hosts_and_csrf(server):
 def test_dotnet_cli_rejects_invalid_arguments(published_host, arguments):
     result = subprocess.run(
         [DOTNET, str(published_host / "PicoUart.dll"), *arguments],
+        check=False,
         capture_output=True,
         text=True,
         timeout=10,

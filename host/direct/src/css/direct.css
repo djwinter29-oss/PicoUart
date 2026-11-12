@@ -20,7 +20,7 @@
   font: 600 14px var(--mono);
 }
 #configuration-profile:focus-visible, #configuration-unsafe-ack:focus-visible {
-  outline: 3px solid var(--lime);
+  outline: 3px solid var(--teal-dark);
   outline-offset: 2px;
 }
 .configuration-acknowledgement input { width: 16px; height: 16px; }
@@ -35,6 +35,25 @@
 }
 .configuration-message:empty { display: none; }
 .configuration-message[data-error="true"] { color: var(--coral); }
+.configuration-recovery {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #fff5df;
+  border: 1px solid #e8cf98;
+  border-radius: 7px;
+}
+.configuration-recovery p { margin: 0 0 8px; color: #754a10; font-size: 12px; }
+.configuration-recovery[hidden] { display: none; }
+.traffic-continuity-warning {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  color: #754a10;
+  background: #fff5df;
+  border: 1px solid #e8cf98;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.traffic-continuity-warning[hidden] { display: none; }
 .static-map table { min-width: 540px; table-layout: auto; }
 .static-map caption { padding: 10px 14px; color: var(--muted); text-align: left; font-size: 12px; }
 .static-map td { height: 40px; }

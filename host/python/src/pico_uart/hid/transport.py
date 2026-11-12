@@ -1,0 +1,222 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Ji Dong
+"""HID device discovery and platform-specific opening helpers."""
+
+import os
+import select
+from importlib import import_module
+from pathlib import Path
+from types import ModuleType
+from typing import Protocol, cast
+
+fcntl: ModuleType | None
+hid: ModuleType | None
+_HID_IMPORT_ERROR: ImportError | None
+try:
+    fcntl = import_module("fcntl")
+except ImportError:  # pragma: no cover - only used by the Linux hidraw fallback
+    fcntl = None
+
+try:
+    hid = import_module("hid")
+except ImportError as error:
+    hid = None
+    _HID_IMPORT_ERROR = error
+else:
+    _HID_IMPORT_ERROR = None
+
+
+VENDOR_ID = 0x2E8A  # Keep in sync with firmware/src/config/usb_identity.h
+PRODUCT_ID = 0x116B
+USAGE_PAGE = 0xFF00
+USAGE = 0x0001
+PRODUCT_STRING = "PicoUart"
+HID_INTERFACE_NUMBER = 12
+
+
+class HidDevice(Protocol):
+    """Operations required from an opened HID interface."""
+
+    def read(self, size: int, timeout_ms: int) -> list[int]: ...
+
+    def get_feature_report(self, report_id: int, size: int) -> list[int]: ...
+
+    def send_feature_report(self, report: list[int]) -> int: ...
+
+    def close(self) -> None: ...
+
+
+class _OpenableHidDevice(HidDevice, Protocol):
+    """HID interface methods used before returning an opened device."""
+
+    def open_path(self, path: str | bytes) -> None: ...
+
+
+def _hid_module() -> ModuleType:
+    if hid is None:
+        raise RuntimeError("Missing dependency: install pico-uart with its runtime dependencies") from _HID_IMPORT_ERROR
+    return hid
+
+
+def require_hid() -> None:
+    """Raise a clear error if hidapi is unavailable, only when opening a device."""
+    _hid_module()
+
+
+class _LinuxHidrawDevice:
+    """Small hidraw adapter used when the installed hidapi uses libusb."""
+
+    def __init__(self, path: str) -> None:
+        self._file_descriptor = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+
+    def close(self) -> None:
+        os.close(self._file_descriptor)
+
+    def read(self, size: int, timeout_ms: int) -> list[int]:
+        readable, _, _ = select.select([self._file_descriptor], [], [], timeout_ms / 1000.0)
+        if not readable:
+            return []
+        return list(os.read(self._file_descriptor, size))
+
+    def get_feature_report(self, report_id: int, size: int) -> list[int]:
+        if fcntl is None:
+            raise OSError("hidraw fallback requires fcntl")
+        report = bytearray(size)
+        report[0] = report_id
+        bytes_read = fcntl.ioctl(
+            self._file_descriptor,
+            _hidraw_feature_ioctl(0x07, size),
+            report,
+            True,
+        )
+        return list(report[:bytes_read])
+
+    def send_feature_report(self, report: list[int]) -> int:
+        if fcntl is None:
+            raise OSError("hidraw fallback requires fcntl")
+        payload = bytearray(report)
+        return fcntl.ioctl(
+            self._file_descriptor,
+            _hidraw_feature_ioctl(0x06, len(payload)),
+            payload,
+            True,
+        )
+
+
+def _hidraw_feature_ioctl(command: int, size: int) -> int:
+    """Build HIDIOCGFEATURE/HIDIOCSFEATURE for a report payload size."""
+    ioc_write = 1
+    ioc_read = 2
+    ioc_nr_bits = 8
+    ioc_type_bits = 8
+    ioc_size_bits = 14
+    ioc_nr_shift = 0
+    ioc_type_shift = ioc_nr_shift + ioc_nr_bits
+    ioc_size_shift = ioc_type_shift + ioc_type_bits
+    ioc_dir_shift = ioc_size_shift + ioc_size_bits
+    direction = ioc_read | ioc_write
+    return (
+        (direction << ioc_dir_shift)
+        | (ord("H") << ioc_type_shift)
+        | (command << ioc_nr_shift)
+        | (size << ioc_size_shift)
+    )
+
+
+def _resolve_hidraw_path(enumerated_path: str) -> str | None:
+    """Resolve a Linux hidapi interface path to its corresponding hidraw node."""
+    if os.name != "posix" or not enumerated_path or enumerated_path.startswith("/dev/"):
+        return None
+
+    for device_link in Path("/sys/class/hidraw").glob("hidraw*/device"):
+        try:
+            device_parts = os.path.realpath(device_link).split(os.sep)
+        except OSError:
+            continue
+        if enumerated_path in device_parts:
+            return f"/dev/{device_link.parent.name}"
+    return None
+
+
+def _open_hidraw_device(path: str) -> HidDevice:
+    """Open a Linux hidraw node with the standard file-descriptor API."""
+    return _LinuxHidrawDevice(path)
+
+
+def open_enumerated_device(device_info: dict[str, object]) -> HidDevice:
+    """Open one enumerated HID device, resolving Linux interface paths when needed."""
+    require_hid()
+    path = device_info.get("path", b"")
+    if not isinstance(path, (str, bytes)) or not path:
+        raise RuntimeError("HID enumeration returned an invalid device path")
+    original_path = os.fsdecode(path)
+    resolved_path = _resolve_hidraw_path(original_path)
+    try:
+        if resolved_path is not None:
+            # libusb may detach usbhid and leave .NET/WebHID unable to discover the board after close.
+            return _open_hidraw_device(resolved_path)
+        device = cast(_OpenableHidDevice, _hid_module().device())
+        device.open_path(path)
+    except OSError as error:
+        raise RuntimeError(
+            f"failed to open PicoUart HID interface at {original_path}; check hidraw permissions"
+        ) from error
+
+    return device
+
+
+def _device_path_matches(device_info: dict[str, object], requested_path: str) -> bool:
+    """Return whether a hidapi path matches a command-line path string."""
+    path = device_info.get("path", b"")
+    return isinstance(path, (str, bytes)) and os.fsdecode(path) == requested_path
+
+
+def enumerate_devices() -> list[dict[str, object]]:
+    """List PicoUart HID interfaces without opening them."""
+    devices = cast(list[dict[str, object]], _hid_module().enumerate(VENDOR_ID, PRODUCT_ID))
+    # Some hidapi backends omit usage metadata. Constrain these fallbacks to
+    # PicoUart's product string or known vendor HID interface.
+    return [
+        info for info in devices
+        if (info.get("usage_page") == USAGE_PAGE and info.get("usage") == USAGE)
+        or (
+            not info.get("usage_page") and not info.get("usage")
+            and (info.get("product_string") == PRODUCT_STRING
+                 or (not info.get("product_string") and info.get("interface_number") == HID_INTERFACE_NUMBER))
+            and info.get("interface_number") in (None, -1, HID_INTERFACE_NUMBER)
+        )
+    ]
+
+
+def open_device(serial_number: str | None = None, device_path: str | None = None) -> HidDevice:
+    """Open PicoUart's vendor-defined HID collection."""
+    if serial_number is not None and device_path is not None:
+        raise RuntimeError("--serial and --device-path cannot be used together")
+
+    devices = enumerate_devices()
+    if serial_number is not None:
+        devices = [info for info in devices if info.get("serial_number") == serial_number]
+    if device_path is not None:
+        devices = [info for info in devices if _device_path_matches(info, device_path)]
+    exact_matches = [
+        device_info
+        for device_info in devices
+        if device_info.get("usage_page") == USAGE_PAGE and device_info.get("usage") == USAGE
+    ]
+    if len(exact_matches) == 1:
+        return open_enumerated_device(exact_matches[0])
+    if len(exact_matches) > 1:
+        raise RuntimeError("multiple PicoUart HID interfaces matched the expected usage")
+
+    fallback_matches = [
+        device_info
+        for device_info in devices
+        if not device_info.get("usage_page")
+        and not device_info.get("usage")
+    ]
+    if len(fallback_matches) == 1:
+        return open_enumerated_device(fallback_matches[0])
+    if len(fallback_matches) > 1:
+        raise RuntimeError("multiple PicoUart HID interfaces lacked usage metadata")
+
+    raise RuntimeError("PicoUart HID interface not found with the expected usage metadata")

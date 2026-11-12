@@ -87,7 +87,7 @@ jobs:
           # preprocessor defines, and linked ELF/object symbols (not a mock).
           # It does not execute Boot ROM or validate physical voltage,
           # thermal margins, or hardware stability; that remains an HIL gate.
-          python3 -m pip install --quiet --require-hashes -r host/python/requirements-voltage-lock.txt
+          python3 -m pip install --quiet --group host/python/pyproject.toml:test
           PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/firmware-${LABEL}" \
             python3 -m pytest -c pyproject.toml \
             tests/firmware/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q

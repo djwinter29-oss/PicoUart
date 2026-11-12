@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Ji Dong
-"""Contracts for opt-in SDK voltage checks and their minimal CI dependency lock."""
+"""Contracts for opt-in SDK voltage checks and their minimal CI dependency group."""
 
 import importlib.util
 import json
@@ -134,7 +134,7 @@ def test_sdk_check_skips_only_when_unconfigured(
 
 
 @pytest.mark.parametrize("workflow_name", ["pr-check.yml", "release.yml"])
-def test_voltage_workflow_uses_hash_required_minimal_lock(repo_root, workflow_name):
+def test_voltage_workflow_installs_the_minimal_test_group(repo_root, workflow_name):
     workflow = (repo_root / ".github/workflows" / workflow_name).read_text()
     step = workflow.split("      - name: Verify no SDK regulator auto-adjust in the real build\n", 1)[1]
     step = step.split("\n      - name:", 1)[0]
@@ -143,42 +143,7 @@ def test_voltage_workflow_uses_hash_required_minimal_lock(repo_root, workflow_na
     ]
     assert len(installs) == 1
     command = installs[0]
-    assert "--require-hashes" in command
-    assert command[command.index("-r") + 1] == "host/python/requirements-voltage-lock.txt"
+    assert command[-2:] == ["--group", "host/python/pyproject.toml:test"]
     assert 'PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/firmware-${LABEL}"' in step
     assert "tests/firmware/test_system_clock_voltage_policy.py -k real_sdk" in step
     assert 'python-version: "3.12"' in workflow
-
-
-def _lock_entries(path):
-    entries = {}
-    current = None
-    for line in path.read_text().splitlines():
-        line = line.strip().removesuffix("\\").strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("--hash="):
-            assert current is not None
-            assert re.fullmatch(r"--hash=sha256:[0-9a-f]{64}", line)
-            entries[current].add(line)
-        else:
-            assert "==" in line
-            assert line not in entries
-            current = line
-            entries[current] = set()
-    assert all(entries.values()), "every locked requirement must have hashes"
-    return entries
-
-
-def test_voltage_lock_is_exact_pytest_subset_of_host_lock(repo_root):
-    host = repo_root / "host/python"
-    subset = _lock_entries(host / "requirements-voltage-lock.txt")
-    full = _lock_entries(host / "requirements-lock.txt")
-    assert {entry.split("==")[0] for entry in subset} == {
-        "iniconfig",
-        "packaging",
-        "pluggy",
-        "pygments",
-        "pytest",
-    }
-    assert subset == {entry: full[entry] for entry in subset}

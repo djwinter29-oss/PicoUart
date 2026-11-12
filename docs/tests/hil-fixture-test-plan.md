@@ -236,8 +236,8 @@ For soak testing, run the concurrent fixture for 60 seconds at 115200 baud, then
 1000000 baud. Capture HID health before and after:
 
 ```sh
-host/python/.venv/bin/python -m pico_uart monitor --duration 5
-host/python/.venv/bin/python -m pico_uart overruns
+host/python/.venv/bin/python -m pico_uart.main monitor --duration 5
+host/python/.venv/bin/python -m pico_uart.main overruns
 ```
 
 Take these standalone HID samples outside the benchmark, not with another monitor consuming the same board's reports

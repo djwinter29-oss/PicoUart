@@ -44,6 +44,26 @@ public sealed class ProtocolTests
     internal static ConfigurationStatus Configuration() => Protocol.ParseConfiguration(ConfigurationPayload(), Identity());
 
     [Fact]
+    public void BuildActionUsesReport20Layout()
+    {
+        var identity = Identity();
+        Assert.Equal(new byte[] { 1, 1, 0, 0 }, Protocol.BuildAction(1, identity));
+        Assert.Equal(new byte[] { 1, 3, 1, 0 }, Protocol.BuildAction(3, identity));
+        Assert.Equal(new byte[] { 1, 4, 3, 4 }, Protocol.BuildAction(4, identity, 4, true));
+    }
+
+    [Fact]
+    public void SaveRequiresCapabilityProfileAndAcknowledgement()
+    {
+        var identity = Identity();
+        Assert.Throws<ArgumentException>(() => Protocol.BuildAction(4, identity, 3, false));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Protocol.BuildAction(4, identity with { ClockProfileMask = 0x0F }, 4, true));
+        Assert.Throws<InvalidOperationException>(() =>
+            Protocol.BuildAction(4, identity with { Capabilities = 3 }, 0, false));
+    }
+
+    [Fact]
     public void IdentityParsesSelectedLayout()
     {
         var identity = Identity();
@@ -149,7 +169,7 @@ public sealed class ProtocolTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(18), 200);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(22), 300);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(26), 400);
-        var channel = Protocol.ParseChannel(10, data, Identity(), Configuration());
+        var channel = Protocol.ParseChannel(10, data, Identity());
         Assert.Equal(0, channel.Id);
         Assert.Equal("ready", channel.State);
         Assert.Equal((byte)1, channel.UartMeasurementState);
@@ -170,12 +190,32 @@ public sealed class ProtocolTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(14), 1);
 
         Assert.Throws<InvalidOperationException>(() =>
-            Protocol.ParseChannel(10, data, Identity(), Configuration()));
+            Protocol.ParseChannel(10, data, Identity()));
 
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(14), 0);
-        var channel = Protocol.ParseChannel(10, data, Identity(), Configuration());
+        var channel = Protocol.ParseChannel(10, data, Identity());
         Assert.Equal((byte)0, channel.UartMeasurementState);
         Assert.Equal((uint)0, channel.UartTxBytes);
+    }
+
+    [Theory]
+    [InlineData(0x40)]
+    [InlineData(0x80)]
+    [InlineData(0xc3)]
+    public void ChannelRejectsHardwareMaskBitsOutsideSupportedChannels(byte hardwareMask)
+    {
+        var data = new byte[30];
+        data[0] = 1;
+        data[1] = 2;
+        data[2] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(3), 115200);
+        data[7] = 8;
+        data[8] = 1;
+        var identity = Identity() with { HardwareChannelMask = hardwareMask };
+
+        Assert.Throws<InvalidOperationException>(() => Protocol.ParseChannel(10, data, identity));
+        Assert.Throws<InvalidOperationException>(() =>
+            Protocol.ParseConfiguration(ConfigurationPayload(), identity));
     }
 
     [Fact]

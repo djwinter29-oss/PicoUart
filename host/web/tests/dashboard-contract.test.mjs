@@ -3,10 +3,27 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { dashboardScript, dashboardSources } from "./dashboard-source.mjs";
+import {
+  createControlConfirmation, matchesControlConfirmation, resolveStatusMessage,
+} from "../src/js/control-confirmation.mjs";
 
-const dashboard = await readFile(new URL("../src/js/dashboard.js", import.meta.url), "utf8");
+const dashboard = dashboardScript();
 const stylesheet = await readFile(new URL("../src/css/dashboard.css", import.meta.url), "utf8");
 const markup = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
+
+test("the module entry resolves every named import using native module exports", async () => {
+  assert.match(markup, /<script type="module" src="\/js\/dashboard\.js\?v=\d+"><\/script>/);
+  const sources = dashboardSources();
+  for (const [url, source] of sources) {
+    for (const [, names, path] of source.matchAll(/^import\s*\{([^}]+)\}\s*from\s*"([^"]+)";/gm)) {
+      const dependency = await import(new URL(path, url).href);
+      for (const name of names.split(",").map(value => value.trim()).filter(Boolean)) {
+        assert.ok(Object.hasOwn(dependency, name), `${path} must export ${name}`);
+      }
+    }
+  }
+});
 
 test("Python and .NET share the Dashboard page heading", () => {
   assert.match(markup, /<h1>Dashboard<\/h1>/);
@@ -40,13 +57,75 @@ test("dashboard uses the HID snapshot and diagnostic contract fields", () => {
     "init_failed",
     "control_pending",
     "cpu_usage_basis_points",
-    "configuration_save",
     "active_profile",
   ]) assert.ok(!dashboard.includes(legacy), `legacy field remains: ${legacy}`);
+  assert.doesNotMatch(dashboard, /data\.configuration_save\b/);
+});
+
+test("control uncertainty is driven by structured fields rather than error wording", () => {
+  assert.match(dashboard, /data\?\.configuration_save_unconfirmed !== true/);
+  assert.match(dashboard, /errorResult\?\.outcome_unconfirmed === "boolean"/);
+  assert.doesNotMatch(dashboard, /\/outcome is unconfirmed\/i/);
+});
+
+test("reset and save confirmations are bound to a known board, physical UID, and generation", () => {
+  for (const action of ["reset", "configuration"]) {
+    const binding = createControlConfirmation(action, "/dev/hidraw7", "A1B2C3", 9, true);
+    assert.ok(binding, `${action} confirmation should capture a connected known device`);
+    assert.equal(matchesControlConfirmation(binding, action, "/dev/hidraw7", "A1B2C3", 9, true), true);
+    assert.equal(matchesControlConfirmation(binding, action, "/dev/hidraw7", "D4E5F6", 9, true), false,
+      "a replacement device on the same OS path must not inherit confirmation");
+    assert.equal(matchesControlConfirmation(binding, action, "/dev/hidraw8", "A1B2C3", 9, true), false);
+    assert.equal(matchesControlConfirmation(binding, action, "/dev/hidraw7", "A1B2C3", 10, true), false);
+    assert.equal(matchesControlConfirmation(binding, action, "/dev/hidraw7", "A1B2C3", 9, false), false);
+    assert.equal(matchesControlConfirmation(binding, action === "reset" ? "configuration" : "reset",
+      "/dev/hidraw7", "A1B2C3", 9, true), false);
+  }
+  assert.equal(createControlConfirmation("reset", "/dev/hidraw7", "--", 9, true), null,
+    "unknown physical UID must be rejected explicitly");
+  assert.match(dashboard, /invalidateControlConfirmations\(\)[\s\S]*?rebootDialog\.close\(\)/);
+  assert.match(dashboard, /revalidateControlConfirmation\(binding, "reset"\)/);
+  assert.match(dashboard, /revalidateControlConfirmation\(binding, "configuration"\)/);
+  assert.match(dashboard, /if \(diagnosticsInvalidated\) \{\s*invalidateControlConfirmations\(\)/);
+});
+
+test("selected board action errors outrank unrelated scan errors on later renders", () => {
+  assert.equal(resolveStatusMessage({
+    boardActionError: "Reboot outcome is unconfirmed",
+    scanError: "Some other board could not be inspected",
+    connected: true,
+  }), "Reboot outcome is unconfirmed");
+  assert.match(dashboard, /boardActionError:\s*boardActionErrors\.get\(selectedBoard\)\?\.message/);
+});
+
+test("focus indicators contrast at least 3:1 with the dashboard paper and canvas", () => {
+  const hexToRgb = value => value.match(/[a-f\d]{2}/gi).map(component => Number.parseInt(component, 16) / 255)
+    .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  const luminance = color => {
+    const [red, green, blue] = hexToRgb(color);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const contrast = (first, second) => {
+    const values = [luminance(first), luminance(second)].sort((left, right) => right - left);
+    return (values[0] + 0.05) / (values[1] + 0.05);
+  };
+  const focusColor = stylesheet.match(/--focus:\s*(#[a-f\d]{6})/i)?.[1];
+  assert.ok(focusColor, "dashboard must define a concrete focus color");
+  assert.ok(contrast(focusColor, "#ffffff") >= 3, "focus color must contrast 3:1 with paper");
+  assert.ok(contrast(focusColor, "#f4f7f6") >= 3, "focus color must contrast 3:1 with canvas");
+  for (const selector of [
+    "#board-select:focus-visible",
+    "#clock-profile:focus-visible",
+    ".button:focus-visible",
+    ".pin-map-disclosure > summary:focus-visible",
+  ]) {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(stylesheet, new RegExp(`${escaped}\\s*\\{[^}]*outline:\\s*3px solid var\\(--focus\\)`));
+  }
 });
 
 test("diagnostics are requested on demand rather than at snapshot cadence", () => {
-  assert.match(dashboard, /fetch\(`\/api\/diagnostics\?board=/);
+  assert.match(dashboard, /fetchJson\(\s*`\/api\/diagnostics\?board=/);
   assert.match(dashboard, /diagnosticsDialog\.showModal\(\)[\s\S]*?loadDiagnostics\(\)/);
   assert.match(dashboard, /#refresh-diagnostics[\s\S]*?await loadDiagnostics\(\)/);
   const refresh = dashboard.match(/async function refresh\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
@@ -85,15 +164,22 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(rebootDialog, /id="cancel-reboot"/);
   assert.match(rebootDialog, /id="confirm-reboot"/);
   assert.match(dashboard, /rebootDialog\.showModal\(\)/);
-  assert.match(dashboard, /rebootDialog\.close\(\)[\s\S]*?runAction\("reset"\)/);
+  assert.match(dashboard,
+    /await revalidateControlConfirmation\(binding, "reset"\)[\s\S]*?runAction\("reset", binding\)/);
   assert.doesNotMatch(dashboard, /window\.confirm\(/);
-  assert.match(dashboard, /fetch\(`\/api\/configuration\?board=/);
+  assert.match(dashboard, /fetchJson\(\s*`\/api\/configuration\?board=/);
   assert.match(dashboard, /JSON\.stringify\(\{ profile, unsafe_overclock: unsafeOverclock \}\)/);
   assert.match(dashboard, /configurationDialog\.showModal\(\)/);
   assert.match(dashboard, /saveConfigurationButton\.addEventListener\("click", openConfigurationConfirmation\)/);
   assert.match(dashboard, /confirmConfigurationButton\.addEventListener\("click", saveConfiguration\)/);
   assert.match(dashboard, /configurationSavePending = true/);
-  assert.match(dashboard, /configurationSavePending \|\| !available/);
+  assert.match(dashboard,
+    /saveConfigurationButton\.disabled = actionBusy \|\| configurationSavePending\s*\|\|\s*!configurationProfileCanBeSaved/);
+  assert.match(dashboard, /actionBusy = true;[\s\S]*?await revalidateControlConfirmation\(binding, "configuration"\)/);
+  assert.match(markup, /id="configuration-recovery"/);
+  assert.match(markup, /id="acknowledge-configuration-outcome"/);
+  assert.match(dashboard, /await Promise\.race\(\[request, timeout\]\)/);
+  assert.match(dashboard, /view\.history\.textContent = view\.history\.hidden \? "" : "History incomplete"/);
   assert.match(markup, /<th class="traffic-heading" scope="col" title="[^"]+">\s*<span class="traffic-heading-title">Traffic<\/span>\s*<span class="traffic-heading-groups" aria-hidden="true">UART &middot; USB<\/span>\s*<\/th>[\s\S]*?<th scope="col">Diagnostics<\/th>/);
   assert.match(markup, /title="Rates ramp from a one-second to a five-second average as samples arrive\./);
   assert.match(markup, /<dialog class="diagnostics-dialog" id="diagnostics-dialog"/);
@@ -103,7 +189,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.doesNotMatch(markup, /CPU load|unsafe overclock/);
   assert.match(markup, /<details class="pin-map-disclosure">\s*<summary>Pin mapping<\/summary>\s*<div class="pin-map" id="pin-map"/);
   assert.match(markup, /Uptime[\s\S]*?Board temperature[\s\S]*?Service load \(Core 0 \/ Core 1\)/);
-  assert.match(dashboard, /total\.textContent = formatBytes\(channel\.totals\?\.\[key\]\)/);
+  assert.match(dashboard, /const total = sampleAvailable && uartMeasurementAvailable \? formatBytes\(channel\.totals\?\.\[key\]\) : "--"/);
   assert.match(dashboard, /latest\.totals\[key\] - baseline\.totals\[key\]/);
   assert.match(dashboard, /elapsed >= MIN_TRAFFIC_RATE_WINDOW_MS/);
   assert.match(dashboard, /const channelRowViews = new Map\(\)/);
@@ -114,6 +200,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(dashboard, /function measurementStatus\(value\)/);
   assert.match(dashboard, /view\.state\.hidden = stale/);
   assert.match(dashboard, /view\.measurement\.textContent = stale \? "— Unavailable" : measurementStatus\(channel\.uart_measurement_state\)/);
+  assert.match(dashboard, /view\.history\.hidden = channel\.traffic_incomplete !== true/);
   assert.match(dashboard, /configuration\.append\(settings\)/);
   assert.doesNotMatch(dashboard, /pins\.textContent/);
   assert.match(stylesheet, /\.health-flags \{[^}]*height: 2\.8em;[^}]*overflow: hidden;/);
@@ -127,6 +214,7 @@ test("dashboard presents lifecycle, static configuration, and honest service-loa
   assert.match(stylesheet, /col\.throughput-column \{ width: 54%; \}/);
   assert.match(stylesheet, /col\.diagnostics-column \{ width: 10%; \}/);
   assert.match(stylesheet, /\.channels-section table \{ min-width: 1080px; \}/);
+  assert.doesNotMatch(stylesheet, /@media \(max-width: 1100px\)/);
   assert.match(stylesheet, /#clock-profile \{[^}]*min-height: 38px;[^}]*border-radius: 7px;[^}]*font: 600 14px var\(--mono\); \}/);
   assert.match(stylesheet, /\.channels-section tbody td:last-child \{ padding-inline: 6px; \}/);
   assert.match(stylesheet, /\.traffic b \{[^}]*text-align: right;/);
