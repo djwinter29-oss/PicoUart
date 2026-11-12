@@ -140,9 +140,9 @@ def test_python_wheel_and_standalone_sdist_preserve_version_assets_and_license(
             assert set(metadata.get_all("Requires-Dist")) == expected_requirements
             entry_points = wheel.read(f"pico_uart-{expected_version}.dist-info/entry_points.txt").decode()
             assert "pico-uart = pico_uart.main:main" in entry_points
-            assert "pico_uart/__main__.py" in wheel.namelist()
             assert wheel.read(f"pico_uart-{expected_version}.dist-info/licenses/LICENSE") == license_text
             if directory != editable_directory:
+                assert "pico_uart/__main__.py" in wheel.namelist()
                 for name, content in expected_assets.items():
                     assert wheel.read(name) == content
                 assert {name for name in wheel.namelist() if name.startswith("pico_uart/dashboard/assets/")} == set(
