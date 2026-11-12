@@ -89,6 +89,7 @@ function page() {
   let ageInterval;
   let intervalCalls = 0;
   let timeoutId = 0;
+  let monotonicTime = 0;
   const timeouts = new Map();
   const context = vm.createContext({
     document: {
@@ -119,6 +120,7 @@ function page() {
       confirm: () => true,
     },
     AbortController,
+    performance: { now: () => monotonicTime },
     fetch: (url, options) => new Promise((resolve, reject) => {
       const request = { url, options, resolve };
       requests.push(request);
@@ -134,6 +136,7 @@ function page() {
     context, requests, get intervalMs() { return intervalMs; }, element: id => elements.get(`#${id}`),
     tick: () => interval(),
     tickAge: () => ageInterval(),
+    advanceTime: milliseconds => { monotonicTime += milliseconds; },
     expireTimeouts(delay) {
       for (const [id, timeout] of timeouts) {
         if (timeout.delay !== delay) continue;
@@ -463,12 +466,13 @@ test("traffic continuity loss remains visible after current rates recover", asyn
 });
 
 test("time-driven refresh marks channels and rates stale while status fetch is pending", async () => {
-  let now = Date.now();
+  let wallClock = Date.now();
   const view = page();
-  view.context.Date = class extends Date { static now() { return now; } };
+  view.context.Date = class extends Date { static now() { return wallClock; } };
   await connect(view);
 
-  now += 500;
+  view.advanceTime(500);
+  wallClock += 500;
   view.tick();
   const updated = snapshot("first");
   updated.channels = updated.channels.map(channel => ({ ...channel, sequence: 2,
@@ -478,7 +482,8 @@ test("time-driven refresh marks channels and rates stale while status fetch is p
   assert.equal(view.element("channel-rows").children[0].children[3]
     .children[0].children[0].children[1].textContent, "-- KB/s");
 
-  now += 500;
+  view.advanceTime(500);
+  wallClock += 500;
   view.tick();
   const secondUpdate = snapshot("first");
   secondUpdate.channels = secondUpdate.channels.map(channel => ({ ...channel, sequence: 3,
@@ -489,7 +494,8 @@ test("time-driven refresh marks channels and rates stale while status fetch is p
 
   view.tick();
   assert.equal(view.requests.length, 1);
-  now += 5000;
+  view.advanceTime(5000);
+  wallClock -= 3600000;
   view.expireTimeouts(5000);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(view.requests.length, 0);
@@ -563,6 +569,31 @@ test("diagnostics timeout renders a visible read error and permits another reque
   assert.equal(view.requests.at(-1).url, "/api/diagnostics?board=A");
 });
 
+test("diagnostics refresh coalesces pending reads and permits retry after failure", async () => {
+  const view = page();
+  await connect(view);
+  const button = view.element("channel-rows").children[0].children[4].children[0];
+  const opening = button.events.click();
+  const refreshes = Array.from({ length: 3 }, () => view.element("refresh-diagnostics").events.click());
+
+  assert.equal(view.requests.length, 1);
+  assert.equal(view.requests[0].url, "/api/diagnostics?board=A");
+  await view.respond({ channel_diagnostics: [] });
+  await Promise.all([opening, ...refreshes]);
+
+  const failedRefresh = view.element("refresh-diagnostics").events.click();
+  assert.equal(view.requests.length, 1);
+  await view.respond({ error: "diagnostics unavailable" }, 503);
+  await failedRefresh;
+  assert.match(view.element("diagnostics-content").textContent, /Diagnostics unavailable: diagnostics unavailable/);
+
+  const retry = view.element("refresh-diagnostics").events.click();
+  assert.equal(view.requests.length, 1);
+  await view.respond({ channel_diagnostics: [] });
+  await retry;
+  assert.match(view.element("diagnostics-content").textContent, /Diagnostics read 0 s ago/);
+});
+
 test("nullable diagnostics render unavailable data and the diagnostics read age", async () => {
   const view = page();
   await connect(view);
@@ -574,6 +605,21 @@ test("nullable diagnostics render unavailable data and the diagnostics read age"
 
   assert.match(view.element("diagnostics-content").textContent, /Diagnostics unavailable for this channel/);
   assert.match(view.element("diagnostics-content").textContent, /Diagnostics read 0 s ago/);
+});
+
+test("diagnostics read age advances monotonically when the wall clock moves backward", async () => {
+  const view = page();
+  await connect(view);
+  const button = view.element("channel-rows").children[0].children[4].children[0];
+  const opening = button.events.click();
+  await view.respond({ channel_diagnostics: [] });
+  await opening;
+
+  view.advanceTime(2500);
+  view.context.Date = class extends Date { static now() { return -3600000; } };
+  view.tickAge();
+
+  assert.match(view.element("diagnostics-content").textContent, /Diagnostics read 2 s ago/);
 });
 
 test("an old diagnostics request cannot block the newly selected board", async () => {
@@ -647,6 +693,58 @@ test("canceling reboot during fresh-status preflight prevents the reset action",
 
   assert.equal(view.element("reboot-dialog").open, false);
   assert.equal(view.requests.length, 0, "cancel must not submit a reset after preflight completes");
+});
+
+test("a canceled reboot preflight cannot dismiss a newer confirmation on the same board", async () => {
+  const view = page();
+  await connect(view);
+  view.element("reset-board").events.click();
+
+  const confirming = view.element("confirm-reboot").events.click();
+  const oldPreflight = view.requests.shift();
+  view.element("cancel-reboot").events.click();
+  view.element("reset-board").events.click();
+  const currentMessage = view.element("status-message").textContent;
+
+  oldPreflight.resolve({
+    ok: false,
+    status: 503,
+    json: async () => ({ error: "old status read failed" }),
+  });
+  await confirming;
+
+  assert.equal(view.element("reboot-dialog").open, true);
+  assert.equal(view.element("status-message").textContent, currentMessage);
+  assert.equal(view.requests.length, 0, "a canceled preflight must not submit a reset");
+});
+
+test("a canceled preflight for another board leaves the new board confirmation intact", async () => {
+  for (const succeeds of [true, false]) {
+    const view = page();
+    await connect(view);
+    view.element("reset-board").events.click();
+    const confirming = view.element("confirm-reboot").events.click();
+    const oldPreflight = view.requests.shift();
+
+    view.element("cancel-reboot").events.click();
+    view.change("B");
+    await view.respond(snapshot("second"));
+    view.element("reset-board").events.click();
+    const currentMessage = view.element("status-message").textContent;
+
+    oldPreflight.resolve({
+      ok: succeeds,
+      status: succeeds ? 200 : 503,
+      json: async () => succeeds ? snapshot("first") : { error: "old status read failed" },
+    });
+    await confirming;
+
+    assert.equal(view.element("board-select").value, "B");
+    assert.equal(view.element("reboot-dialog").open, true);
+    assert.equal(vm.runInContext("rebootConfirmation.boardId", view.context), "B");
+    assert.equal(view.element("status-message").textContent, currentMessage);
+    assert.equal(view.requests.length, 0, "a canceled preflight must not submit a reset");
+  }
 });
 
 test("canceling save during fresh-status preflight restores controls without submitting", async () => {
@@ -762,6 +860,15 @@ test("physical-device replacement clears drafts and device-scoped recovery notic
   await view.respond(uncertain);
   assert.equal(view.element("configuration-recovery").hidden, false);
 
+  const disconnected = snapshot("first");
+  disconnected.connected = false;
+  disconnected.identity = null;
+  disconnected.configuration = null;
+  disconnected.runtime = null;
+  disconnected.led = null;
+  view.tick();
+  await view.respond(disconnected);
+
   const replacement = snapshot("replacement", 2, 1);
   view.tick();
   await view.respond(replacement);
@@ -773,6 +880,160 @@ test("physical-device replacement clears drafts and device-scoped recovery notic
   assert.equal(vm.runInContext("boardActionErrors.has('A')", view.context), false);
   assert.equal(view.element("board-select").children.find(option => option.value === "A").textContent,
     "PicoUart / REPLACEMENT");
+});
+
+test("drafts survive transient identity loss and same-device reconnect", async () => {
+  const view = page();
+  await connect(view);
+  view.element("clock-profile").value = "4";
+  view.element("clock-profile").events.change();
+
+  const identityUnavailable = snapshot("first");
+  identityUnavailable.identity = null;
+  identityUnavailable.identity_error = "temporary identity read failure";
+  view.tick();
+  await view.respond(identityUnavailable);
+  assert.equal(view.element("clock-profile").value, "4");
+
+  const disconnected = snapshot("first");
+  disconnected.connected = false;
+  disconnected.identity = null;
+  disconnected.configuration = null;
+  disconnected.runtime = null;
+  disconnected.led = null;
+  view.tick();
+  await view.respond(disconnected);
+  assert.equal(view.element("clock-profile").value, "4");
+
+  view.tick();
+  await view.respond(snapshot("first"));
+  assert.equal(view.element("clock-profile").value, "4");
+  assert.equal(view.element("save-configuration").disabled, false);
+});
+
+test("late save results from a replaced device do not affect its replacement", async () => {
+  for (const succeeds of [true, false]) {
+    const view = page();
+    await connect(view);
+    view.element("clock-profile").value = "1";
+    view.element("clock-profile").events.change();
+    view.element("save-configuration").events.click();
+    view.element("overclock-ack").checked = true;
+    view.element("overclock-ack").events.change();
+
+    const saving = view.element("confirm-configuration").events.click();
+    await view.respond(snapshot("first"));
+    const oldSave = view.requests.shift();
+    assert.equal(oldSave.url, "/api/configuration?board=A");
+
+    view.tick();
+    await view.respond(snapshot("replacement", 2, 3));
+    oldSave.resolve({
+      ok: succeeds,
+      status: succeeds ? 200 : 409,
+      json: async () => succeeds ? { ok: true }
+        : { error: "old device outcome unavailable", outcome_unconfirmed: true },
+    });
+    await saving;
+
+    assert.equal(vm.runInContext("configurationSavePending", view.context), false);
+    assert.equal(vm.runInContext("pendingConfigurationProfiles.has('A')", view.context), false);
+    assert.equal(vm.runInContext("uncertainConfigurationBoards.has('A')", view.context), false);
+    assert.equal(view.element("clock-profile").value, "3");
+    assert.equal(view.element("configuration-recovery").hidden, true);
+    assert.match(view.element("status-message").textContent, /device changed/i);
+  }
+});
+
+test("late save results are rejected after a device is replaced and returns", async () => {
+  for (const succeeds of [true, false]) {
+    const view = page();
+    await connect(view);
+    view.element("clock-profile").value = "1";
+    view.element("clock-profile").events.change();
+    view.element("save-configuration").events.click();
+    view.element("overclock-ack").checked = true;
+    view.element("overclock-ack").events.change();
+
+    const saving = view.element("confirm-configuration").events.click();
+    await view.respond(snapshot("first"));
+    const oldSave = view.requests.shift();
+    assert.equal(oldSave.url, "/api/configuration?board=A");
+
+    view.tick();
+    await view.respond(snapshot("replacement", 2, 3));
+    view.tick();
+    await view.respond(snapshot("first", 2, 1));
+    oldSave.resolve({
+      ok: succeeds,
+      status: succeeds ? 200 : 409,
+      json: async () => succeeds ? { ok: true }
+        : { error: "old device outcome unavailable", outcome_unconfirmed: true },
+    });
+    await saving;
+
+    assert.equal(vm.runInContext("configurationSavePending", view.context), false);
+    assert.equal(vm.runInContext("pendingConfigurationProfiles.has('A')", view.context), false);
+    assert.equal(vm.runInContext("uncertainConfigurationBoards.has('A')", view.context), false);
+    assert.equal(view.element("clock-profile").value, "1");
+    assert.equal(view.element("configuration-recovery").hidden, true);
+    assert.match(view.element("status-message").textContent, /device changed/i);
+  }
+});
+
+test("same-device reconnect still completes an in-flight save after readback", async () => {
+  const view = page();
+  await connect(view);
+  view.element("clock-profile").value = "1";
+  view.element("clock-profile").events.change();
+  view.element("save-configuration").events.click();
+  view.element("overclock-ack").checked = true;
+  view.element("overclock-ack").events.change();
+
+  const saving = view.element("confirm-configuration").events.click();
+  await view.respond(snapshot("first"));
+  const saveRequest = view.requests.shift();
+  assert.equal(saveRequest.url, "/api/configuration?board=A");
+
+  const disconnected = snapshot("first");
+  disconnected.connected = false;
+  disconnected.identity = null;
+  disconnected.configuration = null;
+  disconnected.runtime = null;
+  disconnected.led = null;
+  view.tick();
+  await view.respond(disconnected);
+  view.tick();
+  await view.respond(snapshot("first", 2, 1));
+
+  saveRequest.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+  await saving;
+  view.tick();
+  await view.respond(snapshot("first", 2, 1));
+
+  assert.equal(view.element("clock-profile").value, "1");
+  assert.equal(view.element("clock-profile").disabled, false);
+  assert.equal(vm.runInContext("configurationSavePending", view.context), false);
+});
+
+test("late board-action failures are not attributed to a replacement device", async () => {
+  const view = page();
+  await connect(view);
+  const action = view.element("toggle-led").events.click();
+  const oldAction = view.requests.shift();
+  assert.equal(oldAction.url, "/api/actions/toggle-led?board=A");
+
+  view.tick();
+  await view.respond(snapshot("replacement", 2, 3));
+  oldAction.resolve({
+    ok: false,
+    status: 409,
+    json: async () => ({ error: "old device outcome unavailable", outcome_unconfirmed: true }),
+  });
+  await action;
+
+  assert.equal(vm.runInContext("boardActionErrors.has('A')", view.context), false);
+  assert.match(view.element("status-message").textContent, /device changed/i);
 });
 
 test("uncertain configuration outcome survives healthy polling and keeps save gated", async () => {

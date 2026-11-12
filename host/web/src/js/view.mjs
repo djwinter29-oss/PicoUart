@@ -127,7 +127,7 @@ function createChannelRow(id, buildDiagnosticsCell) {
 
 export function renderChannels(data, channelRows, buildDiagnosticsCell) {
   const channels = Array.isArray(data.channels) ? data.channels : [];
-  const now = Date.now();
+  const now = performance.now();
   const activeIds = new Set();
   channels.forEach(channel => {
     const id = channel.id;

@@ -6,8 +6,8 @@ import {
 import { channelHistory } from "./traffic.mjs?v=1";
 import {
   formatBytes, uptimeLabel, formatPin, boardIdentityName, deviceUid, resetCauseName, renderChannels,
-} from "./view.mjs?v=1";
-import { createDiagnostics } from "./diagnostics.mjs?v=1";
+} from "./view.mjs?v=2";
+import { createDiagnostics } from "./diagnostics.mjs?v=3";
 import {
   createControlConfirmation, matchesControlConfirmation, resolveStatusMessage,
 } from "./control-confirmation.mjs?v=1";
@@ -43,6 +43,8 @@ const uncertainConfigurationBoards = new Set();
 const acknowledgedConfigurationWarnings = new Map();
 const configurationRecoveryStatusFloor = new Map();
 const configurationRecoveryReadyBoards = new Set();
+const knownDeviceUids = new Map();
+const deviceOwnershipVersions = new Map();
 let selectionVersion = 0;
 let refreshing = null;
 let statusRequestId = 0;
@@ -74,7 +76,7 @@ function setRefreshInterval(interval) {
   refreshTimer = window.setInterval(refresh, delay);
 }
 
-function updateReportAge(data, now = Date.now()) {
+function updateReportAge(data, now = performance.now()) {
   const sample = Date.parse(data.updated_at);
   const age = document.querySelector("#sample-time");
   if (!data.connected) reportSample = null;
@@ -253,7 +255,26 @@ function controlConfirmationIsCurrent(binding, action) {
   );
 }
 
+function controlConfirmationIsActive(binding, action) {
+  return action === "reset"
+    ? rebootDialog.open && rebootConfirmation === binding
+    : action === "configuration" && configurationDialog.open && configurationConfirmation === binding;
+}
+
+function selectedDeviceMatches(board, physicalUid, ownershipVersion) {
+  return selectedBoard === board && physicalUid !== "--"
+    && knownDeviceUids.get(board) === physicalUid
+    && (deviceOwnershipVersions.get(board) ?? 0) === ownershipVersion;
+}
+
+function reportDeviceChangedDuringControl() {
+  statusMessage.textContent =
+    "The selected device changed while this control was in progress; inspect it before acting again.";
+  statusMessage.parentElement.dataset.error = "true";
+}
+
 async function revalidateControlConfirmation(binding, action) {
+  if (!controlConfirmationIsActive(binding, action)) return false;
   if (!controlConfirmationIsCurrent(binding, action)) {
     rejectControlConfirmation("Confirmation canceled: the selected board or device connection changed.");
     return false;
@@ -264,7 +285,6 @@ async function revalidateControlConfirmation(binding, action) {
     const { response, data } = await fetchJson(
       `/api/status${query}`, { cache: "no-store" }, STATUS_REQUEST_TIMEOUT_MS);
     if (selectedBoard !== binding.boardId || deviceGeneration !== binding.generation) {
-      rejectControlConfirmation("Confirmation canceled: the selected board or device connection changed.");
       return false;
     }
     let status = data;
@@ -275,6 +295,7 @@ async function revalidateControlConfirmation(binding, action) {
     } else {
       throw new Error(data.error || `Status request failed (${response.status})`);
     }
+    if (!controlConfirmationIsActive(binding, action)) return false;
     if (!status) throw new Error("Status is unavailable");
     const physicalUid = deviceUid(status.identity);
     if (!status.connected) {
@@ -301,12 +322,14 @@ async function revalidateControlConfirmation(binding, action) {
     }
     return true;
   } catch (error) {
+    if (!controlConfirmationIsActive(binding, action)) return false;
     rejectControlConfirmation(`Cannot verify the selected board before control: ${error.message}`);
     return false;
   }
 }
 
 function clearSelectedBoardStateForDeviceChange(data) {
+  deviceOwnershipVersions.set(selectedBoard, (deviceOwnershipVersions.get(selectedBoard) ?? 0) + 1);
   configurationProfileDirty = false;
   configurationSavePending = false;
   pendingConfigurationProfiles.delete(selectedBoard);
@@ -330,10 +353,13 @@ function acceptStatus(data, requestId) {
   if (requestId <= latestAcceptedStatusRequestId) return false;
   latestAcceptedStatusRequestId = requestId;
 
-  const previousUid = deviceUid(latestData?.identity);
+  const previousUid = knownDeviceUids.get(selectedBoard)
+    ?? (latestData?.connected ? deviceUid(latestData.identity) : "--");
   const currentUid = deviceUid(data.identity);
-  const deviceChanged = data.connected && latestData?.connected && previousUid !== currentUid;
+  const deviceChanged = data.connected && previousUid !== "--" && currentUid !== "--"
+    && previousUid !== currentUid;
   if (deviceChanged) clearSelectedBoardStateForDeviceChange(data);
+  if (data.connected && currentUid !== "--") knownDeviceUids.set(selectedBoard, currentUid);
 
   const saveWarning = configurationSaveWarning(data);
   if (!saveWarning) {
@@ -552,6 +578,8 @@ async function runAction(action, confirmation = null) {
     return;
   }
   const board = confirmation?.boardId ?? selectedBoard;
+  const physicalUid = deviceUid(latestData?.identity);
+  const ownershipVersion = deviceOwnershipVersions.get(board) ?? 0;
   if (action === "reset") invalidateControlConfirmations();
   let responseStatus = null;
   let errorResult = null;
@@ -569,6 +597,10 @@ async function runAction(action, confirmation = null) {
       errorResult = result;
       throw new Error(result.error || `Action failed (${response.status})`);
     }
+    if (!selectedDeviceMatches(board, physicalUid, ownershipVersion)) {
+      reportDeviceChangedDuringControl();
+      return;
+    }
     if (boardActionErrors.get(board)?.action === action) boardActionErrors.delete(board);
     statusMessage.textContent = action === "reset"
       ? "Reboot command sent; USB will reconnect shortly." : "LED toggle command sent";
@@ -581,6 +613,10 @@ async function runAction(action, confirmation = null) {
     const message = uncertain
       ? `Board action outcome is unconfirmed; reconnect and inspect before retrying. ${error.message}`
       : error.message;
+    if (!selectedDeviceMatches(board, physicalUid, ownershipVersion)) {
+      reportDeviceChangedDuringControl();
+      return;
+    }
     boardActionErrors.set(board, { action, message });
     statusMessage.textContent = message;
     statusMessage.parentElement.dataset.error = "true";
@@ -622,6 +658,7 @@ function openConfigurationConfirmation() {
 async function saveConfiguration() {
   const binding = configurationConfirmation;
   const profile = configurationConfirmationProfile;
+  const physicalUid = binding?.physicalUid ?? "--";
   const unsafeOverclock = profile !== 0;
   if (!configurationDialog.open || !selectedBoard || actionBusy || !Number.isInteger(profile)
     || (unsafeOverclock && !overclockAcknowledgement.checked)) return;
@@ -649,6 +686,7 @@ async function saveConfiguration() {
     invalidateControlConfirmations();
 
     const board = binding.boardId;
+    const ownershipVersion = deviceOwnershipVersions.get(board) ?? 0;
     configurationSavePending = true;
     pendingConfigurationProfiles.set(board, profile);
     statusMessage.textContent = `Saving ${profileLabel} and waiting for board confirmation...`;
@@ -668,6 +706,10 @@ async function saveConfiguration() {
         errorResult = result;
         throw new Error(result.error || `Configuration save failed (${response.status})`);
       }
+      if (!selectedDeviceMatches(board, physicalUid, ownershipVersion)) {
+        reportDeviceChangedDuringControl();
+        return;
+      }
       configurationProfileDirty = true;
       configurationSavePending = true;
       uncertainConfigurationBoards.delete(board);
@@ -684,6 +726,10 @@ async function saveConfiguration() {
       const message = uncertain
         ? `Configuration save outcome is unconfirmed; reconnect and inspect before retrying. ${error.message}`
         : error.message;
+      if (!selectedDeviceMatches(board, physicalUid, ownershipVersion)) {
+        reportDeviceChangedDuringControl();
+        return;
+      }
       configurationSavePending = uncertain;
       if (uncertain) uncertainConfigurationBoards.add(board);
       else pendingConfigurationProfiles.delete(board);

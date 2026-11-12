@@ -422,6 +422,8 @@ The shared page loads native ES modules; no bundler or generated frontend copy i
 Keep module imports explicit. Diagnostics receive current board/selection state through a callback so late responses
 remain isolated from a newly selected board. When changing a module's cache version, update all importers to the same
 URL; the HTML entry also has a cache version. Both hosts package the entire asset tree, including module dependencies.
+The Python host explicitly serves JavaScript modules and CSS with browser-compatible MIME types, independent of OS
+file associations, so `nosniff` does not prevent them from loading.
 Run the shared behavior and presentation checks with:
 
 ```sh

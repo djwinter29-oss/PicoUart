@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 import { fetchJson, DIAGNOSTICS_REQUEST_TIMEOUT_MS } from "./api.mjs?v=1";
-import { formatBytes, measurementLabel } from "./view.mjs?v=1";
+import { formatBytes, measurementLabel } from "./view.mjs?v=2";
 
 export function createDiagnostics({ diagnosticsDialog, diagnosticsContent, getContext }) {
   const errorReasons = [
@@ -23,6 +23,11 @@ export function createDiagnostics({ diagnosticsDialog, diagnosticsContent, getCo
 
   document.querySelector("#close-diagnostics").addEventListener("click", () => diagnosticsDialog.close());
   document.querySelector("#refresh-diagnostics").addEventListener("click", async () => {
+    const selection = getContext().selectionVersion;
+    if (diagnosticRequest?.selection === selection && diagnosticRequest.epoch === diagnosticEpoch) {
+      await diagnosticRequest.promise;
+      return;
+    }
     invalidateDiagnostics();
     renderDiagnosticContent(diagnosticsContent, Number(diagnosticsContent.dataset.channel));
     await loadDiagnostics();
@@ -106,7 +111,7 @@ export function createDiagnostics({ diagnosticsDialog, diagnosticsContent, getCo
     updateDiagnosticsAge();
   }
 
-  function updateDiagnosticsAge(now = Date.now()) {
+  function updateDiagnosticsAge(now = performance.now()) {
     if (!diagnosticAgeElement || !diagnosticsDialog.open || !Number.isFinite(diagnosticReadAt)) return;
     const seconds = Math.max(0, Math.floor((now - diagnosticReadAt) / 1000));
     diagnosticAgeElement.textContent = `Diagnostics read ${seconds} s ago`;
@@ -142,7 +147,7 @@ export function createDiagnostics({ diagnosticsDialog, diagnosticsContent, getCo
         if (selection !== getContext().selectionVersion || epoch !== diagnosticEpoch) return;
         diagnosticData = result.channel_diagnostics ?? result;
         diagnosticBoard = board;
-        diagnosticReadAt = Date.now();
+        diagnosticReadAt = performance.now();
       } catch (error) {
         if (selection === getContext().selectionVersion && epoch === diagnosticEpoch) diagnosticError = error.message;
       } finally {

@@ -38,7 +38,7 @@ export function runDashboard(context) {
       vm.runInContext(`"use strict";\n${script}`, context, { filename: url });
     } else {
       const sandbox = { dependencies };
-      for (const name of ["document", "window", "fetch", "AbortController", "Date"]) {
+      for (const name of ["document", "window", "fetch", "AbortController", "Date", "performance"]) {
         Object.defineProperty(sandbox, name, { get: () => context[name] ?? globalThis[name] });
       }
       const names = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)]

@@ -118,7 +118,12 @@ def create_app(service: DashboardService | None = None, port: int = 5000) -> Fla
 
     @app.get("/<any(css,js):asset_type>/<path:filename>")
     def asset(asset_type: str, filename: str) -> Response:
-        return send_from_directory(web_root / asset_type, filename)
+        mimetype = {
+            ".css": "text/css",
+            ".js": "text/javascript",
+            ".mjs": "text/javascript",
+        }.get(Path(filename).suffix.lower())
+        return send_from_directory(web_root / asset_type, filename, mimetype=mimetype)
 
     @app.get("/api/status")
     def status() -> ResponseReturnValue:

@@ -3,6 +3,7 @@
 """Hardware-free tests for the Flask dashboard's control endpoints."""
 
 import logging
+import mimetypes
 import re
 
 import pytest
@@ -162,7 +163,12 @@ def test_dashboard_rejects_non_ascii_csrf_token_without_server_error():
     assert service.actions == []
 
 
-def test_dashboard_serves_static_assets_safely():
+@pytest.mark.parametrize("override_mime_types", [False, True])
+def test_dashboard_serves_static_assets_safely(monkeypatch, override_mime_types):
+    if override_mime_types:
+        mimetypes.init()
+        for extension in (".css", ".js", ".mjs"):
+            monkeypatch.setitem(mimetypes.types_map, extension, "text/plain")
     client = create_app(FakeDashboard()).test_client()
     page = client.get("/")
     assert page.status_code == 200
@@ -180,6 +186,8 @@ def test_dashboard_serves_static_assets_safely():
             assert response.headers["X-Content-Type-Options"] == "nosniff"
             if path.endswith((".js", ".mjs")):
                 assert response.mimetype in ("text/javascript", "application/javascript")
+            elif path.endswith(".css"):
+                assert response.mimetype == "text/css"
 
 
 @pytest.mark.parametrize("version,expected", [
