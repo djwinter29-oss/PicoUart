@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using HidSharp;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 
 namespace PicoUart.Hid;
 
 public sealed record HidBoard(string DevicePath, string? SerialNumber, string ProductName, string? Error = null);
 
 /// <summary>Discover and select devices using validated PicoUart USB identity.</summary>
-internal static class HidDiscovery
+internal static class Discovery
 {
     internal static HidDevice SelectDevice(string? serialNumber, string? devicePath)
     {
@@ -38,7 +38,7 @@ internal static class HidDiscovery
             {
                 string? candidateSerial;
                 try { candidateSerial = getSerialNumber(device); }
-                catch (Exception error) when (HidErrors.IsDeviceError(error))
+                catch (Exception error) when (Errors.IsDeviceError(error))
                 {
                     metadataError ??= error;
                     continue;
@@ -67,7 +67,7 @@ internal static class HidDiscovery
                 var board = discoverDevice(device);
                 if (board is not null) discovered.Add(board);
             }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            catch (Exception error) when (Errors.IsDeviceError(error))
             {
                 discovered.Add(discoveryFailure(device, error));
             }
@@ -81,29 +81,29 @@ internal static class HidDiscovery
     private static string? TryGetSerialNumber(HidDevice device)
     {
         try { return device.GetSerialNumber(); }
-        catch (Exception error) when (HidErrors.IsDeviceError(error)) { return null; }
+        catch (Exception error) when (Errors.IsDeviceError(error)) { return null; }
     }
 
     private static HidBoard DiscoverDevice(HidDevice device)
     {
         var features = device.GetReportDescriptor().DeviceItems.SelectMany(item => item.FeatureReports)
-            .Where(report => report.ReportID == Protocol.IdentityReportId).ToArray();
-        if (features.Length != 1 || HidReports.ReportDataLength(features[0]) < 4)
+            .Where(report => report.ReportID == Codec.IdentityReportId).ToArray();
+        if (features.Length != 1 || Reports.ReportDataLength(features[0]) < 4)
             throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
-        HidStreamLifetime.EnsureDeviceCleanupComplete(device.DevicePath);
+        StreamLifetime.EnsureDeviceCleanupComplete(device.DevicePath);
         var candidate = device.Open();
-        var lifetime = new HidStreamLifetime(candidate.Dispose, device.DevicePath);
+        var lifetime = new StreamLifetime(candidate.Dispose, device.DevicePath);
         try
         {
             candidate.ReadTimeout = 3000;
             candidate.WriteTimeout = 3000;
-            var payload = HidReports.ReadFeaturePayload(candidate, lifetime,
-                Protocol.IdentityReportId, HidReports.ReportDataLength(features[0]) - 1);
-            var prefix = Protocol.ParseIdentityPrefix(payload);
+            var payload = Reports.ReadFeaturePayload(candidate, lifetime,
+                Codec.IdentityReportId, Reports.ReportDataLength(features[0]) - 1);
+            var prefix = Codec.ParseIdentityPrefix(payload);
             var usbSerial = device.GetSerialNumber();
-            if (prefix.ProductId != Protocol.ProductId)
+            if (prefix.ProductId != Codec.ProductId)
                 return new(device.DevicePath, usbSerial, $"Unknown product (0x{prefix.ProductId:X4})");
-            var identity = Protocol.ParseIdentity(payload);
+            var identity = Codec.ParseIdentity(payload);
             ValidateUsbSerial(usbSerial, identity.DeviceUid);
             return CreateBoard(device.DevicePath, usbSerial, identity);
         }

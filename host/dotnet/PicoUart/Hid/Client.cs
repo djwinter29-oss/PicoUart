@@ -2,14 +2,14 @@
 // Copyright (c) 2026 Ji Dong
 using HidSharp;
 using System.Diagnostics;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 
 namespace PicoUart.Hid;
 
-public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
+public sealed partial class Client : IDisposable, IAsyncDisposable
 {
     private readonly HidStream stream;
-    private readonly HidStreamLifetime streamLifetime;
+    private readonly StreamLifetime streamLifetime;
     private readonly string devicePath;
     private readonly object gate = new();
     private BoardIdentity? identity;
@@ -17,7 +17,7 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
     private bool disposed;
     private bool transferUnconfirmed;
 
-    internal PicoUartHid(HidStream stream, BoardIdentity identity)
+    internal Client(HidStream stream, BoardIdentity identity)
     {
         this.stream = stream;
         this.identity = identity;
@@ -27,15 +27,15 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
         stream.WriteTimeout = 3000;
     }
 
-    public PicoUartHid(string? serialNumber = null, string? devicePath = null)
+    public Client(string? serialNumber = null, string? devicePath = null)
     {
-        var device = HidDiscovery.SelectDevice(serialNumber, devicePath);
-        HidStreamLifetime.EnsureDeviceCleanupComplete(device.DevicePath);
+        var device = Discovery.SelectDevice(serialNumber, devicePath);
+        StreamLifetime.EnsureDeviceCleanupComplete(device.DevicePath);
         this.devicePath = device.DevicePath;
         var descriptor = device.GetReportDescriptor();
         var identityReports = descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
-            .Where(report => report.ReportID == Protocol.IdentityReportId).ToArray();
-        if (identityReports.Length != 1 || HidReports.ReportDataLength(identityReports[0]) < 4)
+            .Where(report => report.ReportID == Codec.IdentityReportId).ToArray();
+        if (identityReports.Length != 1 || Reports.ReportDataLength(identityReports[0]) < 4)
             throw new InvalidOperationException("HID identity report is missing or has a truncated discovery prefix");
         stream = device.Open();
         streamLifetime = new(stream.Dispose, device.DevicePath);
@@ -43,17 +43,17 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
         {
             stream.ReadTimeout = 250;
             stream.WriteTimeout = 3000;
-            var payload = HidReports.ReadFeaturePayload(stream, streamLifetime,
-                Protocol.IdentityReportId, HidReports.ReportDataLength(identityReports[0]) - 1);
-            var prefix = Protocol.ParseIdentityPrefix(payload);
-            if (prefix.ProductId != Protocol.ProductId)
+            var payload = Reports.ReadFeaturePayload(stream, streamLifetime,
+                Codec.IdentityReportId, Reports.ReportDataLength(identityReports[0]) - 1);
+            var prefix = Codec.ParseIdentityPrefix(payload);
+            if (prefix.ProductId != Codec.ProductId)
                 throw new InvalidOperationException($"unsupported HID product (0x{prefix.ProductId:X4})");
-            identity = Protocol.ParseIdentity(payload);
-            HidDiscovery.ValidateUsbSerial(device.GetSerialNumber(), identity.DeviceUid);
-            HidReports.ValidateReports(descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
-                    .Select(report => (report.ReportID, HidReports.ReportDataLength(report))),
+            identity = Codec.ParseIdentity(payload);
+            Discovery.ValidateUsbSerial(device.GetSerialNumber(), identity.DeviceUid);
+            Reports.ValidateReports(descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
+                    .Select(report => (report.ReportID, Reports.ReportDataLength(report))),
                 descriptor.DeviceItems.SelectMany(item => item.InputReports)
-                    .Select(report => (report.ReportID, HidReports.ReportDataLength(report))));
+                    .Select(report => (report.ReportID, Reports.ReportDataLength(report))));
         }
         catch
         {
@@ -63,7 +63,7 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
         }
     }
 
-    public static HidBoard[] Discover() => HidDiscovery.Discover();
+    public static HidBoard[] Discover() => Discovery.Discover();
 
     public ChannelStatus? ReadStatus(int timeoutMs = 250)
         => ReadStatus(timeoutMs, timeoutMs);
@@ -89,9 +89,9 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
             int count;
             try { count = stream.Read(report, 0, report.Length); }
             catch (TimeoutException) { return null; }
-            if (count != Protocol.ChannelSize + 1)
+            if (count != Codec.ChannelSize + 1)
                 throw new InvalidOperationException("unexpected HID channel report size");
-            return Protocol.ParseChannel(report[0], report.AsSpan(1, count - 1), info);
+            return Codec.ParseChannel(report[0], report.AsSpan(1, count - 1), info);
         }
         finally
         {
@@ -106,8 +106,8 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
         lock (gate)
         {
             CheckConnection();
-            return identity ??= Protocol.ParseIdentity(
-                ReadFeature(Protocol.IdentityReportId, Protocol.IdentitySize, timeoutMs));
+            return identity ??= Codec.ParseIdentity(
+                ReadFeature(Codec.IdentityReportId, Codec.IdentitySize, timeoutMs));
         }
     }
 
@@ -118,8 +118,8 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
         lock (gate)
         {
             var info = ReadIdentity(timeoutMs);
-            return configuration ??= Protocol.ParseConfiguration(
-                ReadFeature(Protocol.ConfigurationReportId, Protocol.ConfigurationSize, timeoutMs), info);
+            return configuration ??= Codec.ParseConfiguration(
+                ReadFeature(Codec.ConfigurationReportId, Codec.ConfigurationSize, timeoutMs), info);
         }
     }
 
@@ -128,7 +128,7 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
         lock (gate)
         {
             var info = ReadIdentity();
-            return Protocol.ParseTelemetry(ReadFeature(Protocol.TelemetryReportId, Protocol.TelemetrySize), info);
+            return Codec.ParseTelemetry(ReadFeature(Codec.TelemetryReportId, Codec.TelemetrySize), info);
         }
     }
 
@@ -165,11 +165,11 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
     public ChannelStatus ReadChannel(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Protocol.ChannelCount);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Codec.ChannelCount);
         lock (gate)
         {
-            var id = (byte)(Protocol.ChannelReportId + index);
-            return Protocol.ParseChannel(id, ReadFeature(id, Protocol.ChannelSize),
+            var id = (byte)(Codec.ChannelReportId + index);
+            return Codec.ParseChannel(id, ReadFeature(id, Codec.ChannelSize),
                 ReadIdentity());
         }
     }
@@ -177,16 +177,16 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
     public ChannelDiagnostics ReadChannelDiagnostic(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Protocol.ChannelCount);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Codec.ChannelCount);
         lock (gate)
         {
-            var id = (byte)(Protocol.DiagnosticsReportId + index);
-            return Protocol.ParseDiagnostics(id, ReadFeature(id, Protocol.DiagnosticsSize), ReadConfiguration());
+            var id = (byte)(Codec.DiagnosticsReportId + index);
+            return Codec.ParseDiagnostics(id, ReadFeature(id, Codec.DiagnosticsSize), ReadConfiguration());
         }
     }
 
     public ChannelDiagnostics[] ReadChannelDiagnostics() =>
-        Enumerable.Range(0, Protocol.ChannelCount).Select(ReadChannelDiagnostic).ToArray();
+        Enumerable.Range(0, Codec.ChannelCount).Select(ReadChannelDiagnostic).ToArray();
 
     public void Dispose()
     {
@@ -231,7 +231,7 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
         lock (gate)
         {
             CheckConnection();
-            try { return HidReports.ReadFeaturePayload(stream, streamLifetime, reportId, payloadSize, timeoutMs); }
+            try { return Reports.ReadFeaturePayload(stream, streamLifetime, reportId, payloadSize, timeoutMs); }
             catch (TimeoutException)
             {
                 transferUnconfirmed = true;
@@ -241,7 +241,7 @@ public sealed partial class PicoUartHid : IDisposable, IAsyncDisposable
     }
 
     private ActionResult ReadActionResultCore(int timeoutMs) =>
-        Protocol.ParseActionResult(ReadFeature(Protocol.ActionReportId, Protocol.ActionSize, timeoutMs));
+        Codec.ParseActionResult(ReadFeature(Codec.ActionReportId, Codec.ActionSize, timeoutMs));
 
     private static int RemainingTimeoutMs(Stopwatch timer, int timeoutMs) =>
         Math.Max(0, (int)(timeoutMs - timer.Elapsed.TotalMilliseconds));

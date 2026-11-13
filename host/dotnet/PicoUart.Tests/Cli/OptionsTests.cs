@@ -151,7 +151,7 @@ public sealed class OptionsTests
     {
         Assert.Throws<ArgumentException>(() => Options.Parse(
             ["status", "--serial", "board-1", "--device-path", "/dev/hidraw0"]));
-        Assert.Throws<ArgumentException>(() => new PicoUartHid("board-1", "/dev/hidraw0"));
+        Assert.Throws<ArgumentException>(() => new Client("board-1", "/dev/hidraw0"));
     }
 
     [Theory]

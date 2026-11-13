@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Ji Dong
 using System.Text.Json;
 using PicoUart.Cli;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests;
@@ -17,7 +17,7 @@ public sealed class StatusSnapshotTests
     {
         var sample = new ChannelStatus(2, "ready", 1, 115200, 8, 1, "none", 9, 500, 100, 200, 300, 400);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(
-            StatusSnapshot.FromFirstSample(sample, Observed), Protocol.JsonOptions));
+            StatusSnapshot.FromFirstSample(sample, Observed), Codec.JsonOptions));
         var channels = json.RootElement.GetProperty("channels");
         Assert.Equal(6, channels.GetArrayLength());
 

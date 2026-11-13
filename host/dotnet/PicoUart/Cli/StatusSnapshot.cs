@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 
 namespace PicoUart.Cli;
 
@@ -14,8 +14,8 @@ internal sealed record StatusSnapshot(StatusChannel[] Channels)
     internal static StatusSnapshot FromFirstSample(ChannelStatus sample, DateTimeOffset observedAt)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(sample.Id);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(sample.Id, Protocol.ChannelCount);
-        var channels = new StatusChannel[Protocol.ChannelCount];
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(sample.Id, Codec.ChannelCount);
+        var channels = new StatusChannel[Codec.ChannelCount];
         for (var index = 0; index < channels.Length; index++)
             channels[index] = StatusChannel.Waiting(index);
         channels[sample.Id] = StatusChannel.FirstSample(sample, observedAt);
@@ -56,10 +56,10 @@ internal sealed record StatusSnapshot(StatusChannel[] Channels)
     /// <summary>Serialize with recursively sorted object keys, matching Python <c>sort_keys=True</c>.</summary>
     internal static string ToSortedJson(StatusSnapshot snapshot)
     {
-        var node = JsonSerializer.SerializeToNode(snapshot, Protocol.JsonOptions)
+        var node = JsonSerializer.SerializeToNode(snapshot, Codec.JsonOptions)
             ?? throw new InvalidOperationException("status snapshot did not serialize");
         SortKeys(node);
-        return node.ToJsonString(Protocol.JsonOptions);
+        return node.ToJsonString(Codec.JsonOptions);
     }
 
     private static void SortKeys(JsonNode? node)

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using System.Buffers.Binary;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class ProtocolTests
+public sealed class CodecTests
 {
     internal static byte[] IdentityPayload()
     {
@@ -23,7 +23,7 @@ public sealed class ProtocolTests
         return data;
     }
 
-    internal static BoardIdentity Identity() => Protocol.ParseIdentity(IdentityPayload());
+    internal static BoardIdentity Identity() => Codec.ParseIdentity(IdentityPayload());
 
     internal static byte[] ConfigurationPayload()
     {
@@ -41,26 +41,26 @@ public sealed class ProtocolTests
         return data;
     }
 
-    internal static ConfigurationStatus Configuration() => Protocol.ParseConfiguration(ConfigurationPayload(), Identity());
+    internal static ConfigurationStatus Configuration() => Codec.ParseConfiguration(ConfigurationPayload(), Identity());
 
     [Fact]
     public void BuildActionUsesReport20Layout()
     {
         var identity = Identity();
-        Assert.Equal(new byte[] { 1, 1, 0, 0 }, Protocol.BuildAction(1, identity));
-        Assert.Equal(new byte[] { 1, 3, 1, 0 }, Protocol.BuildAction(3, identity));
-        Assert.Equal(new byte[] { 1, 4, 3, 4 }, Protocol.BuildAction(4, identity, 4, true));
+        Assert.Equal(new byte[] { 1, 1, 0, 0 }, Codec.BuildAction(1, identity));
+        Assert.Equal(new byte[] { 1, 3, 1, 0 }, Codec.BuildAction(3, identity));
+        Assert.Equal(new byte[] { 1, 4, 3, 4 }, Codec.BuildAction(4, identity, 4, true));
     }
 
     [Fact]
     public void SaveRequiresCapabilityProfileAndAcknowledgement()
     {
         var identity = Identity();
-        Assert.Throws<ArgumentException>(() => Protocol.BuildAction(4, identity, 3, false));
+        Assert.Throws<ArgumentException>(() => Codec.BuildAction(4, identity, 3, false));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            Protocol.BuildAction(4, identity with { ClockProfileMask = 0x0F }, 4, true));
+            Codec.BuildAction(4, identity with { ClockProfileMask = 0x0F }, 4, true));
         Assert.Throws<InvalidOperationException>(() =>
-            Protocol.BuildAction(4, identity with { Capabilities = 3 }, 0, false));
+            Codec.BuildAction(4, identity with { Capabilities = 3 }, 0, false));
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class ProtocolTests
     {
         var data = IdentityPayload();
         data[offset] = value;
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseIdentity(data));
+        Assert.Throws<InvalidOperationException>(() => Codec.ParseIdentity(data));
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public sealed class ProtocolTests
         {
             var data = ConfigurationPayload();
             data[27] = (byte)cause;
-            Assert.Equal((byte)cause, Protocol.ParseConfiguration(data, Identity()).ResetCause);
+            Assert.Equal((byte)cause, Codec.ParseConfiguration(data, Identity()).ResetCause);
         }
     }
 
@@ -120,7 +120,7 @@ public sealed class ProtocolTests
         var data = ConfigurationPayload();
         data[1] = 4;
 
-        var configuration = Protocol.ParseConfiguration(data, identity);
+        var configuration = Codec.ParseConfiguration(data, identity);
 
         Assert.Equal((byte)4, configuration.StoredProfile);
     }
@@ -131,7 +131,7 @@ public sealed class ProtocolTests
         var data = ConfigurationPayload();
         data[1] = 5;
 
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseConfiguration(data, Identity()));
+        Assert.Throws<InvalidOperationException>(() => Codec.ParseConfiguration(data, Identity()));
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public sealed class ProtocolTests
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(12), 10000);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(14), ushort.MaxValue);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(16), 280000000);
-        var telemetry = Protocol.ParseTelemetry(data, Identity());
+        var telemetry = Codec.ParseTelemetry(data, Identity());
         Assert.True(telemetry.Led.OutputOn);
         Assert.Equal(-1.25, telemetry.TemperatureCelsius);
         Assert.Equal(4294967296ul, telemetry.Runtime.UptimeMs);
@@ -169,7 +169,7 @@ public sealed class ProtocolTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(18), 200);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(22), 300);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(26), 400);
-        var channel = Protocol.ParseChannel(10, data, Identity());
+        var channel = Codec.ParseChannel(10, data, Identity());
         Assert.Equal(0, channel.Id);
         Assert.Equal("ready", channel.State);
         Assert.Equal((byte)1, channel.UartMeasurementState);
@@ -190,10 +190,10 @@ public sealed class ProtocolTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(14), 1);
 
         Assert.Throws<InvalidOperationException>(() =>
-            Protocol.ParseChannel(10, data, Identity()));
+            Codec.ParseChannel(10, data, Identity()));
 
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(14), 0);
-        var channel = Protocol.ParseChannel(10, data, Identity());
+        var channel = Codec.ParseChannel(10, data, Identity());
         Assert.Equal((byte)0, channel.UartMeasurementState);
         Assert.Equal((uint)0, channel.UartTxBytes);
     }
@@ -213,9 +213,9 @@ public sealed class ProtocolTests
         data[8] = 1;
         var identity = Identity() with { HardwareChannelMask = hardwareMask };
 
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseChannel(10, data, identity));
+        Assert.Throws<InvalidOperationException>(() => Codec.ParseChannel(10, data, identity));
         Assert.Throws<InvalidOperationException>(() =>
-            Protocol.ParseConfiguration(ConfigurationPayload(), identity));
+            Codec.ParseConfiguration(ConfigurationPayload(), identity));
     }
 
     [Fact]
@@ -231,7 +231,7 @@ public sealed class ProtocolTests
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(18), 4095);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(20), 2048);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(22), 2047);
-        var diagnostics = Protocol.ParseDiagnostics(30, data, Configuration());
+        var diagnostics = Codec.ParseDiagnostics(30, data, Configuration());
         Assert.Equal((uint)5, diagnostics.RxOverrunCount);
         Assert.Equal((uint)9, diagnostics.LastFaultUptimeS);
     }
@@ -239,8 +239,8 @@ public sealed class ProtocolTests
     [Fact]
     public void ActionResultAndBuilderEnforceContract()
     {
-        Assert.Equal(new ActionResult(4, 2, 0), Protocol.ParseActionResult([1, 4, 2, 0]));
-        Assert.Throws<InvalidOperationException>(() => Protocol.ParseActionResult([1, 4, 2, 3]));
-        Assert.Equal(new byte[] { 1, 4, 3, 4 }, Protocol.BuildAction(4, Identity(), 4, true));
+        Assert.Equal(new ActionResult(4, 2, 0), Codec.ParseActionResult([1, 4, 2, 0]));
+        Assert.Throws<InvalidOperationException>(() => Codec.ParseActionResult([1, 4, 2, 3]));
+        Assert.Equal(new byte[] { 1, 4, 3, 4 }, Codec.BuildAction(4, Identity(), 4, true));
     }
 }

@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PicoUart.Hid;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 
 namespace PicoUart.Dashboard;
 
@@ -13,16 +13,16 @@ public sealed class BoardMonitor : BackgroundService
     private static readonly TimeSpan ControlQueueTimeout = TimeSpan.FromSeconds(5);
     private readonly object gate = new();
     private readonly SemaphoreSlim controlGate = new(1, 1);
-    private readonly Func<PicoUartHid> connect;
+    private readonly Func<Client> connect;
     private readonly ILogger<BoardMonitor> logger;
-    private DashboardSnapshot snapshot = new();
-    private PicoUartHid? client;
+    private Snapshot snapshot = new();
+    private Client? client;
     private string? unconfirmedConfigurationSaveError;
 
     public BoardMonitor(string? serialNumber, string? devicePath, ILogger<BoardMonitor>? logger = null)
-        : this(() => new PicoUartHid(serialNumber, devicePath), logger) { }
+        : this(() => new Client(serialNumber, devicePath), logger) { }
 
-    internal BoardMonitor(Func<PicoUartHid> connect, ILogger<BoardMonitor>? logger = null)
+    internal BoardMonitor(Func<Client> connect, ILogger<BoardMonitor>? logger = null)
     {
         this.connect = connect;
         this.logger = logger ?? NullLogger<BoardMonitor>.Instance;
@@ -33,7 +33,7 @@ public sealed class BoardMonitor : BackgroundService
         lock (gate)
         {
             snapshot.MarkStale();
-            return JsonSerializer.Serialize(snapshot, Protocol.JsonOptions);
+            return JsonSerializer.Serialize(snapshot, Codec.JsonOptions);
         }
     }
 
@@ -57,7 +57,7 @@ public sealed class BoardMonitor : BackgroundService
                 if (action == "toggle-led") ReadTelemetry(connection);
                 return ToControlStatus(result);
             }
-            catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
+            catch (Exception error) when (Errors.IsDeviceError(error) || error is ArgumentException)
             {
                 var result = error switch
                 {
@@ -109,7 +109,7 @@ public sealed class BoardMonitor : BackgroundService
                 }
                 return ToControlStatus(new(4, result.Status, result.ErrorReason));
             }
-            catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
+            catch (Exception error) when (Errors.IsDeviceError(error) || error is ArgumentException)
             {
                 if (error is ControlOutcomeUnconfirmedException)
                     RecordUnconfirmedConfigurationSaveError(error.Message);
@@ -145,7 +145,7 @@ public sealed class BoardMonitor : BackgroundService
         {
             return PublishDiagnostics(connection, connection.ReadChannelDiagnostics());
         }
-        catch (Exception error) when (HidErrors.IsDeviceError(error))
+        catch (Exception error) when (Errors.IsDeviceError(error))
         {
             lock (gate)
                 if (ReferenceEquals(client, connection)) snapshot.DiagnosticsError = error.Message;
@@ -154,7 +154,7 @@ public sealed class BoardMonitor : BackgroundService
         }
     }
 
-    internal string PublishDiagnostics(PicoUartHid connection, ChannelDiagnostics[] diagnostics)
+    internal string PublishDiagnostics(Client connection, ChannelDiagnostics[] diagnostics)
     {
         lock (gate)
         {
@@ -162,11 +162,11 @@ public sealed class BoardMonitor : BackgroundService
                 throw new IOException("board connection changed during diagnostics; retry the request");
             Array.Copy(diagnostics, snapshot.ChannelDiagnostics, diagnostics.Length);
             snapshot.DiagnosticsError = null;
-            return JsonSerializer.Serialize(diagnostics, Protocol.JsonOptions);
+            return JsonSerializer.Serialize(diagnostics, Codec.JsonOptions);
         }
     }
 
-    private PicoUartHid Connection()
+    private Client Connection()
     {
         lock (gate)
             return client ?? throw new InvalidOperationException(
@@ -182,10 +182,10 @@ public sealed class BoardMonitor : BackgroundService
     private static BoardControlStatus ToControlStatus(ActionResult result) =>
         new(result.Action, result.Status, result.ErrorReason,
             result.Status is >= 3 and <= 6
-                ? $"board action {Protocol.ActionStatusName(result.Status)} (error {result.ErrorReason})"
+                ? $"board action {Codec.ActionStatusName(result.Status)} (error {result.ErrorReason})"
                 : null);
 
-    private void ReadControl(PicoUartHid connection)
+    private void ReadControl(Client connection)
     {
         controlGate.Wait();
         try
@@ -200,7 +200,7 @@ public sealed class BoardMonitor : BackgroundService
                 else
                     result = connection.ReadActionResult();
             }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            catch (Exception error) when (Errors.IsDeviceError(error))
             {
                 errorMessage = error.Message;
             }
@@ -237,7 +237,7 @@ public sealed class BoardMonitor : BackgroundService
         finally { controlGate.Release(); }
     }
 
-    private void ReadTelemetry(PicoUartHid connection)
+    private void ReadTelemetry(Client connection)
     {
         BoardIdentity? info = null;
         Telemetry? telemetry = null;
@@ -247,7 +247,7 @@ public sealed class BoardMonitor : BackgroundService
             info = connection.ReadIdentity();
             telemetry = connection.ReadTelemetry();
         }
-        catch (Exception error) when (HidErrors.IsDeviceError(error))
+        catch (Exception error) when (Errors.IsDeviceError(error))
         {
             errorMessage = error.Message;
         }
@@ -287,7 +287,7 @@ public sealed class BoardMonitor : BackgroundService
         string? lastConnectionError = null;
         while (!stoppingToken.IsCancellationRequested)
         {
-            PicoUartHid? connection = null;
+            Client? connection = null;
             try
             {
                 connection = connect();
@@ -319,7 +319,7 @@ public sealed class BoardMonitor : BackgroundService
                         string? configurationError = null;
                         string? telemetryError = null;
                         try { info = connection.ReadIdentity(); }
-                        catch (Exception error) when (HidErrors.IsDeviceError(error))
+                        catch (Exception error) when (Errors.IsDeviceError(error))
                         {
                             identityError = error.Message;
                         }
@@ -328,13 +328,13 @@ public sealed class BoardMonitor : BackgroundService
                             if (needsConfiguration)
                             {
                                 try { configuration = connection.ReadConfiguration(); }
-                                catch (Exception error) when (HidErrors.IsDeviceError(error))
+                                catch (Exception error) when (Errors.IsDeviceError(error))
                                 {
                                     configurationError = error.Message;
                                 }
                             }
                             try { telemetry = connection.ReadTelemetry(); }
-                            catch (Exception error) when (HidErrors.IsDeviceError(error))
+                            catch (Exception error) when (Errors.IsDeviceError(error))
                             {
                                 telemetryError = error.Message;
                             }
@@ -344,10 +344,10 @@ public sealed class BoardMonitor : BackgroundService
                         var features = new List<ChannelStatus>();
                         if (featureReadAttempted)
                         {
-                            for (var index = 0; index < Protocol.ChannelCount; index++)
+                            for (var index = 0; index < Codec.ChannelCount; index++)
                             {
                                 try { features.Add(connection.ReadChannel(index)); }
-                                catch (Exception error) when (HidErrors.IsDeviceError(error))
+                                catch (Exception error) when (Errors.IsDeviceError(error))
                                 {
                                     failedFeatureRead = true;
                                     logger.LogWarning(error,
@@ -390,7 +390,7 @@ public sealed class BoardMonitor : BackgroundService
                     await Task.Yield();
                 }
             }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            catch (Exception error) when (Errors.IsDeviceError(error))
             {
                 if (lastConnectionError != error.Message)
                     logger.LogWarning(error, "PicoUart HID unavailable; reconnect pending");
@@ -418,7 +418,7 @@ public sealed class BoardMonitor : BackgroundService
                         await cleanup.AsTask().WaitAsync(stoppingToken);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
-                    catch (Exception error) when (HidErrors.IsDeviceError(error))
+                    catch (Exception error) when (Errors.IsDeviceError(error))
                     {
                         logger.LogError(error, "Native HID cleanup failed");
                         throw;
@@ -443,7 +443,7 @@ public sealed class BoardMonitor : BackgroundService
     }
 
     /// <summary>Replace per-connection state without discarding unresolved save uncertainty.</summary>
-    internal void ReplaceSnapshot(DashboardSnapshot replacement)
+    internal void ReplaceSnapshot(Snapshot replacement)
     {
         lock (gate)
         {

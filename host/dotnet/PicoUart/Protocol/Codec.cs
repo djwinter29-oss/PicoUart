@@ -3,7 +3,7 @@
 using System.Buffers.Binary;
 using System.Text.Json;
 
-namespace PicoUart.Wire;
+namespace PicoUart.Protocol;
 
 public sealed record BoardStatus(double TemperatureCelsius, string FirmwareVersion,
     byte FirmwareMajor, byte FirmwareMinor, byte FirmwarePatch, bool HidResetEnabled);
@@ -45,7 +45,7 @@ public sealed record ChannelDiagnostics(int Id, byte UartMeasurementState, byte 
 }
 public sealed record ActionResult(byte Action, byte Status, byte ErrorReason);
 
-public static class Protocol
+public static class Codec
 {
     public const int ChannelCount = 6;
     public const byte LayoutVersion = 1;

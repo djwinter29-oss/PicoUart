@@ -276,25 +276,25 @@ dotnet run --project host/dotnet/PicoUart -- web --port 5001
 Its JSON matches the Python `channels` snapshot in [Python test automation](#python-test-automation). .NET
 `monitor` still prints one channel object per line.
 On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
-The C# `PicoUartHid` class owns a connection and implements `IDisposable` and `IAsyncDisposable`;
-`Protocol` provides typed report decoders.
-The HID implementation separates responsibilities without changing that public client:
+The C# `PicoUart.Hid.Client` class owns a connection and implements `IDisposable` and `IAsyncDisposable`;
+`PicoUart.Protocol.Codec` provides typed report decoders.
+The HID implementation separates responsibilities:
 
-- [PicoUartHid.cs](../../host/dotnet/PicoUart/Hid/PicoUartHid.cs) owns the connection, caches, and typed reads.
-- [PicoUartHid.Actions.cs](../../host/dotnet/PicoUart/Hid/PicoUartHid.Actions.cs) implements serialized board controls
+- [Client.cs](../../host/dotnet/PicoUart/Hid/Client.cs) owns the connection, caches, and typed reads.
+- [Actions.cs](../../host/dotnet/PicoUart/Hid/Actions.cs) implements serialized board controls
   as part of the same client, sharing its lock and timeout quarantine rather than opening another connection.
-- [HidDiscovery.cs](../../host/dotnet/PicoUart/Hid/HidDiscovery.cs) handles enumeration, selection, and USB identity.
-- [HidReports.cs](../../host/dotnet/PicoUart/Hid/HidReports.cs) adapts descriptors and native Feature framing;
-  [Protocol.cs](../../host/dotnet/PicoUart/Wire/Protocol.cs) remains responsible for product payload validation.
-- [HidStreamLifetime.cs](../../host/dotnet/PicoUart/Hid/HidStreamLifetime.cs) owns in-flight native transfers and
+- [Discovery.cs](../../host/dotnet/PicoUart/Hid/Discovery.cs) handles enumeration, selection, and USB identity.
+- [Reports.cs](../../host/dotnet/PicoUart/Hid/Reports.cs) adapts descriptors and native Feature framing;
+  [Codec.cs](../../host/dotnet/PicoUart/Protocol/Codec.cs) remains responsible for product payload validation.
+- [StreamLifetime.cs](../../host/dotnet/PicoUart/Hid/StreamLifetime.cs) owns in-flight native transfers and
   deferred cleanup, including the per-device barrier against reopening before cleanup completes.
 
 Dashboard source names reflect their ownership:
 
 - [BoardMonitor.cs](../../host/dotnet/PicoUart/Dashboard/BoardMonitor.cs) owns one board's polling, controls, and reconnects.
-- [DashboardBoardRegistry.cs](../../host/dotnet/PicoUart/Dashboard/DashboardBoardRegistry.cs) discovers boards and shares
+- [BoardRegistry.cs](../../host/dotnet/PicoUart/Dashboard/BoardRegistry.cs) discovers boards and shares
   their monitors between viewers.
-- [DashboardSnapshot.cs](../../host/dotnet/PicoUart/Dashboard/DashboardSnapshot.cs) folds samples into API state and
+- [Snapshot.cs](../../host/dotnet/PicoUart/Dashboard/Snapshot.cs) folds samples into API state and
   traffic accounting.
 
 Python and .NET share `host/web/src`; tests live in `host/web/tests`. Keep frontend changes backend-neutral rather than

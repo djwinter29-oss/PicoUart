@@ -3,7 +3,7 @@
 namespace PicoUart.Hid;
 
 /// <summary>Own native transfers and defer handle cleanup until every transfer has returned.</summary>
-internal sealed class HidStreamLifetime(Action dispose, string? devicePath = null)
+internal sealed class StreamLifetime(Action dispose, string? devicePath = null)
 {
     private static readonly object CleanupGate = new();
     private static readonly Dictionary<string, HashSet<Task>> PendingDeviceCleanup = new();

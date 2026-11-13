@@ -5,16 +5,16 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PicoUart.Hid;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 
 namespace PicoUart.Dashboard;
 
-public sealed record DashboardBoard(string Id, string ProductName, string? SerialNumber, string DevicePath);
-public sealed record DashboardDiscoveryError(string DevicePath, string? SerialNumber, string Error);
-public sealed record DashboardBoardList(
-    DashboardBoard[] Boards, string? DefaultBoardId, DashboardDiscoveryError[] DiscoveryErrors);
+public sealed record Board(string Id, string ProductName, string? SerialNumber, string DevicePath);
+public sealed record DiscoveryError(string DevicePath, string? SerialNumber, string Error);
+public sealed record BoardList(
+    Board[] Boards, string? DefaultBoardId, DiscoveryError[] DiscoveryErrors);
 
-public sealed class DashboardBoardRegistry : IHostedService, IDisposable, IDashboardBoards
+public sealed class BoardRegistry : IHostedService, IDisposable, IBoards
 {
     private const int MissingScansBeforeRetirement = 3;
     private readonly object gate = new();
@@ -23,8 +23,8 @@ public sealed class DashboardBoardRegistry : IHostedService, IDisposable, IDashb
     private readonly string? devicePath;
     private readonly Func<HidBoard[]> discover;
     private readonly Func<string?, string?, BoardMonitor> createMonitor;
-    private readonly ILogger<DashboardBoardRegistry> logger;
-    private readonly Dictionary<string, DashboardBoard> known = new();
+    private readonly ILogger<BoardRegistry> logger;
+    private readonly Dictionary<string, Board> known = new();
     private readonly Dictionary<string, BoardMonitor> monitors = new();
     private readonly Dictionary<string, int> missingScans = new();
     private readonly Dictionary<string, Task> retiring = new();
@@ -35,23 +35,23 @@ public sealed class DashboardBoardRegistry : IHostedService, IDisposable, IDashb
         get { lock (gate) return retiring.Count; }
     }
 
-    public DashboardBoardRegistry(string? serialNumber, string? devicePath, ILoggerFactory? loggerFactory = null)
-        : this(serialNumber, devicePath, PicoUartHid.Discover,
+    public BoardRegistry(string? serialNumber, string? devicePath, ILoggerFactory? loggerFactory = null)
+        : this(serialNumber, devicePath, Client.Discover,
             (serial, path) => new(serial, path, loggerFactory?.CreateLogger<BoardMonitor>()),
-            loggerFactory?.CreateLogger<DashboardBoardRegistry>())
+            loggerFactory?.CreateLogger<BoardRegistry>())
     { }
 
-    internal DashboardBoardRegistry(string? serialNumber, string? devicePath, Func<HidBoard[]> discover,
-        Func<string?, string?, BoardMonitor> createMonitor, ILogger<DashboardBoardRegistry>? logger = null)
+    internal BoardRegistry(string? serialNumber, string? devicePath, Func<HidBoard[]> discover,
+        Func<string?, string?, BoardMonitor> createMonitor, ILogger<BoardRegistry>? logger = null)
     {
         this.serialNumber = serialNumber;
         this.devicePath = devicePath;
         this.discover = discover;
         this.createMonitor = createMonitor;
-        this.logger = logger ?? NullLogger<DashboardBoardRegistry>.Instance;
+        this.logger = logger ?? NullLogger<BoardRegistry>.Instance;
     }
 
-    public DashboardBoardList Boards()
+    public BoardList Boards()
     {
         lock (scanGate)
         {
@@ -63,8 +63,8 @@ public sealed class DashboardBoardRegistry : IHostedService, IDisposable, IDashb
             {
                 if (closed) throw new InvalidOperationException("dashboard is shutting down");
                 var seen = new HashSet<string>();
-                var boards = new List<DashboardBoard>();
-                var errors = new List<DashboardDiscoveryError>();
+                var boards = new List<Board>();
+                var errors = new List<DiscoveryError>();
                 foreach (var device in devices)
                 {
                     var serial = string.IsNullOrEmpty(device.SerialNumber) ? null : device.SerialNumber;
@@ -177,7 +177,7 @@ public sealed class DashboardBoardRegistry : IHostedService, IDisposable, IDashb
     }
 
     public string SnapshotJson(string? boardId) => boardId is null
-        ? JsonSerializer.Serialize(new DashboardSnapshot(), Protocol.JsonOptions) : Reader(boardId).SnapshotJson();
+        ? JsonSerializer.Serialize(new Snapshot(), Codec.JsonOptions) : Reader(boardId).SnapshotJson();
 
     public BoardControlStatus Action(
         string? boardId, string action, CancellationToken cancellationToken = default) =>

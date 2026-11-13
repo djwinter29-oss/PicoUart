@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using System.Diagnostics;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 
 namespace PicoUart.Hid;
 
 // Actions share the connection gate and timeout quarantine; they are not a separate client.
-public sealed partial class PicoUartHid
+public sealed partial class Client
 {
     private bool rebootScheduled;
 
@@ -65,8 +65,8 @@ public sealed partial class PicoUartHid
         cancellationToken.ThrowIfCancellationRequested();
         if (prior.Status == 1 || (prior.Status == 2 && prior.Action is 3 or 4))
             throw new InvalidOperationException("a board action is pending or reboot is already scheduled; reconnect");
-        var payload = Protocol.BuildAction(action, info, profile, unsafeOverclock);
-        byte[] report = [Protocol.ActionReportId, .. payload];
+        var payload = Codec.BuildAction(action, info, profile, unsafeOverclock);
+        byte[] report = [Codec.ActionReportId, .. payload];
         ActionResult? lastResult = null;
         try
         {
@@ -89,7 +89,7 @@ public sealed partial class PicoUartHid
         {
             throw;
         }
-        catch (Exception error) when (HidErrors.IsDeviceError(error))
+        catch (Exception error) when (Errors.IsDeviceError(error))
         {
             transferUnconfirmed = true;
             throw Unconfirmed("command outcome is unconfirmed; do not retry; reconnect and verify board state",

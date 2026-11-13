@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using System.Diagnostics;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 
 namespace PicoUart.Dashboard;
 
@@ -13,7 +13,7 @@ public sealed class Traffic
     public double? UsbRx { get; set; }
 }
 
-public sealed class DashboardChannel(int id)
+public sealed class Channel(int id)
 {
     public int Id { get; } = id;
     public string State { get; set; } = "unknown";
@@ -41,7 +41,7 @@ public sealed class DashboardChannel(int id)
 
 public sealed record BoardControlStatus(byte Action, byte Status, byte ErrorReason, string? Error);
 
-public sealed class DashboardSnapshot
+public sealed class Snapshot
 {
     public bool Connected { get; set; }
     public int RefreshIntervalMs { get; private set; } = 500;
@@ -63,14 +63,14 @@ public sealed class DashboardSnapshot
     public DateTimeOffset? UpdatedAt { get; set; }
     public bool TrafficIncomplete => Channels.Any(channel => channel.TrafficIncomplete);
     public long TrafficGaps => Channels.Sum(channel => channel.TrafficGaps);
-    public ChannelDiagnostics?[] ChannelDiagnostics { get; } = new ChannelDiagnostics?[Protocol.ChannelCount];
+    public ChannelDiagnostics?[] ChannelDiagnostics { get; } = new ChannelDiagnostics?[Codec.ChannelCount];
     public string? DiagnosticsError { get; set; }
     public BoardStatus? Board { get; set; }
     public uint?[] OverflowCounts =>
         ChannelDiagnostics.Select(diagnostic => diagnostic?.KnownRxOverrunCount).ToArray();
     internal BoardControlStatus? Control { get; set; }
-    public DashboardChannel[] Channels { get; } = Enumerable.Range(0, Protocol.ChannelCount)
-        .Select(index => new DashboardChannel(index)).ToArray();
+    public Channel[] Channels { get; } = Enumerable.Range(0, Codec.ChannelCount)
+        .Select(index => new Channel(index)).ToArray();
 
     internal void SetRuntimeReadResult(RuntimeStatus? runtime, string? error)
     {
@@ -82,7 +82,7 @@ public sealed class DashboardSnapshot
     {
         Control = new(result.Action, result.Status, result.ErrorReason,
             result.Status is >= 3 and <= 6
-                ? $"board action {Protocol.ActionStatusName(result.Status)} (error {result.ErrorReason})"
+                ? $"board action {Codec.ActionStatusName(result.Status)} (error {result.ErrorReason})"
                 : null);
         if (result.Action == 4)
         {
@@ -209,7 +209,7 @@ public sealed class DashboardSnapshot
         channel.Parity = source.Parity;
     }
 
-    private static void MarkIncomplete(DashboardChannel channel)
+    private static void MarkIncomplete(Channel channel)
     {
         channel.TrafficIncomplete = true;
         channel.TrafficGaps++;

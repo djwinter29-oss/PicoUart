@@ -2,25 +2,25 @@
 // Copyright (c) 2026 Ji Dong
 using System.Text.Json;
 using PicoUart.Dashboard;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class DashboardSnapshotTests
+public sealed class SnapshotTests
 {
     [Fact]
     public void StatusKeepsActionResultsSeparateAndDerivesOverflowCountsFromDiagnostics()
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
         Assert.All(snapshot.OverflowCounts, count => Assert.Null(count));
         snapshot.ChannelDiagnostics[2] = new(2, 1, 0, 0, 17, 0, 0, 0, 0, 0, 0);
         snapshot.ChannelDiagnostics[3] = new(3, 0, byte.MaxValue, 0, 0, 0, 0, 0, 0, 0, 0);
         snapshot.ChannelDiagnostics[4] = new(4, 2, 1, 0, 9, 0, 0, 0, 0, 0, 0);
         Assert.Equal(new uint?[] { null, null, 17, null, 9, null }, snapshot.OverflowCounts);
         snapshot.ApplyAction(new(2, 2, 0));
-        using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Protocol.JsonOptions));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, Codec.JsonOptions));
         Assert.False(json.RootElement.TryGetProperty("control", out _));
         Assert.Equal(17u, json.RootElement.GetProperty("overflow_counts")[2].GetUInt32());
         Assert.Equal((byte)2, snapshot.Control?.Action);
@@ -34,7 +34,7 @@ public sealed class DashboardSnapshotTests
     [InlineData("error", 4, true)]
     public void ChannelStatusExposesSharedLifecycleAndInputFields(string state, byte code, bool open)
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
         snapshot.Apply(Sample(12, 750, 100) with { State = state });
         var channel = snapshot.Channels[0];
         Assert.Equal(code, channel.ChannelState);
@@ -52,7 +52,7 @@ public sealed class DashboardSnapshotTests
     [Fact]
     public void InputSnapshotSetsCadenceAndTraffic()
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
         snapshot.Apply(Sample(sequence: 1, interval: 500, uartTx: 100));
         snapshot.Apply(Sample(sequence: 2, interval: 750, uartTx: 850));
         Assert.True(snapshot.Connected);
@@ -69,7 +69,7 @@ public sealed class DashboardSnapshotTests
             Path.Combine(AppContext.BaseDirectory, "Fixtures", "host-input-cases.json")));
         foreach (var testCase in cases.RootElement.EnumerateArray())
         {
-            var snapshot = new DashboardSnapshot();
+            var snapshot = new Snapshot();
             foreach (var source in testCase.GetProperty("samples").EnumerateArray())
                 snapshot.Apply(Sample(source.GetProperty("sequence").GetUInt16(),
                     source.GetProperty("interval_ms").GetUInt16(), source.GetProperty("uart_tx").GetUInt32()) with
@@ -80,7 +80,7 @@ public sealed class DashboardSnapshotTests
                     UartMeasurementState = source.TryGetProperty("uart_measurement_state", out var state)
                         ? state.GetByte() : (byte)1
                 });
-            using var actual = JsonDocument.Parse(JsonSerializer.Serialize(snapshot.Channels[0], Protocol.JsonOptions));
+            using var actual = JsonDocument.Parse(JsonSerializer.Serialize(snapshot.Channels[0], Codec.JsonOptions));
             foreach (var expected in testCase.GetProperty("expected").EnumerateObject())
                 Assert.True(JsonElement.DeepEquals(expected.Value, actual.RootElement.GetProperty(expected.Name)),
                     $"{testCase.GetProperty("name").GetString()}: {expected.Name}");
@@ -90,7 +90,7 @@ public sealed class DashboardSnapshotTests
     [Fact]
     public void InvalidOrGappedInputMarksContinuityIncomplete()
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
         snapshot.Apply(Sample(1, 500, 100));
         snapshot.Apply(Sample(3, 500, 200));
         snapshot.Apply(Sample(4, ushort.MaxValue, 300));
@@ -103,7 +103,7 @@ public sealed class DashboardSnapshotTests
     [InlineData(ushort.MaxValue)]
     public void InvalidFirstInputIntervalMarksContinuityIncomplete(ushort interval)
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
 
         snapshot.Apply(Sample(1, interval, 100));
 
@@ -117,7 +117,7 @@ public sealed class DashboardSnapshotTests
     [InlineData(ushort.MaxValue)]
     public void InvalidContiguousInputIntervalDoesNotCountAsSequenceGap(ushort interval)
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
         snapshot.Apply(Sample(1, 500, 100));
 
         snapshot.Apply(Sample(2, interval, 200));
@@ -129,7 +129,7 @@ public sealed class DashboardSnapshotTests
     [Fact]
     public void DuplicateSequenceDoesNotCreateTrafficGapOrReplaceSample()
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
         snapshot.Apply(Sample(10, 500, 100));
         var updatedAt = snapshot.Channels[0].UpdatedAt;
 
@@ -144,7 +144,7 @@ public sealed class DashboardSnapshotTests
     [Fact]
     public void RepeatedOutOfOrderSamplesCountOneGapUntilSequenceRecovers()
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
         snapshot.Apply(Sample(10, 500, 100));
         snapshot.Apply(Sample(9, 500, 90));
         snapshot.Apply(Sample(9, 500, 90));
@@ -162,7 +162,7 @@ public sealed class DashboardSnapshotTests
     [Fact]
     public void ActionAndSaveStatusReflectReport20Result()
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
         snapshot.ApplyAction(new ActionResult(4, 2, 0));
         Assert.Equal((byte)4, snapshot.Control?.Action);
         Assert.Equal((byte)2, snapshot.ConfigurationSave?.Status);
@@ -172,7 +172,7 @@ public sealed class DashboardSnapshotTests
     [Fact]
     public void MarkStaleSetsUnknownStateAfterTimeout()
     {
-        var snapshot = new DashboardSnapshot();
+        var snapshot = new Snapshot();
         snapshot.Apply(Sample(1, 500, 100));
         snapshot.Channels[0].LastInputTimestamp -= 4L * System.Diagnostics.Stopwatch.Frequency;
         snapshot.MarkStale();

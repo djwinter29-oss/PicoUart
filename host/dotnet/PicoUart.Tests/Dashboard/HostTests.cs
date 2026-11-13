@@ -8,13 +8,13 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class DashboardHostTests
+public sealed class HostTests
 {
     [Theory]
     [InlineData("{\"profile\":0,\"unsafe_overclock\":false}", 0u, false)]
@@ -66,7 +66,7 @@ public sealed class DashboardHostTests
             RedirectStandardError = true,
             UseShellExecute = false
         };
-        start.ArgumentList.Add(typeof(Protocol).Assembly.Location);
+        start.ArgumentList.Add(typeof(Codec).Assembly.Location);
         start.ArgumentList.Add("web");
         start.ArgumentList.Add("--port");
         start.ArgumentList.Add(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -189,8 +189,8 @@ public sealed class DashboardHostTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
-        var dashboard = new FakeDashboardBoards();
-        await using var app = await DashboardHost.CreateApplicationAsync(port, dashboard);
+        var dashboard = new FakeBoards();
+        await using var app = await Host.CreateApplicationAsync(port, dashboard);
         await app.StartAsync();
         using var handler = new HttpClientHandler { CookieContainer = new CookieContainer() };
         using var http = new HttpClient(handler)
@@ -274,13 +274,13 @@ public sealed class DashboardHostTests
     [InlineData(true, HttpStatusCode.GatewayTimeout)]
     public async Task DiagnosticsRouteReturnsAnExplicitDeviceFailure(bool timeout, HttpStatusCode expected)
     {
-        var dashboard = new FakeDashboardBoards
+        var dashboard = new FakeBoards
         {
             DiagnosticsError = timeout
                 ? new TimeoutException("diagnostics timed out")
                 : new IOException("diagnostics acquisition failed")
         };
-        await using var app = await DashboardHost.CreateApplicationAsync(0, dashboard);
+        await using var app = await Host.CreateApplicationAsync(0, dashboard);
         await app.StartAsync();
         using var http = new HttpClient { BaseAddress = new(app.Urls.Single()) };
         try
@@ -293,9 +293,9 @@ public sealed class DashboardHostTests
         finally { await app.StopAsync(); }
     }
 
-    private sealed class FakeDashboardBoards : IDashboardBoards
+    private sealed class FakeBoards : IBoards
     {
-        private readonly DashboardSnapshot snapshot = new();
+        private readonly Snapshot snapshot = new();
 
         public string? LastBoardId { get; private set; }
         public CancellationToken LastActionToken { get; private set; }
@@ -305,12 +305,12 @@ public sealed class DashboardHostTests
         public Exception? SaveError { get; set; }
         public Exception? DiagnosticsError { get; set; }
 
-        public DashboardBoardList Boards() => new([], null, []);
+        public BoardList Boards() => new([], null, []);
 
         public string SnapshotJson(string? boardId)
         {
             LastBoardId = boardId;
-            return JsonSerializer.Serialize(snapshot, Protocol.JsonOptions);
+            return JsonSerializer.Serialize(snapshot, Codec.JsonOptions);
         }
 
         public BoardControlStatus Action(

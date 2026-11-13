@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
-using PicoUart.Wire;
+using PicoUart.Protocol;
 
 namespace PicoUart.Dashboard;
 
-public interface IDashboardBoards
+public interface IBoards
 {
-    DashboardBoardList Boards();
+    BoardList Boards();
     string SnapshotJson(string? boardId);
     BoardControlStatus Action(
         string? boardId, string action, CancellationToken cancellationToken = default);

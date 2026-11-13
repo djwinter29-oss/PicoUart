@@ -2,15 +2,15 @@
 // Copyright (c) 2026 Ji Dong
 using HidSharp.Reports;
 using PicoUart.Hid;
-using PicoUart.Wire;
+using PicoUart.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests;
 
 [Trait("Category", "Unit")]
-public sealed class HidReportsTests
+public sealed class ReportsTests
 {
-    private static ReportDescriptor Descriptor(bool padded, int identitySize = Protocol.IdentitySize)
+    private static ReportDescriptor Descriptor(bool padded, int identitySize = Codec.IdentitySize)
     {
         var bytes = new List<byte>
         {
@@ -43,20 +43,20 @@ public sealed class HidReportsTests
         var descriptor = Descriptor(padded);
         var features = descriptor.DeviceItems.SelectMany(item => item.FeatureReports).ToArray();
         var inputs = descriptor.DeviceItems.SelectMany(item => item.InputReports).ToArray();
-        var identity = Assert.Single(features, report => report.ReportID == Protocol.IdentityReportId);
+        var identity = Assert.Single(features, report => report.ReportID == Codec.IdentityReportId);
 
         Assert.Equal(padded ? 37 : 28, identity.Length);
-        Assert.Equal(28, HidReports.ReportDataLength(identity));
-        HidReports.ValidateReports(
-            features.Select(report => (report.ReportID, HidReports.ReportDataLength(report))),
-            inputs.Select(report => (report.ReportID, HidReports.ReportDataLength(report))));
+        Assert.Equal(28, Reports.ReportDataLength(identity));
+        Reports.ValidateReports(
+            features.Select(report => (report.ReportID, Reports.ReportDataLength(report))),
+            inputs.Select(report => (report.ReportID, Reports.ReportDataLength(report))));
 
         var buffer = new byte[37];
-        buffer[0] = Protocol.IdentityReportId;
-        ProtocolTests.IdentityPayload().CopyTo(buffer, 1);
-        var payload = HidReports.FeaturePayload(buffer, Protocol.IdentityReportId,
-            HidReports.ReportDataLength(identity) - 1, prefixSize: 1);
-        Assert.Equal(ProtocolTests.Identity(), Protocol.ParseIdentity(payload));
+        buffer[0] = Codec.IdentityReportId;
+        CodecTests.IdentityPayload().CopyTo(buffer, 1);
+        var payload = Reports.FeaturePayload(buffer, Codec.IdentityReportId,
+            Reports.ReportDataLength(identity) - 1, prefixSize: 1);
+        Assert.Equal(CodecTests.Identity(), Codec.ParseIdentity(payload));
     }
 
     [Theory]
@@ -65,13 +65,13 @@ public sealed class HidReportsTests
     public void TransportPrefixesAndBufferPaddingAreExcludedFromPayload(int prefixSize)
     {
         var buffer = new byte[36 + prefixSize];
-        Array.Fill(buffer, Protocol.IdentityReportId, 0, prefixSize);
-        ProtocolTests.IdentityPayload().CopyTo(buffer, prefixSize);
+        Array.Fill(buffer, Codec.IdentityReportId, 0, prefixSize);
+        CodecTests.IdentityPayload().CopyTo(buffer, prefixSize);
 
-        var payload = HidReports.FeaturePayload(buffer, Protocol.IdentityReportId,
-            Protocol.IdentitySize, prefixSize);
+        var payload = Reports.FeaturePayload(buffer, Codec.IdentityReportId,
+            Codec.IdentitySize, prefixSize);
 
-        Assert.Equal(ProtocolTests.Identity(), Protocol.ParseIdentity(payload));
+        Assert.Equal(CodecTests.Identity(), Codec.ParseIdentity(payload));
     }
 
     [Theory]
@@ -80,11 +80,11 @@ public sealed class HidReportsTests
     public void PaddingDoesNotHideIncompatiblePayloadSizes(int identitySize)
     {
         var descriptor = Descriptor(true, identitySize);
-        Assert.Throws<InvalidOperationException>(() => HidReports.ValidateReports(
+        Assert.Throws<InvalidOperationException>(() => Reports.ValidateReports(
             descriptor.DeviceItems.SelectMany(item => item.FeatureReports)
-                .Select(report => (report.ReportID, HidReports.ReportDataLength(report))),
+                .Select(report => (report.ReportID, Reports.ReportDataLength(report))),
             descriptor.DeviceItems.SelectMany(item => item.InputReports)
-                .Select(report => (report.ReportID, HidReports.ReportDataLength(report)))));
+                .Select(report => (report.ReportID, Reports.ReportDataLength(report)))));
     }
 
     [Fact]
@@ -93,10 +93,10 @@ public sealed class HidReportsTests
         var report = new Report();
         report.DataItems.Add(new DataItem { ElementCount = 1, ElementBits = 8, Flags = DataItemFlags.Constant });
         report.DataItems.Add(new DataItem { ElementCount = 1, ElementBits = 8 });
-        Assert.Throws<InvalidOperationException>(() => HidReports.ReportDataLength(report));
+        Assert.Throws<InvalidOperationException>(() => Reports.ReportDataLength(report));
 
         var partial = new Report();
         partial.DataItems.Add(new DataItem { ElementCount = 1, ElementBits = 7 });
-        Assert.Throws<InvalidOperationException>(() => HidReports.ReportDataLength(partial));
+        Assert.Throws<InvalidOperationException>(() => Reports.ReportDataLength(partial));
     }
 }
