@@ -6,11 +6,10 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.FileProviders;
 using PicoUart.Hid;
-using PicoUart.Wire;
 
 namespace PicoUart.Dashboard;
 
-internal static class DashboardHost
+internal static class Host
 {
     private const int MaxConfigurationRequestBytes = 1024;
 
@@ -21,7 +20,7 @@ internal static class DashboardHost
     }
 
     internal static async Task<WebApplication> CreateApplicationAsync(
-        int port, IDashboardBoards? dashboard = null, string? serialNumber = null, string? devicePath = null)
+        int port, IBoardRegistry? dashboard = null, string? serialNumber = null, string? devicePath = null)
     {
         var builder = WebApplication.CreateBuilder(Array.Empty<string>());
         builder.Logging.AddFilter("Microsoft",
@@ -37,10 +36,10 @@ internal static class DashboardHost
         });
         if (dashboard is null)
         {
-            builder.Services.AddSingleton<IDashboardBoards>(services => new DashboardBoardRegistry(
+            builder.Services.AddSingleton<IBoardRegistry>(services => new BoardRegistry(
                 serialNumber, devicePath, services.GetRequiredService<ILoggerFactory>()));
             builder.Services.AddSingleton<IHostedService>(services =>
-                (DashboardBoardRegistry)services.GetRequiredService<IDashboardBoards>());
+                (BoardRegistry)services.GetRequiredService<IBoardRegistry>());
         }
         else
         {
@@ -92,24 +91,24 @@ internal static class DashboardHost
                 .Replace("{{ host_version }}", System.Net.WebUtility.HtmlEncode(hostVersion)),
                 "text/html");
         });
-        app.MapGet("/api/boards", (IDashboardBoards dashboard) =>
+        app.MapGet("/api/boards", (IBoardRegistry dashboard) =>
         {
-            try { return Results.Json(dashboard.Boards(), Protocol.JsonOptions); }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            try { return Results.Json(dashboard.Boards(), Codec.JsonOptions); }
+            catch (Exception error) when (Errors.IsDeviceError(error))
             {
                 return DeviceErrorResponse(error);
             }
         });
-        app.MapGet("/api/status", async (HttpContext context, IDashboardBoards dashboard) =>
+        app.MapGet("/api/status", async (HttpContext context, IBoardRegistry dashboard) =>
         {
             await context.Session.LoadAsync();
             try { return Results.Content(dashboard.SnapshotJson(context.Request.Query["board"]), "application/json"); }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            catch (Exception error) when (Errors.IsDeviceError(error))
             {
                 return DeviceErrorResponse(error);
             }
         });
-        app.MapGet("/api/diagnostics", async (HttpContext context, IDashboardBoards dashboard) =>
+        app.MapGet("/api/diagnostics", async (HttpContext context, IBoardRegistry dashboard) =>
         {
             await context.Session.LoadAsync();
             try
@@ -117,15 +116,15 @@ internal static class DashboardHost
                 return Results.Content(
                     dashboard.DiagnosticsJson(context.Request.Query["board"]), "application/json");
             }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            catch (Exception error) when (Errors.IsDeviceError(error))
             {
                 return DeviceErrorResponse(error);
             }
         });
         app.MapPost("/api/actions/{action}", (
-            string action, HttpContext context, IDashboardBoards dashboard, ILoggerFactory loggerFactory) =>
+            string action, HttpContext context, IBoardRegistry dashboard, ILoggerFactory loggerFactory) =>
         {
-            var logger = loggerFactory.CreateLogger("PicoUart.DashboardHost");
+            var logger = loggerFactory.CreateLogger("PicoUart.Dashboard.Host");
             var token = context.Session.GetString("csrf_token");
             var supplied = context.Request.Headers["X-CSRF-Token"].ToString();
             if (token is null || !CryptographicOperations.FixedTimeEquals(
@@ -136,18 +135,18 @@ internal static class DashboardHost
             try
             {
                 return Results.Json(dashboard.Action(
-                    context.Request.Query["board"], action, context.RequestAborted), Protocol.JsonOptions);
+                    context.Request.Query["board"], action, context.RequestAborted), Codec.JsonOptions);
             }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            catch (Exception error) when (Errors.IsDeviceError(error))
             {
                 logger.LogWarning(error, "HID control action {Action} failed", action);
                 return DeviceErrorResponse(error);
             }
         });
         app.MapPost("/api/configuration", async (
-            HttpContext context, IDashboardBoards dashboard, ILoggerFactory loggerFactory) =>
+            HttpContext context, IBoardRegistry dashboard, ILoggerFactory loggerFactory) =>
         {
-            var logger = loggerFactory.CreateLogger("PicoUart.DashboardHost");
+            var logger = loggerFactory.CreateLogger("PicoUart.Dashboard.Host");
             if (context.Request.ContentLength > MaxConfigurationRequestBytes)
                 return ConfigurationRequestTooLarge();
             var requestBody = await ReadConfigurationBodyAsync(context.Request.Body, context.RequestAborted);
@@ -165,10 +164,10 @@ internal static class DashboardHost
                 var request = ConfigurationSaveRequest.Parse(body.RootElement);
                 var result = dashboard.SaveConfiguration(
                     context.Request.Query["board"], request.Profile, request.UnsafeOverclock, context.RequestAborted);
-                return Results.Json(result, Protocol.JsonOptions);
+                return Results.Json(result, Codec.JsonOptions);
             }
             catch (Exception error) when (error is JsonException or ArgumentException
-                || HidErrors.IsDeviceError(error))
+                || Errors.IsDeviceError(error))
             {
                 logger.LogWarning(error, "HID configuration save failed");
                 return error is JsonException or ArgumentException
@@ -185,7 +184,7 @@ internal static class DashboardHost
         {
             error = error.Message,
             outcome_unconfirmed = error is ControlOutcomeUnconfirmedException
-        }, Protocol.JsonOptions, statusCode: error switch
+        }, Codec.JsonOptions, statusCode: error switch
         {
             TimeoutException => 504,
             IOException or UnauthorizedAccessException => 503,

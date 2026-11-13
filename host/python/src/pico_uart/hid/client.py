@@ -10,7 +10,7 @@ from copy import deepcopy
 from typing import TypeVar
 
 from .gate import DeviceGate
-from .inputs import InputTracker
+from .input_tracker import InputTracker
 from .protocol import (
     CHANNEL_SIZE,
     COMMAND_LED_OFF,

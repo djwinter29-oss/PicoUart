@@ -4,10 +4,10 @@ using PicoUart.Dashboard;
 using PicoUart.Hid;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Hid;
 
 [Trait("Category", "Unit")]
-public sealed class HidDiscoveryTests
+public sealed class DiscoveryTests
 {
     [Fact]
     public void ExplicitSelectorsFilterDevicesBeforeInspectingDescriptors()
@@ -23,9 +23,9 @@ public sealed class HidDiscoveryTests
             return true;
         }
 
-        var byPath = HidDiscovery.MatchingDevices(devices, null, "/healthy",
+        var byPath = Discovery.MatchingDevices(devices, null, "/healthy",
             device => device.Path, device => device.Serial, IsPicoUart);
-        var bySerial = HidDiscovery.MatchingDevices(devices, "0123456789abcdef", null,
+        var bySerial = Discovery.MatchingDevices(devices, "0123456789abcdef", null,
             device => device.Path, device => device.Serial, IsPicoUart);
 
         Assert.Equal("/healthy", Assert.Single(byPath).Path);
@@ -40,7 +40,7 @@ public sealed class HidDiscoveryTests
             new Candidate("/healthy", "0123456789ABCDEF", false),
             new Candidate("/unreadable", "8899AABBCCDDEEFF", false, true)
         };
-        var matches = HidDiscovery.MatchingDevices(devices, "0123456789ABCDEF", null,
+        var matches = Discovery.MatchingDevices(devices, "0123456789ABCDEF", null,
             device => device.Path, device => ReadSerial(device), _ => true);
 
         Assert.Equal("/healthy", Assert.Single(matches).Path);
@@ -51,7 +51,7 @@ public sealed class HidDiscoveryTests
     {
         var device = new Candidate("/unreadable", "0123456789ABCDEF", false, true);
 
-        var error = Assert.Throws<IOException>(() => HidDiscovery.MatchingDevices(
+        var error = Assert.Throws<IOException>(() => Discovery.MatchingDevices(
             [device], device.Serial, null, candidate => candidate.Path, ReadSerial, _ => true));
 
         Assert.Equal("serial metadata is unreadable", error.Message);
@@ -60,10 +60,10 @@ public sealed class HidDiscoveryTests
     [Fact]
     public async Task DiscoveredBoardPreservesMissingUsbSerialForPathFallback()
     {
-        var board = HidDiscovery.CreateBoard("/serial-less", null, ProtocolTests.Identity());
+        var board = Discovery.CreateBoard("/serial-less", null, ProtocolFixtures.Identity());
         string? selectedSerial = null;
         string? selectedPath = null;
-        using var boards = new DashboardBoardRegistry(null, null, () => [board], (serial, path) =>
+        using var boards = new BoardRegistry(null, null, () => [board], (serial, path) =>
         {
             selectedSerial = serial;
             selectedPath = path;

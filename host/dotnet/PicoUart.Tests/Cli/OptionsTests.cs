@@ -5,7 +5,7 @@ using PicoUart.Cli;
 using PicoUart.Hid;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Cli;
 
 [Trait("Category", "Unit")]
 public sealed class OptionsTests
@@ -151,7 +151,7 @@ public sealed class OptionsTests
     {
         Assert.Throws<ArgumentException>(() => Options.Parse(
             ["status", "--serial", "board-1", "--device-path", "/dev/hidraw0"]));
-        Assert.Throws<ArgumentException>(() => new PicoUartHid("board-1", "/dev/hidraw0"));
+        Assert.Throws<ArgumentException>(() => new Client("board-1", "/dev/hidraw0"));
     }
 
     [Theory]

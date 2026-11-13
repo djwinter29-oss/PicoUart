@@ -8,10 +8,10 @@ import time
 import pytest
 from helpers import channel_bytes, configuration_bytes, device_info_bytes, diagnostic_bytes, telemetry_bytes
 
-from pico_uart.dashboard.boards import MISSED_SCANS_BEFORE_REAP, BoardRegistry
 from pico_uart.dashboard.monitor import BoardMonitor, empty_snapshot
+from pico_uart.dashboard.registry import MISSED_SCANS_BEFORE_REAP, BoardRegistry
 from pico_uart.hid.client import ControlOutcomeUnconfirmed
-from pico_uart.hid.inputs import InputTracker
+from pico_uart.hid.input_tracker import InputTracker
 from pico_uart.hid.protocol import (
     parse_channel,
     parse_configuration,

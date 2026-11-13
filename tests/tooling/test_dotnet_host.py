@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 from pico_uart.dashboard.monitor import empty_snapshot
-from pico_uart.hid.inputs import InputTracker
+from pico_uart.hid.input_tracker import InputTracker
 
 ROOT = Path(__file__).resolve().parents[2]
 DOTNET = os.environ.get("DOTNET_EXE") or shutil.which("dotnet")

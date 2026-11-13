@@ -4,9 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using PicoUart.Cli;
-using PicoUart.Dashboard;
 using PicoUart.Hid;
-using PicoUart.Wire;
 
 try
 {
@@ -20,10 +18,10 @@ try
     }
     if (options.Command == "web")
     {
-        await DashboardHost.RunAsync(options.Port, options.Serial, options.DevicePath);
+        await PicoUart.Dashboard.Host.RunAsync(options.Port, options.Serial, options.DevicePath);
         return 0;
     }
-    using var client = new PicoUartHid(options.Serial, options.DevicePath);
+    using var client = new Client(options.Serial, options.DevicePath);
     switch (options.Command)
     {
         case "status":
@@ -71,7 +69,7 @@ try
         case "toggle-led":
             client.ToggleLed();
             try { client.ReadTelemetry(); }
-            catch (Exception error) when (HidErrors.IsDeviceError(error))
+            catch (Exception error) when (Errors.IsDeviceError(error))
             {
                 Console.Error.WriteLine($"LED action succeeded; telemetry refresh failed: {error.Message}");
             }
@@ -80,10 +78,10 @@ try
     }
     return 0;
 }
-catch (Exception error) when (HidErrors.IsDeviceError(error) || error is ArgumentException)
+catch (Exception error) when (Errors.IsDeviceError(error) || error is ArgumentException)
 {
     Console.Error.WriteLine(error.Message);
     return 1;
 }
 
-static void WriteJson<TValue>(TValue value) => Console.WriteLine(JsonSerializer.Serialize(value, Protocol.JsonOptions));
+static void WriteJson<TValue>(TValue value) => Console.WriteLine(JsonSerializer.Serialize(value, Codec.JsonOptions));

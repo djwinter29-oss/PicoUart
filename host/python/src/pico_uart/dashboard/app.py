@@ -16,7 +16,7 @@ from werkzeug.serving import WSGIRequestHandler
 
 from .. import __version__
 from ..hid.client import ControlOutcomeUnconfirmed, ControlRequestRejected
-from .boards import BoardRegistry
+from .registry import BoardRegistry
 from .types import DashboardService
 
 _LOGGER = logging.getLogger(__name__)

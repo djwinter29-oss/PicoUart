@@ -4,9 +4,8 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using HidSharp;
 using PicoUart.Hid;
-using PicoUart.Wire;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Hid;
 
 internal sealed class ScriptedHidStream() : HidStream(new ScriptedHidDevice())
 {
@@ -18,31 +17,31 @@ internal sealed class ScriptedHidStream() : HidStream(new ScriptedHidDevice())
     public override int ReadTimeout { get; set; } = 250;
     public override int WriteTimeout { get; set; } = 3000;
 
-    public PicoUartHid CreateClient(BoardIdentity? identity = null) => new(this, identity ?? ProtocolTests.Identity());
+    public Client CreateClient(BoardIdentity? identity = null) => new(this, identity ?? ProtocolFixtures.Identity());
 
     public byte[] DefaultFeature(byte id)
     {
-        if (id == Protocol.IdentityReportId) return ProtocolTests.IdentityPayload();
-        if (id == Protocol.ConfigurationReportId) return ProtocolTests.ConfigurationPayload();
-        if (id == Protocol.ActionReportId) return [1, Result.Action, Result.Status, Result.ErrorReason];
-        if (id == Protocol.TelemetryReportId)
+        if (id == Codec.IdentityReportId) return ProtocolFixtures.IdentityPayload();
+        if (id == Codec.ConfigurationReportId) return ProtocolFixtures.ConfigurationPayload();
+        if (id == Codec.ActionReportId) return [1, Result.Action, Result.Status, Result.ErrorReason];
+        if (id == Codec.TelemetryReportId)
         {
-            var telemetry = new byte[Protocol.TelemetrySize];
+            var telemetry = new byte[Codec.TelemetrySize];
             telemetry[0] = 1;
             BinaryPrimitives.WriteUInt32LittleEndian(telemetry.AsSpan(16), 150_000_000);
             return telemetry;
         }
-        if (id >= Protocol.ChannelReportId && id < Protocol.ChannelReportId + Protocol.ChannelCount)
+        if (id >= Codec.ChannelReportId && id < Codec.ChannelReportId + Codec.ChannelCount)
         {
-            var channel = new byte[Protocol.ChannelSize];
+            var channel = new byte[Codec.ChannelSize];
             channel[0] = 1;
             channel[2] = 1;
             BinaryPrimitives.WriteUInt16LittleEndian(channel.AsSpan(12), 500);
             return channel;
         }
-        if (id >= Protocol.DiagnosticsReportId && id < Protocol.DiagnosticsReportId + Protocol.ChannelCount)
+        if (id >= Codec.DiagnosticsReportId && id < Codec.DiagnosticsReportId + Codec.ChannelCount)
         {
-            var diagnostics = new byte[Protocol.DiagnosticsSize];
+            var diagnostics = new byte[Codec.DiagnosticsSize];
             diagnostics[0] = 1;
             diagnostics[1] = 1;
             return diagnostics;
@@ -88,8 +87,8 @@ internal sealed class ScriptedHidStream() : HidStream(new ScriptedHidDevice())
         public override int ReleaseNumberBcd => 0x0100;
         public override int VendorID => 0x2E8A;
         public override string DevicePath { get; } = $"simulated-{Guid.NewGuid():N}";
-        public override int GetMaxFeatureReportLength() => Protocol.ConfigurationSize + 1;
-        public override int GetMaxInputReportLength() => Protocol.ChannelSize + 1;
+        public override int GetMaxFeatureReportLength() => Codec.ConfigurationSize + 1;
+        public override int GetMaxInputReportLength() => Codec.ChannelSize + 1;
         public override int GetMaxOutputReportLength() => 0;
         public override string GetFileSystemName() => "simulated";
         protected override DeviceStream OpenDeviceDirectly(OpenConfiguration configuration) =>

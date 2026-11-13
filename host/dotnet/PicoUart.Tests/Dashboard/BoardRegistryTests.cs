@@ -5,17 +5,18 @@ using System.Diagnostics;
 using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
+using PicoUart.Tests.Hid;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Dashboard;
 
 [Trait("Category", "Unit")]
-public sealed class DashboardBoardRegistryTests
+public sealed class BoardRegistryTests
 {
     [Fact]
     public void DiscoveryContinuesAfterDeviceSpecificReadFailure()
     {
-        var devices = HidDiscovery.DiscoverDevices(
+        var devices = Discovery.DiscoverDevices(
             new[] { "healthy", "unreadable" },
             device => device == "unreadable"
                 ? throw new IOException("identity report failed")
@@ -33,7 +34,7 @@ public sealed class DashboardBoardRegistryTests
     public async Task ConcurrentViewersShareOneReaderPerBoardUntilShutdown()
     {
         var created = new ConcurrentBag<(string? Serial, string? Path, BoardMonitor Reader)>();
-        using var boards = new DashboardBoardRegistry(null, null,
+        using var boards = new BoardRegistry(null, null,
             () => [new("/a", "test-A", "PicoUart"), new("/b", "test-B", "PicoUart")],
             (serial, path) =>
             {
@@ -67,7 +68,7 @@ public sealed class DashboardBoardRegistryTests
     public async Task RescanKeepsMissingReadersAndReconnectsBySerialRatherThanOldPath()
     {
         HidBoard[] attached = [new("/a", "test-A", "PicoUart"), new("/b", "test-B", "PicoUart")];
-        using var boards = new DashboardBoardRegistry("test-A", null, () => attached,
+        using var boards = new BoardRegistry("test-A", null, () => attached,
             (serial, path) => new(() => throw new IOException("simulated disconnected board")));
         var first = boards.Boards().DefaultBoardId!;
         var reader = boards.Reader(first);
@@ -83,7 +84,7 @@ public sealed class DashboardBoardRegistryTests
     [Fact]
     public async Task PreferredSerialSelectionIgnoresHexadecimalCase()
     {
-        using var boards = new DashboardBoardRegistry("0123456789abcdef", null,
+        using var boards = new BoardRegistry("0123456789abcdef", null,
             () => [new("/board", "0123456789ABCDEF", "PicoUart")],
             (serial, path) => new(() => throw new IOException("simulated disconnected board")));
 
@@ -98,7 +99,7 @@ public sealed class DashboardBoardRegistryTests
     {
         HidBoard[] attached = [new("/a", "test-A", "PicoUart")];
         var created = new List<BoardMonitor>();
-        using var boards = new DashboardBoardRegistry(null, null, () => attached, (serial, path) =>
+        using var boards = new BoardRegistry(null, null, () => attached, (serial, path) =>
         {
             var reader = new BoardMonitor(() => throw new IOException("simulated disconnected board"));
             created.Add(reader);
@@ -144,7 +145,7 @@ public sealed class DashboardBoardRegistryTests
         };
         HidBoard[] attached = [new("/a", "test-A", "PicoUart")];
         var creations = 0;
-        using var boards = new DashboardBoardRegistry(null, null,
+        using var boards = new BoardRegistry(null, null,
             () => attached, (serial, path) => ++creations == 1
                 ? new(() => connection)
                 : new(() => throw new IOException("simulated disconnected board")));
@@ -182,7 +183,7 @@ public sealed class DashboardBoardRegistryTests
     {
         HidBoard[] attached = [new("/a", null, "PicoUart"), new("/b", null, "")];
         string? selectedPath = null;
-        using var boards = new DashboardBoardRegistry(null, "/b", () => attached, (serial, path) =>
+        using var boards = new BoardRegistry(null, "/b", () => attached, (serial, path) =>
         {
             selectedPath = path;
             Assert.Null(serial);
@@ -203,7 +204,7 @@ public sealed class DashboardBoardRegistryTests
     public async Task DiscoveryFailuresAreReportedWithoutHidingHealthyBoardsOrRetiringKnownReaders()
     {
         HidBoard[] attached = [new("/board", "test-A", "PicoUart")];
-        using var boards = new DashboardBoardRegistry(null, null, () => attached,
+        using var boards = new BoardRegistry(null, null, () => attached,
             (serial, path) => new(() => throw new IOException("simulated disconnected board")));
         var initial = boards.Boards();
         var boardId = initial.Boards[0].Id;

@@ -5,10 +5,10 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
-using PicoUart.Wire;
+using PicoUart.Tests.Hid;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Dashboard;
 
 [Trait("Category", "Unit")]
 public sealed class BoardMonitorTests
@@ -175,7 +175,7 @@ public sealed class BoardMonitorTests
         var controlRequest = new AsyncLocal<bool>();
         stream.FeatureRead = id =>
         {
-            if (id == Protocol.ActionReportId && controlRequest.Value)
+            if (id == Codec.ActionReportId && controlRequest.Value)
             {
                 preflight.Set();
                 if (!release.Wait(TimeSpan.FromSeconds(3)))
@@ -245,8 +245,8 @@ public sealed class BoardMonitorTests
             Assert.Equal("ready", initial.RootElement.GetProperty("channels")[0].GetProperty("state").GetString());
             Assert.Equal(JsonValueKind.Null,
                 initial.RootElement.GetProperty("channels")[0].GetProperty("sequence").ValueKind);
-            var stale = new DashboardSnapshot();
-            stale.Apply(Protocol.ParseChannel(10, ChannelPayload(1, 100), connection.ReadIdentity()));
+            var stale = new Snapshot();
+            stale.Apply(Codec.ParseChannel(10, ChannelPayload(1, 100), connection.ReadIdentity()));
             stale.Channels[0].LastInputTimestamp -= 4L * System.Diagnostics.Stopwatch.Frequency;
             stale.MarkStale();
             var previousFailures = Volatile.Read(ref failedReads);
@@ -360,7 +360,7 @@ public sealed class BoardMonitorTests
         stream.FeatureRead = id => id == 20
             ? throw new IOException("simulated control read failure") : stream.DefaultFeature(id);
         using var connection = stream.CreateClient(
-            ProtocolTests.Identity() with { Capabilities = readFails ? (byte)7 : (byte)3 });
+            ProtocolFixtures.Identity() with { Capabilities = readFails ? (byte)7 : (byte)3 });
         using var service = new BoardMonitor(() => connection);
         await service.StartAsync(CancellationToken.None);
         try
@@ -383,7 +383,7 @@ public sealed class BoardMonitorTests
         var controlReads = 0;
         stream.FeatureRead = id =>
         {
-            if (id == Protocol.ActionReportId) Interlocked.Increment(ref controlReads);
+            if (id == Codec.ActionReportId) Interlocked.Increment(ref controlReads);
             return stream.DefaultFeature(id);
         };
         using var connection = stream.CreateClient();

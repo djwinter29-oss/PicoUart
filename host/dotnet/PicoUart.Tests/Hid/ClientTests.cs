@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using PicoUart.Hid;
-using PicoUart.Wire;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Hid;
 
 [Trait("Category", "Unit")]
-public sealed class PicoUartHidTests
+public sealed class ClientTests
 {
     [Fact]
     public async Task ReadStatusReturnsWhenClientLockExceedsOperationBudget()

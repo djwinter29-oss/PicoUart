@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
-using PicoUart.Wire;
 
 namespace PicoUart.Hid;
 
@@ -18,7 +17,7 @@ internal sealed class ControlRequestRejectedException(ActionResult result) : Inv
     public ActionResult Result { get; } = result;
 }
 
-internal static class HidErrors
+internal static class Errors
 {
     public static bool IsDeviceError(Exception error) => error is IOException or InvalidOperationException
         or UnauthorizedAccessException or NotSupportedException or TimeoutException;
