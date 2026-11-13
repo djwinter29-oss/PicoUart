@@ -219,6 +219,10 @@ automatically retry reboot or save. There is no request ID or multi-client owner
 An LED toggle is successful once firmware confirms the command; a later telemetry refresh failure does not turn that
 confirmed action into a failure.
 
+Python HTTP responses use a fixed public message for confirmed firmware rejections, with HTTP 409 and
+`outcome_unconfirmed` set to false. Detailed rejection exceptions remain in server logs rather than the response;
+the Python client API retains its detailed exceptions for local callers.
+
 The .NET dashboard bounds waiting for its control queue to five seconds. Control cancellation tokens are honored
 while acquiring the HID client and between read-only preflight steps, including immediately before native SET begins.
 A Feature read already in progress is not canceled by the token; its existing deadline and deferred-cleanup rules still

@@ -223,26 +223,34 @@ def test_configuration_endpoint_preserves_unconfirmed_outcome_warning(caplog):
     assert "outcome is unconfirmed" in caplog.text
 
 
-def test_configuration_endpoint_preserves_confirmed_firmware_rejection():
+@pytest.mark.parametrize("endpoint", ["/api/configuration", "/api/actions/toggle-led", "/api/actions/reset"])
+def test_control_endpoints_preserve_confirmed_rejection_without_exposing_exception_details(endpoint, caplog):
+    private_detail = "/private/device/path: firmware rejected the request (error 1)"
+
     class RejectedDashboard:
         def save_configuration(self, *_args):
-            raise ControlRequestRejected("firmware rejected the board-control request (error 1)")
+            raise ControlRequestRejected(private_detail)
+
+        toggle_led = save_configuration
+        reset_board = save_configuration
 
     client = create_app(RejectedDashboard()).test_client()
     client.get("/")
     with client.session_transaction() as session:
         token = session["csrf_token"]
-    response = client.post(
-        "/api/configuration",
-        json={"profile": 0, "unsafe_overclock": False},
-        headers={"X-CSRF-Token": token},
-    )
+    with caplog.at_level("WARNING", logger="pico_uart.dashboard.app"):
+        response = client.post(
+            endpoint,
+            json={"profile": 0, "unsafe_overclock": False},
+            headers={"X-CSRF-Token": token},
+        )
 
     assert response.status_code == 409
     assert response.json == {
-        "error": "firmware rejected the board-control request (error 1)",
+        "error": "firmware rejected the board-control request",
         "outcome_unconfirmed": False,
     }
+    assert private_detail in caplog.text
 
 
 def test_disconnect_after_save_submission_preserves_unconfirmed_outcome_and_logs_cause(caplog):

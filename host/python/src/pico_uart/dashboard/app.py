@@ -46,9 +46,9 @@ def _control_failure(error: RuntimeError, operation: str) -> tuple[dict[str, str
             "error": "board action outcome is unconfirmed; reconnect and inspect state before retrying",
             "outcome_unconfirmed": True,
         }, 409
-    if isinstance(error, ControlRequestRejected):
-        return {"error": str(error), "outcome_unconfirmed": False}, 409
     _log_runtime_error(operation, error)
+    if isinstance(error, ControlRequestRejected):
+        return {"error": "firmware rejected the board-control request", "outcome_unconfirmed": False}, 409
     return {"error": "request could not be completed", "outcome_unconfirmed": False}, 409
 
 
