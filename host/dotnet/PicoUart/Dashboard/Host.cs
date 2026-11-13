@@ -139,7 +139,8 @@ internal static class Host
             }
             catch (Exception error) when (Errors.IsDeviceError(error))
             {
-                logger.LogWarning(error, "HID control action {Action} failed", action);
+                logger.LogWarning(error, "HID control action {Action} failed",
+                    action == "toggle-led" ? "toggle-led" : "reset");
                 return DeviceErrorResponse(error);
             }
         });
