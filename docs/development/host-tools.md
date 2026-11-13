@@ -1,8 +1,8 @@
 # Host Tools Development
 
-This guide covers the Python and .NET host tools and their shared dashboard frontend. For installation and usage, see
-the [Python package guide](../../host/python/README.md) and [.NET host guide](../../host/dotnet/README.md). The Python
-package guide is also included as the PyPI project description.
+This guide explains the design, behavioral contracts, and development checks for the Python and .NET host tools and
+their shared dashboard frontend. For installation and usage, see the [Python package guide](../../host/python/README.md)
+and [.NET host guide](../../host/dotnet/README.md).
 
 The independent [Direct Dashboard](../../host/direct/README.md) runs directly in a supported desktop browser with its
 own assets and renderer. Its hardware-free checks use Node rather than the Python/.NET test runners.
@@ -12,6 +12,61 @@ steps do not require a board; physical device checks require an identified board
 
 Python and .NET dashboards suppress routine HTTP request logs by default, including page visits and polling.
 Warnings and errors remain visible.
+
+## Host Design
+
+The host tools observe and control the board through its vendor-defined HID interface. UART payloads remain on the
+six CDC interfaces and are owned by the user's serial applications. Neither dashboard proxies UART traffic or changes
+CDC baud/framing settings.
+
+<!-- mermaid-checked: quoted labels, valid flowchart syntax, unique node IDs -->
+```mermaid
+flowchart TD
+    HostedPage["Hosted dashboard browser"] -->|"HTTP"| HostedBackend["Python or .NET host"]
+    HostedBackend -->|"USB HID diagnostics and controls"| PicoBoard["PicoUart board"]
+    DirectPage["Direct Dashboard browser"] -->|"WebHID diagnostics and controls"| PicoBoard
+    SerialApps["Serial applications"] -->|"Six USB CDC data channels"| PicoBoard
+```
+
+The hosted and Direct dashboards are alternative diagnostic hosts, not cooperating readers. In the hosted case,
+the board is attached to the server's computer; WebHID accesses the browser's computer. Serial applications use the
+separate CDC interfaces in either case.
+
+### Responsibility boundaries
+
+| Responsibility | Design boundary |
+| --- | --- |
+| Discovery and transport | Select the intended HID interface and handle platform-specific device access. |
+| Report decoding | Validate report layout and field values before exposing typed data; decoding does not perform device I/O. |
+| HID client | Own the connection, serialize operations, cache boot metadata, and verify board-control results. |
+| Board monitoring | Poll and reconnect independently of HTTP requests, maintaining a coherent cached view of each selected board. |
+| HTTP application | Resolve board selection, enforce request and session checks, and return snapshots or explicit errors. |
+| Frontend | Render available data, track page-local selection and rate windows, and present control outcomes without guessing retry safety. |
+
+Python and .NET share these responsibilities and the hosted frontend's JSON contract, not identical implementation
+boundaries. Python also exposes a supported client API with channel snapshots and Input accounting. The .NET client
+returns decoded channel samples; its dashboard maintains traffic accounting, while its CLI can emit raw samples.
+Language-specific concurrency and hosting mechanisms do not change the firmware report contract.
+
+### State and ownership
+
+Device state, host observations, and browser state have different lifetimes. Boot configuration is cached per
+connection; Input history belongs to the reader that observed it; page selection and display windows belong to the
+browser. Keep these distinctions explicit rather than using a successful HTTP response as evidence of fresh device
+data. See [shared monitoring](#board-selection-and-shared-monitoring) for reader ownership and reconnect behavior.
+
+Static metadata, live telemetry, diagnostics, and control outcomes can fail independently. Preserve unrelated valid
+data, represent unavailable measurements explicitly, and never turn missing data into a measured zero. Feature reads
+provide state without advancing Input traffic history. The [status](#status-presentation) and
+[traffic](#channel-diagnostics-and-traffic-presentation) contracts define how consumers interpret these observations.
+
+Board controls are serialized, verified operations, not fire-and-forget writes. A timed-out native transfer may still
+finish after its caller returns, so handle cleanup must wait for it. Cancellation or an HTTP timeout cannot establish
+that a submitted command did not execute. Follow the [control contract](#board-controls) and
+[save workflow](#persistent-configuration), especially their prohibition on automatic destructive retries.
+
+The [HID report reference](../design/usb/hid-report-reference.md) owns binary layouts and measurement semantics.
+This guide describes how hosts interpret and present them; it does not define a second wire protocol.
 
 ## Prerequisites
 
@@ -50,12 +105,6 @@ On Linux, Python prefers the existing hidraw node even when hidapi uses libusb. 
 driver and breaking subsequent .NET/WebHID discovery. A hidraw permission error is surfaced rather than retrying through
 libusb. Boards left detached by an older client need a USB reconnect after that client closes.
 
-## Python Layout
-
-The installable package lives in `host/python/src/pico_uart`; use its public API rather than adding another top-level
-compatibility module. Python and .NET share the frontend in `host/web/src`. Keep framework-specific behavior in each backend
-and the shared assets backend-neutral.
-
 ## Python Tests
 
 Run only the Python package tests:
@@ -92,11 +141,11 @@ These Python checks do not replace the separate .NET and Node suites or physical
 
 ## Python Dependencies
 
-Edit dependency declarations only in [pyproject.toml](../../host/python/pyproject.toml):
-`project.dependencies` contains the HID runtime package, `project.optional-dependencies.dashboard` contains Flask,
-the `test` dependency group contains pytest, and `dev` adds the packages used by the full host test suite, build
-checks, linting, and type checking. `build-system.requires` declares the isolated build backend and plugin.
-Runtime, optional, and direct development requirements are version-pinned there; pip resolves transitive dependencies
+Keep dependency declarations in [pyproject.toml](../../host/python/pyproject.toml):
+`project.dependencies` declares the HID and dashboard runtime requirements, the `test` dependency group supports
+package tests, and `dev` adds build, lint, coverage, and type-checking tools.
+`build-system.requires` declares the isolated build backend and plugin.
+Runtime and direct development requirements are version-pinned there; pip resolves transitive dependencies
 during installation, so environments are not hash-locked. The runtime launcher uses public PyPI without inheriting
 private index configuration.
 The [dependency contract tests](../../tests/contracts/test_firmware_contract.py) check the declared packages and that no
@@ -140,29 +189,13 @@ Module-level helpers accept an already-open HID device and share in-flight trans
 other wrappers around that same object. After a timed-out helper call, later helpers fail until its native transfer
 returns; calling `close()` on any wrapper closes the shared handle. Use `PicoUartHid` as a context manager for
 multi-operation sessions.
-The names in `pico_uart.__all__` are the supported package-root exports. Report parsers, IDs and sizes, USB
-identifiers, raw HID access, and generic feature-report helpers are low-level exports tied to the firmware report
-contract. Prefer their owning `pico_uart.hid.protocol`, `pico_uart.hid.transport`, and `pico_uart.hid.client` modules
-when using them directly.
-The optional third-party hidapi module is available as `pico_uart.hid.transport.hid`.
+The names in `pico_uart.__all__` are the supported package-root exports. Prefer the high-level client for application
+code. Report parsers, IDs and sizes, USB identifiers, raw HID access, and generic Feature-report helpers are low-level
+exports tied to the firmware report contract. Implementation-module paths are not a stable compatibility boundary;
+private helpers are not supported API. For direct hidapi access, use `pico_uart.hid.transport.hid`, not a package-root
+re-export.
 
-### Python module-path migration
-
-The top-level `PicoUartHid` API remains unchanged, but implementation-module imports moved:
-
-| Previous path | Current path |
-| --- | --- |
-| `pico_uart.cli` | `pico_uart.main` |
-| `pico_uart.client` | `pico_uart.hid.client` |
-| `pico_uart.protocol` | `pico_uart.hid.protocol` |
-| `pico_uart.transport` | `pico_uart.hid.transport` |
-| `pico_uart.web` | `pico_uart.dashboard` |
-| `pico_uart.hid.inputs` | `pico_uart.hid.input_tracker` |
-| `pico_uart.dashboard.boards` | `pico_uart.dashboard.registry` |
-
-Use `pico-uart` or `python -m pico_uart` to invoke the CLI; `python -m pico_uart.main` is also available for direct
-module invocation. Moving the implementation modules is an intentional breaking change for callers that import them
-directly. The old raw hidapi root export is also replaced by `pico_uart.hid.transport.hid`.
+Use `pico-uart` or `python -m pico_uart` to invoke the CLI.
 
 ### UART readiness
 
@@ -278,33 +311,19 @@ dotnet run --project host/dotnet/PicoUart -- web --port 5001
 Its JSON matches the Python `channels` snapshot in [Python test automation](#python-test-automation). .NET
 `monitor` still prints one channel object per line.
 On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
-The C# `PicoUart.Hid.Client` class owns a connection and implements `IDisposable` and `IAsyncDisposable`;
-`PicoUart.Hid.Codec` provides typed report decoders.
-The HID implementation separates responsibilities:
 
-- [Client.cs](../../host/dotnet/PicoUart/Hid/Client.cs) owns the connection, caches, and typed reads.
-- [Actions.cs](../../host/dotnet/PicoUart/Hid/Actions.cs) implements serialized board controls
-  as part of the same client, sharing its lock and timeout quarantine rather than opening another connection.
-- [Discovery.cs](../../host/dotnet/PicoUart/Hid/Discovery.cs) handles enumeration, selection, and USB identity.
-- [Reports.cs](../../host/dotnet/PicoUart/Hid/Reports.cs) adapts descriptors and native Feature framing;
-  [Codec.cs](../../host/dotnet/PicoUart/Hid/Codec.cs) remains responsible for product payload validation.
-- [Types.cs](../../host/dotnet/PicoUart/Hid/Types.cs) defines decoded report records separately from the codec.
-- [StreamLifetime.cs](../../host/dotnet/PicoUart/Hid/StreamLifetime.cs) owns in-flight native transfers and
-  deferred cleanup, including the per-device barrier against reopening before cleanup completes.
+The C# client owns one HID connection and implements `IDisposable` and `IAsyncDisposable`. Synchronous disposal
+requests closure; asynchronous disposal also waits for deferred native cleanup. Typed reads and board controls share
+the same connection lock and timeout quarantine. Reopening the same device remains blocked until its previous
+native cleanup completes.
 
-Dashboard source names reflect their ownership:
+The dashboard uses ASP.NET Core hosting and dependency injection. A registry owns the shared board monitors, each
+running as a background service rather than reading HID on behalf of individual HTTP requests. Snapshots separate
+live state, cached metadata, diagnostic errors, and traffic history. See
+[shared monitoring](#board-selection-and-shared-monitoring) for their lifecycle and selection contract.
 
-- [BoardMonitor.cs](../../host/dotnet/PicoUart/Dashboard/BoardMonitor.cs) owns one board's polling, controls, and reconnects.
-- [BoardRegistry.cs](../../host/dotnet/PicoUart/Dashboard/BoardRegistry.cs) discovers boards and shares
-  their monitors between viewers through [IBoardRegistry.cs](../../host/dotnet/PicoUart/Dashboard/IBoardRegistry.cs).
-- [Snapshot.cs](../../host/dotnet/PicoUart/Dashboard/Snapshot.cs) folds samples into API state and
-  traffic accounting.
-
-Python and .NET share `host/web/src`; tests live in `host/web/tests`. Keep frontend changes backend-neutral rather than
-adding a separate C# frontend.
-
-Test folders and namespaces mirror the source areas. Shared protocol fixture builders live in
-[ProtocolFixtures.cs](../../host/dotnet/PicoUart.Tests/Hid/ProtocolFixtures.cs), separate from the codec tests.
+Keep the hosted frontend backend-neutral and preserve the common JSON contract; differences in .NET hosting must not
+require a separate C# frontend.
 
 Build and run the hardware-free unit suite:
 
@@ -351,10 +370,9 @@ installation belongs in the [.NET host guide](../../host/dotnet/README.md#instal
 
 ## Direct Dashboard Development
 
-The Direct Dashboard uses WebHID and is a standalone browser app in `host/direct/src`, independent of the Python/.NET
-server and shared `host/web/src` frontend. Tests live in `host/direct/tests`. Its HTML, CSS, favicon, and renderer are owned
-by the source directory; no shared asset-generation step
-or files from `host/web/src` are required. Browser connection and troubleshooting belong in the
+The Direct Dashboard is a standalone WebHID application: the browser owns device access and rendering without a
+Python/.NET server. It has an independent frontend and no dependency on hosted-dashboard asset generation.
+Browser connection and troubleshooting belong in the
 [Direct Dashboard user guide](../../host/direct/README.md).
 
 <a id="run-webhid-from-a-checkout"></a>
@@ -426,16 +444,11 @@ contract; do not add a second frontend. The [.NET integration tests](../../tests
 shared assets and API behavior. Distribution details belong in the [Python](../../host/python/README.md) and
 [.NET](../../host/dotnet/README.md) guides.
 
-The shared page loads native ES modules; no bundler or generated frontend copy is needed during development:
+The shared page uses native ES modules without a bundler. Separate page selection and control workflows from bounded
+HTTP requests, traffic accounting, rendering, and on-demand diagnostics. Diagnostics use the current board/selection
+state so late responses remain isolated from a newly selected board.
 
-- [dashboard.js](../../host/web/src/js/dashboard.js): page state, board selection, status polling, and control workflows.
-- [api.mjs](../../host/web/src/js/api.mjs): bounded JSON requests and request timeouts.
-- [traffic.mjs](../../host/web/src/js/traffic.mjs): rate windows, freshness, and counter history.
-- [view.mjs](../../host/web/src/js/view.mjs): display formatting and reusable channel rows.
-- [diagnostics.mjs](../../host/web/src/js/diagnostics.mjs): on-demand dialog reads, cached results, and read age.
-
-Keep module imports explicit. Diagnostics receive current board/selection state through a callback so late responses
-remain isolated from a newly selected board. When changing a module's cache version, update all importers to the same
+Keep module imports explicit. When changing a module's cache version, update all importers to the same
 URL; the HTML entry also has a cache version. Both hosts package the entire asset tree, including module dependencies.
 The Python host explicitly serves JavaScript modules and CSS with browser-compatible MIME types, independent of OS
 file associations, so `nosniff` does not prevent them from loading.
@@ -472,6 +485,35 @@ Additional viewers do not read the HID stream or consume its deltas again. Reade
 them, retry disconnected boards, and are reaped after repeated scans no longer find their board. Observed traffic totals
 belong to the shared reader's current connection, not to a browser session. Run only one host monitor/server per
 physical board; separate server processes and standalone HID clients do not share these readers.
+
+The status path below shows two pages selecting the same board. HTTP polling reads cached observations; only the
+shared monitor consumes the board's Input reports.
+
+<!-- mermaid-checked: quoted labels, valid flowchart syntax, closed subgraphs, unique node IDs -->
+```mermaid
+flowchart LR
+    subgraph ViewerPages["Independent browser pages"]
+        ViewerA["Page A"]
+        ViewerB["Page B"]
+    end
+    subgraph BackendProcess["One hosted backend process"]
+        StatusRoutes["HTTP status routes"]
+        ReaderRegistry["Board registry"]
+        SharedMonitor["One monitor per selected board"]
+        BoardCache["Cached board snapshot"]
+        NativeClient["HID client"]
+    end
+    ViewerA -->|"Poll selected board"| StatusRoutes
+    ViewerB -->|"Poll selected board"| StatusRoutes
+    StatusRoutes -->|"Resolve board"| ReaderRegistry
+    ReaderRegistry -->|"Own and share"| SharedMonitor
+    SharedMonitor -->|"Publish observations"| BoardCache
+    BoardCache -->|"Return cached status"| StatusRoutes
+    SharedMonitor -->|"Read and reconnect"| NativeClient
+```
+
+Explicit controls and diagnostic refreshes also use the selected board's monitor and client; they are not additional
+Input readers. Page-local selection and rate windows do not change shared reader ownership.
 
 Closing a registry requests monitor shutdown and waits for active readers within the host's shutdown deadline. If that
 deadline expires, reader cleanup remains owned and continues in the background. HID clients defer closing their native
