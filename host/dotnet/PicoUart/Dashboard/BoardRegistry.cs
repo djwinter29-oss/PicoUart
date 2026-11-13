@@ -14,7 +14,7 @@ public sealed record DiscoveryError(string DevicePath, string? SerialNumber, str
 public sealed record BoardList(
     Board[] Boards, string? DefaultBoardId, DiscoveryError[] DiscoveryErrors);
 
-public sealed class BoardRegistry : IHostedService, IDisposable, IBoards
+public sealed class BoardRegistry : IHostedService, IDisposable, IBoardRegistry
 {
     private const int MissingScansBeforeRetirement = 3;
     private readonly object gate = new();

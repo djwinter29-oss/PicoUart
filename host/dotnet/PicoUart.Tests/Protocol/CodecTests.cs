@@ -4,49 +4,15 @@ using System.Buffers.Binary;
 using PicoUart.Protocol;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Protocol;
 
 [Trait("Category", "Unit")]
 public sealed class CodecTests
 {
-    internal static byte[] IdentityPayload()
-    {
-        var data = new byte[27];
-        data[0] = 1;
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(1), 1);
-        Convert.FromHexString("0123456789ABCDEF").CopyTo(data.AsSpan(3));
-        data[11] = 1; data[12] = 2; data[13] = 3;
-        data[14] = 2; data[15] = 3; data[16] = 3;
-        data[17] = 7; data[18] = 0x1f;
-        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(19), 532480);
-        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(23), 65536);
-        return data;
-    }
-
-    internal static BoardIdentity Identity() => Codec.ParseIdentity(IdentityPayload());
-
-    internal static byte[] ConfigurationPayload()
-    {
-        var data = new byte[36];
-        data[0] = 1;
-        data[1] = 2;
-        data[2] = 6;
-        byte[] pins = [0, 1, 3, 2, 4, 5, 7, 6, 8, 9, 255, 255, 12, 13, 255, 255, 16, 17, 255, 255, 20, 21, 255, 255];
-        pins.CopyTo(data.AsSpan(3));
-        data[27] = 2;
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(28), 4096);
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(30), 4096);
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(32), 2048);
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(34), 2048);
-        return data;
-    }
-
-    internal static ConfigurationStatus Configuration() => Codec.ParseConfiguration(ConfigurationPayload(), Identity());
-
     [Fact]
     public void BuildActionUsesReport20Layout()
     {
-        var identity = Identity();
+        var identity = ProtocolFixtures.Identity();
         Assert.Equal(new byte[] { 1, 1, 0, 0 }, Codec.BuildAction(1, identity));
         Assert.Equal(new byte[] { 1, 3, 1, 0 }, Codec.BuildAction(3, identity));
         Assert.Equal(new byte[] { 1, 4, 3, 4 }, Codec.BuildAction(4, identity, 4, true));
@@ -55,7 +21,7 @@ public sealed class CodecTests
     [Fact]
     public void SaveRequiresCapabilityProfileAndAcknowledgement()
     {
-        var identity = Identity();
+        var identity = ProtocolFixtures.Identity();
         Assert.Throws<ArgumentException>(() => Codec.BuildAction(4, identity, 3, false));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             Codec.BuildAction(4, identity with { ClockProfileMask = 0x0F }, 4, true));
@@ -66,7 +32,7 @@ public sealed class CodecTests
     [Fact]
     public void IdentityParsesSelectedLayout()
     {
-        var identity = Identity();
+        var identity = ProtocolFixtures.Identity();
         Assert.Equal(1, identity.ProductId);
         Assert.Equal("PicoUart", identity.ProductName);
         Assert.Equal("0123456789ABCDEF", identity.DeviceUid);
@@ -85,7 +51,7 @@ public sealed class CodecTests
     [InlineData(18, 0)]
     public void IdentityRejectsMalformedFields(int offset, byte value)
     {
-        var data = IdentityPayload();
+        var data = ProtocolFixtures.IdentityPayload();
         data[offset] = value;
         Assert.Throws<InvalidOperationException>(() => Codec.ParseIdentity(data));
     }
@@ -93,7 +59,7 @@ public sealed class CodecTests
     [Fact]
     public void ConfigurationParsesPinsAndCapacities()
     {
-        var configuration = Configuration();
+        var configuration = ProtocolFixtures.Configuration();
         Assert.Equal((byte)2, configuration.StoredProfile);
         Assert.Equal((byte)6, configuration.ChannelCount);
         Assert.Equal((byte)0, configuration.ChannelPins[0].TxPin);
@@ -107,17 +73,17 @@ public sealed class CodecTests
     {
         foreach (var cause in Enumerable.Range(0, 11).Append(255))
         {
-            var data = ConfigurationPayload();
+            var data = ProtocolFixtures.ConfigurationPayload();
             data[27] = (byte)cause;
-            Assert.Equal((byte)cause, Codec.ParseConfiguration(data, Identity()).ResetCause);
+            Assert.Equal((byte)cause, Codec.ParseConfiguration(data, ProtocolFixtures.Identity()).ResetCause);
         }
     }
 
     [Fact]
     public void ConfigurationAcceptsRetained280MhzRequestOnRp2040()
     {
-        var identity = Identity() with { McuId = 1, ClockProfileMask = 0x0f };
-        var data = ConfigurationPayload();
+        var identity = ProtocolFixtures.Identity() with { McuId = 1, ClockProfileMask = 0x0f };
+        var data = ProtocolFixtures.ConfigurationPayload();
         data[1] = 4;
 
         var configuration = Codec.ParseConfiguration(data, identity);
@@ -128,10 +94,10 @@ public sealed class CodecTests
     [Fact]
     public void ConfigurationRejectsUnassignedStoredProfile()
     {
-        var data = ConfigurationPayload();
+        var data = ProtocolFixtures.ConfigurationPayload();
         data[1] = 5;
 
-        Assert.Throws<InvalidOperationException>(() => Codec.ParseConfiguration(data, Identity()));
+        Assert.Throws<InvalidOperationException>(() => Codec.ParseConfiguration(data, ProtocolFixtures.Identity()));
     }
 
     [Fact]
@@ -145,7 +111,7 @@ public sealed class CodecTests
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(12), 10000);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(14), ushort.MaxValue);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(16), 280000000);
-        var telemetry = Codec.ParseTelemetry(data, Identity());
+        var telemetry = Codec.ParseTelemetry(data, ProtocolFixtures.Identity());
         Assert.True(telemetry.Led.OutputOn);
         Assert.Equal(-1.25, telemetry.TemperatureCelsius);
         Assert.Equal(4294967296ul, telemetry.Runtime.UptimeMs);
@@ -169,7 +135,7 @@ public sealed class CodecTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(18), 200);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(22), 300);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(26), 400);
-        var channel = Codec.ParseChannel(10, data, Identity());
+        var channel = Codec.ParseChannel(10, data, ProtocolFixtures.Identity());
         Assert.Equal(0, channel.Id);
         Assert.Equal("ready", channel.State);
         Assert.Equal((byte)1, channel.UartMeasurementState);
@@ -190,10 +156,10 @@ public sealed class CodecTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(14), 1);
 
         Assert.Throws<InvalidOperationException>(() =>
-            Codec.ParseChannel(10, data, Identity()));
+            Codec.ParseChannel(10, data, ProtocolFixtures.Identity()));
 
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(14), 0);
-        var channel = Codec.ParseChannel(10, data, Identity());
+        var channel = Codec.ParseChannel(10, data, ProtocolFixtures.Identity());
         Assert.Equal((byte)0, channel.UartMeasurementState);
         Assert.Equal((uint)0, channel.UartTxBytes);
     }
@@ -211,11 +177,11 @@ public sealed class CodecTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(3), 115200);
         data[7] = 8;
         data[8] = 1;
-        var identity = Identity() with { HardwareChannelMask = hardwareMask };
+        var identity = ProtocolFixtures.Identity() with { HardwareChannelMask = hardwareMask };
 
         Assert.Throws<InvalidOperationException>(() => Codec.ParseChannel(10, data, identity));
         Assert.Throws<InvalidOperationException>(() =>
-            Codec.ParseConfiguration(ConfigurationPayload(), identity));
+            Codec.ParseConfiguration(ProtocolFixtures.ConfigurationPayload(), identity));
     }
 
     [Fact]
@@ -231,7 +197,7 @@ public sealed class CodecTests
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(18), 4095);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(20), 2048);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(22), 2047);
-        var diagnostics = Codec.ParseDiagnostics(30, data, Configuration());
+        var diagnostics = Codec.ParseDiagnostics(30, data, ProtocolFixtures.Configuration());
         Assert.Equal((uint)5, diagnostics.RxOverrunCount);
         Assert.Equal((uint)9, diagnostics.LastFaultUptimeS);
     }
@@ -241,6 +207,6 @@ public sealed class CodecTests
     {
         Assert.Equal(new ActionResult(4, 2, 0), Codec.ParseActionResult([1, 4, 2, 0]));
         Assert.Throws<InvalidOperationException>(() => Codec.ParseActionResult([1, 4, 2, 3]));
-        Assert.Equal(new byte[] { 1, 4, 3, 4 }, Codec.BuildAction(4, Identity(), 4, true));
+        Assert.Equal(new byte[] { 1, 4, 3, 4 }, Codec.BuildAction(4, ProtocolFixtures.Identity(), 4, true));
     }
 }

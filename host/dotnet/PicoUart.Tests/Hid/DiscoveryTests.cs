@@ -2,9 +2,10 @@
 // Copyright (c) 2026 Ji Dong
 using PicoUart.Dashboard;
 using PicoUart.Hid;
+using PicoUart.Tests.Protocol;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Hid;
 
 [Trait("Category", "Unit")]
 public sealed class DiscoveryTests
@@ -60,7 +61,7 @@ public sealed class DiscoveryTests
     [Fact]
     public async Task DiscoveredBoardPreservesMissingUsbSerialForPathFallback()
     {
-        var board = Discovery.CreateBoard("/serial-less", null, CodecTests.Identity());
+        var board = Discovery.CreateBoard("/serial-less", null, ProtocolFixtures.Identity());
         string? selectedSerial = null;
         string? selectedPath = null;
         using var boards = new BoardRegistry(null, null, () => [board], (serial, path) =>

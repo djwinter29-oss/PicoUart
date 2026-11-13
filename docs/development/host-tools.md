@@ -293,12 +293,15 @@ Dashboard source names reflect their ownership:
 
 - [BoardMonitor.cs](../../host/dotnet/PicoUart/Dashboard/BoardMonitor.cs) owns one board's polling, controls, and reconnects.
 - [BoardRegistry.cs](../../host/dotnet/PicoUart/Dashboard/BoardRegistry.cs) discovers boards and shares
-  their monitors between viewers.
+  their monitors between viewers through [IBoardRegistry.cs](../../host/dotnet/PicoUart/Dashboard/IBoardRegistry.cs).
 - [Snapshot.cs](../../host/dotnet/PicoUart/Dashboard/Snapshot.cs) folds samples into API state and
   traffic accounting.
 
 Python and .NET share `host/web/src`; tests live in `host/web/tests`. Keep frontend changes backend-neutral rather than
 adding a separate C# frontend.
+
+Test folders and namespaces mirror the source areas. Shared protocol fixture builders live in
+[ProtocolFixtures.cs](../../host/dotnet/PicoUart.Tests/Protocol/ProtocolFixtures.cs), separate from the codec tests.
 
 Build and run the hardware-free unit suite:
 

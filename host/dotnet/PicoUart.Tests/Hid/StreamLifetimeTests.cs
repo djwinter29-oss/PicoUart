@@ -3,7 +3,7 @@
 using PicoUart.Hid;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Hid;
 
 [Trait("Category", "Unit")]
 public sealed class StreamLifetimeTests

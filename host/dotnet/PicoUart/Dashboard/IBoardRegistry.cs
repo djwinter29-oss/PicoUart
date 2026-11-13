@@ -4,7 +4,7 @@ using PicoUart.Protocol;
 
 namespace PicoUart.Dashboard;
 
-public interface IBoards
+public interface IBoardRegistry
 {
     BoardList Boards();
     string SnapshotJson(string? boardId);

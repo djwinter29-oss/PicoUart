@@ -5,9 +5,10 @@ using System.Diagnostics;
 using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
+using PicoUart.Tests.Hid;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Dashboard;
 
 [Trait("Category", "Unit")]
 public sealed class BoardRegistryTests

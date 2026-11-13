@@ -21,7 +21,7 @@ internal static class Host
     }
 
     internal static async Task<WebApplication> CreateApplicationAsync(
-        int port, IBoards? dashboard = null, string? serialNumber = null, string? devicePath = null)
+        int port, IBoardRegistry? dashboard = null, string? serialNumber = null, string? devicePath = null)
     {
         var builder = WebApplication.CreateBuilder(Array.Empty<string>());
         builder.Logging.AddFilter("Microsoft",
@@ -37,10 +37,10 @@ internal static class Host
         });
         if (dashboard is null)
         {
-            builder.Services.AddSingleton<IBoards>(services => new BoardRegistry(
+            builder.Services.AddSingleton<IBoardRegistry>(services => new BoardRegistry(
                 serialNumber, devicePath, services.GetRequiredService<ILoggerFactory>()));
             builder.Services.AddSingleton<IHostedService>(services =>
-                (BoardRegistry)services.GetRequiredService<IBoards>());
+                (BoardRegistry)services.GetRequiredService<IBoardRegistry>());
         }
         else
         {
@@ -92,7 +92,7 @@ internal static class Host
                 .Replace("{{ host_version }}", System.Net.WebUtility.HtmlEncode(hostVersion)),
                 "text/html");
         });
-        app.MapGet("/api/boards", (IBoards dashboard) =>
+        app.MapGet("/api/boards", (IBoardRegistry dashboard) =>
         {
             try { return Results.Json(dashboard.Boards(), Codec.JsonOptions); }
             catch (Exception error) when (Errors.IsDeviceError(error))
@@ -100,7 +100,7 @@ internal static class Host
                 return DeviceErrorResponse(error);
             }
         });
-        app.MapGet("/api/status", async (HttpContext context, IBoards dashboard) =>
+        app.MapGet("/api/status", async (HttpContext context, IBoardRegistry dashboard) =>
         {
             await context.Session.LoadAsync();
             try { return Results.Content(dashboard.SnapshotJson(context.Request.Query["board"]), "application/json"); }
@@ -109,7 +109,7 @@ internal static class Host
                 return DeviceErrorResponse(error);
             }
         });
-        app.MapGet("/api/diagnostics", async (HttpContext context, IBoards dashboard) =>
+        app.MapGet("/api/diagnostics", async (HttpContext context, IBoardRegistry dashboard) =>
         {
             await context.Session.LoadAsync();
             try
@@ -123,7 +123,7 @@ internal static class Host
             }
         });
         app.MapPost("/api/actions/{action}", (
-            string action, HttpContext context, IBoards dashboard, ILoggerFactory loggerFactory) =>
+            string action, HttpContext context, IBoardRegistry dashboard, ILoggerFactory loggerFactory) =>
         {
             var logger = loggerFactory.CreateLogger("PicoUart.Dashboard.Host");
             var token = context.Session.GetString("csrf_token");
@@ -145,7 +145,7 @@ internal static class Host
             }
         });
         app.MapPost("/api/configuration", async (
-            HttpContext context, IBoards dashboard, ILoggerFactory loggerFactory) =>
+            HttpContext context, IBoardRegistry dashboard, ILoggerFactory loggerFactory) =>
         {
             var logger = loggerFactory.CreateLogger("PicoUart.Dashboard.Host");
             if (context.Request.ContentLength > MaxConfigurationRequestBytes)

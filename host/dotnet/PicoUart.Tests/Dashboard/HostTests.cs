@@ -11,7 +11,7 @@ using PicoUart.Hid;
 using PicoUart.Protocol;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Dashboard;
 
 [Trait("Category", "Unit")]
 public sealed class HostTests
@@ -293,7 +293,7 @@ public sealed class HostTests
         finally { await app.StopAsync(); }
     }
 
-    private sealed class FakeBoards : IBoards
+    private sealed class FakeBoards : IBoardRegistry
     {
         private readonly Snapshot snapshot = new();
 

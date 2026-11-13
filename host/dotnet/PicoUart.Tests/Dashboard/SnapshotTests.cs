@@ -5,7 +5,7 @@ using PicoUart.Dashboard;
 using PicoUart.Protocol;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Dashboard;
 
 [Trait("Category", "Unit")]
 public sealed class SnapshotTests

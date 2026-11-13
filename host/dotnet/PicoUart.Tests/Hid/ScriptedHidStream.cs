@@ -5,8 +5,9 @@ using System.Collections.Concurrent;
 using HidSharp;
 using PicoUart.Hid;
 using PicoUart.Protocol;
+using PicoUart.Tests.Protocol;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Hid;
 
 internal sealed class ScriptedHidStream() : HidStream(new ScriptedHidDevice())
 {
@@ -18,12 +19,12 @@ internal sealed class ScriptedHidStream() : HidStream(new ScriptedHidDevice())
     public override int ReadTimeout { get; set; } = 250;
     public override int WriteTimeout { get; set; } = 3000;
 
-    public Client CreateClient(BoardIdentity? identity = null) => new(this, identity ?? CodecTests.Identity());
+    public Client CreateClient(BoardIdentity? identity = null) => new(this, identity ?? ProtocolFixtures.Identity());
 
     public byte[] DefaultFeature(byte id)
     {
-        if (id == Codec.IdentityReportId) return CodecTests.IdentityPayload();
-        if (id == Codec.ConfigurationReportId) return CodecTests.ConfigurationPayload();
+        if (id == Codec.IdentityReportId) return ProtocolFixtures.IdentityPayload();
+        if (id == Codec.ConfigurationReportId) return ProtocolFixtures.ConfigurationPayload();
         if (id == Codec.ActionReportId) return [1, Result.Action, Result.Status, Result.ErrorReason];
         if (id == Codec.TelemetryReportId)
         {

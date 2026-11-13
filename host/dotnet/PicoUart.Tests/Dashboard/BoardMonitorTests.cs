@@ -6,9 +6,11 @@ using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
 using PicoUart.Protocol;
+using PicoUart.Tests.Hid;
+using PicoUart.Tests.Protocol;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Dashboard;
 
 [Trait("Category", "Unit")]
 public sealed class BoardMonitorTests
@@ -360,7 +362,7 @@ public sealed class BoardMonitorTests
         stream.FeatureRead = id => id == 20
             ? throw new IOException("simulated control read failure") : stream.DefaultFeature(id);
         using var connection = stream.CreateClient(
-            CodecTests.Identity() with { Capabilities = readFails ? (byte)7 : (byte)3 });
+            ProtocolFixtures.Identity() with { Capabilities = readFails ? (byte)7 : (byte)3 });
         using var service = new BoardMonitor(() => connection);
         await service.StartAsync(CancellationToken.None);
         try

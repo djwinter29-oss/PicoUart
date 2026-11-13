@@ -5,7 +5,7 @@ using PicoUart.Cli;
 using PicoUart.Protocol;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Cli;
 
 [Trait("Category", "Unit")]
 public sealed class StatusSnapshotTests

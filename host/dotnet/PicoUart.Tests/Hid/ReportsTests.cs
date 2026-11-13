@@ -3,9 +3,10 @@
 using HidSharp.Reports;
 using PicoUart.Hid;
 using PicoUart.Protocol;
+using PicoUart.Tests.Protocol;
 using Xunit;
 
-namespace PicoUart.Tests;
+namespace PicoUart.Tests.Hid;
 
 [Trait("Category", "Unit")]
 public sealed class ReportsTests
@@ -53,10 +54,10 @@ public sealed class ReportsTests
 
         var buffer = new byte[37];
         buffer[0] = Codec.IdentityReportId;
-        CodecTests.IdentityPayload().CopyTo(buffer, 1);
+        ProtocolFixtures.IdentityPayload().CopyTo(buffer, 1);
         var payload = Reports.FeaturePayload(buffer, Codec.IdentityReportId,
             Reports.ReportDataLength(identity) - 1, prefixSize: 1);
-        Assert.Equal(CodecTests.Identity(), Codec.ParseIdentity(payload));
+        Assert.Equal(ProtocolFixtures.Identity(), Codec.ParseIdentity(payload));
     }
 
     [Theory]
@@ -66,12 +67,12 @@ public sealed class ReportsTests
     {
         var buffer = new byte[36 + prefixSize];
         Array.Fill(buffer, Codec.IdentityReportId, 0, prefixSize);
-        CodecTests.IdentityPayload().CopyTo(buffer, prefixSize);
+        ProtocolFixtures.IdentityPayload().CopyTo(buffer, prefixSize);
 
         var payload = Reports.FeaturePayload(buffer, Codec.IdentityReportId,
             Codec.IdentitySize, prefixSize);
 
-        Assert.Equal(CodecTests.Identity(), Codec.ParseIdentity(payload));
+        Assert.Equal(ProtocolFixtures.Identity(), Codec.ParseIdentity(payload));
     }
 
     [Theory]
