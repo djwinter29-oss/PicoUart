@@ -160,8 +160,11 @@ public sealed class DashboardBoardRegistryTests
             attached = [new("/new-path", "test-A", "PicoUart")];
             boards.Boards();
 
-            var read = Task.Run(() => Assert.Throws<IOException>(() => boards.Reader(id)));
-            Assert.Contains("cleanup is still pending", (await read.WaitAsync(TimeSpan.FromSeconds(1))).Message);
+            var readDuration = Stopwatch.StartNew();
+            var error = Assert.Throws<IOException>(() => boards.Reader(id));
+            Assert.True(readDuration.Elapsed < TimeSpan.FromSeconds(1),
+                $"Reader took {readDuration.Elapsed} while retired-reader cleanup was pending");
+            Assert.Contains("cleanup is still pending", error.Message);
             release.Set();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             while (boards.RetiringReaderCount != 0) await Task.Delay(10, timeout.Token);
