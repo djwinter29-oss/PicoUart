@@ -2,8 +2,6 @@
 // Copyright (c) 2026 Ji Dong
 using HidSharp.Reports;
 using PicoUart.Hid;
-using PicoUart.Protocol;
-using PicoUart.Tests.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests.Hid;

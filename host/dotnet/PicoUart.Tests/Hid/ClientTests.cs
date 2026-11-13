@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using PicoUart.Hid;
-using PicoUart.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests.Hid;

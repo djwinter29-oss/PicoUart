@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using PicoUart.Protocol;
+using PicoUart.Hid;
 
 namespace PicoUart.Cli;
 

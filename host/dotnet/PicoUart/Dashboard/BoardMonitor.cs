@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PicoUart.Hid;
-using PicoUart.Protocol;
 
 namespace PicoUart.Dashboard;
 

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Ji Dong
 using System.Text.Json;
 using PicoUart.Cli;
-using PicoUart.Protocol;
+using PicoUart.Hid;
 using Xunit;
 
 namespace PicoUart.Tests.Cli;

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using System.Buffers.Binary;
-using PicoUart.Protocol;
+using PicoUart.Hid;
 
-namespace PicoUart.Tests.Protocol;
+namespace PicoUart.Tests.Hid;
 
 internal static class ProtocolFixtures
 {

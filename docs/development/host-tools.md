@@ -277,7 +277,7 @@ Its JSON matches the Python `channels` snapshot in [Python test automation](#pyt
 `monitor` still prints one channel object per line.
 On Linux/macOS/WSL, `tools/host/run-dotnet.sh` starts the dashboard; arguments such as `status` pass through unchanged.
 The C# `PicoUart.Hid.Client` class owns a connection and implements `IDisposable` and `IAsyncDisposable`;
-`PicoUart.Protocol.Codec` provides typed report decoders.
+`PicoUart.Hid.Codec` provides typed report decoders.
 The HID implementation separates responsibilities:
 
 - [Client.cs](../../host/dotnet/PicoUart/Hid/Client.cs) owns the connection, caches, and typed reads.
@@ -285,7 +285,8 @@ The HID implementation separates responsibilities:
   as part of the same client, sharing its lock and timeout quarantine rather than opening another connection.
 - [Discovery.cs](../../host/dotnet/PicoUart/Hid/Discovery.cs) handles enumeration, selection, and USB identity.
 - [Reports.cs](../../host/dotnet/PicoUart/Hid/Reports.cs) adapts descriptors and native Feature framing;
-  [Codec.cs](../../host/dotnet/PicoUart/Protocol/Codec.cs) remains responsible for product payload validation.
+  [Codec.cs](../../host/dotnet/PicoUart/Hid/Codec.cs) remains responsible for product payload validation.
+- [Types.cs](../../host/dotnet/PicoUart/Hid/Types.cs) defines decoded report records separately from the codec.
 - [StreamLifetime.cs](../../host/dotnet/PicoUart/Hid/StreamLifetime.cs) owns in-flight native transfers and
   deferred cleanup, including the per-device barrier against reopening before cleanup completes.
 
@@ -301,7 +302,7 @@ Python and .NET share `host/web/src`; tests live in `host/web/tests`. Keep front
 adding a separate C# frontend.
 
 Test folders and namespaces mirror the source areas. Shared protocol fixture builders live in
-[ProtocolFixtures.cs](../../host/dotnet/PicoUart.Tests/Protocol/ProtocolFixtures.cs), separate from the codec tests.
+[ProtocolFixtures.cs](../../host/dotnet/PicoUart.Tests/Hid/ProtocolFixtures.cs), separate from the codec tests.
 
 Build and run the hardware-free unit suite:
 

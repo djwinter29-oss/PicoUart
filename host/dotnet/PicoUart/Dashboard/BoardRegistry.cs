@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PicoUart.Hid;
-using PicoUart.Protocol;
 
 namespace PicoUart.Dashboard;
 

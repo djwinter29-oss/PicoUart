@@ -2,7 +2,6 @@
 // Copyright (c) 2026 Ji Dong
 using PicoUart.Dashboard;
 using PicoUart.Hid;
-using PicoUart.Tests.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests.Hid;

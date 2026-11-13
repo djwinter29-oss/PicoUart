@@ -2,7 +2,6 @@
 // Copyright (c) 2026 Ji Dong
 using HidSharp;
 using System.Diagnostics;
-using PicoUart.Protocol;
 
 namespace PicoUart.Hid;
 

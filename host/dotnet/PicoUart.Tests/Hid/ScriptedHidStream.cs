@@ -4,8 +4,6 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using HidSharp;
 using PicoUart.Hid;
-using PicoUart.Protocol;
-using PicoUart.Tests.Protocol;
 
 namespace PicoUart.Tests.Hid;
 

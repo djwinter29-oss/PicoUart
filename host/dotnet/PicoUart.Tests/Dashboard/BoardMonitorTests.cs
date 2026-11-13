@@ -5,9 +5,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
-using PicoUart.Protocol;
 using PicoUart.Tests.Hid;
-using PicoUart.Tests.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests.Dashboard;

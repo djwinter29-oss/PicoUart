@@ -8,7 +8,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using PicoUart.Dashboard;
 using PicoUart.Hid;
-using PicoUart.Protocol;
 using Xunit;
 
 namespace PicoUart.Tests.Dashboard;

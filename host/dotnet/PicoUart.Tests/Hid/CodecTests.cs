@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Ji Dong
 using System.Buffers.Binary;
-using PicoUart.Protocol;
+using PicoUart.Hid;
 using Xunit;
 
-namespace PicoUart.Tests.Protocol;
+namespace PicoUart.Tests.Hid;
 
 [Trait("Category", "Unit")]
 public sealed class CodecTests

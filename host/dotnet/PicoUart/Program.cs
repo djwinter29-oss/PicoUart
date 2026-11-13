@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Text.Json;
 using PicoUart.Cli;
 using PicoUart.Hid;
-using PicoUart.Protocol;
 
 try
 {
