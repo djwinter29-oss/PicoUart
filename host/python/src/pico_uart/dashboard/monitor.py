@@ -11,7 +11,7 @@ from collections.abc import Callable
 from copy import deepcopy
 
 from ..hid.client import ControlOutcomeUnconfirmed, PicoUartHid
-from ..hid.inputs import empty_channel
+from ..hid.input_tracker import empty_channel
 from ..hid.protocol import (
     CAPABILITY_CONFIGURATION_SAVE,
     COMMAND_SAVE_CONFIGURATION,

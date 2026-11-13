@@ -157,6 +157,8 @@ The top-level `PicoUartHid` API remains unchanged, but implementation-module imp
 | `pico_uart.protocol` | `pico_uart.hid.protocol` |
 | `pico_uart.transport` | `pico_uart.hid.transport` |
 | `pico_uart.web` | `pico_uart.dashboard` |
+| `pico_uart.hid.inputs` | `pico_uart.hid.input_tracker` |
+| `pico_uart.dashboard.boards` | `pico_uart.dashboard.registry` |
 
 Use `pico-uart` or `python -m pico_uart` to invoke the CLI; `python -m pico_uart.main` is also available for direct
 module invocation. Moving the implementation modules is an intentional breaking change for callers that import them

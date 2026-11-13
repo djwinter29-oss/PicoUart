@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from pico_uart.dashboard.app import create_app
-from pico_uart.dashboard.boards import MISSED_SCANS_BEFORE_REAP, BoardRegistry
+from pico_uart.dashboard.registry import MISSED_SCANS_BEFORE_REAP, BoardRegistry
 
 
 def device(serial, path):
