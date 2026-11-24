@@ -70,14 +70,13 @@ compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com
 [The Pi Hut](https://thepihut.com/products/picouart6), subject to the following limits:
 
 - The carrier's UART activity, I2C activity, and GPIO-controlled power LEDs are not driven by PicoUart. The Pico's own
-	identification LED is separate and remains available on non-wireless Pico/Pico 2 boards.
+  identification LED is separate and remains available on non-wireless Pico/Pico 2 boards.
 - The STEMMA QT/Qwiic connector has no firmware I2C support: PicoUart does not expose a USB-to-I2C interface and is not
-	compatible with the original firmware's `i2c-tiny-usb` functionality.
+  compatible with the original firmware's `i2c-tiny-usb` functionality.
 - Keep RTS/CTS disabled on this carrier. PicoUart's optional flow-control assignments overlap the carrier's LED and I2C
-	wiring; enabling them requires a separately reviewed pin map and hardware setup.
+  wiring; enabling them requires a separately reviewed pin map and hardware setup.
 
-This is a comparison of documented pin assignments, not a physical qualification of the carrier or a claim of full
-feature compatibility with its original firmware.
+This pinout comparison does not qualify the carrier or its original firmware features.
 
 ## Wiring Rules
 
@@ -86,6 +85,8 @@ feature compatibility with its original firmware.
 - Share ground between PicoUart and every UART peer.
 - Connect RTS to the peer's CTS, and CTS to the peer's RTS, only when flow control is enabled and tested.
 - Use 3.3 V UART logic. Never connect 5 V or RS-232 levels directly to RP2040 or RP2350 GPIOs.
+
+For the fixed loopback wiring used in hardware tests, see [HIL fixture setup](tests/hil-fixture-setup.md).
 
 ## GPIO Availability Notes
 
@@ -108,22 +109,10 @@ GPIO25 as an LED output, but that pin is the wireless chip-select on W boards.
 The release build/HIL matrix currently covers Pico and Pico 2, not the wireless variants. Successful compilation does
 not qualify a Pico W or Pico 2 W for physical UART behavior, throughput, or clock-profile stability.
 
-## Board Layout Guidance
+## Power
 
-- Group each UART channel as a repeated TX/RX/GND block.
-- Put GND near every UART connector.
-- Keep optional RTS/CTS adjacent to the matching TX/RX pair if the connector exposes flow control.
-- Keep the board pin mapping isolated from USB and UART transport logic.
-- Add test points for USB, power, and at least one hardware UART pair.
-
-## Power Guidance
-
-- USB normally powers the Pico board.
-- Decide explicitly whether external UART targets are self-powered or powered from the fixture.
-- Do not assume the Pico board can power six external targets directly.
-- If a connector provides target power, document current limits and protection.
-
-For the fixed loopback wiring used in hardware tests, see [HIL fixture setup](tests/hil-fixture-setup.md).
+Do not assume the Pico board can power six external targets directly. If a carrier provides target power, document
+its current limits and protection.
 
 ## Photo Credits
 

@@ -7,7 +7,7 @@ PicoUart is embedded firmware with companion host tools, not a server or databas
 details here. Follow the shared coding and documentation conventions in
 [.github/copilot-instructions.md](.github/copilot-instructions.md).
 
-## Environment And Validation
+## Environment and Validation
 
 Check the current environment before assuming tools or hardware are available. Choose checks relevant to the change;
 these tiers describe available validation, not a mandatory checklist for every task:
@@ -31,7 +31,7 @@ Use the [host developer setup](docs/development/host-tools.md#python-environment
 [firmware development guide](docs/development/firmware-testing.md#cursor-cloud-environment) for Cursor Cloud snapshot
 provisioning and its update script. Those snapshot assumptions do not apply to every checkout.
 
-## Build, Test, And Run
+## Build, Test, and Run
 
 Use [tools/README.md](tools/README.md) for command mappings and [docs/tests/README.md](docs/tests/README.md) to choose
 validation scope. There is no boot `start` command. Start dashboards or test servers only when requested or for
@@ -41,9 +41,10 @@ Firmware development, flashing, and HIL use the Linux wrappers documented in [to
 Windows firmware-development wrappers are not supported; Windows users should use WSL2 Ubuntu. The Python host tools
 remain usable from Windows for CDC/HID operation.
 
-## Hardware And Firmware Contracts
+## Hardware and Firmware Contracts
 
-- USB interface (CDC/HID) ownership and report contracts: [docs/design/usb/usb-interfaces.md](docs/design/usb/usb-interfaces.md) and
+- USB interface (CDC/HID) ownership and report contracts:
+  [docs/design/usb/usb-interfaces.md](docs/design/usb/usb-interfaces.md) and
   [docs/design/usb/hid-report-reference.md](docs/design/usb/hid-report-reference.md).
 - Control-plane lifecycle and `CONTROL_ERROR` / `CONTROL_PENDING` behavior:
   [docs/design/control-plane-design.md](docs/design/control-plane-design.md).

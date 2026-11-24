@@ -1,7 +1,8 @@
 # Firmware Build and Configuration
 
 This folder holds the Pico SDK firmware project `pico_uart`. This page covers building, loading over SWD, and where the
-build-time configuration lives. To flash a released image, see [Releasing](../docs/deployment/releasing.md#flashing-release-artifacts).
+build-time configuration lives. For released images, see
+[Releasing](../docs/deployment/releasing.md#flashing-release-artifacts).
 
 ## Build
 
@@ -64,7 +65,8 @@ tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-s
 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> erase
 ```
 
-Profile meanings and the save rules are in the [HID reference](../docs/design/usb/hid-report-reference.md#boot-configuration).
+Profile meanings and save rules are in the
+[HID reference](../docs/design/usb/hid-report-reference.md#boot-configuration).
 Non-default profiles are overclocks. Qualify them on the exact board before relying on them.
 
 ## Configuration

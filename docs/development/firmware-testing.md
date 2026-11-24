@@ -1,7 +1,8 @@
 # Firmware Development and Tuning
 
 This guide covers firmware work beyond a plain build: where each kind of test fits, how to profile timing, and how to
-judge buffer sizes. Building and loading are covered in [Firmware Build and Configuration](../../firmware/build-and-config.md).
+judge buffer sizes. Building and loading are covered in
+[Firmware Build and Configuration](../../firmware/build-and-config.md).
 
 ## Test Scope
 
@@ -32,16 +33,17 @@ just before the traffic run, and read them without halting the cores using OpenO
 `echo [read_memory <address> 32 <count>]`. They are observed maxima under instrumentation, not proven worst cases.
 
 Change one tuning macro per variant, and compare verified traffic, block latency, service gaps, ring peaks, and faults
-under the same conditions. Keep the defaults unless a comparison shows a clear win, and go back to an uninstrumented
-image for final HIL. The current defaults are backed by the
-[2026-10-22 tuning record](../tests/records/2026-10-22-cdc-uart-session-validation.md).
+under the same conditions, then go back to an uninstrumented image for final HIL. What has been tried so far, and the
+bar a change must clear, are in the [test plan](../tests/hil-fixture-test-plan.md#tuning-experiments).
 
 ## Buffer Capacity Measurement
 
 Ring sizes are the biggest RAM cost in the firmware, but they are also what absorbs host stalls. Before shrinking them,
 measure both the allocation and the runtime use.
 
-**Allocation.** For each exact ELF, keep its SHA-256, build options, and linker map, plus:
+### Allocation
+
+For each exact ELF, keep its SHA-256, build options, and linker map, plus:
 
 ```sh
 sha256sum build/firmware-pico/pico_uart.elf
@@ -53,28 +55,33 @@ Look at `uart_driver_state`, `uart_driver_rx_storage`, `_cdcd_itf`, and `usb_cdc
 symbol, so include it. Alignment padding and metadata account for the gap between payload size and allocation. That gap
 is not unused buffer space.
 
-**Runtime use.** Run the [concurrent fixture plan](../tests/hil-fixture-test-plan.md) on a freshly booted board and read
+### Runtime Use
+
+Run the [concurrent fixture plan](../tests/hil-fixture-test-plan.md) on a freshly booted board and read
 each channel's observed peaks and drop counters from HID diagnostics during the run. Peaks last for the whole boot, so
 reboot between workloads. Include host stalls and bursts, not only paced traffic. At 8N1, an RX ring of `N` bytes holds
 only `N * 10 / baud` seconds of input. A low peak in a paced test therefore says nothing about stall tolerance.
 
 Keep the current capacities until measurements like these justify a smaller value.
 
+<details>
+<summary>Cursor Cloud snapshot environment</summary>
+
 ## Cursor Cloud Environment
 
-This section describes the provisioned Cursor Cloud VM snapshot, not requirements or hardware availability for every
-local checkout. The snapshot has no attached board, debug probe, or UART fixture; use the non-hardware checks above.
+This section describes the provisioned Cursor Cloud VM snapshot. The snapshot has no attached board, debug probe, or
+UART fixture; use the non-hardware checks above.
 
 ### Snapshot Packages
 
 These packages are installed once and captured in the snapshot. Do not apt-install them from the update script:
 
 - `ninja-build`, `gcc-arm-none-eabi`, `libstdc++-arm-none-eabi-newlib`, `libnewlib-arm-none-eabi`, `gcovr`, and
-	`cppcheck` (apt).
+  `cppcheck` (apt).
 - `libstdc++-14-dev` (apt): the snapshot's default `/usr/bin/c++` is clang and selects the gcc-14 toolchain directory.
-	Without it, the native picotool build fails with `cannot find -lstdc++`, even with `libstdc++-13-dev` present.
+  Without it, the native picotool build fails with `cannot find -lstdc++`, even with `libstdc++-13-dev` present.
 - `python3-venv`, `python3-dev`, `libusb-1.0-0-dev`, `libhidapi-dev`, and `libhidapi-hidraw0` (apt) for the host venv
-	and HID library.
+  and HID library.
 
 ### Update Script
 
@@ -100,3 +107,5 @@ default system interpreter:
 PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
 host/python/.venv/bin/python -m pico_uart.main --help
 ```
+
+</details>

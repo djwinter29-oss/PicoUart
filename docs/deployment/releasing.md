@@ -5,9 +5,8 @@ A release has two independent halves:
 1. **Publication** is automatic. Pushing a version tag builds, tests, and publishes the firmware and host packages.
 2. **Hardware qualification** is manual. Someone flashes the exact published firmware and runs the HIL fixture.
 
-A green CI run only shows that the software checks passed; it says nothing about UART timing, reliability, or board
-stability.
-Until qualification evidence exists, treat published artifacts as lab/test-only.
+A green CI run shows that the software checks passed; it says nothing about UART timing, reliability, or board
+stability. Until qualification evidence exists, treat published artifacts as lab/test-only.
 
 ## Release Sequence
 
@@ -33,9 +32,9 @@ can release.
 ## Publication Gates
 
 If any gate is missing, nothing is published. The GitHub Release job waits for host validation, both firmware builds,
-both host packages, and a successful **PR Check** run on the same commit. A tag push does not trigger PR Check itself, so make sure the
-commit already has one (usually from the push to `main`). PyPI and Pages additionally require a successful tag-push
-Release run for that commit and tag.
+both host packages, and a successful **PR Check** run on the same commit. A tag push does not trigger PR Check itself,
+so make sure the commit already has one (usually from the push to `main`). PyPI and Pages additionally require a
+successful tag-push Release run for that commit and tag.
 
 The [gate script](../../tools/release/require_release_checks.py) looks at the latest matching run. A newer failed or
 pending run blocks publication even if an older run succeeded. Publishers also refuse a tag that has moved away from
@@ -81,7 +80,7 @@ SWD defaults to 1000 kHz; use `--adapter-speed-khz 100` for marginal wiring. Wit
 incremental development build first.
 
 <details>
-<summary>Probe permissions and unknown flash devices</summary>
+<summary>Probe permissions, unknown flash devices, and unstable SWD</summary>
 
 On Linux, `unable to find a matching CMSIS-DAP device` often means USB access was denied, even if `lsusb` lists the
 probe. The loader retries with noninteractive sudo when it can; otherwise add a udev rule for the probe. To test probe
@@ -93,6 +92,11 @@ openocd -d3 -f interface/cmsis-dap.cfg -c 'transport select swd' -c 'adapter spe
 
 If OpenOCD reports `Unknown flash device` after finding the target, update OpenOCD before blaming the firmware. Flash
 ID `0x00154068` (Boya BY25Q16ES) needs a recent build; pass one with `--openocd-exe`.
+
+One recovery that worked in a recorded development session was to disconnect both the board and probe, wait for their
+LEDs to go off, then reconnect. The record notes that retries and programming only core 0 had not restored verified
+programming; treat this as an observation, not a confirmed fix for every SWD failure
+([review record](../tests/records/2026-10-23-uart-cdc-review-validation.md#cause-and-retained-change)).
 
 </details>
 

@@ -13,7 +13,7 @@ Each ring has exactly one producer and one consumer, and needs no lock; see
 ## Capacity
 
 Ring sizes are fixed at build time and must be powers of two. RX storage is also aligned to its size so RX DMA can
-wrap around it in hardware. That alignment applies only to the RX storage, not to the surrounding port structures.
+wrap around it in hardware. The RX storage is size-aligned; the surrounding port structures keep their normal layout.
 Capacity changes how much RAM is reserved and how soon overflow or backpressure starts. It does not change the
 ownership or loss policy.
 

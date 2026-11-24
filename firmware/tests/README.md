@@ -27,20 +27,10 @@ provide portable shared hook storage across ELF and Windows COFF linkers.
 From the repository root:
 
 ```sh
-tools/validation/run-host-tests.sh --skip-python
+tools/validation/run-host-tests.sh --skip-python              # add --sanitize for sanitizer builds
 ```
 
-For a combined firmware build and host-test run:
-
-```sh
-tools/validation/validate.sh --skip-build
-```
-
-For sanitizer coverage:
-
-```sh
-tools/validation/run-host-tests.sh --sanitize --skip-python
-```
+`tools/validation/validate.sh` builds the `pico` firmware first and then runs every host test, C and Python.
 
 To configure and run the C tests directly:
 

@@ -39,7 +39,7 @@ _The dashboard with simulated telemetry._
 
 - Use **3.3 V UART logic** and a shared ground. Never connect 5 V or RS-232 signals directly.
 - UART0-1 use the hardware UARTs. UART2-5 use PIO and support **8N1 only**.
-- RTS/CTS flow control is off by default.
+- RTS/CTS flow control is off by default and has not been tested on hardware yet.
 
 ## Get Started
 
@@ -82,7 +82,8 @@ These commands read diagnostics only; they do not send or capture UART data. On 
 | Pico W / Pico 2 W | Build `pico_w` / `pico2_w` from source; Wi-Fi and Bluetooth stay disabled |
 | PicoUART6 carrier | Default TX/RX pinout matches; carrier LEDs and USB-to-I2C are not supported |
 
-Wireless-board and carrier details are in [hardware setup](docs/hardware-setup.md).
+Most hardware testing so far has been on the Pico; the Pico 2 has had much less. Wireless-board and carrier details are
+in [hardware setup](docs/hardware-setup.md).
 
 ## Documentation
 

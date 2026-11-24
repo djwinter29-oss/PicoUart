@@ -1,7 +1,7 @@
 # HIL Fixture Setup
 
-This fixture exercises all six channels with two crossed UART pairs and two loopbacks. Install all four links once,
-then run the [test plan](hil-fixture-test-plan.md) without moving any jumpers.
+This fixture exercises all six channels with two crossed UART pairs and two loopbacks. Install the four links listed
+below before running the [test plan](hil-fixture-test-plan.md).
 
 ```mermaid
 flowchart LR
@@ -84,7 +84,7 @@ Connect UART5/CDC5 TX to its own RX:
 3. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate. Prefer stable paths under
    `/dev/serial/by-id` instead of `/dev/ttyACM*`.
 4. Confirm all four links are installed before starting the full test.
-5. Run the functional and performance plans without changing wiring.
+5. Run the functional and performance plans.
 6. Remove all test jumpers before connecting external UART equipment.
 
 ## Endpoint Preflight

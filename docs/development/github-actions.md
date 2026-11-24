@@ -3,7 +3,7 @@
 This page maps the automated checks and how the release workflows depend on each other. The workflow files are the
 source of truth for job names, matrices, and toolchain pins.
 
-## Pull Requests And Main
+## Pull Requests and Main
 
 [PR Check](../../.github/workflows/pr-check.yml) runs for pull requests and pushes to `main`.
 
@@ -20,7 +20,7 @@ flowchart TD
 The firmware matrix and host validation run in parallel. Repository pytest covers hardware-free HIL-tool tests and
 packaging/protocol contracts, not physical UART behavior.
 
-## Checks And Dependencies
+## Checks and Dependencies
 
 [Host Validation](../../.github/workflows/host-validation.yml) is reused by both PR Check and Release.
 
@@ -36,9 +36,9 @@ flowchart TD
   Browser --> Done
 ```
 
-| Check | Environment And Dependencies | What It Establishes |
+| Check | Environment and Dependencies | What It Establishes |
 | --- | --- | --- |
-| Firmware matrix | Linux; Arm toolchain, pinned Pico SDK, CMake/Ninja, host C++ compiler, Python | Pico and Pico 2 compile/link and satisfy binary contracts plus target-specific static SRAM/flash budgets; real-build regulator policy is inspected, not physically measured |
+| Firmware matrix | Linux; Arm toolchain, pinned Pico SDK, CMake/Ninja, host C++ compiler, Python | Pico and Pico 2 compile/link, pass binary contracts, and satisfy target-specific static SRAM/flash budgets |
 | Firmware policy check | Python and the `test` dependency group | Minimal pytest environment for inspection of the actual SDK build artifacts |
 | Host application matrix | Linux, macOS, Windows; Python 3.12, .NET 10 SDK, Python `dev` dependency group | .NET unit tests, repository Python tests, and installed/published host contracts; Windows and macOS also run native C tests |
 | Linux host tools | Python 3.12, Python `dev` dependency group, native C toolchain, CMake/Ninja, cppcheck | Syntax, ASan/UBSan native tests, static analysis, and CLI smoke checks |
@@ -50,7 +50,7 @@ flowchart TD
 
 CI cannot establish board compatibility, physical timing, or overclock margins; that is what HIL is for.
 
-## Release And Publication
+## Release and Publication
 
 [Release](../../.github/workflows/release.yml) runs on a version-tag push or as a manual preflight. Firmware packaging
 starts alongside host validation; the Python and .NET packages wait for all host validation jobs. Only a tag push

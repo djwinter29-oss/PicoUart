@@ -2,11 +2,13 @@
 
 ## Supported Versions
 
-PicoUart is pre-1.0; only the latest [GitHub release](https://github.com/djwinter29-oss/PicoUart/releases) is supported.
-Firmware, the [`pico-uart`](https://pypi.org/project/pico-uart/) package, and the .NET host share a
-[release version](docs/deployment/releasing.md#versioning). PyPI development uploads and any content served at the
-official [Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/) URL, including test deployments, are in scope
-for reports but are not supported releases; fixes are provided for the latest release. Check the dashboard's displayed
+PicoUart is pre-1.0; only the latest [GitHub release](https://github.com/djwinter29-oss/PicoUart/releases) is
+supported. Firmware, the [`pico-uart`](https://pypi.org/project/pico-uart/) package, and the .NET host share a
+[release version](docs/deployment/releasing.md#versioning).
+
+PyPI development uploads and content served at the official
+[Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/) URL, including test deployments, are in scope for
+reports but are not supported releases. Fixes are provided for the latest release. Check the dashboard's displayed
 version before use.
 
 ## Trust Model and Safe Use

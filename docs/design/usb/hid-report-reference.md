@@ -27,7 +27,7 @@ The ranges are a reusable convention for Pico projects. The assignments are Pico
 | --- | ---- | ----------- |
 | `1`-`9` | Device information and monitoring | `1` Identity, `2` Board Configuration, `3` Telemetry; `4`-`9` unassigned. |
 | `10`-`19` | Application monitoring | Six Channel Snapshots, addressed as `10 + channel`; `16`-`19` unassigned. |
-| `20`-`29` | Device and application control | `20` Board Action & Result; `21`-`29` unassigned. |
+| `20`-`29` | Device and application control | `20` Board Action and Result; `21`-`29` unassigned. |
 | `30`-`39` | Application diagnostics | Six Channel Diagnostics reports, addressed as `30 + channel`; `36`-`39` unassigned. |
 | `40`-`255` | Unassigned expansion | None. |
 
@@ -36,17 +36,17 @@ payload layouts: a host must identify the product before decoding product-specif
 
 | Report ID | Name | Type | Direction | Payload | Purpose |
 | --------- | ---- | ---- | --------- | ------- | ------- |
-| `1` | Device Identity & Capabilities | Feature | Host reads | 27 bytes | Identity, capabilities, total/reserved RAM. |
+| `1` | Device Identity and Capabilities | Feature | Host reads | 27 bytes | Identity, capabilities, total/reserved RAM. |
 | `2` | Board Configuration | Feature | Host reads | 36 bytes | Stored profile, pins, reset cause, buffer capacities. |
 | `3` | Board Telemetry | Feature | Host reads | 20 bytes | Temperature, LED, uptime, service load, running clock. |
 | `10`-`15` | Channel Snapshot — CDC0–CDC5 | Input / Feature | Device publishes / host reads | 30 bytes | State, measurement validity, applied settings, traffic. |
-| `20` | Board Action & Result | Feature | Host reads/writes | 4 bytes | LED/reboot/save actions and results. |
+| `20` | Board Action and Result | Feature | Host reads/writes | 4 bytes | LED/reboot/save actions and results. |
 | `30`-`35` | Channel Diagnostics — CDC0–CDC5 | Feature | Host reads | 24 bytes | RX fault history, last configuration error, buffer peaks. |
 
 All sixteen report IDs are always present. Unavailable features are signalled by capability flags, not by missing
 reports. Writes to read-only reports are rejected without side effects.
 
-## Report ID 1: Device Identity & Capabilities
+## Report ID 1: Device Identity and Capabilities
 
 Read once per connection. The contents are static until reboot.
 
@@ -226,22 +226,22 @@ Live measurements only.
 
 | Display | Interpretation |
 | ------- | -------------- |
-| Running clock | SDK-configured frequency, not independently calibrated oscillator measurement; separate from requested profile. |
-| Estimated die temperature | Normally one decimal place; encoding precision is not accuracy, ambient temperature, or proof of thermal safety. |
-| USB service load — Core 0 / UART service load — Core 1 | Workload proxies, not CPU utilization or remaining capacity; `65535` means warming up/unavailable, not zero. |
-| LED | Off/On only if capability exists; otherwise Unavailable even though flags are zero. |
-| Uptime | Device uptime, not session duration; a decrease suggests reset only for the same identified device. |
+| Running clock | SDK-configured frequency; the requested profile is separate. |
+| Estimated die temperature | Internal sensor estimate in Celsius, normally shown to one decimal place. |
+| USB service load — Core 0 / UART service load — Core 1 | Work completed by each core during the sampling window; `65535` means warming up/unavailable. |
+| LED | Off/On when supported; otherwise Unavailable. |
+| Uptime | Time since boot; compare readings only for the same identified device. |
 
 If any mandatory measurement fails, the whole GET fails. The firmware never returns a partial or zero-filled report.
-The load sentinel `65535` and an absent LED are valid values and not failures. When a read fails, the host marks the live
-values stale and disables LED controls. It keeps the static data from reports 1 and 2.
+The load sentinel `65535` and an absent LED are valid values and not failures. When a read fails, the host marks live
+values stale, disables LED controls, and keeps static data from reports 1 and 2.
 
 **Service load** is the wall time spent in service passes that did real work, divided by the measurement window.
 Each core publishes about once a second and reports `65535` before its first window. Core 0 counts USB, CDC, control,
-and HID work; core 1 counts UART data, control, and error recovery. Idle polling and waiting on DMA are excluded. It is
-a workload proxy, not CPU utilization or spare throughput. Reject values above `10000` other than the sentinel.
+and HID work; core 1 counts UART data, control, and error recovery. Idle polling and waiting on DMA are excluded. It
+measures service workload, not CPU utilization or spare throughput. Reject values above `10000` other than the sentinel.
 
-## Report ID 20: Board Action & Result
+## Report ID 20: Board Action and Result
 
 A SET requests one action, and a GET returns the latest board-wide result. Both use four bytes.
 

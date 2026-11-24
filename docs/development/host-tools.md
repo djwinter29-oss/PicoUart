@@ -68,22 +68,21 @@ On native Windows, use `python` and `host/python/.venv/Scripts/python.exe`. Re-r
 dependencies change. If hidapi has no wheel for your platform, pip builds it from source, which needs the native build
 prerequisites.
 
-On Linux, Python opens the hidraw node even when hidapi uses libusb, so it never detaches the kernel HID driver that
-.NET and WebHID rely on. A permission error is reported rather than retried through libusb.
+On Linux, when hidapi is built on libusb, Python looks up the board's hidraw node and opens that instead, so it does not
+detach the kernel HID driver that .NET and WebHID rely on. If the node exists but cannot be opened, Python reports a
+permission error rather than falling back to libusb.
 
 ## Python Development
 
 ### Tests and Checks
 
 ```sh
-host/python/.venv/bin/python -m pytest -c host/python/pyproject.toml host/python/tests   # package tests
-host/python/.venv/bin/python -m pytest -c pyproject.toml                                  # all repository tests
-host/python/.venv/bin/python -m pytest -c host/python/pyproject.toml host/python/tests \
-  --cov=pico_uart --cov-report=term-missing
+host/python/.venv/bin/python -m pytest -c pyproject.toml          # every Python test in the repository
 (cd host/python && .venv/bin/python -m ruff check src tests && .venv/bin/python -m mypy)
 ```
 
-Mypy enforces `disallow_untyped_defs`.
+For just the package, use `-c host/python/pyproject.toml host/python/tests`, and add
+`--cov=pico_uart --cov-report=term-missing` for coverage. Mypy enforces `disallow_untyped_defs`.
 
 Dependencies are declared in [pyproject.toml](../../host/python/pyproject.toml): the runtime goes in
 `project.dependencies`, and the `test` and `dev` groups hold the rest. Direct dependencies are version-pinned, but the
@@ -159,14 +158,13 @@ does not track them. `host/python/README.md` is the PyPI page, so keep it user-f
 `host/dotnet/PicoUart.sln` contains the app and its xUnit tests.
 
 ```sh
-dotnet run --project host/dotnet/PicoUart -- status
 dotnet run --project host/dotnet/PicoUart -- web --port 5001
-dotnet build host/dotnet/PicoUart.sln
 dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"
 dotnet format host/dotnet/PicoUart.sln --verify-no-changes --no-restore
 ```
 
-`tools/host/run-dotnet.sh` starts the dashboard on Linux, macOS, and WSL. The unit tests use scripted HID streams, and
+Anything after `--` goes to the app, so `-- status` works too. `tools/host/run-dotnet.sh` starts the dashboard on
+Linux, macOS, and WSL. The unit tests use scripted HID streams, and
 they share [Input-accounting cases](../../tests/contracts/host-input-cases.json) with Python. The cross-backend check
 publishes the app and verifies the shared frontend and HTTP contract. It is skipped if `dotnet` is not on `PATH`;
 `DOTNET_EXE` overrides the executable.
@@ -253,29 +251,24 @@ Until then, requests get a retryable error instead of blocking, and results from
 
 ### HTTP API
 
-The servers listen on loopback only. Session cookies are named per backend and port
-(`PicoUart.Python.Session.<port>`, `PicoUart.DotNet.Session.<port>`), and every write requires the session's CSRF
-header.
+Both servers listen on loopback, and write requests require a session CSRF header.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/boards` | `boards` (`id`, `product_name`, `serial_number`, `device_path`) and `default_board_id`; .NET adds per-device `discovery_errors`. |
-| `GET /api/status?board=ID` | Cached board snapshot; without `board`, an empty six-channel snapshot. |
-| `GET /api/diagnostics?board=ID` | Refreshes `channel_diagnostics` (reports 30-35). |
+| `GET /api/boards` | Board list and default selection; .NET also returns per-device discovery errors. |
+| `GET /api/status?board=ID` | Cached board snapshot, or an empty six-channel snapshot without a board ID. |
+| `GET /api/diagnostics?board=ID` | Refreshes channel diagnostics (reports 30-35). |
 | `POST /api/actions/{toggle-led,reset}?board=ID` | Board actions. |
 | `POST /api/configuration?board=ID` | Save a clock profile and reboot. |
 
-Status snapshots contain:
+Snapshots report identity, runtime, configuration, and LED state separately, each with its own error. Identity and
+configuration are read once per connection; runtime is polled. Channel data includes lifecycle, applied framing,
+totals, per-input byte increments (not rates), traffic gaps, and incomplete intervals. Overflow counts are `null` when
+diagnostics are unavailable.
 
-- `identity`, `runtime`, `configuration`, and `led`, each with its own `*_error`, so one failed read never hides the
-  rest. Identity and configuration are read once per connection; runtime is polled. `toggle-led` sends the explicit
-  opposite of the observed LED state, so an unknown state disables it.
-- `channels` with per-channel lifecycle, applied framing, `sequence`, `updated_at`, `totals`, `traffic` (per-Input byte
-  increments, not rates), `traffic_gaps`, `traffic_incomplete`, and `observed_interval_ms`.
-- `overflow_counts`, taken from diagnostics and `null` when unavailable, and the `configuration_save*` fields.
-
-Control error responses carry `outcome_unconfirmed`, so the frontend never guesses retry safety from error text.
-Python returns HTTP 409 with a fixed public message for confirmed firmware rejections; the details go to the server log.
+The LED action sends the opposite of the observed state; an unknown state disables it. Control errors carry
+`outcome_unconfirmed`, so the frontend does not guess whether a retry is safe. Python returns HTTP 409 with a fixed
+message for firmware rejections; details go to the server log.
 
 ### Persistent Configuration
 
@@ -315,15 +308,15 @@ python tools/host/direct_site.py serve --port 8000      # without a POSIX shell
 The launcher serves a staged copy with a version derived from Git tags. Do not open the HTML straight from disk:
 WebHID needs HTTPS or localhost.
 
+The Direct Dashboard's Node tests run with the [frontend command](#frontend) above. They cover the report framing, the
+version checks, and the presentation rules shared with the hosted renderer. CI also runs a browser smoke test against a
+simulated device:
+
 ```sh
-node --check host/direct/src/js/view.mjs
-node --check host/direct/src/js/app.mjs
-node --test host/direct/tests/*.test.mjs
 python -m pip install playwright==1.63.0
 python -m playwright install --with-deps chromium
-python host/direct/tests/browser_smoke.py               # simulated-device browser smoke test, as in CI
+python host/direct/tests/browser_smoke.py
 ```
 
-The Node tests cover the report framing, the version checks, and the presentation rules shared with the hosted
-renderer. They do not prove that real browser and OS USB access works. Deployment to Pages is described in
+Neither proves that real browser and OS USB access works. Deployment to Pages is described in
 [Host App Distribution and Publishing](../deployment/host-app-publishing.md#direct-dashboard-pages).

@@ -31,10 +31,10 @@ repository root:
 
 ```sh
 PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
-tools/firmware/build.sh --board pico
-tools/firmware/build.sh --board pico2
-python3 tools/release/check-firmware-budget.py --build-dir build/firmware-pico --board pico
-python3 tools/release/check-firmware-budget.py --build-dir build/firmware-pico2 --board pico2
+for board in pico pico2; do
+  tools/firmware/build.sh --board "$board"
+  python3 tools/release/check-firmware-budget.py --build-dir "build/firmware-$board" --board "$board"
+done
 git diff --check
 ```
 

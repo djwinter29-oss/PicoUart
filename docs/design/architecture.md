@@ -38,8 +38,8 @@ via CDC; HID only reports what was applied.
 - **Configuration is deferred, never in-line.** A line-coding change is handed to core 1, which applies it only at a
   safe point. Core 0 never touches UART hardware.
 - **Diagnostics are separate from data.** HID reports health and counters without competing with serial traffic.
-- **Board pinout is data, not code.** A constant board table selects pins and the backend for each port, and the
-  transport and lifecycle code never hard-codes pins.
+- **Board pinout stays separate.** A constant board table maps each port to its pins and backend; transport and
+  lifecycle code stay board-independent.
 
 ## Component Map
 
@@ -104,7 +104,7 @@ or earlier boot left behind.
 - PIO UARTs support 8N1 only. Hardware UARTs accept the wider CDC framing set.
 - Each active UART holds one RX and one TX DMA channel, so six ports use all 12 RP2040 DMA channels.
 - All six ports share one USB full-speed link (12 Mbit/s). For example, six full-duplex 3 Mbaud streams would need
-  3.6 MB/s, more than USB can carry. An accepted baud rate is a per-port setting, not a throughput guarantee.
+  3.6 MB/s, more than USB can carry. Baud rates configure each port; the shared link limits aggregate throughput.
 - RTS/CTS flow control is off by default and enabled per backend in the board configuration.
 - Multicore, DMA, and USB timing can only be proven on hardware; see the
   [HIL test plan](../tests/hil-fixture-test-plan.md).

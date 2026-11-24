@@ -21,8 +21,8 @@ Wire the fixture as described in [HIL Fixture Setup](hil-fixture-setup.md):
 Test each board target (`pico` and `pico2`) when available, one board at a time. The Debug Probe external-peer check in
 the setup guide is optional and not part of the pass criteria.
 
-Before running anything, note that these commands transmit UART data and change serial settings, so make sure the
-endpoints belong to the fixture board. `--no-record` only suppresses the record; it is not a dry run.
+These commands send UART data and change serial settings. Confirm every endpoint belongs to the fixture board before
+running them. `--no-record` only suppresses the report; the hardware test still runs.
 
 Attach only one PicoUart. The runners find the board over HID rather than from the CDC paths, and `--board` is just a
 record label. The six-port runners also check that every CDC path belongs to the same board, at its declared index.
@@ -58,8 +58,7 @@ The functional pass requires all of the following:
 
 ## Performance Pass
 
-Every stream checks its returned payload byte for byte, so traffic alone is never a pass. Test each pair on its own,
-then all six streams concurrently.
+Every stream checks its returned payload byte for byte. Test each pair on its own, then all six streams concurrently.
 
 ### How the Runners Set Up Ports
 
@@ -147,9 +146,9 @@ tools/hil/runner/performance.sh \
 ```
 
 **Combined run.** The usual way to run the plan. `tools/hil/runner/full.sh` runs the functional pass, then the
-concurrent performance pass if the functional pass succeeded, and writes a dated record to [records/](records/README.md).
-It takes the functional pass's `--pico-cdcN`, `--board`, `--firmware-*`, and `--artifact` options, plus `--rates`,
-`--duration`, `--timeout`, and `--performance-payload-bytes`.
+concurrent performance pass if the functional pass succeeded, and writes a dated record to
+[records/](records/README.md). It takes the functional pass's `--pico-cdcN`, `--board`, `--firmware-*`, and
+`--artifact` options, plus `--rates`, `--duration`, `--timeout`, and `--performance-payload-bytes`.
 
 `--skip-functional` and `--skip-performance` give a `PARTIAL` record even if the phase that ran succeeded. Check the
 recorded scope, not just the exit code.
@@ -239,26 +238,87 @@ reset.
 These cases need a fixture source or authorization beyond the runners. Record the board, artifact hash, rate, payload or
 burst size, stall duration, affected channels, and HID samples. If a case cannot be set up, report it as not tested.
 
-| Case | Exercise | Acceptance and evidence |
-| --- | --- | --- |
-| All six channels loaded | Run the concurrent fixture and collect both cores' service load, block latency, ring peaks, and faults during traffic; use optional timing instrumentation for service gaps. | Every stream verifies payloads with no new loss/errors at the qualified load. Retain uninstrumented acceptance separately; host pacing is not proof of wire saturation. |
-| Host drain stalled | With a bounded independently paced fixture source, pause host reads on one RX channel while the other channels continue; resume before the chosen capacity budget, then test a separate intentional-overflow interval. | Within budget, verify ordered bytes without loss. Beyond budget, require visible dropped-byte accounting and recovery, not lossless delivery; unaffected channels continue without new faults. |
-| TX backpressure | Pause a fixture peer with supported CTS in a separately qualified flow-control variant while host OUT writes fill the channel; then resume the peer. | Host writes block or time out explicitly rather than silently losing bytes; admitted bytes remain ordered and other channels continue. Without a supported fixture variant, mark this case not run. |
-| Close/reopen during traffic | Close one active channel while the other streams run, then reopen it with staged settings and require HID readiness before sending a fresh, distinguishable marker. | Do not require delivery of deliberately discarded queued bytes. No old-session payload may contaminate the fresh stream; applied settings match and unaffected channels keep passing. |
-| Session loss with pending control | Keep a supported line-coding request pending using an authorized controlled busy condition, confirm pending through HID, then unplug or issue a targeted USB bus reset. | Old handles terminate or time out explicitly; after remount all old sessions are closed. Reopen, verify applied settings and a fresh marker, and check that canceled work produces no late timeout. Repeat with all six channels active. |
-| Concurrent configuration | Repeatedly change supported settings on other channels while an independently paced channel receives verified traffic. Coordinate both ends of changed links. | Record maximum unaffected-port service gap and both cores' maximum pass times, not just average throughput. Require bounded completion or explicit timeout and no new faults on the unaffected stream. |
+#### All Six Channels Loaded
+
+Run the concurrent fixture and collect both cores' service load, block latency, ring peaks, and faults during traffic.
+Use optional timing instrumentation to check service gaps.
+
+Every stream must verify payloads with no new loss or errors at the qualified load. Run acceptance separately from
+instrumented tests; host-paced traffic does not prove wire saturation.
+
+#### Host Drain Stalled
+
+Use a bounded, independently paced fixture source. Pause host reads on one RX channel while the other channels
+continue, resume before the chosen capacity budget, then test a separate intentional-overflow interval.
+
+The test passes if bytes arrive in order without loss within budget. Beyond budget, dropped bytes must be counted and
+traffic must recover; unaffected channels must continue without new faults.
+
+#### TX Backpressure
+
+With a separately qualified flow-control fixture, pause a peer using supported CTS while host OUT writes fill the
+channel, then resume the peer.
+
+Host writes must block or time out explicitly rather than lose bytes silently. Admitted bytes must remain ordered while
+other channels continue.
+
+#### Close and Reopen During Traffic
+
+Close one active channel while other streams run. Reopen it with staged settings and wait for HID readiness before
+sending a fresh, distinguishable marker.
+
+After reopening, old-session payloads must not enter the fresh stream, applied settings must match, and unaffected
+channels must keep passing. Deliberately discarded queued bytes need not be delivered.
+
+#### Session Loss with Pending Control
+
+Create a controlled busy condition that keeps a supported line-coding request pending. Confirm it through HID, then
+unplug the device or issue a targeted USB bus reset.
+
+Old handles must terminate or time out explicitly, and all old sessions must be closed after remount. Reopen, verify
+applied settings and a fresh marker, and check that canceled work produces no late timeout. Repeat with all six
+channels active.
+
+#### Concurrent Configuration
+
+Repeatedly change supported settings on other channels while an independently paced channel receives verified
+traffic. Coordinate both ends of changed links.
+
+Record the maximum unaffected-port service gap and both cores' maximum pass times, not only average throughput. A pass
+requires bounded completion or an explicit timeout, with no new faults on the unaffected stream.
 
 When changing line coding on a crossed pair, change both ends; a deliberate mismatch is not a bridge failure. A USB
 reset affects the whole device, so the other streams are expected to stop.
 
-Still open, and not closable with more USB loopback runs: independently paced input during USB stalls, CTS behavior,
-RP2350 physical coverage, DMA re-arm endurance, and per-event startup reliability.
+### Known Gaps
+
+More USB loopback runs will not close these:
+
+- Input that keeps arriving while the host has stopped reading. On this fixture every byte starts as a host write, so
+  this needs an independently paced UART source.
+- CTS behavior. No recorded run has used RTS/CTS, because there is no flow-control fixture yet.
+- Pico 2 coverage, which is much thinner than Pico's. Check the [evidence index](records/README.md#evidence-index)
+  before relying on it; a Pico result does not carry over.
+- Sustained DMA wrap/re-arm endurance with the normal transfer count has not been tested. A shortened-countdown
+  attempt produced invalid results, and the safe injection procedure still needs validation.
+- Startup after each kind of reset. A startup failure right after SWD flashing turned out to be core 1 being launched
+  without the reset the Pico SDK requires; calling `multicore_reset_core1()` first fixed it in repeated trials
+  ([review record](records/2026-10-23-uart-cdc-review-validation.md#explicit-core-1-reset-follow-up)). Cold power-on,
+  watchdog, and USB-reset starts are not qualified yet.
 
 ## Tuning Experiments
 
 The current defaults (buffer sizes, bridge budgets, PIO DMA thresholds, TX admission gates, and DMA snapshot checks)
-are backed by the [2026-10-23 review record](records/2026-10-23-uart-cdc-review-validation.md). Keep them unless an
-experiment shows a clear, repeatable win. When you run one:
+are the baseline. The variants tried so far did not beat it:
+
+- Halving the bridge pass budget (to 512 bytes) or the PIO TX DMA threshold (to 32 bytes) left throughput unchanged and
+  made the worst block latency slightly higher ([tuning check](records/2026-10-22-cdc-uart-session-validation.md)).
+- Dropping a TX admission check so the next transfer could start sooner ("refill") did not pay off. On the hardware
+  UARTs it slowed small blocks at 115200. On PIO it gained about 5-8% for small blocks at 460800 but nothing at 115200,
+  from one board and few samples. Both variants were removed; PIO refill may be worth another look for small-message
+  workloads ([review record](records/2026-10-23-uart-cdc-review-validation.md#matched-refill-experiments)).
+
+Keep the defaults unless an experiment shows a clear, repeatable win. When you run one:
 
 - Compare baseline and candidate images on both boards with the same clock, wiring, payloads, rates, and host. Change
   one thing at a time, repeat the baseline to see run-to-run variation, and keep hashes and raw samples.

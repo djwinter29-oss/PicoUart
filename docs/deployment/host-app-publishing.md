@@ -1,8 +1,7 @@
 # Host App Distribution and Publishing
 
-The host applications share the firmware release version and are published automatically after a successful tag-push
-Release run ([releasing](releasing.md)). This page covers where each application is distributed and how to operate,
-retry, or test each channel.
+The host applications share the firmware release version. A successful tag-push Release run publishes them
+automatically ([releasing](releasing.md)).
 
 ## Distribution Channels
 

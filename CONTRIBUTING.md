@@ -18,15 +18,13 @@ physical UART validation and release qualification require hardware.
 - Firmware builds: [firmware/build-and-config.md](firmware/build-and-config.md) and
   [tools/README.md](tools/README.md).
 - Host tools (Python/.NET/WebHID): [docs/development/host-tools.md](docs/development/host-tools.md).
-- Agent-assisted work: [AGENTS.md](AGENTS.md) for repository guidance and hardware safety boundaries.
+- Repository guidance, including agent-assisted work: [AGENTS.md](AGENTS.md).
 
 Use Linux or WSL2 Ubuntu for firmware development and HIL wrappers. Follow the linked guides for host-platform support
 and dependencies rather than installing every tool for every contribution.
 
-An attached board is not permission to modify it or exercise connected devices. Before flashing, resetting, changing
-board or UART configuration, sending board-control commands, or transmitting UART data, get explicit authorization
-from the owner of the board and connected devices (which may be you). Stay within that scope, and do not perform these
-actions merely to validate documentation or UI changes.
+Before using an attached board or its connected equipment, get the owner's explicit permission to flash or reset it,
+change its configuration, use board controls, or send UART traffic.
 
 ## Validate Your Change
 
@@ -52,8 +50,6 @@ claiming hardware validation. Exact-artifact HIL is required for release qualifi
 
 - Keep changes small and focused; follow the [shared coding conventions](.github/copilot-instructions.md), including
   C, Python, Markdown, and Doxygen requirements.
-- Preserve the 6 CDC to 6 UART design unless the change is explicitly about that design.
-- Keep board pin mapping separate from USB and UART transport logic.
 - Add a focused regression check for non-trivial fixes or new behavior.
 - Update matching docs when behavior changes; do not duplicate content across docs.
 - Explain the problem, the change, and any compatibility impact; link the related issue when applicable.

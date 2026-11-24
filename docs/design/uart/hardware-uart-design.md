@@ -19,8 +19,7 @@ When the UART is idle and no line-coding change is blocking TX, the worker sends
 DMA. The span is committed only after the transfer completes. Each span is capped by a wire-time budget, so one busy
 port cannot monopolize the worker.
 
-DMA completion means the bytes reached the PL011 FIFO, not that the last stop bit has left the pin. A safe line-coding
-change also waits for the UART itself to report idle.
+DMA completion places bytes in the PL011 FIFO; a safe line-coding change waits until the UART reports idle.
 
 ## Line-Coding Changes
 
