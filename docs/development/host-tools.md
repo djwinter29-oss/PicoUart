@@ -19,10 +19,8 @@ flowchart TD
     SerialApps["Serial applications"] -->|"Six USB CDC ports"| PicoBoard
 ```
 
-The [HID reference](../design/usb/hid-report-reference.md) defines the wire format. Hosts validate and decode reports,
-then expose typed snapshots and explicit errors. Feature reads do not advance traffic totals or rate baselines. A
-timed-out control may still finish, so hosts verify its result and never retry reboot or save automatically. Routine
-HTTP request logs are off by default.
+The [HID reference](../design/usb/hid-report-reference.md) defines report validation, polling, counters, and control
+handling. Hosts expose decoded snapshots and explicit errors. Routine HTTP request logs are off by default.
 
 ## Prerequisites
 

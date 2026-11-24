@@ -4,27 +4,19 @@ The Python and .NET hosts share a frontend in `host/web/src`. The Direct Dashboa
 `host/direct/src`. This guide covers how they are built, tested, and presented; host API and server development are in
 [Host Tools Development](host-tools.md).
 
-## Hosted Frontend
+## Hosted Dashboards
+
+### Frontend
 
 Python and .NET serve the same frontend, written as native ES modules with no bundler. Keep it backend-neutral and do
 not create a second hosted frontend. If a module's cache-busting version changes, update every importer and the HTML
 entry. The Python server sets correct MIME types for JS and CSS.
 
-## Version Display
+### Version Display
 
 The top bar shows the backend name and **App v**, the host version. Python reports `pico_uart.__version__` (from
 `hatch-vcs`), and .NET reports its assembly informational version (from MinVer). `PICO_UART_HOST_VERSION` overrides
 the displayed value only.
-
-## Frontend Tests
-
-Run the frontend tests with:
-
-```sh
-node --test host/web/tests/*.test.mjs host/direct/tests/*.test.mjs
-```
-
-## Hosted Dashboards
 
 The Python and .NET apps share one HID reader per selected board and serve cached snapshots to each browser page.
 Boards are found at startup and on **Rescan**; unplugged boards do not trigger a switch to another device. Selection is
@@ -60,8 +52,8 @@ The wire contract lives in the [HID reference](../design/usb/hid-report-referenc
 belong to host applications:
 
 - Show an unknown product as `Unknown product (0xNNNN)` and disable its product-specific controls.
-- Show the UID as **Serial / UID**, using uppercase hexadecimal with two characters per byte.
-- Show RAM as **Firmware RAM reserved / total**; it is build-time accounting, not free heap.
+- Show the UID as **Serial / UID**.
+- Show RAM as **Firmware RAM reserved / total**.
 - Show the stored clock profile and the running clock separately. Show peak percentages only when report 2 supplies
   valid capacities.
 - Show temperature as an estimate in Celsius, normally to one decimal place. Label service load by core and mark the
@@ -71,21 +63,18 @@ belong to host applications:
 - Label `rx_overrun_count` as **Known RX bytes dropped**, `rx_error_count` as **RX controller error observations**,
   and `last_control_error_reason` as **Last configuration error**.
 - Label ring and FIFO peaks **Observed peak since boot**. When the port is stopped, show its baud rate as **Last
-  applied**; it is not a measured wire rate.
-- Feature reads show current state but do not advance traffic totals or rate baselines. Compute rates from device
-  intervals, not browser arrival times. An unusable window shows `--`; mark a channel stale after three seconds
-  without an Input report.
+  applied**. For update rates and stale reports, follow the
+  [HID polling rules](../design/usb/hid-report-reference.md#host-polling-and-validation).
 
 Lifecycle badges are Closed, Starting, Ready, Configuring, Error, and host-side Unknown. Fault history and the last
 configuration error remain visible beside the badge.
 
 ## Direct Dashboard
 
-The Direct Dashboard is a standalone WebHID app with its own assets and renderer; it has no server-side code.
-If a save times out or disconnects, it remembers the unconfirmed result by board UID. A fresh report 2 read and explicit
-acknowledgement are required before another save. WebHID open and close timeouts do not cancel the browser operation:
-keep reconnect disabled until it settles. If a late open succeeds, close it; if that fails, unplug the board. A stuck
-WebHID call cannot be canceled, so ignore late completions and never start an overlapping write.
+The Direct Dashboard is a standalone WebHID app with its own assets and renderer; it has no server-side code. If a save
+times out or disconnects, it remembers the unconfirmed result by board UID. A fresh report 2 read and explicit
+acknowledgement are required before another save. WebHID calls cannot be canceled: keep reconnect disabled until an
+open or close settles, close a late successful open, and never start an overlapping write.
 
 ```sh
 tools/host/run-direct.sh                           # serves http://127.0.0.1:8000/ (--port N)
@@ -105,3 +94,11 @@ python host/direct/tests/browser_smoke.py
 
 The simulated test does not verify real browser and OS USB access. Deployment to Pages is described in
 [Host App Distribution and Publishing](../deployment/host-app-publishing.md#direct-dashboard-pages).
+
+## Frontend Tests
+
+Run the frontend tests with:
+
+```sh
+node --test host/web/tests/*.test.mjs host/direct/tests/*.test.mjs
+```

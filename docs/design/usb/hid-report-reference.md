@@ -11,28 +11,19 @@ and per-channel monitoring. For what HID is for and how it relates to the CDC po
 - The device is USB `2e8a:116b`, allocated to PicoUart by the Raspberry Pi Foundation
   ([allocation list](https://github.com/raspberrypi/usb-pid)). The manufacturer string is `djwinter`, the product
   `PicoUart`. CDC interface strings advertise backend limits: `CDC0 HW`, `CDC1 HW`, and `CDC2`-`CDC5 PIO 8N1`.
-- HID never carries UART data or line coding, never selects pins, and never changes ring behavior. Reading a report
-  does not change transport ownership.
+- HID carries board status and control. CDC carries UART data and line coding; the board configuration owns pins and
+  ring behavior. Reading a report leaves transport ownership unchanged.
 
 **Wire rules:** multi-byte integers are little-endian, and the UID is an ordered byte sequence. Offsets and sizes
-exclude the report-ID byte. Every report fits in 64 bytes including the ID. All layouts here are version `1`,
-independent of the firmware version. Within the selected product, report type, ID, length, and version together
-identify a layout. There is no padding.
+exclude the report-ID byte. Every report fits in 64 bytes including the ID. Layout version `1` is independent of the
+firmware version. Select the layout using product, report type, ID, length, and version. Reports have no padding.
 
 ## Report ID Allocation
 
-The ranges are a reusable convention for Pico projects. The assignments are PicoUart's.
+PicoUart assigns IDs by report purpose:
 
-| IDs | Generic role | PicoUart assignments |
-| --- | ---- | ----------- |
-| `1`-`9` | Device information and monitoring | `1` Identity, `2` Board Configuration, `3` Telemetry; `4`-`9` unassigned. |
-| `10`-`19` | Application monitoring | Six Channel Snapshots, addressed as `10 + channel`; `16`-`19` unassigned. |
-| `20`-`29` | Device and application control | `20` Board Action and Result; `21`-`29` unassigned. |
-| `30`-`39` | Application diagnostics | Six Channel Diagnostics reports, addressed as `30 + channel`; `36`-`39` unassigned. |
-| `40`-`255` | Unassigned expansion | None. |
-
-Ranges group reports by purpose; they do not enforce access. ID `0` is unused. Sharing the ranges does not mean sharing
-payload layouts: a host must identify the product before decoding product-specific fields.
+ID `0` is unused. Reports from another product may use the same IDs but have different layouts, so identify the
+product before decoding fields.
 
 | Report ID | Name | Type | Direction | Payload | Purpose |
 | --------- | ---- | ---- | --------- | ------- | ------- |
@@ -43,8 +34,8 @@ payload layouts: a host must identify the product before decoding product-specif
 | `20` | Board Action and Result | Feature | Host reads/writes | 4 bytes | LED/reboot/save actions and results. |
 | `30`-`35` | Channel Diagnostics (CDC0–CDC5) | Feature | Host reads | 24 bytes | RX fault history, last configuration error, buffer peaks. |
 
-All sixteen report IDs are always present. Unavailable features are signalled by capability flags, not by missing
-reports. Writes to read-only reports are rejected without side effects.
+All sixteen report IDs are always present. Capability flags identify features unavailable on a board. Writes to
+read-only reports are rejected without side effects.
 
 ## Report ID 1: Device Identity and Capabilities
 
@@ -67,14 +58,12 @@ Read once per connection. The contents are static until reboot.
 | 23 | 4 | `ram_reserved_bytes` | Static and reserved SRAM for this firmware build. |
 | **Total** | **27** | | **28 bytes including the report ID.** |
 
-### Identity and Capabilities
-
-#### Discovery
+### Discovery
 
 Every product using this convention shares a three-byte prefix: the layout version at offset 0 and the
 little-endian product ID at offsets 1-2. Read the descriptor-declared length, check the prefix, choose the matching
-product contract, and only then validate the full report. Never decode a known product's unsupported version with an
-older layout. Hosts must not enable product-specific commands for an unknown product.
+product contract, then validate the full report. Decode each product only with a supported layout version, and
+disable product-specific commands for unknown products.
 
 | Product ID | Meaning |
 | ---------: | ------- |
@@ -83,12 +72,12 @@ older layout. Hosts must not enable product-specific commands for an unknown pro
 | `0x0002`-`0xfffe` | Assign as other project products are introduced. |
 | `0xffff` | Reserved. |
 
-#### UID
+### UID
 
-It is an ordered byte sequence. Uppercase hexadecimal with two characters per byte matches the 16-character
-USB serial. On RP2040 it is the QSPI flash UID; on RP2350 it is the SDK platform identity.
+The UID is an ordered byte sequence. Uppercase hexadecimal with two characters per byte matches the 16-character USB
+serial. On RP2040 it is the QSPI flash UID; on RP2350 it is the SDK platform identity.
 
-#### Board Model
+### Board Model
 
 This is the configured build target; the firmware does not detect hardware. Keep unknown MCU and board
 numbers as they are rather than inventing names.
@@ -101,15 +90,15 @@ numbers as they are rather than inventing names.
 | `3` | Pico 2 | RP2350 | Existing firmware target. |
 | `4` | Pico 2 W | RP2350 | Builds from source; not covered by the release HIL matrix. |
 
-#### Firmware Version
+### Firmware Version
 
 A `v1.2.3` tag reports `1.2.3`. The USB `bcdDevice` field carries only major.minor. Use the
 version for diagnostics only: choose decoding by product and layout, and choose operations by capability flags.
 
-#### Channel Mask
+### Backend and Capability Fields
 
-Report 2 owns the channel count (six for PicoUart). Reject a hardware mask with bits set above that
-count. PicoUart reports `0x03`, so CDC0 and CDC1 use hardware UARTs and the rest use PIO.
+The hardware channel mask uses report 2's channel count (six for PicoUart). Reject bits set above that count.
+PicoUart reports `0x03`, so CDC0 and CDC1 use hardware UARTs and the rest use PIO.
 
 | Capability bit | Meaning |
 | -------------: | ------- |
@@ -119,13 +108,13 @@ count. PicoUart reports `0x03`, so CDC0 and CDC1 use hardware UARTs and the rest
 | 3-7 | Reserved, zero. |
 
 Clock-profile mask bits 0-4 match the profile IDs in report 2. Bit 0 is always set, and bits 5-7 are zero. A set bit
-means the firmware accepts the request. It says nothing about stability.
+means the firmware accepts the request; board stability depends on the individual board and test conditions.
 
 ### Firmware RAM Reservation
 
 `ram_reserved_bytes` is build-time accounting: linked SRAM through `__end__`, scratch sections, and both stack
-reservations. It does not measure free heap or runtime memory pressure. Reject a zero total or a reservation larger
-than the total.
+reservations. It covers the firmware's reserved memory; free heap and runtime memory pressure are outside this value.
+Reject a zero total or a reservation larger than the total.
 
 ## Report ID 2: Board Configuration
 
@@ -155,13 +144,13 @@ hardware map, and the reset that started this boot. Saving a new profile does no
 Each entry is a GPIO number (not a header pin), and `255` means unassigned. Entries are in channel order, from the
 firmware's board configuration. An assigned RTS/CTS pin does not mean flow control is running.
 
-DTR is a CDC session signal and is not part of this map. If report 2 cannot be read, treat the pins and channel count
-as unknown. Never substitute GPIO 0.
+DTR is a CDC session signal and is not part of this map. If report 2 cannot be read, show the pins and channel count as
+unknown; do not infer GPIO 0.
 
 ### Shared Buffer Capacities
 
-All four capacities are nonzero and the same for every channel. They give the storage behind the matching peaks in
-reports 30-35, not total USB in-flight storage.
+All four capacities are nonzero and the same for every channel. They describe the storage behind the matching peaks in
+reports 30-35; USB in-flight bytes are separate.
 
 ### Reset Cause
 
@@ -183,8 +172,8 @@ distinguish causes, it reports Unknown; RP2040 combines power-on and brownout in
 | `10` | Configuration-save reboot after successful flash verification (firmware marker). |
 | `11`-`255` | Unassigned; hosts preserve the numeric value and display it as unknown. |
 
-Reboot and save markers live in watchdog scratch registers and are consumed at boot. They identify the firmware path,
-not which host asked for the reboot. A recorded HardFault takes priority over those markers.
+Reboot and save markers live in watchdog scratch registers and are consumed at boot. They identify the firmware path;
+the requesting host is not recorded. A recorded HardFault takes priority over those markers.
 
 ### Boot Configuration
 
@@ -196,16 +185,16 @@ not which host asked for the reboot. A recorded HardFault takes priority over th
 | `3` | 250 MHz | Both |
 | `4` | 280 MHz | Both |
 | `5`-`254` | Unassigned; invalid in the currently specified layout | None |
-| `255` | Unavailable sentinel for `stored_profile` readback only; never a save request | None |
+| `255` | Unavailable sentinel for `stored_profile` readback; reject it as a save request | None |
 
-`stored_profile` is only a request; report 3 has the running clock. They are separate values; never infer the profile
-from the frequency.
+`stored_profile` records the request; report 3 gives the running clock. The two values can differ, so use each for its
+own purpose.
 
 At boot the firmware picks the highest supported frequency at or below the request. The current build caps RP2040 at
 250 MHz and RP2350 at 280 MHz. If no frequency is eligible, or the clock change fails, it falls back to SDK defaults.
 
 Invalid or erased storage reads as `255` and boots with SDK defaults; flash is not rewritten. Watchdog recovery can also
-fall back to defaults while keeping the stored request. None of this qualifies an overclock as stable on a given board.
+fall back to defaults while keeping the stored request. Check report 3 to confirm the clock after boot.
 
 ### Save and Reboot Safety
 
@@ -219,7 +208,7 @@ Saving a profile writes flash and reboots the board, so it is guarded:
   API. Only the final flash sector is erased. The record is CRC-protected and checked in full before the result reports
   Completed. Saving the profile that is already stored skips the write.
 - Completed means the profile was verified in flash; it does not promise the next boot succeeded. Reconnect and read
-  report 2 to confirm. An interrupted write boots SDK defaults, because storage is one sector, not a journal.
+  report 2 to confirm. An interrupted write boots SDK defaults because the clock profile occupies one flash sector.
 
 ## Report ID 3: Board Telemetry
 
@@ -236,14 +225,101 @@ Live measurements only.
 | 16 | 4 | `system_clock_hz` | Current SDK-reported `clock_get_hz(clk_sys)`, nonzero. |
 | **Total** | **20** | | **21 bytes including the report ID.** |
 
-If any mandatory measurement fails, the whole GET fails. The firmware never returns a partial or zero-filled report.
-The load sentinel `65535` and an absent LED are valid values and not failures. When a read fails, the host marks live
-values stale, disables LED controls, and keeps static data from reports 1 and 2.
+If any mandatory measurement fails, the whole GET fails. A successful response contains all mandatory measurements.
+The load sentinel `65535` and an absent LED are valid values. When a read fails, the host marks live values stale,
+disables LED controls, and keeps static data from reports 1 and 2.
 
 **Service load** is the wall time spent in service passes that did real work, divided by the measurement window.
 Each core publishes about once a second and reports `65535` before its first window. Core 0 counts USB, CDC, control,
 and HID work; core 1 counts UART data, control, and error recovery. Idle polling and waiting on DMA are excluded. It
-measures service workload, not CPU utilization or spare throughput. Reject values above `10000` other than the sentinel.
+measures service workload; use separate measurements for CPU utilization or spare throughput. Reject values above
+`10000` except the sentinel.
+
+## Reports 10-15: Channel Snapshots
+
+Report `10 + channel` covers CDC0–CDC5. The firmware publishes an Input report for each channel about every **500 ms**.
+A Feature GET returns the same layout on demand.
+
+| Offset | Size | Field | Meaning |
+| -----: | ---: | ----- | ------- |
+| 0 | 1 | `version` | Layout version `1`. |
+| 1 | 1 | `channel_state` | Current lifecycle state; previous faults are reported in diagnostics. |
+| 2 | 1 | `uart_measurement_state` | Unavailable, Current, or Cached UART statistics, defined below. |
+| 3 | 4 | `baud_rate` | Last successfully applied nominal baud setting; zero when unavailable. |
+| 7 | 1 | `data_bits` | Applied data bits; zero when baud is unavailable. |
+| 8 | 1 | `stop_bits` | Applied stop bits; zero when baud is unavailable. |
+| 9 | 1 | `parity` | Applied none=`0`, odd=`1`, even=`2`; zero when unavailable. |
+| 10 | 2 | `sequence` | Accepted Input publication sequence, modulo 65536. |
+| 12 | 2 | `interval_ms` | Milliseconds since preceding accepted Input; `65535` saturated, `0` unusable for rates. |
+| 14 | 4 | `uart_tx_bytes` | Boot-lifetime handoff counter, modulo 2^32. |
+| 18 | 4 | `uart_rx_bytes` | Boot-lifetime published RX counter, including subsequently overwritten bytes, modulo 2^32. |
+| 22 | 4 | `cdc_tx_bytes` | Boot-lifetime TinyUSB acceptance counter, modulo 2^32. |
+| 26 | 4 | `cdc_rx_bytes` | Boot-lifetime UART TX-ring admission counter, modulo 2^32. |
+| **Total** | **30** | | **31 bytes including the report ID.** |
+
+### Channel State
+
+| Value | State | Meaning |
+| ----: | ----- | ------- |
+| `0` | Closed | CDC DTR closed; backend shutdown may still be pending. |
+| `1` | Starting | CDC open; initialization or initial configuration not complete. |
+| `2` | Ready | CDC open, backend ready, no pending control or current failure. |
+| `3` | Configuring | CDC open and backend ready; a line-coding request is pending. |
+| `4` | Error | CDC open with a current initialization/control failure; traffic may still progress. |
+| `5`-`255` | Unassigned | Invalid in this layout. |
+
+When more than one state applies, the earliest in this order wins: Closed, Error, Starting, Configuring, Ready. A
+missing or stale report is shown as host-side Unknown. Read the diagnostics report for an error reason.
+The request lifecycle behind Configuring and Error is described in the
+[control plane design](../control-plane-design.md).
+
+### UART Measurement State
+
+| Value | State | Meaning |
+| ----: | ----- | ------- |
+| `0` | Unavailable | No coherent UART statistics sample exists; UART counters are zero placeholders. |
+| `1` | Current | Coherent UART statistics acquired for this capture. |
+| `2` | Cached | Last accepted UART statistics reused; UART rates unavailable. |
+| `3`-`255` | Unassigned | Invalid in this layout. |
+
+UART statistics come from the core-1 backend through a lock-free snapshot that can fail. On failure, the report keeps
+the last good sample and marks it Cached. Current describes the sample capture; a stopped port can still have a
+current final sample. The CDC counters are owned by core 0 and are always fresh.
+
+### Traffic Counters
+
+| Direction | Counter | Counts |
+| --------- | ------- | ------ |
+| Host → UART | `cdc_rx_bytes` | Bytes consumed from TinyUSB into UART TX ring. |
+| Host → UART | `uart_tx_bytes` | Peripheral/FIFO handoff: HW/PIO DMA completion or PIO polling FIFO writes. |
+| UART → Host | `uart_rx_bytes` | DMA bytes published into RX ring, including bytes subsequently overwritten. |
+| UART → Host | `cdc_tx_bytes` | Bytes accepted by TinyUSB for transmission to the host. |
+
+These count handoffs rather than delivered bytes. Closing a port or resetting USB can discard bytes already counted.
+Use the diagnostics counters and payload checks to investigate loss. The counters run from boot and wrap at 2^32, and
+USB reconnects do not reset them. The applied baud rate reports the configured nominal rate.
+
+### Snapshot Consistency
+
+Each report is captured coherently. The baud rate, framing, and state come from one applied configuration, and the
+four counters are read together at the interval boundary. Treat reports for different channels, and snapshots versus
+diagnostics, as independent captures.
+
+### Sequence, Interval, and Rates
+
+- Each channel has its own sequence and interval. A sequence number is used up only when USB accepts the Input report,
+  so the first accepted report is `1`. A Feature read returns the last committed sequence, or `0` before the first.
+  USB reset restarts the sequence but not the counters.
+- `interval_ms` is the time since this channel's previous accepted Input, capped at `65535`. Values `0` and `65535`
+  cannot produce a rate.
+- When the endpoint is busy, publication is delayed and old snapshots are dropped instead of sent in a burst. Due
+  channels are served round-robin.
+- **Host rate math:** take the counter delta modulo 2^32 and divide by the device's `interval_ms`. The first sample
+  after a (re)connect only sets the baseline. A sequence gap, a stale stream, or a non-Current UART sample discards that
+  channel's rate window while keeping its totals; other channels are unaffected. Combine windows by summing bytes and
+  intervals rather than averaging rates. Feature reads leave rate baselines and totals unchanged.
+- Wrap-safe deltas need fewer than 2^32 bytes between samples, which is hours at UART speeds. A 16-bit sequence cannot
+  detect a loss of exactly 65536 reports, so rebaseline after any long pause.
 
 ## Report ID 20: Board Action and Result
 
@@ -256,8 +332,8 @@ A SET requests one action, and a GET returns the latest board-wide result. Both 
 | 2 | 1 | `flags`: bit 0 confirms reboot/save; bit 1 acknowledges unsafe overclocking. Bits 2-7 zero. | `status`, defined below. |
 | 3 | 1 | `profile`: profile to save for action 4; zero for other actions. | `error_reason`: action rejection or execution failure. |
 
-Always build a fresh SET. Bytes 2-3 mean different things in each direction, so a GET response is not a writable
-image. A GET never runs or repeats an action.
+Always build a fresh SET. Bytes 2-3 mean different things in each direction, so do not send a GET response as a SET.
+GET requests read the latest result; they do not run or repeat actions.
 
 | Action | Name | Required flags | Behavior |
 | -----: | ---- | -------------- | -------- |
@@ -276,7 +352,7 @@ authentication.
 | Status | Name | Meaning |
 | -----: | ---- | ------- |
 | `0` | Idle | No action result yet. |
-| `1` | Pending | Accepted, not yet complete. |
+| `1` | Pending | Accepted and still running. |
 | `2` | Completed | LED action completed, or reboot scheduled; a save has passed flash verification. |
 | `3` | Invalid | Malformed request, invalid profile, or missing confirmation/acknowledgement. |
 | `4` | Unsupported | Unknown action or required capability unavailable. |
@@ -323,109 +399,23 @@ before the USB transfer finishes.
   Pending, for up to 3000 ms. Give each SET and GET its own 3000 ms deadline.
 - Reboot and save reset the board 1000 ms after publishing Completed. Later reads and writes neither delay nor cancel
   this.
-- A timeout or disconnect leaves the outcome unknown. Never retry a reboot or save automatically. Reconnect, read
+- A timeout or disconnect leaves the outcome unknown. Do not retry a reboot or save automatically. Reconnect, read
   report 2, and let the user decide.
-
-## Reports 10-15: Channel Snapshots
-
-Report `10 + channel` covers CDC0–CDC5. The firmware publishes an Input report for each channel about every **500 ms**.
-A Feature GET returns the same layout on demand.
-
-| Offset | Size | Field | Meaning |
-| -----: | ---: | ----- | ------- |
-| 0 | 1 | `version` | Layout version `1`. |
-| 1 | 1 | `channel_state` | Lifecycle summary defined below; not a history flag. |
-| 2 | 1 | `uart_measurement_state` | Unavailable, Current, or Cached UART statistics, defined below. |
-| 3 | 4 | `baud_rate` | Last successfully applied nominal baud setting; zero when unavailable. |
-| 7 | 1 | `data_bits` | Applied data bits; zero when baud is unavailable. |
-| 8 | 1 | `stop_bits` | Applied stop bits; zero when baud is unavailable. |
-| 9 | 1 | `parity` | Applied none=`0`, odd=`1`, even=`2`; zero when unavailable. |
-| 10 | 2 | `sequence` | Accepted Input publication sequence, modulo 65536. |
-| 12 | 2 | `interval_ms` | Milliseconds since preceding accepted Input; `65535` saturated, `0` unusable for rates. |
-| 14 | 4 | `uart_tx_bytes` | Boot-lifetime handoff counter, modulo 2^32. |
-| 18 | 4 | `uart_rx_bytes` | Boot-lifetime published RX counter, including subsequently overwritten bytes, modulo 2^32. |
-| 22 | 4 | `cdc_tx_bytes` | Boot-lifetime TinyUSB acceptance counter, modulo 2^32. |
-| 26 | 4 | `cdc_rx_bytes` | Boot-lifetime UART TX-ring admission counter, modulo 2^32. |
-| **Total** | **30** | | **31 bytes including the report ID.** |
-
-### Channel State
-
-| Value | State | Meaning |
-| ----: | ----- | ------- |
-| `0` | Closed | CDC DTR closed; backend shutdown may still be pending. |
-| `1` | Starting | CDC open; initialization or initial configuration not complete. |
-| `2` | Ready | CDC open, backend ready, no pending control or current failure. |
-| `3` | Configuring | CDC open and backend ready; a line-coding request is pending. |
-| `4` | Error | CDC open with a current initialization/control failure; traffic may still progress. |
-| `5`-`255` | Unassigned | Invalid in this layout. |
-
-When more than one state applies, the earliest in this order wins: Closed, Error, Starting, Configuring, Ready. A
-missing or stale report is a host-side Unknown, not a wire value. Read the diagnostics report for an error reason.
-The request lifecycle behind Configuring and Error is described in the
-[control plane design](../control-plane-design.md).
-
-### UART Measurement State
-
-| Value | State | Meaning |
-| ----: | ----- | ------- |
-| `0` | Unavailable | No coherent UART statistics sample exists; UART counters are zero placeholders. |
-| `1` | Current | Coherent UART statistics acquired for this capture. |
-| `2` | Cached | Last accepted UART statistics reused; UART rates unavailable. |
-| `3`-`255` | Unassigned | Invalid in this layout. |
-
-UART statistics come from the core-1 backend through a lock-free snapshot that can fail. When it fails, the firmware
-reuses the last good sample (Cached) and never substitutes zeros. Current describes the sample, not the backend: a
-stopped port can still have a Current final sample. The CDC counters are owned by core 0 and are always fresh.
-
-### Traffic Counters
-
-| Direction | Counter | Counts |
-| --------- | ------- | ------ |
-| Host → UART | `cdc_rx_bytes` | Bytes consumed from TinyUSB into UART TX ring. |
-| Host → UART | `uart_tx_bytes` | Peripheral/FIFO handoff: HW/PIO DMA completion or PIO polling FIFO writes, not final stop-bit transmission. |
-| UART → Host | `uart_rx_bytes` | DMA bytes published into RX ring, including bytes subsequently overwritten. |
-| UART → Host | `cdc_tx_bytes` | TinyUSB acceptance, not confirmed host receipt. |
-
-These count handoffs rather than delivered bytes. Closing a port or resetting USB can discard bytes already counted.
-Use the diagnostics counters and payload checks to investigate loss. The counters run from boot and wrap at 2^32, and
-USB reconnects do not reset them. The applied baud rate is a setting, not a measured wire rate.
-
-### Snapshot Consistency
-
-Each report is captured coherently. The baud rate, framing, and state come from one applied configuration, and the
-four counters are read together at the interval boundary. Reports for different channels are separate captures, as are
-snapshots and diagnostics; never assume two reports are atomic with each other.
-
-### Sequence, Interval, and Rates
-
-- Each channel has its own sequence and interval. A sequence number is used up only when USB accepts the Input report,
-  so the first accepted report is `1`. A Feature read returns the last committed sequence, or `0` before the first.
-  USB reset restarts the sequence but not the counters.
-- `interval_ms` is the time since this channel's previous accepted Input, capped at `65535`. Values `0` and `65535`
-  cannot produce a rate.
-- When the endpoint is busy, publication is delayed; old snapshots are never queued or sent in a burst. Due channels
-  are served round-robin.
-- **Host rate math:** take the counter delta modulo 2^32 and divide by the device's `interval_ms`. The first sample
-  after a (re)connect only sets the baseline. A sequence gap, a stale stream, or a non-Current UART sample discards that
-  channel's rate window while keeping its totals; other channels are unaffected. Combine windows by summing bytes and
-  intervals rather than averaging rates. Feature reads never set a rate baseline and are not summed into totals.
-- Wrap-safe deltas need fewer than 2^32 bytes between samples, which is hours at UART speeds. A 16-bit sequence cannot
-  detect a loss of exactly 65536 reports, so rebaseline after any long pause.
 
 ## Reports 30-35: Channel Diagnostics
 
 Report `30 + channel` is a read-only Feature with no Input publication. Read it when opening a channel's details or
-investigating an Error. For unattended alerts, a host may poll it slowly, but only when the user enables that. Reading
-it never clears history or affects snapshot sequences and baselines.
+investigating an Error. For unattended alerts, a host may poll it slowly, but only when the user enables that. Reads
+preserve history and leave snapshot sequences and rate baselines unchanged.
 
 | Offset | Size | Field | Meaning |
 | -----: | ---: | ----- | ------- |
 | 0 | 1 | `version` | Layout version `1`. |
 | 1 | 1 | `uart_measurement_state` | Same Unavailable/Current/Cached enum as routine snapshots, for this capture. |
 | 2 | 1 | `uart_sample_age_100ms` | UART acquisition age in 100 ms units, rounded down; 255 means at least 25.5 seconds or no sample. |
-| 3 | 1 | `last_control_error_reason` | Historical last configuration error, not an active-failure flag. |
+| 3 | 1 | `last_control_error_reason` | Most recent configuration error, retained as diagnostic history. |
 | 4 | 4 | `rx_overrun_count` | Saturating known dropped UART RX bytes. |
-| 8 | 4 | `rx_error_count` | Saturating controller error observations, not bad bytes/frames. |
+| 8 | 4 | `rx_error_count` | Saturating count of controller error observations. |
 | 12 | 4 | `last_fault_uptime_s` | Latest observed RX fault or recorded configuration error, in saturating uptime seconds. |
 | 16 | 2 | `uart_tx_ring_peak_bytes` | Boot-lifetime observed UART TX-ring peak, in bytes. |
 | 18 | 2 | `uart_rx_ring_peak_bytes` | Boot-lifetime observed UART RX-ring peak, in bytes. |
@@ -445,20 +435,20 @@ it never clears history or affects snapshot sequences and baselines.
 | `5` | Other or unknown configuration error. |
 | `6`-`255` | Unassigned. |
 
-This field records history and does not mean the port is failing now. It keeps its value through later successes, port
-close and reopen, and USB reconnects, and clears only at boot.
+This field records history. It keeps its value through later successes, port close and reopen, and USB reconnects, and
+clears only at boot.
 
 ### Fault History
 
-- The two RX counters saturate rather than wrap, and nothing on the device clears them. `rx_overrun_count` counts known
+- The two RX counters saturate rather than wrap, and firmware does not clear them. `rx_overrun_count` counts known
   dropped bytes. `rx_error_count` counts sticky error flags seen when sampled, so several bad frames can count as one;
   it is not a per-byte or per-frame total.
-- `last_fault_uptime_s` is the uptime of the latest RX fault or configuration error. It never decreases within a boot.
+- `last_fault_uptime_s` is the uptime of the latest RX fault or configuration error. It is monotonic within a boot.
   A startup failure on its own does not advance it.
 - "No history" means both counters, the reason, and the timestamp are zero. A reason with zero RX counts is valid.
 - The USB core samples faults about every 100 ms, whether or not anyone is reading.
-- Nonzero counts are history and say nothing about the present. Possible causes include a floating RX line, a break, a
-  wrong baud rate, or wiring faults; the counters cannot tell which.
+- Nonzero counts preserve past observations and cannot establish current health. Possible causes include a floating
+  RX line, a break, a wrong baud rate, or wiring faults; the counters cannot distinguish them.
 - There is no boot ID. After reconnecting, start new comparison baselines rather than claiming exact fault counts across
   the gap.
 
@@ -466,7 +456,7 @@ close and reopen, and USB reconnects, and clears only at boot.
 
 | State | Diagnostic age and measurements |
 | ----- | ------------------------------- |
-| Unavailable (`0`) | Age 255; UART-derived RX counts and ring peaks are zero placeholders, not evidence of fault-free operation. |
+| Unavailable (`0`) | Age 255; UART-derived RX counts and ring peaks contain zero placeholders because no sample is available. |
 | Current (`1`) | Age zero; coherent UART statistics acquired for this capture, including a stopped backend when safely captured. |
 | Cached (`2`) | Reuse last accepted UART statistics; age may be zero due to rounding or saturate at 255. |
 
@@ -476,7 +466,7 @@ port close and reopen.
 
 ## Host Polling and Validation
 
-1. Read report 1, check the [discovery prefix](#identity-and-capabilities), and validate the full report before sending
+1. Read report 1, check the [discovery prefix](#discovery), and validate the full report before sending
    any command. PicoUart requires version 1 and exactly 27 bytes.
 2. Read report 2 once per connection. Check that the channel count is 6 and use it to check report 1's channel mask.
 3. Poll report 3 every 500-1000 ms.
@@ -514,7 +504,7 @@ closed, and nothing is pending.
 | Channel sequence `65535` followed by `0` | Normal modulo-65536 continuity, not a gap. |
 | Input at time T; Feature read at T+250 ms; next Input at T+500 ms | Feature read does not commit a baseline. Next Input still covers 500 ms from T and includes all interval bytes once. |
 | Channel 0 sequence jumps from 10 to 12 while channel 1 advances normally | Recover channel 0's cumulative totals, discard its rate window, and leave channel 1 unaffected. |
-| Line coding changes during snapshot capture | Report either coherent old or coherent new applied configuration, never a mixture. |
+| Line coding changes during snapshot capture | Report one coherent applied configuration: either the old or the new one. |
 
 ## Versioning
 

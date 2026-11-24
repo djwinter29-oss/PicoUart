@@ -13,9 +13,8 @@ while old-format bytes are still queued, would corrupt traffic. So the firmware:
 3. applies the change on core 1 once the backend is idle, and
 4. reports the outcome through HID.
 
-The USB transfer result means the request was received, not applied. On HID, the channel snapshot reports `Configuring`
-while the change is pending and `Error` if the request fails. The diagnostics report retains the last configuration
-error reason.
+The USB transfer confirms receipt. The HID channel snapshot reports `Configuring` while the change is pending and
+`Error` if it fails; diagnostics retain the last configuration error reason.
 
 ## Request Lifecycle
 
@@ -79,16 +78,16 @@ time. Repeating the same request does not extend its deadline, but a different r
 
 ## Port Lifecycle
 
-DTR drives each port's lifecycle, and the UART worker is the only code that starts or stops a backend.
-`READY` and `INIT_FAILED` below are internal firmware status flags; HID reports `Ready` and `Error`.
+DTR drives each port's lifecycle, and the UART worker is the only code that starts or stops a backend. HID reports
+`Ready` when the backend is running and `Error` when initialization or configuration fails.
 
-- **Open:** the initial line coding goes through the normal mailbox before the start request, so the backend starts with
-  the requested format, not the previous session's. Each open makes one start attempt. On failure the channel snapshot
+- **Open:** the initial line coding goes through the normal mailbox before the start request, so the backend starts
+  with the requested format. Each open makes one start attempt. On failure the channel snapshot
   reports `Error`; close and reopen to retry.
 - **Close:** core 0 stops admitting bytes and clears the port's CDC FIFOs. The worker then stops the backend and parks
   TX idle-high. Queued bytes are discarded, while the applied settings and boot-lifetime counters are kept. The board
   does not reboot.
-- **Internal `READY` flag:** means the backend is running and its reported settings match the hardware. Both directions
+- **Backend ready:** the backend is running and its reported settings match the hardware. Both directions
   are blocked until the port first becomes ready. During a later live reconfiguration, RX keeps draining and only TX
   is blocked.
 
@@ -107,4 +106,3 @@ polling.
 - After opening and configuring ports, wait for the HID channel snapshot to report `Ready` with the expected applied
   settings. The Python client's `wait_channels_ready()` does exactly this.
 - A `Ready` snapshot confirms the current state; read diagnostics separately when checking retained fault history.
-- Clean serial data without clean HID status and diagnostics is incomplete test evidence.

@@ -11,20 +11,11 @@ Use CDC for serial traffic and HID to see what the bridge is doing. Keeping them
 over a serial port, and a stuck serial client never hides the board's health. The pin map is in
 [hardware setup](../../hardware-setup.md).
 
-## Using Both Together
-
-1. Open the serial port and set the baud rate and framing through CDC.
-2. Watch HID until the port is `Ready` with no pending or current control failure, and confirm the applied settings.
-3. Run traffic over CDC while monitoring HID health and counters.
-
 ## CDC Ports
 
-Each CDC port behaves like an ordinary USB serial adapter for one UART. Bytes flow through the port's
-[rings](../uart/ring-buffer-design.md). When the TX ring is full the firmware stops
-reading that port, so USB pushes back on the host instead of dropping data. DTR opens and closes the UART; while a port
-is closed nothing is bridged and received bytes are discarded. Line coding is applied later on core 1, so a successful
-USB transfer does not mean the change took effect. The result shows up in HID health (see the
-[control plane](../control-plane-design.md)).
+Each CDC port behaves like an ordinary USB serial adapter for one UART. DTR opens and closes the UART; while a port is
+closed nothing is bridged and received bytes are discarded. The port's buffering and full-ring behavior are described
+in [Ring Buffer Design](../uart/ring-buffer-design.md).
 
 Hardware-UART ports accept the usual CDC framing options. PIO ports accept 8N1 only.
 

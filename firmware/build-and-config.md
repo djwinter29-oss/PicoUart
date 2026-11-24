@@ -29,7 +29,7 @@ CI runs both checks below on every firmware build, and you can run them locally 
 
 - [`check-firmware-budget.py`](../tools/release/check-firmware-budget.py) caps static SRAM allocation at 192 of 264 KiB
   (RP2040) and 384 of 520 KiB (RP2350). It also checks that the image fits before the reserved configuration sector.
-  These are allocation limits, not stack or latency measurements.
+  These limits cover static allocation; use runtime tests to measure stack and latency behavior.
 - The voltage-policy test checks that the firmware never writes core-voltage registers, for any clock profile:
 
   ```sh
@@ -42,8 +42,8 @@ CI runs both checks below on every firmware build, and you can run them locally 
 
 ## Load Over SWD
 
-`load.sh` programs the ELF through a Raspberry Pi Debug Probe (CMSIS-DAP OpenOCD), rebuilding first if needed. Connect
-SWDIO, SWCLK, and GND; SWD wiring is separate from the UART wiring.
+`load.sh` programs the ELF through a Raspberry Pi Debug Probe (CMSIS-DAP OpenOCD). Connect SWDIO, SWCLK, and GND; SWD
+wiring is separate from the UART wiring.
 
 ```sh
 tools/firmware/load.sh --board pico
@@ -59,8 +59,8 @@ tools/firmware/load.sh --board pico --skip-build --elf /path/to/release-pico.elf
 ```
 
 Use `--board pico2` with a Pico 2 ELF. Add `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached.
-SWD defaults to 1000 kHz; use `--adapter-speed-khz 100` for marginal wiring. Without `--skip-build`, the loader does
-an incremental development build first.
+SWD defaults to 1000 kHz; use `--adapter-speed-khz 100` for marginal wiring. Without `--skip-build`, the loader
+builds the selected firmware before programming it.
 
 On Linux, `unable to find a matching CMSIS-DAP device` often means USB access was denied, even if `lsusb` lists the
 probe. The loader retries with noninteractive sudo when it can; otherwise add a udev rule for the probe. To test probe
@@ -74,7 +74,7 @@ If OpenOCD reports `Unknown flash device` after finding the target, update OpenO
 (Boya BY25Q16ES) needs a recent OpenOCD build; pass it with `--openocd-exe`.
 
 A recorded recovery for one unstable SWD session was to disconnect both board and probe, wait for their LEDs to go
-off, then reconnect. Treat it as an observation, not a general fix
+off, then reconnect. This worked for that session; see the
 ([review record](../docs/tests/records/2026-10-23-uart-cdc-review-validation.md#cause-and-retained-change)).
 
 ### QSPI Auto-Detection Override

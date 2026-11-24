@@ -21,9 +21,8 @@ flowchart LR
 ## RX Path
 
 The RX state machine samples each bit three times near its centre and takes a majority vote. The samples are four PIO
-clocks apart on a 32-clock-per-bit grid. If the first two samples agree, the third is skipped. The vote rejects
-isolated sampling glitches, but it is not a cure for poor signal integrity. Edge quality still depends on wiring and
-load.
+clocks apart on a 32-clock-per-bit grid. If the first two samples agree, the third is skipped. This filters isolated
+sampling glitches; wiring and electrical load still determine signal quality.
 
 A persistent DMA channel copies each assembled byte from the RX FIFO into the RX ring. A DMA interrupt on core 1 re-arms
 the transfer, with the worker poll as a fallback.
@@ -58,8 +57,8 @@ flowchart TD
 ```
 
 **Why hybrid?** The joined TX FIFO is small compared with USB bursts across six ports. Polling alone wastes worker time
-on a large backlog, while DMA alone wastes setup cost on tiny writes. The backlog threshold is a tuning choice, not a
-protocol guarantee.
+on a large backlog, while DMA alone wastes setup cost on tiny writes. The backlog threshold is an implementation
+tuning value.
 
 Each port claims its TX DMA channel once at startup and keeps it, so a launch only updates the source address and
 length.
@@ -95,8 +94,7 @@ stateDiagram-v2
 ## Flow Control
 
 RTS/CTS is opt-in and off by default. When enabled, RTS follows RX-ring occupancy and CTS gates the start of each TX
-frame; an in-progress frame always finishes. The default configuration enables the RX pull-up and requires RX to be
-idle-high before a baud change.
+frame; an in-progress frame always finishes.
 
 ## Limits
 
@@ -104,5 +102,5 @@ idle-high before a baud change.
   baud rates. RX (32 clocks per bit) hits the floor first at very high rates.
 - PIO instruction memory is finite, and startup rejects configurations whose programs do not fit.
 - The worker services every port on each pass, rotating the starting port. There is no separate TX priority scheduler.
-- Sustained throughput depends on USB bandwidth and how fast the host drains data, not on the configured baud rate.
-  Measured results are in the [HIL records](../../tests/records/README.md#evidence-index).
+- Sustained throughput depends on USB bandwidth and how fast the host drains data; baud configures each port.
+  Measurements are in the [HIL records](../../tests/records/README.md#evidence-index).

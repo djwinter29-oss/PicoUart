@@ -30,8 +30,7 @@ Startup is all-or-nothing: if any backend fails, the ones already started are ro
 launch. Starting a backend that is already active is refused, so its DMA, rings, and settings stay untouched.
 
 Every start is seeded with a complete format, either the queued request or the last applied settings. A failed start
-leaves the applied settings alone, so the reported format always matches the hardware when its internal `READY` flag
-is set.
+leaves the applied settings alone, so the reported format always matches the hardware while the backend is running.
 
 Restart is a real stop and start and discards queued bytes. Counters survive it: traffic and error counts, ring peaks,
 and overflow counts run from boot.

@@ -5,6 +5,8 @@ and CTest; they do not exercise the TinyUSB device stack, live DMA IRQs, or phys
 
 ## What Is Tested
 
+The native test suite covers:
+
 - Ring-buffer occupancy, wrapping, snapshots, and overflow recovery
 - UART line-coding and topology policy
 - DMA progress, TXSTALL timing, and backend policy helpers
@@ -15,8 +17,6 @@ and CTest; they do not exercise the TinyUSB device stack, live DMA IRQs, or phys
 - Hardware/PIO resource claim rollback
 - LED policy behavior
 - Both platforms' reset evidence, stale chip-level flags, consumed markers, and HID user/config-save reboot paths
-
-The test sources are the detailed inventory.
 
 Shared Pico SDK test hooks use one storage definition in [pico_sdk_hooks.c](stubs/pico_sdk_hooks.c), linked into the
 native test targets by CMake. Keep hook declarations in stub headers as `extern`; weak header definitions do not

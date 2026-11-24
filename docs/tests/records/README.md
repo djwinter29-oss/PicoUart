@@ -85,21 +85,14 @@ Health summaries describe the observations retained; before/after checks are not
 
 ### Development Runs
 
-These Pico development runs from October 22–23 are raw history, not release evidence.
+These Pico runs from October 22–23 are development history, not release evidence.
 
-- October 22: [07:49](2026-10-22-074923Z-pico-hil.md) `PASS`, [08:02](2026-10-22-080227Z-pico-hil.md) `PARTIAL`,
-  [14:06](2026-10-22-140603Z-pico-hil.md) `PASS`, [18:43](2026-10-22-184304Z-pico-125mhz-hil.md) `PARTIAL`,
-  [19:29](2026-10-22-192938Z-pico-125mhz-hil.md) `PASS`, [19:39](2026-10-22-193909Z-pico-125mhz-hil.md) `PARTIAL`,
-  [20:03](2026-10-22-200343Z-pico-125mhz-hil.md) `PASS`, [20:46](2026-10-22-204609Z-pico-125mhz-hil.md) `PASS`.
-- [UART lifecycle optimization check](2026-10-22-uart-lifecycle-optimization.md): compares the passing
-  [baseline](2026-10-22-202929Z-pico-125mhz-hil.md) and [candidate](2026-10-22-203712Z-pico-125mhz-hil.md) runs.
-- [CDC/UART session and tuning check](2026-10-22-cdc-uart-session-validation.md): its
-  [final full run](2026-10-22-213102Z-pico-125mhz-hil.md) passed.
-- October 23 runs before final acceptance, all `PASS`: [17:00](2026-10-23-170002Z-pico-125mhz-hil.md),
-  [17:12](2026-10-23-171221Z-pico-125mhz-hil.md), [17:14](2026-10-23-171456Z-pico-125mhz-hil.md),
-  [17:16](2026-10-23-171632Z-pico-125mhz-hil.md), [17:20](2026-10-23-172029Z-pico-125mhz-hil.md),
-  [17:21](2026-10-23-172156Z-pico-125mhz-hil.md), [17:24](2026-10-23-172425Z-pico-125mhz-hil.md),
-  [17:26](2026-10-23-172600Z-pico-125mhz-hil.md), [17:27](2026-10-23-172735Z-pico-125mhz-hil.md).
+| Date | Runs and notes |
+| --- | --- |
+| Oct 22 | [07:49](2026-10-22-074923Z-pico-hil.md) `PASS`; [08:02](2026-10-22-080227Z-pico-hil.md) `PARTIAL`; [14:06](2026-10-22-140603Z-pico-hil.md) `PASS`; [18:43](2026-10-22-184304Z-pico-125mhz-hil.md) `PARTIAL`; [19:29](2026-10-22-192938Z-pico-125mhz-hil.md) `PASS`; [19:39](2026-10-22-193909Z-pico-125mhz-hil.md) `PARTIAL`; [20:03](2026-10-22-200343Z-pico-125mhz-hil.md) and [20:46](2026-10-22-204609Z-pico-125mhz-hil.md) `PASS`. |
+| Oct 22 | [UART lifecycle optimization](2026-10-22-uart-lifecycle-optimization.md): passing [baseline](2026-10-22-202929Z-pico-125mhz-hil.md) and [candidate](2026-10-22-203712Z-pico-125mhz-hil.md). |
+| Oct 22 | [CDC/UART session and tuning check](2026-10-22-cdc-uart-session-validation.md); final full run [passed](2026-10-22-213102Z-pico-125mhz-hil.md). |
+| Oct 23 | Before final acceptance, all `PASS`: [17:00](2026-10-23-170002Z-pico-125mhz-hil.md), [17:12](2026-10-23-171221Z-pico-125mhz-hil.md), [17:14](2026-10-23-171456Z-pico-125mhz-hil.md), [17:16](2026-10-23-171632Z-pico-125mhz-hil.md), [17:20](2026-10-23-172029Z-pico-125mhz-hil.md), [17:21](2026-10-23-172156Z-pico-125mhz-hil.md), [17:24](2026-10-23-172425Z-pico-125mhz-hil.md), [17:26](2026-10-23-172600Z-pico-125mhz-hil.md), and [17:27](2026-10-23-172735Z-pico-125mhz-hil.md). |
 
 ## Historical Throughput
 

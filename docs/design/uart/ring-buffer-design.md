@@ -30,9 +30,6 @@ RX is a live stream and the UART cannot pause, so when the RX ring is full the o
 newer data is kept. The consumer skips past overwritten bytes and counts them. Channel diagnostics expose the dropped
 byte count as `rx_overrun_count` and report observed ring peaks.
 
-A hardware UART FIFO overrun that happens before data reaches the ring is counted differently. The PL011 only latches a
-sticky flag, so it increments `rx_error_count` rather than the dropped-byte count.
-
 ## DMA Interaction
 
 The ring API hands out contiguous spans that the caller fills or drains and then commits. Each side has at most one

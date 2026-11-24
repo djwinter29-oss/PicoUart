@@ -86,23 +86,24 @@ ceiling undetermined.
 
 ### Test Matrix
 
-- **Single direction** — 10 s per rate, both directions on each crossed pair.
-- **Single pair duplex** — 30 s per rate on each crossed pair.
-- **Concurrent six-port** — 30 s per rate with fresh port setup.
+| Mode | Duration |
+| --- | --- |
+| Single direction, both directions on each crossed pair | 10 s per rate |
+| Single pair duplex on each crossed pair | 30 s per rate |
+| Concurrent six-port with fresh port setup | 30 s per rate |
 
-These durations are plan values, not runner defaults; the examples below pass them explicitly. Each runner command
-lists the rates it tests.
+These are the durations used in this plan; examples pass them explicitly. Each runner command lists the rates it tests.
 
 ### Combined Run
 
-`tools/hil/runner/full.sh` runs the functional pass, then the
-concurrent performance pass if the functional pass succeeded, and writes a dated record to
+`tools/hil/runner/full.sh` runs the functional pass, then the concurrent performance pass if the functional pass
+succeeded, and writes a dated record to
 [records/](records/README.md). It takes the functional pass's `--pico-cdcN`, `--board`, `--firmware-*`, and
 `--artifact` options, plus `--rates`, `--duration`, `--timeout`, and `--performance-payload-bytes`.
 Keep failure transcripts and include every attempted rate in the record.
 
-`--skip-functional` and `--skip-performance` give a `PARTIAL` record even if the phase that ran succeeded. Check the
-recorded scope, not just the exit code.
+`--skip-functional` and `--skip-performance` give a `PARTIAL` record even if the phase that ran succeeded. Check both
+the recorded scope and the exit code.
 
 ### Pair Sweeps
 
@@ -149,8 +150,8 @@ tools/hil/runner/performance.sh \
 
 ### Ceiling Search
 
-Replace `--rates` with `--incremental-performance` to step up from 115200 in 100000-baud steps,
-up to 3000000, stopping at the first failure. Adjust it with `--incremental-start-rate`, `--incremental-rate-step`, and
+Replace `--rates` with `--incremental-performance` to step up from 115200 in 100000-baud steps, up to 3000000,
+stopping at the first failure. Adjust it with `--incremental-start-rate`, `--incremental-rate-step`, and
 `--incremental-max-rate`. A start above 115200 skips the baseline, so that run cannot pass on its own. The standalone
 `pico-uart-hil performance --incremental` takes the same options. Narrow the bracket with a smaller step if needed.
 Every rate includes the settle time, so keep sweeps short.
@@ -158,8 +159,8 @@ Every rate includes the settle time, so keep sweeps short.
 ### Timing Output
 
 The benchmark prints one `TIME <label>: {...}` line per stream. It holds the host's thread-start, first-send-attempt,
-and first-nonempty-read timestamps, in UTC and monotonic time. These are host times, not wire first-byte times, and they
-are not parsed by `pico-uart-hil performance`.
+and first-nonempty-read timestamps, in UTC and monotonic time. These are host-side times; use external instrumentation
+to measure wire first-byte times. This diagnostic is not parsed by `pico-uart-hil performance`.
 
 `--duration` stops new blocks from starting, but the last in-flight block can finish afterward. A write or read phase
 that completes at or after its deadline counts as a timeout, even if the final bytes arrive right at the boundary.
@@ -234,14 +235,43 @@ reset.
 These cases need a fixture source or authorization beyond the runners. Record the board, artifact hash, rate, payload or
 burst size, stall duration, affected channels, and HID samples. If a case cannot be set up, report it as not tested.
 
-| Case | How to run it | Pass when |
-| --- | --- | --- |
-| All six channels loaded | Run the concurrent fixture; collect service load, block latency, ring peaks, and faults. Use timing instrumentation for service gaps, then repeat acceptance on uninstrumented firmware. | Every stream verifies with no new loss or errors at the qualified load. USB-paced traffic does not establish wire saturation. |
-| Host drain stalled | Use a bounded, independently paced source. Pause reads on one RX channel while others continue; resume within the capacity budget, then test a separate intentional-overflow interval. | Within budget, bytes arrive in order without loss. Beyond budget, drops are counted and traffic recovers; other channels have no new faults. |
-| TX backpressure | With a qualified flow-control fixture, pause a peer using supported CTS while host OUT writes fill the channel, then resume it. | Host writes block or time out rather than lose bytes. Admitted bytes stay ordered while other channels continue. |
-| Close and reopen during traffic | Close one channel while other streams run. Reopen with staged settings, wait for HID readiness, then send a fresh marker. | Old-session payloads do not enter the new stream; settings match and other channels keep passing. Queued bytes discarded on close need not be delivered. |
-| Session loss with pending control | Keep a supported line-coding request pending and confirm it through HID; unplug the board or issue a targeted USB bus reset. Repeat with all six channels active. | Old handles terminate or time out; after remount, old sessions are closed, settings and a fresh marker verify, and canceled work causes no late timeout. A USB reset stops every stream. |
-| Concurrent configuration | Repeatedly change supported settings on other channels while an independently paced channel carries verified traffic. Change both ends of crossed links. | Record the maximum unaffected-port service gap and both cores' maximum pass times. Each change completes or times out explicitly, with no new faults on unaffected traffic. A mismatched crossed pair is not a bridge failure. |
+#### All six channels loaded
+
+Run the concurrent fixture. Collect service load, block latency, ring peaks, and faults. Use timing instrumentation for
+service gaps, then repeat acceptance on uninstrumented firmware. Every stream must verify without new loss or errors at
+the qualified load. USB-paced traffic does not establish wire saturation.
+
+#### Host drain stalled
+
+Use a bounded, independently paced source. Pause reads on one RX channel while others continue; resume within the
+capacity budget, then test a separate intentional-overflow interval. Within budget, bytes must arrive in order without
+loss. Beyond budget, drops must be counted and traffic must recover, with no new faults on other channels.
+
+#### TX backpressure
+
+With a qualified flow-control fixture, pause a peer using supported CTS while host OUT writes fill the channel, then
+resume it. Host writes must block or time out rather than lose bytes. Admitted bytes must stay ordered while other
+channels continue.
+
+#### Close and reopen during traffic
+
+Close one channel while other streams run. Reopen with staged settings, wait for HID readiness, then send a fresh
+marker. Old-session payloads must not enter the new stream; settings must match and other channels must keep passing.
+Queued bytes discarded on close need not be delivered.
+
+#### Session loss with pending control
+
+Keep a supported line-coding request pending and confirm it through HID; unplug the board or issue a targeted USB bus
+reset. Repeat with all six channels active. Old handles must terminate or time out. After remount, old sessions must be
+closed, settings and a fresh marker must verify, and canceled work must not cause a late timeout. A USB reset stops
+every stream.
+
+#### Concurrent configuration
+
+Repeatedly change supported settings on other channels while an independently paced channel carries verified traffic.
+Change both ends of crossed links. Record the maximum unaffected-port service gap and both cores' maximum pass times.
+Each change must complete or time out explicitly, with no new faults on unaffected traffic. A mismatched crossed pair
+is not a bridge failure.
 
 ### Known Gaps
 
@@ -261,10 +291,10 @@ More USB loopback runs will not close these:
 
 ## Tuning Procedure
 
-Use current defaults as the baseline. Change one setting at a time and compare the candidate under matching conditions:
+Use current defaults as the baseline and compare candidates under matching conditions:
 
 - Compare baseline and candidate images on both boards with the same clock, wiring, payloads, rates, and host. Change
-  one thing at a time, repeat the baseline to see run-to-run variation, and keep hashes and raw samples.
+  one setting per candidate, repeat the baseline to see run-to-run variation, and keep hashes and raw samples.
 - Measure small-payload round trips as well as six-stream throughput, plus service gaps, ring peaks, fault deltas, and
   reopen behavior. The [timing profiles](../development/firmware-testing.md#optional-timing-profiles) and
   [buffer measurements](../development/firmware-testing.md#buffer-capacity-measurement) help here.

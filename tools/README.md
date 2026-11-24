@@ -55,8 +55,8 @@ Run a launcher with `--help` for prerequisites and environment overrides. Python
 permissions before starting, but do not install rules automatically. The Direct Dashboard does not check permissions.
 
 The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it) and installs the `dashboard` extra
-from public PyPI if Flask or hidapi cannot be imported. It runs the source directly, without an editable install. After
-dependency changes, refresh the environment using the
+from public PyPI if Flask or hidapi cannot be imported. It runs the source directly, without an editable install.
+After dependency changes, refresh the environment using the
 [developer setup](../docs/development/host-tools.md#python-environment-setup).
 Native Windows users can use the direct commands in the [Python](../host/python/README.md),
 [.NET](../host/dotnet/README.md), and [Direct Dashboard](../host/direct/README.md) guides.

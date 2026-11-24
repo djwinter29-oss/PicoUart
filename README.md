@@ -29,7 +29,7 @@ dropped-byte counts, and buffer peaks come over a separate USB HID interface, wh
 disturbs an open serial port. Read them in the browser dashboard, from Python or .NET, and save them with your test
 results.
 
-![Direct Dashboard with simulated device identity, board configuration, runtime status, and six-channel UART/USB traffic.](docs/assets/pico-uart-dashboard.png)
+![PicoUart Direct Dashboard showing board status and six UART channels.](docs/assets/pico-uart-dashboard.png)
 
 _The dashboard with simulated telemetry._
 
@@ -73,11 +73,9 @@ These commands read diagnostics only; they do not send or capture UART data. On 
 | --- | --- |
 | Raspberry Pi Pico (RP2040) | `pico` release image |
 | Raspberry Pi Pico 2 (RP2350) | `pico2` release image |
-| Pico W / Pico 2 W | Build `pico_w` / `pico2_w` from source; Wi-Fi and Bluetooth stay disabled |
-| PicoUART6 carrier | Default TX/RX pinout matches; carrier LEDs and USB-to-I2C are not supported |
 
-Most hardware testing so far has been on the Pico; the Pico 2 has had much less. Wireless-board and carrier details are
-in [hardware setup](docs/hardware-setup.md).
+Most hardware testing so far has been on the Pico; the Pico 2 has had much less. Wireless-board and carrier
+compatibility details are in [hardware setup](docs/hardware-setup.md).
 
 ## Documentation
 

@@ -70,7 +70,7 @@ aligned 32-bit access and SDK memory barriers) rather than portable C11 threadin
 ### Ring Ownership
 
 Rings are single-producer/single-consumer. The producer publishes payload before advancing its cursor, and the consumer
-retires bytes only after reading them, with `__dmb()` barriers between. Rings take no locks, so the data path never
+retires bytes only after reading them, with memory barriers between. Rings take no locks, so the data path never
 waits on status reads.
 
 ### Control Mailbox

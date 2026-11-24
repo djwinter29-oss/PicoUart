@@ -5,8 +5,8 @@ A release has two independent halves:
 1. **Publication** is automatic. Pushing a version tag builds, tests, and publishes the firmware and host packages.
 2. **Hardware qualification** is manual. Someone flashes the exact published firmware and runs the HIL fixture.
 
-A green CI run shows that the software checks passed; it says nothing about UART timing, reliability, or board
-stability. Until qualification evidence exists, treat published artifacts as lab/test-only.
+A green CI run covers software checks only. Published artifacts remain lab/test-only until hardware qualification
+evidence exists.
 
 ## Release Sequence
 
@@ -73,12 +73,12 @@ procedures; keep one record per board in the [HIL records](../tests/records/READ
 
 Missing cases make the result `PARTIAL`. Unexplained loss, timeouts, disconnects, or HID errors block qualification.
 A speed-sweep `PASS` qualifies only the 115200-baud baseline. The boundary it finds is a measurement, and higher
-rates remain unrated. Older [record index](../tests/records/README.md#evidence-index) entries cannot
-substitute for a current exact-artifact run.
+rates remain unrated. Older [record index](../tests/records/README.md#evidence-index) entries do not replace a current
+exact-artifact run.
 
 The test plan's [Known Gaps](../tests/hil-fixture-test-plan.md#known-gaps) lists open reset-startup and DMA wrap/re-arm
-procedures. Until exact-artifact evidence closes those gaps, releases remain unqualified. Optional claims such as
-RTS/CTS or backpressure also need their matching board configuration and HIL variant.
+procedures. Optional claims such as RTS/CTS or backpressure also need their matching board configuration and HIL
+variant.
 
 ## Versioning
 

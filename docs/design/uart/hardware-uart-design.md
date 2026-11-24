@@ -33,8 +33,8 @@ Once the old TX bytes have drained and the UART is idle, the backend:
 2. applies the new format, and
 3. restarts RX DMA at the live position, so unread data survives.
 
-If applying fails, the backend restores the previous format. If even that fails, the internal `INIT_FAILED` flag is
-set rather than leaving the port running on a stopped UART.
+If applying fails, the backend restores the previous format. If restoration also fails, the port is marked
+unavailable rather than left reporting a stopped UART as usable.
 
 ## Flow Control
 
