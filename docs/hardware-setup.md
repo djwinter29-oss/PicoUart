@@ -5,28 +5,13 @@ How to wire UART devices to a PicoUart board and find its serial ports. The pin 
 
 ## Supported Boards
 
-<table align="center">
-    <thead>
-        <tr>
-            <th scope="col" align="center">Raspberry Pi Pico</th>
-            <th scope="col" align="center">Raspberry Pi Pico 2</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td align="center">
-                <img src="assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico reference board" width="240" />
-            </td>
-            <td align="center">
-                <img src="assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2 reference board" width="240" />
-            </td>
-        </tr>
-        <tr>
-            <td align="center">RP2040 · firmware: <strong><code>pico</code></strong></td>
-            <td align="center">RP2350 · firmware: <strong><code>pico2</code></strong></td>
-        </tr>
-    </tbody>
-</table>
+| Board | MCU | Firmware image |
+| --- | --- | --- |
+| Raspberry Pi Pico | RP2040 | `pico` |
+| Raspberry Pi Pico 2 | RP2350 | `pico2` |
+
+<img src="assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico" width="240" />
+<img src="assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2" width="240" />
 
 [Wireless boards](#wireless-boards) and the [PicoUART6 carrier](#picouart6-carrier-compatibility) are covered below.
 

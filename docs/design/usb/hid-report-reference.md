@@ -84,8 +84,8 @@ older layout. Show an unknown product as `Unknown product (0xNNNN)`, and enable 
 **UID.** Display it as **Serial / UID**: uppercase hex, two characters per byte, matching the 16-character USB serial.
 On RP2040 it is the QSPI flash UID; on RP2350 it is the SDK platform identity.
 
-**Board model.** This is the configured build target, not hardware detection. Keep unknown MCU and board numbers as
-they are rather than inventing names.
+**Board model.** This is the configured build target; the firmware does not detect hardware. Keep unknown MCU and board
+numbers as they are rather than inventing names.
 
 | Board model | Build target | MCU | Support status |
 | ----------: | ------------ | --- | -------------- |
@@ -109,7 +109,7 @@ count. PicoUart reports `0x03`, so CDC0 and CDC1 use hardware UARTs and the rest
 | 3-7 | Reserved, zero. |
 
 Clock-profile mask bits 0-4 match the profile IDs in report 2. Bit 0 is always set, and bits 5-7 are zero. A set bit
-means the firmware accepts that request, not that the board runs it stably.
+means the firmware accepts the request. It says nothing about stability.
 
 ### Firmware RAM Reservation
 
@@ -142,7 +142,7 @@ hardware map, and the reset that started this boot. Saving a new profile does no
 
 ### Channel Hardware Map
 
-Each entry is a GPIO number, not a header pin, and `255` means unassigned. Entries are in channel order, and come from
+Each entry is a GPIO number (not a header pin), and `255` means unassigned. Entries are in channel order, and come from
 the firmware's board configuration. An assigned RTS/CTS pin does not mean flow control is running. DTR is a CDC
 session signal and is not part of this map. If report 2 cannot be read, treat the pins and channel count as unknown.
 Never substitute GPIO 0.
@@ -187,7 +187,7 @@ HardFault takes priority over those markers.
 | `5`-`254` | Unassigned; invalid in the currently specified layout | None |
 | `255` | Unavailable sentinel for `stored_profile` readback only; never a save request | None |
 
-`stored_profile` is a request, not the running clock; report 3 has the running clock. Show the two separately, and
+`stored_profile` is only a request; report 3 has the running clock. Show the two separately, and
 never infer the profile from the frequency.
 
 At boot the firmware picks the highest supported frequency at or below the request. The current build caps RP2040 at
@@ -203,11 +203,11 @@ Saving a profile writes flash and reboots the board, so it is guarded:
   overclock acknowledgement. Anything else is rejected without touching flash.
 - Every CDC port must be closed (DTR low) when the request is accepted, and again when it runs. Also stop external UART
   traffic. Flash erase stalls both cores, and the reboot drops any queued bytes.
-- The write happens in the USB poll loop, not inside the USB callback. Core 1 is locked out using the SDK flash-safe
+- The write happens in the USB poll loop, outside the USB callback. Core 1 is locked out using the SDK flash-safe
   API. Only the final flash sector is erased. The record is CRC-protected and checked in full before the result reports
   Completed. Saving the profile that is already stored skips the write.
-- Completed means the profile was verified in flash, not that the next boot succeeded. Reconnect and read report 2 to
-  confirm. An interrupted write boots SDK defaults, because storage is one sector, not a journal.
+- Completed means the profile was verified in flash; it does not promise the next boot succeeded. Reconnect and read
+  report 2 to confirm. An interrupted write boots SDK defaults, because storage is one sector, not a journal.
 
 ## Report ID 3: Board Telemetry
 
@@ -233,7 +233,7 @@ Live measurements only.
 | Uptime | Device uptime, not session duration; a decrease suggests reset only for the same identified device. |
 
 If any mandatory measurement fails, the whole GET fails. The firmware never returns a partial or zero-filled report.
-The load sentinel `65535` and an absent LED are valid values, not failures. When a read fails, the host marks the live
+The load sentinel `65535` and an absent LED are valid values and not failures. When a read fails, the host marks the live
 values stale and disables LED controls. It keeps the static data from reports 1 and 2.
 
 **Service load** is the wall time spent in service passes that did real work, divided by the measurement window.
@@ -386,10 +386,10 @@ stopped port can still have a Current final sample. The CDC counters are owned b
 | UART → Host | `uart_rx_bytes` | DMA bytes published into RX ring, including bytes subsequently overwritten. |
 | UART → Host | `cdc_tx_bytes` | TinyUSB acceptance, not confirmed host receipt. |
 
-These count handoffs, not delivered bytes. Closing a port or resetting USB can discard bytes already counted, so a
-difference between counters is not a loss measurement. Use the diagnostics counters and payload checks for that. The
-counters run from boot and wrap at 2^32, and USB reconnects do not reset them. The applied baud rate is a setting, not
-a measured wire rate; show it as **Last applied** while the port is stopped.
+These count handoffs rather than delivered bytes. Closing a port or resetting USB can discard bytes already counted, so
+a difference between counters is not a loss measurement. Use the diagnostics counters and payload checks for that. The
+counters run from boot and wrap at 2^32, and USB reconnects do not reset them. The applied baud rate is a setting, not a
+measured wire rate; show it as **Last applied** while the port is stopped.
 
 ### Snapshot Consistency
 
@@ -451,8 +451,8 @@ it never clears history or affects snapshot sequences and baselines.
 | `5` | Other or unknown configuration error. |
 | `6`-`255` | Unassigned. |
 
-This field is history, not an active failure. It keeps its value through later successes, port close and reopen, and
-USB reconnects, and clears only at boot. Label it **Last configuration error**.
+This field records history and does not mean the port is failing now. It keeps its value through later successes, port
+close and reopen, and USB reconnects, and clears only at boot. Label it **Last configuration error**.
 
 ### Fault History
 
@@ -463,8 +463,8 @@ USB reconnects, and clears only at boot. Label it **Last configuration error**.
   A startup failure on its own does not advance it.
 - "No history" means both counters, the reason, and the timestamp are zero. A reason with zero RX counts is valid.
 - The USB core samples faults about every 100 ms, whether or not anyone is reading.
-- Nonzero counts are history, not a live signal. Possible causes include a floating RX line, a break, a wrong baud
-  rate, or wiring faults; the counters cannot tell which.
+- Nonzero counts are history and say nothing about the present. Possible causes include a floating RX line, a break, a
+  wrong baud rate, or wiring faults; the counters cannot tell which.
 - There is no boot ID. After reconnecting, start new comparison baselines rather than claiming exact fault counts across
   the gap.
 

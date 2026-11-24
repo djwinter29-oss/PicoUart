@@ -22,17 +22,18 @@ Computer -- USB -- Pico / Pico 2 +- UART0 -- Device A
 
 ## Why PicoUart?
 
-When a serial log goes quiet, the cause is ambiguous: the device stopped talking, the bridge dropped bytes, or the host
-stopped reading. A typical USB-serial adapter cannot tell you which. PicoUart counts traffic on both sides of the
-bridge for each channel, which narrows down where data stopped.
+When a serial log goes quiet, there are three suspects: the device stopped talking, the bridge dropped bytes, or the
+host stopped reading. A typical USB-serial adapter can't tell you which. PicoUart counts traffic on both sides of the
+bridge for every channel, so you can see where the data stopped.
 
-Each UART appears as a normal USB CDC serial port, so no host software is needed for data. The counters, dropped-byte
-counts, and buffer peaks come over a separate USB HID interface, so monitoring never competes with your serial tools.
-You can read them in a browser dashboard with nothing to install, or from Python or .NET, and save them next to your
-test results.
+Each UART shows up as an ordinary USB CDC serial port, so your terminals and scripts need nothing extra. The counters,
+dropped-byte counts, and buffer peaks come over a separate USB HID interface, which means checking health never
+disturbs an open serial port. Read them in the browser dashboard, from Python or .NET, and save them with your test
+results.
+
 ![Direct Dashboard with simulated device identity, board configuration, runtime status, and six-channel UART/USB traffic.](docs/assets/pico-uart-dashboard.png)
 
-_Direct Dashboard layout with simulated telemetry; illustrative, not a live hardware result._
+_The dashboard with simulated telemetry._
 
 ## Before You Connect
 

@@ -275,24 +275,14 @@ experiment shows a clear, repeatable win. When you run one:
 
 ## Measured Six-Port Envelope
 
-From the October 9 sweeps, using USB-paced traffic on the tested boards and images. This is historical evidence, not a
-limit for later firmware.
+The October 9 sweeps used USB-paced traffic and are historical evidence, not a limit for later firmware. Per-image
+results are in the [HIL records](records/README.md#evidence-index). The clock matters on RP2040, since the 250 MHz Pico
+passed far higher rates than the 125 MHz one, but no profiling was done to confirm the bottleneck.
 
-| Image | Highest tested rate with all six payload streams passing | First failed tested rate | Evidence |
-| --- | ---: | ---: | --- |
-| Pico, 125 MHz | 256000 baud | 460800 baud | [Rated Pico](records/2026-10-09-070652Z-pico-hil.md) |
-| Pico, 250 MHz | 921600 baud | 1000000 baud | [Overclock Pico](records/2026-10-09-071809Z-pico-250mhz-hil.md) |
-| Pico 2, 150 MHz | 3000000 baud | None within sweep | [Rated Pico 2](records/2026-10-09-072834Z-pico2-hil.md) |
-| Pico 2, 280 MHz | 3000000 baud | None within sweep | [Local 280 MHz build](records/2026-10-09-074700Z-pico2-280mhz-hil.md) |
-
-Rates between the columns were not tested. The jump at 250 MHz suggests that service capacity in the dual-core path
-limits a 125 MHz Pico, though no profiling was done and this is not a confirmed bottleneck.
-
-USB is the shared ceiling on the faster boards. Each payload crosses USB twice (OUT to the source UART, then IN from
-the destination), and each stream waits for its echo before sending more. Total verified throughput levels off around
-0.47-0.53 MB/s, which points to USB full-speed limits. A pass at a given baud therefore shows integrity at the load
-achieved; it says nothing about continuous full-rate traffic at that baud. Measuring that needs a different fixture:
-independently paced external sources that bypass this board's USB OUT path, with wire timing measured.
+On the faster boards, total verified throughput levels off around 0.47-0.53 MB/s. Each payload crosses USB twice, and
+each stream waits for its echo, so this points to USB full-speed limits. A pass at a given baud therefore shows
+integrity at the load achieved, not continuous full-rate traffic. Measuring that needs independently paced external
+sources that bypass the board's USB OUT path, with wire timing measured.
 
 ## Results
 

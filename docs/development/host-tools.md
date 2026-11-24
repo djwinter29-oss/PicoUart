@@ -11,7 +11,6 @@ None of the setup, build, or test steps here need a board. Run commands from the
 The host tools talk to the board only through its HID interface. UART data stays on the six CDC ports, which belong to
 the user's serial applications. No dashboard proxies UART traffic or changes line coding.
 
-<!-- mermaid-checked: quoted labels, valid flowchart syntax, unique node IDs -->
 ```mermaid
 flowchart TD
     HostedPage["Hosted dashboard browser"] -->|"HTTP"| HostedBackend["Python or .NET host"]
@@ -139,12 +138,6 @@ receives no reports; .NET `monitor` can succeed with none. Both drop reports tha
 Dropped-byte counts and peaks are cumulative since boot, so compare before and after a run. A zero exit code is not a
 health check, so test runners should inspect the reported states and counters.
 
-```sh
-pico-uart overruns > overruns-before.txt
-pico-uart monitor --duration 60 > uart-traffic.log
-pico-uart overruns > overruns-after.txt
-```
-
 ### Python Distribution
 
 Building locally does not publish anything. Release channels and gates are described in
@@ -232,7 +225,6 @@ node --test host/web/tests/*.test.mjs host/direct/tests/*.test.mjs
 - The page polls at the backend's `refresh_interval_ms` hint. That is the latest valid Input `interval_ms`, clamped to
   500-1000 ms, and it starts at 500 ms.
 
-<!-- mermaid-checked: quoted labels, valid flowchart syntax, closed subgraphs, unique node IDs -->
 ```mermaid
 flowchart LR
     subgraph ViewerPages["Independent browser pages"]
