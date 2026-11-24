@@ -21,18 +21,16 @@ Wire the fixture as described in [HIL Fixture Setup](hil-fixture-setup.md):
 Test each board target (`pico` and `pico2`) when available, one board at a time. The Debug Probe external-peer check in
 the setup guide is optional and not part of the pass criteria.
 
-Keep these points in mind:
+Before running anything, note that these commands transmit UART data and change serial settings, so make sure the
+endpoints belong to the fixture board. `--no-record` only suppresses the record; it is not a dry run.
 
-- **These commands transmit UART data and change serial settings.** Make sure the endpoints belong to the fixture
-  board. `--no-record` only suppresses the record; it is not a dry run.
-- **Attach only one PicoUart.** The runners' HID health checks find the board automatically, not from the CDC paths, and
-  `--board` is only a record label. The six-port runners also check that every CDC path belongs to the same board, at
-  its declared index.
-- **Flash first.** Flash the image as described in [Releasing](../deployment/releasing.md#flashing-release-artifacts),
-  then confirm its version and ready state over HID. `--artifact` hashes the file you supply, but it cannot prove the
-  board is running it. `--firmware-version` and `--firmware-commit` are labels too.
-- The runners never reset, reflash, or change the board's voltage. After a failure, reflash or reset yourself and
-  confirm clean HID health before the next run.
+Attach only one PicoUart. The runners find the board over HID rather than from the CDC paths, and `--board` is just a
+record label. The six-port runners also check that every CDC path belongs to the same board, at its declared index.
+
+Flash first, as described in [Releasing](../deployment/releasing.md#flashing-release-artifacts), then confirm the
+version and ready state over HID. `--artifact` hashes the file you supply but cannot prove the board is running it, and
+`--firmware-version` and `--firmware-commit` are labels too. The runners never reset, reflash, or change the board's
+voltage, so after a failure reflash or reset yourself and confirm clean HID health before the next run.
 
 ## Functional Pass
 
@@ -148,23 +146,10 @@ tools/hil/runner/performance.sh \
   --artifact /path/to/flashed/pico_uart.elf
 ```
 
-**Combined run.** This is the usual way to run the plan. The combined runner runs the functional pass, then the
+**Combined run.** The usual way to run the plan. `tools/hil/runner/full.sh` runs the functional pass, then the
 concurrent performance pass if the functional pass succeeded, and writes a dated record to [records/](records/README.md).
-It takes `--pico-cdcN` and `--performance-payload-bytes`:
-
-```sh
-tools/hil/runner/full.sh \
-  --pico-cdc0 /dev/serial/by-id/<pico-cdc0> \
-  --pico-cdc1 /dev/serial/by-id/<pico-cdc1> \
-  --pico-cdc2 /dev/serial/by-id/<pico-cdc2> \
-  --pico-cdc3 /dev/serial/by-id/<pico-cdc3> \
-  --pico-cdc4 /dev/serial/by-id/<pico-cdc4> \
-  --pico-cdc5 /dev/serial/by-id/<pico-cdc5> \
-  --rates 115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000 \
-  --duration 30 --performance-payload-bytes 1024 --timeout 3 \
-  --board pico --firmware-version 1.2.3 --firmware-commit <commit> \
-  --artifact /path/to/flashed/pico_uart.elf
-```
+It takes the functional pass's `--pico-cdcN`, `--board`, `--firmware-*`, and `--artifact` options, plus `--rates`,
+`--duration`, `--timeout`, and `--performance-payload-bytes`.
 
 `--skip-functional` and `--skip-performance` give a `PARTIAL` record even if the phase that ran succeeded. Check the
 recorded scope, not just the exit code.
@@ -195,8 +180,8 @@ host/python/.venv/bin/python -m pico_uart.main monitor --duration 5
 host/python/.venv/bin/python -m pico_uart.main overruns
 ```
 
-Sixty seconds is a sanity check, not a long-term stability claim. Pick and record a duration that matches the claim
-you want to make. Earlier long runs are listed in the [evidence index](records/README.md#evidence-index).
+Sixty seconds is a sanity check, not a stability claim; record a duration that matches what you want to claim. Earlier
+long runs are in the [evidence index](records/README.md#evidence-index).
 
 ## Recovery and Stress Coverage
 
@@ -271,24 +256,20 @@ RP2350 physical coverage, DMA re-arm endurance, and per-event startup reliabilit
 
 ## Tuning Experiments
 
-The current defaults are reviewed and backed by the
-[2026-10-23 review record](records/2026-10-23-uart-cdc-review-validation.md). These defaults cover buffer sizes,
-bridge budgets, PIO DMA thresholds, TX admission gates, control generations, and DMA snapshot checks. Keep them unless
-an experiment shows a clear, repeatable win.
+The current defaults (buffer sizes, bridge budgets, PIO DMA thresholds, TX admission gates, and DMA snapshot checks)
+are backed by the [2026-10-23 review record](records/2026-10-23-uart-cdc-review-validation.md). Keep them unless an
+experiment shows a clear, repeatable win. When you run one:
 
-When running an experiment:
-
-- Compare baseline and candidate images on both boards, with the same clock, wiring, payloads, rates, durations, and
-  host.
-- Change one thing at a time. Repeat the baseline to measure run-to-run variation, and keep the hashes and raw samples.
-- Measure small-payload round trips as well as six-stream throughput. Also record service gaps, ring peaks, fault
-  deltas, and reopen behavior. Use the [timing profiles](../development/firmware-testing.md#optional-timing-profiles)
-  and [buffer measurements](../development/firmware-testing.md#buffer-capacity-measurement).
-- As a proposed gate, require at least a 5% gain across five or more matched pairs. Allow no more than 5% regression in
-  p99 or maximum latency, no faults, and passing recovery checks. The current benchmark reports only max and mean, so
-  record distributions too.
-- Repeat payload acceptance on uninstrumented firmware. TX pipelining changes must also keep CTS stalls, byte order,
-  and the shifter-idle check before reconfiguration.
+- Compare baseline and candidate images on both boards with the same clock, wiring, payloads, rates, and host. Change
+  one thing at a time, repeat the baseline to see run-to-run variation, and keep hashes and raw samples.
+- Measure small-payload round trips as well as six-stream throughput, plus service gaps, ring peaks, fault deltas, and
+  reopen behavior. The [timing profiles](../development/firmware-testing.md#optional-timing-profiles) and
+  [buffer measurements](../development/firmware-testing.md#buffer-capacity-measurement) help here.
+- As a proposed gate, require at least a 5% gain across five or more matched pairs, no more than 5% regression in p99 or
+  maximum latency, no faults, and passing recovery checks. The benchmark reports only max and mean, so record
+  distributions as well.
+- Repeat payload acceptance on uninstrumented firmware. TX pipelining changes must keep CTS stalls, byte order, and the
+  shifter-idle check before reconfiguration.
 
 <a id="usb-paced-traffic-and-uart-capacity"></a>
 
@@ -304,19 +285,14 @@ limit for later firmware.
 | Pico 2, 150 MHz | 3000000 baud | None within sweep | [Rated Pico 2](records/2026-10-09-072834Z-pico2-hil.md) |
 | Pico 2, 280 MHz | 3000000 baud | None within sweep | [Local 280 MHz build](records/2026-10-09-074700Z-pico2-280mhz-hil.md) |
 
-How to read it:
+Rates between the columns were not tested. The jump at 250 MHz suggests that service capacity in the dual-core path
+limits a 125 MHz Pico, though no profiling was done and this is not a confirmed bottleneck.
 
-- **Rates between the columns were not tested.** To repeat the rated-Pico range, use
-  `--rates 115200,128000,153600,230400,256000`.
-- **Clock matters on RP2040.** The jump at 250 MHz suggests service capacity in the dual-core path limits a 125 MHz
-  Pico. No profiling was done, so this is not a confirmed bottleneck.
-- **USB is the shared ceiling.** Each payload crosses USB twice (OUT to the source UART, then IN from the destination),
-  and each stream waits for its echo before sending more. On the faster boards, total verified throughput levels off
-  around 0.47-0.53 MB/s, which points to USB full-speed limits. For example, one Pico 2 stream at 3 Mbaud verified
-  83413 B/s, about 834 kbit/s of 8N1 traffic. A pass at a given baud therefore proves integrity at the load achieved,
-  not continuous full-rate traffic at that baud.
-- **Continuous UART capacity needs a different fixture.** It needs independently paced external sources that do not use
-  this board's USB OUT path, with wire timing measured.
+USB is the shared ceiling on the faster boards. Each payload crosses USB twice (OUT to the source UART, then IN from
+the destination), and each stream waits for its echo before sending more. Total verified throughput levels off around
+0.47-0.53 MB/s, which points to USB full-speed limits. A pass at a given baud therefore shows integrity at the load
+achieved; it says nothing about continuous full-rate traffic at that baud. Measuring that needs a different fixture:
+independently paced external sources that bypass this board's USB OUT path, with wire timing measured.
 
 ## Results
 

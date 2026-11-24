@@ -1,93 +1,66 @@
 # PicoUart Direct Dashboard
 
-**Monitor six UARTs directly from your browser over USB.** The Direct Dashboard shows PicoUart identity, runtime health,
-per-channel traffic statistics, and RX dropped-byte counts on Raspberry Pi Pico and Pico 2.
+A browser dashboard for the [PicoUart](https://github.com/djwinter29-oss/PicoUart) six-channel USB-to-UART bridge. It
+shows board identity, runtime health, per-channel traffic, and RX dropped-byte counts for Pico and Pico 2, with nothing
+to install.
 
-Diagnostics use the browser's WebHID API and a separate USB HID interface, without a Python/.NET application backend.
-UART payloads and baud/framing settings still use the six USB CDC serial ports, not this page.
+It talks to the board's USB HID interface through the browser's WebHID API, with no Python or .NET backend. UART data
+and baud/framing settings stay on the six CDC serial ports.
 
 ## Requirements
 
-- Desktop Google Chrome or Microsoft Edge with WebHID enabled; Firefox and Safari are not supported, and mobile
-  browsers generally do not support WebHID
-- A Raspberry Pi Pico or Pico 2 running compatible
-  [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to the computer running the browser
-- Browser permission and OS access to the board's HID interface; Linux may need
+- Desktop Chrome or Edge with WebHID. Firefox, Safari, and most mobile browsers do not support it.
+- A Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to the
+  computer running the browser
+- Operating-system access to the HID interface; on Linux, set up
   [device permissions](../../tools/README.md#linux-hid-permissions)
 
-## Install
+## Use It
 
-Open the [hosted Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/). No local installation, Python, .NET,
-or server is required. The GitHub Pages site uses HTTPS; self-hosted pages also require HTTPS or localhost.
-If your browser does not support WebHID, use the local [Python](../python/README.md) or [.NET](../dotnet/README.md)
-dashboard instead.
+Open the [hosted dashboard](https://djwinter29-oss.github.io/PicoUart/), connect the flashed board with a USB data
+cable, click **Connect**, and choose the PicoUart HID interface. The button becomes **Disconnect** while connected.
+Pages you host yourself need HTTPS or localhost.
 
-## Quick Start
+Identity is read once, and the channel snapshots then refresh continuously. Fault history and buffer peaks are read
+separately as diagnostics. After you unplug the board or it reboots, click **Connect** again; the page never reopens a
+device on its own. Missing or unreadable values show `--` with the read error, and the firmware must speak the
+[current HID report format](../../docs/design/usb/hid-report-reference.md).
 
-1. Connect the flashed board to this computer over a USB data cable.
-2. Open the hosted page, click **Connect**, and choose the PicoUart vendor HID interface.
-3. Inspect board identity, runtime values, and UART health/traffic alongside your serial tools.
-
-The button becomes **Disconnect** while connected. Static device information is read once; channel snapshots cover
-traffic, applied settings, and channel state. Fault history and buffer peaks are read separately through diagnostics.
-Disconnect closes the HID connection; unplugging clears the last sample. After unplug/replug or a configuration-save
-reboot, use **Connect** again; the app does not automatically select or reopen a device.
-
-Firmware must implement the [current HID report contract](../../docs/design/usb/hid-report-reference.md). Missing or
-invalid reports show `--` with an explicit read error; no alternate layouts are supported.
-Read failures leave the device available for automatic polling or Disconnect, but clear stale metadata rather than
-inventing a clock or MCU.
-
-Use one HID monitor per physical board; competing native clients can contend for input reports or device access.
+Run one HID monitor per board, because other native clients compete for the same reports. If your browser lacks WebHID,
+use the [Python](../python/README.md) or [.NET](../dotnet/README.md) dashboard instead.
 
 ## Test Automation
 
-This page is an interactive diagnostic view, not a headless test runner. It has no CLI, JSON/log export, or UART
-payload capture. For scripted status samples and traffic logs, use the
-[Python CLI](../python/README.md#command-line-tools) or [.NET CLI](../dotnet/README.md#test-automation). Disconnect
-the browser before another client monitors the same board.
+This is an interactive page, not a test runner: no CLI, no JSON export, and no UART capture. For scripted status and
+traffic logs, use the [Python CLI](../python/README.md#command-line) or the
+[.NET CLI](../dotnet/README.md#test-automation), and disconnect the browser first.
 
-Traffic statistics are cumulative byte counters, not raw UART messages. A missing report makes the throughput estimate
-incomplete; the continuity notice says so for the rest of the connection, but it does not mean bytes were lost. A
-healthy-looking page alone is not evidence that an automated test passed.
+Traffic figures are cumulative byte counters. If a report is missed, the rate estimate is marked incomplete for the rest
+of the connection; that does not mean bytes were lost.
 
-## Other Commands And Controls
+## Controls
 
-**Board LED** sends explicit identification On/Off commands; its indicator shows physical output.
-The capability-gated **Reboot board** control requests a standalone reboot. The **Boot configuration** section saves
-the selected boot-time clock profile; a verified save automatically reboots the board and briefly disconnects USB.
-Saving requires all six channels to be Closed with fresh Input reports; the confirmation is disabled if those reports
-expire. Close all CDC ports and stop external UART traffic first; non-default clocks require explicit unsafe-overclock
-acknowledgement. The dashboard records an uncertain save in browser session storage. If recovery storage is
-unavailable, monitoring and other supported controls remain available, but configuration saves are disabled.
+The dashboard can turn the identification LED on or off and reboot the board when the firmware supports it. Boot
+configuration saves a boot-time clock profile and then reboots, so USB briefly disconnects. All six channels must be
+Closed with fresh reports, and non-default clocks need the unsafe-overclock confirmation. Close all CDC ports and stop
+UART traffic first. An uncertain save is remembered in the browser session; if that storage is unavailable, saving is
+disabled.
 
-After reconnecting, check the stored boot profile and the running clock separately; do not assume the requested
-profile became active. A verified save does not prove the overclock is stable. The
-[save safety rules](../../docs/design/usb/hid-report-reference.md#save-and-reboot-safety) apply.
-
-Writes are limited to user-initiated LED state changes, standalone reboot, and configuration save. Firmware flashing
-and WebSerial payload access are not implemented.
+After a save, check the stored profile and the running clock. The
+[save and reboot rules](../../docs/design/usb/hid-report-reference.md#save-and-reboot-safety) cover the details. The
+page writes nothing else, and it never exposes credentials or raw flash.
 
 ## Troubleshooting
 
-- **Connect disabled:** use desktop Chrome/Edge in a secure context and check whether browser policy disables WebHID.
-- **Board not found:** check compatible firmware, the USB data cable, device enumeration, and browser site permissions.
-- **Access denied:** browser permission does not replace OS permissions; follow the Linux permission guide above and
-  close competing HID clients.
-- **No valid reports:** check firmware compatibility and USB connectivity. Missing values are not zero traffic.
+- **Connect is disabled:** use desktop Chrome or Edge on HTTPS or localhost, and check that policy allows WebHID.
+- **Board not found or access denied:** check the firmware, the USB data cable, and the browser's site permissions.
+  Browser permission does not replace OS permissions, so close other HID clients too.
+- **Page is remote:** the browser chooser lists USB devices on the computer running the browser. A page forwarded from
+  an SSH or WSL workspace does not forward USB. Plug the board into the browser's computer, or use the Python or .NET
+  dashboard where the board is attached. Never type an OS password into the page.
 
-WebHID does not request a password. Chrome's chooser lists eligible USB devices connected to the computer running
-Chrome. Forwarding a page from a remote Linux/WSL/SSH workspace does not forward its USB devices.
+## Development
 
-If the Pico is attached to the remote machine, use the [Python](../python/README.md) or [.NET](../dotnet/README.md)
-dashboard on its forwarded, configured local port, or connect the USB data cable to the browser's computer. If it is
-already local, check the USB data cable, device enumeration, browser site permissions, and OS device permissions.
-Installing an OS access rule may require administrator approval in the OS; do not enter that password into the page.
-
-## Documentation
-
-- Source assets live in `src/`; automated checks live in `tests/`. Serve or publish only `src/`, with no build step.
-- [Project, firmware, and wiring](../../README.md)
-- [Host development and source-checkout setup](../../docs/development/host-tools.md#direct-dashboard-development)
-- [HID report reference and compatibility](../../docs/design/usb/hid-report-reference.md)
-- [Vulnerability reporting](../../SECURITY.md)
+Source is in `src/` and checks are in `tests/`; serve or publish `src/` directly, with no build step. See
+[developing the Direct Dashboard](../../docs/development/host-tools.md#direct-dashboard-development), the
+[project README](../../README.md), and the [security policy](../../SECURITY.md).

@@ -106,18 +106,15 @@ declarations and that no lock files have crept in.
 | `read_channel_diagnostic(index)` | RX fault history, last configuration-error reason, measurement age, and buffer peaks |
 | `read_channel_diagnostics()` | Diagnostics for all six channels |
 
-A few behaviors are worth knowing:
+Things to know:
 
 - `read_status()` updates only the channel whose Input report arrived; it does not wait for all six.
-- `timeout_ms=0` becomes a 1 ms poll, because hidapi treats zero as wait forever. An absolute `deadline` also bounds
-  lock acquisition and metadata reads.
-- `close()` returns false if an in-flight transfer is holding the native handle open. Call `wait_closed(timeout_s=...)`
-  to wait for it.
-- Module-level helpers such as `read_board_status`, `read_telemetry`, and `reset_board` take an already-open device.
-  They share its in-flight state, so after one helper times out, later helpers fail until the transfer returns.
+- `timeout_ms=0` becomes a 1 ms poll, because hidapi treats zero as wait forever.
+- `close()` returns false while an in-flight transfer holds the native handle; `wait_closed(timeout_s=...)` waits.
+  Module-level helpers such as `read_board_status` and `reset_board` share the device's in-flight state, so after one
+  times out, later calls fail until the transfer returns.
 
-The names exported in `pico_uart.__all__` are the supported API. Report parsers, IDs, and raw HID helpers are low-level
-exports tied to the firmware contract. Module paths and private helpers are not a stable API.
+The names in `pico_uart.__all__` are the supported API; module paths and private helpers are not.
 
 **Readiness.** After opening and configuring the CDC TTYs and asserting DTR, call
 `board.wait_channels_ready({0: 115200, 2: 115200}, timeout_s=3.0)` before transmitting. It waits until those channels
@@ -134,23 +131,13 @@ once the firmware confirms it, even if the telemetry refresh afterwards fails.
 ### Python Test Automation
 
 Python `status --json` and .NET `status` print the same object, `{"channels": [...]}`, with six entries and sorted
-keys:
+keys. A channel with no Input yet is a placeholder (`sequence` is `null`, `state` is `"unknown"`). A channel's first
+Input seeds its totals, and `traffic_incomplete` stays set once an unusable interval or a gap has been seen.
 
-- A channel with no Input yet in this process is a placeholder: `sequence` is `null` and `state` is `"unknown"`.
-- A channel's first Input seeds its totals from the boot counters. `traffic` stays `null`, and `observed_interval_ms`
-  stays 0.
-- `traffic_incomplete` is sticky. It is set by an unusable interval (0 or 65535) or a gap; `traffic_gaps` counts the
-  gaps.
-- `updated_at` is UTC with millisecond precision.
-
-Command behavior:
-
-- `status` retries until `--timeout` (default 2 s, at most 250 ms per read) and fails if no valid report arrives.
-- Python `monitor` prints text and fails if it receives no reports at all. .NET `monitor` prints JSON lines and can
-  succeed with none. Both drop reports that complete at or after the deadline.
-- Dropped-byte counts and peaks are cumulative since boot, so compare before and after a run.
-
-**A zero exit code is not a health check.** Test runners must inspect the reported states and counters.
+`status` retries until `--timeout` (default 2 s) and fails without a valid report. Python `monitor` fails if it
+receives no reports; .NET `monitor` can succeed with none. Both drop reports that complete at or after the deadline.
+Dropped-byte counts and peaks are cumulative since boot, so compare before and after a run. A zero exit code is not a
+health check, so test runners should inspect the reported states and counters.
 
 ```sh
 pico-uart overruns > overruns-before.txt
@@ -197,15 +184,12 @@ host/python/.venv/bin/python -m pytest tests/tooling/test_dotnet_host.py
 
 Design notes:
 
-- The HID client implements both `IDisposable` and `IAsyncDisposable`. Async disposal also waits for deferred native
-  cleanup, and the same device cannot be reopened until that cleanup is done.
-- The dashboard runs a registry of board monitors as background services, never reading HID on behalf of an HTTP
-  request. Waiting for the control queue is capped at five seconds. Once a SET has started, cancellation no longer
-  stops result verification.
-- Diagnostics refresh is all-or-nothing: the new array is published only after all six reads succeed. Errors return
-  503 (I/O) or 504 (timeout), and the last good data stays visible with `diagnostics_error` set.
-- When a channel goes stale, its `state` becomes `unknown` and its live fields become `null`. The counters remain as
-  history until the next Input arrives.
+- The HID client supports both `IDisposable` and `IAsyncDisposable`; async disposal also waits for deferred native
+  cleanup, and the device cannot be reopened until that finishes.
+- Board monitors run as background services, so HTTP requests never read HID directly. The control queue wait is capped
+  at five seconds, and once a SET has started, cancellation no longer stops result verification.
+- Diagnostics refresh is all-or-nothing: errors return 503 (I/O) or 504 (timeout) and the last good data stays visible
+  with `diagnostics_error` set. A stale channel reports `state: unknown` with `null` live fields.
 
 **Local publishing.** For a framework-dependent build:
 
@@ -289,18 +273,14 @@ header.
 | `POST /api/actions/{toggle-led,reset}?board=ID` | Board actions. |
 | `POST /api/configuration?board=ID` | Save a clock profile and reboot. |
 
-Status snapshot fields:
+Status snapshots contain:
 
-- `identity` and `runtime`, each with its own `*_error`. Static data from report 1 is read once per connection;
-  telemetry from report 3 is polled.
-- `configuration` and `configuration_error` come from report 2. Saving does not change them until after the reboot.
-- `led` holds `manual_on` and `output_on`, plus `led_error`. The API's `toggle-led` sends the explicit opposite of the
-  observed state, and an unknown state disables it.
-- `channels` holds per-channel lifecycle, applied framing, `sequence`, `updated_at`, `totals`, `traffic`,
-  `traffic_gaps`, `traffic_incomplete`, and `observed_interval_ms`. `traffic` holds per-Input byte increments, not
-  rates.
-- `overflow_counts` come from the diagnostics `rx_overrun_count`, and are `null` when unavailable.
-- `configuration_save`, `configuration_save_error`, and `configuration_save_unconfirmed`.
+- `identity`, `runtime`, `configuration`, and `led`, each with its own `*_error`, so one failed read never hides the
+  rest. Identity and configuration are read once per connection; runtime is polled. `toggle-led` sends the explicit
+  opposite of the observed LED state, so an unknown state disables it.
+- `channels` with per-channel lifecycle, applied framing, `sequence`, `updated_at`, `totals`, `traffic` (per-Input byte
+  increments, not rates), `traffic_gaps`, `traffic_incomplete`, and `observed_interval_ms`.
+- `overflow_counts`, taken from diagnostics and `null` when unavailable, and the `configuration_save*` fields.
 
 Control error responses carry `outcome_unconfirmed`, so the frontend never guesses retry safety from error text.
 Python returns HTTP 409 with a fixed public message for confirmed firmware rejections; the details go to the server log.
@@ -308,29 +288,27 @@ Python returns HTTP 409 with a fixed public message for confirmed firmware rejec
 ### Persistent Configuration
 
 All three dashboards show the stored boot profile under **Hardware & boot**. A non-default profile needs the
-unsafe-overclock checkbox before **Save & Reboot** is enabled. Editing the selection writes nothing to the board, and
-telemetry refreshes never overwrite an unsaved edit.
+unsafe-overclock checkbox before **Save & Reboot** is enabled. Editing writes nothing to the board, and telemetry
+refreshes never overwrite an unsaved edit.
 
-`POST /api/configuration` takes exactly `{"profile": 0-4, "unsafe_overclock": bool}`, with a body of at most 1 KiB. It
-succeeds only after the firmware reports Completed. Python returns `{"ok": true}`; .NET returns the action result.
-
-If the outcome is unknown (timeout or disconnect), both backends keep a `configuration_save_unconfirmed` warning in the
-shared snapshot, across reconnects and page reloads. Reading report 20 afterwards cannot prove which request produced
-the result, so only a later confirmed save clears the warning. After reconnecting, the user must check the stored
-profile and running clock before saving again.
+`POST /api/configuration` takes exactly `{"profile": 0-4, "unsafe_overclock": bool}` in a body of at most 1 KiB, and
+succeeds only after the firmware reports Completed. After a timeout or disconnect, both backends keep a
+`configuration_save_unconfirmed` warning in the shared snapshot, across reconnects and page reloads. Only a later
+confirmed save clears it, because reading report 20 cannot show which request produced the result. The rules behind
+this are in the [HID reference](../design/usb/hid-report-reference.md#save-and-reboot-safety).
 
 ### Channel Diagnostics and Traffic Presentation
 
-- Applied baud and framing come from the channel snapshots, and GPIOs from report 2. Never take them from a hard-coded
-  map or from a CDC request that may have been rejected.
+- Applied baud and framing come from the channel snapshots, and GPIOs from report 2, never from a hard-coded map or a
+  CDC request that may have been rejected.
 - Rates are shown in KB/s (1000 bytes) over windows of at least one second, computed from `totals` and
-  `observed_interval_ms`, never from browser arrival times. Use the rate rules in the
+  `observed_interval_ms` rather than browser arrival times, following the
   [HID reference](../design/usb/hid-report-reference.md#sequence-interval-and-rates). An unusable window shows `--`,
   and three seconds without an Input marks the channel stale.
 - Lifecycle badges are Closed, Starting, Ready, Configuring, Error, and host-side Unknown. Fault history and the last
-  configuration error are shown next to the badge, without turning a recovered channel red. They cannot be cleared.
-- The header hides the sample age while data is fresh. It shows `Telemetry stale` with the age once data goes stale,
-  and `Waiting for telemetry` before the first sample.
+  configuration error appear beside the badge and cannot be cleared.
+- The header shows `Telemetry stale` with the sample age once data goes stale, and `Waiting for telemetry` before the
+  first sample.
 
 ## Direct Dashboard Development
 

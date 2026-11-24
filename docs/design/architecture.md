@@ -54,7 +54,7 @@ flowchart LR
 
 | Component | Responsibility | Design |
 | --- | --- | --- |
-| CDC and HID | USB interfaces, DTR lifecycle, byte admission, reports | [CDC/HID overview](usb/cdc-hid-overview.md) |
+| USB interfaces | CDC ports, HID, DTR lifecycle, byte admission, reports | [USB interfaces](usb/usb-interfaces.md) |
 | Rings | Per-port buffering, overflow and backpressure policy | [Ring buffers](uart/ring-buffer-design.md) |
 | Control plane | Line-coding hand-off, deadlines, error reporting | [Control plane](control-plane-design.md) |
 | Backend operations | Common contract for both UART implementations | [Backend contract](uart/backend-adapter-design.md) |

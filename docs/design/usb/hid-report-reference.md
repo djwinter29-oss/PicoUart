@@ -2,7 +2,7 @@
 
 This is the wire specification for PicoUart's HID interface: board identity, configuration, telemetry, board actions,
 and per-channel monitoring. For what HID is for and how it relates to the CDC ports, read the
-[CDC/HID overview](cdc-hid-overview.md) first.
+[USB interfaces](usb-interfaces.md) first.
 
 ## Interface Basics
 

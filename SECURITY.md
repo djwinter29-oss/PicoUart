@@ -31,7 +31,7 @@ or secure boot; board controls protect against mistakes, not an authorized local
   pinned to commit SHAs, and PyPI uses trusted publishing; neither makes a compromised source or workflow trustworthy.
 
 Use 3.3 V UART logic, never direct RS-232 levels. Before **Save & Reboot**, close all CDC ports and stop external UART
-traffic; never automatically retry an unconfirmed save. A saved non-default clock profile is not proof of stability.
+traffic, and do not retry an unconfirmed save automatically.
 See [hardware safety](docs/hardware-setup.md), the
 [save contract](docs/design/usb/hid-report-reference.md#save-and-reboot-safety), and
 [release HIL gates](docs/deployment/releasing.md#release-hil-gates). Get permission before modifying or sending traffic

@@ -5,11 +5,13 @@
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
 ![Targets: RP2040 and RP2350](https://img.shields.io/badge/Targets-RP2040%20%7C%20RP2350-2674b8)
 
-**Six serial ports. One Pico. Diagnostics built in.**
+A six-port USB-to-UART bridge for the Raspberry Pi Pico and Pico 2, with built-in health counters.
 
-PicoUart turns a stock Raspberry Pi Pico or Pico 2 into a six-port USB-to-UART bridge for bring-up benches and test
-racks. One board and one USB cable replace a tangle of single-port adapters. Your existing terminals and scripts keep
-working, and you can check bridge health without closing any serial connection.
+**Quick links:** [Releases](https://github.com/djwinter29-oss/PicoUart/releases) · [Hardware setup](docs/hardware-setup.md) · [Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/) · [PyPI package](https://pypi.org/project/pico-uart/)
+
+PicoUart turns a stock Pico or Pico 2 into a six-port USB-to-UART bridge for bring-up benches and test racks: one board
+and one USB cable instead of a handful of single-port adapters. Your existing terminals and scripts keep working, and
+you can check bridge health without closing any serial port.
 
 ```text
 Computer -- USB -- Pico / Pico 2 +- UART0 -- Device A
@@ -22,15 +24,12 @@ Computer -- USB -- Pico / Pico 2 +- UART0 -- Device A
 
 When a serial log goes quiet, the cause is ambiguous: the device stopped talking, the bridge dropped bytes, or the host
 stopped reading. A typical USB-serial adapter cannot tell you which. PicoUart counts traffic on both sides of the
-bridge for each channel, which helps narrow down where data stopped. The counters are evidence; your test runner still
-decides pass or fail.
+bridge for each channel, which narrows down where data stopped.
 
-- **Six standard serial ports.** Each UART appears as a normal USB CDC port. No host software is needed for data.
-- **Separate diagnostics.** Traffic counters, dropped-byte counts, and buffer peaks are reported over a USB HID
-  interface, so monitoring never competes with your serial tools.
-- **Evidence for CI.** Save JSON status snapshots and timed traffic logs next to your test results.
-- **Dashboards.** Use one in the browser with nothing to install, or a local one from Python or .NET.
-
+Each UART appears as a normal USB CDC serial port, so no host software is needed for data. The counters, dropped-byte
+counts, and buffer peaks come over a separate USB HID interface, so monitoring never competes with your serial tools.
+You can read them in a browser dashboard with nothing to install, or from Python or .NET, and save them next to your
+test results.
 ![Direct Dashboard with simulated device identity, board configuration, runtime status, and six-channel UART/USB traffic.](docs/assets/pico-uart-dashboard.png)
 
 _Direct Dashboard layout with simulated telemetry; illustrative, not a live hardware result._
@@ -40,8 +39,6 @@ _Direct Dashboard layout with simulated telemetry; illustrative, not a live hard
 - Use **3.3 V UART logic** and a shared ground. Never connect 5 V or RS-232 signals directly.
 - UART0-1 use the hardware UARTs. UART2-5 use PIO and support **8N1 only**.
 - RTS/CTS flow control is off by default.
-- All six channels share one USB full-speed link, so a configured baud rate does not guarantee sustained throughput.
-  The [HIL records](docs/tests/records/README.md#evidence-index) show what has been measured.
 
 ## Get Started
 
@@ -72,9 +69,8 @@ pico-uart status --json > uart-status.json
 pico-uart monitor --duration 60 > uart-traffic.log
 ```
 
-These commands read diagnostics only; they do not send or capture UART data. A successful exit does not mean every
-channel was healthy, so your runner should check the reported states and counters. On Linux, HID access needs a
-one-time [permission setup](tools/README.md#linux-hid-permissions).
+These commands read diagnostics only; they do not send or capture UART data. On Linux, HID access needs a one-time
+[permission setup](tools/README.md#linux-hid-permissions).
 
 ## Hardware Compatibility
 

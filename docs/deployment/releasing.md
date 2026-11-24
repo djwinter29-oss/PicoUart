@@ -5,7 +5,8 @@ A release has two independent halves:
 1. **Publication** is automatic. Pushing a version tag builds, tests, and publishes the firmware and host packages.
 2. **Hardware qualification** is manual. Someone flashes the exact published firmware and runs the HIL fixture.
 
-A green CI run proves the software checks passed, not that UART timing, reliability, or board stability were tested.
+A green CI run only shows that the software checks passed; it says nothing about UART timing, reliability, or board
+stability.
 Until qualification evidence exists, treat published artifacts as lab/test-only.
 
 ## Release Sequence
@@ -21,19 +22,18 @@ The CI job graph is described in [GitHub Actions](../development/github-actions.
 
 ## Release Preflight
 
-- [ ] The change is reviewed and the working tree has no unintended files.
-- [ ] The version follows the [versioning policy](#versioning).
-- [ ] PR Check passed for the exact commit being tagged.
-- [ ] `git diff --check` passes.
-- [ ] Release notes call out USB/HID compatibility or behavior changes.
-- [ ] Private vulnerability reporting is enabled in the repository settings ([SECURITY.md](../../SECURITY.md)).
+Before tagging, make sure the change is reviewed, the tree has no stray files, `git diff --check` is clean, and PR
+Check passed for the exact commit you are tagging. Pick the version using the [versioning policy](#versioning), and
+mention any USB/HID compatibility or behavior change in the release notes. Also confirm private vulnerability
+reporting is enabled in the repository settings ([SECURITY.md](../../SECURITY.md)).
 
-Never start physical testing from an uncommitted or locally modified image.
+Don't start physical testing from an uncommitted or locally modified image; the result would not describe anything you
+can release.
 
 ## Publication Gates
 
-Publication fails closed. The GitHub Release job waits for host validation, both firmware builds, both host packages,
-and a successful **PR Check** run on the same commit. A tag push does not trigger PR Check itself, so make sure the
+If any gate is missing, nothing is published. The GitHub Release job waits for host validation, both firmware builds,
+both host packages, and a successful **PR Check** run on the same commit. A tag push does not trigger PR Check itself, so make sure the
 commit already has one (usually from the push to `main`). PyPI and Pages additionally require a successful tag-push
 Release run for that commit and tag.
 
@@ -124,9 +124,9 @@ For Pico 2, use `--board pico2`, a Pico 2 ELF, and `target/rp2350.cfg`. Continue
 A release is hardware-qualified only when every rated board artifact has a complete `PASS` on the exact packaged
 UF2/ELF, with its SHA-256 matching the release. A local rebuild or a result for a different image does not count.
 
-Record the reported system clock and boot clock profile alongside the image hash. Board configuration lives outside
-the firmware image, so a matching hash alone does not prove the board ran at the rated clock. Overclock profiles are
-board-local; any overclock claim needs its own evidence on that board and does not establish general stability.
+Record the reported system clock and boot clock profile alongside the image hash, since the clock profile is stored
+outside the firmware image. Overclock profiles are board-local, so an overclock claim needs its own evidence on that
+board.
 
 The [fixture setup](../tests/hil-fixture-setup.md) and [test plan](../tests/hil-fixture-test-plan.md) define how to
 run the tests. Keep one record per board in the [HIL records](../tests/records/README.md) format.
@@ -142,8 +142,8 @@ run the tests. Keep one record per board in the [HIL records](../tests/records/R
 | Artifact identity | Board target, firmware and runner revisions, artifact SHA-256, flashing evidence, and full results |
 
 Missing cases make the result `PARTIAL`. Unexplained loss, timeouts, disconnects, or HID errors block qualification.
-A speed-sweep `PASS` qualifies the 115200-baud baseline only, not the higher rates; the boundary it finds is a
-measurement, not a qualified rating. Older [record index](../tests/records/README.md#evidence-index) entries cannot
+A speed-sweep `PASS` qualifies only the 115200-baud baseline. The boundary it finds is a measurement, and higher
+rates remain unrated. Older [record index](../tests/records/README.md#evidence-index) entries cannot
 substitute for a current exact-artifact run.
 
 Optional claims, such as RTS/CTS or backpressure behavior, need their matching board configuration and HIL variant
@@ -151,10 +151,10 @@ before the release notes may make them.
 
 ## Promotion Checklist
 
-- [ ] All build and check gates passed for the exact release commit.
-- [ ] Every rated firmware artifact has complete, passing evidence with matching hashes.
-- [ ] Records and transcripts are stored somewhere shared, not only in a local cache.
-- [ ] Release notes state compatibility changes, tested conditions, and any unqualified claims.
+Before calling the release qualified, check that all build gates passed for the exact commit, that every rated
+firmware artifact has complete passing evidence with matching hashes, that the records and transcripts live somewhere
+shared rather than a local cache, and that the release notes state compatibility changes, tested conditions, and any
+claims that remain unqualified.
 
 Then attach the evidence and note hardware qualification in the release notes.
 

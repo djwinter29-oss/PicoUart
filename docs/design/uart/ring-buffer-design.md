@@ -24,11 +24,12 @@ The buffer sizes are not the whole RAM cost. Measure the linked map before shrin
 
 The two directions handle a full ring differently, on purpose:
 
-- **TX full:** the bridge stops reading that CDC port and leaves the data in USB. The host is pushed back and nothing is
-  lost or reordered.
-- **RX full:** RX is a live stream, not a logger. The UART cannot pause, so the oldest unread bytes are overwritten and
-  newer data is kept. The consumer skips past the overwritten bytes and counts them. HID reports this as an overrun
-  health bit and a cumulative dropped-byte count.
+When the TX ring is full, the bridge stops reading that CDC port and leaves the data in USB. The host is pushed back
+and nothing is lost or reordered.
+
+RX is a live stream and the UART cannot pause, so when the RX ring is full the oldest unread bytes are overwritten and
+newer data is kept. The consumer skips past the overwritten bytes and counts them; HID reports an overrun health bit
+and a cumulative dropped-byte count.
 
 A hardware UART FIFO overrun that happens before data reaches the ring is counted differently. The PL011 only latches a
 sticky flag, so it shows up as an `rx_error_count` event, not a dropped-byte count.
@@ -38,11 +39,12 @@ sticky flag, so it shows up as an `rx_error_count` event, not a dropped-byte cou
 The ring API hands out contiguous spans that the caller fills or drains and then commits. Each side has at most one
 outstanding span.
 
-- **RX DMA** writes straight into the ring storage, and the backend publishes its progress as the producer cursor.
-  Before sending a span to USB, the bridge checks it against live DMA progress, so data overwritten mid-copy is counted
-  as lost rather than forwarded.
-- **TX DMA** holds its span until the transfer completes, then commits it. Completion frees ring space, but it does not
-  mean the bytes have left the TX pin.
+RX DMA writes straight into the ring storage, and the backend publishes its progress as the producer cursor. Before
+sending a span to USB, the bridge checks it against live DMA progress, so data overwritten mid-copy is counted as lost
+rather than forwarded.
+
+TX DMA holds its span until the transfer completes, then commits it. Completion frees ring space, but the bytes may not
+have left the TX pin yet.
 
 ## Observability
 

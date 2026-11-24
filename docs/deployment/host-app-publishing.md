@@ -73,10 +73,10 @@ attestations.
 
 ### Retry and Development Uploads
 
-- **Retry or publish an older release:** run the workflow manually with the published **tag** and `test_publish`
-  unchecked. Editing a release by hand does not trigger the workflow.
-- **Development upload:** check `test_publish` and leave **tag** empty. The workflow tests and builds a marked wheel,
-  then uploads it after approval. The wheel is also kept as a workflow artifact.
+To retry, or to publish an older release, run the workflow manually with the published **tag** and `test_publish`
+unchecked. Editing a release by hand does not trigger it. For a development upload, check `test_publish` and leave
+**tag** empty: the workflow tests and builds a marked wheel and uploads it after approval, and also keeps the wheel as a
+workflow artifact.
 
 PyPI versions and filenames are permanent, even after deletion. Check PyPI before retrying, and ship corrections under
 a new version. A PyPI failure does not roll back the GitHub Release or Pages.
@@ -90,9 +90,9 @@ version from the tag. Deployments run one at a time.
 Setup: set **Settings > Pages > Source** to **GitHub Actions**, and allow the default branch plus any manual-deploy refs
 in the **github-pages** environment.
 
-- **Redeploy or roll back:** run the workflow manually with a published **tag** and `test_publish` unchecked.
-- **Test from a branch:** check `test_publish` and leave **tag** empty. This replaces the live site. To restore it,
-  rerun with the release tag.
+To redeploy or roll back, run the workflow manually with a published **tag** and `test_publish` unchecked. To test
+from a branch, check `test_publish` and leave **tag** empty; that replaces the live site, so rerun with the release tag
+afterwards to restore it.
 
 A Pages failure does not unpublish the GitHub Release. Mocked browser tests do not prove real WebHID access, so check
 the live site with a board after deploying.

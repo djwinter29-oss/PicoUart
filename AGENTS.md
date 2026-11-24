@@ -43,7 +43,7 @@ remain usable from Windows for CDC/HID operation.
 
 ## Hardware And Firmware Contracts
 
-- CDC/HID ownership and report contracts: [docs/design/usb/cdc-hid-overview.md](docs/design/usb/cdc-hid-overview.md) and
+- USB interface (CDC/HID) ownership and report contracts: [docs/design/usb/usb-interfaces.md](docs/design/usb/usb-interfaces.md) and
   [docs/design/usb/hid-report-reference.md](docs/design/usb/hid-report-reference.md).
 - Control-plane lifecycle and `CONTROL_ERROR` / `CONTROL_PENDING` behavior:
   [docs/design/control-plane-design.md](docs/design/control-plane-design.md).

@@ -6,12 +6,10 @@ contract, with no backend-specific branches. USB and board code never call it di
 
 ## What the Contract Covers
 
-- **Lifecycle:** start, stop, restart, and readiness.
-- **Worker I/O:** one service pass that moves data between the rings and the hardware.
-- **Rings:** access to the port's RX and TX rings ([ring design](ring-buffer-design.md)).
-- **Line coding:** checking whether a format is supported, and applying it once safe
-  ([control plane](../control-plane-design.md)).
-- **Telemetry:** traffic and error counters, and coherent RX progress snapshots.
+The contract covers lifecycle (start, stop, restart, readiness), a single worker pass that moves data between the
+rings and the hardware, access to the port's RX and TX [rings](ring-buffer-design.md), line coding (whether a format is
+supported, and applying it once it is safe; see the [control plane](../control-plane-design.md)), and telemetry: traffic
+and error counters plus coherent RX progress snapshots.
 
 Each backend provides a constant operations table. An incomplete table or an unknown backend fails safely at startup.
 Queries on an inactive backend return neutral values, so callers check readiness before treating results as live.
@@ -28,16 +26,17 @@ Queries on an inactive backend return neutral values, so callers check readiness
 
 ## Lifecycle Rules
 
-- **Startup is all-or-nothing.** If any backend fails, the ones already started are rolled back and the worker does not
-  launch.
-- **Starting an active backend is refused**, which leaves its DMA, rings, and settings untouched.
-- **Each start seeds a complete format.** That is either the queued request or the last applied settings. A failed start
-  leaves the applied settings unchanged, so the reported format always matches the hardware when the port is `READY`.
-- **Restart is a real stop and start.** It discards queued bytes; it is not just a buffer clear.
-- **Counters outlive restarts.** Traffic and error counters, ring peaks, and overflow counts last from boot. Restarting
-  a port does not reset them.
-- **DMA channels are held while active.** Each running port keeps one RX and one TX channel. Six ports use all 12 RP2040
-  channels, so any future DMA feature has to find another way.
+Startup is all-or-nothing: if any backend fails, the ones already started are rolled back and the worker does not
+launch. Starting a backend that is already active is refused, so its DMA, rings, and settings stay untouched.
+
+Every start is seeded with a complete format, either the queued request or the last applied settings. A failed start
+leaves the applied settings alone, so the reported format always matches the hardware when the port is `READY`.
+
+Restart is a real stop and start and discards queued bytes. Counters survive it: traffic and error counts, ring peaks,
+and overflow counts run from boot.
+
+Each running port holds one RX and one TX DMA channel. Six ports use all 12 RP2040 channels, so any future DMA feature
+has to find another way.
 
 ## Line Coding
 
