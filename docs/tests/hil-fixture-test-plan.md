@@ -51,7 +51,8 @@ The functional pass requires all of the following:
 - CDC0-CDC5 and HID enumerate.
 - All six channels are ready, with no initialization failure and no stuck pending request.
 - Both crossed pairs pass in both directions, and both loopbacks pass.
-- No unexpected reset, disconnect, serial framing error, new HID `rx_error`, or `control_error`.
+- No unexpected reset, disconnect, serial framing error, increase in HID `rx_error_count`, or nonzero
+  `last_control_error_reason`.
 - RX overflow counts do not increase.
 
 `--stage N` runs one link for diagnosis; the result is `PARTIAL`. `--continue-on-failure` collects every stage result.
@@ -85,16 +86,17 @@ same checks with `--check-hid-health`.
 ### Baseline and Speed Ceiling
 
 **The baseline is 115200 baud.** The run passes only if all six streams pass at 115200 with clean HID health. If
-115200 fails or was not run, the baseline has not passed, whatever happened at higher rates.
+115200 fails or was not run, the baseline has not passed; higher-rate results do not change that.
 
 Above the baseline, an ascending sweep is a **ceiling search**. It stops at the first failed rate and reports later
-rates as `NOT RUN`. That first failure is the observed boundary, not a failed test. Record:
+rates as `NOT RUN`. That first traffic failure is the observed boundary, not a failed test. Record:
 
 - the highest rate where all six streams passed, and
 - the first higher rate that failed, or note that the cap was reached without a failure.
 
-Do not claim an exact hardware limit; untested rates in between are unknown. A health or setup failure is always a
-failure, whatever the baud rate.
+Do not claim an exact hardware limit; untested rates in between are unknown. Any health failure is a run failure. A
+setup failure before the baseline also fails the run; one after a clean baseline leaves the baseline valid but the
+ceiling undetermined.
 
 ### Test Matrix
 
@@ -105,6 +107,15 @@ failure, whatever the baud rate.
 | Concurrent six-port | 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, 3000000 | 30 s per rate, fresh port setup |
 
 These durations are plan values, not runner defaults, so always pass `--duration`.
+
+**Combined run.** The usual way to run the plan. `tools/hil/runner/full.sh` runs the functional pass, then the
+concurrent performance pass if the functional pass succeeded, and writes a dated record to
+[records/](records/README.md). It takes the functional pass's `--pico-cdcN`, `--board`, `--firmware-*`, and
+`--artifact` options, plus `--rates`, `--duration`, `--timeout`, and `--performance-payload-bytes`.
+Keep failure transcripts and include every attempted rate in the record.
+
+`--skip-functional` and `--skip-performance` give a `PARTIAL` record even if the phase that ran succeeded. Check the
+recorded scope, not just the exit code.
 
 **Pair sweeps.** Set `PICO_DEVICE_BASE` to the board's `/dev/serial/by-id` path without the `-ifNN` suffix; the runner
 adds the suffix for each stage.
@@ -145,14 +156,6 @@ tools/hil/runner/performance.sh \
   --artifact /path/to/flashed/pico_uart.elf
 ```
 
-**Combined run.** The usual way to run the plan. `tools/hil/runner/full.sh` runs the functional pass, then the
-concurrent performance pass if the functional pass succeeded, and writes a dated record to
-[records/](records/README.md). It takes the functional pass's `--pico-cdcN`, `--board`, `--firmware-*`, and
-`--artifact` options, plus `--rates`, `--duration`, `--timeout`, and `--performance-payload-bytes`.
-
-`--skip-functional` and `--skip-performance` give a `PARTIAL` record even if the phase that ran succeeded. Check the
-recorded scope, not just the exit code.
-
 **Ceiling search.** Replace `--rates` with `--incremental-performance` to step up from 115200 in 100000-baud steps,
 up to 3000000, stopping at the first failure. Adjust it with `--incremental-start-rate`, `--incremental-rate-step`, and
 `--incremental-max-rate`. A start above 115200 skips the baseline, so that run cannot pass on its own. The standalone
@@ -169,14 +172,14 @@ are not parsed by `pico-uart-hil performance`.
 that completes at or after its deadline counts as a timeout, even if the final bytes arrive right at the boundary.
 Host scheduling jitter near the deadline can cause such a timeout.
 
-### Soak
+### Short Stability Check
 
 Run the concurrent fixture for 60 seconds at 115200 baud, then test individual links at 921600 and 1000000. Capture
 HID health before and after, while no other monitor is reading the board:
 
 ```sh
-host/python/.venv/bin/python -m pico_uart.main monitor --duration 5
-host/python/.venv/bin/python -m pico_uart.main overruns
+host/python/.venv/bin/pico-uart monitor --duration 5
+host/python/.venv/bin/pico-uart overruns
 ```
 
 Sixty seconds is a sanity check, not a stability claim; record a duration that matches what you want to claim. Earlier
@@ -238,73 +241,30 @@ reset.
 These cases need a fixture source or authorization beyond the runners. Record the board, artifact hash, rate, payload or
 burst size, stall duration, affected channels, and HID samples. If a case cannot be set up, report it as not tested.
 
-#### All Six Channels Loaded
-
-Run the concurrent fixture and collect both cores' service load, block latency, ring peaks, and faults during traffic.
-Use optional timing instrumentation to check service gaps.
-
-Every stream must verify payloads with no new loss or errors at the qualified load. Run acceptance separately from
-instrumented tests; host-paced traffic does not prove wire saturation.
-
-#### Host Drain Stalled
-
-Use a bounded, independently paced fixture source. Pause host reads on one RX channel while the other channels
-continue, resume before the chosen capacity budget, then test a separate intentional-overflow interval.
-
-The test passes if bytes arrive in order without loss within budget. Beyond budget, dropped bytes must be counted and
-traffic must recover; unaffected channels must continue without new faults.
-
-#### TX Backpressure
-
-With a separately qualified flow-control fixture, pause a peer using supported CTS while host OUT writes fill the
-channel, then resume the peer.
-
-Host writes must block or time out explicitly rather than lose bytes silently. Admitted bytes must remain ordered while
-other channels continue.
-
-#### Close and Reopen During Traffic
-
-Close one active channel while other streams run. Reopen it with staged settings and wait for HID readiness before
-sending a fresh, distinguishable marker.
-
-After reopening, old-session payloads must not enter the fresh stream, applied settings must match, and unaffected
-channels must keep passing. Deliberately discarded queued bytes need not be delivered.
-
-#### Session Loss with Pending Control
-
-Create a controlled busy condition that keeps a supported line-coding request pending. Confirm it through HID, then
-unplug the device or issue a targeted USB bus reset.
-
-Old handles must terminate or time out explicitly, and all old sessions must be closed after remount. Reopen, verify
-applied settings and a fresh marker, and check that canceled work produces no late timeout. Repeat with all six
-channels active.
-
-#### Concurrent Configuration
-
-Repeatedly change supported settings on other channels while an independently paced channel receives verified
-traffic. Coordinate both ends of changed links.
-
-Record the maximum unaffected-port service gap and both cores' maximum pass times, not only average throughput. A pass
-requires bounded completion or an explicit timeout, with no new faults on the unaffected stream.
-
-When changing line coding on a crossed pair, change both ends; a deliberate mismatch is not a bridge failure. A USB
-reset affects the whole device, so the other streams are expected to stop.
+| Case | How to run it | Pass when |
+| --- | --- | --- |
+| All six channels loaded | Run the concurrent fixture; collect service load, block latency, ring peaks, and faults. Use timing instrumentation for service gaps, then repeat acceptance on uninstrumented firmware. | Every stream verifies with no new loss or errors at the qualified load. USB-paced traffic does not establish wire saturation. |
+| Host drain stalled | Use a bounded, independently paced source. Pause reads on one RX channel while others continue; resume within the capacity budget, then test a separate intentional-overflow interval. | Within budget, bytes arrive in order without loss. Beyond budget, drops are counted and traffic recovers; other channels have no new faults. |
+| TX backpressure | With a qualified flow-control fixture, pause a peer using supported CTS while host OUT writes fill the channel, then resume it. | Host writes block or time out rather than lose bytes. Admitted bytes stay ordered while other channels continue. |
+| Close and reopen during traffic | Close one channel while other streams run. Reopen with staged settings, wait for HID readiness, then send a fresh marker. | Old-session payloads do not enter the new stream; settings match and other channels keep passing. Queued bytes discarded on close need not be delivered. |
+| Session loss with pending control | Keep a supported line-coding request pending and confirm it through HID; unplug the board or issue a targeted USB bus reset. Repeat with all six channels active. | Old handles terminate or time out; after remount, old sessions are closed, settings and a fresh marker verify, and canceled work causes no late timeout. A USB reset stops every stream. |
+| Concurrent configuration | Repeatedly change supported settings on other channels while an independently paced channel carries verified traffic. Change both ends of crossed links. | Record the maximum unaffected-port service gap and both cores' maximum pass times. Each change completes or times out explicitly, with no new faults on unaffected traffic. A mismatched crossed pair is not a bridge failure. |
 
 ### Known Gaps
 
 More USB loopback runs will not close these:
 
-- Input that keeps arriving while the host has stopped reading. On this fixture every byte starts as a host write, so
-  this needs an independently paced UART source.
-- CTS behavior. No recorded run has used RTS/CTS, because there is no flow-control fixture yet.
-- Pico 2 coverage, which is much thinner than Pico's. Check the [evidence index](records/README.md#evidence-index)
-  before relying on it; a Pico result does not carry over.
-- Sustained DMA wrap/re-arm endurance with the normal transfer count has not been tested. A shortened-countdown
-  attempt produced invalid results, and the safe injection procedure still needs validation.
-- Startup after each kind of reset. A startup failure right after SWD flashing turned out to be core 1 being launched
-  without the reset the Pico SDK requires; calling `multicore_reset_core1()` first fixed it in repeated trials
-  ([review record](records/2026-10-23-uart-cdc-review-validation.md#explicit-core-1-reset-follow-up)). Cold power-on,
-  watchdog, and USB-reset starts are not qualified yet.
+- The fixture cannot test input that keeps arriving while the host has stopped reading. Every byte starts as a host
+  write, so this needs an independently paced UART source.
+- RTS/CTS has not been tested; there is no flow-control fixture yet.
+- Pico 2 has much thinner coverage than Pico. Check the [evidence index](records/README.md#evidence-index) before
+  relying on it; a Pico result does not carry over.
+- Sustained DMA wrap/re-arm endurance with the normal transfer count remains untested. A shortened-countdown attempt
+  produced invalid results, and the safe injection procedure still needs validation.
+- Startup after each kind of reset remains unqualified. A startup failure right after SWD flashing turned out to be
+  core 1 being launched without the reset the Pico SDK requires; calling `multicore_reset_core1()` first fixed it in
+  repeated trials ([review record](records/2026-10-23-uart-cdc-review-validation.md#explicit-core-1-reset-follow-up)).
+  Cold power-on, watchdog, and USB-reset starts are not qualified yet.
 
 ## Tuning Experiments
 
@@ -343,9 +303,3 @@ On the faster boards, total verified throughput levels off around 0.47-0.53 MB/s
 each stream waits for its echo, so this points to USB full-speed limits. A pass at a given baud therefore shows
 integrity at the load achieved, not continuous full-rate traffic. Measuring that needs independently paced external
 sources that bypass the board's USB OUT path, with wire timing measured.
-
-## Results
-
-The combined runner writes a dated record to [records/](records/README.md). Standalone runners append to the local,
-ignored `build/hil-results.md`, which cannot qualify a release on its own. Keep transcripts of failures, and keep every
-tested rate in the record, failures included.

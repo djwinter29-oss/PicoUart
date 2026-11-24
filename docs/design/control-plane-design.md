@@ -13,8 +13,9 @@ while old-format bytes are still queued, would corrupt traffic. So the firmware:
 3. applies the change on core 1 once the backend is idle, and
 4. reports the outcome through HID.
 
-The USB transfer result therefore means "received", not "applied". Hosts watch two HID health bits:
-`CONTROL_PENDING` (bit 3) and `CONTROL_ERROR` (bit 2).
+The USB transfer result means the request was received, not applied. On HID, the channel snapshot reports `Configuring`
+while the change is pending and `Error` if the request fails. The diagnostics report retains the last configuration
+error reason.
 
 ## Request Lifecycle
 
@@ -29,7 +30,7 @@ sequenceDiagram
 
   Host->>USB: SET_LINE_CODING
   USB->>USB: Validate, mark pending
-  USB->>HID: CONTROL_PENDING = 1
+  USB->>HID: Channel state = Configuring
   USB->>Mailbox: Request + generation + TX boundary
   critical Under status lock
     Worker->>Mailbox: Take request
@@ -38,16 +39,17 @@ sequenceDiagram
   Worker->>Worker: Wait for TX boundary and backend idle
   Worker->>Backend: Apply line coding
   Backend-->>Worker: Applied or rejected
-  Worker->>HID: Update CONTROL_PENDING / CONTROL_ERROR
+  Worker->>HID: Update channel state and diagnostics
 ```
 
-A request has three possible owners in turn: core 0 (soft-pending), the mailbox, and the worker. `CONTROL_PENDING` stays
-set while any owner holds a request, and new TX bytes are refused for that whole interval. The hand-off between owners
-happens under the status lock, so the request is never ownerless. Without this, a concurrent timeout could clear
-pending while the worker was mid-change.
+A request has three possible owners in turn: core 0 (soft-pending), the mailbox, and the worker. The internal
+`CONTROL_PENDING` status stays set while any owner holds a request, and new TX bytes are refused for that whole
+interval. The hand-off between owners happens under the status lock, so the request is never ownerless. Without this,
+a concurrent timeout could clear pending while the worker was mid-change.
 
-Malformed or unsupported requests are rejected at once with `CONTROL_ERROR`. Rejections tell the two causes apart:
-invalid framing (for example, non-8N1 on a PIO port) and a baud rate the clock divider cannot reach.
+Malformed or unsupported requests are rejected at once and set the internal `CONTROL_ERROR` status. On HID, hosts see
+the channel state as `Error` and can read the retained reason from channel diagnostics. Reasons distinguish invalid
+framing (for example, non-8N1 on a PIO port) from a baud rate the clock divider cannot reach.
 
 ## Ownership Rules
 
@@ -66,22 +68,22 @@ Owners are independent: a newer request can wait while an older one is still bei
 ## Generations and Stale Completions
 
 Each request increments a per-port generation, and every completion carries the generation it belongs to. A completion
-may update `CONTROL_ERROR` only if its generation is still the latest. A slow, successful older request therefore cannot
-clear the error from a newer rejected one.
+may update the internal `CONTROL_ERROR` status only if its generation is still the latest. A slow, successful older
+request therefore cannot clear the error from a newer rejected one.
 
 ## Timeouts
 
 Soft-pending and worker application each have a bounded per-port deadline, so a busy port never consumes another port's
-time. Repeating the same request does not extend its deadline, but a different request gets a new one. A timeout reports
-`CONTROL_ERROR`.
+time. Repeating the same request does not extend its deadline, but a different request gets a new one. A timeout sets
+`CONTROL_ERROR`, reports channel state `Error` over HID, and updates the diagnostic reason.
 
 ## Port Lifecycle
 
 DTR drives each port's lifecycle, and the UART worker is the only code that starts or stops a backend.
 
 - **Open:** the initial line coding goes through the normal mailbox before the start request, so the backend starts with
-  the requested format, not the previous session's. Each open makes one start attempt. On failure the port reports
-  `INIT_FAILED` instead of retrying forever; close and reopen to retry.
+  the requested format, not the previous session's. Each open makes one start attempt. On failure the channel snapshot
+  reports `Error`; close and reopen to retry.
 - **Close:** core 0 stops admitting bytes and clears the port's CDC FIFOs. The worker then stops the backend and parks
   TX idle-high. Queued bytes are discarded, while the applied settings and boot-lifetime counters are kept. The board
   does not reboot.
@@ -100,7 +102,7 @@ polling.
 ## Host Guidance
 
 - Opening a serial port does not guarantee the backend is running or the line coding is applied.
-- After opening and configuring ports, wait on HID for `READY`, no `CONTROL_PENDING`, no current error, and the
-  expected applied settings. The Python client's `wait_channels_ready()` does exactly this.
-- Pending clearing on its own does not prove success; check the applied settings too.
-- Clean serial data without clean HID health is incomplete test evidence.
+- After opening and configuring ports, wait for the HID channel snapshot to report `Ready` with the expected applied
+  settings. The Python client's `wait_channels_ready()` does exactly this.
+- A `Ready` snapshot confirms the current state; read diagnostics separately when checking retained fault history.
+- Clean serial data without clean HID status and diagnostics is incomplete test evidence.

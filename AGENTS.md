@@ -28,8 +28,8 @@ expected, not a setup failure. Unrelated serial devices may still be present, so
 belongs to PicoUart.
 
 Use the [host developer setup](docs/development/host-tools.md#python-environment-setup) for Python dependencies and
-[firmware development guide](docs/development/firmware-testing.md#cursor-cloud-environment) for Cursor Cloud snapshot
-provisioning and its update script. Those snapshot assumptions do not apply to every checkout.
+[Cursor Cloud environment guide](docs/development/cursor-cloud.md) for snapshot provisioning. Those snapshot
+assumptions do not apply to every checkout.
 
 ## Build, Test, and Run
 

@@ -1,28 +1,15 @@
 # Testing PicoUart
 
-PicoUart is tested at three levels. Start with the smallest level that covers your change, and never count a partial
-hardware run as a full pass.
+PicoUart is tested at five levels. Start with the smallest level that covers your change. A partial hardware run is
+useful evidence, but it is not a full pass.
 
-```mermaid
-flowchart TD
-    Change["Firmware change"] --> Host["Host unit suite"]
-    Host --> Build["pico + pico2 firmware builds"]
-    Build --> Functional["Functional HIL\nall four staged links"]
-    Functional --> Performance["Performance HIL\nindividual + concurrent + soak"]
-    Performance --> Release["Release qualification\nexact artifact hashes"]
-    Host -->|fail| Fix["Fix before continuing"]
-    Build -->|fail| Fix
-    Functional -->|fail or partial| Diagnose["Record and diagnose"]
-    Performance -->|fail or partial| Diagnose
-```
-
-| Level           | Environment                     | Primary purpose                                                         | Result authority           |
-| --------------- | ------------------------------- | ----------------------------------------------------------------------- | -------------------------- |
-| Host tests      | Native host                     | Firmware policies plus host applications and cross-project contracts | Relevant CTest, pytest, .NET, or Node result |
-| Firmware build  | Pico SDK/toolchain              | Compile/link both RP2040 and RP2350 targets                             | Build artifacts            |
-| Functional HIL  | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health           | Functional result entry    |
-| Performance HIL | Same fixture                    | Throughput, integrity, concurrency, soak, overflow behavior             | Performance result entry   |
-| Release HIL     | Exact packaged artifacts        | Qualification of artifacts intended for publication                     | Release checklist + hashes |
+| Level | Environment | Purpose |
+| --- | --- | --- |
+| Host tests | Native host | Firmware policies, host applications, and cross-project contracts |
+| Firmware build | Pico SDK/toolchain | Compile and link both RP2040 and RP2350 targets |
+| Functional HIL | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health |
+| Performance HIL | Same fixture | Throughput, integrity, concurrency, soak, overflow behavior |
+| Release HIL | Exact packaged artifacts | Qualify the artifacts intended for publication |
 
 ## Without Hardware
 
@@ -61,13 +48,4 @@ signalling.
 | `NOT RUN` | A configured rate was never attempted, for example after a sweep stopped. |
 | `NOT REPORTED` | An expected per-stream result is missing. |
 
-Every hardware record should identify:
-
-- the board target and the physical board
-- the firmware version, commit, artifact name, and SHA-256
-- the test command, duration, and rates
-- the wiring variant and the RTS/CTS setting
-- per-link results and verified byte integrity
-- HID health and overflow deltas
-- any USB resets, disconnects, framing errors, or control errors
-- relevant measurements and caveats
+Use the [HIL records guide](records/README.md#record-format) for the required record contents and evidence format.

@@ -1,7 +1,6 @@
 # HIL Fixture Setup
 
-This fixture exercises all six channels with two crossed UART pairs and two loopbacks. Install the four links listed
-below before running the [test plan](hil-fixture-test-plan.md).
+This fixture exercises all six channels with two crossed UART pairs and two loopbacks.
 
 ```mermaid
 flowchart LR
@@ -12,8 +11,7 @@ flowchart LR
 ```
 
 The GPIOs below come from the [port map](../hardware-setup.md#port-map). All links use 3.3 V logic, share ground with
-the board, and run at the firmware default of 115200 8N1. Leave RTS/CTS disconnected unless you are testing a
-flow-control variant.
+the board, and run at the firmware default of 115200 8N1.
 
 ## Equipment
 
@@ -37,7 +35,7 @@ access. It does not touch the board.
 
 ## Fixed Fixture Wiring
 
-Install these four links before starting a runner. Do not move jumpers between stages.
+Wire these four links before starting a runner. Do not move jumpers between stages.
 
 ### Link 1: Hardware UART0 to PIO UART2
 
@@ -77,15 +75,13 @@ Connect UART5/CDC5 TX to its own RX:
 
 ## Bring-Up Checklist
 
-1. With the board unpowered, install and check the four link tables above: TX crosses to RX, RX crosses to TX, and each
-   link shares the board's ground. Perform continuity checks only while unpowered.
+1. With the board unpowered, check the four links above: TX crosses to RX, RX crosses to TX, and each link shares
+   ground. Perform continuity checks only while unpowered.
 2. [Flash the intended firmware artifact](../deployment/releasing.md#flashing-release-artifacts) and record its version
    and SHA-256.
-3. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate. Prefer stable paths under
-   `/dev/serial/by-id` instead of `/dev/ttyACM*`.
-4. Confirm all four links are installed before starting the full test.
-5. Run the functional and performance plans.
-6. Remove all test jumpers before connecting external UART equipment.
+3. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate.
+4. Run the functional and performance plans.
+5. Remove all test jumpers before connecting external UART equipment.
 
 ## Endpoint Preflight
 
@@ -111,9 +107,9 @@ reconnect power and run:
 
 ```sh
 tools/hil/runner/bridge.sh \
-   --pico-port /dev/serial/by-id/<pico-cdc-endpoint> \
-   --peer-port /dev/serial/by-id/<debug-probe-uart> \
-   --label manual-debug-probe --baud 115200
+  --pico-port /dev/serial/by-id/<pico-cdc-endpoint> \
+  --peer-port /dev/serial/by-id/<debug-probe-uart> \
+  --label manual-debug-probe --baud 115200
 ```
 
 Disconnect power before restoring all four fixture links for a subsequent baseline HIL run.

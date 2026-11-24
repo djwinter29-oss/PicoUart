@@ -19,7 +19,8 @@ When the UART is idle and no line-coding change is blocking TX, the worker sends
 DMA. The span is committed only after the transfer completes. Each span is capped by a wire-time budget, so one busy
 port cannot monopolize the worker.
 
-DMA completion places bytes in the PL011 FIFO; a safe line-coding change waits until the UART reports idle.
+DMA completion places bytes in the PL011 FIFO; a safe line-coding change waits for the UART to report idle, after the
+final stop bit has left the pin.
 
 ## Line-Coding Changes
 
@@ -42,8 +43,6 @@ Hardware RTS/CTS is opt-in in the board configuration and off by default:
 - CTS uses the PL011's active-low hardware flow control.
 - RTS is a GPIO driven from RX-ring occupancy with hysteresis. It deasserts at the high watermark and reasserts at the
   low watermark.
-
-Assigning the pins alone does not make the link lossless; test the flow-control variant before relying on it.
 
 ## Errors and Limits
 

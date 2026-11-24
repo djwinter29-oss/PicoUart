@@ -13,9 +13,8 @@ Each ring has exactly one producer and one consumer, and needs no lock; see
 ## Capacity
 
 Ring sizes are fixed at build time and must be powers of two. RX storage is also aligned to its size so RX DMA can
-wrap around it in hardware. The RX storage is size-aligned; the surrounding port structures keep their normal layout.
-Capacity changes how much RAM is reserved and how soon overflow or backpressure starts. It does not change the
-ownership or loss policy.
+wrap around it in hardware. Capacity changes how much RAM is reserved and how soon overflow or backpressure starts. It
+does not change the ownership or loss policy.
 
 The buffer sizes are not the whole RAM cost. Measure the linked map before shrinking them; the procedure is in the
 [firmware guide](../../development/firmware-testing.md#buffer-capacity-measurement).
@@ -28,11 +27,11 @@ When the TX ring is full, the bridge stops reading that CDC port and leaves the 
 and nothing is lost or reordered.
 
 RX is a live stream and the UART cannot pause, so when the RX ring is full the oldest unread bytes are overwritten and
-newer data is kept. The consumer skips past the overwritten bytes and counts them; HID reports an overrun health bit
-and a cumulative dropped-byte count.
+newer data is kept. The consumer skips past overwritten bytes and counts them. Channel diagnostics expose the dropped
+byte count as `rx_overrun_count` and report observed ring peaks.
 
 A hardware UART FIFO overrun that happens before data reaches the ring is counted differently. The PL011 only latches a
-sticky flag, so it shows up as an `rx_error_count` event, not a dropped-byte count.
+sticky flag, so it increments `rx_error_count` rather than the dropped-byte count.
 
 ## DMA Interaction
 
@@ -45,11 +44,6 @@ rather than forwarded.
 
 TX DMA holds its span until the transfer completes, then commits it. Completion frees ring space, but the bytes may not
 have left the TX pin yet.
-
-## Observability
-
-Each ring tracks its high-water mark and RX loss. HID exposes the peak occupancy, an overrun health bit, and cumulative
-dropped bytes.
 
 ## Alternative Considered: Shared Memory Pool
 

@@ -3,18 +3,14 @@
 This guide covers firmware work beyond a plain build: where each kind of test fits, how to profile timing, and how to
 judge buffer sizes. Building and loading are covered in
 [Firmware Build and Configuration](../../firmware/build-and-config.md).
+For the provisioned Cursor Cloud snapshot setup, see the [Cursor Cloud environment guide](cursor-cloud.md).
 
 ## Test Scope
 
-There are three levels, and none substitutes for another:
-
-| Level | Proves | Where |
-| --- | --- | --- |
-| Native C tests | Firmware logic without a board: rings, line-coding policy, control ownership, bridge spans | [firmware/tests](../../firmware/tests/README.md) |
-| Host and contract tests | Python/.NET clients, HID binary layouts, tooling, docs checks | [tools/README.md](../../tools/README.md) |
-| Hardware-in-the-loop | Real UART signalling, USB enumeration, DMA timing, multicore load | [Test documentation](../tests/README.md) |
-
-CI runs the first two and builds the firmware. It has no board, so it cannot prove anything about physical behavior.
+For firmware changes, run the native C and contract tests, build both `pico` and `pico2`, then use HIL when the change
+depends on physical behavior. The [test overview](../tests/README.md) describes the full validation levels; native
+test coverage is listed in [firmware/tests](../../firmware/tests/README.md). CI runs the hardware-free checks and
+builds the firmware, but has no board.
 
 ## Optional Timing Profiles
 
@@ -24,7 +20,7 @@ caches the initial compiler flags:
 ```sh
 CFLAGS='-DPICO_UART_PROFILE_TIMING=1' tools/firmware/build.sh --board pico --build-dir build/profile-default
 CFLAGS='-DPICO_UART_PROFILE_TIMING=1 -DPICO_UART_USB_CDC_BRIDGE_PASS_BUDGET=512' \
-	tools/firmware/build.sh --board pico --build-dir build/profile-budget512
+  tools/firmware/build.sh --board pico --build-dir build/profile-budget512
 ```
 
 This adds three SWD-readable arrays of observed maxima, in microseconds: `service_load_max_pass_us[2]`,
@@ -63,49 +59,3 @@ reboot between workloads. Include host stalls and bursts, not only paced traffic
 only `N * 10 / baud` seconds of input. A low peak in a paced test therefore says nothing about stall tolerance.
 
 Keep the current capacities until measurements like these justify a smaller value.
-
-<details>
-<summary>Cursor Cloud snapshot environment</summary>
-
-## Cursor Cloud Environment
-
-This section describes the provisioned Cursor Cloud VM snapshot. The snapshot has no attached board, debug probe, or
-UART fixture; use the non-hardware checks above.
-
-### Snapshot Packages
-
-These packages are installed once and captured in the snapshot. Do not apt-install them from the update script:
-
-- `ninja-build`, `gcc-arm-none-eabi`, `libstdc++-arm-none-eabi-newlib`, `libnewlib-arm-none-eabi`, `gcovr`, and
-  `cppcheck` (apt).
-- `libstdc++-14-dev` (apt): the snapshot's default `/usr/bin/c++` is clang and selects the gcc-14 toolchain directory.
-  Without it, the native picotool build fails with `cannot find -lstdc++`, even with `libstdc++-13-dev` present.
-- `python3-venv`, `python3-dev`, `libusb-1.0-0-dev`, `libhidapi-dev`, and `libhidapi-hidraw0` (apt) for the host venv
-  and HID library.
-
-### Update Script
-
-Run this update script in Bash; it refreshes the checkout environment and does not start a service:
-
-```bash
-set -euo pipefail
-python3 -m venv host/python/.venv
-host/python/.venv/bin/python -m pip install --group host/python/pyproject.toml:dev
-host/python/.venv/bin/python -m pip install --no-build-isolation -e host/python
-. tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0 --sdk-revision 98a542c1a62fb549ffb5d66a3e5892b06276b670
-```
-
-The Python commands install the `dev` dependency group and `pico-uart` editable; see the
-[host developer setup](host-tools.md#python-environment-setup).
-`setup-sdk-env.sh` clones the pinned SDK into gitignored `.pico-sdk/` if missing, and otherwise confirms the pin.
-Keep the SDK line: a fresh checkout does not carry `.pico-sdk/`.
-
-Ubuntu's `/usr/bin/python3` is PEP 668 externally managed. Point the host-test wrapper at the venv rather than its
-default system interpreter:
-
-```sh
-PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
-host/python/.venv/bin/python -m pico_uart.main --help
-```
-
-</details>

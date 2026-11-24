@@ -14,14 +14,13 @@ over a serial port, and a stuck serial client never hides the board's health. Th
 ## Using Both Together
 
 1. Open the serial port and set the baud rate and framing through CDC.
-2. Watch HID until the port is `READY` with no pending or failed control request, and confirm the applied settings.
+2. Watch HID until the port is `Ready` with no pending or current control failure, and confirm the applied settings.
 3. Run traffic over CDC while monitoring HID health and counters.
 
 ## CDC Ports
 
-Each CDC port behaves like an ordinary USB serial adapter for one UART:
-
-Bytes flow through the port's [rings](../uart/ring-buffer-design.md). When the TX ring is full the firmware stops
+Each CDC port behaves like an ordinary USB serial adapter for one UART. Bytes flow through the port's
+[rings](../uart/ring-buffer-design.md). When the TX ring is full the firmware stops
 reading that port, so USB pushes back on the host instead of dropping data. DTR opens and closes the UART; while a port
 is closed nothing is bridged and received bytes are discarded. Line coding is applied later on core 1, so a successful
 USB transfer does not mean the change took effect. The result shows up in HID health (see the
@@ -36,8 +35,8 @@ clears the transient state but keeps the boot-lifetime counters.
 
 HID carries no UART data and cannot change pins or backends. A host reads identity and configuration once (firmware
 version, board, capabilities, stored clock profile), then follows live telemetry (system clock, temperature, core load)
-and channel snapshots about every 500 ms with traffic counters, health bits, and applied settings per port. Fault
-history, dropped-byte counts, and buffer peaks are available on demand. The only board actions are the identification
+and channel snapshots about every 500 ms with channel state, traffic counters, and applied settings. Channel diagnostics
+provide fault history, dropped-byte counts, and buffer peaks on demand. The only board actions are the identification
 LED, an optional reboot, and saving the boot-time clock profile.
 
 Saving the clock profile always reboots the board, so close all serial ports first. Report layouts and action rules

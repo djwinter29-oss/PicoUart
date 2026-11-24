@@ -15,8 +15,8 @@ framing. The dashboard runs in your browser but talks to Python, so it needs no 
 
 ![PicoUart dashboard showing board information, configuration, runtime status, and six UART channels](https://raw.githubusercontent.com/djwinter29-oss/PicoUart/main/docs/assets/pico-uart-dashboard.png)
 
-*Illustrative screenshot of the Direct Dashboard with simulated telemetry. The Python dashboard shares its frontend,
-but layout and controls may differ.*
+*Illustrative screenshot of the Direct Dashboard with simulated telemetry. The Python and .NET dashboards share a
+separate frontend, so their layout and controls differ.*
 
 ## Install
 

@@ -35,8 +35,7 @@ leaves the applied settings alone, so the reported format always matches the har
 Restart is a real stop and start and discards queued bytes. Counters survive it: traffic and error counts, ring peaks,
 and overflow counts run from boot.
 
-Each running port holds one RX and one TX DMA channel. Six ports use all 12 RP2040 channels, so any future DMA feature
-has to find another way.
+Each running port holds one RX and one TX DMA channel.
 
 ## Line Coding
 

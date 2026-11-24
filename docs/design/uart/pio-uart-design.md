@@ -28,7 +28,7 @@ load.
 A persistent DMA channel copies each assembled byte from the RX FIFO into the RX ring. A DMA interrupt on core 1 re-arms
 the transfer, with the worker poll as a fallback.
 
-Stop-bit framing errors are latched for each port and reported as HID health bit 7.
+Stop-bit framing errors are counted in the channel diagnostic `rx_error_count`.
 
 ## TX Path: Hybrid FIFO and DMA
 
@@ -104,11 +104,8 @@ the two RX flags.
 | `PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP` | Enable a pull-up on RX |
 | `PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH` | Require RX idle-high before a baud change |
 
-Do not claim lossless RX without testing the matching flow-control variant on hardware.
-
 ## Limits
 
-- Framing is 8N1 only.
 - A baud rate must be representable by both dividers. TX (8 clocks per bit) hits the divider ceiling first at very low
   baud rates. RX (32 clocks per bit) hits the floor first at very high rates.
 - PIO instruction memory is finite, and startup rejects configurations whose programs do not fit.

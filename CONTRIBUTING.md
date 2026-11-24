@@ -18,6 +18,7 @@ physical UART validation and release qualification require hardware.
 - Firmware builds: [firmware/build-and-config.md](firmware/build-and-config.md) and
   [tools/README.md](tools/README.md).
 - Host tools (Python/.NET/WebHID): [docs/development/host-tools.md](docs/development/host-tools.md).
+- Cursor Cloud snapshot setup: [docs/development/cursor-cloud.md](docs/development/cursor-cloud.md).
 - Repository guidance, including agent-assisted work: [AGENTS.md](AGENTS.md).
 
 Use Linux or WSL2 Ubuntu for firmware development and HIL wrappers. Follow the linked guides for host-platform support
@@ -31,16 +32,14 @@ change its configuration, use board controls, or send UART traffic.
 Run the smallest relevant checks first, then broaden validation for shared behavior or cross-project contracts.
 Use [Repository Tools](tools/README.md) for commands:
 
-| Change | Validation |
+| Change | Run |
 | --- | --- |
-| Firmware | Relevant native tests and contracts; build both `pico` and `pico2`. See [test scope](docs/development/firmware-testing.md#test-scope). |
-| Python, .NET, or browser tools | Relevant tests and applicable lint/type checks for the host application and shared contracts; see [host development](docs/development/host-tools.md). |
-| Documentation only | Check links, examples, and rendered formatting; run `git diff --check`. |
+| Firmware | `tools/validation/run-host-tests.sh --skip-python`, then build `pico` and `pico2`; see [firmware testing](docs/development/firmware-testing.md). |
+| Python, .NET, or browser tools | Run the changed application's tests and lint/type checks; see [host development](docs/development/host-tools.md). |
+| Documentation | Check links and examples, then run `git diff --check`. |
 
-For Python tests, use the virtual environment from the
-[host setup guide](docs/development/host-tools.md#python-environment-setup). When using the host-test wrapper, set
-`PYTHON_EXE` to that environment's interpreter (for example, `host/python/.venv/bin/python` on Linux, macOS, or WSL)
-so it does not try to install into the system interpreter. See the setup guide for native Windows paths.
+For Python checks, use the virtual environment from the
+[host setup guide](docs/development/host-tools.md#python-environment-setup).
 
 Hardware HIL is not required for every pull request. If hardware is unavailable, report that limitation rather than
 claiming hardware validation. Exact-artifact HIL is required for release qualification; see the

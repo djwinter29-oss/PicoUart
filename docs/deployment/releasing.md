@@ -125,8 +125,7 @@ For Pico 2, use `--board pico2`, a Pico 2 ELF, and `target/rp2350.cfg`. Continue
 
 ## Release HIL Gates
 
-A release is hardware-qualified only when every rated board artifact has a complete `PASS` on the exact packaged
-UF2/ELF, with its SHA-256 matching the release. A local rebuild or a result for a different image does not count.
+A release is hardware-qualified only when every rated board has a complete `PASS` for the required HIL matrix.
 
 Record the reported system clock and boot clock profile alongside the image hash, since the clock profile is stored
 outside the firmware image. Overclock profiles are board-local, so an overclock claim needs its own evidence on that
@@ -143,7 +142,7 @@ run the tests. Keep one record per board in the [HIL records](../tests/records/R
 | Performance | Pair and concurrent payload integrity at declared rates and durations, with clean HID health |
 | Stability | Repeated or soak runs at the declared workload, with duration and conditions recorded |
 | Control and recovery | Rapid line-coding changes, disconnect/remount, watchdog recovery, and DMA wrap/re-arm |
-| Artifact identity | Board target, firmware and runner revisions, artifact SHA-256, flashing evidence, and full results |
+| Artifact identity | Board target, firmware and runner revisions, and the tested artifact's SHA-256 |
 
 Missing cases make the result `PARTIAL`. Unexplained loss, timeouts, disconnects, or HID errors block qualification.
 A speed-sweep `PASS` qualifies only the 115200-baud baseline. The boundary it finds is a measurement, and higher
@@ -155,12 +154,14 @@ before the release notes may make them.
 
 ## Promotion Checklist
 
-Before calling the release qualified, check that all build gates passed for the exact commit, that every rated
-firmware artifact has complete passing evidence with matching hashes, that the records and transcripts live somewhere
-shared rather than a local cache, and that the release notes state compatibility changes, tested conditions, and any
-claims that remain unqualified.
+Before calling the release qualified, confirm:
 
-Then attach the evidence and note hardware qualification in the release notes.
+- All build gates passed for the exact commit.
+- Every rated firmware artifact has complete passing evidence with matching hashes.
+- Records and transcripts are in a shared location, not only in a local cache.
+- Release notes state compatibility changes, tested conditions, and claims that remain unqualified.
+
+Attach the evidence and note hardware qualification in the release notes.
 
 ## Versioning
 

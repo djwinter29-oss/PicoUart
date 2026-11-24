@@ -26,22 +26,9 @@ Download the archive for your computer (not the Pico) from
 
 Extract the whole archive and keep the `web` folder next to the executable.
 
-### As a .NET tool
-
-`PicoUart.DotNet` is also a .NET global tool for the CLI and dashboard. It is not a C# library. Check the
-[distribution channels](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/deployment/host-app-publishing.md#distribution-channels)
-to see whether it is currently published. It needs the .NET 10 SDK to install and the .NET 10 and ASP.NET Core
-runtimes to run.
-
-```sh
-dotnet tool install --global PicoUart.DotNet
-dotnet tool update --global PicoUart.DotNet
-dotnet tool uninstall --global PicoUart.DotNet
-```
-
 ## Quick Start
 
-The examples use the archive spelling. For the .NET tool, use `pico-uart-dotnet`; on Windows, use `.\PicoUart.exe`.
+On Windows, use `.\PicoUart.exe`.
 
 ```sh
 ./PicoUart status
@@ -95,8 +82,6 @@ of the HID reference.
 - **Missing web files:** re-extract the whole archive; the executable needs its `web` folder.
 - **Windows "unsupported report size or layout version" with v0.10.0 host and firmware:** use a host build that includes
   the descriptor-padding fix. You do not need to reflash the board.
-- **`pico-uart-dotnet` not found:** add the global tool directory to `PATH` (`$HOME/.dotnet/tools` on Linux/macOS,
-  `%USERPROFILE%\.dotnet\tools` on Windows) and restart the shell.
 - **Missing .NET runtime:** run `dotnet --list-runtimes`, and install the .NET 10 SDK if needed. See
   [Microsoft's troubleshooting guide](https://learn.microsoft.com/en-us/dotnet/core/tools/troubleshoot-usage-issues).
 - **Framework logs:** set `Logging__LogLevel__Microsoft=Information` before launching.

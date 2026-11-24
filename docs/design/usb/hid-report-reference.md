@@ -39,9 +39,9 @@ payload layouts: a host must identify the product before decoding product-specif
 | `1` | Device Identity and Capabilities | Feature | Host reads | 27 bytes | Identity, capabilities, total/reserved RAM. |
 | `2` | Board Configuration | Feature | Host reads | 36 bytes | Stored profile, pins, reset cause, buffer capacities. |
 | `3` | Board Telemetry | Feature | Host reads | 20 bytes | Temperature, LED, uptime, service load, running clock. |
-| `10`-`15` | Channel Snapshot — CDC0–CDC5 | Input / Feature | Device publishes / host reads | 30 bytes | State, measurement validity, applied settings, traffic. |
+| `10`-`15` | Channel Snapshots (CDC0–CDC5) | Input / Feature | Device publishes / host reads | 30 bytes | State, measurement validity, applied settings, traffic. |
 | `20` | Board Action and Result | Feature | Host reads/writes | 4 bytes | LED/reboot/save actions and results. |
-| `30`-`35` | Channel Diagnostics — CDC0–CDC5 | Feature | Host reads | 24 bytes | RX fault history, last configuration error, buffer peaks. |
+| `30`-`35` | Channel Diagnostics (CDC0–CDC5) | Feature | Host reads | 24 bytes | RX fault history, last configuration error, buffer peaks. |
 
 All sixteen report IDs are always present. Unavailable features are signalled by capability flags, not by missing
 reports. Writes to read-only reports are rejected without side effects.
@@ -52,19 +52,19 @@ Read once per connection. The contents are static until reboot.
 
 | Offset | Size | Field | Meaning |
 | -----: | ---: | ----- | ------- |
-| 0 | 1 | `version` | Layout version, `1`. |
+| 0 | 1 | `version` | Layout version `1`. |
 | 1 | 2 | `product_id` | Project-owned product-family identifier; independent of USB VID/PID. |
 | 3 | 8 | `device_uid` | Opaque SDK board identity bytes, in USB serial-string order. |
 | 11 | 1 | `firmware_major` | Firmware semantic version major component. |
 | 12 | 1 | `firmware_minor` | Firmware semantic version minor component. |
 | 13 | 1 | `firmware_patch` | Firmware semantic version patch component. |
 | 14 | 1 | `mcu` | Silicon family: `1` RP2040; `2` RP2350. |
-| 15 | 1 | `board_model` | Configured firmware build target, defined below; not automatic board detection. |
+| 15 | 1 | `board_model` | Configured firmware build target, defined below. |
 | 16 | 1 | `hardware_channel_mask` | Within report 2's channel count, `1` means hardware UART and `0` means PIO UART. |
 | 17 | 1 | `capabilities` | Static board-control capability flags. |
 | 18 | 1 | `clock_profile_mask` | Firmware-accepted boot profile request bits; see report 2. |
-| 19 | 4 | `ram_total_bytes` | Total SRAM for the MCU/linker layout; nonzero, not free RAM. |
-| 23 | 4 | `ram_reserved_bytes` | Static and reserved SRAM for this firmware build, not live heap/stack use. |
+| 19 | 4 | `ram_total_bytes` | Total SRAM for the MCU/linker layout. |
+| 23 | 4 | `ram_reserved_bytes` | Static and reserved SRAM for this firmware build. |
 | **Total** | **27** | | **28 bytes including the report ID.** |
 
 ### Identity and Capabilities
@@ -142,10 +142,11 @@ hardware map, and the reset that started this boot. Saving a new profile does no
 
 ### Channel Hardware Map
 
-Each entry is a GPIO number (not a header pin), and `255` means unassigned. Entries are in channel order, and come from
-the firmware's board configuration. An assigned RTS/CTS pin does not mean flow control is running. DTR is a CDC
-session signal and is not part of this map. If report 2 cannot be read, treat the pins and channel count as unknown.
-Never substitute GPIO 0.
+Each entry is a GPIO number (not a header pin), and `255` means unassigned. Entries are in channel order, from the
+firmware's board configuration. An assigned RTS/CTS pin does not mean flow control is running.
+
+DTR is a CDC session signal and is not part of this map. If report 2 cannot be read, treat the pins and channel count
+as unknown. Never substitute GPIO 0.
 
 ### Shared Buffer Capacities
 
@@ -192,6 +193,7 @@ never infer the profile from the frequency.
 
 At boot the firmware picks the highest supported frequency at or below the request. The current build caps RP2040 at
 250 MHz and RP2350 at 280 MHz. If no frequency is eligible, or the clock change fails, it falls back to SDK defaults.
+
 Invalid or erased storage reads as `255` and boots with SDK defaults; flash is not rewritten. Watchdog recovery can also
 fall back to defaults while keeping the stored request. None of this qualifies an overclock as stable on a given board.
 
@@ -215,7 +217,7 @@ Live measurements only.
 
 | Offset | Size | Field | Meaning |
 | -----: | ---: | ----- | ------- |
-| 0 | 1 | `version` | Layout version, `1`. |
+| 0 | 1 | `version` | Layout version `1`. |
 | 1 | 1 | `led_flags` | Bit 0: identification output On. Other bits zero. |
 | 2 | 2 | `temperature_centidegrees_celsius` | Signed internal RP2 sensor estimate, in hundredths of a degree Celsius. |
 | 4 | 8 | `uptime_ms` | SDK monotonic milliseconds since boot. |
@@ -228,7 +230,7 @@ Live measurements only.
 | ------- | -------------- |
 | Running clock | SDK-configured frequency; the requested profile is separate. |
 | Estimated die temperature | Internal sensor estimate in Celsius, normally shown to one decimal place. |
-| USB service load — Core 0 / UART service load — Core 1 | Work completed by each core during the sampling window; `65535` means warming up/unavailable. |
+| USB service load (Core 0) / UART service load (Core 1) | Work completed by each core during the sampling window; `65535` means warming up/unavailable. |
 | LED | Off/On when supported; otherwise Unavailable. |
 | Uptime | Time since boot; compare readings only for the same identified device. |
 
@@ -328,12 +330,12 @@ before the USB transfer finishes.
 
 ## Reports 10-15: Channel Snapshots
 
-Report `10 + channel` covers CDC0-CDC5. The firmware publishes an Input report for each channel about every **500 ms**.
+Report `10 + channel` covers CDC0–CDC5. The firmware publishes an Input report for each channel about every **500 ms**.
 A Feature GET returns the same layout on demand.
 
 | Offset | Size | Field | Meaning |
 | -----: | ---: | ----- | ------- |
-| 0 | 1 | `version` | Fresh pre-release layout version `1`. |
+| 0 | 1 | `version` | Layout version `1`. |
 | 1 | 1 | `channel_state` | Lifecycle summary defined below; not a history flag. |
 | 2 | 1 | `uart_measurement_state` | Unavailable, Current, or Cached UART statistics, defined below. |
 | 3 | 4 | `baud_rate` | Last successfully applied nominal baud setting; zero when unavailable. |
@@ -524,7 +526,7 @@ closed, and nothing is pending.
 
 ## Versioning
 
-These layouts are pre-release, version `1`. Earlier development layouts are not supported. After a release, any
-incompatible change to a report's length, units, meaning, or validation bumps that report's version and updates this
+Version `1` is used by published firmware; earlier development layouts are not compatibility targets. After publication,
+an incompatible change to a report's length, units, meaning, or validation bumps that report's version and updates this
 document. The descriptor, firmware, and the Python, .NET, and WebHID clients change together. A host must explicitly
 support a layout before decoding it.

@@ -30,7 +30,7 @@ The two kinds of dashboard are alternatives; they do not cooperate.
 | HID client | Own one connection, serialize operations, cache boot metadata, and verify control results. |
 | Board monitor | Poll and reconnect in the background, keeping a coherent cached snapshot per board. |
 | HTTP app | Resolve the board, check session and CSRF, and return snapshots or explicit errors. |
-| Frontend | Render data, keep page-local selection and rate windows, and show control outcomes honestly. |
+| Frontend | Render data, keep page-local selection and rate windows, and show confirmed or unconfirmed control outcomes. |
 
 The wire format and field meanings are defined in the [HID report reference](../design/usb/hid-report-reference.md).
 This guide covers how the hosts use it. Three rules run through every layer:
@@ -129,13 +129,12 @@ once the firmware confirms it, even if the telemetry refresh afterwards fails.
 ### Python Test Automation
 
 Python `status --json` and .NET `status` print the same object, `{"channels": [...]}`, with six entries and sorted
-keys. A channel with no Input yet is a placeholder (`sequence` is `null`, `state` is `"unknown"`). A channel's first
-Input seeds its totals, and `traffic_incomplete` stays set once an unusable interval or a gap has been seen.
+keys. A channel with no Input yet is a placeholder (`sequence` is `null`, `state` is `"unknown"`). The first Input
+seeds its totals. An unusable interval or a gap sets `traffic_incomplete`, which remains set.
 
 `status` retries until `--timeout` (default 2 s) and fails without a valid report. Python `monitor` fails if it
 receives no reports; .NET `monitor` can succeed with none. Both drop reports that complete at or after the deadline.
-Dropped-byte counts and peaks are cumulative since boot, so compare before and after a run. A zero exit code is not a
-health check, so test runners should inspect the reported states and counters.
+Dropped-byte counts and peaks are cumulative since boot, so compare before and after a run.
 
 ### Python Distribution
 
