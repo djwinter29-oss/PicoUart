@@ -16,7 +16,7 @@ The `tools/` directory contains local build, test, hardware, and release helpers
 
 ```sh
 # Firmware
-. tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0
+. tools/firmware/setup-sdk-env.sh
 tools/firmware/build.sh --board pico                    # or --board pico2
 python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <serial> read
 

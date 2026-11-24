@@ -23,7 +23,7 @@ The CI job graph is described in [GitHub Actions](../development/github-actions.
 
 Before tagging, make sure the change is reviewed, the tree has no stray files, `git diff --check` is clean, and PR
 Check passed for the exact commit you are tagging. Pick the version using the [versioning policy](#versioning), and
-mention any USB/HID compatibility or behavior change in the release notes. Also confirm private vulnerability
+note USB/HID compatibility or behavior changes for the release notes. Also confirm private vulnerability
 reporting is enabled in the repository settings ([SECURITY.md](../../SECURITY.md)).
 
 Don't start physical testing from an uncommitted or locally modified image; the result would not describe anything you
@@ -115,7 +115,7 @@ OPENOCD_TARGET_CFG="$(mktemp)"
 trap 'rm -f "$OPENOCD_TARGET_CFG"' EXIT
 printf 'set FLASHSIZE %s\nsource [find target/rp2040.cfg]\n' "$FLASH_SIZE_BYTES" > "$OPENOCD_TARGET_CFG"
 tools/firmware/load.sh --board pico --skip-build --elf /path/to/pico.elf \
-   --openocd-target "$OPENOCD_TARGET_CFG" --probe-serial "<probe-serial>" --adapter-speed-khz 1000
+  --openocd-target "$OPENOCD_TARGET_CFG" --probe-serial "<probe-serial>" --adapter-speed-khz 1000
 ```
 
 For Pico 2, use `--board pico2`, a Pico 2 ELF, and `target/rp2350.cfg`. Continue only if OpenOCD reports
@@ -149,8 +149,10 @@ A speed-sweep `PASS` qualifies only the 115200-baud baseline. The boundary it fi
 rates remain unrated. Older [record index](../tests/records/README.md#evidence-index) entries cannot
 substitute for a current exact-artifact run.
 
-Optional claims, such as RTS/CTS or backpressure behavior, need their matching board configuration and HIL variant
-before the release notes may make them.
+The test plan currently lists startup after reset types as unqualified and says the safe DMA wrap/re-arm procedure is
+still unvalidated. Until repeatable procedures and passing exact-artifact evidence cover both, a release cannot meet
+this matrix and must remain unqualified. Optional claims, such as RTS/CTS or backpressure behavior, also need their
+matching board configuration and HIL variant.
 
 ## Promotion Checklist
 
@@ -159,13 +161,12 @@ Before calling the release qualified, confirm:
 - All build gates passed for the exact commit.
 - Every rated firmware artifact has complete passing evidence with matching hashes.
 - Records and transcripts are in a shared location, not only in a local cache.
-- Release notes state compatibility changes, tested conditions, and claims that remain unqualified.
-
-Attach the evidence and note hardware qualification in the release notes.
+- Release notes state compatibility changes, tested conditions, and remaining limits; attach the evidence and note
+  whether hardware qualification is complete.
 
 ## Versioning
 
-Every release-version input is called **tag** and takes `vMAJOR.MINOR.PATCH` (for example `v1.2.3`); unprefixed
+Release and packaging workflows accept a **tag** in `vMAJOR.MINOR.PATCH` form (for example `v1.2.3`); unprefixed
 versions and pre-release suffixes are rejected. Firmware, the Python wheel, and the .NET host all report the same
 unprefixed version, and packaging checks verify that they match. Firmware reports it over HID and puts major/minor in
 USB `bcdDevice`.

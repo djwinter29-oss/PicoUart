@@ -60,9 +60,10 @@ profile from the last flash sector. If the record is missing or invalid, it uses
 the dashboards (HID save-and-reboot) or, when USB is unavailable, over SWD:
 
 ```sh
-tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> read
-tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> set-clock 250mhz --unsafe-overclock
-tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> erase
+python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> read
+python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> \
+  set-clock 250mhz --unsafe-overclock
+python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> erase
 ```
 
 Profile meanings and save rules are in the

@@ -526,7 +526,7 @@ closed, and nothing is pending.
 
 ## Versioning
 
-Version `1` is used by published firmware; earlier development layouts are not compatibility targets. After publication,
-an incompatible change to a report's length, units, meaning, or validation bumps that report's version and updates this
+Version `1` is used by published firmware; earlier development layouts are not compatibility targets. An incompatible
+change to a report's length, units, meaning, or validation requires a version bump and a matching update to this
 document. The descriptor, firmware, and the Python, .NET, and WebHID clients change together. A host must explicitly
 support a layout before decoding it.

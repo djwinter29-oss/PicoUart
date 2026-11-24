@@ -80,6 +80,7 @@ time. Repeating the same request does not extend its deadline, but a different r
 ## Port Lifecycle
 
 DTR drives each port's lifecycle, and the UART worker is the only code that starts or stops a backend.
+`READY` and `INIT_FAILED` below are internal firmware status flags; HID reports `Ready` and `Error`.
 
 - **Open:** the initial line coding goes through the normal mailbox before the start request, so the backend starts with
   the requested format, not the previous session's. Each open makes one start attempt. On failure the channel snapshot
@@ -87,8 +88,9 @@ DTR drives each port's lifecycle, and the UART worker is the only code that star
 - **Close:** core 0 stops admitting bytes and clears the port's CDC FIFOs. The worker then stops the backend and parks
   TX idle-high. Queued bytes are discarded, while the applied settings and boot-lifetime counters are kept. The board
   does not reboot.
-- **`READY`:** means the backend is running and its reported settings match the hardware. Both directions are blocked
-  until the port first becomes ready. During a later live reconfiguration, RX keeps draining and only TX is blocked.
+- **Internal `READY` flag:** means the backend is running and its reported settings match the hardware. Both directions
+  are blocked until the port first becomes ready. During a later live reconfiguration, RX keeps draining and only TX
+  is blocked.
 
 One port's startup or close never holds up another port.
 
