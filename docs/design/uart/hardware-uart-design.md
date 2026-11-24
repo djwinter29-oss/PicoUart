@@ -1,90 +1,56 @@
 # Hardware UART Design
 
-This document describes the hardware UART backend used for the two logical ports mapped to RP2040/RP2350 UART
-peripherals. Shared backend behavior is covered by [Backend Contract Design](backend-adapter-design.md); generic ring
-ownership is covered by [Ring Buffer Design](ring-buffer-design.md).
+UART0 and UART1 use the RP2040/RP2350 PL011 peripherals. Core 1 services the registers, DMA, and flow-control GPIO. The
+backend never calls TinyUSB; its rings are its only link to the USB side.
 
-## Ownership
+## Resources
 
-Startup initializes the configured backends before the UART worker is launched. During steady-state operation, core 0
-owns TinyUSB and the CDC-side bridge; core 1 services PL011 registers, RX/TX DMA, flow-control GPIO, and deferred
-line-coding application. The backend never calls TinyUSB; per-port rings are its data-plane boundary. Shared ownership
-and synchronization rules are defined in [Architecture](../architecture.md#inter-core-coordination).
-
-## Lifecycle and Resources
-
-Initialization validates the peripheral and pin configuration, claims RX and TX DMA channels, configures the PL011, and
-starts circular RX DMA. The backend holds its channels until deinitialization. Other DMA users must account for
-resources reserved across all configured backends. Reinitializing an active backend is rejected before hardware startup,
-preserving its DMA ownership, ring contents, and applied settings.
-
-Acquisition or initialization failure releases resources already claimed. The top-level driver rolls back initialized
-ports and does not start the worker unless all configured ports are ready. If a runtime line-format change cannot be
-restored safely, the backend is marked unavailable and reports `INIT_FAILED` rather than continuing on a stopped
-UART.
+On startup the backend checks its pin configuration, claims one RX and one TX DMA channel, configures the PL011, and
+starts circular RX DMA. It keeps the channels until it stops. If any step fails, everything claimed so far is released.
 
 ## RX Path
 
-Circular DMA writes UART bytes into aligned per-port storage. The shared IRQ handler re-arms exhausted transfers, with
-worker polling as a fallback. The backend publishes DMA progress to the RX ring; the bridge validates copied spans
-against live DMA progress and rejects overwritten snapshots so loss can be accounted for.
+Circular DMA copies received bytes into the port's aligned RX ring. When a transfer count runs out, the DMA interrupt
+re-arms it, and the worker's poll is a fallback. The backend publishes DMA progress as the ring's producer cursor.
 
 ## TX Path
 
-The worker sends bounded contiguous TX-ring spans by DMA when the UART is idle and no control transition blocks TX. It
-commits bytes only after transfer completion. Span length is limited by ring contiguity and a configured wire-time
-budget so one busy port cannot monopolize the worker.
+When the UART is idle and no line-coding change is blocking TX, the worker sends the next contiguous TX-ring span by
+DMA. The span is committed only after the transfer completes. Each span is capped by a wire-time budget, so one busy
+port cannot monopolize the worker.
 
-Completion accounting only commits the finished span; the outer poll owns the single TX launch attempt. Fixed DMA
-width, increment, peripheral request, and destination settings are configured once per channel claim. Each launch
-publishes ownership, sets the source address, restores channel `EN` without triggering, then triggers the transfer count.
-Restoring `EN` is required because format-change aborts clear it, including when the previous format is restored.
+DMA completion means the bytes reached the PL011 FIFO, not that the last stop bit has left the pin. A safe line-coding
+change also waits for the UART itself to report idle.
 
-DMA completion means the reserved bytes have been handed to the UART peripheral, not that the final stop bit has left
-the TX pin. Safe line-coding application also requires UART idle; an empty ring or completed DMA alone is insufficient.
+## Line-Coding Changes
 
-## Hardware Flow Control
+The backend validates the requested data bits, parity, and stop bits. It also checks that the PL011 divider can reach
+the baud rate within tolerance.
 
-Hardware RTS/CTS is opt-in through the board configuration. When enabled:
+Once the old TX bytes have drained and the UART is idle, the backend:
 
-- CTS is configured as active-low UART flow control
-- RTS is driven through a SIO GPIO output
-- RTS uses occupancy hysteresis
-- RTS deasserts when RX occupancy reaches the high watermark
-- RTS reasserts after occupancy falls to the low watermark
+1. pauses RX DMA and records its exact progress,
+2. applies the new format, and
+3. restarts RX DMA at the live position, so unread data survives.
 
-The default board configuration keeps hardware flow control disabled. Pin assignment alone does not advertise a lossless
-flow-control guarantee.
+If applying fails, the backend restores the previous format. If even that fails, the port is marked `INIT_FAILED` rather
+than left running on a stopped UART.
 
-## Baud Rate and Line Coding
+## Flow Control
 
-The native backend checks PL011 divisor representability and rejects rates exceeding the configured error tolerance.
-Supported data bits, stop bits, and parity are validated before application.
+Hardware RTS/CTS is opt-in in the board configuration and off by default:
 
-A line-coding change is deferred until the old TX boundary drains and the UART is idle. The backend pauses RX DMA,
-publishes stable progress, applies the supported format, then restarts DMA at the live producer position so unread data
-is preserved. If application fails, it restores the previous format; failure to restore disables the backend. Request
-ownership, timeout, and HID status behavior are specified in [Control Plane Design](../control-plane-design.md).
+- CTS uses the PL011's active-low hardware flow control.
+- RTS is a GPIO driven from RX-ring occupancy with hysteresis. It deasserts at the high watermark and reasserts at the
+  low watermark.
 
-## Deinitialization and Error Baseline
+Assigning the pins alone does not make the link lossless; test the flow-control variant before relying on it.
 
-Deinitialization publishes final RX DMA progress before disabling its IRQ, aborting and releasing DMA channels, and
-deinitializing the UART. GPIO functions are released during backend cleanup.
+## Errors and Limits
 
-After successful startup, the top-level driver clears receive-status errors collected during bring-up. Runtime framing
-and receive-status errors then remain visible through backend statistics and HID health reporting.
-
-## Limits and Validation
-
-- Hardware UART line coding depends on PL011 divisor precision and the configured baud error tolerance.
-- RX overflow remains possible when the peer ignores RTS or the host does not drain CDC IN quickly enough.
-  Reloading the single RX DMA countdown leaves a short PL011 FIFO window. Bytes lost there latch a sticky
-  receive-status flag and publish as one saturating `rx_error_count` observation, not a known `rx_overrun_count`.
-  Closing that window needs double-buffered RX DMA and a physical HIL run. A zero transfer count does not self-chain.
-- DMA, IRQ timing, UART idle behavior, and RTS/CTS behavior require
-    [hardware-in-the-loop testing](../../tests/hil-fixture-test-plan.md).
-- Host tests cover baud/policy, resource claims, and rejection of repeated initialization. A real-driver harness with SDK
-  register-call mocks checks TX completion and launch ordering, fixed DMA reuse, RX pause/restart, and line-format success,
-  rollback, and unrecoverable failure. These checks do not establish physical register timing or UART line behavior.
-- Firmware builds validate SDK integration; the documented hardware test plans establish physical behavior for the
-  tested artifacts and conditions.
+- Receive errors left over from bring-up are cleared after startup. Later framing and receive-status errors appear in
+  backend statistics and HID health.
+- While a single RX DMA transfer is being reloaded, there is a short window in which the PL011 FIFO can overflow.
+  Bytes lost there set a sticky flag and are counted as one `rx_error_count` event, not as a known number of dropped
+  bytes. Closing that window would need double-buffered RX DMA.
+- RX can also overflow if the peer ignores RTS or the host does not drain CDC fast enough.

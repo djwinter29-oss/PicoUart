@@ -29,17 +29,14 @@ application, not the Pico:
 | Apple Silicon Mac | `osx-arm64` | `.tar.gz` |
 
 Extract the **whole archive**, keeping its `web` directory and other files beside the executable. No .NET SDK, runtime,
-or Python installation is needed. See
-[distribution details](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/deployment/host-app-distribution.md#net-downloads)
-for supported downloads and packaging limitations.
+or Python installation is needed.
 
 ### Install as a NuGet .NET tool
 
 `PicoUart.DotNet` is a .NET global tool for the CLI and dashboard, **not a C# library**. Check the
-[distribution guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/deployment/host-app-distribution.md#distribution-channels)
-for its current availability; until it is listed as a current channel, use the self-contained archives above. Unlike
-the archives, the tool requires the .NET 10 SDK to install and compatible .NET 10 and ASP.NET Core runtimes to run.
-The archive target list does not define NuGet tool support; see the distribution guide for current platform information.
+[distribution channels](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/deployment/host-app-publishing.md#distribution-channels)
+for its current availability; until it is listed there, use the self-contained archives above. Unlike the archives,
+the tool needs the .NET 10 SDK to install and the .NET 10 and ASP.NET Core runtimes to run.
 
 Install and start the tool:
 
@@ -60,9 +57,6 @@ Remove it with:
 ```sh
 dotnet tool uninstall --global PicoUart.DotNet
 ```
-
-The tool package does not expose a supported C# library API. For source-level client details, see the
-[host development guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#net-development).
 
 ## Quick Start
 
@@ -88,9 +82,8 @@ For browser-only diagnostics without installing a host application, use the sepa
 connected to the computer running that browser.
 
 For multiple boards, use `./PicoUart --serial ABC123 status` or `./PicoUart --device-path PATH`, but not both. Ambiguous
-matches are rejected. Use **Board** and **Rescan** in the dashboard; see
-[board selection and shared monitoring](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#board-selection-and-shared-monitoring).
-Use one HID monitor/server per physical board; separate processes do not share its input reports or traffic totals.
+matches are rejected. In the dashboard, use **Board** and **Rescan**. Run one host process per physical board;
+separate processes do not share its input reports or traffic totals.
 
 ## Test Automation
 
@@ -103,24 +96,17 @@ counts independently:
 ./PicoUart overruns > uart-dropped-bytes.json
 ```
 
-`overruns` returns `null` when a channel's dropped-byte count is Unavailable; zero means a valid or Cached measurement
-establishes zero. `status` waits up to `--timeout` seconds (default 2) and exits non-zero without a valid report.
-`status` returns after the first valid channel Input report, so only that channel is populated; other channels remain
-waiting placeholders.
-Unlike the Python CLI, .NET `monitor` can finish successfully without receiving reports; check its output for samples
-and channel health.
+- `status` waits up to `--timeout` seconds (default 2) and exits non-zero without a valid report. It returns after the
+  first valid channel report, so other channels may still be waiting placeholders.
+- `monitor` prints one raw channel snapshot (`id` 0-5) per line with its `sequence`, measured `interval_ms`, and byte
+  counters since MCU boot (modulo `2^32`). It does not compute rates or gaps, and it can finish successfully without
+  receiving any reports. Samples completing at or after the deadline are excluded.
+- `overruns` returns `null` for a channel whose dropped-byte count is unavailable. Dropped-byte counts and buffer peaks
+  are cumulative since boot, so compare before and after a run.
 
-Each monitor line is a raw channel snapshot (`id` 0-5) with its own `sequence`, measured `interval_ms`, and byte
-counters. The CLI does not calculate rate deltas or traffic gaps; automation that needs them must derive them from
-sequences, counter values, and intervals, or use the dashboard. The four byte counters are totals since MCU boot modulo
-`2^32`. Dropped-byte counts and buffer peaks are cumulative since boot. The
-[HID contract](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md) defines
-the authoritative field meanings and traffic accounting. Your test runner must check sample availability and channel
-health, not just the exit code.
-
-Timed monitor samples completing at or after the duration deadline are excluded. Timeouts start after device discovery,
-opening, and identity validation; they do not bound process startup or final native-handle cleanup. See
-[test automation details](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#python-test-automation).
+Timeouts start after the device is found and validated. **A zero exit code is not a health check**: your test runner
+must check that samples arrived and that the channels are healthy. Field meanings are defined in the
+[HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md).
 
 ## Other Commands And Controls
 
@@ -130,23 +116,13 @@ Read-only commands include `hardware`, `config`, `telemetry`, `temperature`, and
 
 `toggle-led` changes the board LED. `reset` reboots the board and requires firmware reset support, enabled by default.
 The dashboard's **Reboot** button requests a standalone reboot; **Save & Reboot** saves a persistent boot-time clock
-profile and then reboots. Stop UART traffic, close CDC ports, and read the
-[configuration precautions](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#persistent-configuration)
-before changing it. After reconnecting, inspect the stored profile request and reported system clock separately. The
-host cannot report an active profile or fallback reason, and a verified save does not establish overclock stability.
+profile and then reboots. Stop UART traffic and close CDC ports before saving. After reconnecting, check the stored
+profile and the reported system clock separately; a verified save does not prove the overclock is stable.
 
 Controls validate device identity and capabilities, serialize requests, and verify terminal results. Commands have
 three-second transfer/result deadlines and are never automatically retried after an uncertain outcome. Reconnect and
 inspect board state before retrying. Save completion means flash verification succeeded and reboot was scheduled, not
 that the next boot succeeded.
-
-### Dashboard Data
-
-The dashboard's channel snapshots include per-channel update times, sequences, measured intervals, traffic gaps, and
-diagnostic counters. Missing measurements may be `null`; do not treat unavailable values as zero. The
-[host development guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md#channel-diagnostics-and-traffic-presentation)
-and [HID reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
-define the full field and refresh semantics.
 
 ## Troubleshooting
 

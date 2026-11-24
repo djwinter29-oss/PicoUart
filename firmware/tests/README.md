@@ -16,8 +16,7 @@ and CTest; they do not exercise the TinyUSB device stack, live DMA IRQs, or phys
 - LED policy behavior
 - Both platforms' reset evidence, stale chip-level flags, consumed markers, and HID user/config-save reboot paths
 
-The test source files are the detailed inventory. The production design notes are linked from the root
-[README](../../README.md).
+The test sources are the detailed inventory.
 
 Shared Pico SDK test hooks use one storage definition in [pico_sdk_hooks.c](stubs/pico_sdk_hooks.c), linked into the
 native test targets by CMake. Keep hook declarations in stub headers as `extern`; weak header definitions do not
@@ -51,7 +50,4 @@ cmake --build build/host-tests
 ctest --test-dir build/host-tests --output-on-failure
 ```
 
-Firmware HIL and physical UART behavior are documented in [docs/tests](../../docs/tests) and
-[docs/deployment/releasing.md](../../docs/deployment/releasing.md). Python package tests live under
-[host/python/tests](../../host/python/tests). Repository-level Python tests live under [tests](../../tests) and are
-discovered with the repository [pyproject.toml](../../pyproject.toml).
+Physical UART behavior is covered by the [HIL test documentation](../../docs/tests/README.md).

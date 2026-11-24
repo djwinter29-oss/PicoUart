@@ -1,86 +1,56 @@
 # Ring Buffer Design
 
-## Purpose and Scope
+Each UART port has two fixed ring buffers between the USB side (core 0) and the UART side (core 1):
 
-Each logical UART port uses a TX ring for USB-to-UART data and an RX ring for UART-to-USB data. This document covers
-their ownership, synchronization, overflow/backpressure policy, and relationship to DMA. The overall bridge is described
-in [UART Subsystem](README.md); cross-core synchronization is detailed in
-[Architecture: Inter-Core Coordination](../architecture.md#inter-core-coordination).
+| Ring | Direction | Producer | Consumer |
+| --- | --- | --- | --- |
+| TX | USB to UART | USB bridge (core 0) | UART backend (core 1) |
+| RX | UART to USB | UART backend / RX DMA (core 1) | USB bridge (core 0) |
 
-## Current Design: Split RX And TX Rings Per Port
-
-Each logical port owns two separate ring buffers:
-
-- one RX ring for UART to USB traffic
-- one TX ring for USB to UART traffic
-
-### Ownership and Synchronization
-
-| Ring | Producer | Consumer |
-| --- | --- | --- |
-| TX | USB bridge | UART backend |
-| RX | UART backend/DMA | USB bridge |
-
-Each ring is single-producer/single-consumer. Core 0 owns USB and bridge-side operations; core 1 owns UART service. The
-core ownership and cursor memory-ordering guarantees are detailed in
-[Architecture: Ring Ownership](../architecture.md#ring-ownership).
+Each ring has exactly one producer and one consumer, and needs no lock; see
+[ring ownership](../architecture.md#ring-ownership).
 
 ## Capacity
 
-Each port has fixed RX and TX capacities. Sizes must remain powers of two, and DMA-backed storage must meet the
-backend's alignment requirements. Capacity changes affect reserved RAM and the rate at which overflow or backpressure
-occurs; they do not change the ownership or loss policy.
+Ring sizes are fixed at build time and must be powers of two. RX storage is also aligned to its size so RX DMA can
+wrap around it in hardware. That alignment applies only to the RX storage, not to the surrounding port structures.
+Capacity changes how much RAM is reserved and how soon overflow or backpressure starts. It does not change the
+ownership or loss policy.
 
-The logical-port owner allocates fixed, size-aligned RX storage separately from backend runtime metadata and TX arrays.
-Each backend retains a lifetime pointer to its port's RX storage and owns the corresponding ring and DMA operations.
-Only the RX allocation carries DMA ring alignment; the backend union and logical-port array must not inherit it.
-Startup rejects null or misaligned RX storage before claiming hardware resources.
+The buffer sizes are not the whole RAM cost. Measure the linked map before shrinking them; the procedure is in the
+[firmware guide](../../development/firmware-testing.md#buffer-capacity-measurement).
 
-Payload capacity is not the complete allocation cost. Runtime metadata, alignment, and TinyUSB endpoint storage still
-contribute. Measure linked symbols and the map rather than treating the sum of buffer macros as total RAM usage.
-The [buffer measurement procedure](../../development/firmware-testing.md#buffer-capacity-measurement) defines the evidence
-needed before reducing capacities.
+## Overflow and Backpressure
 
-## Overflow and Backpressure Policy
+The two directions handle a full ring differently, on purpose:
 
-RX is a live stream, not an archival logger. On overrun, the consumer advances past overwritten bytes, preserves newer
-data, and records the loss. The producer never changes the consumer cursor. HID exposes overrun health and cumulative
-dropped-byte counts; see the [HID Report Reference](../usb/hid-report-reference.md).
+- **TX full:** the bridge stops reading that CDC port and leaves the data in USB. The host is pushed back and nothing is
+  lost or reordered.
+- **RX full:** RX is a live stream, not a logger. The UART cannot pause, so the oldest unread bytes are overwritten and
+  newer data is kept. The consumer skips past the overwritten bytes and counts them. HID reports this as an overrun
+  health bit and a cumulative dropped-byte count.
 
-A hardware UART FIFO overrun that never reaches this ring is not one of those byte counts. The controller only latches
-a sticky receive-status flag, so firmware publishes it as an `rx_error_count` observation. That counter saturates and
-can coalesce several frames into one observation.
+A hardware UART FIFO overrun that happens before data reaches the ring is counted differently. The PL011 only latches a
+sticky flag, so it shows up as an `rx_error_count` event, not a dropped-byte count.
 
-When the TX ring is full, the bridge leaves unread CDC OUT data queued and stops reading that port until space is
-available. This preserves host-byte ordering and lets USB apply backpressure instead of silently dropping queued data.
+## DMA Interaction
 
-## Ring API and DMA
+The ring API hands out contiguous spans that the caller fills or drains and then commits. Each side has at most one
+outstanding span.
 
-The ring contract exposes contiguous spans with explicit commit operations. Each side has at most one current span
-reservation; requesting another replaces that side's previous reservation. A commit must stay within the current
-reservation and satisfy its cursor-validity checks.
-
-RX DMA writes ring storage directly, and the backend publishes observed progress into the producer cursor. Before
-forwarding a copied RX span to USB, the bridge validates the reservation against live DMA progress and a coherent
-backend snapshot. It retires only bytes accepted by the USB writer; overwritten data is handled by the loss policy.
-
-TX DMA holds a reserved contiguous span until DMA completion, then commits consumption. That frees ring storage but
-does not establish wire-level TX idle; the peripheral can still be shifting bytes. Backend-specific DMA behavior belongs
-in the [Hardware UART](hardware-uart-design.md) and [PIO UART](pio-uart-design.md) designs.
+- **RX DMA** writes straight into the ring storage, and the backend publishes its progress as the producer cursor.
+  Before sending a span to USB, the bridge checks it against live DMA progress, so data overwritten mid-copy is counted
+  as lost rather than forwarded.
+- **TX DMA** holds its span until the transfer completes, then commits it. Completion frees ring space, but it does not
+  mean the bytes have left the TX pin.
 
 ## Observability
 
-The ring tracks high-water occupancy and RX loss. HID exposes a compact high-water mark and sticky overrun health;
-cumulative dropped-byte counts are defined in the [HID Report Reference](../usb/hid-report-reference.md).
-
-## Validation
-
-Host tests cover ring and bridge invariants, but do not reproduce live DMA or multicore timing. See the
-[firmware testing guide](../../development/firmware-testing.md) for build and hardware validation boundaries.
+Each ring tracks its high-water mark and RX loss. HID exposes the peak occupancy, an overrun health bit, and cumulative
+dropped bytes.
 
 ## Alternative Considered: Shared Memory Pool
 
-A shared memory pool with descriptors could reduce reserved RAM for idle ports and preserve packet boundaries
-explicitly. It was rejected for the current UART bridge because it adds allocator, descriptor, DMA restart, and
-overflow-debugging complexity without solving a measured problem. Revisit it only if fixed per-port rings become a
-real RAM-pressure issue or the firmware gains packet-oriented processing.
+A shared pool with descriptors would save RAM on idle ports and keep packet boundaries. It was rejected because it adds
+allocator, descriptor, and DMA-restart complexity without solving a measured problem. Revisit it if fixed rings become
+a real RAM constraint, or if the firmware ever needs packet-oriented processing.

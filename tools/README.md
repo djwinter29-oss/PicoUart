@@ -20,7 +20,6 @@ the project documentation index; this file only maps the tool categories.
 . tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0
 tools/firmware/build.sh --board pico
 tools/firmware/build.sh --board pico2
-tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> read
 python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <serial> read
 python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <serial> set-clock default
 python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <serial> erase
@@ -61,10 +60,9 @@ Run each launcher with `--help` for prerequisites and environment overrides.
 The Python/.NET launchers check local USB/HID permissions before starting; they do not install rules automatically.
 The Direct Dashboard does not check the server's USB permissions because the browser may run on another computer.
 
-The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it), installing the package with its
-`dashboard` extra if Flask or hidapi cannot import. Bootstrap uses public PyPI only and ignores machine/user
-pip index configuration, avoiding unrelated private feeds. It runs source directly, without activating the environment or
-installing the package editable. Refresh dependencies explicitly after dependency changes using the
+The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it) and installs the `dashboard` extra
+from public PyPI if Flask or hidapi cannot be imported. It runs the source directly, without an editable install. After
+dependency changes, refresh the environment using the
 [developer setup](../docs/development/host-tools.md#python-environment-setup).
 Native Windows users can use the direct commands in the [Python](../host/python/README.md),
 [.NET](../host/dotnet/README.md), and [Direct Dashboard](../host/direct/README.md) guides.
@@ -93,12 +91,10 @@ See the [HID control contract](../docs/design/usb/hid-report-reference.md#action
 [firmware build options](../firmware/build-and-config.md) for reboot behavior and how to disable standalone HID reboot.
 
 If access is still denied, reconnect the board and rerun the check. With no connected board the check succeeds; this is
-not a connectivity test. On systems without udev it warns and skips checking. Both helpers are no-ops on non-Linux hosts.
-For the Direct Dashboard, run setup on the Linux computer running the browser, not just on a remote dashboard server.
+not a connectivity test. On systems without udev it warns and skips checking. Both helpers are no-ops on non-Linux
+hosts. For the Direct Dashboard, run setup on the Linux computer running the browser, not just on a remote dashboard
+server.
 
-## Canonical Documentation
-
-- [Project README](../README.md)
-- [Firmware build and configuration](../firmware/build-and-config.md)
-- [HIL Fixture Test Plan](../docs/tests/hil-fixture-test-plan.md)
-- [Releasing](../docs/deployment/releasing.md)
+For the firmware build and HIL procedures behind these commands, see
+[Firmware Build and Configuration](../firmware/build-and-config.md) and the
+[HIL Fixture Test Plan](../docs/tests/hil-fixture-test-plan.md).

@@ -1,25 +1,24 @@
-# Firmware and Repository Testing
+# Firmware Development and Tuning
 
-This guide summarizes development boundaries and test levels. Detailed build and load steps are in
-[Firmware Build and Configuration](../../firmware/build-and-config.md); canonical test commands and HIL procedures are
-in the [Test Documentation Index](../tests/README.md) and [Repository Tools](../../tools/README.md).
-
-## Design Boundaries
-
-Keep board pin mapping separate from USB and UART transport logic. See [Architecture](../design/architecture.md), the
-[UART subsystem design](../design/uart/README.md), [Hardware Setup](../hardware-setup.md), and the
-[CDC/HID overview](../design/usb/cdc-hid-overview.md) for their respective responsibilities and constraints.
+This guide covers firmware work beyond a plain build: where each kind of test fits, how to profile timing, and how to
+judge buffer sizes. Building and loading are covered in [Firmware Build and Configuration](../../firmware/build-and-config.md).
 
 ## Test Scope
 
-Validation is split across native firmware logic tests, host and cross-project contract tests, and physical HIL. The
-root [pytest configuration](../../pyproject.toml) discovers repository tests; host packages and the HIL runner also have
-project-specific configuration. Use the test index to choose the applicable level and command rather than treating one
-suite as a substitute for another.
+There are three levels, and none substitutes for another:
+
+| Level | Proves | Where |
+| --- | --- | --- |
+| Native C tests | Firmware logic without a board: rings, line-coding policy, control ownership, bridge spans | [firmware/tests](../../firmware/tests/README.md) |
+| Host and contract tests | Python/.NET clients, HID binary layouts, tooling, docs checks | [tools/README.md](../../tools/README.md) |
+| Hardware-in-the-loop | Real UART signalling, USB enumeration, DMA timing, multicore load | [Test documentation](../tests/README.md) |
+
+CI runs the first two and builds the firmware. It has no board, so it cannot prove anything about physical behavior.
 
 ## Optional Timing Profiles
 
-Use a fresh build directory for each measured variant because CMake caches initial compiler flags:
+Timing instrumentation is off by default. Enable it in a separate build directory for each variant, because CMake
+caches the initial compiler flags:
 
 ```sh
 CFLAGS='-DPICO_UART_PROFILE_TIMING=1' tools/firmware/build.sh --board pico --build-dir build/profile-default
@@ -27,24 +26,22 @@ CFLAGS='-DPICO_UART_PROFILE_TIMING=1 -DPICO_UART_USB_CDC_BRIDGE_PASS_BUDGET=512'
 	tools/firmware/build.sh --board pico --build-dir build/profile-budget512
 ```
 
-The optional counters `service_load_max_pass_us[2]`, `service_load_max_gap_us[2]`, and
-`uart_driver_max_service_gap_us[6]` are SWD-readable observed maxima in microseconds. Locate them with
-`arm-none-eabi-nm --defined-only <elf>`. Authorized profiling can zero those arrays immediately before traffic, then
-read them without halting the cores through OpenOCD's `echo [read_memory <address> 32 <count>]`. Per-port timing
-excludes intentional stopped time. Instrumentation perturbs execution, and maxima include host/control activity in the
-measurement interval; they are not proven worst-case execution times or real-time bounds.
+This adds three SWD-readable arrays of observed maxima, in microseconds: `service_load_max_pass_us[2]`,
+`service_load_max_gap_us[2]`, and `uart_driver_max_service_gap_us[6]`. Find them with `arm-none-eabi-nm`, zero them
+just before the traffic run, and read them without halting the cores using OpenOCD
+`echo [read_memory <address> 32 <count>]`. They are observed maxima under instrumentation, not proven worst cases.
 
-Change only one tuning macro per variant. The bridge budget and PIO TX DMA threshold have compile-time range checks.
-Compare verified traffic, block latency, per-port service gaps, ring peaks, and faults under the same conditions.
-The serial stress runner's timing records include verified block count, maximum block duration, and total block time;
-these are host-observed round trips, not isolated UART wire latency. Retain defaults when a short comparison does not
-show a clear benefit. Return to an uninstrumented image for final HIL; profiling is disabled by default and adds no
-HID protocol fields. See the [dated session/tuning check](../tests/records/2026-10-22-cdc-uart-session-validation.md).
+Change one tuning macro per variant, and compare verified traffic, block latency, service gaps, ring peaks, and faults
+under the same conditions. Keep the defaults unless a comparison shows a clear win, and go back to an uninstrumented
+image for final HIL. The current defaults are backed by the
+[2026-10-22 tuning record](../tests/records/2026-10-22-cdc-uart-session-validation.md).
 
 ## Buffer Capacity Measurement
 
-Build each intended board with the normal firmware wrapper before comparing allocations. For each exact ELF, retain its
-SHA-256, build options, linker map, and these read-only measurements:
+Ring sizes are the biggest RAM cost in the firmware, but they are also what absorbs host stalls. Before shrinking them,
+measure both the allocation and the runtime use.
+
+**Allocation.** For each exact ELF, keep its SHA-256, build options, and linker map, plus:
 
 ```sh
 sha256sum build/firmware-pico/pico_uart.elf
@@ -52,33 +49,16 @@ arm-none-eabi-size build/firmware-pico/pico_uart.elf
 arm-none-eabi-nm -S --size-sort build/firmware-pico/pico_uart.elf
 ```
 
-Inspect `uart_driver_state`, `uart_driver_rx_storage`, `_cdcd_itf`, and `usb_cdc_ports` in the symbol list and map. With debug
-information, GDB `p sizeof(...)` can distinguish backend instance size, per-port stride, and enclosing state size.
-Include the separate RX storage symbol when comparing UART allocations; the runtime-state symbol alone excludes it.
-Do not equate the difference between ring payload and driver allocation with unused buffers: alignment padding,
-metadata, and backend-union layout all contribute. BSS and data totals also exclude stack growth and dynamic allocations;
-retain the memory-region and reserved-stack information from the map when assessing available headroom.
+Look at `uart_driver_state`, `uart_driver_rx_storage`, `_cdcd_itf`, and `usb_cdc_ports`. The RX storage is a separate
+symbol, so include it. Alignment padding and metadata account for the gap between payload size and allocation. That gap
+is not unused buffer space.
 
-For runtime evidence, use the [concurrent fixture plan](../tests/hil-fixture-test-plan.md) on the identified board and
-exact flashed image. Collect all six channels' peaks and dropped/error counters during the run, not just after close.
-The new HID diagnostics encode separate UART RX/TX and CDC FIFO observed peaks in bytes. Host/HIL clients still
-require migration before collecting them; see the [HID implementation status](../design/usb/hid-report-reference.md).
-Until then, use authorized, non-halting SWD snapshots of the individual rings and CDC statistics.
-Peaks are boot-lifetime values, so use a fresh boot per workload rather than attributing an old maximum to a new rate.
+**Runtime use.** Run the [concurrent fixture plan](../tests/hil-fixture-test-plan.md) on a freshly booted board and read
+each channel's observed peaks and drop counters from HID diagnostics during the run. Peaks last for the whole boot, so
+reboot between workloads. Include host stalls and bursts, not only paced traffic. At 8N1, an RX ring of `N` bytes holds
+only `N * 10 / baud` seconds of input. A low peak in a paced test therefore says nothing about stall tolerance.
 
-Include bounded host stalls and burst traffic, not only the USB-paced write/read workload. At 8N1, an RX capacity of
-`N` bytes holds at most `N * 10 / baud` seconds of continuous input before accounting for existing occupancy and service
-delay. A low peak in a paced test therefore does not establish safe stall tolerance. Preserve capacities, RX DMA
-power-of-two/alignment constraints, bridge snapshot checks, and fairness bounds until representative measurements
-justify a smaller allocation. The existing [tuning record](../tests/records/2026-10-22-cdc-uart-session-validation.md)
-supports retaining the current scheduling defaults; it does not qualify reduced buffers.
-
-## CI And Hardware Scope
-
-CI validates host behavior and firmware builds. It has no physical board or wiring fixture and cannot prove UART
-signaling, USB enumeration, DMA timing, or multicore behavior under load. Physical acceptance and exact-artifact release
-gates are defined in the [hardware test documentation](../tests/README.md) and
-[release guide](../deployment/releasing.md).
+Keep the current capacities until measurements like these justify a smaller value.
 
 ## Cursor Cloud Environment
 

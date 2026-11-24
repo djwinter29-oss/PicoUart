@@ -1,10 +1,34 @@
 # Hardware Setup
 
-This document describes the PicoUart target-side UART pinout for Pico-class RP2040/RP2350 boards. It is for board wiring
-and connector planning; the fixed hardware-in-the-loop test fixture is documented separately in
-[HIL Fixture Setup](tests/hil-fixture-setup.md).
+How to wire UART devices to a PicoUart board and find its serial ports. The pin assignments come from
+[uart_config.c](../firmware/src/config/uart_config.c).
 
-The [UART configuration](../firmware/src/config/uart_config.c) is the source of truth for this pinout.
+## Supported Boards
+
+<table align="center">
+    <thead>
+        <tr>
+            <th scope="col" align="center">Raspberry Pi Pico</th>
+            <th scope="col" align="center">Raspberry Pi Pico 2</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td align="center">
+                <img src="assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico reference board" width="240" />
+            </td>
+            <td align="center">
+                <img src="assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2 reference board" width="240" />
+            </td>
+        </tr>
+        <tr>
+            <td align="center">RP2040 · firmware: <strong><code>pico</code></strong></td>
+            <td align="center">RP2350 · firmware: <strong><code>pico2</code></strong></td>
+        </tr>
+    </tbody>
+</table>
+
+[Wireless boards](#wireless-boards) and the [PicoUART6 carrier](#picouart6-carrier-compatibility) are covered below.
 
 ## Port Map
 
@@ -19,8 +43,9 @@ The host sees six USB CDC ACM ports. Each CDC port maps to one target-side UART:
 | CDC4    | UART4 | PIO UART       | GP16 | GP17 | GP18         | GP19         |
 | CDC5    | UART5 | PIO UART       | GP20 | GP21 | GP22         | GP26         |
 
-Normal UART wiring needs TX, RX, and a shared ground. RTS/CTS pins are reserved assignments, but they are not active in
-the default firmware configuration.
+Normal wiring needs only TX, RX, and ground. The RTS/CTS pins are reserved, but flow control is off in the default
+firmware; enabling it is a per-port build setting listed under
+[firmware configuration](../firmware/build-and-config.md#configuration).
 
 ## Find The Serial Ports
 
@@ -69,20 +94,13 @@ compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com
 This is a comparison of documented pin assignments, not a physical qualification of the carrier or a claim of full
 feature compatibility with its original firmware.
 
-## Default Firmware Behavior
-
-RTS/CTS assignments are reserved but flow control is disabled by default. Enabling it is backend-specific; see the
-[hardware UART](design/uart/hardware-uart-design.md) and [PIO UART](design/uart/pio-uart-design.md) designs. USB HID
-reports status and board controls but does not change the pinout.
-
 ## Wiring Rules
 
 - Connect PicoUart TX to the peer RX.
 - Connect PicoUart RX to the peer TX.
 - Share ground between PicoUart and every UART peer.
-- Connect PicoUart RTS to peer CTS only when flow control is enabled and tested.
-- Connect PicoUart CTS to peer RTS only when flow control is enabled and tested.
-- Use 3.3 V UART logic. Do not connect RS-232 voltage-level signals directly to RP2040 or RP2350 GPIOs.
+- Connect RTS to the peer's CTS, and CTS to the peer's RTS, only when flow control is enabled and tested.
+- Use 3.3 V UART logic. Never connect 5 V or RS-232 levels directly to RP2040 or RP2350 GPIOs.
 
 ## GPIO Availability Notes
 
@@ -105,11 +123,6 @@ GPIO25 as an LED output, but that pin is the wireless chip-select on W boards.
 The release build/HIL matrix currently covers Pico and Pico 2, not the wireless variants. Successful compilation does
 not qualify a Pico W or Pico 2 W for physical UART behavior, throughput, or clock-profile stability.
 
-## Test Fixture
-
-HIL fixture wiring belongs in [HIL Fixture Setup](tests/hil-fixture-setup.md). Use the
-[HIL Fixture Test Plan](tests/hil-fixture-test-plan.md) for functional checks and performance benchmarks.
-
 ## Board Layout Guidance
 
 - Group each UART channel as a repeated TX/RX/GND block.
@@ -124,3 +137,13 @@ HIL fixture wiring belongs in [HIL Fixture Setup](tests/hil-fixture-setup.md). U
 - Decide explicitly whether external UART targets are self-powered or powered from the fixture.
 - Do not assume the Pico board can power six external targets directly.
 - If a connector provides target power, document current limits and protection.
+
+For the fixed loopback wiring used in hardware tests, see [HIL fixture setup](tests/hil-fixture-setup.md).
+
+## Photo Credits
+
+Pico photo by Misael Reséndiz
+([source](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_Pico.jpg),
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)); Pico 2 photo by SparkFun Electronics
+([source](https://commons.wikimedia.org/wiki/File:DEV-26124-PICO-2-angle.jpg),
+[CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)).

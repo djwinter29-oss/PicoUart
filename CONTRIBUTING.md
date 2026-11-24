@@ -24,11 +24,9 @@ Use Linux or WSL2 Ubuntu for firmware development and HIL wrappers. Follow the l
 and dependencies rather than installing every tool for every contribution.
 
 An attached board is not permission to modify it or exercise connected devices. Before flashing, resetting, changing
-board or UART configuration, sending board-control commands, or transmitting UART data, obtain explicit authorization
-from the equipment owner or responsible operator. Identify the board and connected devices, stay within the authorized
-scope, and do not perform these actions merely to validate documentation or UI changes.
-You may authorize work on equipment you own; shared or third-party boards and connected devices require permission
-from their owner or responsible operator.
+board or UART configuration, sending board-control commands, or transmitting UART data, get explicit authorization
+from the owner of the board and connected devices (which may be you). Stay within that scope, and do not perform these
+actions merely to validate documentation or UI changes.
 
 ## Validate Your Change
 

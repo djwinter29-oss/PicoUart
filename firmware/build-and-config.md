@@ -1,94 +1,62 @@
 # Firmware Build and Configuration
 
-This folder contains the Pico SDK firmware project `pico_uart` for PicoUart.
-
-Use the root [README](../README.md) as the documentation index. This file keeps only firmware-local build, load, and
-configuration notes.
+This folder holds the Pico SDK firmware project `pico_uart`. This page covers building, loading over SWD, and where the
+build-time configuration lives. To flash a released image, see [Releasing](../docs/deployment/releasing.md#flashing-release-artifacts).
 
 ## Build
 
-On Ubuntu/Linux, install CMake, Ninja, an ARM GCC toolchain, and use the project-local Pico SDK:
+On Ubuntu/Linux (or WSL2), install CMake, Ninja, and an ARM GCC toolchain, then:
 
 ```sh
 . tools/firmware/setup-sdk-env.sh
-tools/firmware/build.sh
-tools/firmware/build.sh --board pico2
+tools/firmware/build.sh                 # Pico (RP2040)  -> build/firmware-pico
+tools/firmware/build.sh --board pico2   # Pico 2 (RP2350) -> build/firmware-pico2
 ```
 
-With no arguments or `PICO_BOARD` override, the build defaults to `pico` (RP2040), writing to `build/firmware-pico`.
-Use `--board pico2` for RP2350; an explicit `--board` takes precedence over `PICO_BOARD`.
+- `--board` overrides `PICO_BOARD`, and the default is `pico`. Each board builds into its own directory under `build/`.
+- The scripts use an exported `PICO_SDK_PATH` if set. Otherwise they use the pinned SDK checkout in `.pico-sdk/`, which
+  `setup-sdk-env.sh` clones on first use.
+- `--firmware-version 1.2.3` stamps a release version, which is reported over HID.
+- `--disable-hid-reset` removes the standalone HID reboot action. Save-and-reboot is not affected.
+- `pico_w` and `pico2_w` build USB/UART-only images, with Wi-Fi and Bluetooth disabled; see the
+  [wireless board notes](../docs/hardware-setup.md#wireless-boards).
+- If the board, SDK, generator, version, or HID-reset option changes, the wrapper clears stale CMake state
+  automatically.
 
-Optional: stamp a release version into the firmware with `--firmware-version` (for example `1.2.3` from tag `v1.2.3`).
-Release version policy is documented in [Releasing](../docs/deployment/releasing.md).
+### Build Checks
 
-All generated output is stored under the repository-root `build/` directory. Use a separate build directory per board.
-The Linux build/load tools accept `--board` values supported by the installed Pico SDK.
+CI runs both checks below on every firmware build, and you can run them locally too:
 
-For USB/UART-only builds on wireless boards:
+- [`check-firmware-budget.py`](../tools/release/check-firmware-budget.py) caps static SRAM allocation at 192 of 264 KiB
+  (RP2040) and 384 of 520 KiB (RP2350). It also checks that the image fits before the reserved configuration sector.
+  These are allocation limits, not stack or latency measurements.
+- The voltage-policy test checks that the firmware never writes core-voltage registers, for any clock profile:
 
-```sh
-tools/firmware/build.sh --board pico_w
-tools/firmware/build.sh --board pico2_w
-```
+  ```sh
+  PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/firmware-pico:$PWD/build/firmware-pico2" \
+    python3 -m pytest -c pyproject.toml \
+    tests/firmware/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q
+  ```
 
-Wi-Fi and Bluetooth are not enabled. Board-specific LED behavior and qualification limits are described in the
-[wireless-board notes](../docs/hardware-setup.md#wireless-boards).
+  It inspects the real SDK startup object and the linked ELF. It does not measure voltage, temperature, or stability.
 
-The scripts honor an exported `PICO_SDK_PATH`; otherwise they use the pinned repository-local `.pico-sdk` checkout.
-`load.sh` uses the same SDK selection as `build.sh` when it rebuilds an image.
+## Load Over SWD
 
-Clock profile selection moved to persistent board configuration in the final flash sector. Build-time clock overrides
-are intentionally rejected so the same firmware image can boot with SDK defaults or a stored overclock profile.
-The new firmware HID contract uses a confirmed save-and-reboot action; it does not require a second reboot command.
-The existing dashboards still need migration before they can use these layouts; see the
-[HID implementation status](../docs/design/usb/hid-report-reference.md#report-id-allocation).
-SDK default does not reconfigure the clock. Defined requests share meanings across MCU families; firmware may select
-a lower eligible clock without changing the stored request.
-The [SWD configuration tool](../tools/firmware/config.py) remains available to read, set, or erase the profile,
-including recovery when USB is unavailable.
-Any invalid configuration record reverts to SDK/board defaults.
-
-Firmware writes no core-voltage registers for default or non-default profiles; the regulator setting on entry is
-preserved. The compile/link voltage-policy test checks this behavior against the real SDK startup object and ELF:
-
-Each firmware matrix leg in PR check CI runs this check automatically, right after `verify-build.py`, against its own
-build directory. After building locally, run the same check yourself to inspect the real SDK startup object, resolved
-preprocessor policy, and linked ELF (not just the mock application test):
-
-```sh
-PICO_UART_VOLTAGE_BUILD_DIRS="$PWD/build/pico:$PWD/build/pico2" \
-  python3 -m pytest -c pyproject.toml \
-  tests/firmware/test_system_clock_voltage_policy.py -k real_sdk -o addopts='' -q
-```
-
-Use your completed build directories. The check detects SDK automatic voltage adjustment and regulator writes in the
-startup object/ELF; it does not measure physical voltage, thermal margin, or hardware stability.
-
-PR and release firmware builds also run
-[`check-firmware-budget.py`](../tools/release/check-firmware-budget.py). It counts allocated SRAM sections from the
-linked ELF, including linker-reserved heap and stack sections, and checks the binary image against the flash space
-before the reserved configuration sector. Static SRAM allocation is capped at 192 KiB of 264 KiB on RP2040 and
-384 KiB of 520 KiB on RP2350, leaving at least 72 KiB and 136 KiB respectively outside linked sections. These are
-allocation limits, not stack high-water or CPU-latency measurements.
-
-Changing board, SDK path, generator, firmware version, or HID-reset option causes the build wrapper to reset stale
-CMake cache state before reconfiguring. Standalone HID reboot is built in by default; pass `--disable-hid-reset` to
-remove that action, not the separately confirmed save-and-reboot capability.
-Dependency build caches and external-tool stamps are reset together; the
-wrapper also detects a leftover picotool configure stamp whose dependency cache is missing.
-
-## Load
-
-The Linux load tool programs the ELF remotely through a Raspberry Pi Debug Probe using CMSIS-DAP OpenOCD. Connect the
-probe's SWDIO, SWCLK, and GND signals to PicoUart before loading; UART TX/RX wiring is separate from SWD.
-Like the build wrapper, it defaults to `pico` (RP2040) and `build/firmware-pico` when no board override is supplied.
+`load.sh` programs the ELF through a Raspberry Pi Debug Probe (CMSIS-DAP OpenOCD), rebuilding first if needed. Connect
+SWDIO, SWCLK, and GND; SWD wiring is separate from the UART wiring.
 
 ```sh
 tools/firmware/load.sh --board pico
 tools/firmware/load.sh --board pico2
 ```
 
-To provision or recover a clock profile through SWD, use an explicit probe serial:
+Probe recovery and QSPI flash details are in [Releasing](../docs/deployment/releasing.md#debug-probe-elf).
+
+## Clock Profile
+
+The firmware image has no fixed clock; build-time clock overrides are rejected. At boot it reads a stored clock
+profile from the last flash sector. If the record is missing or invalid, it uses SDK defaults. The profile is set from
+the dashboards (HID save-and-reboot) or, when USB is unavailable, over SWD:
 
 ```sh
 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> read
@@ -96,25 +64,21 @@ tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-s
 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial <probe-serial> erase
 ```
 
-OpenOCD probe recovery and flash-device compatibility require the physical Debug Probe and target board; automated CI
-can validate the command paths but cannot prove USB/SWD recovery behavior. Follow [Releasing](../docs/deployment/releasing.md) for
-the release HIL and OpenOCD recovery gates.
+Profile meanings and the save rules are in the [HID reference](../docs/design/usb/hid-report-reference.md#boot-configuration).
+Non-default profiles are overclocks. Qualify them on the exact board before relying on them.
 
 ## Configuration
 
-Shared fixed capacities are defined in [src/config/capacity_config.h](src/config/capacity_config.h). This includes USB
-control and CDC endpoint capacities, CDC FIFOs, HID endpoint capacity, and the hardware/PIO UART ring capacities.
-TinyUSB-specific mappings remain in [src/config/tusb_config.h](src/config/tusb_config.h).
+| What | Where |
+| --- | --- |
+| Port-to-backend mapping, GPIOs, and startup line coding | [src/config/uart_config.c](src/config/uart_config.c) |
+| Hardware UART flow control (per port, off by default) | [src/uart/hw/hw_uart_board_config.c](src/uart/hw/hw_uart_board_config.c) |
+| PIO pin flags: RX pull-up, idle-high check, RTS/CTS | [src/uart/pio/pio_uart_board_config.c](src/uart/pio/pio_uart_board_config.c) |
+| Ring, CDC FIFO, and endpoint capacities | [src/config/capacity_config.h](src/config/capacity_config.h) |
+| TinyUSB mapping | [src/config/tusb_config.h](src/config/tusb_config.h) |
 
-Do not change a ring capacity without preserving its power-of-two requirement. The PIO RX/TX and hardware UART RX/TX
-ring definitions document where that requirement applies.
+Ring capacities must stay powers of two. Changing a pin table changes the
+[wiring contract](../docs/hardware-setup.md#port-map), so update that page in the same change.
 
-Detailed firmware behavior lives in:
-
-- [Architecture](../docs/design/architecture.md) and the [UART subsystem design](../docs/design/uart/README.md)
-- [CDC/HID Overview](../docs/design/usb/cdc-hid-overview.md)
-- [HID Report Reference](../docs/design/usb/hid-report-reference.md)
-- [Control Plane Design](../docs/design/control-plane-design.md)
-- [Ring Buffer Design](../docs/design/uart/ring-buffer-design.md)
-- [PIO UART Design](../docs/design/uart/pio-uart-design.md)
-- Board pin assignments and safe wiring: [Hardware Setup](../docs/hardware-setup.md)
+The design behind all of this starts at the [architecture overview](../docs/design/architecture.md). Native tests are
+in [tests/](tests/README.md).

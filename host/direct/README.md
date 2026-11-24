@@ -4,8 +4,7 @@
 per-channel traffic statistics, and RX dropped-byte counts on Raspberry Pi Pico and Pico 2.
 
 Diagnostics use the browser's WebHID API and a separate USB HID interface, without a Python/.NET application backend.
-UART payloads and baud/framing
-settings still use the six USB CDC serial ports, not this page.
+UART payloads and baud/framing settings still use the six USB CDC serial ports, not this page.
 
 ## Requirements
 
@@ -48,11 +47,9 @@ payload capture. For scripted status samples and traffic logs, use the
 [Python CLI](../python/README.md#command-line-tools) or [.NET CLI](../dotnet/README.md#test-automation). Disconnect
 the browser before another client monitors the same board.
 
-Traffic statistics are cumulative byte counters, not raw UART messages. A missing report can make throughput estimates
-incomplete without confirming byte loss. Counter wrap can make an increment unknowable if at least `2^32` bytes pass
-between samples. A quiet or healthy-looking page alone is not evidence that an automated test passed. The continuity
-notice signals incomplete observation, not confirmed byte loss, and remains for the current connection. See the
-[HID report reference](../../docs/design/usb/hid-report-reference.md) for counter and measurement semantics.
+Traffic statistics are cumulative byte counters, not raw UART messages. A missing report makes the throughput estimate
+incomplete; the continuity notice says so for the rest of the connection, but it does not mean bytes were lost. A
+healthy-looking page alone is not evidence that an automated test passed.
 
 ## Other Commands And Controls
 
@@ -64,12 +61,9 @@ expire. Close all CDC ports and stop external UART traffic first; non-default cl
 acknowledgement. The dashboard records an uncertain save in browser session storage. If recovery storage is
 unavailable, monitoring and other supported controls remain available, but configuration saves are disabled.
 
-After reconnecting, inspect the stored boot profile request and running clock separately; do not infer the requested
-profile from the clock or assume it became active. The dashboard does not report a configuration fallback reason or
-active profile. A verified save does not establish overclock stability. See the
-[HID report reference](../../docs/design/usb/hid-report-reference.md) and
-[configuration procedure](../../docs/development/host-tools.md#persistent-configuration). This diagnostic does not
-expose credentials or raw flash contents.
+After reconnecting, check the stored boot profile and the running clock separately; do not assume the requested
+profile became active. A verified save does not prove the overclock is stable. The
+[save safety rules](../../docs/design/usb/hid-report-reference.md#save-and-reboot-safety) apply.
 
 Writes are limited to user-initiated LED state changes, standalone reboot, and configuration save. Firmware flashing
 and WebSerial payload access are not implemented.

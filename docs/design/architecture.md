@@ -1,111 +1,110 @@
 # Architecture
 
-## System Boundary
-
-PicoUart exposes six USB CDC ACM serial ports and one HID status/control interface. Each CDC port maps to one UART
-channel. The current board configuration uses two hardware UARTs and four PIO UARTs; board-specific pin assignments
-are documented in [Hardware Setup](../hardware-setup.md).
+PicoUart is a composite USB device with six CDC ACM serial ports and one vendor HID interface. Each CDC port is bridged
+to one UART. UART0-1 run on the chip's hardware UARTs, and UART2-5 run on PIO state machines.
 
 ```mermaid
 flowchart LR
-  Host["Host application"]
+  Host["Host"]
   subgraph Device["PicoUart"]
-    CDC["6 CDC ACM ports<br/>Core 0"]
-    Rings["Shared per-port RX/TX buffers"]
-    Backends["2 hardware UARTs + 4 PIO UARTs<br/>Core 1 service"]
-    HID["HID status/control<br/>Core 0"]
-    Control["Control plane<br/>Core 0 to core 1"]
+    CDC["6 CDC ports<br/>core 0"]
+    Rings["Per-port RX/TX rings"]
+    Backends["2 hardware + 4 PIO UARTs<br/>core 1"]
+    HID["HID status and control<br/>core 0"]
+    Control["Control plane"]
     CDC <-->|"Serial data"| Rings
     Rings <-->|"UART data"| Backends
-    CDC -.->|"Line-coding requests"| Control
-    Control -.->|"Deferred reconfiguration"| Backends
-    Control -.->|"Pending / error state"| HID
-    Backends -.->|"Telemetry snapshots"| HID
+    CDC -.->|"Line coding"| Control
+    Control -.->|"Deferred apply"| Backends
+    Control -.->|"Pending / error"| HID
+    Backends -.->|"Telemetry"| HID
   end
   Target["Target devices"]
 
   Host <-->|"USB CDC"| CDC
   Host <-->|"USB HID"| HID
-  Backends <-->|"UART0–UART5"| Target
+  Backends <-->|"UART0-5"| Target
 ```
 
-Solid paths carry UART bytes. Dashed paths carry configuration or telemetry, not payload data. UART line coding
-originates on CDC; HID reports its outcome rather than configuring UART framing.
+Solid lines carry UART bytes. Dashed lines carry configuration and telemetry only. Baud rate and framing are set
+via CDC; HID only reports what was applied.
 
-## Runtime Ownership
+## Design Principles
 
-- Core 0 exclusively owns TinyUSB and USB-side bridge work.
-- Core 1 owns steady-state UART backend service and applies deferred line-coding changes.
-- Per-port RX/TX buffers move data between the USB and UART sides; HID reports status separately.
-- Board configuration owns pin mapping; the UART subsystem owns runtime behavior.
+- **One core per side.** Core 0 owns TinyUSB and the USB side of the bridge. Core 1 owns all UART hardware. Neither
+  core calls into the other's private state.
+- **Rings are the data boundary.** Every port has one TX ring (USB to UART) and one RX ring (UART to USB). Each ring has
+  exactly one producer and one consumer.
+- **Configuration is deferred, never in-line.** A line-coding change is handed to core 1, which applies it only at a
+  safe point. Core 0 never touches UART hardware.
+- **Diagnostics are separate from data.** HID reports health and counters without competing with serial traffic.
+- **Board pinout is data, not code.** A constant board table selects pins and the backend for each port, and the
+  transport and lifecycle code never hard-codes pins.
 
-The cores communicate through per-port rings, control mailboxes, and shared status; neither calls the other core's
-private implementation.
+## Component Map
+
+```mermaid
+flowchart LR
+  Port["Logical-port API"] -->|"Rings and snapshots"| Ops["Backend operations"]
+  Runtime["UART runtime / worker"] -->|"Start, stop, service"| Ops
+  Control["Control plane"] -->|"Validate and apply"| Ops
+  Ops --> HW["Hardware UART backend"]
+  Ops --> PIO["PIO UART backend"]
+```
+
+| Component | Responsibility | Design |
+| --- | --- | --- |
+| CDC and HID | USB interfaces, DTR lifecycle, byte admission, reports | [CDC/HID overview](usb/cdc-hid-overview.md) |
+| Rings | Per-port buffering, overflow and backpressure policy | [Ring buffers](uart/ring-buffer-design.md) |
+| Control plane | Line-coding hand-off, deadlines, error reporting | [Control plane](control-plane-design.md) |
+| Backend operations | Common contract for both UART implementations | [Backend contract](uart/backend-adapter-design.md) |
+| Hardware UART | PL011 with RX/TX DMA | [Hardware UART](uart/hardware-uart-design.md) |
+| PIO UART | PIO state machines with RX DMA and hybrid TX | [PIO UART](uart/pio-uart-design.md) |
+| HID protocol | Report layouts, states, and board actions | [HID report reference](usb/hid-report-reference.md) |
 
 ## Inter-Core Coordination
 
-These ownership and synchronization rules apply to the supported RP2040/RP2350 platforms.
+Coordination uses a small set of mechanisms, each with a single job. They rely on RP2040/RP2350 guarantees (atomic
+aligned 32-bit access and SDK memory barriers) rather than portable C11 threading.
 
 ### Ring Ownership
 
-Per-port RX/TX direction and overflow behavior are defined in [Ring Buffer Design](uart/ring-buffer-design.md).
+Rings are single-producer/single-consumer. The producer publishes payload before advancing its cursor, and the consumer
+retires bytes only after reading them, with `__dmb()` barriers between. Rings take no locks, so the data path never
+waits on status reads.
 
-Aligned 32-bit cursor accesses are atomic on the supported RP2040/RP2350 platforms. Payload publication and cursor
-retirement are ordered with Pico SDK `__dmb()` barriers. This is target-specific synchronization, not a portable C11
-thread implementation. Ring ownership and DMA snapshot validation remain separate from status locking.
+### Control Mailbox
 
-### Control Mailbox Ordering
+Each port has one mailbox slot for line-coding requests. Core 0 fills the slot under the shared status lock. Core 1
+takes it and records that it now owns the request in the same lock hold, so there is never a moment when a request
+has no owner. An empty mailbox therefore does not mean the change is done; core 1 may still be waiting for a safe apply
+point. Ports never block each other's mailboxes.
 
-Each UART port has one mailbox slot with a payload and occupied flag. All concurrent operations, including inspection
-and reset, require the shared status lock; initialization before launching the worker needs no lock. Core 0 publishes
-the payload and marks the slot occupied under that lock. Core 1 copies it, clears occupancy, and registers worker
-ownership in one critical section. Lock release/acquisition provides publication ordering; a second mailbox sequence
-protocol and mailbox-local barriers are unnecessary. Host request generations remain independent of slot occupancy.
+### Status Lock
 
-Taking a request releases the slot; it does not mean backend reconfiguration has finished. Core 1 can retain worker
-ownership while waiting for a safe apply boundary, so `CONTROL_PENDING` and TX blocking may remain asserted after the
-mailbox is empty. One port's occupied slot does not block another port.
-The complete pending-state and TX-blocking rules belong to [Control Plane Design](control-plane-design.md).
+The status lock protects the small shared state that both cores read: lifecycle flags, control ownership, request
+generations, and applied settings. It does not protect ring cursors.
 
-### Status Lock and Generations
+### Telemetry Snapshots
 
-The status lock protects core-0-visible flags, control ownership, generations, and metadata. It does not protect ring
-cursors, which use SPSC ownership and barriers; keeping the mechanisms separate prevents status reads from becoming a
-global data-path lock. Per-request generation behavior is described in [Control Plane Design](control-plane-design.md).
-Backend support checks use immutable operations bound before worker startup and do not copy lock-protected applied
-metadata. Runtime readiness, lifecycle handshakes, and control completion still require their existing synchronization.
+Core 1 brackets each statistics update with an odd/even sequence counter. Core 0 accepts a snapshot only if the counter
+is even and unchanged across the read, so HID never reports a half-written update.
 
-### Telemetry Sequence Counters
+### Worker Heartbeat and Startup
 
-Core 1 brackets each stats update with an odd/even sequence and memory barriers. Core 0 accepts a snapshot only when the
-sequence is even and unchanged across the read.
+Core 1 bumps a heartbeat after each full control-and-I/O pass. Core 0 feeds the watchdog only while the heartbeat keeps
+moving, so a wedged UART worker triggers a reboot instead of failing silently.
 
-### Worker Heartbeat
-
-The worker increments a heartbeat after each complete control-and-I/O step. Core 0 observes the counter through a
-barrier and feeds the watchdog only while the counter has changed within the freshness window. A stale heartbeat causes
-watchdog recovery rather than allowing a wedged core-1 UART worker to run unnoticed.
-
-### Failure and Recovery Rules
-
-Startup rollback, control completion, and RX overflow recovery are defined in the [UART subsystem](uart/README.md),
-[Control Plane Design](control-plane-design.md), and [Ring Buffer Design](uart/ring-buffer-design.md). Physical DMA,
-IRQ, and multicore timing require [hardware-in-the-loop testing](../tests/hil-fixture-test-plan.md).
+Startup is all-or-nothing. Every configured backend must initialize, or the ones already started are rolled back and
+the worker is not launched. Core 1 is explicitly reset before launch, so startup never depends on the state a debugger
+or earlier boot left behind.
 
 ## Constraints
 
-- PIO UARTs support 8N1; hardware UARTs support the broader CDC line-coding set.
-- Aggregate throughput depends on USB full-speed bandwidth and host drain rate; see the
-  [HIL fixture plan](../tests/hil-fixture-test-plan.md) for measured results and test limits.
-  For example, six full-duplex 3 Mbaud 8N1 streams require 3.6 MB/s of UART payload, beyond the 12 Mbit/s USB link
-  even before USB overhead; an accepted per-port baud setting is not an aggregate-throughput guarantee.
-- Flow control is disabled by default. HID reset is enabled by default and can be removed at build time; see the
-  [CDC/HID overview](usb/cdc-hid-overview.md) for interface behavior.
-
-## Design Details
-
-- [UART Subsystem](uart/README.md) is the entry point for backend architecture, buffers, control flow, and core
-  ownership. It links to the focused ring-buffer, backend, PIO, and hardware UART design documents.
-- [Control Plane Design](control-plane-design.md) describes CDC line-coding requests and HID error reporting.
-- [HID Report Reference](usb/hid-report-reference.md) defines report fields and host compatibility.
-- [Releasing PicoUart](../deployment/releasing.md) defines hardware qualification and artifact gates.
+- PIO UARTs support 8N1 only. Hardware UARTs accept the wider CDC framing set.
+- Each active UART holds one RX and one TX DMA channel, so six ports use all 12 RP2040 DMA channels.
+- All six ports share one USB full-speed link (12 Mbit/s). For example, six full-duplex 3 Mbaud streams would need
+  3.6 MB/s, more than USB can carry. An accepted baud rate is a per-port setting, not a throughput guarantee.
+- RTS/CTS flow control is off by default and enabled per backend in the board configuration.
+- Multicore, DMA, and USB timing can only be proven on hardware; see the
+  [HIL test plan](../tests/hil-fixture-test-plan.md).

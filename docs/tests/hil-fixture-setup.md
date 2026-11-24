@@ -1,13 +1,7 @@
 # HIL Fixture Setup
 
-This is the canonical physical fixture for the functional and performance HIL plans. See the
-[Test Documentation Index](README.md) for the complete test sequence.
-
-It validates all six PicoUart channels through two crossed UART pairs and two local loopbacks. Install all four links
-before testing and do not change wiring during a run.
-
-Use this document once during physical setup. After the fixture is installed, follow the
-[HIL Fixture Test Plan](hil-fixture-test-plan.md) without moving jumpers.
+This fixture exercises all six channels with two crossed UART pairs and two loopbacks. Install all four links once,
+then run the [test plan](hil-fixture-test-plan.md) without moving any jumpers.
 
 ```mermaid
 flowchart LR
@@ -17,23 +11,9 @@ flowchart LR
    CDC5["CDC5 / PIO UART5"] -->|"TX to RX loopback"| CDC5
 ```
 
-The USB CDC numbers identify host-facing interfaces, not GPIO numbers. Cross TX and RX for paired ports; connect TX to
-RX on the same port for each loopback.
-
-The USB host sees the channels as CDC0 through CDC5:
-
-| USB CDC | UART  | Backend       | TX   | RX   |
-| ------- | ----- | ------------- | ---- | ---- |
-| CDC0    | UART0 | Hardware UART | GP0  | GP1  |
-| CDC1    | UART1 | Hardware UART | GP4  | GP5  |
-| CDC2    | UART2 | PIO UART      | GP8  | GP9  |
-| CDC3    | UART3 | PIO UART      | GP12 | GP13 |
-| CDC4    | UART4 | PIO UART      | GP16 | GP17 |
-| CDC5    | UART5 | PIO UART      | GP20 | GP21 |
-
-All connections use 3.3 V UART logic and share ground with the PicoUart board. The firmware defaults to 115200 baud, 8
-data bits, no parity, and 1 stop bit (8N1). RTS/CTS is disabled for this setup; leave those pins disconnected unless you
-are running an explicit flow-control variant.
+The GPIOs below come from the [port map](../hardware-setup.md#port-map). All links use 3.3 V logic, share ground with
+the board, and run at the firmware default of 115200 8N1. Leave RTS/CTS disconnected unless you are testing a
+flow-control variant.
 
 ## Equipment
 
@@ -42,9 +22,8 @@ are running an explicit flow-control variant.
 - Jumper wires
 - Host computer with the PicoUart host tools installed
 
-The runner wrappers require the separate HIL environment. From the repository root, follow the
-[HIL tool setup](../../tools/README.md) and run `tools/hil/setup.sh` before using them. This needs uv and
-network access for dependencies; creating the environment does not flash a board or transmit UART data.
+The runners use a separate HIL environment. Create it once with `tools/hil/setup.sh`, which needs uv and network
+access. It does not touch the board.
 
 ## Electrical Safety
 
@@ -122,9 +101,6 @@ stable by-id paths are available.
 
 Stop the test and inspect the wiring if a channel fails in both directions, a CDC interface disappears, the board resets
 unexpectedly, or a signal appears to be at the wrong voltage.
-
-For flashing, USB enumeration, and extended stress testing, see the [HIL Fixture Test Plan](hil-fixture-test-plan.md)
-and the board-testing procedure in the repository skill documentation.
 
 ## Optional Manual External-Peer Check
 
