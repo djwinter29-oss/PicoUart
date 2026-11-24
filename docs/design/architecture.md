@@ -95,14 +95,12 @@ is even and unchanged across the read, so HID never reports a half-written updat
 Core 1 bumps a heartbeat after each full control-and-I/O pass. Core 0 feeds the watchdog only while the heartbeat keeps
 moving, so a wedged UART worker triggers a reboot instead of failing silently.
 
-Startup is all-or-nothing. Every configured backend must initialize, or the ones already started are rolled back and
-the worker is not launched. Core 1 is explicitly reset before launch, so startup never depends on the state a debugger
-or earlier boot left behind.
+Core 1 is explicitly reset before launch, so startup never depends on the state a debugger or earlier boot left behind.
 
 ## Constraints
 
 - PIO UARTs support 8N1 only. Hardware UARTs accept the wider CDC framing set.
-- Each active UART holds one RX and one TX DMA channel, so six ports use all 12 RP2040 DMA channels.
+- The six active ports use all 12 RP2040 DMA channels.
 - All six ports share one USB full-speed link (12 Mbit/s). For example, six full-duplex 3 Mbaud streams would need
   3.6 MB/s, more than USB can carry. Baud rates configure each port; the shared link limits aggregate throughput.
 - RTS/CTS flow control is off by default and enabled per backend in the board configuration.

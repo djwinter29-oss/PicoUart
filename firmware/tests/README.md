@@ -22,5 +22,5 @@ Shared Pico SDK test hooks use one storage definition in [pico_sdk_hooks.c](stub
 native test targets by CMake. Keep hook declarations in stub headers as `extern`; weak header definitions do not
 provide portable shared hook storage across ELF and Windows COFF linkers.
 
-Use the [test overview](../../docs/tests/README.md) for validation commands and HIL coverage. It is the authoritative
-guide for choosing the checks a change needs.
+Use the [hardware-free checks](../../docs/tests/README.md#without-hardware) for validation commands; the
+[test overview](../../docs/tests/README.md#with-hardware) covers HIL.

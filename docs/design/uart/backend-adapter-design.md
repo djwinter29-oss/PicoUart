@@ -36,8 +36,6 @@ is set.
 Restart is a real stop and start and discards queued bytes. Counters survive it: traffic and error counts, ring peaks,
 and overflow counts run from boot.
 
-Each running port holds one RX and one TX DMA channel.
-
 ## Line Coding
 
 Each backend answers two separate questions: whether it supports a format at all, and whether it is safe to apply the

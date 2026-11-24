@@ -1,7 +1,7 @@
 # Cursor Cloud Development Environment
 
 This guide covers the provisioned Cursor Cloud VM snapshot. It has no attached board, debug probe, or UART fixture;
-use the non-hardware checks in the [firmware development guide](firmware-testing.md#test-scope).
+use the [hardware-free test checklist](../tests/README.md#without-hardware).
 
 ## Snapshot Packages
 

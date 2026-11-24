@@ -42,6 +42,21 @@ Normal wiring needs only TX, RX, and ground. The RTS/CTS pins are reserved, but 
 firmware; enabling it is a per-port build setting listed under
 [firmware configuration](../firmware/build-and-config.md#configuration).
 
+## Wiring Rules
+
+- Connect PicoUart TX to the peer RX.
+- Connect PicoUart RX to the peer TX.
+- Share ground between PicoUart and every UART peer.
+- Connect RTS to the peer's CTS, and CTS to the peer's RTS, only when flow control is enabled and tested.
+- Use 3.3 V UART logic. Never connect 5 V or RS-232 levels directly to RP2040 or RP2350 GPIOs.
+
+For the fixed loopback wiring used in hardware tests, see [HIL fixture setup](tests/hil-fixture-setup.md).
+
+## Power
+
+Do not power six external targets from the Pico unless the supply is rated for their combined current. For a carrier
+with target-power output, check its documented current limit and protection before connecting devices.
+
 ## Find the Serial Ports
 
 Host port numbers such as `/dev/ttyACM*` or `COMx` depend on enumeration order, so identify each CDC port by its USB
@@ -64,12 +79,12 @@ board's unique USB serial number in the device name distinguishes them.
 Example observed Linux entries (board serial redacted; `/dev/ttyACM*` assignments vary):
 
 ```text
-usb-PicoUart_PicoUart_<board-serial>-if00 -> ../../ttyACM2
-usb-PicoUart_PicoUart_<board-serial>-if02 -> ../../ttyACM3
-usb-PicoUart_PicoUart_<board-serial>-if04 -> ../../ttyACM4
-usb-PicoUart_PicoUart_<board-serial>-if06 -> ../../ttyACM5
-usb-PicoUart_PicoUart_<board-serial>-if08 -> ../../ttyACM6
-usb-PicoUart_PicoUart_<board-serial>-if0a -> ../../ttyACM7
+usb-djwinter_PicoUart_<board-serial>-if00 -> ../../ttyACM2
+usb-djwinter_PicoUart_<board-serial>-if02 -> ../../ttyACM3
+usb-djwinter_PicoUart_<board-serial>-if04 -> ../../ttyACM4
+usb-djwinter_PicoUart_<board-serial>-if06 -> ../../ttyACM5
+usb-djwinter_PicoUart_<board-serial>-if08 -> ../../ttyACM6
+usb-djwinter_PicoUart_<board-serial>-if0a -> ../../ttyACM7
 ```
 
 ## PicoUART6 Carrier Compatibility
@@ -85,16 +100,6 @@ compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com
   compatible with the original firmware's `i2c-tiny-usb` functionality.
 - Keep RTS/CTS disabled on this carrier. PicoUart's optional flow-control assignments overlap the carrier's LED and I2C
   wiring; enabling them requires a separately reviewed pin map and hardware setup.
-
-## Wiring Rules
-
-- Connect PicoUart TX to the peer RX.
-- Connect PicoUart RX to the peer TX.
-- Share ground between PicoUart and every UART peer.
-- Connect RTS to the peer's CTS, and CTS to the peer's RTS, only when flow control is enabled and tested.
-- Use 3.3 V UART logic. Never connect 5 V or RS-232 levels directly to RP2040 or RP2350 GPIOs.
-
-For the fixed loopback wiring used in hardware tests, see [HIL fixture setup](tests/hil-fixture-setup.md).
 
 ## GPIO Availability Notes
 
@@ -116,11 +121,6 @@ as an LED output, but that pin is the wireless chip-select on W boards.
 
 The release build and HIL matrix covers Pico and Pico 2 only. Wireless variants have no physical UART, throughput, or
 clock-stability qualification yet.
-
-## Power
-
-Do not power six external targets from the Pico unless the supply is rated for their combined current. For a carrier
-with target-power output, check its documented current limit and protection before connecting devices.
 
 ## Photo Credits
 

@@ -9,9 +9,8 @@ A six-port USB-to-UART bridge for the Raspberry Pi Pico and Pico 2, with built-i
 
 **Quick links:** [Releases](https://github.com/djwinter29-oss/PicoUart/releases) · [Hardware setup](docs/hardware-setup.md) · [Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/) · [PyPI package](https://pypi.org/project/pico-uart/)
 
-PicoUart turns a stock Pico or Pico 2 into a six-port USB-to-UART bridge for bring-up benches and test racks: one board
-and one USB cable instead of a handful of single-port adapters. Your existing terminals and scripts keep working, and
-you can check bridge health without closing any serial port.
+For bring-up benches and test racks, one board and USB cable replace a handful of single-port adapters. Existing
+terminals and scripts keep working.
 
 ```text
 Computer -- USB -- Pico / Pico 2 +- UART0 -- Device A
@@ -22,9 +21,8 @@ Computer -- USB -- Pico / Pico 2 +- UART0 -- Device A
 
 ## Why PicoUart?
 
-When a serial log goes quiet, there are three suspects: the device stopped talking, the bridge dropped bytes, or the
-host stopped reading. A typical USB-serial adapter can't tell you which. PicoUart counts traffic on both sides of the
-bridge for every channel, so you can see where the data stopped.
+When a serial log goes quiet, PicoUart's per-channel counters help distinguish a silent device from bytes lost by the
+bridge or an unread host buffer.
 
 Each UART shows up as an ordinary USB CDC serial port, so your terminals and scripts need nothing extra. The counters,
 dropped-byte counts, and buffer peaks come over a separate USB HID interface, which means checking health never
@@ -43,13 +41,8 @@ _The dashboard with simulated telemetry._
 
 ## Get Started
 
-1. Download the firmware from [Releases](https://github.com/djwinter29-oss/PicoUart/releases): the `pico` `.uf2`
-   for Pico (RP2040), or the `pico2` `.uf2` for Pico 2 (RP2350).
-2. Hold **BOOTSEL** while plugging in the board, then copy the `.uf2` onto the `RPI-RP2` or `RP2350` drive that
-   appears. The board reboots into PicoUart; see [hardware setup](docs/hardware-setup.md#installing-firmware) for
-   details.
-3. Wire each device TX to RX, RX to TX, and GND to GND. The pin map is in [hardware setup](docs/hardware-setup.md).
-4. Open the matching serial port in your terminal or script, and set the baud rate and framing your device needs.
+1. Follow [hardware setup](docs/hardware-setup.md) to install firmware and wire your device.
+2. Open the matching serial port in your terminal or script, and set the baud rate and framing your device needs.
 
 The host should list six PicoUart serial ports. That confirms USB enumeration but not your wiring. Exchanging data with
 the device confirms both.

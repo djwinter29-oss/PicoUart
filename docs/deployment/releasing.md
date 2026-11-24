@@ -21,10 +21,9 @@ The CI job graph is described in [GitHub Actions](../development/github-actions.
 
 ## Release Preflight
 
-Before tagging, make sure the change is reviewed, the tree has no stray files, `git diff --check` is clean, and PR
-Check passed for the exact commit you are tagging. Pick the version using the [versioning policy](#versioning), and
-note USB/HID compatibility or behavior changes for the release notes. Also confirm private vulnerability
-reporting is enabled in the repository settings ([SECURITY.md](../../SECURITY.md)).
+Before tagging, make sure the change is reviewed, the tree has no stray files, and `git diff --check` is clean. Pick
+the version using the [versioning policy](#versioning), note USB/HID compatibility changes for the release notes, and
+confirm private vulnerability reporting is enabled in the repository settings ([SECURITY.md](../../SECURITY.md)).
 
 Don't start physical testing from an uncommitted or locally modified image; the result would not describe anything you
 can release.
@@ -56,15 +55,6 @@ qualification run, verify the artifact's SHA-256 against the release manifest, t
 [Firmware Build and Configuration](../../firmware/build-and-config.md#load-over-swd). Do not rebuild the image being
 qualified.
 
-### Debug Probe (ELF)
-
-See [Debug Probe loading and recovery](../../firmware/build-and-config.md#debug-probe-loading-and-recovery).
-
-### Override QSPI Auto-Detection (Advanced)
-
-Use the [verified-capacity procedure](../../firmware/build-and-config.md#qspi-auto-detection-override) only after
-confirming the flash capacity from the chip marking and datasheet.
-
 ## Release HIL Gates
 
 A release is hardware-qualified only when every rated board has a complete `PASS` for this matrix. The
@@ -89,10 +79,6 @@ substitute for a current exact-artifact run.
 The test plan's [Known Gaps](../tests/hil-fixture-test-plan.md#known-gaps) lists open reset-startup and DMA wrap/re-arm
 procedures. Until exact-artifact evidence closes those gaps, releases remain unqualified. Optional claims such as
 RTS/CTS or backpressure also need their matching board configuration and HIL variant.
-
-Before calling a release qualified, confirm that all build gates passed for the exact commit, every rated artifact has
-matching passing evidence, and records/transcripts are available to the team. Release notes should state tested
-conditions, compatibility changes, and remaining limits.
 
 ## Versioning
 

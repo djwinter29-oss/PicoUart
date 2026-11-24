@@ -26,11 +26,7 @@ access. It does not touch the board.
 ## Electrical Safety
 
 - Disconnect power before installing jumpers or checking continuity; reconnect only after verifying the wiring.
-- Use 3.3 V UART logic and connect a shared ground between the board and every link.
-- Never connect UART TX to TX or RX to RX.
-- Never connect RS-232 voltage levels directly to Pico GPIOs.
 - Leave RTS/CTS disconnected for the baseline fixture.
-- Power the board through its intended USB connection; do not add an external UART voltage source to signal pins.
 
 ## Fixed Fixture Wiring
 
@@ -70,15 +66,6 @@ Connect UART5/CDC5 TX to its own RX:
 | --------------- | ---- | --------------- | ---- |
 | TX              | GP20 | RX              | GP21 |
 
-## Bring-Up Checklist
-
-1. Verify the four links above.
-2. Flash the intended artifact using [USB](../hardware-setup.md#installing-firmware) or
-   [SWD](../../firmware/build-and-config.md#debug-probe-loading-and-recovery), then record its version and SHA-256.
-3. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate.
-4. Run the functional and performance plans.
-5. Remove all test jumpers before connecting external UART equipment.
-
 ## Endpoint Preflight
 
 Before running a test runner, record the stable device paths:
@@ -93,6 +80,15 @@ stable by-id paths are available.
 
 Stop the test and inspect the wiring if a channel fails in both directions, a CDC interface disappears, the board resets
 unexpectedly, or a signal appears to be at the wrong voltage.
+
+## Bring-Up Checklist
+
+1. Verify the four links above.
+2. Flash the intended artifact using [USB](../hardware-setup.md#installing-firmware) or
+   [SWD](../../firmware/build-and-config.md#debug-probe-loading-and-recovery), then record its version and SHA-256.
+3. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate.
+4. Run the functional and performance plans.
+5. Remove all test jumpers before connecting external UART equipment.
 
 ## Optional Manual External-Peer Check
 

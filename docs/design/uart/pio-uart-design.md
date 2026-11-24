@@ -94,15 +94,9 @@ stateDiagram-v2
 
 ## Flow Control
 
-PIO behavior is set by per-port pin flags. RTS/CTS is opt-in and off by default; the default configuration sets only
-the two RX flags.
-
-| Flag | Effect |
-| --- | --- |
-| `PIO_UART_DRIVER_PIN_FLAG_RX_FLOW_CONTROL` | Drive active-low RTS from RX-ring occupancy |
-| `PIO_UART_DRIVER_PIN_FLAG_TX_FLOW_CONTROL` | Start a new TX frame only while CTS is asserted (low); a frame in progress is never cut |
-| `PIO_UART_DRIVER_PIN_FLAG_RX_PULL_UP` | Enable a pull-up on RX |
-| `PIO_UART_DRIVER_PIN_FLAG_REQUIRE_RX_IDLE_HIGH` | Require RX idle-high before a baud change |
+RTS/CTS is opt-in and off by default. When enabled, RTS follows RX-ring occupancy and CTS gates the start of each TX
+frame; an in-progress frame always finishes. The default configuration enables the RX pull-up and requires RX to be
+idle-high before a baud change.
 
 ## Limits
 

@@ -12,7 +12,7 @@ import time
 
 from .config import verify_line_speed
 
-PICO = "/dev/serial/by-id/usb-PicoUart_PicoUart_CDC+HID_PIO_8N1_5303284748A07A1C"
+PICO = "/dev/serial/by-id/usb-djwinter_PicoUart_5303284748A07A1C"
 PAIRS = {
     "stage1": ("-if00", "-if04"),
     "stage2": ("-if06", "-if08"),

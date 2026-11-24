@@ -34,7 +34,7 @@ Use [Repository Tools](tools/README.md) for commands:
 
 | Change | Run |
 | --- | --- |
-| Firmware | Follow the [firmware test guide](docs/development/firmware-testing.md). |
+| Firmware | Run the [hardware-free checks](docs/tests/README.md#without-hardware). |
 | Python/.NET | Run relevant tests and lint/type checks; see [host development](docs/development/host-tools.md). |
 | Dashboards | Run the [dashboard checks](docs/development/dashboard-development.md). |
 | Documentation | Check links and examples, then run `git diff --check`. |

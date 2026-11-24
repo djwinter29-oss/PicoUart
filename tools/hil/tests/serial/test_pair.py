@@ -30,6 +30,14 @@ def test_pair_map_matches_the_fixed_hil_fixture(repo_root, monkeypatch):
     }
 
 
+def test_pair_cli_default_uses_current_usb_identity(repo_root, monkeypatch):
+    pair = load_pair(repo_root, monkeypatch)
+
+    arguments = pair.parse_arguments(["stage1", "--rates", "115200"])
+
+    assert arguments.pico_device == "/dev/serial/by-id/usb-djwinter_PicoUart_5303284748A07A1C"
+
+
 def test_pair_cli_uses_selected_device_base(repo_root, monkeypatch):
     pair = load_pair(repo_root, monkeypatch)
     arguments = pair.parse_arguments(["stage1", "--rates", "115200", "--pico-device", "/dev/by-id/pico"])

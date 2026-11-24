@@ -4,15 +4,19 @@ The Python and .NET hosts share a frontend in `host/web/src`. The Direct Dashboa
 `host/direct/src`. This guide covers how they are built, tested, and presented; host API and server development are in
 [Host Tools Development](host-tools.md).
 
-## Shared Frontend
+## Hosted Frontend
 
 Python and .NET serve the same frontend, written as native ES modules with no bundler. Keep it backend-neutral and do
 not create a second hosted frontend. If a module's cache-busting version changes, update every importer and the HTML
 entry. The Python server sets correct MIME types for JS and CSS.
 
+## Version Display
+
 The top bar shows the backend name and **App v**, the host version. Python reports `pico_uart.__version__` (from
 `hatch-vcs`), and .NET reports its assembly informational version (from MinVer). `PICO_UART_HOST_VERSION` overrides
-the displayed value only. Routine HTTP request logs are off by default.
+the displayed value only.
+
+## Frontend Tests
 
 Run the frontend tests with:
 
@@ -24,7 +28,7 @@ node --test host/web/tests/*.test.mjs host/direct/tests/*.test.mjs
 
 The Python and .NET apps share one HID reader per selected board and serve cached snapshots to each browser page.
 Boards are found at startup and on **Rescan**; unplugged boards do not trigger a switch to another device. Selection is
-page-local, so separate tabs can watch different boards. Run only one host process per physical board.
+page-local, so separate tabs can watch different boards.
 
 Both servers listen on loopback. Write requests require a session CSRF header.
 
@@ -78,6 +82,10 @@ configuration error remain visible beside the badge.
 ## Direct Dashboard
 
 The Direct Dashboard is a standalone WebHID app with its own assets and renderer; it has no server-side code.
+If a save times out or disconnects, it remembers the unconfirmed result by board UID. A fresh report 2 read and explicit
+acknowledgement are required before another save. WebHID open and close timeouts do not cancel the browser operation:
+keep reconnect disabled until it settles. If a late open succeeds, close it; if that fails, unplug the board. A stuck
+WebHID call cannot be canceled, so ignore late completions and never start an overlapping write.
 
 ```sh
 tools/host/run-direct.sh                           # serves http://127.0.0.1:8000/ (--port N)

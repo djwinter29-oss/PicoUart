@@ -9,19 +9,14 @@ Result meanings (`PASS`, `PARTIAL`, `NOT RUN`, and so on) and the evidence each 
 
 ## Before You Start
 
-Wire the fixture as described in [HIL Fixture Setup](hil-fixture-setup.md):
-
-| Stage | Connection             | CDC endpoints | Expected result    |
-| ----- | ---------------------- | ------------- | ------------------ |
-| 1     | HW UART0 ↔ PIO UART2  | CDC0, CDC2    | Bidirectional pass |
-| 2     | PIO UART3 ↔ PIO UART4 | CDC3, CDC4    | Bidirectional pass |
-| 3     | HW UART1 loopback      | CDC1          | Loopback pass      |
-| 4     | PIO UART5 loopback     | CDC5          | Loopback pass      |
+Wire the fixed fixture and identify its endpoints using [HIL Fixture Setup](hil-fixture-setup.md). The manual Debug
+Probe [external-peer check](hil-fixture-setup.md#optional-manual-external-peer-check) is optional and not part of HIL
+pass criteria.
 
 Test `pico` and `pico2` separately when available. Attach one PicoUart and confirm every CDC endpoint belongs to it:
 the runners send UART data and change serial settings, but do not reset or flash the board. Flash and identify the
 image using the [hardware setup guide](../hardware-setup.md#installing-firmware); `--artifact` hashes the supplied
-file but cannot verify what is running. `--no-record` suppresses the report only, not the test.
+file but does not identify the firmware running on the board. Use `--no-record` when you do not want a report saved.
 
 ## Functional Pass
 
@@ -63,9 +58,8 @@ The runners process the comma-separated rates sequentially in one process. Each 
    payload.
 4. Take an HID health baseline, run traffic, take health again, then close the ports and restore the TTY settings.
 
-If setup fails, nothing is transmitted. The setup also reads back the host TTY speed and fails if it differs from the
-requested rate by 50% or more. That catches driver problems, but it is not a waveform measurement; payload verification
-is the end-to-end check.
+If setup fails, nothing is transmitted. The setup reads back the host TTY speed and fails if it differs from the
+requested rate by 50% or more. This checks the host driver setting; payload verification checks the link end to end.
 
 ### HID Health
 
@@ -76,11 +70,12 @@ same checks with `--check-hid-health`.
 
 ### Baseline and Speed Ceiling
 
-**The baseline is 115200 baud.** The run passes only if all six streams pass at 115200 with clean HID health. If
+The baseline is 115200 baud. The run passes only if all six streams pass at 115200 with clean HID health. If
 115200 fails or was not run, the baseline has not passed; higher-rate results do not change that.
 
 Above the baseline, an ascending sweep is a **ceiling search**. It stops at the first failed rate and reports later
-rates as `NOT RUN`. That first traffic failure is the observed boundary, not a failed test. Record:
+rates as `NOT RUN`. Record the first traffic failure as the measured boundary; the 115200-baud baseline remains a
+separate result:
 
 - the highest rate where all six streams passed, and
 - the first higher rate that failed, or note that the cap was reached without a failure.
@@ -91,14 +86,16 @@ ceiling undetermined.
 
 ### Test Matrix
 
-- **Single direction** — 10 s per rate: 460800, 600000, 800000, 1000000, 1100000, 1200000.
-- **Single pair duplex** — 30 s per rate: 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000.
-- **Concurrent six-port** — 30 s per rate with fresh port setup: 115200, 128000, 153600, 230400, 256000, 460800,
-  921600, 1000000, 2000000, 3000000.
+- **Single direction** — 10 s per rate, both directions on each crossed pair.
+- **Single pair duplex** — 30 s per rate on each crossed pair.
+- **Concurrent six-port** — 30 s per rate with fresh port setup.
 
-These durations are plan values, not runner defaults, so always pass `--duration`.
+These durations are plan values, not runner defaults; the examples below pass them explicitly. Each runner command
+lists the rates it tests.
 
-**Combined run.** The usual way to run the plan. `tools/hil/runner/full.sh` runs the functional pass, then the
+### Combined Run
+
+`tools/hil/runner/full.sh` runs the functional pass, then the
 concurrent performance pass if the functional pass succeeded, and writes a dated record to
 [records/](records/README.md). It takes the functional pass's `--pico-cdcN`, `--board`, `--firmware-*`, and
 `--artifact` options, plus `--rates`, `--duration`, `--timeout`, and `--performance-payload-bytes`.
@@ -107,8 +104,10 @@ Keep failure transcripts and include every attempted rate in the record.
 `--skip-functional` and `--skip-performance` give a `PARTIAL` record even if the phase that ran succeeded. Check the
 recorded scope, not just the exit code.
 
-**Pair sweeps.** Set `PICO_DEVICE_BASE` to the board's `/dev/serial/by-id` path without the `-ifNN` suffix; the runner
-adds the suffix for each stage.
+### Pair Sweeps
+
+Set `PICO_DEVICE_BASE` to the board's `/dev/serial/by-id` path without the `-ifNN` suffix; the runner adds the suffix
+for each stage.
 
 ```sh
 # Single direction, both directions on each crossed pair
@@ -130,7 +129,9 @@ done
 
 Test each loopback with `tools/hil/runner/bridge.sh --pico-port <endpoint> --loopback`.
 
-**Concurrent six-port.** The standalone runner uses `--cdcN`:
+### Concurrent Six-Port
+
+The standalone runner uses `--cdcN`:
 
 ```sh
 tools/hil/runner/performance.sh \
@@ -146,7 +147,9 @@ tools/hil/runner/performance.sh \
   --artifact /path/to/flashed/pico_uart.elf
 ```
 
-**Ceiling search.** Replace `--rates` with `--incremental-performance` to step up from 115200 in 100000-baud steps,
+### Ceiling Search
+
+Replace `--rates` with `--incremental-performance` to step up from 115200 in 100000-baud steps,
 up to 3000000, stopping at the first failure. Adjust it with `--incremental-start-rate`, `--incremental-rate-step`, and
 `--incremental-max-rate`. A start above 115200 skips the baseline, so that run cannot pass on its own. The standalone
 `pico-uart-hil performance --incremental` takes the same options. Narrow the bracket with a smaller step if needed.
@@ -172,8 +175,8 @@ host/python/.venv/bin/pico-uart monitor --duration 5
 host/python/.venv/bin/pico-uart overruns
 ```
 
-Sixty seconds is a sanity check, not a stability claim; record a duration that matches what you want to claim. Earlier
-long runs are in the [evidence index](records/README.md#evidence-index).
+Treat the 60-second run as a short check; include the tested duration in any stability claim. Earlier long runs are in
+the [evidence index](records/README.md#evidence-index).
 
 ## Recovery and Stress Coverage
 
@@ -256,8 +259,6 @@ More USB loopback runs will not close these:
   repeated trials ([review record](records/2026-10-23-uart-cdc-review-validation.md#explicit-core-1-reset-follow-up)).
   Cold power-on, watchdog, and USB-reset starts are not qualified yet.
 
-<a id="tuning-experiments"></a>
-
 ## Tuning Procedure
 
 Use current defaults as the baseline. Change one setting at a time and compare the candidate under matching conditions:
@@ -272,11 +273,3 @@ Use current defaults as the baseline. Change one setting at a time and compare t
   distributions as well.
 - Repeat payload acceptance on uninstrumented firmware. TX pipelining changes must keep CTS stalls, byte order, and the
   shifter-idle check before reconfiguration.
-
-<a id="usb-paced-traffic-and-uart-capacity"></a>
-
-## Measured Throughput
-
-Historical six-port measurements and their limits are summarized in the
-[HIL records](records/README.md#historical-throughput). They are evidence for the tested artifacts, not a universal
-UART rate.

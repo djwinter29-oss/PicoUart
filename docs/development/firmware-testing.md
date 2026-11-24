@@ -1,14 +1,9 @@
 # Firmware Testing
 
-This guide covers firmware work beyond a plain build: where each kind of test fits, how to profile timing, and how to
-judge buffer sizes. Building and loading are covered in
-[Firmware Build and Configuration](../../firmware/build-and-config.md).
+This guide covers firmware work beyond a plain build: timing profiles and buffer measurements. For build and load
+instructions, see [Firmware Build and Configuration](../../firmware/build-and-config.md); for test commands, use the
+[hardware-free test checklist](../tests/README.md#without-hardware).
 For the provisioned Cursor Cloud snapshot setup, see the [Cursor Cloud environment guide](cursor-cloud.md).
-
-## Test Scope
-
-Choose validation from the [test overview](../tests/README.md). It covers host checks, both firmware builds, and HIL;
-native C test coverage is listed in [firmware/tests](../../firmware/tests/README.md). CI has no board.
 
 ## Optional Timing Profiles
 
@@ -27,8 +22,8 @@ just before the traffic run, and read them without halting the cores using OpenO
 `echo [read_memory <address> 32 <count>]`. They are observed maxima under instrumentation, not proven worst cases.
 
 Change one tuning macro per variant, and compare verified traffic, block latency, service gaps, ring peaks, and faults
-under the same conditions, then go back to an uninstrumented image for final HIL. What has been tried so far, and the
-bar a change must clear, are in the [test plan](../tests/hil-fixture-test-plan.md#tuning-experiments).
+under the same conditions, then go back to an uninstrumented image for final HIL. The
+[HIL records' tuning notes](../tests/records/README.md#tuning-notes) summarize previous experiments.
 
 ## Buffer Capacity Measurement
 

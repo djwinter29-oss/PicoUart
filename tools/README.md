@@ -41,8 +41,7 @@ The other HIL runners and `pico-uart-hil` subcommands are covered in the
 ## Running Dashboards
 
 The Python and .NET launchers default to the local dashboard and pass application arguments through unchanged. Each
-instance needs a separate port and gets a port-specific session cookie. Run only one HID monitor per physical board;
-select a different board for each process:
+instance needs a separate port and gets a port-specific session cookie:
 
 ```sh
 tools/host/run-python.sh --serial <serial-1> dashboard --port 5001

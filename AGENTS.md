@@ -48,6 +48,7 @@ remain usable from Windows for CDC/HID operation.
   [docs/design/usb/hid-report-reference.md](docs/design/usb/hid-report-reference.md).
 - Control-plane lifecycle and `CONTROL_ERROR` / `CONTROL_PENDING` behavior:
   [docs/design/control-plane-design.md](docs/design/control-plane-design.md).
-- Fixture, dated-record, and local-log conventions: [docs/tests/README.md](docs/tests/README.md).
-- Release qualification and OpenOCD/HIL gates:
-  [docs/deployment/releasing.md](docs/deployment/releasing.md#release-hil-gates).
+- Fixture and HIL procedures: [docs/tests/README.md](docs/tests/README.md); dated records and local-log conventions:
+  [docs/tests/records/README.md](docs/tests/records/README.md).
+- Release qualification: [docs/deployment/releasing.md](docs/deployment/releasing.md#release-hil-gates); OpenOCD and
+  firmware recovery: [firmware/build-and-config.md](firmware/build-and-config.md#debug-probe-loading-and-recovery).

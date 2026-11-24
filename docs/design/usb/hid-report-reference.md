@@ -69,7 +69,9 @@ Read once per connection. The contents are static until reboot.
 
 ### Identity and Capabilities
 
-**Discovery.** Every product using this convention shares a three-byte prefix: the layout version at offset 0 and the
+#### Discovery
+
+Every product using this convention shares a three-byte prefix: the layout version at offset 0 and the
 little-endian product ID at offsets 1-2. Read the descriptor-declared length, check the prefix, choose the matching
 product contract, and only then validate the full report. Never decode a known product's unsupported version with an
 older layout. Hosts must not enable product-specific commands for an unknown product.
@@ -81,10 +83,14 @@ older layout. Hosts must not enable product-specific commands for an unknown pro
 | `0x0002`-`0xfffe` | Assign as other project products are introduced. |
 | `0xffff` | Reserved. |
 
-**UID.** It is an ordered byte sequence. Uppercase hexadecimal with two characters per byte matches the 16-character
+#### UID
+
+It is an ordered byte sequence. Uppercase hexadecimal with two characters per byte matches the 16-character
 USB serial. On RP2040 it is the QSPI flash UID; on RP2350 it is the SDK platform identity.
 
-**Board model.** This is the configured build target; the firmware does not detect hardware. Keep unknown MCU and board
+#### Board Model
+
+This is the configured build target; the firmware does not detect hardware. Keep unknown MCU and board
 numbers as they are rather than inventing names.
 
 | Board model | Build target | MCU | Support status |
@@ -95,10 +101,14 @@ numbers as they are rather than inventing names.
 | `3` | Pico 2 | RP2350 | Existing firmware target. |
 | `4` | Pico 2 W | RP2350 | Builds from source; not covered by the release HIL matrix. |
 
-**Firmware version.** A `v1.2.3` tag reports `1.2.3`. The USB `bcdDevice` field carries only major.minor. Use the
+#### Firmware Version
+
+A `v1.2.3` tag reports `1.2.3`. The USB `bcdDevice` field carries only major.minor. Use the
 version for diagnostics only: choose decoding by product and layout, and choose operations by capability flags.
 
-**Channel mask.** Report 2 owns the channel count (six for PicoUart). Reject a hardware mask with bits set above that
+#### Channel Mask
+
+Report 2 owns the channel count (six for PicoUart). Reject a hardware mask with bits set above that
 count. PicoUart reports `0x03`, so CDC0 and CDC1 use hardware UARTs and the rest use PIO.
 
 | Capability bit | Meaning |
@@ -155,25 +165,26 @@ reports 30-35, not total USB in-flight storage.
 
 ### Reset Cause
 
+The firmware reports the most specific cause supported by hardware flags or firmware markers. If the platform cannot
+distinguish causes, it reports Unknown; RP2040 combines power-on and brownout into one hardware indication.
+
 | Value | Meaning |
 | ----: | ------- |
-| `0` | Unknown or not reliably distinguishable. |
-| `1` | Power-on, when reliably identified by the platform. |
-| `2` | Watchdog reset, without a reliably established software-requested cause. |
-| `3` | Software-requested reset, when reliably established by firmware/platform evidence. |
+| `0` | Unknown or indistinguishable. |
+| `1` | Power-on. |
+| `2` | Watchdog reset without a software-requested marker. |
+| `3` | Software-requested reset. |
 | `4` | Watchdog recovery after firmware recorded a HardFault in watchdog scratch storage. |
-| `5` | Power-on or brownout; RP2040 provides a combined hardware indication. |
-| `6` | Brownout, independently identified by the platform. |
+| `5` | Power-on or brownout (combined RP2040 indication). |
+| `6` | Brownout. |
 | `7` | External RUN-pin reset. |
-| `8` | Debugger reset, identified by platform reset evidence. |
-| `9` | User-requested standalone board reboot, identified by a firmware marker. |
-| `10` | Configuration-save reboot after successful flash verification, identified by a firmware marker. |
+| `8` | Debugger reset. |
+| `9` | User-requested standalone board reboot (firmware marker). |
+| `10` | Configuration-save reboot after successful flash verification (firmware marker). |
 | `11`-`255` | Unassigned; hosts preserve the numeric value and display it as unknown. |
 
-The firmware reports a cause only when it has evidence; otherwise it reports Unknown, which is not a fault by itself.
-RP2040 cannot tell power-on from brownout, so it reports `5`. Reboot and save markers live in watchdog scratch
-registers and are consumed at boot. They identify the firmware path, not which host asked for the reboot. A recorded
-HardFault takes priority over those markers.
+Reboot and save markers live in watchdog scratch registers and are consumed at boot. They identify the firmware path,
+not which host asked for the reboot. A recorded HardFault takes priority over those markers.
 
 ### Boot Configuration
 
@@ -309,15 +320,11 @@ before the USB transfer finishes.
 ### Action Timing and Host Rules
 
 - A completed SET transfer does not prove the action ran. Read report 20 right away and then every 50 ms while it is
-  Pending, for up to 3000 ms. Give each SET and GET its own 3000 ms deadline. WebHID cannot cancel a stuck call, so
-  ignore late completions and never start an overlapping write.
+  Pending, for up to 3000 ms. Give each SET and GET its own 3000 ms deadline.
 - Reboot and save reset the board 1000 ms after publishing Completed. Later reads and writes neither delay nor cancel
   this.
-- **A timeout or disconnect means the outcome is unknown, not failed.** Never retry a reboot or save automatically.
-  Reconnect, read report 2, and let the user decide. The Direct Dashboard remembers an unconfirmed save by board UID.
-  It requires a fresh report 2 read and explicit acknowledgement before it allows another save.
-- WebHID open and close timeouts do not cancel the browser operation. Keep reconnect disabled until the operation
-  settles. If an open completes late, close it; if that fails, unplug the board.
+- A timeout or disconnect leaves the outcome unknown. Never retry a reboot or save automatically. Reconnect, read
+  report 2, and let the user decide.
 
 ## Reports 10-15: Channel Snapshots
 

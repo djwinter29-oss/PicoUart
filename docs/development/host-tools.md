@@ -21,7 +21,8 @@ flowchart TD
 
 The [HID reference](../design/usb/hid-report-reference.md) defines the wire format. Hosts validate and decode reports,
 then expose typed snapshots and explicit errors. Feature reads do not advance traffic totals or rate baselines. A
-timed-out control may still finish, so hosts verify its result and never retry reboot or save automatically.
+timed-out control may still finish, so hosts verify its result and never retry reboot or save automatically. Routine
+HTTP request logs are off by default.
 
 ## Prerequisites
 
@@ -92,7 +93,7 @@ failure and `TimeoutError` on expiry. Select the HID board using the same USB se
 Saving a profile reboots the board; follow the
 [HID save rules](../design/usb/hid-report-reference.md#save-and-reboot-safety).
 
-### Python Test Automation
+### Cross-Backend Test Behavior
 
 Python `status --json` and .NET `status` print the same `{"channels": [...]}` shape with six entries. A channel without
 an Input report yet has `sequence: null` and `state: "unknown"`. Traffic gaps set `traffic_incomplete`.
