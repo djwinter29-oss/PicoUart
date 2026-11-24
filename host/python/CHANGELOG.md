@@ -2,7 +2,7 @@
 
 User-facing changes to the `pico-uart` Python package.
 
-## Unreleased
+## 0.12.0
 
 ### Changes
 

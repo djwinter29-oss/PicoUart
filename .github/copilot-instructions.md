@@ -6,13 +6,16 @@
 - Use Pico SDK and TinyUSB conventions when adding firmware code.
 - Keep board pin mapping separate from USB and UART transport logic.
 - Prefer clear, explicit code over heavy abstraction.
-- Do not duplicate runbook details here. Use [README.md](../README.md) as the docs index. Use
-  [docs/deployment/releasing.md](../docs/deployment/releasing.md) for physical flashing, OpenOCD recovery, and release HIL gates.
-- For an unknown QSPI ID, use the documented `FLASHSIZE` auto-detection override only after confirming flash
-  capacity from the chip marking/datasheet; never guess capacity or use the override to hide failed SWD access.
-- For HIL speed sweeps, follow the [test plan](../docs/tests/hil-fixture-test-plan.md): require a passing six-stream
-  115200-baud baseline, then record the highest all-stream passing tested rate and first higher failed rate.
-  A higher-rate boundary is not itself a failed baseline test; retain clean HID-health and setup requirements.
+- Do not duplicate runbook details here. Use [README.md](../README.md) as the docs index, the
+  [hardware setup](../docs/hardware-setup.md) for USB flashing, the
+  [firmware guide](../firmware/build-and-config.md) for SWD and OpenOCD, the
+  [release guide](../docs/deployment/releasing.md) for release gates, and the
+  [HIL test plan](../docs/tests/hil-fixture-test-plan.md) for hardware procedures.
+- Follow the [QSPI override procedure](../firmware/build-and-config.md#qspi-auto-detection-override) only after
+  confirming flash capacity from the chip marking and datasheet. Never guess capacity or use the override to hide
+  failed SWD access.
+- Use the HIL test plan's [speed-sweep rules](../docs/tests/hil-fixture-test-plan.md#baseline-and-speed-ceiling) when
+  recording a ceiling search.
 
 ## Documentation
 

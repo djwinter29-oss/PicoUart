@@ -1,49 +1,24 @@
 # HIL Fixture Test Plan
 
-Use this plan to qualify the fixed PicoUart HIL fixture. It covers functional validation first, then performance testing
-on the same wiring. Physical hardware is required; CI runs host tests and firmware builds only.
+This plan qualifies PicoUart on the fixed four-link fixture. Run the functional pass first, then the performance pass on
+the same wiring. It is the baseline hardware test; releases also need the extra checks in the
+[required HIL matrix](../deployment/releasing.md#required-hil-matrix).
 
-This is the baseline fixture plan, not the complete release gate. Release qualification also requires the recovery and
-stress checks listed in [Releasing](../deployment/releasing.md#required-hil-matrix).
+Result meanings (`PASS`, `PARTIAL`, `NOT RUN`, and so on) and the evidence each record needs are defined in the
+[test overview](README.md#results-and-evidence).
 
-## Setup
+## Before You Start
 
-Follow [HIL Fixture Setup](hil-fixture-setup.md) and install both crossed pairs and both loopbacks before testing. The
-[Hardware Setup](../hardware-setup.md) document is the GPIO source of truth. Use the manual Debug Probe
-external-peer check only when needed; it is not part of HIL pass criteria.
+Wire the fixed fixture and identify its endpoints using [HIL Fixture Setup](hil-fixture-setup.md). The manual Debug
+Probe [external-peer check](hil-fixture-setup.md#optional-manual-external-peer-check) is optional and not part of HIL
+pass criteria.
 
-Test both board targets when hardware is available, one board at a time:
-
-- Raspberry Pi Pico (`pico`, RP2040)
-- Raspberry Pi Pico 2 (`pico2`, RP2350)
-
-| Stage | Connection             | CDC endpoints | Expected result    |
-| ----- | ---------------------- | ------------- | ------------------ |
-| 1     | HW UART0 ↔ PIO UART2  | CDC0, CDC2    | Bidirectional pass |
-| 2     | PIO UART3 ↔ PIO UART4 | CDC3, CDC4    | Bidirectional pass |
-| 3     | HW UART1 loopback      | CDC1          | Loopback pass      |
-| 4     | PIO UART5 loopback     | CDC5          | Loopback pass      |
-
-All links use 3.3 V UART signaling, 8N1 at the default 115200 baud, and shared ground. RTS/CTS is disconnected unless an
-explicit flow-control variant is under test.
-
-The commands below change serial settings and transmit UART data. Identify the intended board and endpoints before
-running them, and use the dedicated fixture rather than ports connected to unrelated equipment. `--help` displays
-usage; `--no-record` suppresses result recording but still runs hardware tests and is not a dry-run mode.
-
-The runners' HID health queries use automatic discovery, not the supplied CDC paths. Keep only the intended PicoUart
-board available to those queries and verify that all six CDC paths belong to it. `--board` is a record label, not a
-device selector; attaching a second compatible board can make HID discovery ambiguous and invalidate health evidence.
-
-Flash the intended image using the [release flashing procedure](../deployment/releasing.md#flashing-release-artifacts)
-before testing, then verify its HID firmware version and ready state. `--artifact` hashes the supplied file; it does not
-read back flash or prove the board is running that file. Version and commit arguments are record labels, so match them
-to the flashed artifact and retain the flashing evidence rather than relying on matching labels alone.
+Test `pico` and `pico2` separately when available. Attach one PicoUart and confirm every CDC endpoint belongs to it:
+the runners send UART data and change serial settings, but do not reset or flash the board. Flash and identify the
+image using the [hardware setup guide](../hardware-setup.md#installing-firmware); `--artifact` hashes the supplied
+file but does not identify the firmware running on the board. Use `--no-record` when you do not want a report saved.
 
 ## Functional Pass
-
-Run the functional stages in order with all four links installed. The runner tests pairs in both directions and each
-self-loopback on its own CDC endpoint:
 
 ```sh
 tools/hil/runner/functional.sh \
@@ -57,104 +32,86 @@ tools/hil/runner/functional.sh \
   --artifact /path/to/flashed/pico_uart.elf
 ```
 
-Functional pass criteria:
+The functional pass requires all of the following:
 
-- CDC0 through CDC5 and HID enumerate.
-- All six UART channels are ready, with no initialization failure or unresolved control-pending state.
-- Both crossed pairs pass in both directions; both loopbacks pass.
-- No unexpected reset, disconnect, serial framing error, new HID `rx_error`, or `control_error` occurs.
+- CDC0-CDC5 and HID enumerate.
+- All six channels are ready, with no initialization failure and no stuck pending request.
+- Both crossed pairs pass in both directions, and both loopbacks pass.
+- No unexpected reset, disconnect, serial framing error, increase in HID `rx_error_count`, or nonzero
+  `last_control_error_reason`.
 - RX overflow counts do not increase.
 
-Use `--stage 1`, `--stage 2`, `--stage 3`, or `--stage 4` to diagnose one fixture link. A single-stage run is `PARTIAL`,
-not a full functional pass. Use `--continue-on-failure` to collect all stage results and `--no-record` only to suppress
-the result log.
+`--stage N` runs one link for diagnosis; the result is `PARTIAL`. `--continue-on-failure` collects every stage result.
 
 ## Performance Pass
 
-Run performance testing only after functional pass. Every stream verifies returned payload bytes; traffic activity alone
-is not a pass. Test each pair individually, then run all six streams concurrently. The pair and concurrent runners
-process comma-separated rates sequentially in one process; they reopen and reconfigure the ports and wait for the settle
-interval before testing each rate. After settling, the runner flushes all host TTY queues so bytes arriving during
-CDC re-enumeration or DTR-triggered channel reset cannot contaminate the next rate's first payload.
+Every stream checks its returned payload byte for byte. Test each pair on its own, then all six streams concurrently.
 
-For each paired functional test, the bridge runner opens both endpoints before applying either line coding. For each
-concurrent rate, the stress runner opens all six CDC endpoints first. Identified PicoUart endpoints hold DTR low during
-configuration. Setup applies line coding without fixed setup sleeps, then asserts DTR for the configured group and
-requires a bounded HID readiness handshake before returning descriptors or transmitting. Linux sysfs associates each
-selected TTY with its USB serial number and CDC interface. The six-port runner requires every endpoint to match its
-declared CDC index on the same board; unidentified, swapped, duplicate, or mixed-board endpoints fail setup before
-group DTR assertion. Paired bridge tests still permit a generic external UART peer. HID auto-discovery of an unrelated
-board is not used for readiness.
-The handshake contract and timeout are defined in [Control Plane Design](../design/control-plane-design.md#usb-mount-and-unmount-reset).
-Failure closes all opened endpoints and prevents payload transmission. After traffic, closing deinitializes each
-backend; teardown deasserts DTR before restoring saved TTY settings. The runner then retains the configured rate-settle
-interval (8 seconds by default) and flushes once more before health sampling or traffic. These delays are setup time,
-not time removed from the payload duration, and are not a substitute for readiness verification.
+### How the Runners Set Up Ports
 
-The standalone performance runner and combined runner default to this concurrent six-port sweep, in order:
-115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, and 3000000 baud. The default sweep
-does not test above 3 Mbaud. Use `--rates` to select a different list. Concurrent sweeps stop at the first failed
-rate; later configured rates are reported as `NOT RUN`, not as failures or missing measurements.
+The runners process the comma-separated rates sequentially in one process. Each rate gets a fresh setup:
 
-Treat an ascending concurrent speed sweep as a ceiling search, not a pass/fail test at every requested rate. The
-required baseline is 115200 baud: an overall `PASS` requires all six streams to pass at that rate and clean HID
-health. A failure at a higher tested rate is the observed speed boundary, not a failed baseline test. Record the
-highest rate where all six streams passed and the first higher rate with a failed stream; do not claim an exact
-hardware limit. If 115200 fails or is not included, the baseline did not pass and the speed sweep is `FAIL` or
-inconclusive. HID health failures remain failures regardless of baud.
+1. Open every endpoint with DTR held low and apply the line coding.
+2. Assert DTR for the group and wait for the HID readiness handshake. The handshake follows the
+   [control plane's session rules](../design/control-plane-design.md#usb-mount-and-unmount-reset).
+3. Wait the settle interval (8 s by default) and flush the host TTY queues, so no stale bytes leak into the next
+   payload.
+4. Take an HID health baseline, run traffic, take health again, then close the ports and restore the TTY settings.
 
-The standalone performance workflow and combined runner require clean HID health before and after each rate,
-including unchanged overrun counts. A health failure blocks traffic or fails the completed rate even if payload
-verification passed. Raw `stress` invocations opt into these same checks with `--check-hid-health`.
-Health collection uses the host API's non-consuming per-channel Feature snapshots and diagnostics, not console
-monitor text. Every channel must be closed or ready with current diagnostics and zero recorded RX/configuration
-faults; missing reports and HID failures block acceptance. Raw diagnostics, including buffer peaks, are retained.
-Transient stale diagnostic captures receive bounded per-channel retries; an exhausted retry remains an explicit
-health-query failure, not a clean sample. Retained per-rate summaries include measurement validity and fault history.
-Each rate reopens the endpoints, configures line coding, settles, flushes host TTY queues, and then collects its health
-baseline.
+If setup fails, nothing is transmitted. The setup reads back the host TTY speed and fails if it differs from the
+requested rate by 50% or more. This checks the host driver setting; payload verification checks the link end to end.
 
-For controlled budget/threshold experiments, use the
-[optional timing-profile procedure](../development/firmware-testing.md#optional-timing-profiles). Keep one variable
-different per variant and preserve the ordinary uninstrumented HIL gate. Dated results and limits are recorded in the
-[session/tuning check](records/2026-10-22-cdc-uart-session-validation.md), not as universal baud or timing guarantees.
-After a failure, reset or reflash the intended image and verify clean health before running a different rate in
-a separate invocation. Do not interpret later measurements from older continue-after-failure sweeps as isolated
-clean-start results. The runners never reset, reflash, or change regulator voltage automatically.
+### HID Health
 
-Benchmark children run with unbuffered Python output, so stdout rate headings and stderr failures retain their
-emission order without requiring an external `PYTHONUNBUFFERED` setting. Reports retain per-rate HID summaries.
+Each rate needs clean HID health before and after traffic. Every channel must be closed or ready, with current
+diagnostics, unchanged overrun counts, and no recorded RX or configuration faults. A health failure fails the rate even
+if the payloads verified. Raw diagnostics, including buffer peaks, are kept in the record. A raw `stress` run adds the
+same checks with `--check-hid-health`.
 
-For a concurrent six-port ceiling search, use `--incremental-performance` with the combined runner. It starts at the
-115200-baud baseline by default, increases by 100000 baud, and stops at the first failed rate (capped at 3000000 baud
-by default). The recorded summary shows whether the six-stream baseline passed, the highest tested rate where every
-stream passed, and the first failed tested rate. The first higher failed rate is an expected boundary; it does not
-make the overall sweep `FAIL` when the baseline and HID health passed. If all attempted rates pass up to the cap,
-record that highest tested rate and say the boundary was not reached. A missing baseline, setup/health failure, or
-missing baseline stream result is not a passing sweep. Override the start, step, or cap with
-`--incremental-start-rate`, `--incremental-rate-step`, or `--incremental-max-rate`; an overridden start above
-115200 does not establish a baseline in that run. The standalone `pico-uart-hil performance --incremental` mode uses
-the same options.
+### Baseline and Speed Ceiling
 
-The serial setup also checks the host TTY's reported line speed and fails when either direction differs from the
-requested rate by 50% or more. This checks driver readback, not an independent measurement of the physical waveform;
-payload verification remains the end-to-end check that the firmware and UART link communicate correctly.
+The baseline is 115200 baud. The run passes only if all six streams pass at 115200 with clean HID health. If
+115200 fails or was not run, the baseline has not passed; higher-rate results do not change that.
 
-| Layer               | Rate sweep                                                         | Duration                        |
-| ------------------- | ------------------------------------------------------------------ | ------------------------------- |
-| Single direction    | 460800, 600000, 800000, 1000000, 1100000, 1200000                  | 10 s per rate                   |
-| Single pair duplex  | 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000 | 30 s per rate                   |
-| Concurrent six-port | 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, 3000000 | 30 s per rate, fresh port setup |
+Above the baseline, an ascending sweep is a **ceiling search**. It stops at the first failed rate and reports later
+rates as `NOT RUN`. Record the first traffic failure as the measured boundary; the 115200-baud baseline remains a
+separate result:
 
-These are explicit test-plan durations, not runner defaults. Pass `--duration` for the intended test level and record
-the actual duration; a shorter default run does not establish the same coverage.
+- the highest rate where all six streams passed, and
+- the first higher rate that failed, or note that the cap was reached without a failure.
 
-Before the pair sweeps, set `PICO_DEVICE_BASE` to the PicoUart `/dev/serial/by-id` path before its `-if00`/`-if04`
-interface suffixes.
+Do not claim an exact hardware limit; untested rates in between are unknown. Any health failure is a run failure. A
+setup failure before the baseline also fails the run; one after a clean baseline leaves the baseline valid but the
+ceiling undetermined.
 
-For the single-direction sweep, test both directions on each crossed pair:
+### Test Matrix
+
+| Mode | Duration |
+| --- | --- |
+| Single direction, both directions on each crossed pair | 10 s per rate |
+| Single pair duplex on each crossed pair | 30 s per rate |
+| Concurrent six-port with fresh port setup | 30 s per rate |
+
+These are the durations used in this plan; examples pass them explicitly. Each runner command lists the rates it tests.
+
+### Combined Run
+
+`tools/hil/runner/full.sh` runs the functional pass, then the concurrent performance pass if the functional pass
+succeeded, and writes a dated record to
+[records/](records/README.md). It takes the functional pass's `--pico-cdcN`, `--board`, `--firmware-*`, and
+`--artifact` options, plus `--rates`, `--duration`, `--timeout`, and `--performance-payload-bytes`.
+Keep failure transcripts and include every attempted rate in the record.
+
+`--skip-functional` and `--skip-performance` give a `PARTIAL` record even if the phase that ran succeeded. Check both
+the recorded scope and the exit code.
+
+### Pair Sweeps
+
+Set `PICO_DEVICE_BASE` to the board's `/dev/serial/by-id` path without the `-ifNN` suffix; the runner adds the suffix
+for each stage.
 
 ```sh
+# Single direction, both directions on each crossed pair
 for stage in stage1 stage2; do
   for direction in a-to-b b-to-a; do
     tools/hil/runner/pair.sh "$stage" --pico-device "$PICO_DEVICE_BASE" \
@@ -162,11 +119,8 @@ for stage in stage1 stage2; do
       --duration 10 --direction "$direction"
   done
 done
-```
 
-For synchronized pair-duplex sweeps, test both crossed pairs:
-
-```sh
+# Duplex
 for stage in stage1 stage2; do
   tools/hil/runner/pair.sh "$stage" --pico-device "$PICO_DEVICE_BASE" \
     --rates 460800,600000,800000,900000,1000000,1040000,1060000,1080000 \
@@ -174,8 +128,11 @@ for stage in stage1 stage2; do
 done
 ```
 
-The pair runner appends the appropriate interface suffix for each stage. Test both loopback endpoints with
-`tools/hil/runner/bridge.sh --pico-port <endpoint> --loopback`. The full concurrent command is:
+Test each loopback with `tools/hil/runner/bridge.sh --pico-port <endpoint> --loopback`.
+
+### Concurrent Six-Port
+
+The standalone runner uses `--cdcN`:
 
 ```sh
 tools/hil/runner/performance.sh \
@@ -191,115 +148,48 @@ tools/hil/runner/performance.sh \
   --artifact /path/to/flashed/pico_uart.elf
 ```
 
-For one command that runs both phases and creates a dated record, use the combined runner. It accepts `--pico-cdcN`,
-not the standalone performance runner's `--cdcN`, and names the performance payload option explicitly:
+### Ceiling Search
+
+Replace `--rates` with `--incremental-performance` to step up from 115200 in 100000-baud steps, up to 3000000,
+stopping at the first failure. Adjust it with `--incremental-start-rate`, `--incremental-rate-step`, and
+`--incremental-max-rate`. A start above 115200 skips the baseline, so that run cannot pass on its own. The standalone
+`pico-uart-hil performance --incremental` takes the same options. Narrow the bracket with a smaller step if needed.
+Every rate includes the settle time, so keep sweeps short.
+
+### Timing Output
+
+The benchmark prints one `TIME <label>: {...}` line per stream. It holds the host's thread-start, first-send-attempt,
+and first-nonempty-read timestamps, in UTC and monotonic time. These are host-side times; use external instrumentation
+to measure wire first-byte times. This diagnostic is not parsed by `pico-uart-hil performance`.
+
+`--duration` stops new blocks from starting, but the last in-flight block can finish afterward. A write or read phase
+that completes at or after its deadline counts as a timeout, even if the final bytes arrive right at the boundary.
+Host scheduling jitter near the deadline can cause such a timeout.
+
+### Short Stability Check
+
+Run the concurrent fixture for 60 seconds at 115200 baud, then test individual links at 921600 and 1000000. Capture
+HID health before and after, while no other monitor is reading the board:
 
 ```sh
-tools/hil/runner/full.sh \
-  --pico-cdc0 /dev/serial/by-id/<pico-cdc0> \
-  --pico-cdc1 /dev/serial/by-id/<pico-cdc1> \
-  --pico-cdc2 /dev/serial/by-id/<pico-cdc2> \
-  --pico-cdc3 /dev/serial/by-id/<pico-cdc3> \
-  --pico-cdc4 /dev/serial/by-id/<pico-cdc4> \
-  --pico-cdc5 /dev/serial/by-id/<pico-cdc5> \
-  --rates 115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000 \
-  --duration 30 --performance-payload-bytes 1024 --timeout 3 \
-  --board pico --firmware-version 1.2.3 --firmware-commit <commit> \
-  --artifact /path/to/flashed/pico_uart.elf
+host/python/.venv/bin/pico-uart monitor --duration 5
+host/python/.venv/bin/pico-uart overruns
 ```
 
-Its performance phase starts only after functional success. Use `--skip-functional` or `--skip-performance` only for
-intentional phase-only checks; the combined record is then `PARTIAL`, even if the executed phase exits successfully.
-Likewise, a single-stage functional success is not a full-fixture pass. Inspect the recorded scope and result, not only
-the process exit code. Continue-after-failure options are diagnostic, not a way to qualify a failed run.
+Treat the 60-second run as a short check; include the tested duration in any stability claim. Earlier long runs are in
+the [evidence index](records/README.md#evidence-index).
 
-### Six-Port Ceiling Search
+## Recovery and Stress Coverage
 
-When the goal is to find the highest tested rate that passes on all six ports, use the same combined command with
-`--incremental-performance` instead of `--rates`. Keep the 115200-baud baseline in the same run, choose a practical
-step and maximum for the board/clock, and refine the passing/failing bracket with a smaller step if needed. Each rate
-includes the configured settling period, so keep the duration and sweep size practical.
+A normal performance run uses USB-paced traffic and does not exercise the cases below. Run them as separate, authorized
+procedures on the exact flashed image.
 
-The runner stops at the first boundary rate where actual traffic fails. A clean all-stream 115200 baseline makes the
-speed sweep an overall `PASS`; a higher-rate traffic failure is recorded as the expected boundary, with the highest
-all-stream passing tested rate and first failed tested rate shown separately. Clean HID health is still required
-before and after the run. Do not claim an exact hardware limit. A dirty HID check, setup/health failure, missing
-baseline stream outcome, or failed 115200 baseline means the baseline did not pass and the run remains `FAIL`.
+<a id="repeatable-recovery-checks"></a>
 
-The benchmark prints one `TIME <label>: {...}` line per stream with host thread-start, first-send-attempt, and
-first-nonempty-read UTC and monotonic timestamps. These are not wire-level first-byte times and are not parsed by
-`pico-uart-hil performance`. `--duration` stops starting new blocks; the last in-flight block can finish afterward. A
-write or read phase that completes at or after its deadline is a timeout, even if the final bytes arrive at that
-boundary. Host scheduling jitter near the deadline can also cause a timeout.
+### Automated Loopback Recovery
 
-For soak testing, run the concurrent fixture for 60 seconds at 115200 baud, then test individual links at 921600 and
-1000000 baud. Capture HID health before and after:
-
-```sh
-host/python/.venv/bin/python -m pico_uart.main monitor --duration 5
-host/python/.venv/bin/python -m pico_uart.main overruns
-```
-
-Take these standalone HID samples outside the benchmark, not with another monitor consuming the same board's reports
-while the runner is collecting its own evidence.
-
-The 60-second run is a short sanity check, not long-duration stability qualification. Choose and record a duration
-appropriate to the intended claim; the [record index](records/README.md#evidence-index) identifies historical longer
-runs.
-
-Record every tested rate, including failures. A rate is stable only if every direction and stream passes repeatedly.
-Full-speed USB bandwidth limits aggregate throughput; a concurrent failure does not by itself establish a single-UART
-baud limit. For a single-rate qualification, a data mismatch, unexplained loss, unexpected reset, persistent
-disconnect, or new RX error is a failure. In an ascending ceiling sweep, a traffic failure above a passing 115200-baud
-baseline is the expected boundary observation; retain and report the failed row and health evidence.
-
-## Concurrent Recovery And Profiling Coverage
-
-The normal performance sweep verifies USB-paced payloads; it does not by itself exercise the cases below. Run these
-as separate, explicitly authorized fixture procedures after flashing the exact image. Use bounded timeouts and record
-the board identity, artifact hash, rate, payload/burst size, stall duration, affected channels, and HID samples.
-These procedures are not automated by the normal performance runner.
-
-| Case | Exercise | Acceptance and evidence |
-| --- | --- | --- |
-| All six channels loaded | Run the concurrent fixture and collect both cores' service load, block latency, ring peaks, and faults during traffic; use optional timing instrumentation for service gaps. | Every stream verifies payloads with no new loss/errors at the qualified load. Retain uninstrumented acceptance separately; host pacing is not proof of wire saturation. |
-| Host drain stalled | With a bounded independently paced fixture source, pause host reads on one RX channel while the other channels continue; resume before the chosen capacity budget, then test a separate intentional-overflow interval. | Within budget, verify ordered bytes without loss. Beyond budget, require visible dropped-byte accounting and recovery, not lossless delivery; unaffected channels continue without new faults. |
-| TX backpressure | Pause a fixture peer with supported CTS in a separately qualified flow-control variant while host OUT writes fill the channel; then resume the peer. | Host writes block or time out explicitly rather than silently losing bytes; admitted bytes remain ordered and other channels continue. Without a supported fixture variant, mark this case not run. |
-| Close/reopen during traffic | Close one active channel while the other streams run, then reopen it with staged settings and require HID readiness before sending a fresh, distinguishable marker. | Do not require delivery of deliberately discarded queued bytes. No old-session payload may contaminate the fresh stream; applied settings match and unaffected channels keep passing. |
-| Session loss with pending control | Keep a supported line-coding request pending using an authorized controlled busy condition, confirm pending through HID, then unplug or issue a targeted USB bus reset. | Old handles terminate or time out explicitly; after remount all old sessions are closed. Reopen, verify applied settings and a fresh marker, and check that canceled work produces no late timeout. Repeat with all six channels active. |
-| Concurrent configuration | Repeatedly change supported settings on other channels while an independently paced channel receives verified traffic. Coordinate both ends of changed links. | Record maximum unaffected-port service gap and both cores' maximum pass times, not just average throughput. Require bounded completion or explicit timeout and no new faults on the unaffected stream. |
-
-For line-coding experiments on crossed pairs, coordinate both ends or use an independent fixture peer; a deliberate
-framing mismatch is not an unexplained bridge failure. USB disconnect/reset affects the whole device, so other streams
-are expected to terminate in that case. Do not send reset commands or change connections on unrelated devices.
-If a pending window cannot be established and observed, report that case as not tested rather than claiming coverage
-from an ordinary reset. Preserve intentional overflow results separately from clean-health fixed-rate acceptance.
-
-Use the [buffer measurement procedure](../development/firmware-testing.md#buffer-capacity-measurement) before changing
-capacities and the [timing-profile procedure](../development/firmware-testing.md#optional-timing-profiles) before changing
-service budgets. Existing short-run evidence is in the
-[session/tuning record](records/2026-10-22-cdc-uart-session-validation.md); it does not establish every recovery case
-above or qualify the newly built image.
-
-### Optimization Acceptance
-
-Compare baseline and candidate images on both board targets with the same clock, wiring, payload sizes, rates,
-durations, and host. Flash and identify each image separately. Change one policy at a time, repeat the baseline to
-estimate variation, and retain hashes and raw samples. Include small-payload round trips as well as six-stream
-throughput, maximum service gaps, ring peaks, fault deltas, and configuration/reopen behavior. Instrumentation changes
-timing; repeat payload acceptance on uninstrumented firmware.
-
-Keep current TX idle/FIFO admission gates, CDC bridge budgets, and PIO DMA thresholds unless a candidate demonstrates
-a repeatable improvement beyond baseline variation without correctness regressions. TX pipelining must additionally
-preserve CTS stalls, byte ordering, old-format boundary drain, and physical shifter-idle checks before reconfiguration.
-Native lock-count regressions prove reduced software work, not an on-wire throughput or latency improvement.
-Without authorized hardware testing, these experiments remain pending and no performance improvement is qualified.
-
-## Repeatable Recovery Checks
-
-After flashing and verifying the selected image, use the existing CDC1 and CDC5 loopbacks for bounded development
-regressions. Close all six CDC sessions first. The command validates both Linux sysfs endpoint identities against the
-explicit USB serial before opening either port. It never resets or flashes the board:
+The `recovery` command uses the CDC1 and CDC5 loopbacks. Close all CDC sessions first. The command checks that both
+endpoints belong to the given USB serial, and it never resets or flashes the board.
 
 ```sh
 tools/hil/.venv/bin/pico-uart-hil recovery \
@@ -307,26 +197,23 @@ tools/hil/.venv/bin/pico-uart-hil recovery \
   --artifact /path/to/flashed/pico_uart.elf --output build/recovery.json
 ```
 
-The default `--mode all` runs configuration churn with sibling payload verification, five close/reopen cycles with
-distinct old/fresh payloads, a 2048-byte read stall with sibling traffic for at least 250 ms, then an intentional
-16384-byte overflow with sibling traffic for at least two seconds. `--mode churn|reopen|stall|overflow` selects one.
-Serial payload operations have bounded phase deadlines. HID and host serial setup still depend on OS device calls;
-use an outer process deadline in unattended automation, as with the other serial runners.
+The default `--mode all` runs four checks; `--mode churn|reopen|stall|overflow` runs one of them:
 
-Acceptance requires verified payloads, current diagnostics, zero unexpected RX/configuration faults on all six ports,
-and successful endpoint teardown. During intentional overflow, only CDC1's drop counter may be nonzero: retained
-bytes plus drops must equal the transmitted input, retained bytes must be an ordered subsequence, fresh markers must
-pass after draining device backlog to quiescence, and recovery must cause no further drops. Host `tcflush` is not
-device-backlog recovery. Overflow deliberately leaves retained loss history; reflash before subsequent clean-health
-acceptance tests.
+- configuration churn, with payloads checked on a sibling port
+- five close/reopen cycles, each with a distinct payload
+- a 2048-byte read stall of at least 250 ms
+- a deliberate 16384-byte overflow
 
-The new JSON path is reserved before hardware access and never overwritten. Evidence retains the supplied ELF hash,
-live hardware/configuration/version, partial checks, diagnostics, and errors. These are USB-paced loopback tests, not
-external-source capacity or CTS qualification. Run the combined functional/performance acceptance separately.
+To pass, all payloads must verify, with no unexpected faults on any port. In the overflow check, only CDC1 may count
+drops. The retained bytes plus the drops must equal the input, the retained bytes must stay in order, and fresh payloads
+must pass after the backlog drains. The overflow leaves loss history behind, so reflash before any clean-health test.
+The output file is never overwritten. Use an outer timeout for unattended runs.
 
-## Startup Observations
+<a id="startup-observations"></a>
 
-Use a separate observation for each authorized cold-power-on, SWD reset, watchdog recovery, or USB reset:
+### Startup Observation
+
+Record each cold power-on, SWD reset, watchdog recovery, or USB reset as its own observation:
 
 ```sh
 tools/hil/.venv/bin/pico-uart-hil startup \
@@ -334,120 +221,85 @@ tools/hil/.venv/bin/pico-uart-hil startup \
   --timeout 20 --output build/startup-swd-01.json
 ```
 
-By default this read-only command neither triggers the event nor opens CDC. For a reset, invoke it immediately after the
-independently performed event; for manual power-on, start observation before applying power. Record the event's
-actual time and method alongside the JSON. The event label is operator supplied, not proof of a reset.
+The command does not trigger the event; you do. For a reset, start it right after the reset; for power-on, start it
+before applying power. `--event` is a label. The command passes when the board reports a valid clock and all six
+channels stay closed for 12 seconds (`--stable-seconds`), with uptime advancing in step with host time.
 
-Each attempt has a subprocess timeout of at most two seconds or the remaining observation deadline. Errors, stderr,
-attempt start/end times, and successful hardware/configuration/runtime/channel snapshots are retained. `PASS` requires
-a positive live clock and all six channels closed throughout a 12-second observation window (`--stable-seconds`),
-within the overall deadline. After the first closed observation, a failed sample or an uptime discontinuity fails
-the run rather than retrying into success. Uptime advance from the first sample must match host elapsed time within
-one second, allowing 32-bit rollover; this detects observed resets/stalls, not every possible event between samples.
-It does not establish initial UART readiness, fault-free traffic, or the expected reset cause. Time is measured from
-observer startup, not the physical power/reset edge. A blocked or late HID attempt cannot turn a missed deadline
-into a pass.
-OS process creation/termination can add latency; this is not a hard real-time host deadline.
+For startup acceptance, add `--cdc1 /dev/serial/by-id/<cdc1>`. This transmits UART data: it opens CDC1 on its loopback,
+waits for readiness, and verifies a 154-byte payload. Without it, the check only proves the board enumerates. Repeat
+each event type, keep the failures as well as the passes, and never lengthen firmware sleeps to hide an unexplained
+reset.
 
-Repeat each event type and retain failures as well as successes. Compare uptime/reset cause against elapsed time and
-the independently recorded event. Do not increase firmware sleeps or retry windows to conceal unexplained resets.
-Cold-start/SWD behavior remains unqualified until the event series and subsequent functional tests pass.
+### Manual Cases
 
-To exercise worker startup rather than only observe closed channels, explicitly add
-`--cdc1 /dev/serial/by-id/<cdc1>` on the fixed HW UART1 loopback fixture. This option changes CDC settings and transmits
-UART data; it is not read-only. After the first valid closed-channel snapshot, a subprocess checks that the endpoint
-is CDC1 on the selected board, opens it at 115200 8N1, awaits the existing HID readiness contract, verifies a 154-byte
-loopback payload, and closes/restores the port. The probe runs once, with at most eight seconds or the remaining overall
-deadline; any probe error fails the observation immediately rather than retrying into success. The ordinary closed-state
-and uptime-stability observations must still pass afterward. Uptime comparisons use timestamps tied to the HID
-snapshots rather than probe completion, so a slow probe is not mistaken for a reset.
+These cases need a fixture source or authorization beyond the runners. Record the board, artifact hash, rate, payload or
+burst size, stall duration, affected channels, and HID samples. If a case cannot be set up, report it as not tested.
 
-Use this active variant for startup acceptance; a closed-only pass does not prove that UART worker admission works.
-Reserve the default passive variant for diagnosing enumeration or cases where UART transmission is not authorized.
-Probe failures retain stderr and partial snapshots. A subprocess deadline may interrupt teardown; on failure inspect
-the selected board and reflash before a separate physical test rather than assuming cleanup or a clean session.
+#### All six channels loaded
 
-## Optimization Decision Gates
+Run the concurrent fixture. Collect service load, block latency, ring peaks, and faults. Use timing instrumentation for
+service gaps, then repeat acceptance on uninstrumented firmware. Every stream must verify without new loss or errors at
+the qualified load. USB-paced traffic does not establish wire saturation.
 
-Retain the [reviewed production policies](records/2026-10-23-uart-cdc-review-validation.md) unless a workload justifies
-another experiment. Do not merge HW/PIO ordering, cache lifecycle readiness, remove control generations, or replace
-DMA snapshot ownership checks merely to shorten source. Keep current buffer sizes, bridge budgets, and thresholds.
+#### Host drain stalled
 
-If small-message PIO throughput matters, repeat the isolated FIFO-admission candidate using interleaved baseline and
-candidate images. As a proposed development gate, require at least 5% improvement in the declared target workload
-across at least five matched pairs, with no more than 5% regression in p99 or maximum host block latency, no
-payload/diagnostic faults, and passing session/configuration recovery. Record block-size/rate distributions and
-sample counts; the current benchmark's maximum/mean fields alone do not establish p99. Repeat on both boards before
-changing a shared default. Hardware TX pipelining additionally requires the CTS and shifter-idle gates above.
-These are experiment criteria, not claims that a candidate has passed them.
+Use a bounded, independently paced source. Pause reads on one RX channel while others continue; resume within the
+capacity budget, then test a separate intentional-overflow interval. Within budget, bytes must arrive in order without
+loss. Beyond budget, drops must be counted and traffic must recover, with no new faults on other channels.
 
-Unresolved physical gates remain independently paced ingress during USB stalls/configuration churn, CTS behavior,
-RP2350 physical coverage, safe DMA re-arm/full-countdown endurance, and event-specific startup reliability. More
-USB-loopback runs cannot close them. Provision the required fixture/source and retain exact-artifact evidence under
-the [release matrix](../deployment/releasing.md#required-hil-matrix).
+#### TX backpressure
 
-## Measured Six-Port Envelope
+With a qualified flow-control fixture, pause a peer using supported CTS while host OUT writes fill the channel, then
+resume it. Host writes must block or time out rather than lose bytes. Admitted bytes must stay ordered while other
+channels continue.
 
-The October 9 fixture sweeps establish these observed payload-integrity envelopes under USB-paced traffic for the
-tested boards and images, not universal MCU baud limits or continuous full-rate UART capacity. They are historical
-evidence, not recommended limits for later firmware; rerun qualification on the intended image and workload.
+#### Close and reopen during traffic
 
-| Image | Highest tested rate with all six payload streams passing | First failed tested rate | Evidence |
-| --- | ---: | ---: | --- |
-| Pico, 125 MHz | 256000 baud | 460800 baud | [Rated Pico](records/2026-10-09-070652Z-pico-hil.md) |
-| Pico, 250 MHz | 921600 baud | 1000000 baud | [Overclock Pico](records/2026-10-09-071809Z-pico-250mhz-hil.md) |
-| Pico 2, 150 MHz | 3000000 baud | None within sweep | [Rated Pico 2](records/2026-10-09-072834Z-pico2-hil.md) |
-| Pico 2, 280 MHz | 3000000 baud | None within sweep | [Local 280 MHz build](records/2026-10-09-074700Z-pico2-280mhz-hil.md) |
+Close one channel while other streams run. Reopen with staged settings, wait for HID readiness, then send a fresh
+marker. Old-session payloads must not enter the new stream; settings must match and other channels must keep passing.
+Queued bytes discarded on close need not be delivered.
 
-For the tested rated Pico image, 256000 baud was the highest all-stream payload pass in this matrix,
-not an exact maximum: intermediate rates between 256000 and 460800 were not tested. To rerun that historical range,
-use `--rates 115200,128000,153600,230400,256000`; the default wider sweep probes beyond those passing observations.
-The clock-dependent improvement at 250 MHz is consistent with limited service capacity in the dual-core
-USB/UART path at 125 MHz. No core profiling was collected, so a specific multicore defect or CPU bottleneck is
-not established. The recorded failures outside this envelope remain failures, not valid payload transfers.
+#### Session loss with pending control
 
-The faster-board aggregate verified throughput approaches roughly 0.47-0.53 MB/s despite higher requested UART
-rates. This plateau is consistent with the shared USB full-speed path becoming the limiting resource, including
-CDC scheduling, host drain rate, and the benchmark's write/read pacing. It is not a direct measurement of USB
-bus saturation or proof that CPU, DMA, or host scheduling contribute nothing. Pico 250 MHz still failed at
-1 Mbaud; Pico 2 at 150 MHz and 280 MHz passed all streams through 3 Mbaud in single sweeps. Repeated stability,
-per-rate health for these historical runs, and the separate recovery/soak gates are not established by these results.
+Keep a supported line-coding request pending and confirm it through HID; unplug the board or issue a targeted USB bus
+reset. Repeat with all six channels active. Old handles must terminate or time out. After remount, old sessions must be
+closed, settings and a fresh marker must verify, and canceled work must not cause a late timeout. A USB reset stops
+every stream.
 
-### USB-Paced Traffic And UART Capacity
+#### Concurrent configuration
 
-Every verified payload in the fixed fixture crosses USB twice: host OUT to the source UART, then destination
-UART to host IN. Each stream writes a block and waits for its returned payload before sending the next block.
-Shared USB bandwidth and this pacing constrain both the traffic generator and the receiver, leaving possible
-idle gaps on the UART wire. A pass at a configured baud therefore proves integrity at the achieved load, not
-continuous full-rate operation at that baud.
+Repeatedly change supported settings on other channels while an independently paced channel carries verified traffic.
+Change both ends of crossed links. Record the maximum unaffected-port service gap and both cores' maximum pass times.
+Each change must complete or time out explicitly, with no new faults on unaffected traffic. A mismatched crossed pair
+is not a bridge failure.
 
-The standard Pico 2 record's `83413.3 B/s` is one stream's verified payload throughput at a configured 3 Mbaud,
-not its physical line speed or a universal maximum. In 8N1, that payload rate corresponds to about 834133 bit/s
-of average framing-inclusive traffic, including the effect of idle gaps. The six streams together verified about
-0.501 MB/s, corresponding to about 1.002 MB/s of combined USB OUT and IN payload traffic, before USB overhead.
-This supports a USB full-speed path bottleneck interpretation, but does not isolate USB bus saturation from
-CDC scheduling, host scheduling, CPU/DMA service, or benchmark pacing.
+### Known Gaps
 
-The passes support confidence in 921600-baud operation under comparable workloads. They do not prove continuous
-full-rate 921600-baud operation: the standard Pico 2 streams achieved about 73.8-74.4 kB/s at that setting,
-below the theoretical 92.16 kB/s per stream for 8N1. The small throughput increase at 1 Mbaud shows a benefit
-from the higher setting, not independent proof of sustained UART capacity. Configured rates above 921600 also
-passed at the achieved USB-paced load; neither those passes nor the plateau establish a UART maximum.
+More USB loopback runs will not close these:
 
-To qualify continuous UART capacity, use independently paced external UART sources that do not rely on this
-device's USB OUT path. Verify received payloads, loss/error counters, duration, and actual wire timing while the
-host drains USB IN. If all receive channels are loaded concurrently, retain the shared USB IN bandwidth limit
-when interpreting losses; separate UART/backend capacity from end-to-end USB bridge capacity.
+- The fixture cannot test input that keeps arriving while the host has stopped reading. Every byte starts as a host
+  write, so this needs an independently paced UART source.
+- RTS/CTS has not been tested; there is no flow-control fixture yet.
+- Pico 2 has much thinner coverage than Pico. Check the [evidence index](records/README.md#evidence-index) before
+  relying on it; a Pico result does not carry over.
+- Sustained DMA wrap/re-arm endurance with the normal transfer count remains untested. A shortened-countdown attempt
+  produced invalid results, and the safe injection procedure still needs validation.
+- Startup after each kind of reset remains unqualified. A startup failure right after SWD flashing turned out to be
+  core 1 being launched without the reset the Pico SDK requires; calling `multicore_reset_core1()` first fixed it in
+  repeated trials ([review record](records/2026-10-23-uart-cdc-review-validation.md#explicit-core-1-reset-follow-up)).
+  Cold power-on, watchdog, and USB-reset starts are not qualified yet.
 
-## Results and Release Evidence
+## Tuning Procedure
 
-The combined runner creates a fixed-format, dated record in [records](records/README.md). Standalone functional or
-performance runs write to the ignored local log at `build/hil-results.md` by default; preserve separate transcripts when
-diagnosing failures. A local log alone does not qualify a release. Release HIL evidence must identify each rated board,
-the exact artifact and SHA-256, firmware version and commit, test commands, per-link results, and HID health. Attach or
-link the generated record and transcript with the release evidence as described in
-[Releasing](../deployment/releasing.md).
+Use current defaults as the baseline and compare candidates under matching conditions:
 
-`NOT RUN` means the configured rate was not attempted; `NOT REPORTED` means expected per-stream results were absent.
-Neither establishes a pass. Preserve incomplete and failed rows, and assess the declared test scope alongside payload
-verification and retained health evidence before making a qualification claim.
+- Compare baseline and candidate images on both boards with the same clock, wiring, payloads, rates, and host. Change
+  one setting per candidate, repeat the baseline to see run-to-run variation, and keep hashes and raw samples.
+- Measure small-payload round trips as well as six-stream throughput, plus service gaps, ring peaks, fault deltas, and
+  reopen behavior. The [timing profiles](../development/firmware-testing.md#optional-timing-profiles) and
+  [buffer measurements](../development/firmware-testing.md#buffer-capacity-measurement) help here.
+- As a proposed gate, require at least a 5% gain across five or more matched pairs, no more than 5% regression in p99 or
+  maximum latency, no faults, and passing recovery checks. The benchmark reports only max and mean, so record
+  distributions as well.
+- Repeat payload acceptance on uninstrumented firmware. TX pipelining changes must keep CTS stalls, byte order, and the
+  shifter-idle check before reconfiguration.

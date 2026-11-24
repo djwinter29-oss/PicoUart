@@ -1,33 +1,24 @@
 # GitHub Actions: Validation and Releases
 
-This guide maps the current automated checks and release dependencies. The linked workflows are authoritative for job
-names, matrices, and toolchain pins. Use the [test index](../tests/README.md) for local commands and test levels,
-and [Releasing PicoUart](../deployment/releasing.md) for promotion and publishing procedures.
+PR Check and Release share host validation; Release adds packaging and publication gates. The workflow files are the
+source of truth for job names, matrices, and toolchain pins.
 
-## Pull Requests And Main
+## Pull Requests and Main
 
-[PR Check](../../.github/workflows/pr-check.yml) runs for pull requests and pushes to `main`. Its firmware matrix and
-reusable host validation run in parallel; firmware builds do not wait for host tests.
+[PR Check](../../.github/workflows/pr-check.yml) runs for pull requests and pushes to `main`.
 
 ```mermaid
 flowchart TD
   Event["Pull request or push to main"] --> Firmware["Firmware matrix: pico and pico2"]
   Event --> Host["Reusable Host Validation"]
-  Firmware --> Contracts["Build, binary, and memory-budget checks<br/>Real-SDK voltage-policy check<br/>Pico-only stamped-version smoke check"]
-  Host --> HostDone["All shared host checks pass"]
-  Contracts --> Passed["PR Check succeeds"]
-  HostDone --> Passed
+  Firmware --> PRCheck["PR Check"]
+  Host --> PRCheck
 ```
 
-Within a job, steps run in order. The four Host Validation branches are independent jobs, and each OS/board matrix leg
-runs independently. Success boxes summarize completion; they are not additional workflow jobs. Any required failure
-prevents that workflow from succeeding. Repository branch-protection settings separately control merge requirements.
+The firmware matrix and host validation run in parallel; both must pass for PR Check to succeed. Repository pytest
+covers hardware-free HIL-tool tests and packaging/protocol contracts, not physical UART behavior.
 
-Repository pytest includes hardware-free HIL-tool tests and packaging/protocol contracts, not physical UART tests.
-SDK-dependent .NET integration checks can skip when no SDK executable is available; the three-OS application matrix
-explicitly installs .NET and also runs its unit suite.
-
-## Checks And Dependencies
+## Checks and Dependencies
 
 [Host Validation](../../.github/workflows/host-validation.yml) is reused by both PR Check and Release.
 
@@ -37,37 +28,27 @@ flowchart TD
   Host --> Native["Linux native C sanitizers<br/>Syntax, static analysis, CLI smoke"]
   Host --> Minimum["Python 3.10 minimum<br/>Repository pytest"]
   Host --> Browser["Node 22<br/>WebHID and renderer checks"]
-  Apps --> Done["All shared checks pass"]
-  Native --> Done
-  Minimum --> Done
-  Browser --> Done
 ```
 
-The application-matrix job runs .NET unit tests before repository pytest; Windows and macOS run native C tests
-afterward. Linux runs that suite with ASan/UBSan in the host-tools job.
-The Pico-only stamped-version check is a conditional step inside the PR firmware matrix, not another job.
-
-| Check | Environment And Dependencies | What It Establishes |
+| Check | Environment and dependencies | What it checks |
 | --- | --- | --- |
-| Firmware matrix | Linux; Arm toolchain, pinned Pico SDK, CMake/Ninja, host C++ compiler, Python | Pico and Pico 2 compile/link and satisfy binary contracts plus target-specific static SRAM/flash budgets; real-build regulator policy is inspected, not physically measured |
-| Firmware policy check | Python and the `test` dependency group | Minimal pytest environment for inspection of the actual SDK build artifacts |
+| Firmware matrix | Linux; Arm toolchain, pinned Pico SDK, CMake/Ninja, host C++ compiler, Python | Pico and Pico 2 compile/link, pass binary contracts, and satisfy target-specific static SRAM/flash budgets |
+| Firmware policy check | Python and the `test` dependency group | Real SDK build leaves regulator auto-adjust disabled, based on compile commands, defines, and linked artifacts |
 | Host application matrix | Linux, macOS, Windows; Python 3.12, .NET 10 SDK, Python `dev` dependency group | .NET unit tests, repository Python tests, and installed/published host contracts; Windows and macOS also run native C tests |
 | Linux host tools | Python 3.12, Python `dev` dependency group, native C toolchain, CMake/Ninja, cppcheck | Syntax, ASan/UBSan native tests, static analysis, and CLI smoke checks |
 | Python minimum | Linux; Python 3.10 and Python `dev` dependency group | Repository Python checks on the minimum supported interpreter |
 | Browser host | Linux; Node 22 | JavaScript syntax, WebHID tests, and the shared dashboard contract test under `host/web/tests` |
 | Release Python wheel | Python build backend/plugin and wheel-declared runtime dependencies | Wheel version, clean installation outside the checkout, and bundled dashboard startup response |
 | Release .NET archives | Native Linux/Windows/macOS runners and .NET SDK | Self-contained publishing for the configured runtime matrix, archive extraction, CLI startup, and embedded version |
-| Physical HIL | Identified board, intended flashed artifact, and required fixture | UART payload integrity, health, timing/recovery behavior, and conditions absent from CI |
 
-Python dependencies are declared in the host project's
-[pyproject.toml](../../host/python/pyproject.toml). Version stamping and host transport checks do not establish board compatibility
-or physical overclock/voltage margins. See [HIL scope](../tests/hil-fixture-test-plan.md) for the evidence limits.
+CI has no board. Run [physical HIL](../tests/README.md) separately for UART payload integrity, health, timing, and
+recovery behavior.
 
-## Release And Publication
+## Release and Publication
 
-[Release](../../.github/workflows/release.yml) runs on a version-tag push or manual preflight. Firmware packaging starts
-alongside Host Validation. Python and .NET packaging wait for **all** Host Validation jobs, not for firmware packaging.
-Only a tag push enters the automatic GitHub-publication job.
+[Release](../../.github/workflows/release.yml) runs on a version-tag push or as a manual preflight. Firmware packaging
+starts alongside host validation; the Python and .NET packages wait for all host validation jobs. Only a tag push
+publishes.
 
 ```mermaid
 flowchart TD
@@ -84,38 +65,15 @@ flowchart TD
   Release --> Complete["Successful Release workflow completion"]
   Complete --> PyPI["PyPI: release/checksum/version gates<br/>Protected upload of unchanged wheel"]
   Complete --> Pages["Pages: release/check gates<br/>Validated commit, Node checks, version stamp"]
-  Release --> HIL["Manual HIL on exact artifacts<br/>Every rated board and required case"]
-  HIL --> Qualified{"Complete PASS<br/>and matching hashes?"}
-  Qualified -->|"No"| Hold["Keep hardware unqualified; diagnose or rerun"]
-  Qualified -->|"Yes"| Record["Record hardware qualification and evidence"]
 ```
 
-The exact-commit PR Check is a **separate workflow requirement**, not a Release `needs` job. A tag push does not itself
-trigger PR Check. A successful PR run for a different merge commit does not satisfy this gate; confirm a successful
-matching run, commonly from the push to `main`, before releasing that commit.
+PyPI and Pages run from `workflow_run` after Release completes. A release event created with `GITHUB_TOKEN` does not
+start other workflows. See [releasing](../deployment/releasing.md) for publication gates and hardware qualification,
+and [host app publishing](../deployment/host-app-publishing.md) for channel operations.
 
-CI publishes tested tags but does not perform physical HIL or automatically qualify hardware. Artifact hashes identify
-the tested image; record the board's active clock profile and boot fallback too. A local rebuild, a partial run, or a
-ceiling-search aggregate `PASS` with failed rows cannot replace required exact-artifact evidence.
+When you change a workflow's triggers, `needs`, tests, or dependency setup, update this map too.
 
-After successful Release completion, PyPI and Pages independently recheck the exact-commit PR Check and matching
-tag-push run. They reject a tag moved away from the triggering commit. PyPI reuses the released wheel; Pages runs its
-own Node checks before deployment. Repository environment approvals still apply. The `workflow_run` trigger avoids
-depending on a release event emitted by `GITHUB_TOKEN`, which GitHub does not forward to downstream workflows.
+## Manual Hardware Qualification
 
-## Manual Modes And Failures
-
-| Mode Or Failure | Consequence |
-| --- | --- |
-| Manual Release preflight | Builds firmware and host artifacts with the entered version label, but creates no release or public upload |
-| Independent .NET packaging test | Native archive checks produce marked workflow artifacts; no release attachment or publication |
-| Explicit Python test publication | Scoped package tests and installed-wheel checks, then an approved public development upload to production PyPI |
-| Explicit Pages test publication | Scoped Node checks, then a marked deployment replacing the live site; not a private preview |
-| Required automated check fails | No successful normal gate; fix or rerun before continuing |
-| HIL fails, is partial, or lacks matching artifacts | Keep the published artifacts hardware-unqualified/lab-only; do not claim a HIL pass |
-| PyPI or Pages fails after GitHub publication | Diagnose/retry that channel; GitHub publication and the other channel are not automatically rolled back |
-
-Manual test modes are intentional exceptions, not equivalent substitutes for the normal release graph. The
-[publication gates](../deployment/releasing.md#publication-gates) own fail-closed run selection and test-version rules;
-the [publishing runbook](../deployment/host-app-publishing.md) owns setup, retries, and rollback. Changing a workflow's
-triggers, `needs`, tests, or dependency setup should include reviewing this map.
+CI publishes candidate artifacts. Qualify those exact artifacts manually using the
+[release HIL gates](../deployment/releasing.md#release-hil-gates).

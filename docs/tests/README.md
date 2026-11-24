@@ -1,101 +1,51 @@
-# Test Documentation
+# Testing PicoUart
 
-This directory separates automated validation from physical hardware qualification. Use the smallest applicable level
-first and do not treat a partial hardware run as a full pass.
+PicoUart is tested at five levels. Start with the smallest level that covers your change; record partial hardware runs
+as partial.
 
-For CI ordering, parallel jobs, tool dependencies, and the PR-to-release gates, see
-[GitHub Actions: Validation and Releases](../development/github-actions.md).
+| Level | Environment | Purpose |
+| --- | --- | --- |
+| Host tests | Native host | Firmware policies, host applications, and cross-project contracts |
+| Firmware build | Pico SDK/toolchain | Compile and link both RP2040 and RP2350 targets |
+| Functional HIL | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health |
+| Performance HIL | Same fixture | Throughput, integrity, concurrency, soak, overflow behavior |
+| Release HIL | Exact packaged artifacts | Qualify the artifacts intended for publication |
 
-## Test Levels
+## Without Hardware
 
-```mermaid
-flowchart TD
-    Change["Firmware change"] --> Host["Host unit suite"]
-    Host --> Build["pico + pico2 firmware builds"]
-    Build --> Functional["Functional HIL\nall four staged links"]
-    Functional --> Performance["Performance HIL\nindividual + concurrent + soak"]
-    Performance --> Release["Release qualification\nexact artifact hashes"]
-    Host -->|fail| Fix["Fix before continuing"]
-    Build -->|fail| Fix
-    Functional -->|fail or partial| Diagnose["Record and diagnose"]
-    Performance -->|fail or partial| Diagnose
-```
-
-| Level           | Environment                     | Primary purpose                                                         | Result authority           |
-| --------------- | ------------------------------- | ----------------------------------------------------------------------- | -------------------------- |
-| Host tests      | Native host                     | Firmware policies plus host applications and cross-project contracts | Relevant CTest, pytest, .NET, or Node result |
-| Firmware build  | Pico SDK/toolchain              | Compile/link both RP2040 and RP2350 targets                             | Build artifacts            |
-| Functional HIL  | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health           | Functional result entry    |
-| Performance HIL | Same fixture                    | Throughput, integrity, concurrency, soak, overflow behavior             | Performance result entry   |
-| Release HIL     | Exact packaged artifacts        | Qualification of artifacts intended for publication                     | Release checklist + hashes |
-
-## Automated Validation
-
-Follow the [Python environment setup](../development/host-tools.md#python-environment-setup), then run from the
-repository root. The host-test wrapper runs both the native C suite and Python tests; a separate `ctest` invocation is
-unnecessary.
+After the [Python environment setup](../development/host-tools.md#python-environment-setup), run this from the
+repository root:
 
 ```sh
 PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
-tools/firmware/build.sh --board pico
-tools/firmware/build.sh --board pico2
-python3 tools/release/check-firmware-budget.py --build-dir build/firmware-pico --board pico
-python3 tools/release/check-firmware-budget.py --build-dir build/firmware-pico2 --board pico2
+for board in pico pico2; do
+  tools/firmware/build.sh --board "$board"
+  python3 tools/release/check-firmware-budget.py --build-dir "build/firmware-$board" --board "$board"
+done
 git diff --check
 ```
 
-The host suite is not a hardware test. It does not prove DMA timing, USB enumeration, multicore scheduling under load,
-physical UART signaling, or RTS/CTS behavior.
+The host-test wrapper runs native C and Python tests; add `--skip-python` to run only the C suite. It does not cover the
+.NET or browser dashboards; if you changed those, run their checks from the [tools reference](../../tools/README.md),
+and report any check you skipped. Hardware-free checks cannot establish DMA timing, USB enumeration, multicore load,
+or physical UART signalling.
 
-The wrapper covers native C and repository Python tests, not every host application suite. Run the relevant .NET and
-browser checks from the [host development guide](../development/host-tools.md) when those applications or their shared
-contracts change; report skipped checks rather than treating the wrapper as a universal pass.
+## With Hardware
 
-## Hardware Test Sequence
+1. Wire the fixture: [HIL Fixture Setup](hil-fixture-setup.md).
+2. Run the functional pass, then the performance pass: [HIL Fixture Test Plan](hil-fixture-test-plan.md). The combined
+   `tools/hil/runner/full.sh` runs both and writes a dated record to [records/](records/README.md).
+3. For a release, test the exact packaged artifacts and follow the gates in
+   [Releasing](../deployment/releasing.md#release-hil-gates).
 
-1. Follow [HIL Fixture Setup](hil-fixture-setup.md) and install both crossed pairs and both loopbacks before testing.
-2. Follow the [HIL Fixture Test Plan](hil-fixture-test-plan.md), which runs functional checks before performance.
-3. The combined runner creates a dated record in [records](records/README.md); standalone phase runners log locally to
-   `build/hil-results.md`.
-4. For releases, use the exact packaged artifacts and follow [Releasing](../deployment/releasing.md).
+## Results and Evidence
 
-From the repository root, run the combined functional and concurrent-performance checks and generate a dated result:
+| Result | Meaning |
+| --- | --- |
+| `PASS` | Every required case for the declared level passed. |
+| `FAIL` | A required case failed, or there was unexplained loss or errors. |
+| `PARTIAL` | A case, link, board, or artifact was intentionally left out. It is useful evidence, but it cannot qualify the design or a release. |
+| `NOT RUN` | A configured rate was never attempted, for example after a sweep stopped. |
+| `NOT REPORTED` | An expected per-stream result is missing. |
 
-```sh
-tools/hil/runner/full.sh \
-    --pico-cdc0 /dev/serial/by-id/<pico-cdc0> \
-    --pico-cdc1 /dev/serial/by-id/<pico-cdc1> \
-    --pico-cdc2 /dev/serial/by-id/<pico-cdc2> \
-    --pico-cdc3 /dev/serial/by-id/<pico-cdc3> \
-    --pico-cdc4 /dev/serial/by-id/<pico-cdc4> \
-    --pico-cdc5 /dev/serial/by-id/<pico-cdc5> \
-    --board pico --firmware-version 1.2.3 --firmware-commit <commit> \
-    --artifact /path/to/flashed/pico_uart.uf2 \
-    --rates 460800,500000,600000 --duration 30
-```
-
-Replace the example values with the attached board's endpoints and firmware metadata. The runner creates
-`docs/tests/records/` if needed and avoids overwriting earlier records. This command records the functional and
-concurrent six-port phases; use the [HIL Fixture Test Plan](hil-fixture-test-plan.md) for the separate pair sweeps and
-soak checks.
-
-## Result Semantics
-
-- `PASS`: every required case for the declared test level passed.
-- `FAIL`: a required case failed or produced unexplained loss/error.
-- `PARTIAL`: a case, link, board, or required artifact was intentionally omitted.
-
-A `PARTIAL` result is useful diagnostic evidence, but it cannot qualify the full six-port design or a release.
-
-## Evidence Minimum
-
-Every hardware result should identify:
-
-- board target and physical board
-- firmware version, source commit, artifact name, and SHA-256 when available
-- test command and duration/rates
-- wiring variant and RTS/CTS configuration
-- per-link result and verified byte integrity
-- HID health and overflow deltas
-- USB resets, disconnects, framing errors, or control errors
-- relevant measurements, caveats, and exact artifact hashes in the result entry
+Use the [HIL records guide](records/README.md#record-format) for the required record contents and evidence format.

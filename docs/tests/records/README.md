@@ -1,18 +1,18 @@
 # HIL Records
 
 The combined `pico-uart-hil` runner (also exposed by `tools/hil/runner/full.sh`) creates one Markdown record per
-invocation in this directory. Use `--record-dir` to choose another directory. `--no-record` suppresses result recording;
-it does not skip hardware access, serial configuration, or UART traffic.
+invocation in this directory. Use `--record-dir` to choose another directory.
 
 ## Naming
 
-Generated names use UTC date/time, board target, measured live system clock, and test kind:
+New records use UTC date/time, board target, measured live system clock, and test kind:
 
 ```text
 YYYY-MM-DD-HHMMSSZ-pico-125mhz-hil.md
 YYYY-MM-DD-HHMMSSZ-pico2-150mhz-hil.md
 ```
 
+Older records may use either `YYYYMMDDTHHMMSSZ` or `YYYYMMDD-HHMMSSZ` for the date and time.
 If the clock could not be read, the filename uses `clock-unknown`; the report must not infer a clock. If a name already
 exists, the runner adds a numeric suffix rather than overwriting it. Single-phase runs and
 `pico-uart-hil functional` / `pico-uart-hil performance` invocations append to the ignored local log at
@@ -28,90 +28,89 @@ Combined and standalone functional/performance reports use the same concise form
 - Artifact name and SHA-256 when supplied
 - A functional summary table with each fixture link, result, and verified byte count
 - A concurrent performance table with each baud rate, stream, result, verified bytes, and throughput/error
-- For speed sweeps, the 115200-baud six-stream baseline result, highest all-stream passing tested rate, and first failed
-  tested rate (or `not reached`)
+- For speed sweeps, the 115200-baud six-stream baseline result, the highest rate all six streams passed, and the first
+  rate that failed (or `not reached`)
 - Per-rate HID health summaries when collected; rates skipped after a failure are marked `NOT RUN`
 - A compact final HID health summary
 
-For an ascending speed sweep, the overall result is `PASS` when all six streams pass at 115200 baud and HID health is
-clean. A failure at a higher tested rate is the observed speed boundary, not a failed baseline test; retain that
-`FAIL` in its stream row and identify it as the first failed tested rate. Report the highest rate where all six streams
-passed. If 115200 fails or is missing, the baseline did not pass; do not infer a ceiling from higher-rate results.
-Health failures remain failures.
+Interpret sweep results using the
+[baseline and speed-ceiling rules](../hil-fixture-test-plan.md#baseline-and-speed-ceiling). Keep stream failures and
+HID health results visible in the record.
 
-Reports intentionally omit child command lines and verbose monitor transcripts. The terminal still shows live test
-output while a run is in progress. Standalone phase entries are appended to the ignored local log at
-`build/hil-results.md`.
+Reports omit child command lines and verbose monitor transcripts; live test output remains in the terminal.
 
-A local record is evidence, not automatic release qualification. Release evidence must use the exact packaged artifacts
-and pass the gates in [Releasing](../../deployment/releasing.md).
+Release qualification uses the gates in [Releasing](../../deployment/releasing.md).
 
 ## Evidence Index
 
-The measurements below are historical evidence interpreted using the current baseline/ceiling convention; the result
-tables preserve the original stream outcomes. Missing measurements must not be inferred from a `PASS`.
-Performance-only runs do not establish functional or recovery coverage, and requested baud is not independently
-measured wire speed.
+The newest versioned release record is for v0.8.6 (2026-10-24). Repository tags now reach v0.12.0, but this directory
+has no exact-artifact HIL record for v0.9.0 or later. Performance-only runs do not cover functional or recovery
+behavior; configured baud is not a wire-rate measurement.
 
 Pico 2 rows below stop on 2026-10-10 and predate the v0.8.6 Pico release line. No file in this directory is an
 exact-artifact Pico 2 run of that line. A Pico `PASS` does not qualify `pico2`.
 
-This table is the curated evidence index. Development notes are linked at the end of this page and are not extra
-qualification. Every Markdown file in this directory is linked from this page.
+Every Markdown file in this directory is linked from this page.
 
-| Record | Recorded Result | Scope And Limitations |
+### Recent Records
+
+| Record | Result and coverage | Artifact or caveat |
 | --- | --- | --- |
-| [2026-10-24 Pico 200 MHz eight-hour 1 Mbaud soak](20261024T223400Z-pico-200mhz-1000000-6port-8h.md) | `PASS` | v0.8.6 Pico ELF at the board-local 200 MHz profile. Six streams at 1,000,000 baud for 8 hours verified 12,606,540,800 host CDC payload bytes, with clean before/after HID and zero overruns. Performance only: no functional table, recovery, or RTS/CTS. The worktree was dirty. Counts are host-verified CDC bytes, and the run ended 2026-10-25 06:34 UTC. |
-| [2026-10-24 Pico 200 MHz four-hour 1 Mbaud soak](20261024T183331Z-pico-200mhz-1000000-6port-4h.md) | `PASS` | Same v0.8.6 Pico ELF and six-stream 1,000,000 baud workload for 4 hours (6,324,596,736 verified bytes) with clean HID. Performance only. The system clock was not independently captured, and the worktree was dirty. |
-| [2026-10-24 Pico eight-hour 460800 soak](20261024-071715Z-pico-125mhz-460800-8h-soak.md) | `PASS` | Six streams at 460800 baud for 8 hours with clean before/after HID. Firmware was reported as 0.0.0 and the artifact hash was not supplied, so this is not release-artifact qualification. |
-| [2026-10-24 Pico four-hour 460800 soak](20261024-031611Z-pico-125mhz-460800-4h-soak.md) | `PASS` | Six streams at 460800 baud for 4 hours with clean before/after HID. Firmware was reported as 0.0.0 and the artifact hash was not supplied, so this is not release-artifact qualification. |
-| [2026-10-24 v0.8.6 Pico 200 MHz HIL](2026-10-24-181517Z-pico-200mhz-hil.md) | `PASS` | Exact packaged Pico ELF with the board-local 200 MHz profile; functional fixture and all six streams passed through 2 Mbaud. At 3 Mbaud, CDC5 loopback failed a short read (33 of 1024 bytes), establishing the first observed boundary; HID health remained clean with zero overruns/errors. |
-| [2026-10-24 v0.8.6 Pico release HIL](2026-10-24-180437Z-pico-125mhz-hil.md) | `PASS` | Exact packaged Pico ELF; all functional links and all six streams passed through 2 Mbaud with clean HID health. At 3 Mbaud, CDC3→CDC4 failed a short read, establishing the first observed boundary; zero overruns or HID errors were recorded. |
-| [2026-10-23 Pico 3 Mbaud sweep](2026-10-23-220124Z-pico-125mhz-hil.md) | `PASS` | All six streams passed through 2 Mbaud; two streams failed at 3 Mbaud with final zero overruns. The installed firmware commit and artifact hash were unavailable, so this is not release-artifact qualification. |
-| [2026-10-23 Pico reset-corrected acceptance](2026-10-23-191806Z-pico-125mhz-hil.md) | `PASS` | Explicit core1-reset image; four fixture stages and six streams at 115200/460800, 300 seconds per rate with clean current diagnostics. Active startup/recovery comparisons are in the review validation record; other hardware/reset-event gates remain open. |
-| [2026-10-23 Pico extended acceptance](2026-10-23-182232Z-pico-125mhz-hil.md) | `PASS` | Fresh ordinary image; four fixture stages and six streams at 115200/460800, 300 seconds per rate with clean current diagnostics. Does not resolve startup reliability or qualify missing hardware variants. |
-| [2026-10-23 UART/CDC review validation](2026-10-23-uart-cdc-review-validation.md) | Scoped development checks | Exact-image RP2040 refill comparisons and recovery; explicit reset-before-core1-launch corrects reproduced post-SWD startup failure in repeated active-probe trials. Refill candidates removed; other reset events and RP2350/CTS/full-countdown qualification remain pending. |
-| [2026-10-23 Pico final acceptance](2026-10-23-174031Z-pico-125mhz-hil.md) | `PASS` | Ordinary reviewed image; four functional stages and six streams at 115200/460800, 60 seconds per rate, with current diagnostics and zero faults. Not long-duration qualification. |
-| [2026-10-08 Pico 2](2026-10-08-173102Z-pico2-hil.md) | `PARTIAL` | Performance only, above the current default sweep, at low achieved load. Its historical “supported rate” label is not a general baud-capability claim. |
-| [2026-10-08 Pico](2026-10-08-183203Z-pico-hil.md) | `FAIL` | Missing stream results and incomplete performance evidence; functional success does not override the overall failure. |
-| [2026-10-09 Pico](2026-10-09-070652Z-pico-hil.md) | `FAIL` | All six streams passed through 256000 baud; the first higher failures were at 460800 baud. The overall run remains `FAIL` because final RX errors were recorded; later rates followed failures and per-rate health was not recorded. |
-| [2026-10-09 Pico 250 MHz](2026-10-09-071809Z-pico-250mhz-hil.md) | `PASS` | Overclock artifact with documented provenance; all six streams passed through 921600 baud and two failed at 1000000 baud. Per-rate health, recovery, and soak coverage are missing, so this does not establish release qualification. |
-| [2026-10-09 Pico 2](2026-10-09-072834Z-pico2-hil.md) | `PASS` | One functional/concurrent sweep at USB-paced load, without per-rate health or the complete recovery/soak gates. |
-| [2026-10-09 Pico 2 280 MHz](2026-10-09-074700Z-pico2-280mhz-hil.md) | `PASS` | Local overclock build, not the packaged release artifact; one sweep does not establish general overclock stability. |
-| [2026-10-10 Pico 2 four-hour soak](2026-10-10-013150Z-pico2-921600-4h.md) | `PASS` | One configured rate under USB-paced load; physical flash byte identity was not independently established in the record. |
-| [2026-10-10 Pico 2 twelve-hour soak](2026-10-10-173721Z-pico2-921600-12h.md) | `PASS` | One configured rate under USB-paced load; not continuous wire-capacity or full release-matrix qualification. |
+| [Pico 200 MHz eight-hour 1 Mbaud soak](20261024T223400Z-pico-200mhz-1000000-6port-8h.md) | `PASS`; 12.6 billion verified CDC bytes, clean HID, zero overruns. | v0.8.6 ELF; dirty worktree. |
+| [Pico 200 MHz four-hour 1 Mbaud soak](20261024T183331Z-pico-200mhz-1000000-6port-4h.md) | `PASS`; 6.3 billion verified bytes, clean HID. | Same v0.8.6 ELF; clock not independently captured, dirty worktree. |
+| [v0.8.6 Pico 200 MHz HIL](2026-10-24-181517Z-pico-200mhz-hil.md) | `PASS`; fixture and six streams through 2 Mbaud. | Exact packaged ELF; CDC5 returned a short read at 3 Mbaud. |
+| [v0.8.6 Pico release HIL](2026-10-24-180437Z-pico-125mhz-hil.md) | `PASS`; fixture and six streams through 2 Mbaud. | Exact packaged ELF; CDC3→CDC4 returned a short read at 3 Mbaud. |
+| [Pico eight-hour 460800 soak](20261024-071715Z-pico-125mhz-460800-8h-soak.md) | `PASS`; six streams, clean before/after HID. | Firmware version `0.0.0`; no artifact hash. |
+| [Pico four-hour 460800 soak](20261024-031611Z-pico-125mhz-460800-4h-soak.md) | `PASS`; six streams, clean before/after HID. | Firmware version `0.0.0`; no artifact hash. |
+| [Pico 3 Mbaud sweep](2026-10-23-220124Z-pico-125mhz-hil.md) | `PASS`; all streams through 2 Mbaud, two failed at 3 Mbaud. | Installed commit and artifact hash absent. |
+| [Pico reset-corrected acceptance](2026-10-23-191806Z-pico-125mhz-hil.md) | `PASS`; fixture and six streams at 115200/460800 for 300 s per rate. | Clean diagnostics; other reset events and boards remain open. |
+| [Pico extended acceptance](2026-10-23-182232Z-pico-125mhz-hil.md) | `PASS`; fixture and six streams at 115200/460800 for 300 s per rate. | Clean diagnostics; startup reliability remains open. |
+| [UART/CDC review validation](2026-10-23-uart-cdc-review-validation.md) | Scoped RP2040 refill comparisons and recovery. | Refill candidates removed; RP2350, CTS, and other reset cases remain open. |
+| [Pico final acceptance](2026-10-23-174031Z-pico-125mhz-hil.md) | `PASS`; fixture and six streams at 115200/460800 for 60 s per rate. | Clean diagnostics; no long soak. |
 
-Health summaries describe the observations actually retained; do not infer continuous error sampling from before/after
-checks. Paths to artifacts or transcripts in a tester's local cache are provenance, not repository downloads. Preserve
-the referenced files with their hashes in an accessible evidence archive when sharing or qualifying a release.
-Do not backfill unknown provenance or overwrite historical stream results with later runs. A higher-rate boundary
-failure does not change a clean 115200-baseline speed sweep to `FAIL`; independent health, setup, or functional failures
-remain failures.
+### Historical Records
 
-## Development Notes
+| Record | Result and coverage | Artifact or caveat |
+| --- | --- | --- |
+| [Pico 2 twelve-hour soak](2026-10-10-173721Z-pico2-921600-12h.md) | `PASS`; one USB-paced rate. | Does not cover the release matrix or continuous wire capacity. |
+| [Pico 2 four-hour soak](2026-10-10-013150Z-pico2-921600-4h.md) | `PASS`; one USB-paced rate. | Board flash was not matched to the artifact. |
+| [Pico 2 280 MHz](2026-10-09-074700Z-pico2-280mhz-hil.md) | `PASS`; local overclock sweep. | No stability run. |
+| [Pico 2](2026-10-09-072834Z-pico2-hil.md) | `PASS`; one functional/concurrent sweep. | USB-paced load; per-rate health and recovery/soak evidence absent. |
+| [Pico 250 MHz](2026-10-09-071809Z-pico-250mhz-hil.md) | `PASS` through 921600; two streams failed at 1000000. | Overclock artifact; per-rate health and recovery evidence absent. |
+| [Pico](2026-10-09-070652Z-pico-hil.md) | `FAIL`; streams passed through 256000, then failed at 460800. | Final RX errors; later rates and per-rate health absent. |
+| [Pico](2026-10-08-183203Z-pico-hil.md) | `FAIL`; incomplete stream results and performance evidence. | Functional success does not change the overall result. |
+| [Pico 2](2026-10-08-173102Z-pico2-hil.md) | `PARTIAL`; performance-only, above the current default sweep. | Low achieved load; no release qualification. |
 
-Every Markdown file in this directory is linked from this page. The notes below are not extra qualification.
-A Pico result here does not qualify `pico2`.
+Health summaries describe the observations retained; before/after checks are not continuous sampling.
 
-- [2026-10-22 07:49 Pico](2026-10-22-074923Z-pico-hil.md): `PASS`, firmware 0.8.1. Historical Pico run, not v0.8.6.
-- [2026-10-22 08:02 Pico](2026-10-22-080227Z-pico-hil.md): `PARTIAL`, firmware 0.8.1. Historical Pico run, not v0.8.6.
-- [2026-10-22 14:06 Pico](2026-10-22-140603Z-pico-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-22 18:43 Pico 125 MHz](2026-10-22-184304Z-pico-125mhz-hil.md): `PARTIAL`, firmware 0.0.0. Not qualification.
-- [2026-10-22 19:29 Pico 125 MHz](2026-10-22-192938Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-22 19:39 Pico 125 MHz](2026-10-22-193909Z-pico-125mhz-hil.md): `PARTIAL`, firmware 0.0.0. Not qualification.
-- [2026-10-22 20:03 Pico 125 MHz](2026-10-22-200343Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-22 20:29 Pico 125 MHz](2026-10-22-202929Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-22 20:37 Pico 125 MHz](2026-10-22-203712Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-22 20:46 Pico 125 MHz](2026-10-22-204609Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-22 21:31 Pico 125 MHz](2026-10-22-213102Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [CDC/UART session and tuning check](2026-10-22-cdc-uart-session-validation.md): development check, not qualification.
-- [UART lifecycle optimization check](2026-10-22-uart-lifecycle-optimization.md): development check, not qualification.
-- [2026-10-23 17:00 Pico 125 MHz](2026-10-23-170002Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-23 17:12 Pico 125 MHz](2026-10-23-171221Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-23 17:14 Pico 125 MHz](2026-10-23-171456Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-23 17:16 Pico 125 MHz](2026-10-23-171632Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-23 17:20 Pico 125 MHz](2026-10-23-172029Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-23 17:21 Pico 125 MHz](2026-10-23-172156Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-23 17:24 Pico 125 MHz](2026-10-23-172425Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-23 17:26 Pico 125 MHz](2026-10-23-172600Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
-- [2026-10-23 17:27 Pico 125 MHz](2026-10-23-172735Z-pico-125mhz-hil.md): `PASS`, firmware 0.0.0. Not qualification.
+### Development Runs
+
+These Pico runs from October 22–23 are development history, not release evidence.
+
+| Date | Runs and notes |
+| --- | --- |
+| Oct 22 | [07:49](2026-10-22-074923Z-pico-hil.md) `PASS`; [08:02](2026-10-22-080227Z-pico-hil.md) `PARTIAL`; [14:06](2026-10-22-140603Z-pico-hil.md) `PASS`; [18:43](2026-10-22-184304Z-pico-125mhz-hil.md) `PARTIAL`; [19:29](2026-10-22-192938Z-pico-125mhz-hil.md) `PASS`; [19:39](2026-10-22-193909Z-pico-125mhz-hil.md) `PARTIAL`; [20:03](2026-10-22-200343Z-pico-125mhz-hil.md) and [20:46](2026-10-22-204609Z-pico-125mhz-hil.md) `PASS`. |
+| Oct 22 | [UART lifecycle optimization](2026-10-22-uart-lifecycle-optimization.md): passing [baseline](2026-10-22-202929Z-pico-125mhz-hil.md) and [candidate](2026-10-22-203712Z-pico-125mhz-hil.md). |
+| Oct 22 | [CDC/UART session and tuning check](2026-10-22-cdc-uart-session-validation.md); final full run [passed](2026-10-22-213102Z-pico-125mhz-hil.md). |
+| Oct 23 | Before final acceptance, all `PASS`: [17:00](2026-10-23-170002Z-pico-125mhz-hil.md), [17:12](2026-10-23-171221Z-pico-125mhz-hil.md), [17:14](2026-10-23-171456Z-pico-125mhz-hil.md), [17:16](2026-10-23-171632Z-pico-125mhz-hil.md), [17:20](2026-10-23-172029Z-pico-125mhz-hil.md), [17:21](2026-10-23-172156Z-pico-125mhz-hil.md), [17:24](2026-10-23-172425Z-pico-125mhz-hil.md), [17:26](2026-10-23-172600Z-pico-125mhz-hil.md), and [17:27](2026-10-23-172735Z-pico-125mhz-hil.md). |
+
+## Historical Throughput
+
+The October 9 six-port sweeps used USB-paced traffic. On the faster Pico boards, total verified throughput levelled
+around 0.47-0.53 MB/s. Each payload crossed USB twice and each stream waited for its echo, so the results describe the
+test path and clock profile. The 250 MHz Pico passed higher rates than the 125 MHz board; the bottleneck was not
+profiled. A pass confirms payload integrity at the achieved load.
+
+## Tuning Notes
+
+The variants tried so far did not beat the defaults. Halving the bridge pass budget or PIO TX DMA threshold left
+throughput unchanged and slightly raised worst block latency
+([tuning check](2026-10-22-cdc-uart-session-validation.md)). Removing a TX admission check slowed small hardware-UART
+blocks at 115200; PIO gained 5–8% at 460800 on one board and few samples, with no gain at 115200. Both variants were
+removed ([review record](2026-10-23-uart-cdc-review-validation.md#matched-refill-experiments)).
+
+## Evidence Retention
+
+Some records refer to artifacts or transcripts in a tester's local cache rather than files in this repository. Preserve
+those files with their hashes in an accessible evidence archive before using them for release qualification. Keep
+historical provenance gaps visible, and do not overwrite recorded results with later runs.
