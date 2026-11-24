@@ -80,10 +80,7 @@ of the HID reference.
   attached, HID commands fail by design.
 - **Access denied:** see the Linux permissions link above.
 - **Missing web files:** re-extract the whole archive; the executable needs its `web` folder.
-- **Windows "unsupported report size or layout version" with v0.10.0 host and firmware:** use a host build that includes
-  the descriptor-padding fix. You do not need to reflash the board.
-- **Missing .NET runtime:** run `dotnet --list-runtimes`, and install the .NET 10 SDK if needed. See
-  [Microsoft's troubleshooting guide](https://learn.microsoft.com/en-us/dotnet/core/tools/troubleshoot-usage-issues).
+- **Older host reports an unsupported report size or layout:** update the host application to the latest release.
 - **Framework logs:** set `Logging__LogLevel__Microsoft=Information` before launching.
 
 ## More

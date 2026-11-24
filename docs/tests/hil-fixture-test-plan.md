@@ -18,19 +18,10 @@ Wire the fixture as described in [HIL Fixture Setup](hil-fixture-setup.md):
 | 3     | HW UART1 loopback      | CDC1          | Loopback pass      |
 | 4     | PIO UART5 loopback     | CDC5          | Loopback pass      |
 
-Test each board target (`pico` and `pico2`) when available, one board at a time. The Debug Probe external-peer check in
-the setup guide is optional and not part of the pass criteria.
-
-These commands send UART data and change serial settings. Confirm every endpoint belongs to the fixture board before
-running them. `--no-record` only suppresses the report; the hardware test still runs.
-
-Attach only one PicoUart. The runners find the board over HID rather than from the CDC paths, and `--board` is just a
-record label. The six-port runners also check that every CDC path belongs to the same board, at its declared index.
-
-Flash first, as described in [Releasing](../deployment/releasing.md#flashing-release-artifacts), then confirm the
-version and ready state over HID. `--artifact` hashes the file you supply but cannot prove the board is running it, and
-`--firmware-version` and `--firmware-commit` are labels too. The runners never reset, reflash, or change the board's
-voltage, so after a failure reflash or reset yourself and confirm clean HID health before the next run.
+Test `pico` and `pico2` separately when available. Attach one PicoUart and confirm every CDC endpoint belongs to it:
+the runners send UART data and change serial settings, but do not reset or flash the board. Flash and identify the
+image using the [hardware setup guide](../hardware-setup.md#installing-firmware); `--artifact` hashes the supplied
+file but cannot verify what is running. `--no-record` suppresses the report only, not the test.
 
 ## Functional Pass
 
@@ -100,11 +91,10 @@ ceiling undetermined.
 
 ### Test Matrix
 
-| Layer               | Rate sweep                                                         | Duration                        |
-| ------------------- | ------------------------------------------------------------------ | ------------------------------- |
-| Single direction    | 460800, 600000, 800000, 1000000, 1100000, 1200000                  | 10 s per rate                   |
-| Single pair duplex  | 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000 | 30 s per rate                   |
-| Concurrent six-port | 115200, 128000, 153600, 230400, 256000, 460800, 921600, 1000000, 2000000, 3000000 | 30 s per rate, fresh port setup |
+- **Single direction** — 10 s per rate: 460800, 600000, 800000, 1000000, 1100000, 1200000.
+- **Single pair duplex** — 30 s per rate: 460800, 600000, 800000, 900000, 1000000, 1040000, 1060000, 1080000.
+- **Concurrent six-port** — 30 s per rate with fresh port setup: 115200, 128000, 153600, 230400, 256000, 460800,
+  921600, 1000000, 2000000, 3000000.
 
 These durations are plan values, not runner defaults, so always pass `--duration`.
 
@@ -266,19 +256,11 @@ More USB loopback runs will not close these:
   repeated trials ([review record](records/2026-10-23-uart-cdc-review-validation.md#explicit-core-1-reset-follow-up)).
   Cold power-on, watchdog, and USB-reset starts are not qualified yet.
 
-## Tuning Experiments
+<a id="tuning-experiments"></a>
 
-The current defaults (buffer sizes, bridge budgets, PIO DMA thresholds, TX admission gates, and DMA snapshot checks)
-are the baseline. The variants tried so far did not beat it:
+## Tuning Procedure
 
-- Halving the bridge pass budget (to 512 bytes) or the PIO TX DMA threshold (to 32 bytes) left throughput unchanged and
-  made the worst block latency slightly higher ([tuning check](records/2026-10-22-cdc-uart-session-validation.md)).
-- Dropping a TX admission check so the next transfer could start sooner ("refill") did not pay off. On the hardware
-  UARTs it slowed small blocks at 115200. On PIO it gained about 5-8% for small blocks at 460800 but nothing at 115200,
-  from one board and few samples. Both variants were removed; PIO refill may be worth another look for small-message
-  workloads ([review record](records/2026-10-23-uart-cdc-review-validation.md#matched-refill-experiments)).
-
-Keep the defaults unless an experiment shows a clear, repeatable win. When you run one:
+Use current defaults as the baseline. Change one setting at a time and compare the candidate under matching conditions:
 
 - Compare baseline and candidate images on both boards with the same clock, wiring, payloads, rates, and host. Change
   one thing at a time, repeat the baseline to see run-to-run variation, and keep hashes and raw samples.
@@ -293,13 +275,8 @@ Keep the defaults unless an experiment shows a clear, repeatable win. When you r
 
 <a id="usb-paced-traffic-and-uart-capacity"></a>
 
-## Measured Six-Port Envelope
+## Measured Throughput
 
-The October 9 sweeps used USB-paced traffic and are historical evidence, not a limit for later firmware. Per-image
-results are in the [HIL records](records/README.md#evidence-index). The clock matters on RP2040, since the 250 MHz Pico
-passed far higher rates than the 125 MHz one, but no profiling was done to confirm the bottleneck.
-
-On the faster boards, total verified throughput levels off around 0.47-0.53 MB/s. Each payload crosses USB twice, and
-each stream waits for its echo, so this points to USB full-speed limits. A pass at a given baud therefore shows
-integrity at the load achieved, not continuous full-rate traffic. Measuring that needs independently paced external
-sources that bypass the board's USB OUT path, with wire timing measured.
+Historical six-port measurements and their limits are summarized in the
+[HIL records](records/README.md#historical-throughput). They are evidence for the tested artifacts, not a universal
+UART rate.

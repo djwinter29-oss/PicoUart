@@ -10,8 +10,8 @@ flowchart LR
    CDC5["CDC5 / PIO UART5"] -->|"TX to RX loopback"| CDC5
 ```
 
-The GPIOs below come from the [port map](../hardware-setup.md#port-map). All links use 3.3 V logic, share ground with
-the board, and run at the firmware default of 115200 8N1.
+The GPIOs below come from the [port map](../hardware-setup.md#port-map). Run the fixture at the firmware default of
+115200 8N1.
 
 ## Equipment
 
@@ -26,8 +26,7 @@ access. It does not touch the board.
 ## Electrical Safety
 
 - Disconnect power before installing jumpers or checking continuity; reconnect only after verifying the wiring.
-- Use 3.3 V UART logic only.
-- Connect a shared ground for every link.
+- Use 3.3 V UART logic and connect a shared ground between the board and every link.
 - Never connect UART TX to TX or RX to RX.
 - Never connect RS-232 voltage levels directly to Pico GPIOs.
 - Leave RTS/CTS disconnected for the baseline fixture.
@@ -45,7 +44,6 @@ Cross the signal directions between UART0/CDC0 and UART2/CDC2:
 | ------------ | ---- | ------------ | ---- |
 | TX           | GP0  | RX           | GP9  |
 | RX           | GP1  | TX           | GP8  |
-| GND          | GND  | GND          | GND  |
 
 ### Link 2: PIO UART3 to PIO UART4
 
@@ -55,7 +53,6 @@ Cross the signal directions between UART3/CDC3 and UART4/CDC4:
 | ------------ | ---- | ------------ | ---- |
 | TX           | GP12 | RX           | GP17 |
 | RX           | GP13 | TX           | GP16 |
-| GND          | GND  | GND          | GND  |
 
 ### Link 3: Hardware UART1 Loopback
 
@@ -75,10 +72,9 @@ Connect UART5/CDC5 TX to its own RX:
 
 ## Bring-Up Checklist
 
-1. With the board unpowered, check the four links above: TX crosses to RX, RX crosses to TX, and each link shares
-   ground. Perform continuity checks only while unpowered.
-2. [Flash the intended firmware artifact](../deployment/releasing.md#flashing-release-artifacts) and record its version
-   and SHA-256.
+1. Verify the four links above.
+2. Flash the intended artifact using [USB](../hardware-setup.md#installing-firmware) or
+   [SWD](../../firmware/build-and-config.md#debug-probe-loading-and-recovery), then record its version and SHA-256.
 3. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate.
 4. Run the functional and performance plans.
 5. Remove all test jumpers before connecting external UART equipment.

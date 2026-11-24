@@ -46,7 +46,8 @@ _The dashboard with simulated telemetry._
 1. Download the firmware from [Releases](https://github.com/djwinter29-oss/PicoUart/releases): the `pico` `.uf2`
    for Pico (RP2040), or the `pico2` `.uf2` for Pico 2 (RP2350).
 2. Hold **BOOTSEL** while plugging in the board, then copy the `.uf2` onto the `RPI-RP2` or `RP2350` drive that
-   appears. The board reboots into PicoUart.
+   appears. The board reboots into PicoUart; see [hardware setup](docs/hardware-setup.md#installing-firmware) for
+   details.
 3. Wire each device TX to RX, RX to TX, and GND to GND. The pin map is in [hardware setup](docs/hardware-setup.md).
 4. Open the matching serial port in your terminal or script, and set the baud rate and framing your device needs.
 
@@ -91,8 +92,9 @@ in [hardware setup](docs/hardware-setup.md).
 | --- | --- |
 | Wiring, pin map, finding ports | [Hardware setup](docs/hardware-setup.md) |
 | How the firmware works | [Architecture](docs/design/architecture.md) and the other [design docs](docs/design/) |
-| Building firmware and options | [Build and configuration](firmware/build-and-config.md) |
-| Developing and testing | [Firmware](docs/development/firmware-testing.md), [host tools](docs/development/host-tools.md), [tests](docs/tests/README.md), [CI](docs/development/github-actions.md) |
+| Firmware | [Build/configuration](firmware/build-and-config.md), [test guide](docs/development/firmware-testing.md) |
+| Host tools | [Host guide](docs/development/host-tools.md), [dashboard guide](docs/development/dashboard-development.md) |
+| Tests and CI | [Test overview](docs/tests/README.md), [GitHub Actions](docs/development/github-actions.md) |
 | Releasing | [Release process](docs/deployment/releasing.md) |
 | Contributing | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md), [Security](SECURITY.md) |
 

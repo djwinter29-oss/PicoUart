@@ -1,4 +1,4 @@
-# Firmware Development and Tuning
+# Firmware Testing
 
 This guide covers firmware work beyond a plain build: where each kind of test fits, how to profile timing, and how to
 judge buffer sizes. Building and loading are covered in
@@ -7,10 +7,8 @@ For the provisioned Cursor Cloud snapshot setup, see the [Cursor Cloud environme
 
 ## Test Scope
 
-For firmware changes, run the native C and contract tests, build both `pico` and `pico2`, then use HIL when the change
-depends on physical behavior. The [test overview](../tests/README.md) describes the full validation levels; native
-test coverage is listed in [firmware/tests](../../firmware/tests/README.md). CI runs the hardware-free checks and
-builds the firmware, but has no board.
+Choose validation from the [test overview](../tests/README.md). It covers host checks, both firmware builds, and HIL;
+native C test coverage is listed in [firmware/tests](../../firmware/tests/README.md). CI has no board.
 
 ## Optional Timing Profiles
 

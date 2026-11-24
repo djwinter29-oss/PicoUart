@@ -1,8 +1,7 @@
 # Firmware Build and Configuration
 
-This folder holds the Pico SDK firmware project `pico_uart`. This page covers building, loading over SWD, and where the
-build-time configuration lives. For released images, see
-[Releasing](../docs/deployment/releasing.md#flashing-release-artifacts).
+This folder holds the Pico SDK firmware project `pico_uart`. This page covers building, loading over SWD, and build-time
+configuration. For USB firmware installation, see [Hardware Setup](../docs/hardware-setup.md#installing-firmware).
 
 ## Build
 
@@ -51,7 +50,50 @@ tools/firmware/load.sh --board pico
 tools/firmware/load.sh --board pico2
 ```
 
-Probe recovery and QSPI flash details are in [Releasing](../docs/deployment/releasing.md#debug-probe-elf).
+### Debug Probe Loading and Recovery
+
+To flash a packaged ELF without rebuilding:
+
+```sh
+tools/firmware/load.sh --board pico --skip-build --elf /path/to/release-pico.elf
+```
+
+Use `--board pico2` with a Pico 2 ELF. Add `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached.
+SWD defaults to 1000 kHz; use `--adapter-speed-khz 100` for marginal wiring. Without `--skip-build`, the loader does
+an incremental development build first.
+
+On Linux, `unable to find a matching CMSIS-DAP device` often means USB access was denied, even if `lsusb` lists the
+probe. The loader retries with noninteractive sudo when it can; otherwise add a udev rule for the probe. To test probe
+access without touching flash:
+
+```sh
+openocd -d3 -f interface/cmsis-dap.cfg -c 'transport select swd' -c 'adapter speed 1000' -c 'init; shutdown'
+```
+
+If OpenOCD reports `Unknown flash device` after finding the target, update OpenOCD first. Flash ID `0x00154068`
+(Boya BY25Q16ES) needs a recent OpenOCD build; pass it with `--openocd-exe`.
+
+A recorded recovery for one unstable SWD session was to disconnect both board and probe, wait for their LEDs to go
+off, then reconnect. Treat it as an observation, not a general fix
+([review record](../docs/tests/records/2026-10-23-uart-cdc-review-validation.md#cause-and-retained-change)).
+
+### QSPI Auto-Detection Override
+
+Use this only with stable SWD and flash capacity confirmed from the chip marking and datasheet. OpenOCD uses capacity
+to set erase bounds, so a guessed value can make flashing unsafe. Prefer a current OpenOCD with normal detection. If
+normal detection is unavailable, the RP2040/RP2350 target scripts accept `FLASHSIZE` in bytes:
+
+```sh
+: "${FLASH_SIZE_BYTES:?Set the flash capacity in bytes from the verified chip marking and datasheet}"
+OPENOCD_TARGET_CFG="$(mktemp)"
+trap 'rm -f "$OPENOCD_TARGET_CFG"' EXIT
+printf 'set FLASHSIZE %s\nsource [find target/rp2040.cfg]\n' "$FLASH_SIZE_BYTES" > "$OPENOCD_TARGET_CFG"
+tools/firmware/load.sh --board pico --skip-build --elf /path/to/pico.elf \
+  --openocd-target "$OPENOCD_TARGET_CFG" --probe-serial "<probe-serial>" --adapter-speed-khz 1000
+```
+
+For Pico 2, use `--board pico2`, a Pico 2 ELF, and `target/rp2350.cfg`. Continue only if OpenOCD reports
+**Verified OK**. The override skips identification; it does not fix SWD wiring or reset problems.
 
 ## Clock Profile
 

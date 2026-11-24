@@ -22,22 +22,5 @@ Shared Pico SDK test hooks use one storage definition in [pico_sdk_hooks.c](stub
 native test targets by CMake. Keep hook declarations in stub headers as `extern`; weak header definitions do not
 provide portable shared hook storage across ELF and Windows COFF linkers.
 
-## Run C Tests
-
-From the repository root:
-
-```sh
-tools/validation/run-host-tests.sh --skip-python              # add --sanitize for sanitizer builds
-```
-
-`tools/validation/validate.sh` builds the `pico` firmware first and then runs every host test, C and Python.
-
-To configure and run the C tests directly:
-
-```sh
-cmake -S firmware/tests -B build/host-tests -G Ninja
-cmake --build build/host-tests
-ctest --test-dir build/host-tests --output-on-failure
-```
-
-Physical UART behavior is covered by the [HIL test documentation](../../docs/tests/README.md).
+Use the [test overview](../../docs/tests/README.md) for validation commands and HIL coverage. It is the authoritative
+guide for choosing the checks a change needs.

@@ -34,8 +34,9 @@ Use [Repository Tools](tools/README.md) for commands:
 
 | Change | Run |
 | --- | --- |
-| Firmware | `tools/validation/run-host-tests.sh --skip-python`, then build `pico` and `pico2`; see [firmware testing](docs/development/firmware-testing.md). |
-| Python, .NET, or browser tools | Run the changed application's tests and lint/type checks; see [host development](docs/development/host-tools.md). |
+| Firmware | Follow the [firmware test guide](docs/development/firmware-testing.md). |
+| Python/.NET | Run relevant tests and lint/type checks; see [host development](docs/development/host-tools.md). |
+| Dashboards | Run the [dashboard checks](docs/development/dashboard-development.md). |
 | Documentation | Check links and examples, then run `git diff --check`. |
 
 For Python checks, use the virtual environment from the

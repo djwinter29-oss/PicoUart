@@ -1,7 +1,7 @@
 # Testing PicoUart
 
-PicoUart is tested at five levels. Start with the smallest level that covers your change. A partial hardware run is
-useful evidence, but it is not a full pass.
+PicoUart is tested at five levels. Start with the smallest level that covers your change; record partial hardware runs
+as partial.
 
 | Level | Environment | Purpose |
 | --- | --- | --- |
@@ -25,10 +25,10 @@ done
 git diff --check
 ```
 
-The host-test wrapper runs both the native C suite and the Python tests. It does not cover the .NET or browser
-dashboards; if you changed those, run their checks from the [tools reference](../../tools/README.md), and report any
-check you skipped. None of this proves anything about DMA timing, USB enumeration, multicore load, or physical UART
-signalling.
+The host-test wrapper runs native C and Python tests; add `--skip-python` to run only the C suite. It does not cover the
+.NET or browser dashboards; if you changed those, run their checks from the [tools reference](../../tools/README.md),
+and report any check you skipped. Hardware-free checks cannot establish DMA timing, USB enumeration, multicore load,
+or physical UART signalling.
 
 ## With Hardware
 

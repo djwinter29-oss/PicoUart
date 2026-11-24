@@ -40,31 +40,21 @@ phase. See the [test plan](../../../docs/tests/hil-fixture-test-plan.md#before-y
 `--no-record`. Install both crossed pairs and both loopbacks before starting and do not change wiring during the run.
 Use `tools/hil/runner/functional.sh --stage 1|2|3|4` only to diagnose one link on the same fixed fixture.
 
-For a six-port speed ceiling search:
-
-- Use the combined runner with `--incremental-performance`, starting at the default 115200-baud baseline.
-- Require a complete baseline with clean HID health. A health or setup error at the baseline means it did not pass.
-- Record the highest rate all six streams passed and the first higher failed rate. If the search reaches its cap,
-  report that no failure was reached; do not claim an exact hardware limit.
-- A higher-rate setup issue leaves the ceiling undetermined but does not erase a verified baseline pass. A health
-  error remains a failure.
-
-See the [baseline and speed-ceiling rules](../../../docs/tests/hil-fixture-test-plan.md#baseline-and-speed-ceiling)
-for interpreting results.
+Use the [baseline and speed-ceiling rules](../../../docs/tests/hil-fixture-test-plan.md#baseline-and-speed-ceiling)
+when running or interpreting a speed sweep.
 
 Before each physical HIL test:
 
 - Flash the selected board with the image under test. For development, use
   `tools/firmware/load.sh --board <pico|pico2>` to build and flash. For release qualification, flash the exact
   packaged artifact with `--skip-build --elf <artifact>` as documented in
-  [Releasing](../../../docs/deployment/releasing.md#flashing-release-artifacts).
+  [Firmware Build and Configuration](../../../firmware/build-and-config.md#load-over-swd).
 - Verify that the board re-enumerates and reports the expected firmware version. Record the artifact path and SHA-256.
 - The combined runner records the live system clock in the report header and filename, for example
   `2026-10-22-171334Z-pico-125mhz-hil.md`. If it says `clock-unknown`, run `pico-uart hardware` and record the
   reported clock; if that query fails, leave the clock unknown. Do not infer it from the board model or profile.
-- If OpenOCD cannot identify QSPI flash, do not guess an override. Follow the verified-capacity procedure in
-  [Releasing](../../../docs/deployment/releasing.md#override-qspi-auto-detection-advanced) after checking the chip
-  marking and datasheet.
+- If OpenOCD cannot identify QSPI flash, follow the verified-capacity procedure in
+  [Firmware Build and Configuration](../../../firmware/build-and-config.md#qspi-auto-detection-override).
 
 ## Diagnostics
 

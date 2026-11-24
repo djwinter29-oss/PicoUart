@@ -13,11 +13,6 @@ The tools read channel health, traffic counters, and dropped-byte counts over th
 separate from the six CDC serial ports, so keep using your terminal or serial library for UART data, baud rate, and
 framing. The dashboard runs in your browser but talks to Python, so it needs no WebHID support.
 
-![PicoUart dashboard showing board information, configuration, runtime status, and six UART channels](https://raw.githubusercontent.com/djwinter29-oss/PicoUart/main/docs/assets/pico-uart-dashboard.png)
-
-*Illustrative screenshot of the Direct Dashboard with simulated telemetry. The Python and .NET dashboards share a
-separate frontend, so their layout and controls differ.*
-
 ## Install
 
 Use a virtual environment:
@@ -30,8 +25,6 @@ python -m pip install pico-uart
 
 If PowerShell blocks activation, skip it and call `.\.venv\Scripts\python.exe` and `.\.venv\Scripts\pico-uart.exe`
 directly. `pipx install pico-uart` also works, and `--pre` installs prereleases.
-
-PyPI 0.11.0 starts the dashboard with `pico-uart web`; later releases use `pico-uart dashboard`.
 
 ## Dashboard
 
@@ -98,7 +91,7 @@ unclear, reconnect and check the board before saving again. Details are in the
 ## More
 
 - [Release notes](https://github.com/djwinter29-oss/PicoUart/releases) and
-  [unreleased changes](https://github.com/djwinter29-oss/PicoUart/blob/main/host/python/CHANGELOG.md)
+  [package changelog](https://github.com/djwinter29-oss/PicoUart/blob/main/host/python/CHANGELOG.md)
 - [Developing from a checkout](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/development/host-tools.md)
 - [HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md)
 - [Security policy](https://github.com/djwinter29-oss/PicoUart/blob/main/SECURITY.md)

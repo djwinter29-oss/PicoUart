@@ -4,12 +4,12 @@ The `tools/` directory contains local build, test, hardware, and release helpers
 
 ## Categories
 
-| Directory     | Purpose                                                                                          |
-| ------------- | ------------------------------------------------------------------------------------------------ |
-| `firmware/`   | Pico SDK setup, firmware builds, and Debug Probe loading                                         |
-| `hil/`        | Reusable Python project for physical HIL runners and serial bridge/stress tools                  |
-| `host/`       | Host application launchers and Linux HID permission helpers                                     |
-| `release/`    | Release version, USB identity, and artifact verification                                         |
+| Directory | Purpose |
+| --- | --- |
+| `firmware/` | Pico SDK setup, firmware builds, and Debug Probe loading |
+| `hil/` | Physical HIL runners and serial bridge/stress tools |
+| `host/` | Host application launchers and Linux HID permission helpers |
+| `release/` | Release version, USB identity, and artifact verification |
 | `validation/` | Test runners, coverage, syntax checks, static analysis, and smoke tests |
 
 ## Common Commands

@@ -62,5 +62,5 @@ page writes nothing else, and it never exposes credentials or raw flash.
 ## Development
 
 Source is in `src/` and checks are in `tests/`; serve or publish `src/` directly, with no build step. See
-[developing the Direct Dashboard](../../docs/development/host-tools.md#direct-dashboard-development), the
+[Dashboard Development](../../docs/development/dashboard-development.md#direct-dashboard), the
 [project README](../../README.md), and the [security policy](../../SECURITY.md).

@@ -6,8 +6,8 @@ and per-channel monitoring. For what HID is for and how it relates to the CDC po
 
 ## Interface Basics
 
-- One vendor-defined HID interface, `Status Monitor`, follows the twelve CDC interfaces. It uses usage page `0xFF00`,
-  usage `0x01`, and no boot protocol.
+- One vendor-defined HID interface, `Status Monitor`, follows the six CDC ports (twelve USB interfaces). It uses usage
+  page `0xFF00`, usage `0x01`, and no boot protocol.
 - The device is USB `2e8a:116b`, allocated to PicoUart by the Raspberry Pi Foundation
   ([allocation list](https://github.com/raspberrypi/usb-pid)). The manufacturer string is `djwinter`, the product
   `PicoUart`. CDC interface strings advertise backend limits: `CDC0 HW`, `CDC1 HW`, and `CDC2`-`CDC5 PIO 8N1`.
@@ -72,7 +72,7 @@ Read once per connection. The contents are static until reboot.
 **Discovery.** Every product using this convention shares a three-byte prefix: the layout version at offset 0 and the
 little-endian product ID at offsets 1-2. Read the descriptor-declared length, check the prefix, choose the matching
 product contract, and only then validate the full report. Never decode a known product's unsupported version with an
-older layout. Show an unknown product as `Unknown product (0xNNNN)`, and enable no product-specific commands for it.
+older layout. Hosts must not enable product-specific commands for an unknown product.
 
 | Product ID | Meaning |
 | ---------: | ------- |
@@ -81,8 +81,8 @@ older layout. Show an unknown product as `Unknown product (0xNNNN)`, and enable 
 | `0x0002`-`0xfffe` | Assign as other project products are introduced. |
 | `0xffff` | Reserved. |
 
-**UID.** Display it as **Serial / UID**: uppercase hex, two characters per byte, matching the 16-character USB serial.
-On RP2040 it is the QSPI flash UID; on RP2350 it is the SDK platform identity.
+**UID.** It is an ordered byte sequence. Uppercase hexadecimal with two characters per byte matches the 16-character
+USB serial. On RP2040 it is the QSPI flash UID; on RP2350 it is the SDK platform identity.
 
 **Board model.** This is the configured build target; the firmware does not detect hardware. Keep unknown MCU and board
 numbers as they are rather than inventing names.
@@ -91,9 +91,9 @@ numbers as they are rather than inventing names.
 | ----------: | ------------ | --- | -------------- |
 | `0` | Unknown / unspecified | Reported separately | No specific board identity claimed. |
 | `1` | Pico | RP2040 | Existing firmware target. |
-| `2` | Pico W | RP2040 | Identifier reserved; target support not implemented or qualified. |
+| `2` | Pico W | RP2040 | Builds from source; not covered by the release HIL matrix. |
 | `3` | Pico 2 | RP2350 | Existing firmware target. |
-| `4` | Pico 2 W | RP2350 | Identifier reserved; target support not implemented or qualified. |
+| `4` | Pico 2 W | RP2350 | Builds from source; not covered by the release HIL matrix. |
 
 **Firmware version.** A `v1.2.3` tag reports `1.2.3`. The USB `bcdDevice` field carries only major.minor. Use the
 version for diagnostics only: choose decoding by product and layout, and choose operations by capability flags.
@@ -113,9 +113,9 @@ means the firmware accepts the request. It says nothing about stability.
 
 ### Firmware RAM Reservation
 
-Show `ram_reserved_bytes` / `ram_total_bytes` as **Firmware RAM reserved / total**. This is build-time accounting: the
-linked SRAM through `__end__`, the scratch sections, and both stack reservations. It is not free heap or runtime
-memory pressure. Reject a zero total or a reservation larger than the total.
+`ram_reserved_bytes` is build-time accounting: linked SRAM through `__end__`, scratch sections, and both stack
+reservations. It does not measure free heap or runtime memory pressure. Reject a zero total or a reservation larger
+than the total.
 
 ## Report ID 2: Board Configuration
 
@@ -151,8 +151,7 @@ as unknown. Never substitute GPIO 0.
 ### Shared Buffer Capacities
 
 All four capacities are nonzero and the same for every channel. They give the storage behind the matching peaks in
-report 30-35, not total USB in-flight storage. Show peak percentages only when report 2 is valid; otherwise show raw
-bytes.
+reports 30-35, not total USB in-flight storage.
 
 ### Reset Cause
 
@@ -188,8 +187,8 @@ HardFault takes priority over those markers.
 | `5`-`254` | Unassigned; invalid in the currently specified layout | None |
 | `255` | Unavailable sentinel for `stored_profile` readback only; never a save request | None |
 
-`stored_profile` is only a request; report 3 has the running clock. Show the two separately, and
-never infer the profile from the frequency.
+`stored_profile` is only a request; report 3 has the running clock. They are separate values; never infer the profile
+from the frequency.
 
 At boot the firmware picks the highest supported frequency at or below the request. The current build caps RP2040 at
 250 MHz and RP2350 at 280 MHz. If no frequency is eligible, or the clock change fails, it falls back to SDK defaults.
@@ -225,14 +224,6 @@ Live measurements only.
 | 14 | 2 | `core1_service_load_basis_points` | Same scale and sentinel. |
 | 16 | 4 | `system_clock_hz` | Current SDK-reported `clock_get_hz(clk_sys)`, nonzero. |
 | **Total** | **20** | | **21 bytes including the report ID.** |
-
-| Display | Interpretation |
-| ------- | -------------- |
-| Running clock | SDK-configured frequency; the requested profile is separate. |
-| Estimated die temperature | Internal sensor estimate in Celsius, normally shown to one decimal place. |
-| USB service load (Core 0) / UART service load (Core 1) | Work completed by each core during the sampling window; `65535` means warming up/unavailable. |
-| LED | Off/On when supported; otherwise Unavailable. |
-| Uptime | Time since boot; compare readings only for the same identified device. |
 
 If any mandatory measurement fails, the whole GET fails. The firmware never returns a partial or zero-filled report.
 The load sentinel `65535` and an absent LED are valid values and not failures. When a read fails, the host marks live
@@ -362,8 +353,8 @@ A Feature GET returns the same layout on demand.
 | `5`-`255` | Unassigned | Invalid in this layout. |
 
 When more than one state applies, the earliest in this order wins: Closed, Error, Starting, Configuring, Ready. A
-missing or stale report is a host-side Unknown, not a wire value. Show Error as "attention" and read the diagnostics
-report for the reason. The request lifecycle behind Configuring and Error is described in the
+missing or stale report is a host-side Unknown, not a wire value. Read the diagnostics report for an error reason.
+The request lifecycle behind Configuring and Error is described in the
 [control plane design](../control-plane-design.md).
 
 ### UART Measurement State
@@ -388,10 +379,9 @@ stopped port can still have a Current final sample. The CDC counters are owned b
 | UART → Host | `uart_rx_bytes` | DMA bytes published into RX ring, including bytes subsequently overwritten. |
 | UART → Host | `cdc_tx_bytes` | TinyUSB acceptance, not confirmed host receipt. |
 
-These count handoffs rather than delivered bytes. Closing a port or resetting USB can discard bytes already counted, so
-a difference between counters is not a loss measurement. Use the diagnostics counters and payload checks for that. The
-counters run from boot and wrap at 2^32, and USB reconnects do not reset them. The applied baud rate is a setting, not a
-measured wire rate; show it as **Last applied** while the port is stopped.
+These count handoffs rather than delivered bytes. Closing a port or resetting USB can discard bytes already counted.
+Use the diagnostics counters and payload checks to investigate loss. The counters run from boot and wrap at 2^32, and
+USB reconnects do not reset them. The applied baud rate is a setting, not a measured wire rate.
 
 ### Snapshot Consistency
 
@@ -436,11 +426,6 @@ it never clears history or affects snapshot sequences and baselines.
 | 22 | 2 | `cdc_rx_fifo_peak_bytes` | Boot-lifetime observed host-to-device FIFO peak. |
 | **Total** | **24** | | **25 bytes including the report ID.** |
 
-| Counter | User-facing label |
-| ------- | ----------------- |
-| `rx_overrun_count` | Known RX bytes dropped |
-| `rx_error_count` | RX controller error observations |
-
 ### Last Configuration Error
 
 | Value | Meaning |
@@ -454,7 +439,7 @@ it never clears history or affects snapshot sequences and baselines.
 | `6`-`255` | Unassigned. |
 
 This field records history and does not mean the port is failing now. It keeps its value through later successes, port
-close and reopen, and USB reconnects, and clears only at boot. Label it **Last configuration error**.
+close and reopen, and USB reconnects, and clears only at boot.
 
 ### Fault History
 
@@ -478,9 +463,9 @@ close and reopen, and USB reconnects, and clears only at boot. Label it **Last c
 | Current (`1`) | Age zero; coherent UART statistics acquired for this capture, including a stopped backend when safely captured. |
 | Cached (`2`) | Reuse last accepted UART statistics; age may be zero due to rounding or saturate at 255. |
 
-Peaks are the largest occupancy seen at the firmware's sampling points, so a brief maximum can be missed. Label them
-**Observed peak since boot** and compare them with the capacities in report 2. A full peak does not by itself mean
-current congestion or data loss. Peaks survive port close and reopen.
+Peaks are the largest occupancy seen at the firmware's sampling points, so a brief maximum can be missed. Compare them
+with the capacities in report 2. A full peak does not by itself mean current congestion or data loss. Peaks survive
+port close and reopen.
 
 ## Host Polling and Validation
 

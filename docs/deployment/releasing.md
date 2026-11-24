@@ -15,7 +15,7 @@ stability. Until qualification evidence exists, treat published artifacts as lab
    PyPI and Pages publishers follow automatically ([host app publishing](host-app-publishing.md)).
 3. [Flash the packaged images](#flashing-release-artifacts) without rebuilding, and collect the
    [required HIL evidence](#required-hil-matrix) for each rated board.
-4. Work through the [promotion checklist](#promotion-checklist) before calling the release hardware-qualified.
+4. Confirm the [release HIL gates](#release-hil-gates) before calling the release hardware-qualified.
 
 The CI job graph is described in [GitHub Actions](../development/github-actions.md).
 
@@ -51,90 +51,27 @@ own VID/PID. Changing the identity is a breaking USB change.
 
 ## Flashing Release Artifacts
 
-Stop UART traffic and close host applications first. Use the packaged artifact for the target board and check its
-SHA-256 against the release checksum manifest. Both methods work for first installs and upgrades.
-
-### USB Drive (UF2)
-
-No debug probe or build tools are needed.
-
-1. Download the `.uf2` for your board: `pico` for Raspberry Pi Pico, `pico2` for Pico 2.
-2. Hold **BOOTSEL** while connecting the USB cable. If the board is already powered, unplug it first.
-3. Release BOOTSEL when the bootloader drive appears, and copy the `.uf2` onto it.
-4. The drive disappears when the copy finishes, the board reboots, and the six serial ports and HID interface appear.
-   Check the reported firmware version before resuming UART traffic.
-
-On boards with a **RESET** button you can instead hold BOOTSEL, tap RESET, then release BOOTSEL. Standard Pico and
-Pico 2 boards have no reset button.
+For regular setup or updates, follow [Installing Firmware](../hardware-setup.md#installing-firmware). For a release
+qualification run, verify the artifact's SHA-256 against the release manifest, then use the SWD procedure in
+[Firmware Build and Configuration](../../firmware/build-and-config.md#load-over-swd). Do not rebuild the image being
+qualified.
 
 ### Debug Probe (ELF)
 
-Programming over SWD flashes the packaged ELF without rebuilding it:
-
-```sh
-tools/firmware/load.sh --board pico --skip-build --elf /path/to/release-pico.elf
-```
-
-Use `--board pico2` with the Pico 2 ELF. Add `--probe-serial <serial>` when more than one CMSIS-DAP probe is attached.
-SWD defaults to 1000 kHz; use `--adapter-speed-khz 100` for marginal wiring. Without `--skip-build`, the loader does an
-incremental development build first.
-
-<details>
-<summary>Probe permissions, unknown flash devices, and unstable SWD</summary>
-
-On Linux, `unable to find a matching CMSIS-DAP device` often means USB access was denied, even if `lsusb` lists the
-probe. The loader retries with noninteractive sudo when it can; otherwise add a udev rule for the probe. To test probe
-access without touching flash:
-
-```sh
-openocd -d3 -f interface/cmsis-dap.cfg -c 'transport select swd' -c 'adapter speed 1000' -c 'init; shutdown'
-```
-
-If OpenOCD reports `Unknown flash device` after finding the target, update OpenOCD before blaming the firmware. Flash
-ID `0x00154068` (Boya BY25Q16ES) needs a recent build; pass one with `--openocd-exe`.
-
-One recovery that worked in a recorded development session was to disconnect both the board and probe, wait for their
-LEDs to go off, then reconnect. The record notes that retries and programming only core 0 had not restored verified
-programming; treat this as an observation, not a confirmed fix for every SWD failure
-([review record](../tests/records/2026-10-23-uart-cdc-review-validation.md#cause-and-retained-change)).
-
-</details>
+See [Debug Probe loading and recovery](../../firmware/build-and-config.md#debug-probe-loading-and-recovery).
 
 ### Override QSPI Auto-Detection (Advanced)
 
-<details>
-<summary>Only with stable SWD and a flash capacity confirmed from the chip marking and datasheet</summary>
-
-OpenOCD uses the flash capacity to set erase bounds, so a guessed value can make flashing unsafe. Prefer a current
-OpenOCD with normal detection. When that is not possible, the RP2040/RP2350 target scripts accept a `FLASHSIZE` in
-bytes:
-
-```sh
-: "${FLASH_SIZE_BYTES:?Set the flash capacity in bytes from the verified chip marking and datasheet}"
-OPENOCD_TARGET_CFG="$(mktemp)"
-trap 'rm -f "$OPENOCD_TARGET_CFG"' EXIT
-printf 'set FLASHSIZE %s\nsource [find target/rp2040.cfg]\n' "$FLASH_SIZE_BYTES" > "$OPENOCD_TARGET_CFG"
-tools/firmware/load.sh --board pico --skip-build --elf /path/to/pico.elf \
-  --openocd-target "$OPENOCD_TARGET_CFG" --probe-serial "<probe-serial>" --adapter-speed-khz 1000
-```
-
-For Pico 2, use `--board pico2`, a Pico 2 ELF, and `target/rp2350.cfg`. Continue only if OpenOCD reports
-**Verified OK**. The override skips identification only; it does not fix SWD wiring or reset problems.
-
-</details>
+Use the [verified-capacity procedure](../../firmware/build-and-config.md#qspi-auto-detection-override) only after
+confirming the flash capacity from the chip marking and datasheet.
 
 ## Release HIL Gates
 
-A release is hardware-qualified only when every rated board has a complete `PASS` for the required HIL matrix.
+A release is hardware-qualified only when every rated board has a complete `PASS` for this matrix. The
+[fixture setup](../tests/hil-fixture-setup.md) and [test plan](../tests/hil-fixture-test-plan.md) define the
+procedures; keep one record per board in the [HIL records](../tests/records/README.md) format.
 
-Record the reported system clock and boot clock profile alongside the image hash, since the clock profile is stored
-outside the firmware image. Overclock profiles are board-local, so an overclock claim needs its own evidence on that
-board.
-
-The [fixture setup](../tests/hil-fixture-setup.md) and [test plan](../tests/hil-fixture-test-plan.md) define how to
-run the tests. Keep one record per board in the [HIL records](../tests/records/README.md) format.
-
-## Required HIL Matrix
+<a id="required-hil-matrix"></a>
 
 | Coverage | Required evidence |
 | --- | --- |
@@ -149,20 +86,13 @@ A speed-sweep `PASS` qualifies only the 115200-baud baseline. The boundary it fi
 rates remain unrated. Older [record index](../tests/records/README.md#evidence-index) entries cannot
 substitute for a current exact-artifact run.
 
-The test plan currently lists startup after reset types as unqualified and says the safe DMA wrap/re-arm procedure is
-still unvalidated. Until repeatable procedures and passing exact-artifact evidence cover both, a release cannot meet
-this matrix and must remain unqualified. Optional claims, such as RTS/CTS or backpressure behavior, also need their
-matching board configuration and HIL variant.
+The test plan's [Known Gaps](../tests/hil-fixture-test-plan.md#known-gaps) lists open reset-startup and DMA wrap/re-arm
+procedures. Until exact-artifact evidence closes those gaps, releases remain unqualified. Optional claims such as
+RTS/CTS or backpressure also need their matching board configuration and HIL variant.
 
-## Promotion Checklist
-
-Before calling the release qualified, confirm:
-
-- All build gates passed for the exact commit.
-- Every rated firmware artifact has complete passing evidence with matching hashes.
-- Records and transcripts are in a shared location, not only in a local cache.
-- Release notes state compatibility changes, tested conditions, and remaining limits; attach the evidence and note
-  whether hardware qualification is complete.
+Before calling a release qualified, confirm that all build gates passed for the exact commit, every rated artifact has
+matching passing evidence, and records/transcripts are available to the team. Release notes should state tested
+conditions, compatibility changes, and remaining limits.
 
 ## Versioning
 

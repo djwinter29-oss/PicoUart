@@ -15,6 +15,16 @@ How to wire UART devices to a PicoUart board and find its serial ports. The pin 
 
 [Wireless boards](#wireless-boards) and the [PicoUART6 carrier](#picouart6-carrier-compatibility) are covered below.
 
+## Installing Firmware
+
+For first setup or an update, download the matching `.uf2` from
+[GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases): `pico` for Pico or `pico2` for Pico 2. Hold
+**BOOTSEL** while connecting the USB cable, then copy the file to the `RPI-RP2` or `RP2350` drive. The board reboots
+when the copy finishes. Confirm its firmware version over HID before resuming UART traffic.
+
+For release qualification, verify the artifact checksum and follow the
+[release flashing procedure](deployment/releasing.md#flashing-release-artifacts).
+
 ## Port Map
 
 The host sees six USB CDC ACM ports. Each CDC port maps to one target-side UART:
@@ -32,7 +42,7 @@ Normal wiring needs only TX, RX, and ground. The RTS/CTS pins are reserved, but 
 firmware; enabling it is a per-port build setting listed under
 [firmware configuration](../firmware/build-and-config.md#configuration).
 
-## Find The Serial Ports
+## Find the Serial Ports
 
 Host port numbers such as `/dev/ttyACM*` or `COMx` depend on enumeration order, so identify each CDC port by its USB
 interface instead. CDCn uses USB interface number 2×n and the interface name below, from the
@@ -67,7 +77,7 @@ usb-PicoUart_PicoUart_<board-serial>-if0a -> ../../ttyACM7
 With flow control disabled, PicoUart's six UART TX/RX pairs match the published pinout of
 [8086net/pico-sexa-uart-bridge](https://github.com/8086net/pico-sexa-uart-bridge). This provides UART TX/RX pin
 compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com/products/picouart6) and
-[The Pi Hut](https://thepihut.com/products/picouart6), subject to the following limits:
+[The Pi Hut](https://thepihut.com/products/picouart6). The carrier's extra features are not supported:
 
 - The carrier's UART activity, I2C activity, and GPIO-controlled power LEDs are not driven by PicoUart. The Pico's own
   identification LED is separate and remains available on non-wireless Pico/Pico 2 boards.
@@ -75,8 +85,6 @@ compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com
   compatible with the original firmware's `i2c-tiny-usb` functionality.
 - Keep RTS/CTS disabled on this carrier. PicoUart's optional flow-control assignments overlap the carrier's LED and I2C
   wiring; enabling them requires a separately reviewed pin map and hardware setup.
-
-This pinout comparison does not qualify the carrier or its original firmware features.
 
 ## Wiring Rules
 
@@ -103,16 +111,16 @@ Pico W and Pico 2 W expose the same UART pins listed above. Build specifically f
 Wi-Fi and Bluetooth are not initialized or used.
 
 The wireless boards' onboard LED is connected through the wireless chip rather than a direct MCU GPIO, so HID LED
-identification is unavailable in these builds. Do not substitute the non-wireless `pico` or `pico2` image: it treats
-GPIO25 as an LED output, but that pin is the wireless chip-select on W boards.
+identification is unavailable in these builds. Do not use the non-wireless `pico` or `pico2` image: it treats GPIO25
+as an LED output, but that pin is the wireless chip-select on W boards.
 
-The release build/HIL matrix currently covers Pico and Pico 2, not the wireless variants. Successful compilation does
-not qualify a Pico W or Pico 2 W for physical UART behavior, throughput, or clock-profile stability.
+The release build and HIL matrix covers Pico and Pico 2 only. Wireless variants have no physical UART, throughput, or
+clock-stability qualification yet.
 
 ## Power
 
-Do not assume the Pico board can power six external targets directly. If a carrier provides target power, document
-its current limits and protection.
+Do not power six external targets from the Pico unless the supply is rated for their combined current. For a carrier
+with target-power output, check its documented current limit and protection before connecting devices.
 
 ## Photo Credits
 
