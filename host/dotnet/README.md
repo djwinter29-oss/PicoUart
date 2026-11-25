@@ -1,19 +1,18 @@
 # PicoUart .NET Host
 
 A command-line tool and local dashboard for the [PicoUart](https://github.com/djwinter29-oss/PicoUart) six-channel
-USB-to-UART bridge on Raspberry Pi Pico and Pico 2. It reads channel health and traffic over the board's USB HID
-interface, so your serial tools keep using the six CDC ports. It does not capture UART data or set baud rates.
+USB-to-UART bridge. Download, extract, and run `./PicoUart web`; no .NET install is needed. It reads channel health
+and traffic over the board's USB HID interface, so your serial tools keep using the six CDC ports. UART data capture
+and baud-rate changes belong to those serial tools.
 
 ## Requirements
 
-- Linux x64, Windows x64, or Apple Silicon macOS (the release archive needs no .NET install)
-- A Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected by USB
-- Access to the board's HID interface; on Linux, set up
-  [device permissions](https://github.com/djwinter29-oss/PicoUart/blob/main/tools/README.md#linux-hid-permissions)
+- Linux x64, Windows x64, or Apple Silicon macOS
+- A flashed board ([firmware releases](https://github.com/djwinter29-oss/PicoUart/releases)) connected by USB
+- Access to the board's HID interface; on Linux, follow the
+  [device permission setup](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/hardware-setup.md#linux-hid-permissions)
 
 ## Install
-
-### From a Release Archive
 
 Download the archive for your computer (not the Pico) from
 [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases):
@@ -35,9 +34,9 @@ On Windows, use `.\PicoUart.exe`.
 ./PicoUart web
 ```
 
-Open <http://127.0.0.1:5000/>. The dashboard listens on loopback only, needs no WebHID, and shows channel health and
-traffic, dropped bytes, firmware and hardware identity, clock, and temperature. Press `Ctrl+C` to stop it, and use
-`--port 5001` if the port is taken.
+Open <http://127.0.0.1:5000/>. The dashboard listens on loopback only, works in any browser, and shows channel health
+and traffic, dropped bytes, firmware and hardware identity, clock, and temperature. Press `Ctrl+C` to stop it, and
+use `--port 5001` if the port is taken.
 
 With several boards, use `--serial ABC123` or `--device-path PATH` (not both), or pick one in the dashboard with
 **Board** and **Rescan**. Run one host process per board.
@@ -52,14 +51,14 @@ No install at all? The [Direct Dashboard](https://djwinter29-oss.github.io/PicoU
 ./PicoUart overruns > uart-dropped-bytes.json
 ```
 
-- `status` waits up to `--timeout` seconds (default 2) and exits non-zero if no valid report arrives. It returns after
-  the first channel report, so other channels may still be placeholders.
-- `monitor` prints one raw snapshot per line: `id` (0-5), `sequence`, `interval_ms`, and byte counters since boot. It
-  does not compute rates, and it can exit successfully with no samples at all.
-- `overruns` prints cumulative dropped-byte counts, or `null` where unavailable. Compare before and after a run.
+| Command | Prints | Exits `1` when |
+| --- | --- | --- |
+| `status` | One JSON snapshot after the first channel report; other channels may still be placeholders | No valid report arrives within `--timeout` seconds (default 2) |
+| `monitor` | One raw JSON snapshot per line: `id` (0-5), `sequence`, `interval_ms`, byte counters since boot; no rates | The board cannot be read; a run with no samples still exits `0` |
+| `overruns` | Cumulative dropped-byte counts, `null` where unavailable; compare before and after a run | The board cannot be read |
 
-Because a zero exit code does not mean the channels were healthy, have your test check that samples arrived and look
-at the reported states. Field meanings are in the
+Exit code `0` does not mean the channels were healthy: check that samples arrived and look at the reported states.
+Field meanings are in the
 [HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md).
 
 ## Other Commands
@@ -67,12 +66,8 @@ at the reported states. Field meanings are in the
 `hardware`, `config`, `telemetry`, `temperature`, and `version` are read-only; `./PicoUart --help` lists them all.
 `toggle-led` flips the board LED, and `reset` reboots the board when the firmware allows it.
 
-The dashboard's **Save & Reboot** stores a boot-time clock profile and then reboots. Stop UART traffic and close all CDC
-ports first. After the board comes back, check the stored profile and the reported clock. Control commands are never
-retried automatically; if the outcome is unclear, reconnect and check the board before trying again. The full rules
-are in the
-[save and reboot section](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md#save-and-reboot-safety)
-of the HID reference.
+**Save & Reboot** stores a boot-time clock profile and restarts the board, so stop UART traffic and close all CDC ports
+first. The dashboard does not retry an uncertain control; check the board before trying again.
 
 ## Troubleshooting
 

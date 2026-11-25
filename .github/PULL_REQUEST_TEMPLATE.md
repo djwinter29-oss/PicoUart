@@ -12,7 +12,7 @@
 - [ ] New feature
 - [ ] Documentation
 - [ ] Firmware (RP2040/RP2350)
-- [ ] Host tooling (Python/.NET/WebHID)
+- [ ] Host tooling (Python/dotnet/Direct)
 - [ ] CI / release tooling
 
 ## Testing

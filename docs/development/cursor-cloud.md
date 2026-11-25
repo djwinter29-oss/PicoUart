@@ -23,7 +23,7 @@ set -euo pipefail
 python3 -m venv host/python/.venv
 host/python/.venv/bin/python -m pip install --group host/python/pyproject.toml:dev
 host/python/.venv/bin/python -m pip install --no-build-isolation -e host/python
-. tools/firmware/setup-sdk-env.sh --sdk-version 2.3.0 --sdk-revision 98a542c1a62fb549ffb5d66a3e5892b06276b670
+. tools/firmware/setup-sdk-env.sh
 ```
 
 The Python commands install the `dev` dependency group and `pico-uart` editable; for details, see the
@@ -31,10 +31,10 @@ The Python commands install the `dev` dependency group and `pico-uart` editable;
 `setup-sdk-env.sh` clones the pinned SDK into gitignored `.pico-sdk/` if missing, and otherwise confirms the pin.
 Keep the SDK line: a fresh checkout does not carry `.pico-sdk/`.
 
-Ubuntu's `/usr/bin/python3` is PEP 668 externally managed. Point the host-test wrapper at the venv rather than its
-default system interpreter:
+Ubuntu's `/usr/bin/python3` is PEP 668 externally managed. The
+[hardware-free test checklist](../tests/README.md#without-hardware) shows how to point the host-test wrapper at the
+venv rather than the system interpreter. To check the CLI:
 
 ```sh
-PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
 host/python/.venv/bin/python -m pico_uart.main --help
 ```

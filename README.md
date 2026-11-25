@@ -5,12 +5,13 @@
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
 ![Targets: RP2040 and RP2350](https://img.shields.io/badge/Targets-RP2040%20%7C%20RP2350-2674b8)
 
-A six-port USB-to-UART bridge for the Raspberry Pi Pico and Pico 2, with built-in health counters.
+A six-channel USB-to-UART bridge for the Raspberry Pi Pico and Pico 2, with built-in health counters.
 
-**Quick links:** [Releases](https://github.com/djwinter29-oss/PicoUart/releases) · [Hardware setup](docs/hardware-setup.md) · [Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/) · [PyPI package](https://pypi.org/project/pico-uart/)
+**Quick links:** [Releases](https://github.com/djwinter29-oss/PicoUart/releases) ·
+[Hardware setup](docs/hardware-setup.md) · [Direct Dashboard](https://djwinter29-oss.github.io/PicoUart/) ·
+[PyPI package](https://pypi.org/project/pico-uart/)
 
-For bring-up benches and test racks, one board and USB cable replace a handful of single-port adapters. Existing
-terminals and scripts keep working.
+For bring-up benches and test racks, one board and USB cable replace a handful of single-port adapters.
 
 ```text
 Computer -- USB -- Pico / Pico 2 +- UART0 -- Device A
@@ -19,7 +20,7 @@ Computer -- USB -- Pico / Pico 2 +- UART0 -- Device A
                                  `- UART5 -- Device F
 ```
 
-## Why PicoUart?
+## Six Channels, Separate Health
 
 When a serial log goes quiet, PicoUart's per-channel counters help distinguish a silent device from bytes lost by the
 bridge or an unread host buffer.
@@ -37,15 +38,13 @@ _The dashboard with simulated telemetry._
 
 - Use **3.3 V UART logic** and a shared ground. Never connect 5 V or RS-232 signals directly.
 - UART0-1 use the hardware UARTs. UART2-5 use PIO and support **8N1 only**.
-- RTS/CTS flow control is off by default and has not been tested on hardware yet.
+- RTS/CTS flow control is off by default and untested on hardware; see
+  [Known Gaps](docs/tests/hil-recovery-and-stress.md#known-gaps).
 
 ## Get Started
 
 1. Follow [hardware setup](docs/hardware-setup.md) to install firmware and wire your device.
 2. Open the matching serial port in your terminal or script, and set the baud rate and framing your device needs.
-
-The host should list six PicoUart serial ports. That confirms USB enumeration but not your wiring. Exchanging data with
-the device confirms both.
 
 ## Dashboards and Automation
 
@@ -65,25 +64,16 @@ pico-uart monitor --duration 60 > uart-traffic.log
 ```
 
 These commands read diagnostics only; they do not send or capture UART data. On Linux, HID access needs a one-time
-[permission setup](tools/README.md#linux-hid-permissions).
-
-## Hardware Compatibility
-
-| Board | Firmware |
-| --- | --- |
-| Raspberry Pi Pico (RP2040) | `pico` release image |
-| Raspberry Pi Pico 2 (RP2350) | `pico2` release image |
-
-Most hardware testing so far has been on the Pico; the Pico 2 has had much less. Wireless-board and carrier
-compatibility details are in [hardware setup](docs/hardware-setup.md).
+[permission setup](docs/hardware-setup.md#linux-hid-permissions).
 
 ## Documentation
 
 | Topic | Where to look |
 | --- | --- |
-| Wiring, pin map, finding ports | [Hardware setup](docs/hardware-setup.md) |
+| Wiring, pin map, supported boards, carrier compatibility, finding ports | [Hardware setup](docs/hardware-setup.md) |
 | How the firmware works | [Architecture](docs/design/architecture.md) and the other [design docs](docs/design/) |
-| Firmware | [Build/configuration](firmware/build-and-config.md), [test guide](docs/development/firmware-testing.md) |
+| Firmware build/configuration | [Guide](firmware/build-and-config.md) |
+| Firmware tests | [Native C tests](firmware/tests/README.md), [timing and buffer measurements](docs/development/firmware-timing-and-buffer-measurements.md) |
 | Host tools | [Host guide](docs/development/host-tools.md), [dashboard guide](docs/development/dashboard-development.md) |
 | Tests and CI | [Test overview](docs/tests/README.md), [GitHub Actions](docs/development/github-actions.md) |
 | Releasing | [Release process](docs/deployment/releasing.md) |

@@ -179,6 +179,7 @@ def test_writes_fixed_record_sections_and_board_metadata(tmp_path: Path) -> None
             "PASS cdc4-to-cdc3: 1000 bytes, 103.0 B/s",
             "PASS cdc1-loopback: 1000 bytes, 104.0 B/s",
             "PASS cdc5-loopback: 1000 bytes, 105.0 B/s",
+            "HID rate 460800 health: PASS",
             "HID health summary: health clean final",
         ]
     )
@@ -199,6 +200,7 @@ def test_writes_fixed_record_sections_and_board_metadata(tmp_path: Path) -> None
     assert "| HW UART0 to PIO UART2 | CDC0 <-> CDC2 | PASS | 234 |" in text
     assert "## Concurrent Performance Summary" in text
     assert "| 460800 | cdc0-to-cdc2 | PASS | 1000 | 100.0 B/s |" in text
+    assert "All per-rate HID health checks passed (1 rate)." in text
     assert "health clean final" in text
     assert "child command hidden" not in text
     assert "Command:" not in text
@@ -229,6 +231,10 @@ def test_incremental_record_shows_ceiling_and_only_attempted_rates() -> None:
             for label in stream_labels
         )
     performance_lines.append("CEILING SEARCH PASS: expected traffic failure at the measured boundary")
+    performance_lines.append("HID rate 115200 health: PASS")
+    performance_lines.append("HID rate 460800 health: PASS")
+    performance_lines.append("HID rate 560800 health: PASS")
+    performance_lines.append("HID rate 660800 health: PASS")
 
     report = full.format_result_entry(
         arguments,

@@ -286,6 +286,7 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
                 health_before = collect_hid_health()
                 print(f"HID rate {stream_baud} before: {health_summary(health_before)}")
                 if not health_is_clean(health_before):
+                    print(f"HID rate {stream_baud} health: FAIL (before)")
                     for label, _, _ in streams:
                         print(f"FAIL {label}: HID health not clean before rate; no traffic sent", file=sys.stderr)
                     return False
@@ -318,7 +319,9 @@ def benchmark_rate(arguments: argparse.Namespace, stream_baud: int) -> bool:
             if getattr(arguments, "check_hid_health", False):
                 health_after = collect_hid_health()
                 print(f"HID rate {stream_baud} after: {health_summary(health_after)}")
-                if not health_is_clean(health_after, health_before):
+                health_passed = health_is_clean(health_after, health_before)
+                print(f"HID rate {stream_baud} health: {'PASS' if health_passed else 'FAIL (after)'}")
+                if not health_passed:
                     for label, _, _ in streams:
                         verified, error = results.get(label, (0, "stream did not report a result"))
                         results[label] = (verified, error or "HID health failed after rate")

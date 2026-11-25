@@ -1,8 +1,10 @@
-# Dashboard Development
+# Dashboard Behavior and Presentation
 
-The Python and .NET hosts share a frontend in `host/web/src`. The Direct Dashboard is a separate WebHID app in
-`host/direct/src`. This guide covers how they are built, tested, and presented; host API and server development are in
-[Host Tools Development](host-tools.md).
+This guide covers the shared Python/.NET frontend in `host/web/src`, the Direct Dashboard in `host/direct/src`, and
+their checks: Python [route tests](../../host/python/tests/dashboard/test_app.py),
+[configuration tests](../../host/python/tests/dashboard/test_configuration_save.py), and
+[published .NET contract tests](../../tests/tooling/test_dotnet_host.py). For Python API, CLI, or server implementation,
+see [Host Tools Development](host-tools.md).
 
 ## Hosted Dashboards
 
@@ -17,6 +19,8 @@ entry. The Python server sets correct MIME types for JS and CSS.
 The top bar shows the backend name and **App v**, the host version. Python reports `pico_uart.__version__` (from
 `hatch-vcs`), and .NET reports its assembly informational version (from MinVer). `PICO_UART_HOST_VERSION` overrides
 the displayed value only.
+
+### Hosted Service Behavior
 
 The Python and .NET apps share one HID reader per selected board and serve cached snapshots to each browser page.
 Boards are found at startup and on **Rescan**; unplugged boards do not trigger a switch to another device. Selection is
@@ -41,9 +45,9 @@ have run, so the hosts surface an unconfirmed outcome rather than retrying it.
 
 ### Boot Configuration
 
-A save request takes exactly `{"profile": 0-4, "unsafe_overclock": bool}` in a body of at most 1 KiB. It succeeds only
-after firmware reports Completed. After a timeout or disconnect, the backends keep a `configuration_save_unconfirmed`
-warning across reconnects and page reloads. Reading report 20 cannot identify which request produced its result. The
+A save request takes exactly `{"profile": 0-4, "unsafe_overclock": bool}` in a body of at most 1 KiB and succeeds only
+after firmware reports Completed. Report 20 cannot identify which request produced its result, so an unconfirmed save
+also keeps a `configuration_save_unconfirmed` warning across reconnects and page reloads. The
 [HID save rules](../design/usb/hid-report-reference.md#save-and-reboot-safety) define the board-side checks.
 
 ### Channel Presentation
@@ -58,36 +62,37 @@ belong to host applications:
   valid capacities.
 - Show temperature as an estimate in Celsius, normally to one decimal place. Label service load by core and mark the
   `65535` sentinel as warming up or unavailable. Uptime is meaningful only for the same device within one boot.
-- A channel's missing or stale report is host-side Unknown. Show an Error state as needing attention and read
-  diagnostics for its reason.
+- Treat a channel with no Input report for three seconds as stale and show host-side Unknown. A read error invalidates
+  only the values that read would refresh; keep static reports 1 and 2. Disable LED controls when the telemetry read
+  fails. Show an Error state as needing attention and read diagnostics for its reason.
 - Label `rx_overrun_count` as **Known RX bytes dropped**, `rx_error_count` as **RX controller error observations**,
   and `last_control_error_reason` as **Last configuration error**.
 - Label ring and FIFO peaks **Observed peak since boot**. When the port is stopped, show its baud rate as **Last
   applied**. For update rates and stale reports, follow the
-  [HID polling rules](../design/usb/hid-report-reference.md#host-polling-and-validation).
+  [HID polling rules](../design/usb/hid-report-reference.md#polling-and-validation).
 
 Lifecycle badges are Closed, Starting, Ready, Configuring, Error, and host-side Unknown. Fault history and the last
 configuration error remain visible beside the badge.
 
 ## Direct Dashboard
 
-The Direct Dashboard is a standalone WebHID app with its own assets and renderer; it has no server-side code. If a save
-times out or disconnects, it remembers the unconfirmed result by board UID. A fresh report 2 read and explicit
-acknowledgement are required before another save. WebHID calls cannot be canceled: keep reconnect disabled until an
-open or close settles, close a late successful open, and never start an overlapping write.
+The Direct Dashboard is a standalone WebHID app with its own assets and renderer; it has no server-side code. It
+remembers an unconfirmed save by board UID and requires a fresh report 2 read and explicit acknowledgement before
+another save. WebHID calls cannot be canceled: keep reconnect disabled until an open or close settles, close a late
+successful open, and never start an overlapping write.
 
 ```sh
 tools/host/run-direct.sh                           # serves http://127.0.0.1:8000/ (--port N)
 python tools/host/direct_site.py serve --port 8000 # without a POSIX shell
 ```
 
-The launcher serves a staged copy with a version derived from Git tags. WebHID needs HTTPS or localhost, so do not
-open the HTML straight from disk.
+The launcher serves a staged copy with a version derived from Git tags. For manual WebHID testing, use desktop Chrome
+or Edge and serve the page from HTTPS or localhost; do not open the HTML straight from disk.
 
-CI runs a browser smoke test against a simulated device:
+CI runs a browser smoke test against a simulated device. Install the Playwright version pinned in
+[host-validation.yml](../../.github/workflows/host-validation.yml), then:
 
 ```sh
-python -m pip install playwright==1.63.0
 python -m playwright install --with-deps chromium
 python host/direct/tests/browser_smoke.py
 ```
@@ -97,7 +102,7 @@ The simulated test does not verify real browser and OS USB access. Deployment to
 
 ## Frontend Tests
 
-Run the frontend tests with:
+Requires Node 22+. Run the frontend tests with:
 
 ```sh
 node --test host/web/tests/*.test.mjs host/direct/tests/*.test.mjs

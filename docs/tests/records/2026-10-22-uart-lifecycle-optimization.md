@@ -7,8 +7,8 @@ RTS/CTS disabled. No wiring, clock profile, or RX snapshot-copy changes were mad
 was `0.0.0`. Baseline source was `c71982775ee69fe396aabd83cbb81057a61d1866`; the candidate used that source with
 the immediate-start, polling, and host setup changes in its recorded dirty worktree.
 
-- [Baseline full HIL record](2026-10-22-202929Z-pico-125mhz-hil.md): 250 ms firmware debounce and fixed host setup waits.
-- [Candidate full HIL record](2026-10-22-203712Z-pico-125mhz-hil.md): immediate worker startup and readiness-driven setup.
+- [Baseline full HIL record](archive/2026-10-22-202929Z-pico-125mhz-hil.md): 250 ms firmware debounce and fixed host setup waits.
+- [Candidate full HIL record](archive/2026-10-22-203712Z-pico-125mhz-hil.md): immediate worker startup and readiness-driven setup.
 
 Both artifacts were flashed through probe `50543165611F6C9C`; OpenOCD reported `Verified OK`. Their paths and hashes
 are authoritative in the linked HIL records. Both full fixture runs passed all four functional stages and all six

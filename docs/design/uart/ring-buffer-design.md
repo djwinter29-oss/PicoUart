@@ -17,7 +17,7 @@ wrap around it in hardware. Capacity changes how much RAM is reserved and how so
 does not change the ownership or loss policy.
 
 The buffer sizes are not the whole RAM cost. Measure the linked map before shrinking them; the procedure is in the
-[firmware guide](../../development/firmware-testing.md#buffer-capacity-measurement).
+[firmware guide](../../development/firmware-timing-and-buffer-measurements.md#buffer-capacity-measurement).
 
 ## Overflow and Backpressure
 

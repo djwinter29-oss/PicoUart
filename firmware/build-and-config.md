@@ -18,8 +18,8 @@ tools/firmware/build.sh --board pico2   # Pico 2 (RP2350) -> build/firmware-pico
   `setup-sdk-env.sh` clones on first use.
 - `--firmware-version 1.2.3` stamps a release version, which is reported over HID.
 - `--disable-hid-reset` removes the standalone HID reboot action. Save-and-reboot is not affected.
-- `pico_w` and `pico2_w` build USB/UART-only images, with Wi-Fi and Bluetooth disabled; see the
-  [wireless board notes](../docs/hardware-setup.md#wireless-boards).
+- CMake rejects `pico_w` and `pico2_w`; W boards run the `pico` or `pico2` image
+  ([supported boards](../docs/hardware-setup.md#supported-boards)).
 - If the board, SDK, generator, version, or HID-reset option changes, the wrapper clears stale CMake state
   automatically.
 
@@ -40,7 +40,7 @@ CI runs both checks below on every firmware build, and you can run them locally 
 
   It inspects the real SDK startup object and the linked ELF. It does not measure voltage, temperature, or stability.
 
-## Load Over SWD
+## Debug Probe Loading and Recovery
 
 `load.sh` programs the ELF through a Raspberry Pi Debug Probe (CMSIS-DAP OpenOCD). Connect SWDIO, SWCLK, and GND; SWD
 wiring is separate from the UART wiring.
@@ -49,8 +49,6 @@ wiring is separate from the UART wiring.
 tools/firmware/load.sh --board pico
 tools/firmware/load.sh --board pico2
 ```
-
-### Debug Probe Loading and Recovery
 
 To flash a packaged ELF without rebuilding:
 
@@ -73,9 +71,8 @@ openocd -d3 -f interface/cmsis-dap.cfg -c 'transport select swd' -c 'adapter spe
 If OpenOCD reports `Unknown flash device` after finding the target, update OpenOCD first. Flash ID `0x00154068`
 (Boya BY25Q16ES) needs a recent OpenOCD build; pass it with `--openocd-exe`.
 
-A recorded recovery for one unstable SWD session was to disconnect both board and probe, wait for their LEDs to go
-off, then reconnect. This worked for that session; see the
-([review record](../docs/tests/records/2026-10-23-uart-cdc-review-validation.md#cause-and-retained-change)).
+After repeated verification failures or an all-`0xff` readback, physically disconnect both board and probe until
+their LEDs go out, reconnect them, then retry.
 
 ### QSPI Auto-Detection Override
 

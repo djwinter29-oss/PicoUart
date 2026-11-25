@@ -53,9 +53,7 @@ def test_parser_rejects_sram_section_outside_physical_capacity():
     ("board", "expected"),
     [
         ("pico", (264 * 1024, 192 * 1024)),
-        ("pico_w", (264 * 1024, 192 * 1024)),
         ("pico2", (520 * 1024, 384 * 1024)),
-        ("pico2_w", (520 * 1024, 384 * 1024)),
     ],
 )
 def test_budget_covers_each_declared_board(board, expected):

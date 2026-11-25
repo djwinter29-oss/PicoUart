@@ -1,8 +1,7 @@
 # HID Report Reference
 
 This is the wire specification for PicoUart's HID interface: board identity, configuration, telemetry, board actions,
-and per-channel monitoring. For what HID is for and how it relates to the CDC ports, read the
-[USB interfaces](usb-interfaces.md) first.
+and per-channel monitoring. The [architecture](../architecture.md#usb-interfaces) describes its role alongside CDC.
 
 ## Interface Basics
 
@@ -11,31 +10,26 @@ and per-channel monitoring. For what HID is for and how it relates to the CDC po
 - The device is USB `2e8a:116b`, allocated to PicoUart by the Raspberry Pi Foundation
   ([allocation list](https://github.com/raspberrypi/usb-pid)). The manufacturer string is `djwinter`, the product
   `PicoUart`. CDC interface strings advertise backend limits: `CDC0 HW`, `CDC1 HW`, and `CDC2`-`CDC5 PIO 8N1`.
-- HID carries board status and control. CDC carries UART data and line coding; the board configuration owns pins and
-  ring behavior. Reading a report leaves transport ownership unchanged.
 
-**Wire rules:** multi-byte integers are little-endian, and the UID is an ordered byte sequence. Offsets and sizes
-exclude the report-ID byte. Every report fits in 64 bytes including the ID. Layout version `1` is independent of the
-firmware version. Select the layout using product, report type, ID, length, and version. Reports have no padding.
+**Wire rules:** multi-byte integers are little-endian. Offsets and sizes exclude the report-ID byte. Every report fits
+in 64 bytes including the ID, with no padding. Layout version `1` is independent of the firmware version;
+[Discovery](#discovery) explains layout selection.
 
 ## Report ID Allocation
 
-PicoUart assigns IDs by report purpose:
-
-ID `0` is unused. Reports from another product may use the same IDs but have different layouts, so identify the
-product before decoding fields.
-
 | Report ID | Name | Type | Direction | Payload | Purpose |
 | --------- | ---- | ---- | --------- | ------- | ------- |
-| `1` | Device Identity and Capabilities | Feature | Host reads | 27 bytes | Identity, capabilities, total/reserved RAM. |
-| `2` | Board Configuration | Feature | Host reads | 36 bytes | Stored profile, pins, reset cause, buffer capacities. |
-| `3` | Board Telemetry | Feature | Host reads | 20 bytes | Temperature, LED, uptime, service load, running clock. |
-| `10`-`15` | Channel Snapshots (CDC0–CDC5) | Input / Feature | Device publishes / host reads | 30 bytes | State, measurement validity, applied settings, traffic. |
-| `20` | Board Action and Result | Feature | Host reads/writes | 4 bytes | LED/reboot/save actions and results. |
-| `30`-`35` | Channel Diagnostics (CDC0–CDC5) | Feature | Host reads | 24 bytes | RX fault history, last configuration error, buffer peaks. |
+| `1` | [Device Identity and Capabilities](#report-id-1-device-identity-and-capabilities) | Feature | Host reads | 27 bytes | Identity, capabilities, total/reserved RAM. |
+| `2` | [Board Configuration](#report-id-2-board-configuration) | Feature | Host reads | 36 bytes | Stored profile, pins, reset cause, buffer capacities. |
+| `3` | [Board Telemetry](#report-id-3-board-telemetry) | Feature | Host reads | 20 bytes | Temperature, LED, uptime, service load, running clock. |
+| `10`-`15` | [Channel Snapshots (CDC0–CDC5)](#reports-10-15-channel-snapshots) | Input / Feature | Device publishes / host reads | 30 bytes | State, measurement validity, applied settings, traffic. |
+| `20` | [Board Action and Result](#report-id-20-board-action-and-result) | Feature | Host reads/writes | 4 bytes | LED/reboot/save actions and results. |
+| `30`-`35` | [Channel Diagnostics (CDC0–CDC5)](#reports-30-35-channel-diagnostics) | Feature | Host reads | 24 bytes | RX fault history, last configuration error, buffer peaks. |
 
-All sixteen report IDs are always present. Capability flags identify features unavailable on a board. Writes to
-read-only reports are rejected without side effects.
+All sixteen report IDs are always present, and ID `0` is unused. Capability flags identify features unavailable on a
+board. Writes to read-only reports are rejected without side effects.
+
+For read cadence and validation order, see [Host Rules](#host-rules).
 
 ## Report ID 1: Device Identity and Capabilities
 
@@ -63,7 +57,7 @@ Read once per connection. The contents are static until reboot.
 Every product using this convention shares a three-byte prefix: the layout version at offset 0 and the
 little-endian product ID at offsets 1-2. Read the descriptor-declared length, check the prefix, choose the matching
 product contract, then validate the full report. Decode each product only with a supported layout version, and
-disable product-specific commands for unknown products.
+reject unknown products rather than decoding them with a guessed layout.
 
 | Product ID | Meaning |
 | ---------: | ------- |
@@ -72,28 +66,24 @@ disable product-specific commands for unknown products.
 | `0x0002`-`0xfffe` | Assign as other project products are introduced. |
 | `0xffff` | Reserved. |
 
-### UID
+### Device Identity Fields
 
-The UID is an ordered byte sequence. Uppercase hexadecimal with two characters per byte matches the 16-character USB
+**UID:** an ordered byte sequence. Uppercase hexadecimal with two characters per byte matches the 16-character USB
 serial. On RP2040 it is the QSPI flash UID; on RP2350 it is the SDK platform identity.
 
-### Board Model
+**Firmware version:** a `v1.2.3` tag reports `1.2.3`; USB `bcdDevice` carries only major.minor. Use the version for
+diagnostics only; capability flags gate operations.
 
-This is the configured build target; the firmware does not detect hardware. Keep unknown MCU and board
-numbers as they are rather than inventing names.
+The board model is the configured build target; firmware does not detect hardware. Keep unknown MCU and board numbers
+as reported rather than inventing names.
 
-| Board model | Build target | MCU | Support status |
-| ----------: | ------------ | --- | -------------- |
+| Board model | Board | MCU | Support status |
+| ----------: | ----- | --- | -------------- |
 | `0` | Unknown / unspecified | Reported separately | No specific board identity claimed. |
 | `1` | Pico | RP2040 | Existing firmware target. |
-| `2` | Pico W | RP2040 | Builds from source; not covered by the release HIL matrix. |
+| `2` | Pico W | RP2040 | Reserved; not a supported build target. Pico W boards run `pico` and report `1`. |
 | `3` | Pico 2 | RP2350 | Existing firmware target. |
-| `4` | Pico 2 W | RP2350 | Builds from source; not covered by the release HIL matrix. |
-
-### Firmware Version
-
-A `v1.2.3` tag reports `1.2.3`. The USB `bcdDevice` field carries only major.minor. Use the
-version for diagnostics only: choose decoding by product and layout, and choose operations by capability flags.
+| `4` | Pico 2 W | RP2350 | Reserved; not a supported build target. Pico 2 W boards run `pico2` and report `3`. |
 
 ### Backend and Capability Fields
 
@@ -139,18 +129,16 @@ hardware map, and the reset that started this boot. Saving a new profile does no
 | 34 | 2 | `cdc_rx_fifo_capacity_bytes` | Per-channel host-to-device CDC FIFO capacity. |
 | **Total** | **36** | | **37 bytes including the report ID.** |
 
-### Channel Hardware Map
+### Channel Hardware Map and Capacities
 
 Each entry is a GPIO number (not a header pin), and `255` means unassigned. Entries are in channel order, from the
 firmware's board configuration. An assigned RTS/CTS pin does not mean flow control is running.
 
-DTR is a CDC session signal and is not part of this map. If report 2 cannot be read, show the pins and channel count as
-unknown; do not infer GPIO 0.
-
-### Shared Buffer Capacities
-
 All four capacities are nonzero and the same for every channel. They describe the storage behind the matching peaks in
 reports 30-35; USB in-flight bytes are separate.
+
+DTR is a CDC session signal and is not part of this map. If report 2 cannot be read, show the pins and channel count as
+unknown; do not infer GPIO 0.
 
 ### Reset Cause
 
@@ -196,20 +184,6 @@ At boot the firmware picks the highest supported frequency at or below the reque
 Invalid or erased storage reads as `255` and boots with SDK defaults; flash is not rewritten. Watchdog recovery can also
 fall back to defaults while keeping the stored request. Check report 3 to confirm the clock after boot.
 
-### Save and Reboot Safety
-
-Saving a profile writes flash and reboots the board, so it is guarded:
-
-- The profile must be advertised, the request must carry the confirm flag, and a non-default profile also needs the
-  overclock acknowledgement. Anything else is rejected without touching flash.
-- Every CDC port must be closed (DTR low) when the request is accepted, and again when it runs. Also stop external UART
-  traffic. Flash erase stalls both cores, and the reboot drops any queued bytes.
-- The write happens in the USB poll loop, outside the USB callback. Core 1 is locked out using the SDK flash-safe
-  API. Only the final flash sector is erased. The record is CRC-protected and checked in full before the result reports
-  Completed. Saving the profile that is already stored skips the write.
-- Completed means the profile was verified in flash; it does not promise the next boot succeeded. Reconnect and read
-  report 2 to confirm. An interrupted write boots SDK defaults because the clock profile occupies one flash sector.
-
 ## Report ID 3: Board Telemetry
 
 Live measurements only.
@@ -225,9 +199,7 @@ Live measurements only.
 | 16 | 4 | `system_clock_hz` | Current SDK-reported `clock_get_hz(clk_sys)`, nonzero. |
 | **Total** | **20** | | **21 bytes including the report ID.** |
 
-If any mandatory measurement fails, the whole GET fails. A successful response contains all mandatory measurements.
-The load sentinel `65535` and an absent LED are valid values. When a read fails, the host marks live values stale,
-disables LED controls, and keeps static data from reports 1 and 2.
+If any mandatory measurement fails, the whole GET fails. The load sentinel `65535` and an absent LED are valid values.
 
 **Service load** is the wall time spent in service passes that did real work, divided by the measurement window.
 Each core publishes about once a second and reports `65535` before its first window. Core 0 counts USB, CDC, control,
@@ -275,12 +247,12 @@ The request lifecycle behind Configuring and Error is described in the
 
 ### UART Measurement State
 
-| Value | State | Meaning |
-| ----: | ----- | ------- |
-| `0` | Unavailable | No coherent UART statistics sample exists; UART counters are zero placeholders. |
-| `1` | Current | Coherent UART statistics acquired for this capture. |
-| `2` | Cached | Last accepted UART statistics reused; UART rates unavailable. |
-| `3`-`255` | Unassigned | Invalid in this layout. |
+| Value | State | Meaning | Diagnostic sample age |
+| ----: | ----- | ------- | --------------------- |
+| `0` | Unavailable | No coherent UART statistics sample exists; UART counters are zero placeholders. | `255` |
+| `1` | Current | Coherent UART statistics acquired for this capture. | `0` |
+| `2` | Cached | Last accepted UART statistics reused; UART rates unavailable. | `0` after rounding, or `255` when saturated |
+| `3`-`255` | Unassigned | Invalid in this layout. | Invalid |
 
 UART statistics come from the core-1 backend through a lock-free snapshot that can fail. On failure, the report keeps
 the last good sample and marks it Cached. Current describes the sample capture; a stopped port can still have a
@@ -305,7 +277,7 @@ Each report is captured coherently. The baud rate, framing, and state come from 
 four counters are read together at the interval boundary. Treat reports for different channels, and snapshots versus
 diagnostics, as independent captures.
 
-### Sequence, Interval, and Rates
+### Sequence and Interval
 
 - Each channel has its own sequence and interval. A sequence number is used up only when USB accepts the Input report,
   so the first accepted report is `1`. A Feature read returns the last committed sequence, or `0` before the first.
@@ -314,12 +286,6 @@ diagnostics, as independent captures.
   cannot produce a rate.
 - When the endpoint is busy, publication is delayed and old snapshots are dropped instead of sent in a burst. Due
   channels are served round-robin.
-- **Host rate math:** take the counter delta modulo 2^32 and divide by the device's `interval_ms`. The first sample
-  after a (re)connect only sets the baseline. A sequence gap, a stale stream, or a non-Current UART sample discards that
-  channel's rate window while keeping its totals; other channels are unaffected. Combine windows by summing bytes and
-  intervals rather than averaging rates. Feature reads leave rate baselines and totals unchanged.
-- Wrap-safe deltas need fewer than 2^32 bytes between samples, which is hours at UART speeds. A 16-bit sequence cannot
-  detect a loss of exactly 65536 reports, so rebaseline after any long pause.
 
 ## Report ID 20: Board Action and Result
 
@@ -390,29 +356,29 @@ The firmware checks a SET in this order and publishes the first failure:
 6. An open CDC port gives Busy/6. Readiness is checked again just before running; flash errors give 7 or 8, and any
    other failure gives 9.
 
-Rejected requests have no side effects. An accepted SET publishes its result, either Pending or an immediate Completed,
-before the USB transfer finishes.
+`Invalid/n` means the Invalid result status with reason code `n`. Rejected requests have no side effects. An accepted
+SET publishes its result, either Pending or an immediate Completed, before the USB transfer finishes.
 
-### Action Timing and Host Rules
+### Save and Reboot Safety
 
-- A completed SET transfer does not prove the action ran. Read report 20 right away and then every 50 ms while it is
-  Pending, for up to 3000 ms. Give each SET and GET its own 3000 ms deadline.
-- Reboot and save reset the board 1000 ms after publishing Completed. Later reads and writes neither delay nor cancel
-  this.
-- A timeout or disconnect leaves the outcome unknown. Do not retry a reboot or save automatically. Reconnect, read
-  report 2, and let the user decide.
+Saving writes flash and then reboots. Besides closing every CDC port, stop external UART traffic: flash erase stalls
+both cores, and the reboot drops any queued bytes.
+
+- The write runs in the USB poll loop, outside the USB callback, with core 1 locked out by the SDK flash-safe API.
+  Only the final flash sector is erased, and saving the profile that is already stored skips the write.
+- The record is CRC-protected and checked in full before the result reports Completed. Completed means the profile was
+  verified in flash, not that the next boot succeeded.
+- An interrupted write boots SDK defaults because the clock profile occupies one flash sector.
 
 ## Reports 30-35: Channel Diagnostics
 
-Report `30 + channel` is a read-only Feature with no Input publication. Read it when opening a channel's details or
-investigating an Error. For unattended alerts, a host may poll it slowly, but only when the user enables that. Reads
-preserve history and leave snapshot sequences and rate baselines unchanged.
+Report `30 + channel` is a read-only Feature with no Input publication. Reads preserve history.
 
 | Offset | Size | Field | Meaning |
 | -----: | ---: | ----- | ------- |
 | 0 | 1 | `version` | Layout version `1`. |
-| 1 | 1 | `uart_measurement_state` | Same Unavailable/Current/Cached enum as routine snapshots, for this capture. |
-| 2 | 1 | `uart_sample_age_100ms` | UART acquisition age in 100 ms units, rounded down; 255 means at least 25.5 seconds or no sample. |
+| 1 | 1 | `uart_measurement_state` | Unavailable, Current, or Cached; see [UART Measurement State](#uart-measurement-state). |
+| 2 | 1 | `uart_sample_age_100ms` | UART acquisition age in 100 ms units; see [UART Measurement State](#uart-measurement-state). |
 | 3 | 1 | `last_control_error_reason` | Most recent configuration error, retained as diagnostic history. |
 | 4 | 4 | `rx_overrun_count` | Saturating known dropped UART RX bytes. |
 | 8 | 4 | `rx_error_count` | Saturating count of controller error observations. |
@@ -452,19 +418,15 @@ clears only at boot.
 - There is no boot ID. After reconnecting, start new comparison baselines rather than claiming exact fault counts across
   the gap.
 
-### Measurement Age and Peaks
-
-| State | Diagnostic age and measurements |
-| ----- | ------------------------------- |
-| Unavailable (`0`) | Age 255; UART-derived RX counts and ring peaks contain zero placeholders because no sample is available. |
-| Current (`1`) | Age zero; coherent UART statistics acquired for this capture, including a stopped backend when safely captured. |
-| Cached (`2`) | Reuse last accepted UART statistics; age may be zero due to rounding or saturate at 255. |
+### Peak Measurements
 
 Peaks are the largest occupancy seen at the firmware's sampling points, so a brief maximum can be missed. Compare them
 with the capacities in report 2. A full peak does not by itself mean current congestion or data loss. Peaks survive
 port close and reopen.
 
-## Host Polling and Validation
+## Host Rules
+
+### Polling and Validation
 
 1. Read report 1, check the [discovery prefix](#discovery), and validate the full report before sending
    any command. PicoUart requires version 1 and exactly 27 bytes.
@@ -474,16 +436,33 @@ port close and reopen.
 5. Read reports 30-35 on demand, or slowly if the user enables alerts.
 6. Send actions only through report 20, then read report 20 until the result is final.
 
-At steady state that is one or two telemetry reads and about twelve channel Inputs per second. Mark a channel stale
-after three seconds with no Input. A read error invalidates only the data it would have refreshed. After a disconnect
-or reboot, drop every cache and pending action and start again at step 1.
+This cadence produces one or two telemetry reads and about twelve channel Inputs per second. After a disconnect or
+reboot, discard cached reports and pending actions, then start again at step 1.
 
 For every report, validate its type, ID, exact length, version, reserved bits, enum values, and field consistency.
-Reject unknown layouts outright; there is no negotiation.
 
-### Conformance Examples
+### Rates
 
-Report-20 payloads, without the report-ID byte. Assume the LED and save capabilities are present, CDC ports are
+Take the counter delta modulo 2^32 and divide by the device's `interval_ms`. The first sample after a (re)connect only
+sets the baseline. A sequence gap, a stale stream, or a non-Current UART sample discards that channel's rate window
+while keeping its totals; other channels are unaffected. Combine windows by summing bytes and intervals rather than
+averaging rates. Feature reads of any report leave sequences, rate baselines, and totals unchanged.
+
+Wrap-safe deltas need fewer than 2^32 bytes between samples, which is hours at UART speeds. A 16-bit sequence cannot
+detect a loss of exactly 65536 reports, so rebaseline after any long pause.
+
+### Board Actions
+
+A completed SET transfer does not prove the action ran. Read report 20 right away and then every 50 ms while it is
+Pending, for up to 3000 ms. Give each SET and GET its own 3000 ms deadline. Reboot and save reset the board 1000 ms
+after publishing Completed; later reads and writes neither delay nor cancel this.
+
+A timeout or disconnect leaves the outcome unknown. Do not retry a reboot or save automatically. Reconnect, read
+report 2, and let the user decide.
+
+## Conformance Examples
+
+Payloads omit the report-ID byte. Action examples assume the LED and save capabilities are present, CDC ports are
 closed, and nothing is pending.
 
 | Request | Response | Meaning |
@@ -498,8 +477,6 @@ closed, and nothing is pending.
 | Unknown action `0x7f` with flags `0x80`, otherwise well-framed | Publish action 0 with Invalid/error 1 before action validation. |
 | Reboot without confirmation | Publish action 3 with Invalid/error 4; no reset. |
 | Save while any CDC DTR session is open | Publish action 4 with Busy/error 6; no flash write or reset. |
-| Another write while Pending or Completed awaiting reboot | Reject the transfer; preserve the existing operation, result, and reset deadline. |
-| Reboot/save SET times out or disconnects | Treat outcome as unconfirmed; do not automatically retry. |
 | First channel publication fails, a Feature read follows, then publication succeeds | Failed candidate uses sequence 1 without committing; Feature returns 0; first accepted Input returns 1. |
 | Channel sequence `65535` followed by `0` | Normal modulo-65536 continuity, not a gap. |
 | Input at time T; Feature read at T+250 ms; next Input at T+500 ms | Feature read does not commit a baseline. Next Input still covers 500 ms from T and includes all interval bytes once. |
@@ -510,5 +487,5 @@ closed, and nothing is pending.
 
 Version `1` is used by published firmware; earlier development layouts are not compatibility targets. An incompatible
 change to a report's length, units, meaning, or validation requires a version bump and a matching update to this
-document. The descriptor, firmware, and the Python, .NET, and WebHID clients change together. A host must explicitly
+document. The descriptor and firmware changes require matching Python, .NET, and Direct Dashboard support. Hosts must
 support a layout before decoding it.

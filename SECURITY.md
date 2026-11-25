@@ -17,7 +17,7 @@ or secure boot; board controls protect against mistakes, not an authorized local
 
 - Any process allowed to open a CDC port can read or write UART traffic. Any process allowed to open HID can read
   diagnostics and control the board. Restrict access to trusted accounts. On Linux,
-  [HID access](tools/README.md#linux-hid-permissions) is granted by udev; serial access is usually controlled
+  [HID access](docs/hardware-setup.md#linux-hid-permissions) is granted by udev; serial access is usually controlled
   separately by groups such as `dialout`. On Windows and macOS, the logged-in user's processes typically have HID
   access.
 - Python and .NET dashboards bind to loopback, check the Host, and require a session CSRF token for changes. CSRF

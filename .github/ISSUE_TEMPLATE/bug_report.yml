@@ -16,8 +16,8 @@ body:
       options:
         - Firmware (RP2040/RP2350)
         - Host Python
-        - Host .NET
-        - WebHID
+        - Host dotnet
+        - Host Direct Dashboard
         - Build/CI/release tooling
         - Documentation
     validations:
@@ -26,7 +26,12 @@ body:
     id: board
     attributes:
       label: Board and firmware version
-      description: e.g. Pico 2, firmware v0.5.0
+      description: e.g. Pico 2, output from pico-uart version
+  - type: textarea
+    id: wiring
+    attributes:
+      label: Wiring
+      description: For UART or hardware issues, which CDC ports and GPIO pins connect to what, and at what voltage
   - type: textarea
     id: repro
     attributes:

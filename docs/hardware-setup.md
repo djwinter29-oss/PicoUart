@@ -13,17 +13,20 @@ How to wire UART devices to a PicoUart board and find its serial ports. The pin 
 <img src="assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico" width="240" />
 <img src="assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2" width="240" />
 
-[Wireless boards](#wireless-boards) and the [PicoUART6 carrier](#picouart6-carrier-compatibility) are covered below.
+Pico W and Pico 2 W also work with the `pico` and `pico2` images on the same pins. There is no W-specific build, so
+Wi-Fi and Bluetooth stay unused and LED identification does nothing, because the W LED is wired through the wireless
+chip. They report as Pico or Pico 2 over HID. Release HIL testing covers Pico and Pico 2 only.
 
 ## Installing Firmware
 
-For first setup or an update, download the matching `.uf2` from
-[GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases): `pico` for Pico or `pico2` for Pico 2. Hold
-**BOOTSEL** while connecting the USB cable, then copy the file to the `RPI-RP2` or `RP2350` drive. The board reboots
-when the copy finishes. Confirm its firmware version over HID before resuming UART traffic.
+1. Download the image listed above from
+   [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases).
+2. Hold **BOOTSEL** while connecting the USB cable.
+3. Copy the `.uf2` file to the `RPI-RP2` or `RP2350` drive. The board reboots when the copy finishes.
+4. On Linux, configure [HID permissions](#linux-hid-permissions). With the Python host installed, check the firmware
+   version using `pico-uart version` ([CLI guide](../host/python/README.md#command-line)).
 
-For release qualification, verify the artifact checksum and follow the
-[release flashing procedure](deployment/releasing.md#flashing-release-artifacts).
+The [HIL evidence index](tests/records/README.md#evidence-index) lists which firmware builds passed hardware tests.
 
 ## Port Map
 
@@ -50,7 +53,23 @@ firmware; enabling it is a per-port build setting listed under
 - Connect RTS to the peer's CTS, and CTS to the peer's RTS, only when flow control is enabled and tested.
 - Use 3.3 V UART logic. Never connect 5 V or RS-232 levels directly to RP2040 or RP2350 GPIOs.
 
-For the fixed loopback wiring used in hardware tests, see [HIL fixture setup](tests/hil-fixture-setup.md).
+## Check a Peer Connection
+
+After wiring a peer, open the peer's CDC port with DTR asserted and exchange a known byte pattern using your serial
+tool before relying on the connection.
+
+To check one port against a Debug Probe UART, disconnect power and remove any [HIL fixture](tests/hil-fixture-setup.md)
+jumpers first, so two TX outputs cannot drive the same RX line. Wire the port to the probe with crossed TX/RX and shared
+ground, reconnect power, and run the following from a checkout. This check is not part of HIL pass criteria.
+
+```sh
+tools/hil/runner/bridge.sh \
+  --pico-port /dev/serial/by-id/<pico-cdc-endpoint> \
+  --peer-port /dev/serial/by-id/<debug-probe-uart> \
+  --label manual-debug-probe --baud 115200
+```
+
+Disconnect power before restoring the four fixture links for a baseline HIL run.
 
 ## Power
 
@@ -72,9 +91,7 @@ interface instead. CDCn uses USB interface number 2×n and the interface name be
 | CDC4    | 8                | `-if08`              | `CDC4 PIO 8N1` |
 | CDC5    | 10               | `-if0a`              | `CDC5 PIO 8N1` |
 
-On Linux, use the stable paths from `ls -l /dev/serial/by-id/`; the suffix is the hexadecimal interface number. On
-other systems, match the interface number or name shown by the OS device tools. With several boards attached, the
-board's unique USB serial number in the device name distinguishes them.
+On Linux, use the stable paths from `ls -l /dev/serial/by-id/`; the suffix is the hexadecimal interface number.
 
 Example observed Linux entries (board serial redacted; `/dev/ttyACM*` assignments vary):
 
@@ -87,6 +104,31 @@ usb-djwinter_PicoUart_<board-serial>-if08 -> ../../ttyACM6
 usb-djwinter_PicoUart_<board-serial>-if0a -> ../../ttyACM7
 ```
 
+On other systems, match the interface number or name shown by the OS device tools. With several boards attached, the
+board's unique USB serial number in the device name distinguishes them.
+
+## Linux HID Permissions
+
+Linux may restrict access to the board's HID interface. Add a udev rule for the primary group of the account that will
+run the host application. Find that group with `id -gn`, then replace both instances of `YOUR_GROUP` below:
+
+```text
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2e8a", ATTR{idProduct}=="116b", GROUP="YOUR_GROUP", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="116b", GROUP="YOUR_GROUP", MODE="0660", TAG+="uaccess"
+```
+
+Save the lines as `/etc/udev/rules.d/70-picouart-hid.rules`, then reload the rules and reconnect the board:
+
+```sh
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=2e8a --attr-match=idProduct=116b
+sudo udevadm trigger --subsystem-match=hidraw
+sudo udevadm settle
+```
+
+The rule grants read/write access to the selected group and the active desktop user. It does not change CDC serial-port
+permissions. For repository setup commands, see [tools/README.md](../tools/README.md#linux-hid-permissions).
+
 ## PicoUART6 Carrier Compatibility
 
 With flow control disabled, PicoUart's six UART TX/RX pairs match the published pinout of
@@ -95,7 +137,7 @@ compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com
 [The Pi Hut](https://thepihut.com/products/picouart6). The carrier's extra features are not supported:
 
 - The carrier's UART activity, I2C activity, and GPIO-controlled power LEDs are not driven by PicoUart. The Pico's own
-  identification LED is separate and remains available on non-wireless Pico/Pico 2 boards.
+  identification LED is separate.
 - The STEMMA QT/Qwiic connector has no firmware I2C support: PicoUart does not expose a USB-to-I2C interface and is not
   compatible with the original firmware's `i2c-tiny-usb` functionality.
 - Keep RTS/CTS disabled on this carrier. PicoUart's optional flow-control assignments overlap the carrier's LED and I2C
@@ -108,19 +150,6 @@ compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com
 - GP25 is reserved for the selected board's default LED when `PICO_DEFAULT_LED_PIN` is defined.
 - GP26 is used as UART5 CTS when PIO flow control is enabled. In that configuration it is not available as an ADC input.
 - GP27 and GP28 remain free for future use.
-
-## Wireless Boards
-
-Pico W and Pico 2 W expose the same UART pins listed above. Build specifically for `pico_w` or `pico2_w` using the
-[firmware build guide](../firmware/build-and-config.md#build). The firmware operates as a USB/UART bridge only;
-Wi-Fi and Bluetooth are not initialized or used.
-
-The wireless boards' onboard LED is connected through the wireless chip rather than a direct MCU GPIO, so HID LED
-identification is unavailable in these builds. Do not use the non-wireless `pico` or `pico2` image: it treats GPIO25
-as an LED output, but that pin is the wireless chip-select on W boards.
-
-The release build and HIL matrix covers Pico and Pico 2 only. Wireless variants have no physical UART, throughput, or
-clock-stability qualification yet.
 
 ## Photo Credits
 

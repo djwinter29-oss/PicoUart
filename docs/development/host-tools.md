@@ -1,139 +1,126 @@
 # Host Tools Development
 
-This guide covers development and tests for the Python package and .NET host. The browser applications have a separate
-[dashboard development guide](dashboard-development.md); user setup is in the [Python](../../host/python/README.md),
-[.NET](../../host/dotnet/README.md), and [Direct Dashboard](../../host/direct/README.md) guides.
+Develop the Python package or .NET host from a checkout; commands below run from the repository root and need no
+board. For browser app development, see the [dashboard guide](dashboard-development.md); host changes must follow the
+[HID reference](../design/usb/hid-report-reference.md). Most examples use POSIX shell syntax, with PowerShell shown
+for Python setup.
 
-Run commands from the repository root. None of the setup or test steps here need a board.
+## Python
 
-## Architecture
+### Python Environment Setup
 
-The host tools use HID for board status and controls. UART data and line coding stay on the six CDC ports used by
-serial applications.
-
-```mermaid
-flowchart TD
-    HostedPage["Hosted dashboard browser"] -->|"HTTP"| HostedBackend["Python or .NET host"]
-    HostedBackend -->|"USB HID"| PicoBoard["PicoUart board"]
-    DirectPage["Direct Dashboard browser"] -->|"WebHID"| PicoBoard
-    SerialApps["Serial applications"] -->|"Six USB CDC ports"| PicoBoard
-```
-
-The [HID reference](../design/usb/hid-report-reference.md) defines report validation, polling, counters, and control
-handling. Hosts expose decoded snapshots and explicit errors. Routine HTTP request logs are off by default.
-
-## Prerequisites
-
-Install only what you need:
-
-- Python 3.10+ and pip 25.1+ for Python and cross-backend checks
-- .NET 10 SDK for .NET development
-- Node 22+ for dashboard tests
-- Desktop Chrome or Edge for WebHID
-- Git with full tag history; versions come from tags
-
-## Python Environment Setup
-
-The [host launchers](../../tools/README.md) need no setup. For development, create a venv with the `dev` dependency
-group and install the package editable:
+Use Python 3.10+ and pip 25.1+. The editable install includes the `dev` dependency group:
 
 ```sh
 python3 -m venv host/python/.venv
-host/python/.venv/bin/python -m pip install --group host/python/pyproject.toml:dev
-host/python/.venv/bin/python -m pip install --no-build-isolation -e host/python
+. host/python/.venv/bin/activate
+python -m pip install --group host/python/pyproject.toml:dev
+python -m pip install --no-build-isolation -e host/python
 ```
 
-On native Windows, use `python` and `host/python/.venv/Scripts/python.exe`. Re-run both installs when dependencies
-change. If hidapi has no wheel for your platform, pip builds it from source and needs native build prerequisites.
+For native Windows, use the same steps with the Python executable inside the environment:
 
-On Linux, if hidapi is built on libusb, Python opens the board's hidraw node instead of detaching the kernel HID driver.
-If that node exists but cannot be opened, Python reports a permission error rather than falling back to libusb.
+```powershell
+python -m venv host/python/.venv
+.\host\python\.venv\Scripts\Activate.ps1
+python -m pip install --group host/python/pyproject.toml:dev
+python -m pip install --no-build-isolation -e host/python
+```
 
-## Python Development
+If PowerShell blocks activation, omit that line and use `.\host\python\.venv\Scripts\python.exe` instead of `python`
+for commands run from the repository root. From `host/python`, use `.\.venv\Scripts\python.exe`.
+
+- Reinstall after changing dependencies.
+- If pip has no hidapi wheel for your platform, it builds the package from source; see the
+  [hidapi installation instructions](https://github.com/trezor/cython-hidapi) for native prerequisites.
 
 ### Tests and Checks
 
+With the venv active, run the Python suite from the repository root:
+
 ```sh
-host/python/.venv/bin/python -m pytest -c pyproject.toml
+python -m pytest -c pyproject.toml
+```
+
+Run Ruff and mypy from `host/python`; the POSIX command uses a subshell so the current directory stays at the
+repository root:
+
+```sh
 (cd host/python && .venv/bin/python -m ruff check src tests && .venv/bin/python -m mypy)
 ```
 
-For just the package, use `-c host/python/pyproject.toml host/python/tests`; add
-`--cov=pico_uart --cov-report=term-missing` for coverage. Mypy enforces `disallow_untyped_defs`.
+For just the package tests, run `python -m pytest -c host/python/pyproject.toml host/python/tests` from the repository
+root. Add `--cov=pico_uart --cov-report=term-missing` for coverage. Mypy enforces `disallow_untyped_defs` on the
+package. Runtime dependencies are in `project.dependencies`; test and development tools are in the `test` and `dev`
+groups in [pyproject.toml](../../host/python/pyproject.toml).
 
-Runtime dependencies belong in `project.dependencies`; test and development tools belong in the `test` and `dev`
-groups in [pyproject.toml](../../host/python/pyproject.toml). The contract test checks these declarations and that no
-lock files have been added.
+### Build a Wheel
 
-### Python Client API
-
-`PicoUartHid` is the supported entry point. It owns one HID connection; use it as a context manager. Pass
-`serial_number="ABC123"` to select a board. Device errors raise `OSError` or `RuntimeError`.
-
-| Method | Returns |
-| --- | --- |
-| `read_status(timeout_ms=250)` | Latest six-channel Input snapshot, or `None` on timeout |
-| `read_identity()` / `read_board_status()` | Identity and capabilities; board status also includes temperature |
-| `read_telemetry()` | Live board telemetry |
-| `read_configuration()` | Boot-time pins, capacities, stored profile, and reset cause |
-| `read_channel(index)` | On-demand channel Feature snapshot |
-| `read_channel_diagnostic(index)` | RX fault history, configuration error, sample age, and buffer peaks |
-| `read_channel_diagnostics()` | Diagnostics for all six channels |
-
-`read_status()` updates only the channel whose Input report arrived; it does not wait for all six. Public names are
-listed in `pico_uart.__all__`.
-
-After opening and configuring CDC TTYs and asserting DTR, call
-`board.wait_channels_ready({0: 115200}, timeout_s=3.0)` before transmitting. It raises `OSError` on a current
-failure and `TimeoutError` on expiry. Select the HID board using the same USB serial number as the TTY.
-
-`toggle_led()`, `reset_board()`, and `save_configuration(profile, unsafe_overclock=False)` implement board controls.
-Saving a profile reboots the board; follow the
-[HID save rules](../design/usb/hid-report-reference.md#save-and-reboot-safety).
-
-### Cross-Backend Test Behavior
-
-Python `status --json` and .NET `status` print the same `{"channels": [...]}` shape with six entries. A channel without
-an Input report yet has `sequence: null` and `state: "unknown"`. Traffic gaps set `traffic_incomplete`.
-
-Python `monitor` fails if it receives no reports; .NET `monitor` can succeed with none. Both drop reports that
-complete at or after the deadline. Dropped-byte counts and peaks are cumulative since boot.
-
-### Python Distribution
-
-Building locally does not publish. Release channels and gates are described in
-[Host App Distribution and Publishing](../deployment/host-app-publishing.md).
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) for this step. Stage the shared dashboard assets,
+then build the wheel:
 
 ```sh
-mkdir -p host/python/src/pico_uart/dashboard/assets
-cp -R host/web/src/. host/python/src/pico_uart/dashboard/assets/
+python -c "from shutil import copytree; copytree('host/web/src', 'host/python/src/pico_uart/dashboard/assets', dirs_exist_ok=True)"
 uv build --wheel --directory host/python
 ```
 
-`hatch-vcs` derives versions from Git tags. Without Git metadata, the version is `0.0.0.dev0`; set
-`SETUPTOOLS_SCM_PRETEND_VERSION` to override it. Staged dashboard assets are included in the wheel.
+The standard-library copy command works in POSIX shells and PowerShell. This builds locally; it does not publish.
+`hatch-vcs` derives the version from Git tags, or uses `0.0.0.dev0` without Git metadata; builds need full tag history.
+Set `SETUPTOOLS_SCM_PRETEND_VERSION` to override it. See
+[Host App Distribution and Publishing](../deployment/host-app-publishing.md).
 
 ## .NET Development
 
-`host/dotnet/PicoUart.sln` contains the app and xUnit tests.
+Use the .NET 10 SDK. `host/dotnet/PicoUart.sln` contains the app and xUnit tests.
+The cross-backend pytest also needs the Python development environment above.
+
+```sh
+dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"
+dotnet format host/dotnet/PicoUart.sln --verify-no-changes --no-restore
+python -m pytest tests/tooling/test_dotnet_host.py
+```
+
+The unit tests use scripted HID streams and share [input-accounting cases](../../tests/contracts/host-input-cases.json)
+with Python. The cross-backend test publishes the app and checks the shared frontend and HTTP contract. It is skipped
+if `dotnet` is not on `PATH`; set `DOTNET_EXE` to use a specific executable.
+
+### Run the Host
+
+This starts the web host in the foreground; press `Ctrl+C` to stop it:
 
 ```sh
 dotnet run --project host/dotnet/PicoUart -- web --port 5001
-dotnet test host/dotnet/PicoUart.sln --filter "Category=Unit"
-dotnet format host/dotnet/PicoUart.sln --verify-no-changes --no-restore
-host/python/.venv/bin/python -m pytest tests/tooling/test_dotnet_host.py
 ```
 
-The unit tests use scripted HID streams and share [Input-accounting cases](../../tests/contracts/host-input-cases.json)
-with Python. The cross-backend check publishes the app and verifies the shared frontend and HTTP contract. It is
-skipped if `dotnet` is not on `PATH`; `DOTNET_EXE` overrides the executable.
-
-For a local framework-dependent publish:
+To publish a framework-dependent build locally:
 
 ```sh
 dotnet publish host/dotnet/PicoUart -c Release --self-contained false -o build/host-dotnet
-dotnet build/host-dotnet/PicoUart.dll web --port 5001
 ```
+
+Run the published host in the foreground with `dotnet build/host-dotnet/PicoUart.dll web --port 5001`; press
+`Ctrl+C` to stop it.
 
 For a self-contained publish, add `--self-contained true -r linux-x64` (or another RID). Ship the whole output
 directory, including `web/`. Use `-p:MinVerVersionOverride=1.2.3` to set the version.
+
+## Launch Scripts
+
+The `tools/host/` launchers run the Python or .NET dashboard (or serve the Direct Dashboard) from a checkout. They
+default to the local dashboard and pass application arguments through unchanged. Each instance needs a separate port
+and gets a port-specific session cookie:
+
+```sh
+tools/host/run-python.sh --serial <serial-1> dashboard --port 5001
+tools/host/run-dotnet.sh --serial <serial-2> web --port 5002
+```
+
+The Direct Dashboard serves static files on loopback port 8000; use `--port` to change it. WebHID permissions apply on
+the computer running the browser. Run a launcher with `--help` for prerequisites and environment overrides. Python and
+.NET check local USB/HID permissions before starting but do not install rules; the Direct Dashboard does not check.
+
+The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it) and installs the local `pico-uart`
+package, resolving dependencies from public PyPI if Flask or hidapi cannot be imported. It runs the source directly.
+After dependency changes, refresh the environment with [Python Environment Setup](#python-environment-setup). Native
+Windows users run the direct commands in the [Python](../../host/python/README.md),
+[.NET](../../host/dotnet/README.md), and [Direct Dashboard](../../host/direct/README.md) guides.

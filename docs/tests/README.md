@@ -8,8 +8,14 @@ as partial.
 | Host tests | Native host | Firmware policies, host applications, and cross-project contracts |
 | Firmware build | Pico SDK/toolchain | Compile and link both RP2040 and RP2350 targets |
 | Functional HIL | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health |
-| Performance HIL | Same fixture | Throughput, integrity, concurrency, soak, overflow behavior |
+| Performance HIL | Same fixture | Payload integrity under concurrent six-port and per-pair load |
 | Release HIL | Exact packaged artifacts | Qualify the artifacts intended for publication |
+
+## Hardware Authorization
+
+An attached board is not authorization. Get explicit user approval before flashing, resetting, changing board or UART
+configuration, sending board-control commands, or transmitting UART data. Identify the target and stay within the
+approved scope.
 
 ## Without Hardware
 
@@ -25,18 +31,38 @@ done
 git diff --check
 ```
 
-The host-test wrapper runs native C and Python tests; add `--skip-python` to run only the C suite. It does not cover the
-.NET or browser dashboards; if you changed those, run their checks from the [tools reference](../../tools/README.md),
-and report any check you skipped. Hardware-free checks cannot establish DMA timing, USB enumeration, multicore load,
-or physical UART signalling.
+The host-test wrapper runs native C and Python tests; add `--skip-python` to run only the C suite. It does not cover
+the .NET host or browser apps. If you changed the .NET host, run the
+[.NET checks](../development/host-tools.md#net-development). For browser changes, run the
+[frontend tests](../development/dashboard-development.md#frontend-tests). Hardware-free checks cannot establish DMA
+timing, USB enumeration, multicore load, or physical UART signalling.
 
 ## With Hardware
 
+Follow these steps in order; each document below owns one step.
+
 1. Wire the fixture: [HIL Fixture Setup](hil-fixture-setup.md).
-2. Run the functional pass, then the performance pass: [HIL Fixture Test Plan](hil-fixture-test-plan.md). The combined
-   `tools/hil/runner/full.sh` runs both and writes a dated record to [records/](records/README.md).
-3. For a release, test the exact packaged artifacts and follow the gates in
+2. Flash the image and record its version and SHA-256 ([USB](../hardware-setup.md#installing-firmware) or
+   [SWD](../../firmware/build-and-config.md#debug-probe-loading-and-recovery)). Confirm CDC0 through CDC5 and HID
+   enumerate.
+3. Run the [standard combined run](hil-fixture-test-plan.md#standard-combined-run). It writes a dated record to
+   [records/](records/README.md). The same plan has the pair sweeps.
+4. Run the [recovery, stress, and startup checks](hil-recovery-and-stress.md) the change or release requires. Open
+   coverage is under [Known Gaps](hil-recovery-and-stress.md#known-gaps).
+5. For a release, test the exact packaged artifacts and follow the gates in
    [Releasing](../deployment/releasing.md#release-hil-gates).
+6. Remove the fixture jumpers before connecting external UART equipment.
+
+For a quick check after a change, run the concurrent fixture for 60 seconds at 115200 baud, then test individual links
+at 921600 and 1000000. Capture HID health before and after, while no other monitor is reading the board:
+
+```sh
+host/python/.venv/bin/pico-uart monitor --duration 5
+host/python/.venv/bin/pico-uart overruns
+```
+
+This is not release stability evidence; see the [evidence index](records/README.md#evidence-index) for earlier long
+runs.
 
 ## Results and Evidence
 
@@ -48,4 +74,4 @@ or physical UART signalling.
 | `NOT RUN` | A configured rate was never attempted, for example after a sweep stopped. |
 | `NOT REPORTED` | An expected per-stream result is missing. |
 
-Use the [HIL records guide](records/README.md#record-format) for the required record contents and evidence format.
+Use the [HIL records guide](records/README.md#record-formats) for required record contents and evidence format.
