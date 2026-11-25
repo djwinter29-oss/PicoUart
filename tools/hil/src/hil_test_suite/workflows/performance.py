@@ -189,6 +189,33 @@ def expected_link_labels() -> tuple[str, ...]:
     )
 
 
+def per_rate_health_summary(output: str) -> list[str]:
+    """Keep passing rate health compact while preserving details for failed checks."""
+    checks: dict[str, str] = {}
+    details: dict[str, list[str]] = {}
+    for line in output.splitlines():
+        match = re.match(r"^HID rate ([0-9]+) health: (PASS|FAIL)(?: \((before|after)\))?$", line)
+        if match:
+            rate, status, phase = match.groups()
+            checks[rate] = status if phase is None else f"{status} ({phase})"
+            continue
+        detail = re.match(r"^HID rate ([0-9]+) (before|after): .+$", line)
+        if detail:
+            details.setdefault(detail.group(1), []).append(line)
+
+    if not checks:
+        return []
+    failures = [(rate, status) for rate, status in checks.items() if not status.startswith("PASS")]
+    if not failures:
+        rate_label = "rate" if len(checks) == 1 else "rates"
+        return [f"All per-rate HID health checks passed ({len(checks)} {rate_label})."]
+    lines = [f"Per-rate HID health: {len(checks) - len(failures)} passed; {len(failures)} failed."]
+    for rate, status in failures:
+        lines.append(f"- {rate} baud: {status}")
+        lines.extend(f"  {detail}" for detail in details.get(rate, []))
+    return lines
+
+
 def format_result_entry(
     arguments: SimpleNamespace,
     timestamp: str,
@@ -260,7 +287,7 @@ def format_result_entry(
             "",
             "### Per-Rate HID Health",
             "",
-            *[f"- {line}" for line in output.splitlines() if line.startswith("HID rate ")],
+            *(per_rate_health_summary(output) or ["not reported"]),
             "",
             "### Health",
             "",

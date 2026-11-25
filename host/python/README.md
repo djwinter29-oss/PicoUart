@@ -1,6 +1,6 @@
 # pico-uart
 
-Monitor a [PicoUart](https://github.com/djwinter29-oss/PicoUart) six-port USB-to-UART adapter from your browser, the
+Monitor a [PicoUart](https://github.com/djwinter29-oss/PicoUart) six-channel USB-to-UART adapter from your browser, the
 command line, or Python. Works on Windows, Linux, and macOS with Python 3.10 or newer.
 
 PicoUart appears on your computer as six ordinary serial ports. Keep using your usual terminal or serial library to
@@ -20,9 +20,9 @@ python -m pip install pico-uart
 ```
 
 Install it into your project's virtual environment, or use `pipx install pico-uart` if you only need the command line
-and dashboard. On Linux,
-[allow USB access](https://github.com/djwinter29-oss/PicoUart/blob/main/tools/README.md#linux-hid-permissions) instead
-of running as root.
+and dashboard. On Linux, follow the
+[USB access setup](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/hardware-setup.md#linux-hid-permissions)
+instead of running as root.
 
 ## Dashboard
 
@@ -103,7 +103,6 @@ port 0 in the Python call is that same `CDC0` channel. The wait raises `TimeoutE
 | `toggle_led()` / `reset_board()` | Switch the board LED on or off to find it / restart the board |
 | `save_configuration(profile, unsafe_overclock=False)` | Save boot clock settings; restarts the board |
 
-Close serial ports and stop traffic before saving a clock profile, as noted in the Dashboard section above.
 Non-default profiles require `unsafe_overclock=True`.
 
 ## Troubleshooting

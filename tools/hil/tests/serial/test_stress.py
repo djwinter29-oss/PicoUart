@@ -291,8 +291,11 @@ def test_benchmark_rate_collects_and_prints_stream_timing(
     stdout = captured.out
     if health_failure == "before":
         assert "TIME " not in stdout
+        assert "HID rate 115200 health: FAIL (before)" in stdout
         assert captured.err.count("no traffic sent") == 6
         return
+    expected_health = "PASS" if health_failure is None else "FAIL (after)"
+    assert f"HID rate 115200 health: {expected_health}" in stdout
     if health_failure is not None:
         assert captured.err.count("HID health failed after rate") == 6
     time_lines = [line for line in stdout.splitlines() if line.startswith("TIME ")]
@@ -514,16 +517,6 @@ def test_benchmark_allows_time_for_concurrent_line_coding() -> None:
     assert stress.RATE_SETTLE_SECONDS >= 2.0
 
 
-def test_performance_test_plan_documents_time_diagnostic_output(repo_root: Path) -> None:
-    """The per-stream ``TIME <label>: {...}`` diagnostic line (undocumented
-    output alongside the parsed PASS/FAIL lines) must be explained in the
-    performance test plan so operators aren't left guessing at its format.
-    """
-    plan = " ".join((repo_root / "docs/tests/hil-fixture-test-plan.md").read_text().split())
-    assert "TIME" in plan
-    assert "not parsed by `pico-uart-hil performance`" in plan
-
-
 @pytest.mark.parametrize("wake_at", [1.0, 1.1])
 def test_read_exact_rejects_first_byte_ready_at_deadline(monkeypatch, wake_at):
     stress = _load_stress()
@@ -716,19 +709,3 @@ def test_run_stream_measures_verified_block_latency(monkeypatch):
     assert timing["latency"]["verified_blocks"] == 2
     assert timing["latency"]["max_block_duration_ms"] == pytest.approx(3)
     assert timing["latency"]["total_block_duration_ms"] == pytest.approx(6)
-
-
-def test_hil_fixture_plan_matches_modes_and_timing(repo_root):
-    plan = " ".join((repo_root / "docs/tests/hil-fixture-test-plan.md").read_text().split())
-    assert "six streams concurrently" in plan
-    assert "--cdc0" in plan and "--cdc5" in plan
-    assert "Debug Probe" in plan
-    assert "first-send-attempt" in plan
-    assert "last in-flight block" in plan
-    assert "completes at or after its deadline" in plan
-    assert "host scheduling jitter" in plan.lower()
-    assert "sequentially in one process" in plan
-    assert "fresh port setup" in plan
-    assert "tools/hil/runner/pair.sh" in plan
-    assert "--incremental-performance" in plan
-    assert "50% or more" in plan

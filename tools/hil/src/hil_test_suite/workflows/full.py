@@ -19,7 +19,13 @@ from ..support.health import read_system_clock_hz
 from ..support.paths import REPO_ROOT
 from ..support.results import artifact_metadata
 from ..support.repository import git_metadata
-from .performance import DEFAULT_RATES, RATE_PATTERN, parse_benchmark_output_by_rate, rate_sweep_summary
+from .performance import (
+    DEFAULT_RATES,
+    RATE_PATTERN,
+    parse_benchmark_output_by_rate,
+    per_rate_health_summary,
+    rate_sweep_summary,
+)
 
 DEFAULT_RECORDS_DIR = REPO_ROOT / "docs/tests/records"
 FUNCTIONAL_CASES = (
@@ -318,11 +324,7 @@ def format_result_entry(
             "",
             "## Per-Rate HID Health",
             "",
-            *[
-                f"- {line}"
-                for line in (performance[1] if performance else "").splitlines()
-                if line.startswith("HID rate ")
-            ],
+            *(per_rate_health_summary(performance[1] if performance else "") or ["not reported"]),
             "",
             "## HID Health",
             "",

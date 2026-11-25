@@ -10,8 +10,8 @@ flowchart LR
    CDC5["CDC5 / PIO UART5"] -->|"TX to RX loopback"| CDC5
 ```
 
-The GPIOs below come from the [port map](../hardware-setup.md#port-map). Run the fixture at the firmware default of
-115200 8N1.
+The GPIOs below come from the [port map](../hardware-setup.md#port-map). The functional baseline uses 115200 8N1;
+performance runs use the rates and durations in the [HIL test plan](hil-fixture-test-plan.md).
 
 ## Equipment
 
@@ -32,54 +32,19 @@ access. It does not touch the board.
 
 Wire these four links before starting a runner. Do not move jumpers between stages.
 
-### Link 1: Hardware UART0 to PIO UART2
+| Stage | Connection | GPIO wiring |
+| --- | --- | --- |
+| 1 | Cross CDC0 TX to CDC2 RX | GP0 → GP9 |
+| 1 | Cross CDC2 TX to CDC0 RX | GP8 → GP1 |
+| 2 | Cross CDC3 TX to CDC4 RX | GP12 → GP17 |
+| 2 | Cross CDC4 TX to CDC3 RX | GP16 → GP13 |
+| 3 | Loop CDC1 TX to CDC1 RX | GP4 → GP5 |
+| 4 | Loop CDC5 TX to CDC5 RX | GP20 → GP21 |
 
-Cross the signal directions between UART0/CDC0 and UART2/CDC2:
+Runner stages use the same numbering.
 
-| UART0 signal | GPIO | UART2 signal | GPIO |
-| ------------ | ---- | ------------ | ---- |
-| TX           | GP0  | RX           | GP9  |
-| RX           | GP1  | TX           | GP8  |
-
-### Link 2: PIO UART3 to PIO UART4
-
-Cross the signal directions between UART3/CDC3 and UART4/CDC4:
-
-| UART3 signal | GPIO | UART4 signal | GPIO |
-| ------------ | ---- | ------------ | ---- |
-| TX           | GP12 | RX           | GP17 |
-| RX           | GP13 | TX           | GP16 |
-
-### Link 3: Hardware UART1 Loopback
-
-Connect UART1/CDC1 TX to its own RX:
-
-| PicoUart signal | GPIO | PicoUart signal | GPIO |
-| --------------- | ---- | --------------- | ---- |
-| TX              | GP4  | RX              | GP5  |
-
-### Link 4: PIO UART5 Loopback
-
-Connect UART5/CDC5 TX to its own RX:
-
-| PicoUart signal | GPIO | PicoUart signal | GPIO |
-| --------------- | ---- | --------------- | ---- |
-| TX              | GP20 | RX              | GP21 |
-
-## Endpoint Preflight
-
-Before running a test runner, record the stable device paths:
-
-```sh
-ls -l /dev/serial/by-id/
-```
-
-Expected endpoints are six PicoUart CDC serial ports. The HID interface may not appear as a serial path; verify it with
-the HID host tool or the runner's enumeration step. Do not guess interface numbers from `/dev/ttyACM*` ordering when
-stable by-id paths are available.
-
-Stop the test and inspect the wiring if a channel fails in both directions, a CDC interface disappears, the board resets
-unexpectedly, or a signal appears to be at the wrong voltage.
+Before testing, identify the board's six CDC ports using the
+[serial-port guide](../hardware-setup.md#find-the-serial-ports). The runner checks HID enumeration.
 
 ## Bring-Up Checklist
 
@@ -87,7 +52,7 @@ unexpectedly, or a signal appears to be at the wrong voltage.
 2. Flash the intended artifact using [USB](../hardware-setup.md#installing-firmware) or
    [SWD](../../firmware/build-and-config.md#debug-probe-loading-and-recovery), then record its version and SHA-256.
 3. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate.
-4. Run the functional and performance plans.
+4. Run the [functional and performance plans](hil-fixture-test-plan.md).
 5. Remove all test jumpers before connecting external UART equipment.
 
 ## Optional Manual External-Peer Check

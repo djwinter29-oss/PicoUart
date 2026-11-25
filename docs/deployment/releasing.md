@@ -52,8 +52,8 @@ own VID/PID. Changing the identity is a breaking USB change.
 
 For regular setup or updates, follow [Installing Firmware](../hardware-setup.md#installing-firmware). For a release
 qualification run, verify the artifact's SHA-256 against the release manifest, then use the SWD procedure in
-[Firmware Build and Configuration](../../firmware/build-and-config.md#load-over-swd). Do not rebuild the image being
-qualified.
+[Firmware Build and Configuration](../../firmware/build-and-config.md#debug-probe-loading-and-recovery). Do not
+rebuild the image being qualified.
 
 ## Release HIL Gates
 
@@ -66,8 +66,8 @@ procedures; keep one record per board in the [HIL records](../tests/records/READ
 | Coverage | Required evidence |
 | --- | --- |
 | Functional fixture | Both crossed pairs in both directions and both loopbacks; all six CDC ports and HID enumerate |
-| Performance | Pair and concurrent payload integrity at declared rates and durations, with clean HID health |
-| Stability | Repeated or soak runs at the declared workload, with duration and conditions recorded |
+| Performance | [Default six-port sweep](../tests/hil-fixture-test-plan.md#standard-combined-run), 30 s/rate, clean HID; pair sweeps for pair-specific claims |
+| Stability | Repeat or soak the intended workload; record workload and duration in the HIL record before testing |
 | Control and recovery | Rapid line-coding changes, disconnect/remount, watchdog recovery, and DMA wrap/re-arm |
 | Artifact identity | Board target, firmware and runner revisions, and the tested artifact's SHA-256 |
 
@@ -76,9 +76,9 @@ A speed-sweep `PASS` qualifies only the 115200-baud baseline. The boundary it fi
 rates remain unrated. Older [record index](../tests/records/README.md#evidence-index) entries do not replace a current
 exact-artifact run.
 
-The test plan's [Known Gaps](../tests/hil-fixture-test-plan.md#known-gaps) lists open reset-startup and DMA wrap/re-arm
-procedures. Optional claims such as RTS/CTS or backpressure also need their matching board configuration and HIL
-variant.
+The [test plan's Known Gaps](../tests/hil-fixture-test-plan.md#known-gaps) lists hardware cases without validated
+procedures. A required case cannot pass until its procedure and acceptance criteria are validated. Optional claims
+such as RTS/CTS or backpressure need their matching board configuration and HIL variant.
 
 ## Versioning
 

@@ -14,7 +14,7 @@ was flashed with the repository loader and OpenOCD reported `Verified OK`; clock
 | Profiled DMA threshold 32 | firmware-session-profile-dma32/pico_uart.elf | 24fd97db5ef825a8974186934e7e6fb95e7305f6857bf83d3ee4d95906960bc2 |
 | Uninstrumented defaults | firmware-uart-session-final-pico/pico_uart.elf | 3956a072f703c55b5ce7cc2fa179831258059e84e196ca2ec5f3db358b683807 |
 
-The [final full HIL record](2026-10-22-213102Z-pico-125mhz-hil.md) is the authority for uninstrumented functional and
+The [final full HIL record](archive/2026-10-22-213102Z-pico-125mhz-hil.md) is the authority for uninstrumented functional and
 performance results: all four functional stages and all six concurrent streams passed at 115200, 396800, and 460800
 baud, ten seconds per rate, with zero RX overruns and clean per-rate health. It does not establish a baud ceiling.
 

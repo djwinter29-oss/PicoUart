@@ -16,8 +16,8 @@ body:
       options:
         - Firmware (RP2040/RP2350)
         - Host Python
-        - Host .NET
-        - WebHID
+        - Host dotnet
+        - Host Direct Dashboard
         - Build/CI/release tooling
         - Documentation
     validations:

@@ -23,9 +23,6 @@ python3 tools/firmware/config.py --build-dir build/firmware-pico --probe-serial 
 # Host dashboards (Linux/macOS/WSL)
 tools/host/run-python.sh                                # or run-dotnet.sh, run-direct.sh
 
-# Host tests, C and Python (after the developer environment setup linked below)
-PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
-
 # Hardware tests
 tools/hil/setup.sh
 tools/hil/runner/full.sh --help
@@ -54,8 +51,8 @@ port 8000; use `--port` to change it. WebHID permissions apply on the computer r
 Run a launcher with `--help` for prerequisites and environment overrides. Python and .NET check local USB/HID
 permissions before starting, but do not install rules automatically. The Direct Dashboard does not check permissions.
 
-The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it) and installs the `dashboard` extra
-from public PyPI if Flask or hidapi cannot be imported. It runs the source directly, without an editable install.
+The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it) and installs the local `pico-uart`
+package, resolving dependencies from public PyPI if Flask or hidapi cannot be imported. It runs the source directly.
 After dependency changes, refresh the environment using the
 [developer setup](../docs/development/host-tools.md#python-environment-setup).
 Native Windows users can use the direct commands in the [Python](../host/python/README.md),
@@ -70,17 +67,5 @@ tools/host/hid-permissions-setup.sh
 tools/host/hid-permissions-check.sh
 ```
 
-Setup requires sudo, installs `/etc/udev/rules.d/70-picouart-hid.rules`, reloads udev, and reapplies rules to attached
-devices. It grants read/write access to PicoUart USB and hidraw nodes (VID `0x2E8A`, PID `0x116B`) through the
-invoking user's primary group and desktop-session `uaccess`. Customized rules are not overwritten. Separate USB and
-hidraw rules support libusb-backed hidapi and hidraw/WebHID clients; CDC serial permissions and Debug Probe access
-are unchanged.
-
-HID permission includes board controls as well as diagnostics. See [security guidance](../SECURITY.md) and
-[firmware build options](../firmware/build-and-config.md) for reboot behavior and how to disable standalone HID reboot.
-
-If access is still denied:
-
-- Reconnect the board and rerun the check. With no board attached, the check succeeds without testing connectivity.
-- Systems without udev receive a warning and skip the check; both helpers are no-ops on non-Linux hosts.
-- For the Direct Dashboard, run setup on the Linux computer running the browser.
+For setup behavior and troubleshooting, see the
+[Linux HID permissions guide](../docs/hardware-setup.md#linux-hid-permissions).

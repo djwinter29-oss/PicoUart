@@ -1,7 +1,8 @@
 # PicoUart HIL Record
 
 - **Overall result:** `PASS`
-- **Run time (UTC):** `2026-10-24T22:33:40+00:00`
+- **Test start (UTC):** `2026-10-24T18:33:31+00:00`
+- **Run ended (UTC):** `2026-10-24T22:33:40+00:00`
 - **Board:** `pico` (RP2040)
 - **Tester:** Ji Dong
 - **Firmware:** `0.8.6`
@@ -36,4 +37,4 @@
 - All six stream payloads passed: yes.
 - HID per-rate checks passed before and after; all channels ready at rate checks; overruns, RX errors and control errors remained zero.
 - Byte totals are runner-verified USB-paced host payload counters, not independent UART-pin measurements.
-- Raw log: `/home/home/.hermes/cache/scratch/picouart-1m-6port-4h-20261024T183331Z.log` (SHA-256 `c416aa08f90aaf15cf7402c507fd5f190e1ba1b9317b1fe57d7c6080c0a3e310`).
+- Raw log not retained in this repository; SHA-256 `c416aa08f90aaf15cf7402c507fd5f190e1ba1b9317b1fe57d7c6080c0a3e310`.

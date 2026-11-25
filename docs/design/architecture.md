@@ -29,14 +29,31 @@ flowchart LR
 Solid lines carry UART bytes. Dashed lines carry configuration and telemetry only. Baud rate and framing are set
 via CDC; HID only reports what was applied.
 
+## USB Interfaces
+
+The composite USB device exposes six CDC ACM interfaces and one vendor HID interface:
+
+| Interface | Count | Carries | Used by |
+| --- | ---: | --- | --- |
+| CDC ACM | 6 | UART bytes, DTR, and line coding for UART0-UART5 | Terminals, test runners, serial libraries |
+| Vendor HID | 1 | Status, diagnostics, and board controls | Python, .NET, and Direct Dashboard |
+
+Each CDC port maps to one UART; [hardware setup](../hardware-setup.md#port-map) owns the pin map. The
+[control plane](control-plane-design.md) defines session and line-coding transitions, and
+[ring buffers](uart/ring-buffer-design.md) define buffering and full-ring behavior. The
+[HID reference](usb/hid-report-reference.md) specifies report layouts and board actions.
+
+Use **CDC port** for the USB serial interface and **channel** for its firmware status and diagnostics; channel `n`
+maps to CDCn.
+
 ## Design Principles
 
 - **One core per side.** Core 0 owns TinyUSB and the USB side of the bridge. Core 1 owns all UART hardware. Neither
   core calls into the other's private state.
 - **Rings are the data boundary.** Every port has one TX ring (USB to UART) and one RX ring (UART to USB). Each ring has
   exactly one producer and one consumer.
-- **Configuration is deferred, never in-line.** A line-coding change is handed to core 1, which applies it only at a
-  safe point. Core 0 never touches UART hardware.
+- **Configuration stays on the control path.** Core 0 hands line-coding requests to core 1, which applies them at a
+  safe point; core 0 does not touch UART hardware.
 - **Diagnostics are separate from data.** HID reports health and counters without competing with serial traffic.
 - **Board pinout stays separate.** A constant board table maps each port to its pins and backend; transport and
   lifecycle code stay board-independent.
@@ -54,7 +71,6 @@ flowchart LR
 
 | Component | Responsibility | Design |
 | --- | --- | --- |
-| USB interfaces | CDC ports, HID, DTR lifecycle, byte admission, reports | [USB interfaces](usb/usb-interfaces.md) |
 | Rings | Per-port buffering, overflow and backpressure policy | [Ring buffers](uart/ring-buffer-design.md) |
 | Control plane | Line-coding hand-off, deadlines, error reporting | [Control plane](control-plane-design.md) |
 | Backend operations | Common contract for both UART implementations | [Backend contract](uart/backend-adapter-design.md) |
@@ -80,15 +96,11 @@ takes it and records that it now owns the request in the same lock hold, so ther
 has no owner. An empty mailbox therefore does not mean the change is done; core 1 may still be waiting for a safe apply
 point. Ports never block each other's mailboxes.
 
-### Status Lock
+### Shared State and Telemetry
 
-The status lock protects the small shared state that both cores read: lifecycle flags, control ownership, request
-generations, and applied settings. It does not protect ring cursors.
-
-### Telemetry Snapshots
-
-Core 1 brackets each statistics update with an odd/even sequence counter. Core 0 accepts a snapshot only if the counter
-is even and unchanged across the read, so HID never reports a half-written update.
+The status lock protects lifecycle flags, control ownership, request generations, and applied settings, but not ring
+cursors. Core 1 brackets each statistics update with an odd/even sequence counter; core 0 accepts a snapshot only if
+the counter is even and unchanged across the read.
 
 ### Worker Heartbeat and Startup
 
@@ -99,10 +111,8 @@ Core 1 is explicitly reset before launch, so startup never depends on the state 
 
 ## Constraints
 
-- PIO UARTs support 8N1 only. Hardware UARTs accept the wider CDC framing set.
 - The six active ports use all 12 RP2040 DMA channels.
 - All six ports share one USB full-speed link (12 Mbit/s). For example, six full-duplex 3 Mbaud streams would need
   3.6 MB/s, more than USB can carry. Baud rates configure each port; the shared link limits aggregate throughput.
-- RTS/CTS flow control is off by default and enabled per backend in the board configuration.
 - Multicore, DMA, and USB timing can only be proven on hardware; see the
   [HIL test plan](../tests/hil-fixture-test-plan.md).

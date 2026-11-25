@@ -115,13 +115,18 @@ def test_performance_report_includes_runner_git_metadata_and_summary_table() -> 
         artifact_path="firmware.elf",
         artifact_sha256="deadbeef",
     )
-    output = "Benchmarking all six HIL fixture streams at 115200 baud\nPASS cdc0-to-cdc2: 100 bytes, 20.0 B/s\n"
+    output = (
+        "Benchmarking all six HIL fixture streams at 115200 baud\n"
+        "PASS cdc0-to-cdc2: 100 bytes, 20.0 B/s\n"
+        "HID rate 115200 health: PASS\n"
+    )
 
     report = performance.format_result_entry(arguments, "2026-10-08T00:00:00+00:00", 0, output)
 
     assert "**Runner Git commit:** `runner-commit`" in report
     assert "**Runner worktree:** `dirty`" in report
     assert "| 115200 | cdc0-to-cdc2 | PASS | 100 | 20.0 |" in report
+    assert "All per-rate HID health checks passed (1 rate)." in report
     assert "Command:" not in report
 
 
@@ -277,6 +282,7 @@ def test_report_marks_unattempted_rates_and_preserves_rate_health() -> None:
     output = (
         "Benchmarking all six HIL fixture streams at 115200 baud\n"
         "HID rate 115200 after: rx_error\n"
+        "HID rate 115200 health: FAIL (after)\n"
         "FAIL cdc0-to-cdc2: HID health failed after rate\n"
     )
 
@@ -284,7 +290,9 @@ def test_report_marks_unattempted_rates_and_preserves_rate_health() -> None:
 
     assert "| 115200 | cdc0-to-cdc2 | FAIL" in report
     assert "| 460800 | cdc0-to-cdc2 | NOT RUN" in report
-    assert "- HID rate 115200 after: rx_error" in report
+    assert "Per-rate HID health: 0 passed; 1 failed." in report
+    assert "- 115200 baud: FAIL (after)" in report
+    assert "HID rate 115200 after: rx_error" in report
 
 
 @pytest.mark.parametrize(

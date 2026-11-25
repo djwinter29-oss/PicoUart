@@ -39,7 +39,7 @@ fi
 PYTHON_EXE="$VENV_DIR/bin/python"
 if ! "$PYTHON_EXE" -c 'import flask, hid' >/dev/null 2>&1; then
     PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_EXTRA_INDEX_URL= \
-        "$PYTHON_EXE" -m pip install "$REPO_ROOT/host/python[dashboard]"
+        "$PYTHON_EXE" -m pip install "$REPO_ROOT/host/python"
 fi
 
 if [ "$#" -eq 0 ]; then

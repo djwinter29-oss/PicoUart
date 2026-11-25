@@ -31,10 +31,10 @@ The Python commands install the `dev` dependency group and `pico-uart` editable;
 `setup-sdk-env.sh` clones the pinned SDK into gitignored `.pico-sdk/` if missing, and otherwise confirms the pin.
 Keep the SDK line: a fresh checkout does not carry `.pico-sdk/`.
 
-Ubuntu's `/usr/bin/python3` is PEP 668 externally managed. Point the host-test wrapper at the venv rather than its
-default system interpreter:
+Ubuntu's `/usr/bin/python3` is PEP 668 externally managed. The
+[hardware-free test checklist](../tests/README.md#without-hardware) shows how to point the host-test wrapper at the
+venv rather than the system interpreter. To check the CLI:
 
 ```sh
-PYTHON_EXE=host/python/.venv/bin/python tools/validation/run-host-tests.sh
 host/python/.venv/bin/python -m pico_uart.main --help
 ```

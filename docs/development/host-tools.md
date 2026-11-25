@@ -2,10 +2,11 @@
 
 Use this guide to develop the Python package or .NET host from a checkout. For installation and everyday use, see the
 [Python](../../host/python/README.md) and [.NET](../../host/dotnet/README.md) guides. For browser app development and
-HTTP behavior, see the [dashboard development guide](dashboard-development.md).
+HTTP behavior, see the [dashboard behavior and presentation guide](dashboard-development.md).
 
-Run commands from the repository root. Setup and tests here do not require a board. Host applications use HID for
-board status and controls; UART data and line coding stay on the six CDC ports. See the
+Run commands from the repository root. Setup and tests here do not require a board. Most command examples use POSIX
+shell syntax; the Python setup section includes the native PowerShell equivalent. Host applications use HID for board
+status and controls; UART data and line coding stay on the six CDC ports. See the
 [HID reference](../design/usb/hid-report-reference.md) for the USB contract.
 
 ## Python
@@ -21,7 +22,7 @@ python -m pip install --group host/python/pyproject.toml:dev
 python -m pip install --no-build-isolation -e host/python
 ```
 
-In PowerShell, use:
+For native Windows, use the same steps with the Python executable inside the environment:
 
 ```powershell
 python -m venv host/python/.venv
@@ -44,20 +45,11 @@ With the venv active, run the Python suite from the repository root:
 python -m pytest -c pyproject.toml
 ```
 
-Run Ruff and mypy from `host/python`. The POSIX command runs in a subshell, so the current directory stays at the
+Run Ruff and mypy from `host/python`; the POSIX command uses a subshell so the current directory stays at the
 repository root:
 
 ```sh
 (cd host/python && .venv/bin/python -m ruff check src tests && .venv/bin/python -m mypy)
-```
-
-In PowerShell, use:
-
-```powershell
-Push-Location host/python
-.\.venv\Scripts\python.exe -m ruff check src tests
-.\.venv\Scripts\python.exe -m mypy
-Pop-Location
 ```
 
 For just the package tests, run `python -m pytest -c host/python/pyproject.toml host/python/tests` from the repository
@@ -71,21 +63,13 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/) for this s
 then build the wheel:
 
 ```sh
-mkdir -p host/python/src/pico_uart/dashboard/assets
-cp -R host/web/src/. host/python/src/pico_uart/dashboard/assets/
+python -c "from shutil import copytree; copytree('host/web/src', 'host/python/src/pico_uart/dashboard/assets', dirs_exist_ok=True)"
 uv build --wheel --directory host/python
 ```
 
-In PowerShell, stage the assets and build with:
-
-```powershell
-New-Item -ItemType Directory -Force host/python/src/pico_uart/dashboard/assets | Out-Null
-Get-ChildItem host/web/src -Force | Copy-Item -Destination host/python/src/pico_uart/dashboard/assets -Recurse -Force
-uv build --wheel --directory host/python
-```
-
-This builds locally; it does not publish. `hatch-vcs` derives the version from Git tags, or uses `0.0.0.dev0` without
-Git metadata. Set `SETUPTOOLS_SCM_PRETEND_VERSION` to override it. Publication instructions are in
+The standard-library copy command works in POSIX shells and PowerShell. This builds locally; it does not publish.
+`hatch-vcs` derives the version from Git tags, or uses `0.0.0.dev0` without Git metadata. Set
+`SETUPTOOLS_SCM_PRETEND_VERSION` to override it. Publication instructions are in
 [Host App Distribution and Publishing](../deployment/host-app-publishing.md).
 
 ## .NET Development

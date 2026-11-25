@@ -8,8 +8,8 @@ interface, so your serial tools keep using the six CDC ports. It does not captur
 
 - Linux x64, Windows x64, or Apple Silicon macOS (the release archive needs no .NET install)
 - A Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected by USB
-- Access to the board's HID interface; on Linux, set up
-  [device permissions](https://github.com/djwinter29-oss/PicoUart/blob/main/tools/README.md#linux-hid-permissions)
+- Access to the board's HID interface; on Linux, follow the
+  [device permission setup](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/hardware-setup.md#linux-hid-permissions)
 
 ## Install
 
@@ -67,12 +67,9 @@ at the reported states. Field meanings are in the
 `hardware`, `config`, `telemetry`, `temperature`, and `version` are read-only; `./PicoUart --help` lists them all.
 `toggle-led` flips the board LED, and `reset` reboots the board when the firmware allows it.
 
-The dashboard's **Save & Reboot** stores a boot-time clock profile and then reboots. Stop UART traffic and close all CDC
-ports first. After the board comes back, check the stored profile and the reported clock. Control commands are never
-retried automatically; if the outcome is unclear, reconnect and check the board before trying again. The full rules
-are in the
-[save and reboot section](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md#save-and-reboot-safety)
-of the HID reference.
+**Save & Reboot** stores a boot-time clock profile and restarts the board. Stop UART traffic and close all CDC ports
+first. The dashboard does not retry an uncertain control; check the board before trying again. See the
+[HID save and reboot rules](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md#save-and-reboot-safety).
 
 ## Troubleshooting
 

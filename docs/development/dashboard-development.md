@@ -1,12 +1,10 @@
-# Dashboard Development
+# Dashboard Behavior and Presentation
 
-The Python and .NET hosts share a frontend in `host/web/src`. The Direct Dashboard is a separate WebHID app in
-`host/direct/src`. This guide covers frontend development and dashboard behavior. Its hosted endpoint table is an
-overview, not a complete API specification; see the Python
-[route tests](../../host/python/tests/dashboard/test_app.py),
+This guide covers the shared Python/.NET frontend in `host/web/src` and the separate Direct Dashboard in
+`host/direct/src`. For endpoint behavior, see the Python [route tests](../../host/python/tests/dashboard/test_app.py),
 [configuration tests](../../host/python/tests/dashboard/test_configuration_save.py), and
-[published .NET contract tests](../../tests/tooling/test_dotnet_host.py) for executable examples. For Python API, CLI,
-or server implementation, see [Host Tools Development](host-tools.md).
+[published .NET contract tests](../../tests/tooling/test_dotnet_host.py). For Python API, CLI, or server implementation,
+see [Host Tools Development](host-tools.md).
 
 ## Hosted Dashboards
 
@@ -64,13 +62,14 @@ belong to host applications:
   valid capacities.
 - Show temperature as an estimate in Celsius, normally to one decimal place. Label service load by core and mark the
   `65535` sentinel as warming up or unavailable. Uptime is meaningful only for the same device within one boot.
-- A channel's missing or stale report is host-side Unknown. Show an Error state as needing attention and read
-  diagnostics for its reason.
+- Treat a channel with no Input report for three seconds as stale and show host-side Unknown. A read error invalidates
+  only the values that read would refresh; keep static reports 1 and 2. Disable LED controls when the telemetry read
+  fails. Show an Error state as needing attention and read diagnostics for its reason.
 - Label `rx_overrun_count` as **Known RX bytes dropped**, `rx_error_count` as **RX controller error observations**,
   and `last_control_error_reason` as **Last configuration error**.
 - Label ring and FIFO peaks **Observed peak since boot**. When the port is stopped, show its baud rate as **Last
   applied**. For update rates and stale reports, follow the
-  [HID polling rules](../design/usb/hid-report-reference.md#host-polling-and-validation).
+  [HID polling rules](../design/usb/hid-report-reference.md#polling-and-validation).
 
 Lifecycle badges are Closed, Starting, Ready, Configuring, Error, and host-side Unknown. Fault history and the last
 configuration error remain visible beside the badge.

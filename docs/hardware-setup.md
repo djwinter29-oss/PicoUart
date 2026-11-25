@@ -8,7 +8,9 @@ How to wire UART devices to a PicoUart board and find its serial ports. The pin 
 | Board | MCU | Firmware image |
 | --- | --- | --- |
 | Raspberry Pi Pico | RP2040 | `pico` |
+| Raspberry Pi Pico W | RP2040 | `pico` (no LED identification) |
 | Raspberry Pi Pico 2 | RP2350 | `pico2` |
+| Raspberry Pi Pico 2 W | RP2350 | `pico2` (no LED identification) |
 
 <img src="assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico" width="240" />
 <img src="assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2" width="240" />
@@ -18,16 +20,15 @@ How to wire UART devices to a PicoUart board and find its serial ports. The pin 
 ## Installing Firmware
 
 For first setup or an update, download the matching `.uf2` from
-[GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases): `pico` for Pico or `pico2` for Pico 2. Hold
-**BOOTSEL** while connecting the USB cable, then copy the file to the `RPI-RP2` or `RP2350` drive. The board reboots
-when the copy finishes. With the Python host installed, confirm the firmware version over HID with `pico-uart version`
+[GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases): `pico` for Pico or Pico W, `pico2` for Pico 2
+or Pico 2 W. Hold **BOOTSEL** while connecting the USB cable, then copy the file to the `RPI-RP2` or `RP2350` drive.
+The board reboots when the copy finishes. On Linux, configure [HID permissions](#linux-hid-permissions) before checking
+the version. With the Python host installed, run `pico-uart version`
 ([CLI guide](../host/python/README.md#command-line)) before resuming UART traffic.
 
-Publication does not mean an artifact is hardware-qualified. Check the
-[HIL evidence index](tests/records/README.md#evidence-index) for results matching the artifact and board; treat
-artifacts without that evidence as lab/test-only. For release work, follow the
-[release flashing procedure](deployment/releasing.md#flashing-release-artifacts) and
-[HIL gates](deployment/releasing.md#release-hil-gates).
+Published firmware may not be hardware-qualified. Check the
+[HIL evidence index](tests/records/README.md#evidence-index); release qualification uses the
+[release procedure](deployment/releasing.md).
 
 ## Port Map
 
@@ -95,6 +96,28 @@ usb-djwinter_PicoUart_<board-serial>-if08 -> ../../ttyACM6
 usb-djwinter_PicoUart_<board-serial>-if0a -> ../../ttyACM7
 ```
 
+## Linux HID Permissions
+
+Linux may restrict access to the board's HID interface. Add a udev rule for the primary group of the account that will
+run the host application. Find that group with `id -gn`, then replace both instances of `YOUR_GROUP` below:
+
+```text
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2e8a", ATTR{idProduct}=="116b", GROUP="YOUR_GROUP", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="116b", GROUP="YOUR_GROUP", MODE="0660", TAG+="uaccess"
+```
+
+Save the lines as `/etc/udev/rules.d/70-picouart-hid.rules`, then reload the rules and reconnect the board:
+
+```sh
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=2e8a --attr-match=idProduct=116b
+sudo udevadm trigger --subsystem-match=hidraw
+sudo udevadm settle
+```
+
+The rule grants read/write access to the selected group and the active desktop user. It does not change CDC serial-port
+permissions. For repository setup commands, see [tools/README.md](../tools/README.md#linux-hid-permissions).
+
 ## PicoUART6 Carrier Compatibility
 
 With flow control disabled, PicoUart's six UART TX/RX pairs match the published pinout of
@@ -119,16 +142,14 @@ compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com
 
 ## Wireless Boards
 
-Pico W and Pico 2 W expose the same UART pins listed above. Build specifically for `pico_w` or `pico2_w` using the
-[firmware build guide](../firmware/build-and-config.md#build). The firmware operates as a USB/UART bridge only;
-Wi-Fi and Bluetooth are not initialized or used.
+There are no `pico_w` or `pico2_w` firmware builds. Pico W and Pico 2 W run the `pico` and `pico2` images and expose
+the same UART pins listed above. Wi-Fi and Bluetooth are not used, and HID reports the board as Pico or Pico 2.
 
-The wireless boards' onboard LED is connected through the wireless chip rather than a direct MCU GPIO, so HID LED
-identification is unavailable in these builds. Do not use the non-wireless `pico` or `pico2` image: it treats GPIO25
-as an LED output, but that pin is the wireless chip-select on W boards.
+HID LED identification does not work on W boards because their onboard LED is wired through the wireless chip, not
+GPIO25.
 
-The release build and HIL matrix covers Pico and Pico 2 only. Wireless variants have no physical UART, throughput, or
-clock-stability qualification yet.
+The release HIL matrix covers Pico and Pico 2 only. W boards have no physical UART, throughput, or clock-stability
+qualification yet.
 
 ## Photo Credits
 

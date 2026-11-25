@@ -1,6 +1,6 @@
 # Firmware Timing and Buffer Measurements
 
-This guide covers optional timing profiles and buffer measurements, not the ordinary firmware test commands. See
+This guide covers optional timing profiles and buffer measurements. See
 [Firmware Build and Configuration](../../firmware/build-and-config.md) for build and load instructions, the
 [hardware-free test checklist](../tests/README.md#without-hardware) for test commands, and the
 [Cursor Cloud environment guide](cursor-cloud.md) for its provisioned snapshot.
@@ -22,9 +22,21 @@ just before the traffic run, then read them without halting the cores:
 `echo [read_memory <address> 32 <count>]`. These are maxima seen in the instrumented run; they do not establish
 worst-case timing.
 
-Change one tuning macro per variant, and compare verified traffic, block latency, service gaps, ring peaks, and faults
-under the same conditions, then go back to an uninstrumented image for final HIL. The
-[HIL records' tuning notes](../tests/records/README.md#tuning-notes) summarize previous experiments.
+Use these measurements for comparison, not as release evidence by themselves. See
+[Comparing Tuning Candidates](#comparing-tuning-candidates) for the comparison method and
+[the matched refill experiments](../tests/records/2026-10-23-uart-cdc-review-validation.md#matched-refill-experiments)
+for previous results.
+
+## Comparing Tuning Candidates
+
+Use current defaults as the baseline. Compare baseline and candidate images on both boards under the same clock, wiring,
+payloads, rates, host, and test durations. Change one setting per candidate, repeat the baseline to measure run-to-run
+variation, and retain image hashes and raw samples.
+
+Measure small-payload round trips and six-stream throughput, plus service gaps, ring peaks, fault deltas, and reopen
+behavior. Compare timing distributions as well as maxima and means; the benchmark does not report percentiles. Finish
+with payload acceptance on uninstrumented firmware. TX-pipelining changes must preserve CTS stalls, byte order, and the
+shifter-idle check before reconfiguration.
 
 ## Buffer Capacity Measurement
 

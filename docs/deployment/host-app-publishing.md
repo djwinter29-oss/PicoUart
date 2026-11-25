@@ -77,8 +77,8 @@ a new version. A PyPI failure does not roll back the GitHub Release or Pages.
 ## Direct Dashboard Pages
 
 [Publish Direct Dashboard Pages](../../.github/workflows/publish-direct.yml) deploys `host/direct/src` after a
-successful tag-push Release. It checks out the gate-validated commit, runs the WebHID tests, and stamps the visible
-version from the tag. Deployments run one at a time.
+successful tag-push Release. It checks out the gate-validated commit, runs the Direct Dashboard browser tests, and
+stamps the visible version from the tag. Deployments run one at a time.
 
 Setup: set **Settings > Pages > Source** to **GitHub Actions**, and allow the default branch plus any manual-deploy refs
 in the **github-pages** environment.

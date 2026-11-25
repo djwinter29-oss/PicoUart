@@ -1,18 +1,14 @@
 # GitHub Actions: Validation and Releases
 
-PR Check and Release share host validation; Release adds packaging and publication gates. The workflow files are the
-source of truth for job names, matrices, and toolchain pins.
-
-## Pull Requests and Main
-
-[PR Check](../../.github/workflows/pr-check.yml) runs for pull requests and pushes to `main`.
-
-The firmware matrix and host validation run in parallel; both must pass for PR Check to succeed. Repository pytest
-covers hardware-free HIL-tool tests and packaging/protocol contracts, not physical UART behavior.
-
-## Validation Gates
+PR Check and Release share host validation; Release adds packaging and publication gates. Workflow files define job
+names, matrices, toolchain pins, triggers, and dependencies.
 
 [Host Validation](../../.github/workflows/host-validation.yml) is reused by both PR Check and Release.
+[PR Check](../../.github/workflows/pr-check.yml) runs for pull requests and pushes to `main`. The firmware matrix and
+host validation run in parallel; both must pass. Repository pytest covers hardware-free HIL-tool tests and
+packaging/protocol contracts, not physical UART behavior.
+
+## Validation Gates
 
 | Gate | What it checks |
 | --- | --- |
@@ -21,12 +17,13 @@ covers hardware-free HIL-tool tests and packaging/protocol contracts, not physic
 | Host applications | Python and .NET tests, plus installed/published host contracts |
 | Linux host tools | Native C sanitizers, syntax checks, static analysis, and CLI smoke checks |
 | Minimum Python | Repository Python checks on the minimum supported interpreter |
-| Browser | JavaScript syntax, WebHID tests, and the shared dashboard contract test under `host/web/tests` |
+| Browser | JavaScript syntax, Direct Dashboard browser tests, and the shared dashboard contract test under `host/web/tests` |
 | Python wheel | Version, clean installation outside the checkout, and bundled dashboard startup response |
 | .NET archives | Self-contained publish, archive extraction, CLI startup, and embedded version |
 
 CI has no board. Run [physical HIL](../tests/README.md) separately for UART payload integrity, health, timing, and
-recovery behavior.
+recovery behavior. Qualify the exact candidate artifacts using the
+[release HIL gates](../deployment/releasing.md#release-hil-gates).
 
 ## Release and Publication
 
@@ -51,13 +48,7 @@ flowchart TD
   Complete --> Pages["Pages: release/check gates<br/>Validated commit, Node checks, version stamp"]
 ```
 
-PyPI and Pages run from `workflow_run` after Release completes. A release event created with `GITHUB_TOKEN` does not
-start other workflows. See [releasing](../deployment/releasing.md) for publication gates and hardware qualification,
-and [host app publishing](../deployment/host-app-publishing.md) for channel operations.
+See [releasing](../deployment/releasing.md) for publication eligibility and
+[host app publishing](../deployment/host-app-publishing.md) for channel operations.
 
 When workflows change their triggers, gate dependencies, or what the checks establish, update this map too.
-
-## Manual Hardware Qualification
-
-CI publishes candidate artifacts. Qualify those exact artifacts manually using the
-[release HIL gates](../deployment/releasing.md#release-hil-gates).

@@ -42,6 +42,7 @@ change right now. Both backends receive the same backend-neutral request.
 
 - The **hardware UART** supports the standard data-bit, parity, and stop-bit options. It checks the baud rate against
   the PL011 divider and an error tolerance.
-- The **PIO UART** is 8N1 only. It accepts a baud rate only if both its TX and RX clock dividers can represent it.
+- The **PIO UART** accepts baud changes only when both TX and RX clock dividers can represent the rate; see the
+  [PIO UART design](pio-uart-design.md) for its framing limit.
 
 Requests that are malformed or cannot be met by the clock are rejected before any hardware is touched.

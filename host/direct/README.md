@@ -12,8 +12,8 @@ and baud/framing settings stay on the six CDC serial ports.
 - Desktop Chrome or Edge with WebHID. Firefox, Safari, and most mobile browsers do not support it.
 - A Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to the
   computer running the browser
-- Operating-system access to the HID interface; on Linux, set up
-  [device permissions](../../tools/README.md#linux-hid-permissions)
+- Operating-system access to the HID interface; on Linux, follow the
+  [device permission setup](../../docs/hardware-setup.md#linux-hid-permissions)
 
 ## Use It
 
@@ -61,6 +61,6 @@ page writes nothing else, and it never exposes credentials or raw flash.
 
 ## Development
 
-Source is in `src/` and checks are in `tests/`; serve or publish `src/` directly, with no build step. See
-[Dashboard Development](../../docs/development/dashboard-development.md#direct-dashboard), the
+Source is in `src/` and checks are in `tests/`; serve or publish `src/` directly, with no build step. See the
+[dashboard behavior and presentation guide](../../docs/development/dashboard-development.md#direct-dashboard), the
 [project README](../../README.md), and the [security policy](../../SECURITY.md).
