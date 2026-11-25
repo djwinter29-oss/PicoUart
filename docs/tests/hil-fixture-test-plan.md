@@ -18,17 +18,45 @@ the runners send UART data and change serial settings, but do not reset or flash
 image using the [hardware setup guide](../hardware-setup.md#installing-firmware); `--artifact` hashes the supplied
 file but does not identify the firmware running on the board. Use `--no-record` when you do not want a report saved.
 
+## Standard Combined Run
+
+Use the combined runner for the baseline fixture test. It runs the functional pass first, then the concurrent six-port
+performance pass if functional testing succeeds. It does not run isolated pair sweeps or recovery/stress procedures.
+Replace the example paths and metadata with the identified board and the image actually flashed. The run writes one
+dated record; check its overall result and both phase summaries.
+
+```sh
+tools/hil/runner/full.sh \
+  --pico-cdc0 "/dev/serial/by-id/<pico-cdc0>" \
+  --pico-cdc1 "/dev/serial/by-id/<pico-cdc1>" \
+  --pico-cdc2 "/dev/serial/by-id/<pico-cdc2>" \
+  --pico-cdc3 "/dev/serial/by-id/<pico-cdc3>" \
+  --pico-cdc4 "/dev/serial/by-id/<pico-cdc4>" \
+  --pico-cdc5 "/dev/serial/by-id/<pico-cdc5>" \
+  --board pico --tester "<name>" \
+  --firmware-version 1.2.3 --firmware-commit "<commit>" \
+  --artifact /path/to/flashed/pico_uart.elf \
+  --rates 115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000 \
+  --duration 30
+```
+
+The rates match the runner defaults; the 30-second duration matches this plan's concurrent test matrix. A later-rate
+failure records the measured boundary, while the 115200-baud baseline remains a separate result.
+`--skip-functional` and `--skip-performance` create a `PARTIAL` record even if the remaining phase passes.
+
 ## Functional Pass
+
+Run this phase alone only when you need a functional-only result or are diagnosing a link:
 
 ```sh
 tools/hil/runner/functional.sh \
-  --pico-cdc0 /dev/serial/by-id/<pico-cdc0> \
-  --pico-cdc1 /dev/serial/by-id/<pico-cdc1> \
-  --pico-cdc2 /dev/serial/by-id/<pico-cdc2> \
-  --pico-cdc3 /dev/serial/by-id/<pico-cdc3> \
-  --pico-cdc4 /dev/serial/by-id/<pico-cdc4> \
-  --pico-cdc5 /dev/serial/by-id/<pico-cdc5> \
-  --board pico --firmware-version 1.2.3 --firmware-commit <commit> \
+  --pico-cdc0 "/dev/serial/by-id/<pico-cdc0>" \
+  --pico-cdc1 "/dev/serial/by-id/<pico-cdc1>" \
+  --pico-cdc2 "/dev/serial/by-id/<pico-cdc2>" \
+  --pico-cdc3 "/dev/serial/by-id/<pico-cdc3>" \
+  --pico-cdc4 "/dev/serial/by-id/<pico-cdc4>" \
+  --pico-cdc5 "/dev/serial/by-id/<pico-cdc5>" \
+  --board pico --firmware-version 1.2.3 --firmware-commit "<commit>" \
   --artifact /path/to/flashed/pico_uart.elf
 ```
 
@@ -45,7 +73,9 @@ The functional pass requires all of the following:
 
 ## Performance Pass
 
-Every stream checks its returned payload byte for byte. Test each pair on its own, then all six streams concurrently.
+Every stream checks its returned payload byte for byte. The combined run covers concurrent six-port traffic. The
+isolated pair sweeps below are separate; run them for per-link characterization or when required by the
+[release HIL matrix](../deployment/releasing.md#required-hil-matrix).
 
 ### How the Runners Set Up Ports
 
@@ -94,17 +124,6 @@ ceiling undetermined.
 
 These are the durations used in this plan; examples pass them explicitly. Each runner command lists the rates it tests.
 
-### Combined Run
-
-`tools/hil/runner/full.sh` runs the functional pass, then the concurrent performance pass if the functional pass
-succeeded, and writes a dated record to
-[records/](records/README.md). It takes the functional pass's `--pico-cdcN`, `--board`, `--firmware-*`, and
-`--artifact` options, plus `--rates`, `--duration`, `--timeout`, and `--performance-payload-bytes`.
-Keep failure transcripts and include every attempted rate in the record.
-
-`--skip-functional` and `--skip-performance` give a `PARTIAL` record even if the phase that ran succeeded. Check both
-the recorded scope and the exit code.
-
 ### Pair Sweeps
 
 Set `PICO_DEVICE_BASE` to the board's `/dev/serial/by-id` path without the `-ifNN` suffix; the runner adds the suffix
@@ -128,7 +147,7 @@ for stage in stage1 stage2; do
 done
 ```
 
-Test each loopback with `tools/hil/runner/bridge.sh --pico-port <endpoint> --loopback`.
+Test each loopback with `tools/hil/runner/bridge.sh --pico-port "<endpoint>" --loopback`.
 
 ### Concurrent Six-Port
 
@@ -136,15 +155,15 @@ The standalone runner uses `--cdcN`:
 
 ```sh
 tools/hil/runner/performance.sh \
-  --cdc0 /dev/serial/by-id/<pico-cdc0> \
-  --cdc1 /dev/serial/by-id/<pico-cdc1> \
-  --cdc2 /dev/serial/by-id/<pico-cdc2> \
-  --cdc3 /dev/serial/by-id/<pico-cdc3> \
-  --cdc4 /dev/serial/by-id/<pico-cdc4> \
-  --cdc5 /dev/serial/by-id/<pico-cdc5> \
+  --cdc0 "/dev/serial/by-id/<pico-cdc0>" \
+  --cdc1 "/dev/serial/by-id/<pico-cdc1>" \
+  --cdc2 "/dev/serial/by-id/<pico-cdc2>" \
+  --cdc3 "/dev/serial/by-id/<pico-cdc3>" \
+  --cdc4 "/dev/serial/by-id/<pico-cdc4>" \
+  --cdc5 "/dev/serial/by-id/<pico-cdc5>" \
   --rates 115200,128000,153600,230400,256000,460800,921600,1000000,2000000,3000000 \
   --duration 30 --payload-bytes 1024 --timeout 3 \
-  --board pico --firmware-version 1.2.3 --firmware-commit <commit> \
+  --board pico --firmware-version 1.2.3 --firmware-commit "<commit>" \
   --artifact /path/to/flashed/pico_uart.elf
 ```
 
@@ -193,7 +212,7 @@ endpoints belong to the given USB serial, and it never resets or flashes the boa
 
 ```sh
 tools/hil/.venv/bin/pico-uart-hil recovery \
-  --serial <usb-serial> --cdc1 /dev/serial/by-id/<cdc1> --cdc5 /dev/serial/by-id/<cdc5> \
+  --serial "<usb-serial>" --cdc1 "/dev/serial/by-id/<cdc1>" --cdc5 "/dev/serial/by-id/<cdc5>" \
   --artifact /path/to/flashed/pico_uart.elf --output build/recovery.json
 ```
 
@@ -217,7 +236,7 @@ Record each cold power-on, SWD reset, watchdog recovery, or USB reset as its own
 
 ```sh
 tools/hil/.venv/bin/pico-uart-hil startup \
-  --serial <usb-serial> --event swd-reset --artifact /path/to/flashed/pico_uart.elf \
+  --serial "<usb-serial>" --event swd-reset --artifact /path/to/flashed/pico_uart.elf \
   --timeout 20 --output build/startup-swd-01.json
 ```
 
@@ -225,7 +244,7 @@ The command does not trigger the event; you do. For a reset, start it right afte
 before applying power. `--event` is a label. The command passes when the board reports a valid clock and all six
 channels stay closed for 12 seconds (`--stable-seconds`), with uptime advancing in step with host time.
 
-For startup acceptance, add `--cdc1 /dev/serial/by-id/<cdc1>`. This transmits UART data: it opens CDC1 on its loopback,
+For startup acceptance, add `--cdc1 "/dev/serial/by-id/<cdc1>"`. This transmits UART data: it opens CDC1 on its loopback,
 waits for readiness, and verifies a 154-byte payload. Without it, the check only proves the board enumerates. Repeat
 each event type, keep the failures as well as the passes, and never lengthen firmware sleeps to hide an unexplained
 reset.

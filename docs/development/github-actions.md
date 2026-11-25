@@ -7,39 +7,23 @@ source of truth for job names, matrices, and toolchain pins.
 
 [PR Check](../../.github/workflows/pr-check.yml) runs for pull requests and pushes to `main`.
 
-```mermaid
-flowchart TD
-  Event["Pull request or push to main"] --> Firmware["Firmware matrix: pico and pico2"]
-  Event --> Host["Reusable Host Validation"]
-  Firmware --> PRCheck["PR Check"]
-  Host --> PRCheck
-```
-
 The firmware matrix and host validation run in parallel; both must pass for PR Check to succeed. Repository pytest
 covers hardware-free HIL-tool tests and packaging/protocol contracts, not physical UART behavior.
 
-## Checks and Dependencies
+## Validation Gates
 
 [Host Validation](../../.github/workflows/host-validation.yml) is reused by both PR Check and Release.
 
-```mermaid
-flowchart TD
-  Host["Host Validation"] --> Apps["Python + .NET<br/>Linux / macOS / Windows"]
-  Host --> Native["Linux native C sanitizers<br/>Syntax, static analysis, CLI smoke"]
-  Host --> Minimum["Python 3.10 minimum<br/>Repository pytest"]
-  Host --> Browser["Node 22<br/>WebHID and renderer checks"]
-```
-
-| Check | Environment and dependencies | What it checks |
-| --- | --- | --- |
-| Firmware matrix | Linux; Arm toolchain, pinned Pico SDK, CMake/Ninja, host C++ compiler, Python | Pico and Pico 2 compile/link, pass binary contracts, and satisfy target-specific static SRAM/flash budgets |
-| Firmware policy check | Python and the `test` dependency group | Real SDK build leaves regulator auto-adjust disabled, based on compile commands, defines, and linked artifacts |
-| Host application matrix | Linux, macOS, Windows; Python 3.12, .NET 10 SDK, Python `dev` dependency group | .NET unit tests, repository Python tests, and installed/published host contracts; Windows and macOS also run native C tests |
-| Linux host tools | Python 3.12, Python `dev` dependency group, native C toolchain, CMake/Ninja, cppcheck | Syntax, ASan/UBSan native tests, static analysis, and CLI smoke checks |
-| Python minimum | Linux; Python 3.10 and Python `dev` dependency group | Repository Python checks on the minimum supported interpreter |
-| Browser host | Linux; Node 22 | JavaScript syntax, WebHID tests, and the shared dashboard contract test under `host/web/tests` |
-| Release Python wheel | Python build backend/plugin and wheel-declared runtime dependencies | Wheel version, clean installation outside the checkout, and bundled dashboard startup response |
-| Release .NET archives | Native Linux/Windows/macOS runners and .NET SDK | Self-contained publishing for the configured runtime matrix, archive extraction, CLI startup, and embedded version |
+| Gate | What it checks |
+| --- | --- |
+| Firmware builds | Pico and Pico 2 compile/link, pass binary contracts, and meet target-specific static SRAM/flash budgets |
+| Firmware policy | The SDK build leaves regulator auto-adjust disabled, based on compile commands, defines, and linked artifacts |
+| Host applications | Python and .NET tests, plus installed/published host contracts |
+| Linux host tools | Native C sanitizers, syntax checks, static analysis, and CLI smoke checks |
+| Minimum Python | Repository Python checks on the minimum supported interpreter |
+| Browser | JavaScript syntax, WebHID tests, and the shared dashboard contract test under `host/web/tests` |
+| Python wheel | Version, clean installation outside the checkout, and bundled dashboard startup response |
+| .NET archives | Self-contained publish, archive extraction, CLI startup, and embedded version |
 
 CI has no board. Run [physical HIL](../tests/README.md) separately for UART payload integrity, health, timing, and
 recovery behavior.
@@ -71,7 +55,7 @@ PyPI and Pages run from `workflow_run` after Release completes. A release event 
 start other workflows. See [releasing](../deployment/releasing.md) for publication gates and hardware qualification,
 and [host app publishing](../deployment/host-app-publishing.md) for channel operations.
 
-When you change a workflow's triggers, `needs`, tests, or dependency setup, update this map too.
+When workflows change their triggers, gate dependencies, or what the checks establish, update this map too.
 
 ## Manual Hardware Qualification
 

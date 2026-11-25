@@ -8,7 +8,7 @@ as partial.
 | Host tests | Native host | Firmware policies, host applications, and cross-project contracts |
 | Firmware build | Pico SDK/toolchain | Compile and link both RP2040 and RP2350 targets |
 | Functional HIL | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health |
-| Performance HIL | Same fixture | Throughput, integrity, concurrency, soak, overflow behavior |
+| Performance HIL | Same fixture | Throughput and integrity; pair sweeps, soaks, and overflow/recovery are separate tests |
 | Release HIL | Exact packaged artifacts | Qualify the artifacts intended for publication |
 
 ## Without Hardware
@@ -25,16 +25,18 @@ done
 git diff --check
 ```
 
-The host-test wrapper runs native C and Python tests; add `--skip-python` to run only the C suite. It does not cover the
-.NET or browser dashboards; if you changed those, run their checks from the [tools reference](../../tools/README.md),
-and report any check you skipped. Hardware-free checks cannot establish DMA timing, USB enumeration, multicore load,
-or physical UART signalling.
+The host-test wrapper runs native C and Python tests; add `--skip-python` to run only the C suite. It does not cover
+the .NET host or browser apps. If you changed the .NET host, run the
+[.NET checks](../development/host-tools.md#net-development). For browser changes, run the
+[frontend tests](../development/dashboard-development.md#frontend-tests). Report any check you skipped. Hardware-free
+checks cannot establish DMA timing, USB enumeration, multicore load, or physical UART signalling.
 
 ## With Hardware
 
 1. Wire the fixture: [HIL Fixture Setup](hil-fixture-setup.md).
-2. Run the functional pass, then the performance pass: [HIL Fixture Test Plan](hil-fixture-test-plan.md). The combined
-   `tools/hil/runner/full.sh` runs both and writes a dated record to [records/](records/README.md).
+2. Run the baseline fixture test from the [HIL Fixture Test Plan](hil-fixture-test-plan.md). The combined
+   `tools/hil/runner/full.sh` runs the functional and concurrent six-port passes and writes a dated record to
+   [records/](records/README.md). Pair sweeps and recovery/stress procedures are separate runs.
 3. For a release, test the exact packaged artifacts and follow the gates in
    [Releasing](../deployment/releasing.md#release-hil-gates).
 

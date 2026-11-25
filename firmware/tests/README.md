@@ -3,6 +3,18 @@
 This directory contains native C tests for firmware logic that can run without a Pico board. The tests use Unity, CMake,
 and CTest; they do not exercise the TinyUSB device stack, live DMA IRQs, or physical UART wiring.
 
+## Run
+
+From the repository root, build and run the native C tests with:
+
+```sh
+tools/validation/run-host-tests.sh --skip-python
+```
+
+This needs a native C toolchain, CMake, and either Ninja or Make. The
+[hardware-free test checklist](../../docs/tests/README.md#without-hardware) also runs the Python suite and firmware
+builds.
+
 ## What Is Tested
 
 The native test suite covers:
@@ -22,5 +34,4 @@ Shared Pico SDK test hooks use one storage definition in [pico_sdk_hooks.c](stub
 native test targets by CMake. Keep hook declarations in stub headers as `extern`; weak header definitions do not
 provide portable shared hook storage across ELF and Windows COFF linkers.
 
-Use the [hardware-free checks](../../docs/tests/README.md#without-hardware) for validation commands; the
-[test overview](../../docs/tests/README.md#with-hardware) covers HIL.
+Use the [test overview](../../docs/tests/README.md) to choose further hardware-free checks or HIL.

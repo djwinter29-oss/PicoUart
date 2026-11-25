@@ -20,10 +20,14 @@ How to wire UART devices to a PicoUart board and find its serial ports. The pin 
 For first setup or an update, download the matching `.uf2` from
 [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases): `pico` for Pico or `pico2` for Pico 2. Hold
 **BOOTSEL** while connecting the USB cable, then copy the file to the `RPI-RP2` or `RP2350` drive. The board reboots
-when the copy finishes. Confirm its firmware version over HID before resuming UART traffic.
+when the copy finishes. With the Python host installed, confirm the firmware version over HID with `pico-uart version`
+([CLI guide](../host/python/README.md#command-line)) before resuming UART traffic.
 
-For release qualification, verify the artifact checksum and follow the
-[release flashing procedure](deployment/releasing.md#flashing-release-artifacts).
+Publication does not mean an artifact is hardware-qualified. Check the
+[HIL evidence index](tests/records/README.md#evidence-index) for results matching the artifact and board; treat
+artifacts without that evidence as lab/test-only. For release work, follow the
+[release flashing procedure](deployment/releasing.md#flashing-release-artifacts) and
+[HIL gates](deployment/releasing.md#release-hil-gates).
 
 ## Port Map
 
@@ -75,6 +79,10 @@ interface instead. CDCn uses USB interface number 2×n and the interface name be
 On Linux, use the stable paths from `ls -l /dev/serial/by-id/`; the suffix is the hexadecimal interface number. On
 other systems, match the interface number or name shown by the OS device tools. With several boards attached, the
 board's unique USB serial number in the device name distinguishes them.
+
+After wiring a peer, confirm all six CDC ports enumerate. Open the peer's CDC port with DTR asserted; that opens its
+UART. Exchange a known byte pattern with the peer using your serial tool before relying on the connection. Seeing the
+ports alone confirms USB enumeration, not UART wiring.
 
 Example observed Linux entries (board serial redacted; `/dev/ttyACM*` assignments vary):
 

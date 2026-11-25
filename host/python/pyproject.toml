@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pico-uart"
 dynamic = ["version"]
-description = "Host HID API, CLI, and Flask diagnostics dashboard for PicoUart"
+description = "Dashboard, command line, and Python API for monitoring PicoUart USB-to-UART adapters"
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
@@ -21,7 +21,7 @@ dependencies = ["flask==3.1.3", "hidapi==0.14.0.post4"]
 
 [project.urls]
 Homepage = "https://github.com/djwinter29-oss/PicoUart"
-Documentation = "https://github.com/djwinter29-oss/PicoUart/blob/main/host/python/README.md"
+Documentation = "https://github.com/djwinter29-oss/PicoUart/tree/main/docs"
 Source = "https://github.com/djwinter29-oss/PicoUart"
 Issues = "https://github.com/djwinter29-oss/PicoUart/issues"
 Releases = "https://github.com/djwinter29-oss/PicoUart/releases"

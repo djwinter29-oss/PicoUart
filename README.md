@@ -83,7 +83,8 @@ compatibility details are in [hardware setup](docs/hardware-setup.md).
 | --- | --- |
 | Wiring, pin map, finding ports | [Hardware setup](docs/hardware-setup.md) |
 | How the firmware works | [Architecture](docs/design/architecture.md) and the other [design docs](docs/design/) |
-| Firmware | [Build/configuration](firmware/build-and-config.md), [test guide](docs/development/firmware-testing.md) |
+| Firmware build/configuration | [Guide](firmware/build-and-config.md) |
+| Firmware tests | [Native C tests](firmware/tests/README.md), [timing and buffer measurements](docs/development/firmware-testing.md) |
 | Host tools | [Host guide](docs/development/host-tools.md), [dashboard guide](docs/development/dashboard-development.md) |
 | Tests and CI | [Test overview](docs/tests/README.md), [GitHub Actions](docs/development/github-actions.md) |
 | Releasing | [Release process](docs/deployment/releasing.md) |

@@ -13,8 +13,8 @@ over a serial port, and a stuck serial client never hides the board's health. Th
 
 ## CDC Ports
 
-Each CDC port behaves like an ordinary USB serial adapter for one UART. DTR opens and closes the UART; while a port is
-closed nothing is bridged and received bytes are discarded. The port's buffering and full-ring behavior are described
+Each CDC port behaves like an ordinary USB serial adapter for one UART. Assert DTR high to open the UART; when DTR is
+low, nothing is bridged and received bytes are discarded. The port's buffering and full-ring behavior are described
 in [Ring Buffer Design](../uart/ring-buffer-design.md).
 
 Hardware-UART ports accept the usual CDC framing options. PIO ports accept 8N1 only.

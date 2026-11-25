@@ -1,8 +1,12 @@
 # Dashboard Development
 
 The Python and .NET hosts share a frontend in `host/web/src`. The Direct Dashboard is a separate WebHID app in
-`host/direct/src`. This guide covers how they are built, tested, and presented; host API and server development are in
-[Host Tools Development](host-tools.md).
+`host/direct/src`. This guide covers frontend development and dashboard behavior. Its hosted endpoint table is an
+overview, not a complete API specification; see the Python
+[route tests](../../host/python/tests/dashboard/test_app.py),
+[configuration tests](../../host/python/tests/dashboard/test_configuration_save.py), and
+[published .NET contract tests](../../tests/tooling/test_dotnet_host.py) for executable examples. For Python API, CLI,
+or server implementation, see [Host Tools Development](host-tools.md).
 
 ## Hosted Dashboards
 
@@ -17,6 +21,8 @@ entry. The Python server sets correct MIME types for JS and CSS.
 The top bar shows the backend name and **App v**, the host version. Python reports `pico_uart.__version__` (from
 `hatch-vcs`), and .NET reports its assembly informational version (from MinVer). `PICO_UART_HOST_VERSION` overrides
 the displayed value only.
+
+### Hosted Service Behavior
 
 The Python and .NET apps share one HID reader per selected board and serve cached snapshots to each browser page.
 Boards are found at startup and on **Rescan**; unplugged boards do not trigger a switch to another device. Selection is
@@ -81,8 +87,8 @@ tools/host/run-direct.sh                           # serves http://127.0.0.1:800
 python tools/host/direct_site.py serve --port 8000 # without a POSIX shell
 ```
 
-The launcher serves a staged copy with a version derived from Git tags. WebHID needs HTTPS or localhost, so do not
-open the HTML straight from disk.
+The launcher serves a staged copy with a version derived from Git tags. For manual WebHID testing, use desktop Chrome
+or Edge and serve the page from HTTPS or localhost; do not open the HTML straight from disk.
 
 CI runs a browser smoke test against a simulated device:
 
@@ -97,7 +103,7 @@ The simulated test does not verify real browser and OS USB access. Deployment to
 
 ## Frontend Tests
 
-Run the frontend tests with:
+Requires Node 22+. Run the frontend tests with:
 
 ```sh
 node --test host/web/tests/*.test.mjs host/direct/tests/*.test.mjs

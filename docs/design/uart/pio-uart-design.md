@@ -38,24 +38,6 @@ The TX state machine runs at 8 clocks per bit. Each worker pass for a port:
 3. uses DMA for a large backlog, or writes a small span straight into the FIFO. If DMA cannot start, it falls back to
    the FIFO.
 
-```mermaid
-flowchart TD
-  Sweep["Worker pass"] --> Active{"TX DMA active?"}
-  Active -->|yes| Complete["Commit if complete"]
-  Complete --> Busy{"Still active?"}
-  Busy -->|yes| Next["Next pass"]
-  Busy -->|no| Empty{"TX FIFO empty?"}
-  Active -->|no| Empty
-  Empty -->|no| Next
-  Empty -->|yes| Backlog{"Large backlog?"}
-  Backlog -->|yes| Launch["Launch bounded TX DMA"]
-  Backlog -->|no| FIFO["Write span to FIFO"]
-  Launch --> Started{"Started?"}
-  Started -->|yes| Next
-  Started -->|no| FIFO
-  FIFO --> Next
-```
-
 **Why hybrid?** The joined TX FIFO is small compared with USB bursts across six ports. Polling alone wastes worker time
 on a large backlog, while DMA alone wastes setup cost on tiny writes. The backlog threshold is an implementation
 tuning value.

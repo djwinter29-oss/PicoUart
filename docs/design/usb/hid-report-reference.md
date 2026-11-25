@@ -27,15 +27,17 @@ product before decoding fields.
 
 | Report ID | Name | Type | Direction | Payload | Purpose |
 | --------- | ---- | ---- | --------- | ------- | ------- |
-| `1` | Device Identity and Capabilities | Feature | Host reads | 27 bytes | Identity, capabilities, total/reserved RAM. |
-| `2` | Board Configuration | Feature | Host reads | 36 bytes | Stored profile, pins, reset cause, buffer capacities. |
-| `3` | Board Telemetry | Feature | Host reads | 20 bytes | Temperature, LED, uptime, service load, running clock. |
-| `10`-`15` | Channel Snapshots (CDC0–CDC5) | Input / Feature | Device publishes / host reads | 30 bytes | State, measurement validity, applied settings, traffic. |
-| `20` | Board Action and Result | Feature | Host reads/writes | 4 bytes | LED/reboot/save actions and results. |
-| `30`-`35` | Channel Diagnostics (CDC0–CDC5) | Feature | Host reads | 24 bytes | RX fault history, last configuration error, buffer peaks. |
+| `1` | [Device Identity and Capabilities](#report-id-1-device-identity-and-capabilities) | Feature | Host reads | 27 bytes | Identity, capabilities, total/reserved RAM. |
+| `2` | [Board Configuration](#report-id-2-board-configuration) | Feature | Host reads | 36 bytes | Stored profile, pins, reset cause, buffer capacities. |
+| `3` | [Board Telemetry](#report-id-3-board-telemetry) | Feature | Host reads | 20 bytes | Temperature, LED, uptime, service load, running clock. |
+| `10`-`15` | [Channel Snapshots (CDC0–CDC5)](#reports-10-15-channel-snapshots) | Input / Feature | Device publishes / host reads | 30 bytes | State, measurement validity, applied settings, traffic. |
+| `20` | [Board Action and Result](#report-id-20-board-action-and-result) | Feature | Host reads/writes | 4 bytes | LED/reboot/save actions and results. |
+| `30`-`35` | [Channel Diagnostics (CDC0–CDC5)](#reports-30-35-channel-diagnostics) | Feature | Host reads | 24 bytes | RX fault history, last configuration error, buffer peaks. |
 
 All sixteen report IDs are always present. Capability flags identify features unavailable on a board. Writes to
 read-only reports are rejected without side effects.
+
+For read cadence and validation order, see [Host Polling and Validation](#host-polling-and-validation).
 
 ## Report ID 1: Device Identity and Capabilities
 

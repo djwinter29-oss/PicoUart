@@ -1,6 +1,6 @@
-# Firmware Testing
+# Firmware Timing and Buffer Measurements
 
-This guide covers timing profiles and buffer measurements beyond a plain build. See
+This guide covers optional timing profiles and buffer measurements, not the ordinary firmware test commands. See
 [Firmware Build and Configuration](../../firmware/build-and-config.md) for build and load instructions, the
 [hardware-free test checklist](../tests/README.md#without-hardware) for test commands, and the
 [Cursor Cloud environment guide](cursor-cloud.md) for its provisioned snapshot.
