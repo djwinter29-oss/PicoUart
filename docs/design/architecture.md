@@ -31,14 +31,12 @@ via CDC; HID only reports what was applied.
 
 ## USB Interfaces
 
-The composite USB device exposes six CDC ACM interfaces and one vendor HID interface:
-
 | Interface | Count | Carries | Used by |
 | --- | ---: | --- | --- |
 | CDC ACM | 6 | UART bytes, DTR, and line coding for UART0-UART5 | Terminals, test runners, serial libraries |
 | Vendor HID | 1 | Status, diagnostics, and board controls | Python, .NET, and Direct Dashboard |
 
-Each CDC port maps to one UART; [hardware setup](../hardware-setup.md#port-map) owns the pin map. The
+[Hardware setup](../hardware-setup.md#port-map) owns the pin map. The
 [control plane](control-plane-design.md) defines session and line-coding transitions, and
 [ring buffers](uart/ring-buffer-design.md) define buffering and full-ring behavior. The
 [HID reference](usb/hid-report-reference.md) specifies report layouts and board actions.
@@ -53,7 +51,7 @@ maps to CDCn.
 - **Rings are the data boundary.** Every port has one TX ring (USB to UART) and one RX ring (UART to USB). Each ring has
   exactly one producer and one consumer.
 - **Configuration stays on the control path.** Core 0 hands line-coding requests to core 1, which applies them at a
-  safe point; core 0 does not touch UART hardware.
+  safe point.
 - **Diagnostics are separate from data.** HID reports health and counters without competing with serial traffic.
 - **Board pinout stays separate.** A constant board table maps each port to its pins and backend; transport and
   lifecycle code stay board-independent.
@@ -85,16 +83,14 @@ aligned 32-bit access and SDK memory barriers) rather than portable C11 threadin
 
 ### Ring Ownership
 
-Rings are single-producer/single-consumer. The producer publishes payload before advancing its cursor, and the consumer
-retires bytes only after reading them, with memory barriers between. Rings take no locks, so the data path never
-waits on status reads.
+The producer publishes payload before advancing its cursor, and the consumer retires bytes only after reading them, with
+memory barriers between. Rings take no locks, so the data path never waits on status reads.
 
 ### Control Mailbox
 
-Each port has one mailbox slot for line-coding requests. Core 0 fills the slot under the shared status lock. Core 1
-takes it and records that it now owns the request in the same lock hold, so there is never a moment when a request
-has no owner. An empty mailbox therefore does not mean the change is done; core 1 may still be waiting for a safe apply
-point. Ports never block each other's mailboxes.
+Each port has one mailbox slot for line-coding requests. Core 0 fills it and core 1 takes it under the shared status
+lock; the [control plane](control-plane-design.md) defines the ownership hand-off and completion. Ports never block each
+other's mailboxes.
 
 ### Shared State and Telemetry
 

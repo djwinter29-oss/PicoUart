@@ -101,10 +101,10 @@ fi
 
 if [ -z "$OPENOCD_TARGET" ]; then
     case "${BOARD:-pico}" in
-        pico|pico_w|rp2040*)
+        pico|rp2040*)
             OPENOCD_TARGET="target/rp2040.cfg"
             ;;
-        pico2|pico2_w|rp2350*)
+        pico2|rp2350*)
             OPENOCD_TARGET="target/rp2350.cfg"
             ;;
         *)

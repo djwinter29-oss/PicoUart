@@ -13,9 +13,8 @@ evidence exists.
 1. Complete the [preflight](#release-preflight).
 2. Push the `vMAJOR.MINOR.PATCH` tag. The Release workflow publishes the GitHub Release once its gates pass, and the
    PyPI and Pages publishers follow automatically ([host app publishing](host-app-publishing.md)).
-3. [Flash the packaged images](#flashing-release-artifacts) without rebuilding, and collect the
-   [required HIL evidence](#required-hil-matrix) for each rated board.
-4. Confirm the [release HIL gates](#release-hil-gates) before calling the release hardware-qualified.
+3. [Flash the packaged images](#flashing-release-artifacts) without rebuilding, and pass the
+   [release HIL gates](#release-hil-gates) on each rated board before calling the release hardware-qualified.
 
 The CI job graph is described in [GitHub Actions](../development/github-actions.md).
 
@@ -61,8 +60,6 @@ A release is hardware-qualified only when every rated board has a complete `PASS
 [fixture setup](../tests/hil-fixture-setup.md) and [test plan](../tests/hil-fixture-test-plan.md) define the
 procedures; keep one record per board in the [HIL records](../tests/records/README.md) format.
 
-<a id="required-hil-matrix"></a>
-
 | Coverage | Required evidence |
 | --- | --- |
 | Functional fixture | Both crossed pairs in both directions and both loopbacks; all six CDC ports and HID enumerate |
@@ -72,9 +69,9 @@ procedures; keep one record per board in the [HIL records](../tests/records/READ
 | Artifact identity | Board target, firmware and runner revisions, and the tested artifact's SHA-256 |
 
 Missing cases make the result `PARTIAL`. Unexplained loss, timeouts, disconnects, or HID errors block qualification.
-A speed-sweep `PASS` qualifies only the 115200-baud baseline. The boundary it finds is a measurement, and higher
-rates remain unrated. Older [record index](../tests/records/README.md#evidence-index) entries do not replace a current
-exact-artifact run.
+Rates above the 115200-baud baseline stay unrated; the
+[speed-ceiling rules](../tests/hil-fixture-test-plan.md#baseline-and-speed-ceiling) say what a sweep measures. Older
+[record index](../tests/records/README.md#evidence-index) entries do not replace a current exact-artifact run.
 
 The [test plan's Known Gaps](../tests/hil-fixture-test-plan.md#known-gaps) lists hardware cases without validated
 procedures. A required case cannot pass until its procedure and acceptance criteria are validated. Optional claims

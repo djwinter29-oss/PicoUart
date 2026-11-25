@@ -22,29 +22,23 @@ cable, click **Connect**, and choose the PicoUart HID interface. The button beco
 Pages you host yourself need HTTPS or localhost.
 
 Identity is read once, and the channel snapshots then refresh continuously. Fault history and buffer peaks are read
-separately as diagnostics. After you unplug the board or it reboots, click **Connect** again; the page never reopens a
-device on its own. Missing or unreadable values show `--` with the read error, and the firmware must speak the
+separately as diagnostics. Traffic figures are cumulative byte counters; if a report is missed, the rate estimate is
+marked incomplete for the rest of the connection, which does not mean bytes were lost. After you unplug the board or it
+reboots, click **Connect** again; the page never reopens a device on its own. Missing or unreadable values show `--`
+with the read error, and the firmware must speak the
 [current HID report format](../../docs/design/usb/hid-report-reference.md).
 
-Run one HID monitor per board, because other native clients compete for the same reports. If your browser lacks WebHID,
-use the [Python](../python/README.md) or [.NET](../dotnet/README.md) dashboard instead.
-
-## Test Automation
-
-This is an interactive page, not a test runner: no CLI, no JSON export, and no UART capture. For scripted status and
-traffic logs, use the [Python CLI](../python/README.md#command-line) or the
-[.NET CLI](../dotnet/README.md#test-automation), and disconnect the browser first.
-
-Traffic figures are cumulative byte counters. If a report is missed, the rate estimate is marked incomplete for the rest
-of the connection; that does not mean bytes were lost.
+Run one HID monitor per board, because other native clients compete for the same reports. The page has no CLI, JSON
+export, or UART capture. For scripted logs, or if your browser lacks WebHID, disconnect the browser and use the
+[Python](../python/README.md) or [.NET](../dotnet/README.md) host instead.
 
 ## Controls
 
 The dashboard can turn the identification LED on or off and reboot the board when the firmware supports it. Boot
-configuration saves a boot-time clock profile and then reboots, so USB briefly disconnects. All six channels must be
-Closed with fresh reports, and non-default clocks need the unsafe-overclock confirmation. Close all CDC ports and stop
-UART traffic first. An uncertain save is remembered in the browser session; if that storage is unavailable, saving is
-disabled.
+configuration saves a boot-time clock profile and then reboots, so USB briefly disconnects. Close all CDC ports and
+stop UART traffic first; saving is enabled only when fresh reports show all six channels Closed. Non-default clocks
+need the unsafe-overclock confirmation. An uncertain save is remembered in the browser session; if that storage is
+unavailable, saving is disabled.
 
 After a save, check the stored profile and the running clock. The
 [save and reboot rules](../../docs/design/usb/hid-report-reference.md#save-and-reboot-safety) cover the details. The

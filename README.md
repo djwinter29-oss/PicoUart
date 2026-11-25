@@ -45,9 +45,6 @@ _The dashboard with simulated telemetry._
 1. Follow [hardware setup](docs/hardware-setup.md) to install firmware and wire your device.
 2. Open the matching serial port in your terminal or script, and set the baud rate and framing your device needs.
 
-The host should list six PicoUart serial ports. That confirms USB enumeration but not your wiring. Exchanging data with
-the device confirms both.
-
 ## Dashboards and Automation
 
 Dashboards are optional; serial traffic never depends on them.

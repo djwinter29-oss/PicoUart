@@ -45,9 +45,9 @@ have run, so the hosts surface an unconfirmed outcome rather than retrying it.
 
 ### Boot Configuration
 
-A save request takes exactly `{"profile": 0-4, "unsafe_overclock": bool}` in a body of at most 1 KiB. It succeeds only
-after firmware reports Completed. After a timeout or disconnect, the backends keep a `configuration_save_unconfirmed`
-warning across reconnects and page reloads. Reading report 20 cannot identify which request produced its result. The
+A save request takes exactly `{"profile": 0-4, "unsafe_overclock": bool}` in a body of at most 1 KiB and succeeds only
+after firmware reports Completed. Report 20 cannot identify which request produced its result, so an unconfirmed save
+also keeps a `configuration_save_unconfirmed` warning across reconnects and page reloads. The
 [HID save rules](../design/usb/hid-report-reference.md#save-and-reboot-safety) define the board-side checks.
 
 ### Channel Presentation
@@ -76,10 +76,10 @@ configuration error remain visible beside the badge.
 
 ## Direct Dashboard
 
-The Direct Dashboard is a standalone WebHID app with its own assets and renderer; it has no server-side code. If a save
-times out or disconnects, it remembers the unconfirmed result by board UID. A fresh report 2 read and explicit
-acknowledgement are required before another save. WebHID calls cannot be canceled: keep reconnect disabled until an
-open or close settles, close a late successful open, and never start an overlapping write.
+The Direct Dashboard is a standalone WebHID app with its own assets and renderer; it has no server-side code. It
+remembers an unconfirmed save by board UID and requires a fresh report 2 read and explicit acknowledgement before
+another save. WebHID calls cannot be canceled: keep reconnect disabled until an open or close settles, close a late
+successful open, and never start an overlapping write.
 
 ```sh
 tools/host/run-direct.sh                           # serves http://127.0.0.1:8000/ (--port N)
@@ -89,10 +89,10 @@ python tools/host/direct_site.py serve --port 8000 # without a POSIX shell
 The launcher serves a staged copy with a version derived from Git tags. For manual WebHID testing, use desktop Chrome
 or Edge and serve the page from HTTPS or localhost; do not open the HTML straight from disk.
 
-CI runs a browser smoke test against a simulated device:
+CI runs a browser smoke test against a simulated device. Install the Playwright version pinned in
+[host-validation.yml](../../.github/workflows/host-validation.yml), then:
 
 ```sh
-python -m pip install playwright==1.63.0
 python -m playwright install --with-deps chromium
 python host/direct/tests/browser_smoke.py
 ```

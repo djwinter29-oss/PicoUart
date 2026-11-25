@@ -8,27 +8,26 @@ How to wire UART devices to a PicoUart board and find its serial ports. The pin 
 | Board | MCU | Firmware image |
 | --- | --- | --- |
 | Raspberry Pi Pico | RP2040 | `pico` |
-| Raspberry Pi Pico W | RP2040 | `pico` (no LED identification) |
+| Raspberry Pi Pico W | RP2040 | `pico` |
 | Raspberry Pi Pico 2 | RP2350 | `pico2` |
-| Raspberry Pi Pico 2 W | RP2350 | `pico2` (no LED identification) |
+| Raspberry Pi Pico 2 W | RP2350 | `pico2` |
 
 <img src="assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico" width="240" />
 <img src="assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2" width="240" />
 
-[Wireless boards](#wireless-boards) and the [PicoUART6 carrier](#picouart6-carrier-compatibility) are covered below.
+W boards have no separate image. They run the `pico` or `pico2` image on the same pins and report Pico or Pico 2 over
+HID. Wi-Fi and Bluetooth are unused, and LED identification does nothing because the W LED is wired through the
+wireless chip. Release HIL testing covers Pico and Pico 2 only.
 
 ## Installing Firmware
 
-For first setup or an update, download the matching `.uf2` from
-[GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases): `pico` for Pico or Pico W, `pico2` for Pico 2
-or Pico 2 W. Hold **BOOTSEL** while connecting the USB cable, then copy the file to the `RPI-RP2` or `RP2350` drive.
-The board reboots when the copy finishes. On Linux, configure [HID permissions](#linux-hid-permissions) before checking
-the version. With the Python host installed, run `pico-uart version`
-([CLI guide](../host/python/README.md#command-line)) before resuming UART traffic.
+For first setup or an update, download the image listed above from
+[GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases). Hold **BOOTSEL** while connecting the USB
+cable, then copy the `.uf2` file to the `RPI-RP2` or `RP2350` drive. The board reboots when the copy finishes. On
+Linux, configure [HID permissions](#linux-hid-permissions) before checking the version. With the Python host
+installed, run `pico-uart version` ([CLI guide](../host/python/README.md#command-line)) before resuming UART traffic.
 
-Published firmware may not be hardware-qualified. Check the
-[HIL evidence index](tests/records/README.md#evidence-index); release qualification uses the
-[release procedure](deployment/releasing.md).
+The [HIL evidence index](tests/records/README.md#evidence-index) lists which firmware builds passed hardware tests.
 
 ## Port Map
 
@@ -126,7 +125,7 @@ compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com
 [The Pi Hut](https://thepihut.com/products/picouart6). The carrier's extra features are not supported:
 
 - The carrier's UART activity, I2C activity, and GPIO-controlled power LEDs are not driven by PicoUart. The Pico's own
-  identification LED is separate and remains available on non-wireless Pico/Pico 2 boards.
+  identification LED is separate.
 - The STEMMA QT/Qwiic connector has no firmware I2C support: PicoUart does not expose a USB-to-I2C interface and is not
   compatible with the original firmware's `i2c-tiny-usb` functionality.
 - Keep RTS/CTS disabled on this carrier. PicoUart's optional flow-control assignments overlap the carrier's LED and I2C
@@ -139,17 +138,6 @@ compatibility with the PicoUART6 carrier sold on [Lectronz](https://lectronz.com
 - GP25 is reserved for the selected board's default LED when `PICO_DEFAULT_LED_PIN` is defined.
 - GP26 is used as UART5 CTS when PIO flow control is enabled. In that configuration it is not available as an ADC input.
 - GP27 and GP28 remain free for future use.
-
-## Wireless Boards
-
-There are no `pico_w` or `pico2_w` firmware builds. Pico W and Pico 2 W run the `pico` and `pico2` images and expose
-the same UART pins listed above. Wi-Fi and Bluetooth are not used, and HID reports the board as Pico or Pico 2.
-
-HID LED identification does not work on W boards because their onboard LED is wired through the wireless chip, not
-GPIO25.
-
-The release HIL matrix covers Pico and Pico 2 only. W boards have no physical UART, throughput, or clock-stability
-qualification yet.
 
 ## Photo Credits
 

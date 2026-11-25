@@ -1,12 +1,11 @@
 # GitHub Actions: Validation and Releases
 
-PR Check and Release share host validation; Release adds packaging and publication gates. Workflow files define job
-names, matrices, toolchain pins, triggers, and dependencies.
+PR Check and Release both reuse [Host Validation](../../.github/workflows/host-validation.yml); Release adds packaging
+and publication gates. Workflow files define job names, matrices, toolchain pins, triggers, and dependencies.
 
-[Host Validation](../../.github/workflows/host-validation.yml) is reused by both PR Check and Release.
 [PR Check](../../.github/workflows/pr-check.yml) runs for pull requests and pushes to `main`. The firmware matrix and
 host validation run in parallel; both must pass. Repository pytest covers hardware-free HIL-tool tests and
-packaging/protocol contracts, not physical UART behavior.
+packaging/protocol contracts.
 
 ## Validation Gates
 
@@ -27,8 +26,7 @@ recovery behavior. Qualify the exact candidate artifacts using the
 
 ## Release and Publication
 
-[Release](../../.github/workflows/release.yml) runs on a version-tag push or as a manual preflight. Firmware packaging
-starts alongside host validation; the Python and .NET packages wait for all host validation jobs. Only a tag push
+[Release](../../.github/workflows/release.yml) runs on a version-tag push or as a manual preflight; only a tag push
 publishes.
 
 ```mermaid

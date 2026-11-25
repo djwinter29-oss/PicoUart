@@ -30,7 +30,8 @@ access. It does not touch the board.
 
 ## Fixed Fixture Wiring
 
-Wire these four links before starting a runner. Do not move jumpers between stages.
+Wire these four links before starting a runner; runner stage numbers match the table. Do not move jumpers between
+stages.
 
 | Stage | Connection | GPIO wiring |
 | --- | --- | --- |
@@ -40,8 +41,6 @@ Wire these four links before starting a runner. Do not move jumpers between stag
 | 2 | Cross CDC4 TX to CDC3 RX | GP16 → GP13 |
 | 3 | Loop CDC1 TX to CDC1 RX | GP4 → GP5 |
 | 4 | Loop CDC5 TX to CDC5 RX | GP20 → GP21 |
-
-Runner stages use the same numbering.
 
 Before testing, identify the board's six CDC ports using the
 [serial-port guide](../hardware-setup.md#find-the-serial-ports). The runner checks HID enumeration.

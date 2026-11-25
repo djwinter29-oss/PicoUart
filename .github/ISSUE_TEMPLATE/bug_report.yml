@@ -28,6 +28,11 @@ body:
       label: Board and firmware version
       description: e.g. Pico 2, firmware v0.5.0
   - type: textarea
+    id: wiring
+    attributes:
+      label: Wiring
+      description: For UART or hardware issues, which CDC ports and GPIO pins connect to what, and at what voltage
+  - type: textarea
     id: repro
     attributes:
       label: Steps to Reproduce

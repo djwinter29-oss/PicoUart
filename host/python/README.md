@@ -35,8 +35,7 @@ pico-uart dashboard
 Open <http://127.0.0.1:5000/> on the same computer. Click **Rescan** after plugging in another board. Add
 `--port 5001` if port 5000 is busy, and press `Ctrl+C` to stop.
 
-Saving a clock profile here restarts the board. Close serial ports and stop traffic first; see the
-[save rules](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md#save-and-reboot-safety).
+Saving a clock profile here restarts the board, so close serial ports and stop traffic first.
 
 ## Command Line
 
@@ -68,9 +67,9 @@ with PicoUartHid() as board:
                 print(f'cdc{channel["id"]}: {channel["state"]}')
 ```
 
-`read_status()` waits for one port update and returns the current snapshot of all six ports. Other ports may still have
-state `"unknown"`. Possible states are `closed`, `starting`, `ready`, `configuring`, and `error`; `unknown` means no
-report has arrived yet. Use `PicoUartHid(serial_number="ABC123")` to choose a board.
+`read_status()` waits for one port update and returns the current snapshot of all six ports. Possible states are
+`closed`, `starting`, `ready`, `configuring`, and `error`; `unknown` means no report has arrived yet for that port. Use
+`PicoUartHid(serial_number="ABC123")` to choose a board.
 
 ### Wait Before Sending
 

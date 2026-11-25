@@ -55,13 +55,13 @@ def _write_stub_sdk(sdk_dir, platform):
     ("board", "platform", "expected"),
     [
         ("pico", "rp2040", "Configuration policy accepted"),
-        ("pico_w", "rp2040", "Configuration policy accepted"),
+        ("pico_w", "rp2040", "W boards run the pico or pico2 image"),
         ("pico2", "rp2350", "Configuration policy accepted"),
-        ("pico2_w", "rp2350", "Configuration policy accepted"),
+        ("pico2_w", "rp2350", "W boards run the pico or pico2 image"),
         ("acme_falcon", "rp2350", "Configuration policy accepted"),
     ],
 )
-def test_cmake_accepts_supported_platforms_without_clock_overrides(repo_root, tmp_path, board, platform, expected):
+def test_cmake_applies_board_policy_without_clock_overrides(repo_root, tmp_path, board, platform, expected):
     sdk = tmp_path / "sdk"
     _write_stub_sdk(sdk, platform)
     completed = subprocess.run(

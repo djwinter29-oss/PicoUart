@@ -2,7 +2,7 @@
 
 This plan qualifies PicoUart on the fixed four-link fixture. Run the functional pass first, then the performance pass on
 the same wiring. It is the baseline hardware test; releases also need the extra checks in the
-[required HIL matrix](../deployment/releasing.md#required-hil-matrix).
+[release HIL gates](../deployment/releasing.md#release-hil-gates).
 
 Result meanings (`PASS`, `PARTIAL`, `NOT RUN`, and so on) and the evidence each record needs are defined in the
 [test overview](README.md#results-and-evidence).
@@ -22,9 +22,10 @@ file but does not identify the firmware running on the board. Use `tools/hil/.ve
 ## Standard Combined Run
 
 Use the combined runner for the baseline fixture test. It runs the functional pass first, then the concurrent six-port
-performance pass if functional testing succeeds. It does not run isolated pair sweeps or recovery/stress procedures.
-Replace the example paths and metadata with the identified board and the image actually flashed. The run writes one
-dated record; check its overall result and both phase summaries.
+performance pass if functional testing succeeds. It does not run the [pair sweeps](#pair-sweeps) or the
+[recovery and stress procedures](hil-recovery-and-stress.md). Replace the example paths and metadata with the
+identified board and the image actually flashed. The run writes one dated record; check its overall result and both
+phase summaries.
 
 ```sh
 tools/hil/runner/full.sh \
@@ -40,9 +41,9 @@ tools/hil/runner/full.sh \
   --duration 30
 ```
 
-Leave `--rates` unset to use the runner's default sweep. The 30-second duration is the concurrent six-port duration in
-the [test matrix](#test-matrix). A later-rate failure records the measured boundary. `--skip-functional` and
-`--skip-performance` create a `PARTIAL` record.
+Leave `--rates` unset to use the runner's default sweep, which is a [ceiling search](#baseline-and-speed-ceiling) above
+115200; `--duration 30` follows the [test matrix](#test-matrix). `--skip-functional` and `--skip-performance` create a
+`PARTIAL` record.
 
 ## Functional Pass
 
@@ -63,9 +64,8 @@ result.
 
 ## Performance Pass
 
-Every stream checks its returned payload byte for byte. The combined run tests all six streams concurrently. The
-isolated pair sweeps below are separate; run them for per-link characterization or when required by the
-[release HIL matrix](../deployment/releasing.md#required-hil-matrix).
+Every stream checks its returned payload byte for byte. Run the [pair sweeps](#pair-sweeps) for per-link
+characterization or pair-specific claims.
 
 ### How the Runners Set Up Ports
 
@@ -90,19 +90,25 @@ same checks with `--check-hid-health`.
 
 ### Baseline and Speed Ceiling
 
-The baseline is 115200 baud. The run passes only if all six streams pass at 115200 with clean HID health. If
-115200 fails or was not run, the baseline has not passed; higher-rate results do not change that.
+The baseline is 115200 baud. A run passes only if all six streams pass at 115200 with clean HID health; if 115200
+fails or was not run, higher-rate results cannot make it pass.
 
-Above the baseline, an ascending sweep is a **ceiling search**. It stops at the first failed rate and reports later
-rates as `NOT RUN`. Record the first traffic failure as the measured boundary; the 115200-baud baseline remains a
-separate result:
+Above the baseline, an ascending sweep is a **ceiling search**: it stops at the first failed rate and reports later
+rates as `NOT RUN`. Record the boundary separately from the baseline result:
 
 - the highest rate where all six streams passed, and
-- the first higher rate that failed, or note that the cap was reached without a failure.
+- the first higher rate that failed, or that the cap was reached without a failure.
 
-Do not claim an exact hardware limit; untested rates in between are unknown. Any health failure is a run failure. A
+Untested rates in between are unknown, so do not claim an exact hardware limit. Any health failure fails the run. A
 setup failure before the baseline also fails the run; one after a clean baseline leaves the baseline valid but the
 ceiling undetermined.
+
+For an evenly stepped search, add `--incremental-performance` to the combined command instead of `--rates`. It steps
+up from 115200 in 100000-baud steps to 3000000 and stops at the first failure; adjust it with
+`--incremental-start-rate`, `--incremental-rate-step`, and `--incremental-max-rate`. The standalone
+`pico-uart-hil performance --incremental` takes the same options. A start above 115200 skips the baseline, so that run
+cannot pass on its own. Every rate includes the settle time, so keep sweeps short and narrow the bracket with a smaller
+step only where needed.
 
 ### Test Matrix
 
@@ -112,7 +118,8 @@ ceiling undetermined.
 | Single pair duplex on each crossed pair | 30 s per rate |
 | Concurrent six-port with fresh port setup | 30 s per rate |
 
-These are the durations used in this plan; examples pass them explicitly. Each runner command lists the rates it tests.
+Runner defaults differ, so pass `--duration` explicitly, as the examples do. Each runner command lists the rates it
+tests.
 
 ### Pair Sweeps
 
@@ -143,16 +150,8 @@ Test each loopback with `tools/hil/runner/bridge.sh --pico-port "<endpoint>" --l
 ### Concurrent Six-Port
 
 The [combined command](#standard-combined-run) is the default. For performance-only diagnosis, use
-`tools/hil/runner/performance.sh --help`; its endpoint flags are `--cdc0` through `--cdc5` rather than the combined
-runner's `--pico-cdc0` through `--pico-cdc5`. The standalone command uses the same default rate sweep and duration.
-
-### Ceiling Search
-
-Replace `--rates` with `--incremental-performance` to step up from 115200 in 100000-baud steps, up to 3000000,
-stopping at the first failure. Adjust it with `--incremental-start-rate`, `--incremental-rate-step`, and
-`--incremental-max-rate`. A start above 115200 skips the baseline, so that run cannot pass on its own. The standalone
-`pico-uart-hil performance --incremental` takes the same options. Narrow the bracket with a smaller step if needed.
-Every rate includes the settle time, so keep sweeps short.
+`tools/hil/runner/performance.sh` (see `--help`). It takes `--cdc0` through `--cdc5` instead of `--pico-cdc0` through
+`--pico-cdc5` and uses the same default rate sweep.
 
 ## Timing Output
 
@@ -174,12 +173,8 @@ host/python/.venv/bin/pico-uart monitor --duration 5
 host/python/.venv/bin/pico-uart overruns
 ```
 
-This diagnostic run is not release stability evidence. For release evidence, use the workload and duration declared
-before the test in the [release matrix](../deployment/releasing.md#required-hil-matrix). Earlier long runs are in the
-[evidence index](records/README.md#evidence-index).
-
-Normal performance runs do not cover recovery or manual stress cases. Use the separate
-[HIL recovery and stress plan](hil-recovery-and-stress.md) for those procedures.
+This is not release stability evidence; the [release HIL gates](../deployment/releasing.md#release-hil-gates) define
+that. Earlier long runs are in the [evidence index](records/README.md#evidence-index).
 
 ## Known Gaps
 

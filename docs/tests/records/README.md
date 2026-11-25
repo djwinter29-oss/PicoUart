@@ -1,11 +1,12 @@
 # HIL Test Records
 
 The combined `pico-uart-hil` runner (also exposed by `tools/hil/runner/full.sh`) creates one Markdown record per
-invocation in this directory. Use `--record-dir` to choose another directory.
+invocation in this directory; `--record-dir` chooses another. Single-phase runs and `pico-uart-hil functional` /
+`pico-uart-hil performance` append to the ignored local log `build/hil-results.md` instead.
 
 ## Naming
 
-For new runner records, use the UTC start time, board target, measured live system clock, and test kind:
+Name records by UTC start time, board target, measured live system clock, and test kind:
 
 ```text
 YYYY-MM-DD-HHMMSSZ-pico-125mhz-hil.md
@@ -13,12 +14,10 @@ YYYY-MM-DD-HHMMSSZ-pico2-150mhz-hil.md
 YYYY-MM-DD-HHMMSSZ-pico-125mhz-460800-6port-8h-soak.md
 ```
 
-Runner-generated records use the `-hil.md` suffix. For a manually maintained soak, include the baud rate, port count,
-duration, and `-soak.md`. Older records may use a date-only name when the start time was not recorded; narrative
-summaries use `YYYY-MM-DD-topic.md`. If the clock could not be read, use `clock-unknown`; query `pico-uart hardware`
-when available, otherwise leave it unknown. Never infer the clock. If a name already exists, the runner adds a
-numeric suffix rather than overwriting it. Single-phase runs and `pico-uart-hil functional` /
-`pico-uart-hil performance` invocations append to the ignored local log at `build/hil-results.md` instead.
+- Runner records end in `-hil.md`. Manual soaks add baud rate, port count, duration, and `-soak.md`.
+- Read the clock with `pico-uart hardware`. If it cannot be read, use `clock-unknown`; never infer it.
+- Narrative summaries use `YYYY-MM-DD-topic.md`. Older records may be date-only when the start time was not recorded.
+- The runner adds a numeric suffix rather than overwriting an existing name.
 
 ## Record Formats
 
@@ -43,9 +42,9 @@ Reports omit child command lines and verbose monitor transcripts; live test outp
 
 Historical hand-written records use the `PicoUart HIL Results` heading and may organize fields differently. Soak
 records also use two legacy timestamp styles (`Test start` / `Report generated` and `Test start` / `Run ended`).
-Older runner records may include health bytes such as `0x11` and `0x31`; these are preserved as reported and have no
-verified mapping in the current report contract. Interpret current reports using the
-[HID reference](../../design/usb/hid-report-reference.md) instead.
+Older runner records, including the v0.8.6 runs, list every per-rate HID check in full. Some include health bytes such
+as `0x11` and `0x31`, preserved as reported with no verified mapping in the current report contract. Interpret current
+reports using the [HID reference](../../design/usb/hid-report-reference.md).
 
 Release qualification uses the gates in [Releasing](../../deployment/releasing.md).
 
@@ -56,15 +55,12 @@ Performance-only runs do not cover functional or recovery behavior. Configured b
 Pico 2 rows below stop on 2026-10-10. No file in this directory is an exact-artifact Pico 2 run for the current
 release. A Pico `PASS` does not qualify `pico2`.
 
-Top-level records are linked below. Older development runner output is in the
-[archive](archive/README.md); narrative records link directly to the runs they discuss.
-
 ### Recent Records
 
 | Record | Result and coverage | Artifact or caveat |
 | --- | --- | --- |
 | [Pico 200 MHz eight-hour 1 Mbaud soak](2026-10-24-223400Z-pico-200mhz-1000000-6port-8h-soak.md) | `PASS`; 12.6 billion verified CDC bytes, clean HID, zero overruns. | v0.8.6 ELF; dirty worktree. |
-| [Pico 200 MHz four-hour 1 Mbaud soak](2026-10-24-183331Z-pico-200mhz-1000000-6port-4h-soak.md) | `PASS`; 6.3 billion verified bytes, clean HID. | Same v0.8.6 ELF; clock not independently captured, dirty worktree. |
+| [Pico four-hour 1 Mbaud soak](2026-10-24-183331Z-pico-clock-unknown-1000000-6port-4h-soak.md) | `PASS`; 6.3 billion verified bytes, clean HID. | Same v0.8.6 ELF; clock not independently captured, dirty worktree. |
 | [v0.8.6 Pico 200 MHz HIL](2026-10-24-181517Z-pico-200mhz-hil.md) | `PASS`; fixture and six streams through 2 Mbaud. | Exact packaged ELF; CDC5 returned a short read at 3 Mbaud. |
 | [v0.8.6 Pico release HIL](2026-10-24-180437Z-pico-125mhz-hil.md) | `PASS`; fixture and six streams through 2 Mbaud. | Exact packaged ELF; CDC3→CDC4 returned a short read at 3 Mbaud. |
 | [Pico eight-hour 460800 soak](2026-10-24-071715Z-pico-125mhz-460800-6port-8h-soak.md) | `PASS`; six streams, clean before/after HID. | Firmware version `0.0.0`; no artifact hash. |
@@ -92,8 +88,8 @@ Health summaries describe the observations retained; before/after checks are not
 
 ### Development History
 
-Development runs from October 22–23 are archived separately from release evidence; see the
-[archive index](archive/README.md). Narrative summaries:
+Development runner output from October 22–23 is archived separately from release evidence in the
+[archive index](archive/README.md); narrative records link directly to the runs they discuss. Narrative summaries:
 [UART lifecycle optimization](2026-10-22-uart-lifecycle-optimization.md) and
 [CDC/UART session validation](2026-10-22-cdc-uart-session-validation.md).
 

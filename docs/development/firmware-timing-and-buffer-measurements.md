@@ -1,9 +1,7 @@
 # Firmware Timing and Buffer Measurements
 
-This guide covers optional timing profiles and buffer measurements. See
-[Firmware Build and Configuration](../../firmware/build-and-config.md) for build and load instructions, the
-[hardware-free test checklist](../tests/README.md#without-hardware) for test commands, and the
-[Cursor Cloud environment guide](cursor-cloud.md) for its provisioned snapshot.
+This guide covers optional timing profiles and buffer measurements for comparing firmware tuning candidates. Build and
+load instructions are in [Firmware Build and Configuration](../../firmware/build-and-config.md).
 
 ## Optional Timing Profiles
 
@@ -19,13 +17,9 @@ CFLAGS='-DPICO_UART_PROFILE_TIMING=1 -DPICO_UART_USB_CDC_BRIDGE_PASS_BUDGET=512'
 This adds three SWD-readable arrays of observed maxima, in microseconds: `service_load_max_pass_us[2]`,
 `service_load_max_gap_us[2]`, and `uart_driver_max_service_gap_us[6]`. Find them with `arm-none-eabi-nm`, zero them
 just before the traffic run, then read them without halting the cores:
-`echo [read_memory <address> 32 <count>]`. These are maxima seen in the instrumented run; they do not establish
-worst-case timing.
-
-Use these measurements for comparison, not as release evidence by themselves. See
-[Comparing Tuning Candidates](#comparing-tuning-candidates) for the comparison method and
-[the matched refill experiments](../tests/records/2026-10-23-uart-cdc-review-validation.md#matched-refill-experiments)
-for previous results.
+`echo [read_memory <address> 32 <count>]`. These are maxima from one instrumented run, not worst-case timing or
+release evidence; use them to compare candidates as described below. Previous results are in
+[the matched refill experiments](../tests/records/2026-10-23-uart-cdc-review-validation.md#matched-refill-experiments).
 
 ## Comparing Tuning Candidates
 

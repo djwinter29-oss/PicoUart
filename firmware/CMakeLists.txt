@@ -11,6 +11,9 @@ if((DEFINED PICO_UART_SYSTEM_CLOCK_KHZ AND NOT PICO_UART_SYSTEM_CLOCK_KHZ STREQU
    PICO_UART_ALLOW_UNSAFE_OVERCLOCK)
     message(FATAL_ERROR "Build-time clock overrides were removed; use tools/firmware/config.py to select a stored profile")
 endif()
+if(PICO_BOARD MATCHES "^pico2?_w$")
+    message(FATAL_ERROR "PICO_BOARD=${PICO_BOARD} is not supported; W boards run the pico or pico2 image")
+endif()
 
 # pico_sdk_import.cmake is designed to be include()d prior to project(); doing so
 # here (rather than after the clock-ceiling checks below) also lets the SDK's own
@@ -123,9 +126,13 @@ target_compile_definitions(pico_uart PRIVATE
 
 # Preserve SDK HID descriptor/idle handling while enforcing report transfers before status ACK.
 target_link_options(pico_uart PRIVATE -Wl,--wrap=hidd_control_xfer_cb)
-set(_hid_board_models pico pico_w pico2 pico2_w)
-list(FIND _hid_board_models "${PICO_BOARD}" _hid_board_index)
-math(EXPR _hid_board_model "${_hid_board_index} + 1")
+# HID board-model IDs; 2 and 4 stay reserved for the rejected W boards, and custom boards report 0.
+set(_hid_board_model 0)
+if(PICO_BOARD STREQUAL "pico")
+    set(_hid_board_model 1)
+elseif(PICO_BOARD STREQUAL "pico2")
+    set(_hid_board_model 3)
+endif()
 target_compile_definitions(pico_uart PRIVATE PICO_UART_BOARD_MODEL=${_hid_board_model}u)
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")

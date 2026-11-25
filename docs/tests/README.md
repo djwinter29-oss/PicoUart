@@ -8,7 +8,7 @@ as partial.
 | Host tests | Native host | Firmware policies, host applications, and cross-project contracts |
 | Firmware build | Pico SDK/toolchain | Compile and link both RP2040 and RP2350 targets |
 | Functional HIL | Board + fixed four-link fixture | Enumeration, bidirectional bytes, backend mapping, HID health |
-| Performance HIL | Same fixture | Concurrent six-port payload integrity; pair sweeps, soaks, and recovery are separate runs |
+| Performance HIL | Same fixture | Payload integrity under concurrent six-port and per-pair load |
 | Release HIL | Exact packaged artifacts | Qualify the artifacts intended for publication |
 
 ## Hardware Authorization
@@ -40,9 +40,8 @@ checks cannot establish DMA timing, USB enumeration, multicore load, or physical
 ## With Hardware
 
 1. Wire the fixture: [HIL Fixture Setup](hil-fixture-setup.md).
-2. Run the baseline fixture test from the [HIL Fixture Test Plan](hil-fixture-test-plan.md). The combined
-   `tools/hil/runner/full.sh` runs the functional and concurrent six-port passes and writes a dated record to
-   [records/](records/README.md). Pair sweeps and recovery/stress procedures are separate runs; see the
+2. Run the [standard combined run](hil-fixture-test-plan.md#standard-combined-run); it writes a dated record to
+   [records/](records/README.md). Pair sweeps are in the same plan; recovery, stress, and startup checks are in the
    [HIL recovery and stress plan](hil-recovery-and-stress.md).
 3. For a release, test the exact packaged artifacts and follow the gates in
    [Releasing](../deployment/releasing.md#release-hil-gates).

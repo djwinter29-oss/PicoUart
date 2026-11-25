@@ -5,9 +5,8 @@ Use this guide to develop the Python package or .NET host from a checkout. For i
 HTTP behavior, see the [dashboard behavior and presentation guide](dashboard-development.md).
 
 Run commands from the repository root. Setup and tests here do not require a board. Most command examples use POSIX
-shell syntax; the Python setup section includes the native PowerShell equivalent. Host applications use HID for board
-status and controls; UART data and line coding stay on the six CDC ports. See the
-[HID reference](../design/usb/hid-report-reference.md) for the USB contract.
+shell syntax; the Python setup section includes the native PowerShell equivalent. Host changes must follow the
+[HID reference](../design/usb/hid-report-reference.md).
 
 ## Python
 

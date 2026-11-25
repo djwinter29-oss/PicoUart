@@ -11,8 +11,8 @@ automatically ([releasing](releasing.md)).
 | .NET | Self-contained archives on GitHub Releases (Linux x64, Windows x64, macOS arm64) |
 | Direct Dashboard | Static site on [GitHub Pages](https://djwinter29-oss.github.io/PicoUart/) |
 
-The Python and .NET packages bundle the shared dashboard from `host/web/src`. The Direct Dashboard is independent and
-deploys `host/direct/src` as-is. There is no shared asset-generation step, and none should be added.
+The Python and .NET packages bundle the shared dashboard from `host/web/src`. The Direct Dashboard is independent: it
+shares no assets with them and deploys `host/direct/src` as-is.
 
 ## Manual Test Modes
 
@@ -87,5 +87,4 @@ To redeploy or roll back, run the workflow manually with a published **tag** and
 from a branch, check `test_publish` and leave **tag** empty; that replaces the live site, so rerun with the release tag
 afterwards to restore it.
 
-A Pages failure does not unpublish the GitHub Release. Mocked browser tests do not prove real WebHID access, so check
-the live site with a board after deploying.
+A Pages failure does not unpublish the GitHub Release. After deploying, check the live site with a board.

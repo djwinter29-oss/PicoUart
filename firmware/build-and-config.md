@@ -18,8 +18,8 @@ tools/firmware/build.sh --board pico2   # Pico 2 (RP2350) -> build/firmware-pico
   `setup-sdk-env.sh` clones on first use.
 - `--firmware-version 1.2.3` stamps a release version, which is reported over HID.
 - `--disable-hid-reset` removes the standalone HID reboot action. Save-and-reboot is not affected.
-- `pico_w` and `pico2_w` are not supported build targets. W boards use the `pico` or `pico2` image; see the
-  [wireless board notes](../docs/hardware-setup.md#wireless-boards).
+- CMake rejects `pico_w` and `pico2_w`; W boards run the `pico` or `pico2` image
+  ([supported boards](../docs/hardware-setup.md#supported-boards)).
 - If the board, SDK, generator, version, or HID-reset option changes, the wrapper clears stale CMake state
   automatically.
 

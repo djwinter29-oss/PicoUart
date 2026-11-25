@@ -17,18 +17,8 @@ builds.
 
 ## What Is Tested
 
-The native test suite covers:
-
-- Ring-buffer occupancy, wrapping, snapshots, and overflow recovery
-- UART line-coding and topology policy
-- DMA progress, TXSTALL timing, and backend policy helpers
-- CDC soft-pending and control-ownership rules
-- Bridge partial/zero writes, wrapped spans, snapshot sequence changes, and overflow during retirement
-- HID ring-peak saturation at the version-1 report limit
-- Logical-port RX alignment, independent storage, and compact metadata layout
-- Hardware/PIO resource claim rollback
-- LED policy behavior
-- Both platforms' reset evidence, stale chip-level flags, consumed markers, and HID user/config-save reboot paths
+Each `test_<module>.c` file covers one firmware module, from ring buffers and line-coding policy to the CDC, HID,
+control-plane, DMA, and UART backend logic. The file names are the inventory.
 
 Shared Pico SDK test hooks use one storage definition in [pico_sdk_hooks.c](stubs/pico_sdk_hooks.c), linked into the
 native test targets by CMake. Keep hook declarations in stub headers as `extern`; weak header definitions do not

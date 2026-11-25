@@ -10,17 +10,12 @@ and per-channel monitoring. The [architecture](../architecture.md#usb-interfaces
 - The device is USB `2e8a:116b`, allocated to PicoUart by the Raspberry Pi Foundation
   ([allocation list](https://github.com/raspberrypi/usb-pid)). The manufacturer string is `djwinter`, the product
   `PicoUart`. CDC interface strings advertise backend limits: `CDC0 HW`, `CDC1 HW`, and `CDC2`-`CDC5 PIO 8N1`.
-- HID carries board status and control. CDC carries UART data and line coding; the board configuration owns pins and
-  ring behavior. Reading a report leaves transport ownership unchanged.
 
-**Wire rules:** multi-byte integers are little-endian, and the UID is an ordered byte sequence. Offsets and sizes
-exclude the report-ID byte. Every report fits in 64 bytes including the ID. Layout version `1` is independent of the
-firmware version. Select the layout using product, report type, ID, length, and version. Reports have no padding.
+**Wire rules:** multi-byte integers are little-endian. Offsets and sizes exclude the report-ID byte. Every report fits
+in 64 bytes including the ID, with no padding. Layout version `1` is independent of the firmware version;
+[Discovery](#discovery) explains layout selection.
 
 ## Report ID Allocation
-
-Report ID `0` is unused. Other products may reuse these IDs with different layouts, so identify the product before
-decoding fields.
 
 | Report ID | Name | Type | Direction | Payload | Purpose |
 | --------- | ---- | ---- | --------- | ------- | ------- |
@@ -31,8 +26,8 @@ decoding fields.
 | `20` | [Board Action and Result](#report-id-20-board-action-and-result) | Feature | Host reads/writes | 4 bytes | LED/reboot/save actions and results. |
 | `30`-`35` | [Channel Diagnostics (CDC0–CDC5)](#reports-30-35-channel-diagnostics) | Feature | Host reads | 24 bytes | RX fault history, last configuration error, buffer peaks. |
 
-All sixteen report IDs are always present. Capability flags identify features unavailable on a board. Writes to
-read-only reports are rejected without side effects.
+All sixteen report IDs are always present, and ID `0` is unused. Capability flags identify features unavailable on a
+board. Writes to read-only reports are rejected without side effects.
 
 For read cadence and validation order, see [Host Rules](#host-rules).
 
@@ -77,7 +72,7 @@ reject unknown products rather than decoding them with a guessed layout.
 serial. On RP2040 it is the QSPI flash UID; on RP2350 it is the SDK platform identity.
 
 **Firmware version:** a `v1.2.3` tag reports `1.2.3`; USB `bcdDevice` carries only major.minor. Use the version for
-diagnostics only: choose decoding by product and layout, and operations by capability flags.
+diagnostics only; capability flags gate operations.
 
 The board model is the configured build target; firmware does not detect hardware. Keep unknown MCU and board numbers
 as reported rather than inventing names.
@@ -188,20 +183,6 @@ At boot the firmware picks the highest supported frequency at or below the reque
 
 Invalid or erased storage reads as `255` and boots with SDK defaults; flash is not rewritten. Watchdog recovery can also
 fall back to defaults while keeping the stored request. Check report 3 to confirm the clock after boot.
-
-### Save and Reboot Safety
-
-Saving a profile writes flash and reboots the board, so it is guarded:
-
-- The profile must be advertised, the request must carry the confirm flag, and a non-default profile also needs the
-  overclock acknowledgement. Anything else is rejected without touching flash.
-- Every CDC port must be closed (DTR low) when the request is accepted, and again when it runs. Also stop external UART
-  traffic. Flash erase stalls both cores, and the reboot drops any queued bytes.
-- The write happens in the USB poll loop, outside the USB callback. Core 1 is locked out using the SDK flash-safe
-  API. Only the final flash sector is erased. The record is CRC-protected and checked in full before the result reports
-  Completed. Saving the profile that is already stored skips the write.
-- Completed means the profile was verified in flash; it does not promise the next boot succeeded. An interrupted write
-  boots SDK defaults because the clock profile occupies one flash sector.
 
 ## Report ID 3: Board Telemetry
 
@@ -379,10 +360,20 @@ The firmware checks a SET in this order and publishes the first failure:
 `Invalid/n` means the Invalid result status with reason code `n`. Rejected requests have no side effects. An accepted
 SET publishes its result, either Pending or an immediate Completed, before the USB transfer finishes.
 
+### Save and Reboot Safety
+
+Saving writes flash and then reboots. Besides closing every CDC port, stop external UART traffic: flash erase stalls
+both cores, and the reboot drops any queued bytes.
+
+- The write runs in the USB poll loop, outside the USB callback, with core 1 locked out by the SDK flash-safe API.
+  Only the final flash sector is erased, and saving the profile that is already stored skips the write.
+- The record is CRC-protected and checked in full before the result reports Completed. Completed means the profile was
+  verified in flash, not that the next boot succeeded.
+- An interrupted write boots SDK defaults because the clock profile occupies one flash sector.
+
 ## Reports 30-35: Channel Diagnostics
 
-Report `30 + channel` is a read-only Feature with no Input publication. Reads preserve history and leave snapshot
-sequences and rate baselines unchanged.
+Report `30 + channel` is a read-only Feature with no Input publication. Reads preserve history.
 
 | Offset | Size | Field | Meaning |
 | -----: | ---: | ----- | ------- |
@@ -450,14 +441,13 @@ This cadence produces one or two telemetry reads and about twelve channel Inputs
 reboot, discard cached reports and pending actions, then start again at step 1.
 
 For every report, validate its type, ID, exact length, version, reserved bits, enum values, and field consistency.
-Reject unknown layouts outright; there is no negotiation.
 
 ### Rates
 
 Take the counter delta modulo 2^32 and divide by the device's `interval_ms`. The first sample after a (re)connect only
 sets the baseline. A sequence gap, a stale stream, or a non-Current UART sample discards that channel's rate window
 while keeping its totals; other channels are unaffected. Combine windows by summing bytes and intervals rather than
-averaging rates. Feature reads leave rate baselines and totals unchanged.
+averaging rates. Feature reads of any report leave sequences, rate baselines, and totals unchanged.
 
 Wrap-safe deltas need fewer than 2^32 bytes between samples, which is hours at UART speeds. A 16-bit sequence cannot
 detect a loss of exactly 65536 reports, so rebaseline after any long pause.
@@ -471,9 +461,9 @@ after publishing Completed; later reads and writes neither delay nor cancel this
 A timeout or disconnect leaves the outcome unknown. Do not retry a reboot or save automatically. Reconnect, read
 report 2, and let the user decide.
 
-### Conformance Examples
+## Conformance Examples
 
-Report-20 payloads, without the report-ID byte. Assume the LED and save capabilities are present, CDC ports are
+Payloads omit the report-ID byte. Action examples assume the LED and save capabilities are present, CDC ports are
 closed, and nothing is pending.
 
 | Request | Response | Meaning |
@@ -488,8 +478,6 @@ closed, and nothing is pending.
 | Unknown action `0x7f` with flags `0x80`, otherwise well-framed | Publish action 0 with Invalid/error 1 before action validation. |
 | Reboot without confirmation | Publish action 3 with Invalid/error 4; no reset. |
 | Save while any CDC DTR session is open | Publish action 4 with Busy/error 6; no flash write or reset. |
-| Another write while Pending or Completed awaiting reboot | Reject the transfer; preserve the existing operation, result, and reset deadline. |
-| Reboot/save SET times out or disconnects | Treat outcome as unconfirmed; do not automatically retry. |
 | First channel publication fails, a Feature read follows, then publication succeeds | Failed candidate uses sequence 1 without committing; Feature returns 0; first accepted Input returns 1. |
 | Channel sequence `65535` followed by `0` | Normal modulo-65536 continuity, not a gap. |
 | Input at time T; Feature read at T+250 ms; next Input at T+500 ms | Feature read does not commit a baseline. Next Input still covers 500 ms from T and includes all interval bytes once. |

@@ -13,8 +13,8 @@ while old-format bytes are still queued, would corrupt traffic. So the firmware:
 3. applies the change on core 1 once the backend is idle, and
 4. reports the outcome through HID.
 
-The USB transfer confirms receipt. HID reports `Configuring` while the change is pending and `Error` if it fails;
-diagnostics retain the last configuration error reason.
+The USB transfer confirms receipt. Internally the request sets `CONTROL_PENDING`, which HID reports as `Configuring`; a
+failure sets `CONTROL_ERROR`, reported as `Error`, and diagnostics retain the reason.
 
 ## Request Lifecycle
 
@@ -44,8 +44,8 @@ sequenceDiagram
 A request remains `CONTROL_PENDING` from acceptance through completion, and new TX bytes are refused for that whole
 interval. The status-lock hand-off keeps mailbox-to-worker ownership atomic.
 
-Malformed or unsupported requests are rejected at once and set `CONTROL_ERROR`. Diagnostics retain the reason, such as
-invalid framing on a PIO port or an unreachable baud rate.
+Malformed or unsupported requests, such as invalid framing on a PIO port or an unreachable baud rate, are rejected at
+once with `CONTROL_ERROR`.
 
 ## Generations and Stale Completions
 
@@ -57,22 +57,20 @@ an older success cannot clear a newer error.
 
 A request for a closed port waits without starting its deadline. Soft-pending and worker application then have bounded
 per-port deadlines, so a busy port never consumes another port's time. Repeating the same request does not extend its
-deadline, but a different request gets a new one. A timeout sets `CONTROL_ERROR` and records its diagnostic reason.
+deadline, but a different request gets a new one. A timeout sets `CONTROL_ERROR`.
 
 ## Port Lifecycle
 
 DTR drives each port's lifecycle, and the UART worker is the only code that starts or stops a backend. HID reports
-`Ready` when the backend is running and `Error` when initialization or configuration fails.
+`Ready` when the backend is running with settings that match the hardware, and `Error` when initialization or
+configuration fails. Both directions are blocked until the port first becomes ready; during a later live
+reconfiguration, RX keeps draining and only TX is blocked.
 
 - **Open:** the initial line coding goes through the normal mailbox before the start request, so the backend starts
-  with the requested format. Each open makes one start attempt. On failure the channel snapshot
-  reports `Error`; close and reopen to retry.
+  with the requested format. Each open makes one start attempt; after a failure, close and reopen to retry.
 - **Close:** core 0 stops admitting bytes and clears the port's CDC FIFOs. The worker then stops the backend and parks
   TX idle-high. Queued bytes are discarded, while the applied settings and boot-lifetime counters are kept. The board
   does not reboot.
-- **Backend ready:** the backend is running and its reported settings match the hardware. Both directions
-  are blocked until the port first becomes ready. During a later live reconfiguration, RX keeps draining and only TX
-  is blocked.
 
 One port's startup or close never holds up another port.
 

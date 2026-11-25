@@ -52,14 +52,14 @@ No install at all? The [Direct Dashboard](https://djwinter29-oss.github.io/PicoU
 ./PicoUart overruns > uart-dropped-bytes.json
 ```
 
-- `status` waits up to `--timeout` seconds (default 2) and exits non-zero if no valid report arrives. It returns after
-  the first channel report, so other channels may still be placeholders.
-- `monitor` prints one raw snapshot per line: `id` (0-5), `sequence`, `interval_ms`, and byte counters since boot. It
-  does not compute rates, and it can exit successfully with no samples at all.
-- `overruns` prints cumulative dropped-byte counts, or `null` where unavailable. Compare before and after a run.
+| Command | Prints | Exits `1` when |
+| --- | --- | --- |
+| `status` | One JSON snapshot after the first channel report; other channels may still be placeholders | No valid report arrives within `--timeout` seconds (default 2) |
+| `monitor` | One raw JSON snapshot per line: `id` (0-5), `sequence`, `interval_ms`, byte counters since boot; no rates | The board cannot be read; a run with no samples still exits `0` |
+| `overruns` | Cumulative dropped-byte counts, `null` where unavailable; compare before and after a run | The board cannot be read |
 
-Because a zero exit code does not mean the channels were healthy, have your test check that samples arrived and look
-at the reported states. Field meanings are in the
+Exit code `0` does not mean the channels were healthy: check that samples arrived and look at the reported states.
+Field meanings are in the
 [HID report reference](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md).
 
 ## Other Commands
@@ -67,9 +67,8 @@ at the reported states. Field meanings are in the
 `hardware`, `config`, `telemetry`, `temperature`, and `version` are read-only; `./PicoUart --help` lists them all.
 `toggle-led` flips the board LED, and `reset` reboots the board when the firmware allows it.
 
-**Save & Reboot** stores a boot-time clock profile and restarts the board. Stop UART traffic and close all CDC ports
-first. The dashboard does not retry an uncertain control; check the board before trying again. See the
-[HID save and reboot rules](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/design/usb/hid-report-reference.md#save-and-reboot-safety).
+**Save & Reboot** stores a boot-time clock profile and restarts the board, so stop UART traffic and close all CDC ports
+first. The dashboard does not retry an uncertain control; check the board before trying again.
 
 ## Troubleshooting
 
