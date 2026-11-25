@@ -88,3 +88,19 @@ Repeatedly change supported settings on other channels while an independently pa
 Change both ends of crossed links. Record the maximum unaffected-port service gap and both cores' maximum pass times.
 Each change must complete or time out explicitly, with no new faults on unaffected traffic. A mismatched crossed pair
 is not a bridge failure.
+
+## Known Gaps
+
+Open hardware coverage:
+
+- The fixture cannot test input that keeps arriving while the host has stopped reading. Every byte starts as a host
+  write, so [Host Drain Stalled](#host-drain-stalled) needs an independently paced UART source.
+- RTS/CTS has not been tested; there is no flow-control fixture yet, so [TX Backpressure](#tx-backpressure) is open.
+- Pico 2 has much thinner coverage than Pico. Check the [evidence index](records/README.md#evidence-index) before
+  relying on it; a Pico result does not carry over.
+- Sustained DMA wrap/re-arm endurance with the normal transfer count remains untested. A shortened-countdown attempt
+  produced invalid results; no safe injection procedure is validated yet.
+- Watchdog recovery has one development observation, but no repeatable trigger procedure is documented. See the
+  [review record](records/2026-10-23-uart-cdc-review-validation.md#configuration-isolation-and-recovery).
+- Cold-power-on, watchdog, and USB-reset startup remain unqualified; see
+  [Startup Observation](#startup-observation).

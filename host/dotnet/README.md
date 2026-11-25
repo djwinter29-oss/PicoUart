@@ -1,13 +1,14 @@
 # PicoUart .NET Host
 
 A command-line tool and local dashboard for the [PicoUart](https://github.com/djwinter29-oss/PicoUart) six-channel
-USB-to-UART bridge on Raspberry Pi Pico and Pico 2. It reads channel health and traffic over the board's USB HID
-interface, so your serial tools keep using the six CDC ports. It does not capture UART data or set baud rates.
+USB-to-UART bridge. Download, extract, and run `./PicoUart web`; no .NET install is needed. It reads channel health
+and traffic over the board's USB HID interface, so your serial tools keep using the six CDC ports. UART data capture
+and baud-rate changes belong to those serial tools.
 
 ## Requirements
 
-- Linux x64, Windows x64, or Apple Silicon macOS (the release archive needs no .NET install)
-- A Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected by USB
+- Linux x64, Windows x64, or Apple Silicon macOS
+- A flashed board ([firmware releases](https://github.com/djwinter29-oss/PicoUart/releases)) connected by USB
 - Access to the board's HID interface; on Linux, follow the
   [device permission setup](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/hardware-setup.md#linux-hid-permissions)
 
@@ -33,9 +34,9 @@ On Windows, use `.\PicoUart.exe`.
 ./PicoUart web
 ```
 
-Open <http://127.0.0.1:5000/>. The dashboard listens on loopback only, needs no WebHID, and shows channel health and
-traffic, dropped bytes, firmware and hardware identity, clock, and temperature. Press `Ctrl+C` to stop it, and use
-`--port 5001` if the port is taken.
+Open <http://127.0.0.1:5000/>. The dashboard listens on loopback only, works in any browser, and shows channel health
+and traffic, dropped bytes, firmware and hardware identity, clock, and temperature. Press `Ctrl+C` to stop it, and
+use `--port 5001` if the port is taken.
 
 With several boards, use `--serial ABC123` or `--device-path PATH` (not both), or pick one in the dashboard with
 **Board** and **Rescan**. Run one host process per board.

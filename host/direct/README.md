@@ -1,26 +1,28 @@
 # PicoUart Direct Dashboard
 
-A browser dashboard for the [PicoUart](https://github.com/djwinter29-oss/PicoUart) six-channel USB-to-UART bridge. It
-shows board identity, runtime health, per-channel traffic, and RX dropped-byte counts for Pico and Pico 2, with nothing
-to install.
+A browser dashboard for the [PicoUart](https://github.com/djwinter29-oss/PicoUart) six-channel USB-to-UART bridge. Open
+it in desktop Chrome or Edge to see board identity, runtime health, per-channel traffic, and RX dropped-byte counts for
+Pico and Pico 2. Nothing to install:
 
-It talks to the board's USB HID interface through the browser's WebHID API, with no Python or .NET backend. UART data
-and baud/framing settings stay on the six CDC serial ports.
+**<https://djwinter29-oss.github.io/PicoUart/>**
+
+It talks to the board's USB HID interface through the browser's WebHID API, so no Python or .NET backend is involved.
+UART data and baud/framing settings stay on the six CDC serial ports.
 
 ## Requirements
 
 - Desktop Chrome or Edge with WebHID. Firefox, Safari, and most mobile browsers do not support it.
-- A Pico or Pico 2 running [PicoUart firmware](https://github.com/djwinter29-oss/PicoUart/releases), connected to the
-  computer running the browser
+- A flashed board ([firmware releases](https://github.com/djwinter29-oss/PicoUart/releases)) connected to the computer
+  running the browser
 - Operating-system access to the HID interface; on Linux, follow the
   [device permission setup](../../docs/hardware-setup.md#linux-hid-permissions)
 - Firmware with the [current HID report format](../../docs/design/usb/hid-report-reference.md)
 
 ## Use It
 
-Open the [hosted dashboard](https://djwinter29-oss.github.io/PicoUart/), connect the flashed board with a USB data
-cable, click **Connect**, and choose the PicoUart HID interface. The button becomes **Disconnect** while connected.
-Pages you host yourself need HTTPS or localhost.
+Connect the board with a USB data cable, open the [hosted dashboard](https://djwinter29-oss.github.io/PicoUart/),
+click **Connect**, and choose the PicoUart HID interface. The button becomes **Disconnect** while connected. Pages you
+host yourself need HTTPS or localhost.
 
 Identity is read once, and the channel snapshots then refresh continuously. Fault history and buffer peaks are read
 separately as diagnostics. Traffic figures are cumulative byte counters; if a report is missed, the rate estimate is
@@ -28,8 +30,8 @@ marked incomplete for the rest of the connection.
 
 Run one HID monitor per board, because other native clients compete for the same reports.
 
-The page has no CLI, JSON export, or UART capture. For scripted logs or a browser without WebHID, disconnect the
-browser and use the [Python](../python/README.md) or [.NET](../dotnet/README.md) host.
+For scripted logs, JSON export, or a browser without WebHID, disconnect the browser and use the
+[Python](../python/README.md) or [.NET](../dotnet/README.md) host.
 
 ## Controls
 

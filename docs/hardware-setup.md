@@ -8,16 +8,14 @@ How to wire UART devices to a PicoUart board and find its serial ports. The pin 
 | Board | MCU | Firmware image |
 | --- | --- | --- |
 | Raspberry Pi Pico | RP2040 | `pico` |
-| Raspberry Pi Pico W | RP2040 | `pico` |
 | Raspberry Pi Pico 2 | RP2350 | `pico2` |
-| Raspberry Pi Pico 2 W | RP2350 | `pico2` |
 
 <img src="assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico" width="240" />
 <img src="assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2" width="240" />
 
-W boards run the `pico` or `pico2` image on the same pins and report Pico or Pico 2 over HID. Wi-Fi and Bluetooth are
-unused, and LED identification does nothing because the W LED is wired through the wireless chip. Release HIL testing
-covers Pico and Pico 2 only.
+Pico W and Pico 2 W also work with the `pico` and `pico2` images on the same pins. There is no W-specific build, so
+Wi-Fi and Bluetooth stay unused and LED identification does nothing, because the W LED is wired through the wireless
+chip. They report as Pico or Pico 2 over HID. Release HIL testing covers Pico and Pico 2 only.
 
 ## Installing Firmware
 
@@ -55,10 +53,23 @@ firmware; enabling it is a per-port build setting listed under
 - Connect RTS to the peer's CTS, and CTS to the peer's RTS, only when flow control is enabled and tested.
 - Use 3.3 V UART logic. Never connect 5 V or RS-232 levels directly to RP2040 or RP2350 GPIOs.
 
+## Check a Peer Connection
+
 After wiring a peer, open the peer's CDC port with DTR asserted and exchange a known byte pattern using your serial
 tool before relying on the connection.
 
-For the fixed loopback wiring used in hardware tests, see [HIL fixture setup](tests/hil-fixture-setup.md).
+To check one port against a Debug Probe UART, disconnect power and remove any [HIL fixture](tests/hil-fixture-setup.md)
+jumpers first, so two TX outputs cannot drive the same RX line. Wire the port to the probe with crossed TX/RX and shared
+ground, reconnect power, and run the following from a checkout. This check is not part of HIL pass criteria.
+
+```sh
+tools/hil/runner/bridge.sh \
+  --pico-port /dev/serial/by-id/<pico-cdc-endpoint> \
+  --peer-port /dev/serial/by-id/<debug-probe-uart> \
+  --label manual-debug-probe --baud 115200
+```
+
+Disconnect power before restoring the four fixture links for a baseline HIL run.
 
 ## Power
 

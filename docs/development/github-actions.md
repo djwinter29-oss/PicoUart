@@ -30,23 +30,12 @@ recovery behavior. Qualify the exact candidate artifacts using the
 publishes.
 
 ```mermaid
-flowchart TD
-  Tag["Version-tag push"] --> Host["Reusable Host Validation"]
-  Tag --> Firmware["pico / pico2<br/>Build, verify, package, checksum"]
-  Host --> Python["Python wheel<br/>Build, install-check, checksum"]
-  Host --> Dotnet[".NET native matrix<br/>Publish, extract-check, checksum"]
-  Host --> Gate["GitHub-publication job"]
-  Firmware --> Gate
-  Python --> Gate
-  Dotnet --> Gate
-  PR["Successful PR Check<br/>for the exact release commit"] -.->|"Explicit gate check"| Gate
-  Gate --> Release["Published GitHub Release<br/>Packaged artifacts and checksums"]
-  Release --> Complete["Successful Release workflow completion"]
-  Complete --> PyPI["PyPI: release/checksum/version gates<br/>Protected upload of unchanged wheel"]
-  Complete --> Pages["Pages: release/check gates<br/>Validated commit, Node checks, version stamp"]
+flowchart LR
+  Tag["Version-tag push<br/>build, package, checksum"] --> Gate["Publication gates<br/>host validation + PR Check"]
+  Gate --> Release["GitHub Release"]
+  Release --> Publish["PyPI and Pages<br/>after Release completes"]
 ```
 
 See [releasing](../deployment/releasing.md) for publication eligibility and
-[host app publishing](../deployment/host-app-publishing.md) for channel operations.
-
-When workflows change their triggers, gate dependencies, or what the checks establish, update this map too.
+[host app publishing](../deployment/host-app-publishing.md) for channel operations. The
+[workflow files](../../.github/workflows/) define job names, dependencies, and gates.

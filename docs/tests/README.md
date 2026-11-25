@@ -39,12 +39,30 @@ timing, USB enumeration, multicore load, or physical UART signalling.
 
 ## With Hardware
 
+Follow these steps in order; each document below owns one step.
+
 1. Wire the fixture: [HIL Fixture Setup](hil-fixture-setup.md).
-2. Run the [standard combined run](hil-fixture-test-plan.md#standard-combined-run); it writes a dated record to
-   [records/](records/README.md). Pair sweeps are in the same plan; recovery, stress, and startup checks are in the
-   [HIL recovery and stress plan](hil-recovery-and-stress.md).
-3. For a release, test the exact packaged artifacts and follow the gates in
+2. Flash the image and record its version and SHA-256 ([USB](../hardware-setup.md#installing-firmware) or
+   [SWD](../../firmware/build-and-config.md#debug-probe-loading-and-recovery)). Confirm CDC0 through CDC5 and HID
+   enumerate.
+3. Run the [standard combined run](hil-fixture-test-plan.md#standard-combined-run). It writes a dated record to
+   [records/](records/README.md). The same plan has the pair sweeps.
+4. Run the [recovery, stress, and startup checks](hil-recovery-and-stress.md) the change or release requires. Open
+   coverage is under [Known Gaps](hil-recovery-and-stress.md#known-gaps).
+5. For a release, test the exact packaged artifacts and follow the gates in
    [Releasing](../deployment/releasing.md#release-hil-gates).
+6. Remove the fixture jumpers before connecting external UART equipment.
+
+For a quick check after a change, run the concurrent fixture for 60 seconds at 115200 baud, then test individual links
+at 921600 and 1000000. Capture HID health before and after, while no other monitor is reading the board:
+
+```sh
+host/python/.venv/bin/pico-uart monitor --duration 5
+host/python/.venv/bin/pico-uart overruns
+```
+
+This is not release stability evidence; see the [evidence index](records/README.md#evidence-index) for earlier long
+runs.
 
 ## Results and Evidence
 

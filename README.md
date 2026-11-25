@@ -38,7 +38,8 @@ _The dashboard with simulated telemetry._
 
 - Use **3.3 V UART logic** and a shared ground. Never connect 5 V or RS-232 signals directly.
 - UART0-1 use the hardware UARTs. UART2-5 use PIO and support **8N1 only**.
-- RTS/CTS flow control is off by default and has not been tested on hardware yet.
+- RTS/CTS flow control is off by default and untested on hardware; see
+  [Known Gaps](docs/tests/hil-recovery-and-stress.md#known-gaps).
 
 ## Get Started
 

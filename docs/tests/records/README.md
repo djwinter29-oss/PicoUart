@@ -57,7 +57,8 @@ These records summarize tested workloads; configured baud is not a wire-rate mea
 cover no functional or recovery behavior. Health summaries describe before/after checks, not continuous sampling.
 
 Pico 2 rows below stop on 2026-10-10. No file in this directory is an exact-artifact Pico 2 run for the current
-release. A Pico `PASS` does not qualify `pico2`.
+release. A Pico `PASS` does not qualify `pico2`. Other untested cases are in
+[Known Gaps](../hil-recovery-and-stress.md#known-gaps).
 
 ### Recent Records
 

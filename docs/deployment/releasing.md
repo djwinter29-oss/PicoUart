@@ -63,7 +63,7 @@ Rates above the 115200-baud baseline stay unrated; the
 [speed-ceiling rules](../tests/hil-fixture-test-plan.md#baseline-and-speed-ceiling) say what a sweep measures. Older
 [record index](../tests/records/README.md#evidence-index) entries do not replace a current exact-artifact run.
 
-The [test plan's Known Gaps](../tests/hil-fixture-test-plan.md#known-gaps) lists hardware cases without validated
+The [test plan's Known Gaps](../tests/hil-recovery-and-stress.md#known-gaps) lists hardware cases without validated
 procedures. A required case cannot pass until its procedure and acceptance criteria are validated. Optional claims
 such as RTS/CTS or backpressure need their matching board configuration and HIL variant.
 

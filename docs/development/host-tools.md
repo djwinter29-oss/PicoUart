@@ -103,3 +103,24 @@ Run the published host in the foreground with `dotnet build/host-dotnet/PicoUart
 
 For a self-contained publish, add `--self-contained true -r linux-x64` (or another RID). Ship the whole output
 directory, including `web/`. Use `-p:MinVerVersionOverride=1.2.3` to set the version.
+
+## Launch Scripts
+
+The `tools/host/` launchers run the Python or .NET dashboard (or serve the Direct Dashboard) from a checkout. They
+default to the local dashboard and pass application arguments through unchanged. Each instance needs a separate port
+and gets a port-specific session cookie:
+
+```sh
+tools/host/run-python.sh --serial <serial-1> dashboard --port 5001
+tools/host/run-dotnet.sh --serial <serial-2> web --port 5002
+```
+
+The Direct Dashboard serves static files on loopback port 8000; use `--port` to change it. WebHID permissions apply on
+the computer running the browser. Run a launcher with `--help` for prerequisites and environment overrides. Python and
+.NET check local USB/HID permissions before starting but do not install rules; the Direct Dashboard does not check.
+
+The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides it) and installs the local `pico-uart`
+package, resolving dependencies from public PyPI if Flask or hidapi cannot be imported. It runs the source directly.
+After dependency changes, refresh the environment with [Python Environment Setup](#python-environment-setup). Native
+Windows users run the direct commands in the [Python](../../host/python/README.md),
+[.NET](../../host/dotnet/README.md), and [Direct Dashboard](../../host/direct/README.md) guides.

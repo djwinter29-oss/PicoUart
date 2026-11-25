@@ -43,29 +43,6 @@ stages.
 | 4 | Loop CDC5 TX to CDC5 RX | GP20 → GP21 |
 
 Before testing, identify the board's six CDC ports using the
-[serial-port guide](../hardware-setup.md#find-the-serial-ports). The runner checks HID enumeration.
-
-## Bring-Up Checklist
-
-1. Verify the four links above.
-2. Flash the intended artifact using [USB](../hardware-setup.md#installing-firmware) or
-   [SWD](../../firmware/build-and-config.md#debug-probe-loading-and-recovery), then record its version and SHA-256.
-3. Connect the PicoUart USB device and confirm that CDC0 through CDC5 plus HID enumerate.
-4. Run the [functional and performance plans](hil-fixture-test-plan.md).
-5. Remove all test jumpers before connecting external UART equipment.
-
-## Optional Manual External-Peer Check
-
-A Debug Probe UART connection may be tested manually as an external peer, but it is not part of this HIL fixture or its
-pass criteria. Disconnect power and remove the baseline fixture jumpers before connecting an external peer, so two TX
-outputs cannot drive the same RX line. Wire one PicoUart port to the probe using crossed TX/RX and shared ground, then
-reconnect power and run:
-
-```sh
-tools/hil/runner/bridge.sh \
-  --pico-port /dev/serial/by-id/<pico-cdc-endpoint> \
-  --peer-port /dev/serial/by-id/<debug-probe-uart> \
-  --label manual-debug-probe --baud 115200
-```
-
-Disconnect power before restoring all four fixture links for a subsequent baseline HIL run.
+[serial-port guide](../hardware-setup.md#find-the-serial-ports). The runner checks HID enumeration. Remove all test
+jumpers before connecting external UART equipment. To exercise a port against a real peer instead, see the
+[external-peer check](../hardware-setup.md#check-a-peer-connection).

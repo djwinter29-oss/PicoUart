@@ -10,8 +10,6 @@ Result meanings (`PASS`, `PARTIAL`, `NOT RUN`, and so on) and the evidence each 
 ## Before You Start
 
 - Wire the fixture and identify its endpoints using [HIL Fixture Setup](hil-fixture-setup.md).
-- The manual Debug Probe [external-peer check](hil-fixture-setup.md#optional-manual-external-peer-check) is optional
-  and not part of HIL pass criteria.
 - Follow the [hardware authorization rules](README.md#hardware-authorization). Test `pico` and `pico2` separately
   when available.
 - Attach one PicoUart and confirm every CDC endpoint belongs to it. The runners send UART data and change serial
@@ -73,20 +71,6 @@ when payloads verify.
 
 Every stream checks its returned payload byte for byte. Run the [pair sweeps](#pair-sweeps) for per-link
 characterization or pair-specific claims.
-
-### How the Runners Set Up Ports
-
-The runners process the comma-separated rates sequentially in one process. Each rate gets a fresh setup:
-
-1. Open every endpoint with DTR held low and apply the line coding.
-2. Assert DTR for the group and wait for the HID readiness handshake. The handshake follows the
-   [control plane's session rules](../design/control-plane-design.md#usb-mount-and-unmount-reset).
-3. Wait the settle interval (8 s by default) and flush the host TTY queues, so no stale bytes leak into the next
-   payload.
-4. Take an HID health baseline, run traffic, take health again, then close the ports and restore the TTY settings.
-
-If setup fails, nothing is transmitted. The setup reads back the host TTY speed and fails if it differs from the
-requested rate by 50% or more. This checks the host driver setting; payload verification checks the link end to end.
 
 ### HID Health
 
@@ -158,6 +142,22 @@ The [combined command](#standard-combined-run) is the default. For performance-o
 `tools/hil/runner/performance.sh` (see `--help`). It takes `--cdc0` through `--cdc5` instead of `--pico-cdc0` through
 `--pico-cdc5` and uses the same default rate sweep.
 
+## Runner Reference
+
+### How the Runners Set Up Ports
+
+The runners process the comma-separated rates sequentially in one process. Each rate gets a fresh setup:
+
+1. Open every endpoint with DTR held low and apply the line coding.
+2. Assert DTR for the group and wait for the HID readiness handshake. The handshake follows the
+   [control plane's session rules](../design/control-plane-design.md#usb-mount-and-unmount-reset).
+3. Wait the settle interval (8 s by default) and flush the host TTY queues, so no stale bytes leak into the next
+   payload.
+4. Take an HID health baseline, run traffic, take health again, then close the ports and restore the TTY settings.
+
+If setup fails, nothing is transmitted. The setup reads back the host TTY speed and fails if it differs from the
+requested rate by 50% or more. This checks the host driver setting; payload verification checks the link end to end.
+
 ### Timing Output
 
 The benchmark prints one `TIME <label>: {...}` line per stream. It holds the host's thread-start, first-send-attempt,
@@ -168,34 +168,6 @@ to measure wire first-byte times. This diagnostic is not parsed by `pico-uart-hi
 that completes at or after its deadline counts as a timeout, even if the final bytes arrive right at the boundary.
 Host scheduling jitter near the deadline can cause such a timeout.
 
-## Short Diagnostic Run
-
-For a quick post-change check, run the concurrent fixture for 60 seconds at 115200 baud, then test individual links at
-921600 and 1000000. Capture HID health before and after, while no other monitor is reading the board:
-
-```sh
-host/python/.venv/bin/pico-uart monitor --duration 5
-host/python/.venv/bin/pico-uart overruns
-```
-
-This is not release stability evidence; the [release HIL gates](../deployment/releasing.md#release-hil-gates) define
-that. Earlier long runs are in the [evidence index](records/README.md#evidence-index).
-
-## Known Gaps
-
-Open hardware coverage:
-
-- The fixture cannot test input that keeps arriving while the host has stopped reading. Every byte starts as a host
-  write, so this needs an independently paced UART source.
-- RTS/CTS has not been tested; there is no flow-control fixture yet.
-- Pico 2 has much thinner coverage than Pico. Check the [evidence index](records/README.md#evidence-index) before
-  relying on it; a Pico result does not carry over.
-- Sustained DMA wrap/re-arm endurance with the normal transfer count remains untested. A shortened-countdown attempt
-  produced invalid results; no safe injection procedure is validated yet.
-- Watchdog recovery has one development observation, but no repeatable trigger procedure is documented. See the
-  [review record](records/2026-10-23-uart-cdc-review-validation.md#configuration-isolation-and-recovery).
-- Cold-power-on, watchdog, and USB-reset startup remain unqualified. See the
-  [startup observation](hil-recovery-and-stress.md#startup-observation).
-
-For firmware parameter comparisons, follow the single
+For firmware parameter comparisons, follow the
 [tuning and measurement guide](../development/firmware-timing-and-buffer-measurements.md#comparing-tuning-candidates).
+Untested hardware cases are listed under [Known Gaps](hil-recovery-and-stress.md#known-gaps).
