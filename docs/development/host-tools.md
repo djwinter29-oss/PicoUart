@@ -1,12 +1,9 @@
 # Host Tools Development
 
-Use this guide to develop the Python package or .NET host from a checkout. For installation and everyday use, see the
-[Python](../../host/python/README.md) and [.NET](../../host/dotnet/README.md) guides. For browser app development and
-HTTP behavior, see the [dashboard behavior and presentation guide](dashboard-development.md).
-
-Run commands from the repository root. Setup and tests here do not require a board. Most command examples use POSIX
-shell syntax; the Python setup section includes the native PowerShell equivalent. Host changes must follow the
-[HID reference](../design/usb/hid-report-reference.md).
+Develop the Python package or .NET host from a checkout; commands below run from the repository root and need no
+board. For browser app development, see the [dashboard guide](dashboard-development.md); host changes must follow the
+[HID reference](../design/usb/hid-report-reference.md). Most examples use POSIX shell syntax, with PowerShell shown
+for Python setup.
 
 ## Python
 
@@ -32,9 +29,10 @@ python -m pip install --no-build-isolation -e host/python
 
 If PowerShell blocks activation, omit that line and use `.\host\python\.venv\Scripts\python.exe` instead of `python`
 for commands run from the repository root. From `host/python`, use `.\.venv\Scripts\python.exe`.
-Reinstall after changing dependencies. If pip has no hidapi wheel for your platform, it builds the package from source;
-see the [hidapi installation instructions](https://github.com/trezor/cython-hidapi) for native prerequisites.
-Python and .NET versions come from Git tags, so builds need full tag history.
+
+- Reinstall after changing dependencies.
+- If pip has no hidapi wheel for your platform, it builds the package from source; see the
+  [hidapi installation instructions](https://github.com/trezor/cython-hidapi) for native prerequisites.
 
 ### Tests and Checks
 
@@ -67,8 +65,8 @@ uv build --wheel --directory host/python
 ```
 
 The standard-library copy command works in POSIX shells and PowerShell. This builds locally; it does not publish.
-`hatch-vcs` derives the version from Git tags, or uses `0.0.0.dev0` without Git metadata. Set
-`SETUPTOOLS_SCM_PRETEND_VERSION` to override it. Publication instructions are in
+`hatch-vcs` derives the version from Git tags, or uses `0.0.0.dev0` without Git metadata; builds need full tag history.
+Set `SETUPTOOLS_SCM_PRETEND_VERSION` to override it. See
 [Host App Distribution and Publishing](../deployment/host-app-publishing.md).
 
 ## .NET Development

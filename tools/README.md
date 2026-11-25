@@ -48,6 +48,9 @@ tools/host/run-dotnet.sh --serial <serial-2> web --port 5002
 The same pattern works for multiple instances of either backend. The Direct Dashboard serves static files on loopback
 port 8000; use `--port` to change it. WebHID permissions apply on the computer running the browser.
 
+Native Windows users can use the direct commands in the [Python](../host/python/README.md),
+[.NET](../host/dotnet/README.md), and [Direct Dashboard](../host/direct/README.md) guides.
+
 Run a launcher with `--help` for prerequisites and environment overrides. Python and .NET check local USB/HID
 permissions before starting, but do not install rules automatically. The Direct Dashboard does not check permissions.
 
@@ -55,8 +58,6 @@ The Python launcher creates or reuses `host/python/.venv` (`VENV_DIR` overrides 
 package, resolving dependencies from public PyPI if Flask or hidapi cannot be imported. It runs the source directly.
 After dependency changes, refresh the environment using the
 [developer setup](../docs/development/host-tools.md#python-environment-setup).
-Native Windows users can use the direct commands in the [Python](../host/python/README.md),
-[.NET](../host/dotnet/README.md), and [Direct Dashboard](../host/direct/README.md) guides.
 
 ## Linux HID Permissions
 

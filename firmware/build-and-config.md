@@ -71,6 +71,9 @@ openocd -d3 -f interface/cmsis-dap.cfg -c 'transport select swd' -c 'adapter spe
 If OpenOCD reports `Unknown flash device` after finding the target, update OpenOCD first. Flash ID `0x00154068`
 (Boya BY25Q16ES) needs a recent OpenOCD build; pass it with `--openocd-exe`.
 
+After repeated verification failures or an all-`0xff` readback, physically disconnect both board and probe until
+their LEDs go out, reconnect them, then retry.
+
 ### QSPI Auto-Detection Override
 
 Use this only with stable SWD and flash capacity confirmed from the chip marking and datasheet. OpenOCD uses capacity

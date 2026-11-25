@@ -13,8 +13,8 @@ evidence exists.
 1. Complete the [preflight](#release-preflight).
 2. Push the `vMAJOR.MINOR.PATCH` tag. The Release workflow publishes the GitHub Release once its gates pass, and the
    PyPI and Pages publishers follow automatically ([host app publishing](host-app-publishing.md)).
-3. [Flash the packaged images](#flashing-release-artifacts) without rebuilding, and pass the
-   [release HIL gates](#release-hil-gates) on each rated board before calling the release hardware-qualified.
+3. [Flash the packaged images](#flashing-release-artifacts) and run the
+   [release HIL gates](#release-hil-gates) on each rated board.
 
 The CI job graph is described in [GitHub Actions](../development/github-actions.md).
 
@@ -23,9 +23,6 @@ The CI job graph is described in [GitHub Actions](../development/github-actions.
 Before tagging, make sure the change is reviewed, the tree has no stray files, and `git diff --check` is clean. Pick
 the version using the [versioning policy](#versioning), note USB/HID compatibility changes for the release notes, and
 confirm private vulnerability reporting is enabled in the repository settings ([SECURITY.md](../../SECURITY.md)).
-
-Don't start physical testing from an uncommitted or locally modified image; the result would not describe anything you
-can release.
 
 ## Publication Gates
 
@@ -38,14 +35,7 @@ The [gate script](../../tools/release/require_release_checks.py) looks at the la
 pending run blocks publication even if an older run succeeded. Publishers also refuse a tag that has moved away from
 the triggering commit.
 
-Manual test modes are the only exception. They run their own scoped checks, use clearly marked non-release versions,
-and never qualify firmware; see [host app publishing](host-app-publishing.md#manual-test-modes).
-
-## USB Identity
-
-PicoUart uses the Raspberry Pi-allocated identity `2e8a:116b` from the
-[official PID list](https://github.com/raspberrypi/usb-pid). Do not reuse it for other products; derivatives need their
-own VID/PID. Changing the identity is a breaking USB change.
+Manual test modes bypass the full release gate; see [host app publishing](host-app-publishing.md#manual-test-modes).
 
 ## Flashing Release Artifacts
 
@@ -86,3 +76,9 @@ USB `bcdDevice`.
 
 For a manual Release preflight or .NET packaging run, **tag** is only a version label: it does not need to exist and is
 not created. Stable PyPI uploads and release-mode Pages deployments require an existing published release tag.
+
+## USB Identity
+
+PicoUart uses the Raspberry Pi-allocated identity `2e8a:116b` from the
+[official PID list](https://github.com/raspberrypi/usb-pid). Do not reuse it for other products; derivatives need their
+own VID/PID. Changing the identity is a breaking USB change.

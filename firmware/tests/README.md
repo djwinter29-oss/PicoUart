@@ -1,4 +1,4 @@
-# Firmware Host Tests
+# Native Firmware Tests
 
 This directory contains native C tests for firmware logic that can run without a Pico board. The tests use Unity, CMake,
 and CTest; they do not exercise the TinyUSB device stack, live DMA IRQs, or physical UART wiring.

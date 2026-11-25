@@ -68,7 +68,7 @@ stateDiagram-v2
 ```
 
 - TX idle is proven with fresh evidence. The worker clears the TX state machine's stall flag, then waits for it to
-  reassert on a later pass. It never busy-waits, so sibling ports stay serviced even at slow baud rates.
+  reassert on a later pass. It never busy-waits.
 - The final check runs inside a short critical section, with the state machines and RX DMA paused. Any late activity
   restores service and defers the change. The control plane's deadline bounds the retries.
 - The default configuration enables the RX pull-up and also requires RX to be idle-high before changing.

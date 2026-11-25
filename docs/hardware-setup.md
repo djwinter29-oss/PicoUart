@@ -15,17 +15,18 @@ How to wire UART devices to a PicoUart board and find its serial ports. The pin 
 <img src="assets/raspberry-pi-pico.jpg" alt="Raspberry Pi Pico" width="240" />
 <img src="assets/raspberry-pi-pico-2.jpg" alt="Raspberry Pi Pico 2" width="240" />
 
-W boards have no separate image. They run the `pico` or `pico2` image on the same pins and report Pico or Pico 2 over
-HID. Wi-Fi and Bluetooth are unused, and LED identification does nothing because the W LED is wired through the
-wireless chip. Release HIL testing covers Pico and Pico 2 only.
+W boards run the `pico` or `pico2` image on the same pins and report Pico or Pico 2 over HID. Wi-Fi and Bluetooth are
+unused, and LED identification does nothing because the W LED is wired through the wireless chip. Release HIL testing
+covers Pico and Pico 2 only.
 
 ## Installing Firmware
 
-For first setup or an update, download the image listed above from
-[GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases). Hold **BOOTSEL** while connecting the USB
-cable, then copy the `.uf2` file to the `RPI-RP2` or `RP2350` drive. The board reboots when the copy finishes. On
-Linux, configure [HID permissions](#linux-hid-permissions) before checking the version. With the Python host
-installed, run `pico-uart version` ([CLI guide](../host/python/README.md#command-line)) before resuming UART traffic.
+1. Download the image listed above from
+   [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases).
+2. Hold **BOOTSEL** while connecting the USB cable.
+3. Copy the `.uf2` file to the `RPI-RP2` or `RP2350` drive. The board reboots when the copy finishes.
+4. On Linux, configure [HID permissions](#linux-hid-permissions). With the Python host installed, check the firmware
+   version using `pico-uart version` ([CLI guide](../host/python/README.md#command-line)).
 
 The [HIL evidence index](tests/records/README.md#evidence-index) lists which firmware builds passed hardware tests.
 
@@ -54,6 +55,9 @@ firmware; enabling it is a per-port build setting listed under
 - Connect RTS to the peer's CTS, and CTS to the peer's RTS, only when flow control is enabled and tested.
 - Use 3.3 V UART logic. Never connect 5 V or RS-232 levels directly to RP2040 or RP2350 GPIOs.
 
+After wiring a peer, open the peer's CDC port with DTR asserted and exchange a known byte pattern using your serial
+tool before relying on the connection.
+
 For the fixed loopback wiring used in hardware tests, see [HIL fixture setup](tests/hil-fixture-setup.md).
 
 ## Power
@@ -76,13 +80,7 @@ interface instead. CDCn uses USB interface number 2×n and the interface name be
 | CDC4    | 8                | `-if08`              | `CDC4 PIO 8N1` |
 | CDC5    | 10               | `-if0a`              | `CDC5 PIO 8N1` |
 
-On Linux, use the stable paths from `ls -l /dev/serial/by-id/`; the suffix is the hexadecimal interface number. On
-other systems, match the interface number or name shown by the OS device tools. With several boards attached, the
-board's unique USB serial number in the device name distinguishes them.
-
-After wiring a peer, confirm all six CDC ports enumerate. Open the peer's CDC port with DTR asserted; that opens its
-UART. Exchange a known byte pattern with the peer using your serial tool before relying on the connection. Seeing the
-ports alone confirms USB enumeration, not UART wiring.
+On Linux, use the stable paths from `ls -l /dev/serial/by-id/`; the suffix is the hexadecimal interface number.
 
 Example observed Linux entries (board serial redacted; `/dev/ttyACM*` assignments vary):
 
@@ -94,6 +92,9 @@ usb-djwinter_PicoUart_<board-serial>-if06 -> ../../ttyACM5
 usb-djwinter_PicoUart_<board-serial>-if08 -> ../../ttyACM6
 usb-djwinter_PicoUart_<board-serial>-if0a -> ../../ttyACM7
 ```
+
+On other systems, match the interface number or name shown by the OS device tools. With several boards attached, the
+board's unique USB serial number in the device name distinguishes them.
 
 ## Linux HID Permissions
 

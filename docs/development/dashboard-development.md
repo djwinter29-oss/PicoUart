@@ -1,7 +1,7 @@
 # Dashboard Behavior and Presentation
 
-This guide covers the shared Python/.NET frontend in `host/web/src` and the separate Direct Dashboard in
-`host/direct/src`. For endpoint behavior, see the Python [route tests](../../host/python/tests/dashboard/test_app.py),
+This guide covers the shared Python/.NET frontend in `host/web/src`, the Direct Dashboard in `host/direct/src`, and
+their checks: Python [route tests](../../host/python/tests/dashboard/test_app.py),
 [configuration tests](../../host/python/tests/dashboard/test_configuration_save.py), and
 [published .NET contract tests](../../tests/tooling/test_dotnet_host.py). For Python API, CLI, or server implementation,
 see [Host Tools Development](host-tools.md).

@@ -15,10 +15,36 @@ CFLAGS='-DPICO_UART_PROFILE_TIMING=1 -DPICO_UART_USB_CDC_BRIDGE_PASS_BUDGET=512'
 ```
 
 This adds three SWD-readable arrays of observed maxima, in microseconds: `service_load_max_pass_us[2]`,
-`service_load_max_gap_us[2]`, and `uart_driver_max_service_gap_us[6]`. Find them with `arm-none-eabi-nm`, zero them
-just before the traffic run, then read them without halting the cores:
-`echo [read_memory <address> 32 <count>]`. These are maxima from one instrumented run, not worst-case timing or
-release evidence; use them to compare candidates as described below. Previous results are in
+`service_load_max_gap_us[2]`, and `uart_driver_max_service_gap_us[6]`. Find their addresses in the ELF:
+
+```sh
+arm-none-eabi-nm -n build/profile-default/pico_uart.elf | grep -E \
+  'service_load_max_(pass|gap)_us|uart_driver_max_service_gap_us'
+```
+
+Start OpenOCD with the same probe and target settings as the
+[firmware loading guide](../../firmware/build-and-config.md#debug-probe-loading-and-recovery). For a Pico, use:
+
+```sh
+openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "adapter speed 1000" -c "init"
+```
+
+For Pico 2, use `target/rp2350.cfg`; add `-c "adapter serial <serial>"` when selecting a specific probe. In another
+terminal, connect to the OpenOCD console with `telnet localhost 4444`. Replace each placeholder below with the
+matching address reported by `nm`. Zero the arrays immediately before traffic, then read them afterward:
+
+```tcl
+write_memory <service_load_max_pass_us_address> 32 0 2
+write_memory <service_load_max_gap_us_address> 32 0 2
+write_memory <uart_driver_max_service_gap_us_address> 32 0 6
+echo [read_memory <service_load_max_pass_us_address> 32 2]
+echo [read_memory <service_load_max_gap_us_address> 32 2]
+echo [read_memory <uart_driver_max_service_gap_us_address> 32 6]
+```
+
+Use counts 2, 2, and 6 for the three arrays, respectively. Do not halt or reset the cores during the run. These maxima
+come from one instrumented run; they are not worst-case timing or release evidence. Use them to compare candidates as
+described below. Previous results are in
 [the matched refill experiments](../tests/records/2026-10-23-uart-cdc-review-validation.md#matched-refill-experiments).
 
 ## Comparing Tuning Candidates

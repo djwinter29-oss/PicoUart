@@ -36,11 +36,6 @@ via CDC; HID only reports what was applied.
 | CDC ACM | 6 | UART bytes, DTR, and line coding for UART0-UART5 | Terminals, test runners, serial libraries |
 | Vendor HID | 1 | Status, diagnostics, and board controls | Python, .NET, and Direct Dashboard |
 
-[Hardware setup](../hardware-setup.md#port-map) owns the pin map. The
-[control plane](control-plane-design.md) defines session and line-coding transitions, and
-[ring buffers](uart/ring-buffer-design.md) define buffering and full-ring behavior. The
-[HID reference](usb/hid-report-reference.md) specifies report layouts and board actions.
-
 Use **CDC port** for the USB serial interface and **channel** for its firmware status and diagnostics; channel `n`
 maps to CDCn.
 
@@ -52,6 +47,7 @@ maps to CDCn.
   exactly one producer and one consumer.
 - **Configuration stays on the control path.** Core 0 hands line-coding requests to core 1, which applies them at a
   safe point.
+- **Ports are isolated.** A slow or reconfiguring port does not prevent the worker from servicing other ports.
 - **Diagnostics are separate from data.** HID reports health and counters without competing with serial traffic.
 - **Board pinout stays separate.** A constant board table maps each port to its pins and backend; transport and
   lifecycle code stay board-independent.
@@ -60,18 +56,22 @@ maps to CDCn.
 
 ```mermaid
 flowchart LR
-  Port["Logical-port API"] -->|"Rings and snapshots"| Ops["Backend operations"]
-  Runtime["UART runtime / worker"] -->|"Start, stop, service"| Ops
+  Rings["Rings"] -->|"UART data"| Ops["Backend operations"]
   Control["Control plane"] -->|"Validate and apply"| Ops
+  BoardMap["Board pin map"] -->|"Pins and backend"| HW["Hardware UART backend"]
+  BoardMap --> PIO["PIO UART backend"]
   Ops --> HW["Hardware UART backend"]
   Ops --> PIO["PIO UART backend"]
+  Ops -.->|"Telemetry"| HID["HID protocol"]
+  Control -.->|"Status"| HID
 ```
 
 | Component | Responsibility | Design |
 | --- | --- | --- |
 | Rings | Per-port buffering, overflow and backpressure policy | [Ring buffers](uart/ring-buffer-design.md) |
+| Board map | Per-port pin and backend assignments | [Hardware setup](../hardware-setup.md#port-map) |
 | Control plane | Line-coding hand-off, deadlines, error reporting | [Control plane](control-plane-design.md) |
-| Backend operations | Common contract for both UART implementations | [Backend contract](uart/backend-adapter-design.md) |
+| Backend operations | Common contract for both UART implementations | [Backend operations contract](uart/backend-adapter-design.md) |
 | Hardware UART | PL011 with RX/TX DMA | [Hardware UART](uart/hardware-uart-design.md) |
 | PIO UART | PIO state machines with RX DMA and hybrid TX | [PIO UART](uart/pio-uart-design.md) |
 | HID protocol | Report layouts, states, and board actions | [HID report reference](usb/hid-report-reference.md) |
@@ -89,8 +89,7 @@ memory barriers between. Rings take no locks, so the data path never waits on st
 ### Control Mailbox
 
 Each port has one mailbox slot for line-coding requests. Core 0 fills it and core 1 takes it under the shared status
-lock; the [control plane](control-plane-design.md) defines the ownership hand-off and completion. Ports never block each
-other's mailboxes.
+lock; the [control plane](control-plane-design.md) defines the ownership hand-off and completion.
 
 ### Shared State and Telemetry
 

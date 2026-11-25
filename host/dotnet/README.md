@@ -13,8 +13,6 @@ interface, so your serial tools keep using the six CDC ports. It does not captur
 
 ## Install
 
-### From a Release Archive
-
 Download the archive for your computer (not the Pico) from
 [GitHub Releases](https://github.com/djwinter29-oss/PicoUart/releases):
 

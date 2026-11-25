@@ -1,10 +1,7 @@
 # PicoUart Copilot Instructions
 
-- Follow the [engineering conventions](../CONTRIBUTING.md#engineering-conventions): small focused changes, the six
-  CDC-to-UART design, Pico SDK and TinyUSB conventions, pin mapping separate from transport, Doxygen, `ponytail:`
-  comments, and focused regression checks.
+- Follow the [engineering conventions](../CONTRIBUTING.md#engineering-conventions).
 - Read the relevant design, test, or release guide before changing behavior, and follow existing repository patterns.
-  Do not copy their procedures here.
 - Before adding code, check whether it is needed, already exists, or can use the standard library or an installed
   dependency. Prefer the smallest implementation and avoid unrequested abstractions or dependencies.
 - Fix root causes rather than symptoms. Validate inputs at trust boundaries and handle errors that could lose data.

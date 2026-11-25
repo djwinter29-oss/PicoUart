@@ -69,8 +69,7 @@ These commands read diagnostics only; they do not send or capture UART data. On 
 
 | Topic | Where to look |
 | --- | --- |
-| Wiring, pin map, finding ports | [Hardware setup](docs/hardware-setup.md) |
-| Supported boards and carrier compatibility | [Hardware setup](docs/hardware-setup.md#supported-boards) |
+| Wiring, pin map, supported boards, carrier compatibility, finding ports | [Hardware setup](docs/hardware-setup.md) |
 | How the firmware works | [Architecture](docs/design/architecture.md) and the other [design docs](docs/design/) |
 | Firmware build/configuration | [Guide](firmware/build-and-config.md) |
 | Firmware tests | [Native C tests](firmware/tests/README.md), [timing and buffer measurements](docs/development/firmware-timing-and-buffer-measurements.md) |

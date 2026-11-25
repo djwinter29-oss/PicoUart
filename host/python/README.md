@@ -86,9 +86,9 @@ with PicoUartHid() as board, serial.Serial("COM5", 115200) as port:  # replace w
     port.write(b"hello\n")
 ```
 
-The host name `COM5` is only an example. Find your board's `CDC0` port in the
-[serial-port guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/hardware-setup.md#find-the-serial-ports);
-port 0 in the Python call is that same `CDC0` channel. The wait raises `TimeoutError` if it is not ready in time and
+Find your board's `CDC0` port in the
+[serial-port guide](https://github.com/djwinter29-oss/PicoUart/blob/main/docs/hardware-setup.md#find-the-serial-ports).
+Port 0 in the Python call is that same `CDC0` channel. The wait raises `TimeoutError` if it is not ready in time and
 `OSError` if the board could not apply the settings.
 
 ### Other Methods

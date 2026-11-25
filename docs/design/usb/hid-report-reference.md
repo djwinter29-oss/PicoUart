@@ -77,8 +77,8 @@ diagnostics only; capability flags gate operations.
 The board model is the configured build target; firmware does not detect hardware. Keep unknown MCU and board numbers
 as reported rather than inventing names.
 
-| Board model | Build target | MCU | Support status |
-| ----------: | ------------ | --- | -------------- |
+| Board model | Board | MCU | Support status |
+| ----------: | ----- | --- | -------------- |
 | `0` | Unknown / unspecified | Reported separately | No specific board identity claimed. |
 | `1` | Pico | RP2040 | Existing firmware target. |
 | `2` | Pico W | RP2040 | Reserved; not a supported build target. Pico W boards run `pico` and report `1`. |
@@ -199,8 +199,7 @@ Live measurements only.
 | 16 | 4 | `system_clock_hz` | Current SDK-reported `clock_get_hz(clk_sys)`, nonzero. |
 | **Total** | **20** | | **21 bytes including the report ID.** |
 
-If any mandatory measurement fails, the whole GET fails. A successful response contains all mandatory measurements.
-The load sentinel `65535` and an absent LED are valid values.
+If any mandatory measurement fails, the whole GET fails. The load sentinel `65535` and an absent LED are valid values.
 
 **Service load** is the wall time spent in service passes that did real work, divided by the measurement window.
 Each core publishes about once a second and reports `65535` before its first window. Core 0 counts USB, CDC, control,

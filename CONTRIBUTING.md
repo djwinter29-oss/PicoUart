@@ -10,8 +10,6 @@ physical UART validation and release qualification require hardware.
   [pull requests](https://github.com/djwinter29-oss/PicoUart/pulls) to avoid duplicate work.
 - For new features, design changes, or substantial changes, open an issue to agree on scope before starting.
   Well-scoped bug fixes do not require prior approval.
-- When reporting a bug, include reproduction steps, expected and actual behavior, and relevant versions and logs.
-  For hardware issues, also include the board target, firmware artifact, and wiring. Remove sensitive information.
 
 ## Development Setup
 
@@ -59,12 +57,11 @@ claiming hardware validation. Exact-artifact HIL is required for release qualifi
 - Mark intentional simplifications with `ponytail:`. If a shortcut has a known ceiling, document why it is acceptable
   and what would replace it if the ceiling becomes a problem.
 - Add a focused regression check for non-trivial fixes or new behavior.
-- Update matching docs when behavior changes; do not duplicate content across docs.
 
 ## Pull Requests
 
 - Explain the problem, the change, and any compatibility impact; link the related issue when applicable.
-- List checks run and their results, and identify skipped checks and why they were skipped.
+- List the checks run and their results.
 
 ## Reporting Security Issues
 

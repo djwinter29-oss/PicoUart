@@ -6,10 +6,13 @@ contract, with no backend-specific branches. USB and board code never call it di
 
 ## What the Contract Covers
 
-The contract covers lifecycle (start, stop, restart, readiness), a single worker pass that moves data between the
-rings and the hardware, access to the port's RX and TX [rings](ring-buffer-design.md), line coding (whether a format is
-supported, and applying it once it is safe; see the [control plane](../control-plane-design.md)), and telemetry: traffic
-and error counters plus coherent RX progress snapshots.
+The contract covers:
+
+- Lifecycle: start, stop, restart, and readiness.
+- Worker service: move data between rings and hardware.
+- [Ring access](ring-buffer-design.md): per-port RX and TX rings.
+- Line coding: format support and safe application through the [control plane](../control-plane-design.md).
+- Telemetry: traffic and error counters, plus coherent RX progress snapshots.
 
 Each backend provides a constant operations table. An incomplete table or an unknown backend fails safely at startup.
 Queries on an inactive backend return neutral values, so callers check readiness before treating results as live.

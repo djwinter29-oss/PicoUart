@@ -14,6 +14,7 @@ and baud/framing settings stay on the six CDC serial ports.
   computer running the browser
 - Operating-system access to the HID interface; on Linux, follow the
   [device permission setup](../../docs/hardware-setup.md#linux-hid-permissions)
+- Firmware with the [current HID report format](../../docs/design/usb/hid-report-reference.md)
 
 ## Use It
 
@@ -23,14 +24,12 @@ Pages you host yourself need HTTPS or localhost.
 
 Identity is read once, and the channel snapshots then refresh continuously. Fault history and buffer peaks are read
 separately as diagnostics. Traffic figures are cumulative byte counters; if a report is missed, the rate estimate is
-marked incomplete for the rest of the connection, which does not mean bytes were lost. After you unplug the board or it
-reboots, click **Connect** again; the page never reopens a device on its own. Missing or unreadable values show `--`
-with the read error, and the firmware must speak the
-[current HID report format](../../docs/design/usb/hid-report-reference.md).
+marked incomplete for the rest of the connection.
 
-Run one HID monitor per board, because other native clients compete for the same reports. The page has no CLI, JSON
-export, or UART capture. For scripted logs, or if your browser lacks WebHID, disconnect the browser and use the
-[Python](../python/README.md) or [.NET](../dotnet/README.md) host instead.
+Run one HID monitor per board, because other native clients compete for the same reports.
+
+The page has no CLI, JSON export, or UART capture. For scripted logs or a browser without WebHID, disconnect the
+browser and use the [Python](../python/README.md) or [.NET](../dotnet/README.md) host.
 
 ## Controls
 
@@ -49,6 +48,9 @@ page writes nothing else, and it never exposes credentials or raw flash.
 - **Connect is disabled:** use desktop Chrome or Edge on HTTPS or localhost, and check that policy allows WebHID.
 - **Board not found or access denied:** check the firmware, the USB data cable, and the browser's site permissions.
   Browser permission does not replace OS permissions, so close other HID clients too.
+- **A value shows `--`:** inspect its read error and update the firmware if it does not use the current HID report
+  format.
+- **Board unplugged or rebooted:** click **Connect** again; the page does not reopen a device automatically.
 - **Page is remote:** the browser chooser lists USB devices on the computer running the browser. A page forwarded from
   an SSH or WSL workspace does not forward USB. Plug the board into the browser's computer, or use the Python or .NET
   dashboard where the board is attached. Never type an OS password into the page.

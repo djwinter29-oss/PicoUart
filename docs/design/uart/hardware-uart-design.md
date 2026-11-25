@@ -16,8 +16,7 @@ re-arms it, and the worker's poll is a fallback. The backend publishes DMA progr
 ## TX Path
 
 When the UART is idle and no line-coding change is blocking TX, the worker sends the next contiguous TX-ring span by
-DMA. The span is committed only after the transfer completes. Each span is capped by a wire-time budget, so one busy
-port cannot monopolize the worker.
+DMA. The span is committed only after the transfer completes. Each span is capped by a wire-time budget.
 
 DMA completion places bytes in the PL011 FIFO; a safe line-coding change waits for the UART to report idle, after the
 final stop bit has left the pin.

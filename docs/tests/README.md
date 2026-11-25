@@ -34,8 +34,8 @@ git diff --check
 The host-test wrapper runs native C and Python tests; add `--skip-python` to run only the C suite. It does not cover
 the .NET host or browser apps. If you changed the .NET host, run the
 [.NET checks](../development/host-tools.md#net-development). For browser changes, run the
-[frontend tests](../development/dashboard-development.md#frontend-tests). Report any check you skipped. Hardware-free
-checks cannot establish DMA timing, USB enumeration, multicore load, or physical UART signalling.
+[frontend tests](../development/dashboard-development.md#frontend-tests). Hardware-free checks cannot establish DMA
+timing, USB enumeration, multicore load, or physical UART signalling.
 
 ## With Hardware
 

@@ -17,7 +17,7 @@ shares no assets with them and deploys `host/direct/src` as-is.
 ## Manual Test Modes
 
 Each channel has a manual test mode for trying changes from a branch. Test modes skip the full release gate, but they
-still run their own checks and environment approvals. They never qualify firmware.
+still run their own checks and environment approvals. They are not release qualification.
 
 | Workflow | Result | Version |
 | --- | --- | --- |

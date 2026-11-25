@@ -9,15 +9,17 @@ Result meanings (`PASS`, `PARTIAL`, `NOT RUN`, and so on) and the evidence each 
 
 ## Before You Start
 
-Wire the fixed fixture and identify its endpoints using [HIL Fixture Setup](hil-fixture-setup.md). The manual Debug
-Probe [external-peer check](hil-fixture-setup.md#optional-manual-external-peer-check) is optional and not part of HIL
-pass criteria. Follow the [hardware authorization rules](README.md#hardware-authorization).
-
-Test `pico` and `pico2` separately when available. Attach one PicoUart and confirm every CDC endpoint belongs to it:
-the runners send UART data and change serial settings, but do not reset or flash the board. Flash and identify the
-image using the [hardware setup guide](../hardware-setup.md#installing-firmware); `--artifact` hashes the supplied
-file but does not identify the firmware running on the board. Use `tools/hil/.venv` for `pico-uart-hil` runners and
-`host/python/.venv` for `pico-uart` host commands. Use `--no-record` when you do not want a report saved.
+- Wire the fixture and identify its endpoints using [HIL Fixture Setup](hil-fixture-setup.md).
+- The manual Debug Probe [external-peer check](hil-fixture-setup.md#optional-manual-external-peer-check) is optional
+  and not part of HIL pass criteria.
+- Follow the [hardware authorization rules](README.md#hardware-authorization). Test `pico` and `pico2` separately
+  when available.
+- Attach one PicoUart and confirm every CDC endpoint belongs to it. The runners send UART data and change serial
+  settings; they do not reset or flash the board.
+- Flash and identify the image using the [hardware setup guide](../hardware-setup.md#installing-firmware).
+  `--artifact` hashes the supplied file; it does not identify the firmware running on the board.
+- Use `tools/hil/.venv` for `pico-uart-hil` runners and `host/python/.venv` for `pico-uart` host commands. Use
+  `--no-record` to omit the saved report.
 
 ## Standard Combined Run
 
@@ -55,12 +57,17 @@ The functional pass requires all of the following:
 - CDC0-CDC5 and HID enumerate.
 - All six channels are ready, with no initialization failure and no stuck pending request.
 - Both crossed pairs pass in both directions, and both loopbacks pass.
-- No unexpected reset, disconnect, serial framing error, increase in HID `rx_error_count`, or nonzero
-  `last_control_error_reason`.
-- RX overflow counts do not increase.
+- No unexpected reset, disconnect, or serial framing error.
+- The [HID health criteria](#hid-health-criteria) pass.
 
 `--stage N` runs one fixture link for diagnosis; the result is `PARTIAL`. `--continue-on-failure` collects every link
 result.
+
+## HID Health Criteria
+
+Before and after traffic, every channel must be closed or ready, diagnostics must be current, `rx_overrun_count` and
+`rx_error_count` must not increase, and `last_control_error_reason` must be zero. A health failure fails the pass even
+when payloads verify.
 
 ## Performance Pass
 
@@ -83,10 +90,8 @@ requested rate by 50% or more. This checks the host driver setting; payload veri
 
 ### HID Health
 
-Each rate needs clean HID health before and after traffic. Every channel must be closed or ready, with current
-diagnostics, unchanged overrun counts, and no recorded RX or configuration faults. A health failure fails the rate even
-if the payloads verified. Raw diagnostics, including buffer peaks, are kept in the record. A raw `stress` run adds the
-same checks with `--check-hid-health`.
+Apply the [HID health criteria](#hid-health-criteria) before and after each rate. Raw diagnostics, including buffer
+peaks, are kept in the record. A raw `stress` run adds the same checks with `--check-hid-health`.
 
 ### Baseline and Speed Ceiling
 
@@ -153,7 +158,7 @@ The [combined command](#standard-combined-run) is the default. For performance-o
 `tools/hil/runner/performance.sh` (see `--help`). It takes `--cdc0` through `--cdc5` instead of `--pico-cdc0` through
 `--pico-cdc5` and uses the same default rate sweep.
 
-## Timing Output
+### Timing Output
 
 The benchmark prints one `TIME <label>: {...}` line per stream. It holds the host's thread-start, first-send-attempt,
 and first-nonempty-read timestamps, in UTC and monotonic time. These are host-side times; use external instrumentation
@@ -189,11 +194,8 @@ Open hardware coverage:
   produced invalid results; no safe injection procedure is validated yet.
 - Watchdog recovery has one development observation, but no repeatable trigger procedure is documented. See the
   [review record](records/2026-10-23-uart-cdc-review-validation.md#configuration-isolation-and-recovery).
-- Startup after each kind of reset remains unqualified. A startup failure right after SWD flashing turned out to be
-  core 1 being launched without the reset the Pico SDK requires. The firmware now resets core 1 before launch
-  ([architecture](../design/architecture.md#inter-core-coordination)); cold power-on, watchdog, and USB-reset starts
-  are not qualified yet. Record procedures are in the
-  [HIL recovery and stress plan](hil-recovery-and-stress.md#startup-observation).
+- Cold-power-on, watchdog, and USB-reset startup remain unqualified. See the
+  [startup observation](hil-recovery-and-stress.md#startup-observation).
 
 For firmware parameter comparisons, follow the single
 [tuning and measurement guide](../development/firmware-timing-and-buffer-measurements.md#comparing-tuning-candidates).

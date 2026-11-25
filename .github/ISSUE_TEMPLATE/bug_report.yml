@@ -26,7 +26,7 @@ body:
     id: board
     attributes:
       label: Board and firmware version
-      description: e.g. Pico 2, firmware v0.5.0
+      description: e.g. Pico 2, output from pico-uart version
   - type: textarea
     id: wiring
     attributes:

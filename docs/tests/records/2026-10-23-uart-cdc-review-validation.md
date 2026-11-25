@@ -1,13 +1,23 @@
 # UART/CDC Review Validation
 
-The retained firmware correction resets core 1 before launch. Development evidence and remaining coverage are recorded
-below; this record does not qualify a release.
+## Outcome
+
+The retained firmware correction resets core 1 before launch. Both TX refill candidates were removed. The final
+accepted Pico image has SHA-256
+`e0f2fb2b41318894bb664c0cbc19a658a28dfecef7d39a66e8df5f78cc504657`.
+
+| Accepted run | Result and coverage |
+| --- | --- |
+| [Initial acceptance](2026-10-23-174031Z-pico-125mhz-hil.md) | `PASS`; four fixture stages and six streams at 115200/460800 baud, 60 s per rate; clean per-rate diagnostics. |
+| [Extended acceptance](2026-10-23-182232Z-pico-125mhz-hil.md) | `PASS`; four fixture stages and six streams at 115200/460800 baud, 300 s per rate; clean diagnostics. |
+| [Final-image acceptance](2026-10-23-191806Z-pico-125mhz-hil.md) | `PASS`; four fixture stages and six streams at 115200/460800 baud, 300 s per rate; clean diagnostics on the reset-corrected image. |
+
+These are RP2040 development results, not release qualification.
 
 ## Scope and Identity
 
 Development validation of the reviewed six-CDC/six-UART design on Pico/RP2040 serial `5303284748A07A1C`,
 125 MHz, firmware `0.0.0`, Debug Probe `50543165611F6C9C`, fixed four-link fixture, RTS/CTS disabled.
-No Pico 2 was attached.
 
 Firmware source baseline is `da0b1e722b794cf7a0a81d14dcd9bbf5e47624b5`, including the reviewed mailbox,
 lifecycle, readiness-query, and rejection-diagnostic fixes. The initial retained follow-ups repair HIL tooling, not the
@@ -30,6 +40,7 @@ could not identify `0x00154068`. Post-flash enumeration/readiness was checked be
 
 | Review item | Decision |
 | --- | --- |
+| Core-1 startup | Retain explicit reset immediately before launch; post-SWD trials support the correction. |
 | Mailbox/lifecycle/readiness simplification | Retain the reviewed baseline changes and native regressions. |
 | Conservative TX admission | Retain both gates; isolated refill candidates did not justify removing them. |
 | Configuration delays | Keep bounded synchronous settling; measured gaps do not justify another state machine. |
@@ -116,15 +127,18 @@ Timing arrays were then zeroed and read using non-halting SWD around the followi
 These are observed, instrumented maxima, not worst-case bounds. This USB-fed loopback workload does not substitute
 for an independently clocked external source. No measurement justifies an incremental DMA-settling state machine.
 
-Separate fresh-image checks on the uninstrumented baseline:
+Separate fresh-image checks on the uninstrumented baseline and later repository recovery regressions:
 
-| Check | Observed result |
-| --- | --- |
-| Bounded read stall | CDC1 accepted 2048 known bytes, held reads for 250 ms, then verified every byte at 115200; zero faults. |
-| Intentional overflow | CDC1 accepted 16384 bytes and held reads for two seconds; exactly 6231 dropped bytes were reported. Drain of 10153 retained bytes plus dropped count accounts for the input. A fresh marker verified after explicitly draining old backlog. |
-| Overflow isolation | Concurrent CDC5 loopback verified 86016 bytes over eight seconds without drops/errors. |
-| Pending control/session loss | With all six channels open, CDC5 ran at feasible 300 baud, queued 1024 bytes, and received a 115200 request. HID reported `configuring` before a serial-identified USB bus reset. All six sessions returned closed, CDC5 reopened and verified a fresh marker, and no canceled-request timeout/fault appeared after 1.2 seconds. |
-| Watchdog recovery | Halted core 1 through the selected probe, disabled watchdog debug-pause only for the injection, and allowed recovery. HID returned with watchdog reset cause, fresh uptime, normal clock, and verified CDC1 payload. Production pause-on-debug policy was not changed. |
+| Check | Initial baseline | Repository regression | Final-image regression |
+| --- | --- | --- | --- |
+| Settings isolation | 200 settings requests across five channels while CDC1 loopback ran; see instrumented measurements above. | Twelve CDC5 changes across 115200/230400/460800; CDC1 simultaneously verified 52224 bytes over 5 s. | Twelve CDC5 changes; CDC1 simultaneously verified 53120 bytes over 5 s. |
+| Close/reopen | Ten CDC5 cycles; old-session marker queued before close, then a distinct fresh marker verified after reopening. | Five CDC5 cycles queued distinct old payloads; fresh markers passed on CDC5 and CDC1. | Five CDC5 cycles; fresh-marker checks passed on both loopbacks. |
+| Bounded read stall | CDC1 accepted 2048 known bytes, held reads for 250 ms, then verified every byte at 115200; zero faults. | Recovered all 2048 CDC1 bytes while CDC5 verified 2688 bytes during the 250 ms stall. | Recovered all 2048 CDC1 bytes while CDC5 verified 2688 bytes during the 250 ms stall. |
+| Intentional overflow | 16384 input bytes: 10153 retained plus exactly 6231 drops. Drained backlog before verifying a fresh marker. | 16384 input bytes: 10160 retained plus 6224 drops. Retained bytes passed the ordered-subsequence check. | 16384 input bytes: 10168 retained plus 6216 drops. |
+| Overflow isolation/recovery | CDC5 loopback verified 86016 bytes over 8 s without drops/errors. | CDC5 verified 21376 bytes during the 2 s stall; fresh markers passed after draining device backlog, with no further drops. | CDC5 verified 21248 bytes during the 2 s stall; fresh markers passed after draining device backlog. |
+| Pending control/session loss | With all six open, CDC5 ran at feasible 300 baud, queued 1024 bytes, and received a 115200 request. HID reported `configuring` before a serial-identified USB bus reset. All sessions returned closed; CDC5 reopened and verified a fresh marker. No canceled-request timeout/fault appeared after 1.2 s. | — | — |
+| Watchdog recovery | Halted core 1 through the selected probe, disabled watchdog debug-pause only for injection, and allowed recovery. HID returned with watchdog reset cause, fresh uptime, normal clock, and verified CDC1 payload. Production pause-on-debug policy was unchanged. | — | — |
+| Diagnostics and cleanup | All six channels retained zero RX loss, RX errors, and configuration fault history. | Current diagnostics, zero unexpected RX/configuration faults, and no endpoint cleanup error; intentional CDC1 drops were permitted. | Current diagnostics had no unexpected RX/configuration faults or cleanup error. One setup attempt before CDC re-enumeration failed identity validation before opening a port; the accepted run passed after fresh flash and enumeration. |
 
 An initial overflow-marker check failed because host `tcflush` does not discard queued device-side backlog. The
 corrected procedure drains the retained stream before testing a new marker; overflow is not a session reset.
@@ -139,20 +153,6 @@ Early attempts also encountered post-flash readiness timeouts, rejected sub-mini
 contended diagnostic captures. These are not included as passing comparisons. The tooling fixes do not establish
 cold-power-on or immediate-post-SWD-reset reliability; accepted runs required successful readiness handshakes.
 
-Local raw benchmark transcripts, timing samples, recovery assertions, and JSON captures remain in the testing
-session cache. The tables above retain the measured results; local cache paths are not downloadable release evidence.
-
-### Initial 60-Second Acceptance
-
-The ordinary baseline was reflashed and verified after the intrusive tests. The
-[final HIL record](2026-10-23-174031Z-pico-125mhz-hil.md) passed all four functional stages and all six concurrent
-streams for 60 seconds per rate at 115200 and 460800 baud. Every per-rate measurement was current, with zero RX
-drops, RX errors, and configuration fault history. The board was left running that normal image with CDC sessions
-closed.
-
-Both firmware targets build and pass compiled USB contracts. Native firmware tests pass normally and under ASan/UBSan;
-firmware/host contract tests and firmware static analysis pass. Profiling and intentional-fault runs are diagnostic
-evidence, not acceptance runs.
 
 ### Repository Recovery and Startup Follow-Up
 
@@ -165,16 +165,8 @@ No firmware data-path, mailbox ownership, buffers, budgets, or TX gates changed 
 
 The repository command's `--mode all` passed on the same identified RP2040, 125 MHz, baseline ELF/hash above,
 starting at `2026-10-23T18:10:29Z`. The image was freshly flashed and verified, then allowed 15 seconds before
-setup. This settling condition is recorded, not proposed as a fix for startup reliability.
-
-| Repository check | Observed result |
-| --- | --- |
-| Configuration isolation | Twelve CDC5 changes across 115200/230400/460800, with verified markers; CDC1 simultaneously verified 52224 bytes over its five-second stream. |
-| Session isolation | Five CDC5 close/reopen cycles queued distinct old payloads, then verified fresh markers on CDC5 and CDC1. |
-| Bounded stall | CDC1 recovered all 2048 known bytes after reads were held while CDC5 verified 2688 bytes for at least 250 ms. |
-| Intentional overflow | CDC1 retained 10160 bytes and reported exactly 6224 drops, accounting for all 16384 input bytes. Retained bytes passed the ordered-subsequence check. |
-| Overflow recovery/isolation | CDC5 verified 21376 bytes during the two-second read stall; fresh markers passed on both loopbacks after draining device backlog. No further drops occurred. |
-| Diagnostics/teardown | Current six-channel diagnostics, zero unexpected RX/configuration faults, and no endpoint cleanup error. Only intentional CDC1 drops were permitted. |
+setup. This settling condition is recorded, not proposed as a fix for startup reliability. Its measured results are
+summarized in the recovery comparison above.
 
 Unlike the earlier session-only harness, these checks are repository-runnable and retain partial results, exact image
 hash, selected serial, and explicit failures in a new JSON file. Endpoint identities are checked before opening either
@@ -202,18 +194,14 @@ The observer records each attempt and bounds potentially blocked HID operations 
 deadline exhaustion, post-readiness disconnect, reset/stalled uptime, rollover, invalid input, and preservation of
 existing evidence.
 
-#### Extended Acceptance and Software Checks
-
-After the intentional overflow and diagnostic work, the ordinary baseline was freshly flashed and verified again.
-The [extended acceptance record](2026-10-23-182232Z-pico-125mhz-hil.md) passed all four fixture stages and all six
-streams for 300 seconds per rate at 115200 and 460800, using the exact baseline ELF/hash above. All per-rate and
-final diagnostics were current, with zero RX drops/errors or configuration fault history. This extends the earlier
-60-second observations; it remains a single-board, USB-paced workload.
+#### Software Checks
 
 The current HIL tooling suite passes its hardware-free checks, including the repository-run recovery and startup
 commands. Both CLI help paths and affected documentation links were checked. No firmware source changed, so the
-earlier build and sanitizer results apply to the unchanged baseline; they were not repeated as new firmware
-qualification in this follow-up.
+earlier baseline builds and sanitizer results apply; they were not repeated as new firmware qualification in this
+follow-up. The baseline builds pass for both targets and compiled USB contracts; native firmware tests pass normally
+and under ASan/UBSan, along with firmware/host contract tests and firmware static analysis. Profiling and
+intentional-fault runs are diagnostic evidence, not acceptance runs.
 
 ### Explicit Core-1 Reset Follow-Up
 
@@ -274,33 +262,19 @@ Both candidate images have the same functional firmware delta from baseline: exp
 also includes the explanatory source comment and was rebuilt separately; hashes, not Git metadata alone, identify
 the tested artifacts.
 
-#### Final-Image Recovery and Host Validation
+#### Final-Image Validation
 
-The final-image repository recovery command passed `--mode all` starting at `19:06:41Z`:
+The final-image repository recovery command passed `--mode all` starting at `19:06:41Z`; results are in the
+comparison table above. The final reset-corrected
+[HIL record](2026-10-23-191806Z-pico-125mhz-hil.md) passed the 300-second concurrent acceptance summarized in the
+Outcome table. Its Git fields name the parent commit and dirty worktree used during testing; they do not imply that the
+parent commit alone contains the reset correction.
 
-- Twelve CDC5 settings changes passed while CDC1 verified 53120 bytes over its five-second stream.
-- Five CDC5 reopen cycles passed fresh-marker checks on both loopbacks.
-- The bounded stall recovered all 2048 CDC1 bytes while CDC5 verified 2688 bytes during the 250 ms stall.
-- Intentional overflow accounted for all 16384 input bytes: 10168 retained and 6216 reported drops.
-  CDC5 verified 21248 bytes during the two-second stall; fresh markers passed after draining the backlog.
-- Current diagnostics had no unexpected RX/configuration faults or cleanup error. A separate first invocation
-  started before CDC re-enumeration and failed endpoint identity validation before opening a port; it remains a
-  failed setup, not a passing workload. The accepted run freshly flashed again and verified enumeration first.
-
-The firmware passes native tests normally and under ASan/UBSan. Both Pico and Pico 2 builds and their compiled
+The final firmware passes native tests normally and under ASan/UBSan. Both Pico and Pico 2 builds and their compiled
 six-CDC/one-HID contracts pass, as does firmware static analysis. Targeted firmware, clock/version-policy, and
 artifact-verifier Python checks also pass. The first contract-test invocation used the HIL-only environment and
 failed collection for missing `tomlkit`; the accepted run used the existing host developer environment without
 dependency changes.
-
-#### Final-Image Concurrent Acceptance
-
-After another fresh verified flash, the [final reset-corrected HIL record](2026-10-23-191806Z-pico-125mhz-hil.md)
-passed all four functional stages and all six concurrent streams at 115200 and 460800 baud for 300 seconds per rate.
-Every per-rate and final diagnostic was current, with zero RX drops/errors or configuration fault history. This run
-used the final RP2040 ELF/hash above. Its Git fields truthfully name the parent commit and dirty worktree used during
-testing; they do not imply that the parent commit alone contains the reset correction.
-
 The board was left running this uninstrumented 125 MHz image. A final read-only HID check confirmed the identified
 RP2040 and all six CDC sessions closed.
 

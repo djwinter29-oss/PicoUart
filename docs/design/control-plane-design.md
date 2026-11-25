@@ -41,9 +41,6 @@ sequenceDiagram
   Worker->>HID: Update channel state and diagnostics
 ```
 
-A request remains `CONTROL_PENDING` from acceptance through completion, and new TX bytes are refused for that whole
-interval. The status-lock hand-off keeps mailbox-to-worker ownership atomic.
-
 Malformed or unsupported requests, such as invalid framing on a PIO port or an unreachable baud rate, are rejected at
 once with `CONTROL_ERROR`.
 
@@ -55,16 +52,16 @@ an older success cannot clear a newer error.
 
 ## Timeouts
 
-A request for a closed port waits without starting its deadline. Soft-pending and worker application then have bounded
-per-port deadlines, so a busy port never consumes another port's time. Repeating the same request does not extend its
-deadline, but a different request gets a new one. A timeout sets `CONTROL_ERROR`.
+A request for a closed port waits without starting its deadline. Core-0 soft-pending (an accepted request waiting to be
+queued in the mailbox) and worker application each have bounded per-port deadlines. Repeating the same request does
+not extend its deadline, but a different request gets a new one. A timeout sets `CONTROL_ERROR`.
 
 ## Port Lifecycle
 
 DTR drives each port's lifecycle, and the UART worker is the only code that starts or stops a backend. HID reports
 `Ready` when the backend is running with settings that match the hardware, and `Error` when initialization or
-configuration fails. Both directions are blocked until the port first becomes ready; during a later live
-reconfiguration, RX keeps draining and only TX is blocked.
+configuration fails. Both directions are blocked until the port first becomes ready; RX keeps draining during later
+live reconfiguration.
 
 - **Open:** the initial line coding goes through the normal mailbox before the start request, so the backend starts
   with the requested format. Each open makes one start attempt; after a failure, close and reopen to retry.
@@ -72,11 +69,9 @@ reconfiguration, RX keeps draining and only TX is blocked.
   TX idle-high. Queued bytes are discarded, while the applied settings and boot-lifetime counters are kept. The board
   does not reboot.
 
-One port's startup or close never holds up another port.
-
 ## USB Mount and Unmount Reset
 
-Unplug, bus reset, and remount end the old USB session. The firmware clears host-facing CDC state, cancels soft-pending
+Unplug, bus reset, and remount end the old USB session. The firmware clears host-facing CDC state, cancels pending
 requests without reporting them as timeouts, resets HID scheduling and reset-arm state, and stops the old session's
 backends. A bus reset does not always fire TinyUSB's unmount callback, so the firmware also detects a lost mount by
 polling.

@@ -40,17 +40,21 @@ HID health results visible.
 
 Reports omit child command lines and verbose monitor transcripts; live test output remains in the terminal.
 
-Historical hand-written records use the `PicoUart HIL Results` heading and may organize fields differently. Soak
-records also use two legacy timestamp styles (`Test start` / `Report generated` and `Test start` / `Run ended`).
-Older runner records, including the v0.8.6 runs, list every per-rate HID check in full. Some include health bytes such
-as `0x11` and `0x31`, preserved as reported with no verified mapping in the current report contract. Interpret current
-reports using the [HID reference](../../design/usb/hid-report-reference.md).
+Historical formats:
+
+- Hand-written records use the `PicoUart HIL Results` heading and may organize fields differently.
+- Soak records use either `Test start` / `Report generated` or `Test start` / `Run ended`.
+- Older runner records, including v0.8.6, list every per-rate HID check. Some retain health bytes such as `0x11` and
+  `0x31`, with no verified mapping in the current contract.
+
+Interpret current reports using the [HID reference](../../design/usb/hid-report-reference.md).
 
 Release qualification uses the gates in [Releasing](../../deployment/releasing.md).
 
 ## Evidence Index
 
-Performance-only runs do not cover functional or recovery behavior. Configured baud is not a wire-rate measurement.
+These records summarize tested workloads; configured baud is not a wire-rate measurement, and performance-only runs
+cover no functional or recovery behavior. Health summaries describe before/after checks, not continuous sampling.
 
 Pico 2 rows below stop on 2026-10-10. No file in this directory is an exact-artifact Pico 2 run for the current
 release. A Pico `PASS` does not qualify `pico2`.
@@ -68,7 +72,6 @@ release. A Pico `PASS` does not qualify `pico2`.
 | [Pico 3 Mbaud sweep](2026-10-23-220124Z-pico-125mhz-hil.md) | `PASS`; all streams through 2 Mbaud, two failed at 3 Mbaud. | Installed commit and artifact hash absent. |
 | [Pico reset-corrected acceptance](2026-10-23-191806Z-pico-125mhz-hil.md) | `PASS`; fixture and six streams at 115200/460800 for 300 s per rate. | Clean diagnostics; other reset events and boards remain open. |
 | [Pico extended acceptance](2026-10-23-182232Z-pico-125mhz-hil.md) | `PASS`; fixture and six streams at 115200/460800 for 300 s per rate. | Clean diagnostics; startup reliability remains open. |
-| [UART/CDC review validation](2026-10-23-uart-cdc-review-validation.md) | Scoped RP2040 refill comparisons and recovery. | Refill candidates removed; RP2350, CTS, and other reset cases remain open. |
 | [Pico final acceptance](2026-10-23-174031Z-pico-125mhz-hil.md) | `PASS`; fixture and six streams at 115200/460800 for 60 s per rate. | Clean diagnostics; no long soak. |
 
 ### Historical Records
@@ -84,14 +87,18 @@ release. A Pico `PASS` does not qualify `pico2`.
 | [Pico](2026-10-08-183203Z-pico-hil.md) | `FAIL`; incomplete stream results and performance evidence. | Functional success does not change the overall result. |
 | [Pico 2](2026-10-08-173102Z-pico2-hil.md) | `PARTIAL`; performance-only, above the current default sweep. | Low achieved load; no release qualification. |
 
-Health summaries describe the observations retained; before/after checks are not continuous sampling.
-
 ### Development History
 
-Development runner output from October 22–23 is archived separately from release evidence in the
-[archive index](archive/README.md); narrative records link directly to the runs they discuss. Narrative summaries:
-[UART lifecycle optimization](2026-10-22-uart-lifecycle-optimization.md) and
-[CDC/UART session validation](2026-10-22-cdc-uart-session-validation.md).
+Runner output from October 22–23 is archived separately from release evidence in the
+[archive index](archive/README.md).
+
+### Narrative Records
+
+| Record | Scope |
+| --- | --- |
+| [UART lifecycle optimization](2026-10-22-uart-lifecycle-optimization.md) | Lifecycle and worker startup changes. |
+| [CDC/UART session validation](2026-10-22-cdc-uart-session-validation.md) | Session, close/reopen, and readiness validation. |
+| [UART/CDC review validation](2026-10-23-uart-cdc-review-validation.md) | Refill comparisons, recovery, and core-1 startup correction. |
 
 ## Evidence Retention
 
