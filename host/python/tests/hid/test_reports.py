@@ -509,20 +509,24 @@ def test_late_feature_transfer_is_bounded_and_quarantines_the_connection(monkeyp
     import pico_uart.hid.client as client_module
 
     started = threading.Event()
+    release = threading.Event()
 
     class SlowDevice(FakeHidDevice):
         def get_feature_report(self, report_id, size):
             started.set()
-            time.sleep(0.05)
+            release.wait(5)
             return super().get_feature_report(report_id, size)
 
     monkeypatch.setattr(client_module, "COMMAND_TIMEOUT_S", 0.01)
     client = PicoUartHid(device=SlowDevice({REPORT_ID_DEVICE_INFO: device_info_bytes()}))
-    with pytest.raises(RuntimeError, match="transfer timed out"):
-        client.read_identity()
-    assert started.is_set()
-    with pytest.raises(RuntimeError, match="still in flight"):
-        client.read_control()
+    try:
+        with pytest.raises(RuntimeError, match="transfer timed out"):
+            client.read_identity()
+        assert started.is_set()
+        with pytest.raises(RuntimeError, match="still in flight"):
+            client.read_control()
+    finally:
+        release.set()
 
 
 def test_module_helper_calls_share_quarantine_for_a_raw_device(monkeypatch):
