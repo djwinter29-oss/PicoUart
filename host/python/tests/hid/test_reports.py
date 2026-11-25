@@ -583,7 +583,8 @@ def test_status_deadline_bounds_metadata_feature_transfers():
 
     assert client.read_status(0, deadline=deadline) is None
     assert len(transfer_timeouts) == 2
-    assert all(0 < timeout <= 1.0 for timeout in transfer_timeouts)
+    # Coarse Windows clocks leave remaining time at 1.0 plus float rounding from (now + 1.0) - now.
+    assert all(0 < timeout <= 1.0 + 1e-6 for timeout in transfer_timeouts)
 
 
 def test_status_does_not_issue_zero_timeout_native_reads_or_read_after_deadline(monkeypatch):
